@@ -10,8 +10,9 @@ import {
 import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
+import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
-import { OrderEntity } from './entities';
+import { OrderEntity, PublicOrderEntity, type PublicOrderRow } from './entities';
 import { CartRepository, CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
@@ -250,6 +251,11 @@ const discountServiceMock = {
   redeem: jest.fn(),
 };
 
+// TASK-483: the public lookup's own repository — one method, deliberately.
+const orderLookupRepositoryMock = {
+  findByNumberAndPhone: jest.fn(),
+};
+
 const pinoLoggerMock = {
   setContext: jest.fn(),
   info: jest.fn(),
@@ -290,6 +296,7 @@ describe('OrderService', () => {
       providers: [
         OrderService,
         { provide: OrderRepository, useValue: orderRepositoryMock },
+        { provide: OrderLookupRepository, useValue: orderLookupRepositoryMock },
         { provide: CartRepository, useValue: cartRepositoryMock },
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: MailOutboxService, useValue: mailOutboxServiceMock },
@@ -2330,6 +2337,185 @@ describe('OrderService', () => {
       const unknown = await service.getGuestOrder(RAW_TOKEN).catch((err: Error) => err.message);
 
       expect(expired).toBe(unknown);
+    });
+  });
+
+  // ─── lookupOrders (TASK-483) ─────────────────────────────────────────────────
+  // The public "number + phone" form. Two properties are load-bearing and are
+  // asserted here rather than left to the e2e: EVERY failure is the same 404,
+  // and the phone is normalised the way the columns were (TASK-466).
+
+  describe('lookupOrders', () => {
+    const ORDER_ID = '94f5f971-1111-2222-3333-444455556666';
+
+    const makeRow = (overrides: Partial<PublicOrderRow> = {}): PublicOrderRow => ({
+      id: ORDER_ID,
+      createdAt: now,
+      status: OrderStatus.SHIPPED,
+      paymentStatus: PaymentStatus.PENDING,
+      paymentMethod: null,
+      subtotal: '69.97',
+      discount: '0.00',
+      shippingCost: '70.00',
+      addonsTotal: null,
+      total: '139.97',
+      trackingNumber: '20450000000001',
+      shippingAddress: {
+        firstName: 'Олена',
+        lastName: 'Шевченко',
+        address1: 'вул. Хрещатик, 1, кв. 12',
+        city: 'Київ',
+        phone: '+380671112233',
+        npWarehouseName: 'Відділення №12',
+      },
+      items: [
+        {
+          quantity: 2,
+          price: '29.99',
+          product: { name: 'Чохол MagSafe' },
+          addons: [{ name: 'Страхування', price: '99.00' }],
+        },
+      ],
+      ...overrides,
+    });
+
+    it('queries by the exact 8-character prefix, lowercased, with the "#" stripped', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([makeRow()]);
+
+      await service.lookupOrders({ number: '# 94F5 F971 ', phone: '+380671112233' });
+
+      expect(orderLookupRepositoryMock.findByNumberAndPhone).toHaveBeenCalledWith(
+        '94f5f971',
+        '380671112233',
+      );
+    });
+
+    it('normalises the phone the way the columns were normalised (TASK-466)', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([makeRow()]);
+
+      // A customer dictates their number without the country code. `phoneDigits`
+      // would leave this as `0671112233` and match nothing at all — the exact
+      // defect TASK-466 fixed in the columns.
+      await service.lookupOrders({ number: '94f5f971', phone: '067 111 22 33' });
+
+      expect(orderLookupRepositoryMock.findByNumberAndPhone).toHaveBeenCalledWith(
+        '94f5f971',
+        '380671112233',
+      );
+    });
+
+    it('404s on a number shorter than 8 characters WITHOUT querying anything', async () => {
+      // The whole point: a 3-character prefix would match strangers' orders.
+      await expect(service.lookupOrders({ number: '94f', phone: '+380671112233' })).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(orderLookupRepositoryMock.findByNumberAndPhone).not.toHaveBeenCalled();
+    });
+
+    it('404s on a number that is the right length but not hex', async () => {
+      await expect(
+        service.lookupOrders({ number: 'ZZZZZZZZ', phone: '+380671112233' }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(orderLookupRepositoryMock.findByNumberAndPhone).not.toHaveBeenCalled();
+    });
+
+    it('answers malformed, unknown and wrong-phone with the IDENTICAL message', async () => {
+      const malformed = await service
+        .lookupOrders({ number: '94f', phone: '+380671112233' })
+        .catch((err: Error) => err.message);
+
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([]);
+      const unknown = await service
+        .lookupOrders({ number: '00000000', phone: '+380671112233' })
+        .catch((err: Error) => err.message);
+      const wrongPhone = await service
+        .lookupOrders({ number: '94f5f971', phone: '+380670000000' })
+        .catch((err: Error) => err.message);
+
+      expect(malformed).toBe(unknown);
+      expect(unknown).toBe(wrongPhone);
+    });
+
+    it('returns a LIST — an 8-character prefix can collide, and a collision is one person', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([
+        makeRow(),
+        makeRow({ id: '94f5f971-9999-8888-7777-666655554444' }),
+      ]);
+
+      const result = await service.lookupOrders({ number: '94f5f971', phone: '+380671112233' });
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBeInstanceOf(PublicOrderEntity);
+    });
+
+    it('shows the number, the statuses, the lines, the money, the branch and the ТТН', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([makeRow()]);
+
+      const [order] = await service.lookupOrders({
+        number: '94f5f971',
+        phone: '+380671112233',
+      });
+
+      expect(order.number).toBe('94F5F971');
+      expect(order.status).toBe(OrderStatus.SHIPPED);
+      expect(order.paymentStatus).toBe(PaymentStatus.PENDING);
+      expect(order.items).toEqual([
+        {
+          productName: 'Чохол MagSafe',
+          quantity: 2,
+          price: '29.99',
+          lineTotal: '59.98',
+          addons: ['Страхування'],
+        },
+      ]);
+      expect(order.total).toBe('139.97');
+      expect(order.delivery).toEqual({ city: 'Київ', warehouse: 'Відділення №12' });
+      expect(order.trackingNumber).toBe('20450000000001');
+    });
+
+    it('never carries the street, the phone, the email, the notes or the raw id', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([makeRow()]);
+
+      const [order] = await service.lookupOrders({
+        number: '94f5f971',
+        phone: '+380671112233',
+      });
+
+      // Serialised, because that is what actually leaves the process — a field
+      // present on the instance but stripped by a decorator would still be a bug
+      // here, and a field absent from the class cannot be either.
+      const wire = JSON.stringify(order);
+      expect(wire).not.toContain('Хрещатик');
+      expect(wire).not.toContain('380671112233');
+      expect(wire).not.toContain(ORDER_ID);
+      expect(order).not.toHaveProperty('id');
+      expect(order).not.toHaveProperty('guest');
+      expect(order).not.toHaveProperty('notes');
+      expect(order).not.toHaveProperty('internalNotes');
+      expect(order.delivery).not.toHaveProperty('address1');
+    });
+
+    it('shows the city but no branch for a courier delivery (and still no street)', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([
+        makeRow({
+          shippingAddress: {
+            firstName: 'Олена',
+            lastName: 'Шевченко',
+            address1: 'вул. Хрещатик, 1, кв. 12',
+            city: 'Київ',
+          },
+        }),
+      ]);
+
+      const [order] = await service.lookupOrders({
+        number: '94f5f971',
+        phone: '+380671112233',
+      });
+
+      expect(order.delivery).toEqual({ city: 'Київ', warehouse: null });
+      expect(JSON.stringify(order)).not.toContain('Хрещатик');
     });
   });
 

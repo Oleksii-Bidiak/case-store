@@ -44,6 +44,17 @@ export interface OrderConfirmationParams {
    * route, so burying it in body text would be a support burden by design.
    */
   orderStatusUrl?: string;
+  /**
+   * Absolute link to the storefront's public "check my order" form (TASK-483).
+   *
+   * Sent to EVERY buyer, guest or account holder, and it is the half of this
+   * letter that survives the letter. `orderStatusUrl` above carries a token: it
+   * is gone the moment the mail is deleted, filed in spam, or typed to the wrong
+   * address. This one is an ordinary page that asks for the order number and the
+   * phone — so the letter also teaches the way back that does not depend on the
+   * letter (owner's decision B-5).
+   */
+  orderLookupUrl?: string;
   order: {
     id: string;
     createdAt: Date;
@@ -77,6 +88,8 @@ export interface OrderConfirmationMailPayload {
   customerName?: string;
   /** Guest order-status link (TASK-338); absent on account orders. */
   orderStatusUrl?: string;
+  /** Public "check my order" form (TASK-483); sent to every buyer. */
+  orderLookupUrl?: string;
   order: Omit<OrderConfirmationParams['order'], 'createdAt'> & { createdAt: string };
 }
 
@@ -175,14 +188,39 @@ function renderAddressHtml(address: OrderConfirmationAddress | null): string {
  * the token is opaque and machine-generated, but "it can't contain a quote" is
  * exactly the assumption that ages badly.
  */
-function renderStatusLinkHtml(orderStatusUrl?: string): string {
+function renderStatusLinkHtml(orderStatusUrl?: string, orderLookupUrl?: string): string {
   if (!orderStatusUrl) return '';
   const href = escapeHtml(orderStatusUrl);
+  // TASK-483: the old line under the button read "це ЄДИНИЙ спосіб відкрити ваше
+  // замовлення без реєстрації". That stopped being true the moment the public
+  // lookup form shipped, and a letter that tells a worried customer their only
+  // way in is gone — when it is not — is the most expensive kind of stale copy.
+  const keepNote = orderLookupUrl
+    ? 'Збережіть цей лист — за посиланням замовлення відкривається одразу, без номера й телефону.'
+    : 'Збережіть цей лист — це єдиний спосіб відкрити ваше замовлення без реєстрації.';
   return `<p style="margin:24px 0 0;text-align:center;">
   <a href="${href}" style="display:inline-block;padding:12px 24px;background:#0f172a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:bold;">Переглянути статус замовлення</a>
 </p>
 <p style="margin:12px 0 0;color:#94a3b8;font-size:13px;text-align:center;">
-  Збережіть цей лист — це єдиний спосіб відкрити ваше замовлення без реєстрації.
+  ${keepNote}
+</p>`;
+}
+
+/**
+ * The way back that does not depend on this letter (TASK-483).
+ *
+ * Rendered for EVERY buyer, including account holders: the number + phone form
+ * is also what someone reaches for when they cannot remember which address they
+ * registered with. Deliberately a text link rather than a second button — the
+ * token link above is the fast path, this is the fallback, and two equally loud
+ * buttons would make the fast path slower for everybody.
+ */
+function renderLookupLinkHtml(orderLookupUrl?: string): string {
+  if (!orderLookupUrl) return '';
+  const href = escapeHtml(orderLookupUrl);
+  return `<p style="margin:16px 0 0;color:#64748b;font-size:13px;text-align:center;">
+  Загубили цей лист? Статус завжди можна перевірити за номером замовлення й телефоном:
+  <a href="${href}" style="color:#0f172a;">${href}</a>
 </p>`;
 }
 
@@ -216,7 +254,8 @@ ${renderTotalsHtml(order)}
       </tbody>
     </table>
     ${renderAddressHtml(order.shippingAddress)}
-    ${renderStatusLinkHtml(params.orderStatusUrl)}
+    ${renderStatusLinkHtml(params.orderStatusUrl, params.orderLookupUrl)}
+    ${renderLookupLinkHtml(params.orderLookupUrl)}
     <p style="margin:24px 0 0;color:#94a3b8;font-size:13px;">
       Якщо у вас є запитання щодо замовлення, просто дайте відповідь на цей лист.
     </p>
@@ -269,7 +308,20 @@ function renderText(params: OrderConfirmationParams): string {
       '',
       'Статус замовлення:',
       params.orderStatusUrl,
-      'Збережіть цей лист — це єдиний спосіб відкрити ваше замовлення без реєстрації.',
+      params.orderLookupUrl
+        ? 'Збережіть цей лист — за посиланням замовлення відкривається одразу, без номера й телефону.'
+        : 'Збережіть цей лист — це єдиний спосіб відкрити ваше замовлення без реєстрації.',
+    );
+  }
+
+  // TASK-483: the letter-independent route, in the plain-text part too — the
+  // buyer whose client strips HTML is exactly the buyer most likely to lose the
+  // link.
+  if (params.orderLookupUrl) {
+    sections.push(
+      '',
+      'Загубили цей лист? Статус завжди можна перевірити за номером замовлення й телефоном:',
+      params.orderLookupUrl,
     );
   }
 

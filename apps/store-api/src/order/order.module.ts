@@ -8,6 +8,9 @@ import { DiscountModule } from '../discount';
 import { AddonServiceModule } from '../addon-service';
 import { SearchModule } from '../search';
 import { OrderRepository } from './order.repository';
+// TASK-483: the public lookup's own narrow query — see its docblock for why it
+// is not a method on OrderRepository.
+import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
 import { OrderController } from './order.controller';
 import { AdminOrderController } from './admin-order.controller';
@@ -61,6 +64,7 @@ import {
   // module boundary and the order it belongs to on the other.
   providers: [
     OrderRepository,
+    OrderLookupRepository,
     OrderService,
     ReturnRepository,
     ReturnService,

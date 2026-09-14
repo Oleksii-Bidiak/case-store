@@ -10,12 +10,15 @@ import { PinoLogger } from 'nestjs-pino';
 import { createHash, randomBytes } from 'crypto';
 import { OrderStatus, PaymentStatus, PaymentAttemptStatus, PaymentMethod } from '@prisma/client';
 import { OrderRepository, type AdminOrderExportRow } from './order.repository';
+// TASK-483: the public lookup has its own repository — see its docblock for why
+// the narrow projection gets a narrow query rather than a filtered wide one.
+import { OrderLookupRepository } from './order-lookup.repository';
 import { CartRepository, type CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
 import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
-import { OrderEntity, OrderStatusHistoryEntity } from './entities';
+import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
 import {
   allowedPaymentTransitions,
@@ -33,13 +36,19 @@ import { AddonApplicabilityResolver, toTwoDecimals } from '../addon-service';
 // Shared with the newsletter export: one formula-injection guard, so a fix
 // cannot land in one export and miss the other (see the helper's docblock).
 import { escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
+// TASK-483/466: one canonical phone spelling on both sides of the comparison.
+import { normalizeUaPhone } from '../common/validators';
 import type {
   CreateOrderDto,
   CreateManualOrderDto,
   OrderListQueryDto,
   AdminOrderListQueryDto,
   AddressDto,
+  OrderLookupDto,
 } from './dto';
+// TASK-483: value imports (the normaliser and the shape it must satisfy), so
+// they cannot be in the `import type` block above.
+import { ORDER_NUMBER_PATTERN, normalizeOrderNumber } from './dto';
 // Declared beside the list query it narrows; deliberately not in the DTO barrel.
 import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto';
 import type {
@@ -188,6 +197,8 @@ export interface PaginationMeta {
 export class OrderService {
   constructor(
     private readonly orderRepository: OrderRepository,
+    // TASK-483: the public lookup's own narrow query.
+    private readonly orderLookupRepository: OrderLookupRepository,
     private readonly cartRepository: CartRepository,
     private readonly userRepository: UserRepository,
     private readonly mailOutbox: MailOutboxService,
@@ -343,6 +354,9 @@ export class OrderService {
     // the cart cookie is gone or they switch device — edge case E-17.
     const guestToken = actor.type === 'guest' ? generateGuestToken() : null;
     const guestStatusUrl = guestToken ? this.buildGuestStatusUrl(guestToken) : null;
+    // TASK-483: order-independent and token-free, so it is built for account
+    // orders too.
+    const orderLookupUrl = this.buildOrderLookupUrl();
 
     // Where the confirmation letter goes. For a guest there is no user row, so it
     // comes from what they typed at checkout — which is also why the email is the
@@ -401,6 +415,9 @@ export class OrderService {
             order: OrderEntity.fromPrisma(created),
             customerName: recipient.name,
             ...(guestStatusUrl ? { orderStatusUrl: guestStatusUrl } : {}),
+            // TASK-483: goes to every buyer — the token link above is the fast
+            // path, this is the one that survives losing the letter.
+            ...(orderLookupUrl ? { orderLookupUrl } : {}),
           },
           tx,
         );
@@ -449,6 +466,21 @@ export class OrderService {
   }
 
   /**
+   * The storefront page that asks for an order number and a phone (TASK-483).
+   *
+   * Put in every confirmation letter, guest or account, because it is the one
+   * route back that the letter itself is not required for. `STORE_CLIENT_URL` is
+   * read without a fallback for the same reason {@link buildGuestStatusUrl}
+   * does: a `localhost` default is a link that works in dev and points real
+   * customers at their own laptop. No value → no line in the letter, which is
+   * honest.
+   */
+  private buildOrderLookupUrl(): string | null {
+    const storeUrl = this.configService.get<string>('STORE_CLIENT_URL');
+    return storeUrl ? `${storeUrl.replace(/\/+$/, '')}/orders/status` : null;
+  }
+
+  /**
    * Read a guest's own order using the token from their confirmation email
    * (TASK-338).
    *
@@ -456,10 +488,17 @@ export class OrderService {
    * switch device (edge case E-17). The raw token is hashed before the lookup, so
    * a database leak does not hand out order access.
    *
-   * The link expires `GUEST_ORDER_TOKEN_TTL_DAYS` after the order was placed.
-   * There is no expiry COLUMN — `createdAt` plus the configured window is the
-   * same information, and inventing a column that must be kept in step with a
-   * setting is how the two drift apart.
+   * The link expires `GUEST_ORDER_TOKEN_TTL_DAYS` after it was ISSUED. There is
+   * still no expiry COLUMN — the issue timestamp plus the configured window is
+   * the same information, and inventing a column that must be kept in step with
+   * a setting is how the two drift apart.
+   *
+   * TASK-484: the clock starts at `accessTokenIssuedAt`, falling back to
+   * `createdAt` for every order minted before that column existed. Counting from
+   * `createdAt` alone was correct only while a token could be issued exactly
+   * once, at checkout. Now that an operator can re-issue one (B-5 §4), a
+   * rotation performed two months into an order's life would have handed the
+   * buyer a link that was already dead when it was pasted into the chat.
    *
    * Every failure — unknown token, expired token, soft-deleted order — answers
    * the same 404. A token that is merely expired must not be distinguishable
@@ -477,7 +516,8 @@ export class OrderService {
       'GUEST_ORDER_TOKEN_TTL_DAYS',
       DEFAULT_GUEST_TOKEN_TTL_DAYS,
     );
-    const expiresAt = order.createdAt.getTime() + ttlDays * MS_PER_DAY;
+    const issuedAt = order.accessTokenIssuedAt ?? order.createdAt;
+    const expiresAt = issuedAt.getTime() + ttlDays * MS_PER_DAY;
     if (Date.now() > expiresAt) {
       this.logger.info(
         { event: 'order.guest_token_expired', orderId: order.id },
@@ -487,6 +527,64 @@ export class OrderService {
     }
 
     return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Find an order from the public form: order number + phone (TASK-483).
+   *
+   * ── Why this exists next to the emailed link ──────────────────────────────
+   * Before it, an order could be seen exactly one way — the link in the
+   * confirmation letter — and that is the single easiest thing in the flow to
+   * lose: a deleted mail, a mistyped address, a spam folder, or an order an
+   * operator took over the phone, which had no letter at all. "Seeing your order
+   * must be possible in more than one way" is the principle B-5 was decided on.
+   *
+   * ── One 404 for every kind of failure ─────────────────────────────────────
+   * A number that is not eight hex characters, a number nobody has, the right
+   * number with the wrong phone, a soft-deleted order — all of them answer the
+   * same `404`, produced by the same line of code. Anything else turns this into
+   * an oracle: a distinguishable "well-formed but unknown" would tell someone
+   * walking through numbers that they are getting warmer, and a distinguishable
+   * "right number, wrong phone" would confirm an order exists to anyone who
+   * merely read the number off a parcel label.
+   *
+   * ── What the caller gets back ─────────────────────────────────────────────
+   * A LIST, not a single order. An eight-character prefix of a UUID can collide,
+   * and when it does, every match also had to match the phone — so they all
+   * belong to the same person and showing them is not a leak (B-5 §1).
+   *
+   * @throws NotFoundException — always, for every failure mode.
+   */
+  async lookupOrders(dto: OrderLookupDto): Promise<PublicOrderEntity[]> {
+    // Normalised again here rather than trusted from the DTO: the transform is a
+    // convenience for the HTTP boundary, and this method is also reachable from
+    // tests and future callers that never went through a validation pipe.
+    const number = normalizeOrderNumber(dto.number);
+    const phone = normalizeUaPhone(dto.phone);
+
+    // The one place a short or malformed input is rejected — and it is rejected
+    // as "not found", not as a validation error. Searching on a 3-character
+    // prefix would return other people's orders; see the repository docblock.
+    if (!ORDER_NUMBER_PATTERN.test(number) || phone.length === 0) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const rows = await this.orderLookupRepository.findByNumberAndPhone(number, phone);
+
+    if (rows.length === 0) {
+      // Logged without the number and without the phone: this endpoint is
+      // unauthenticated, so its failures are exactly the data an attacker would
+      // like written down for them. The count is enough to alarm on.
+      this.logger.info({ event: 'order.lookup_miss' }, 'Public order lookup found nothing');
+      throw new NotFoundException('Order not found');
+    }
+
+    this.logger.info(
+      { event: 'order.lookup_hit', matches: rows.length },
+      'Public order lookup matched',
+    );
+
+    return rows.map((row) => PublicOrderEntity.fromRow(row));
   }
 
   /**

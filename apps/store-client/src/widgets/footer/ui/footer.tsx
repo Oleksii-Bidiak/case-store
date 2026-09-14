@@ -144,6 +144,12 @@ export async function Footer() {
           ))}
           <FooterLink href="/info#about">{dict.footer.infoAbout}</FooterLink>
           <FooterLink href="/info#faq">{dict.footer.infoFaq}</FooterLink>
+          {/* TASK-483: the footer is where somebody looks when the confirmation
+              email is gone — which is exactly the situation this page exists
+              for, so it has to be reachable without already knowing it exists. */}
+          <FooterLink href="/orders/status">
+            {dict.footer.infoOrderStatus}
+          </FooterLink>
           <FooterLink href="/blog">{dict.footer.infoBlog}</FooterLink>
         </div>
 
