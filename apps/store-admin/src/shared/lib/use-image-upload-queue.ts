@@ -1,9 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { useProductImageControllerUpload } from "@/entities/product";
-import { imageUploadErrorMessage } from "@/features/content-image-upload";
-import { dict } from "@/shared/config";
+import { useEffect, useRef, useState } from "react";
 
 /** One queued file and what happened to it. */
 export type UploadQueueStatus = "queued" | "uploading" | "done" | "failed";
@@ -31,6 +28,32 @@ export interface UploadQueueHandlers {
   onItemFailed?: (item: UploadQueueItem, reason: string) => void;
 }
 
+/**
+ * Send exactly ONE file wherever it belongs, and reject when the server refuses
+ * it.
+ *
+ * This is the only thing that differs between the callers, which is why it is
+ * injected rather than imported: this module lives in `shared`, while both the
+ * endpoint (`@/entities/product`, `@/entities/media`) and the operator-facing
+ * failure copy (`@/features/content-image-upload`) live above it. A queue that
+ * reached for either would be an upward import, and there would be no way to add
+ * a third caller without editing the queue.
+ */
+export type UploadQueueSender<TTarget> = (
+  file: File,
+  target: TTarget,
+) => Promise<unknown>;
+
+export interface UploadQueueOptions<TTarget> {
+  /** How one file is sent. See {@link UploadQueueSender}. */
+  send: UploadQueueSender<TTarget>;
+  /**
+   * Turn a rejected request into words the operator can act on — normally
+   * `imageUploadErrorMessage(error, <this screen's dictionary block>)`.
+   */
+  describeError: (error: unknown) => string;
+}
+
 let queueSeq = 0;
 
 const toQueueItems = (files: File[]): UploadQueueItem[] =>
@@ -42,18 +65,26 @@ const toQueueItems = (files: File[]): UploadQueueItem[] =>
   }));
 
 /**
- * The product-photo upload queue: ONE REQUEST PER FILE (TASK-424), strictly in
- * sequence, drained by ONE loop at a time.
+ * The image upload queue: ONE REQUEST PER FILE (TASK-424), strictly in sequence,
+ * drained by ONE loop at a time.
  *
- * Extracted out of `ProductImageManager` by TASK-442 so the create flow can
+ * Extracted out of `ProductImageManager` by TASK-442 so the create flow could
  * replay the photos an operator staged before the product existed through the
- * very same mechanism, instead of a second, subtly different loop next to it.
- * The queue is product-agnostic: the target id is an argument to
- * `enqueue`/`retry`, because the create flow only learns it from the
- * `POST /products` response.
+ * very same mechanism, instead of a second, subtly different loop next to it;
+ * moved down here from `features/product-image-manager` by TASK-441, when the
+ * media library became its third caller. A feature importing another feature is
+ * an FSD violation and copying the loop is worse, so the mechanism belongs in
+ * `shared` — which is also what forced the endpoint and the failure copy to
+ * become arguments (see {@link UploadQueueSender}).
  *
- * ONE REQUEST PER FILE. The endpoint accepts ten, and validates every file
- * before writing any of them — right for the API, wrong for this screen:
+ * The target id stays an argument to `enqueue`/`retry` rather than something the
+ * hook is constructed with, because the create flow only learns it from the
+ * `POST /products` response — long after this hook was called. Callers with no
+ * target at all (the media library uploads into no entity) instantiate it as
+ * `useImageUploadQueue<void>` and pass `undefined`.
+ *
+ * ONE REQUEST PER FILE. The product endpoint accepts ten, and validates every
+ * file before writing any of them — right for the API, wrong for this screen:
  * dropping twelve photos of which one is over the size cap meant all twelve were
  * refused with a single unexplained toast, and the operator had no way to tell
  * which file was the problem. A request per file buys a per-file outcome, a
@@ -83,7 +114,10 @@ const toQueueItems = (files: File[]): UploadQueueItem[] =>
  * drained the files, because two overlapping drops are one upload to the
  * operator.
  */
-export function useImageUploadQueue() {
+export function useImageUploadQueue<TTarget = void>({
+  send,
+  describeError,
+}: UploadQueueOptions<TTarget>) {
   const [items, setItems] = useState<UploadQueueItem[]>([]);
   const [isUploading, setIsUploading] = useState(false);
 
@@ -97,7 +131,20 @@ export function useImageUploadQueue() {
   const pendingRef = useRef<UploadQueueItem[]>([]);
   const isDrainingRef = useRef(false);
 
-  const upload = useProductImageControllerUpload();
+  /**
+   * The two injected callbacks, kept current without being re-captured per loop.
+   *
+   * A running loop outlives many renders, and the closure it started with would
+   * otherwise go on calling the mutation object built by the render that kicked
+   * it off. Reading through a ref on every turn is what `useDebouncedCallback`
+   * next door does, for the same reason.
+   */
+  const sendRef = useRef(send);
+  const describeErrorRef = useRef(describeError);
+  useEffect(() => {
+    sendRef.current = send;
+    describeErrorRef.current = describeError;
+  });
 
   const patch = (id: string, changes: Partial<UploadQueueItem>) =>
     setItems((prev) =>
@@ -105,7 +152,7 @@ export function useImageUploadQueue() {
     );
 
   const drain = async (
-    productId: string,
+    target: TTarget,
     queued: UploadQueueItem[],
     handlers: UploadQueueHandlers = {},
   ): Promise<UploadDrainSummary | null> => {
@@ -125,12 +172,12 @@ export function useImageUploadQueue() {
       if (!item) break;
       patch(item.id, { status: "uploading", error: undefined });
       try {
-        await upload.mutateAsync({ productId, data: { files: [item.file] } });
+        await sendRef.current(item.file, target);
         patch(item.id, { status: "done" });
         done += 1;
         handlers.onItemUploaded?.(item);
       } catch (error) {
-        const message = imageUploadErrorMessage(error, dict.productImages);
+        const message = describeErrorRef.current(error);
         patch(item.id, { status: "failed", error: message });
         failedItems.push({ ...item, status: "failed", error: message });
         handlers.onItemFailed?.(item, message);
@@ -146,9 +193,9 @@ export function useImageUploadQueue() {
     return { done, failed: failedItems.length, failedItems };
   };
 
-  /** Add files to the visible queue and upload them to `productId`. */
+  /** Add files to the visible queue and upload them to `target`. */
   const enqueue = (
-    productId: string,
+    target: TTarget,
     files: File[],
     handlers?: UploadQueueHandlers,
   ): Promise<UploadDrainSummary | null> => {
@@ -157,15 +204,15 @@ export function useImageUploadQueue() {
     // Keep finished rows visible alongside the new ones: an operator who drops a
     // second batch should still see which file from the first one failed.
     setItems((prev) => [...prev, ...queued]);
-    return drain(productId, queued, handlers);
+    return drain(target, queued, handlers);
   };
 
   /** Re-send rows that already live in the queue (a retry). */
   const retry = (
-    productId: string,
+    target: TTarget,
     targets: UploadQueueItem[],
     handlers?: UploadQueueHandlers,
-  ): Promise<UploadDrainSummary | null> => drain(productId, targets, handlers);
+  ): Promise<UploadDrainSummary | null> => drain(target, targets, handlers);
 
   const clear = () => setItems([]);
 

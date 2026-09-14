@@ -13,6 +13,7 @@ import {
   FileText,
   Newspaper,
   ImageIcon,
+  Images,
   GalleryHorizontal,
   ShoppingCart,
   Star,
@@ -140,6 +141,16 @@ const navItems: readonly NavItem[] = [
     href: "/carousels",
     icon: GalleryHorizontal,
     permission: PERM.carouselsWrite,
+  },
+  // TASK-441 — gated on the READ key alone. The screen is useful to anyone who
+  // may look at a picture, and `media:write` is checked inside it to decide
+  // whether the upload zone and the delete button render at all; requiring it
+  // here would hide the library from a manager who is allowed to browse it.
+  {
+    label: dict.nav.media,
+    href: "/media",
+    icon: Images,
+    permission: PERM.mediaRead,
   },
   {
     label: dict.nav.orders,

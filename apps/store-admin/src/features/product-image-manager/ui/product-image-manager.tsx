@@ -36,12 +36,12 @@ import {
 } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
-import {
-  useImageUploadQueue,
-  type UploadDrainSummary,
-  type UploadQueueItem,
-  type UploadQueueStatus,
-} from "../model/use-image-upload-queue";
+import type {
+  UploadDrainSummary,
+  UploadQueueItem,
+  UploadQueueStatus,
+} from "@/shared/lib/use-image-upload-queue";
+import { useProductImageUploadQueue } from "../model/use-product-image-upload-queue";
 
 interface ProductImageManagerProps {
   /**
@@ -81,9 +81,10 @@ export function ProductImageManager(props: ProductImageManagerProps) {
 
 /**
  * The queue mechanics — one request per file, one drain loop at a time — live in
- * `../model/use-image-upload-queue`, which is also what the create flow replays
- * staged photos through. Read its docblock before changing anything about
- * ordering, concurrency or the `isUploading` latch.
+ * `@/shared/lib/use-image-upload-queue`, wired to the gallery endpoint by
+ * `../model/use-product-image-upload-queue`, which is also what the create flow
+ * replays staged photos through. Read the shared hook's docblock before changing
+ * anything about ordering, concurrency or the `isUploading` latch.
  *
  * Reordering is move-buttons, not drag-and-drop: it is the WCAG 2.2 SC 2.5.7
  * non-dragging path and predates this change. Dragging FILES IN is a different
@@ -119,7 +120,7 @@ function ProductImageManagerView({
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: listQueryKey });
 
-  const queue = useImageUploadQueue();
+  const queue = useProductImageUploadQueue();
   const reorder = useProductImageControllerReorder();
   const remove = useProductImageControllerDelete();
   const busy = queue.isUploading || reorder.isPending || remove.isPending;

@@ -44,6 +44,8 @@ export * from "./generated/search/search";
 // TASK-380 — storefront traffic, proxied through our API so the analytics
 // credential never lands in this bundle.
 export * from "./generated/analytics/analytics";
+// TASK-441 — the internal media library.
+export * from "./generated/media/media";
 
 // Generated DTO / entity types
 export * from "./generated/models";

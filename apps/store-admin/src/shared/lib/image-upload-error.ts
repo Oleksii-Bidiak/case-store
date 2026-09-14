@@ -1,6 +1,18 @@
 import { isAxiosError } from "axios";
 
 /**
+ * The words an image upload fails in, and the extensions its picker offers.
+ *
+ * Lived in `features/content-image-upload` until TASK-441. Three DIFFERENT
+ * features upload images now — the single-image content field, the product
+ * gallery, and the media library's batch drop zone — and all three have to
+ * explain a 413 the same way, because it is one API contract. A feature
+ * importing another feature is not an import direction FSD allows, so the shared
+ * half moved down here; `features/content-image-upload` keeps the FIELD, which
+ * is genuinely its own.
+ */
+
+/**
  * Extensions offered by the file picker, mirroring the API's accepted MIME set
  * (`ALLOWED_IMAGE_MIME_EXT` in `uploads/image-upload.constants.ts`). `accept` is
  * only a picker hint — the backend re-checks the MIME AND sniffs the real bytes,

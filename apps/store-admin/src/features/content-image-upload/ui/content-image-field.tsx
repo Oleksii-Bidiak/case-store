@@ -6,7 +6,7 @@ import { dict } from "@/shared/config";
 import {
   CONTENT_IMAGE_ACCEPT,
   type ImageUploadCopy,
-} from "../model/image-upload-copy";
+} from "@/shared/lib/image-upload-error";
 
 export interface ContentImageFieldProps {
   /**

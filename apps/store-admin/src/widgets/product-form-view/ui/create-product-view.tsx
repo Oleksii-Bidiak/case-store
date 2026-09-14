@@ -21,7 +21,7 @@ import { useProductControllerUpdateDeviceCompat } from "@/entities/device";
 import { useAddonServiceControllerSetProductDelta } from "@/entities/addon-service";
 import {
   ProductImageManager,
-  useImageUploadQueue,
+  useProductImageUploadQueue,
 } from "@/features/product-image-manager";
 import { ProductSpecsEditor } from "@/features/product-specs-editor";
 import { ProductDeviceCompatManager } from "@/features/product-device-compat";
@@ -74,9 +74,10 @@ const IDLE_REPLAY: ReplayState = {
  *
  * THE REPLAY. After `POST /products` answers, this view walks the four areas in
  * order against the new id, with the progress visible: photos one request per
- * file (through the very same queue the image panel uploads with — see
- * `features/product-image-manager/model/use-image-upload-queue`), then specs,
- * then compatibility, then one delta per picked add-on.
+ * file (through the very same queue the image panel uploads with —
+ * `useProductImageUploadQueue`, whose mechanics TASK-441 moved down to
+ * `shared/lib/use-image-upload-queue` when the media library became a third
+ * caller), then specs, then compatibility, then one delta per picked add-on.
  *
  * PARTIAL FAILURE ROLLS BACK NOTHING, deliberately. The product exists and is
  * HIDDEN — that is the part that matters, and un-creating it would throw away
@@ -108,7 +109,7 @@ export function CreateProductView() {
   const saveSpecs = useUpdateProductSpecs();
   const saveCompat = useProductControllerUpdateDeviceCompat();
   const saveAddon = useAddonServiceControllerSetProductDelta();
-  const imageQueue = useImageUploadQueue();
+  const imageQueue = useProductImageUploadQueue();
 
   const progressRef = useRef<HTMLElement>(null);
   useEffect(() => {
