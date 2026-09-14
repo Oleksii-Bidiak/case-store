@@ -2829,6 +2829,12 @@ export const dict = {
       category: "Категорії",
       siteContact: "Контакти сайту",
       user: "Користувачі",
+      // TASK-441 — the media library. Deliberately its own label rather than a
+      // fold into `uploads` (a file dropped straight into one content form) or
+      // `productImage` (a photo bound to one product): an asset here belongs to
+      // no entity and may be reused by all of them, so sharing a label would
+      // make the log's entity filter answer the wrong question.
+      media: "Медіатека",
       // TASK-430 — the customer-notes journal is audited like everything else
       // behind a permission, so its entries need a name here too.
       userNote: "Нотатки про клієнтів",

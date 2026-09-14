@@ -3,6 +3,8 @@ export {
   PERMISSION_KEYS,
   PERMISSION_ZONES,
   PERMISSION_ZONE_LABELS,
+  MEDIA_BACKFILL_SOURCE_PERMISSIONS,
+  MEDIA_PERMISSIONS,
   isKnownPermission,
   type Permission,
   type PermissionDefinition,

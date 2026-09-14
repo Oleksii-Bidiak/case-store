@@ -19,6 +19,7 @@ import { UserModule } from './user';
 import { UserNoteModule } from './user-note';
 import { ProductModule } from './product';
 import { UploadsModule } from './uploads';
+import { MediaModule } from './media';
 import { CatalogImportModule } from './catalog-import';
 import { ProductGroupModule } from './product-group';
 import { CategoryModule } from './category';
@@ -170,6 +171,11 @@ import { buildPinoHttpOptions } from './config/pino.config';
     // The shared image-upload pipeline + the admin content-image routes
     // (TASK-424). Listed before ProductModule, which depends on it.
     UploadsModule,
+
+    // The internal media library (TASK-441) — assets as rows of their own,
+    // reusable across products, categories, banners and articles. Depends on
+    // UploadsModule above.
+    MediaModule,
 
     // Product catalog
     ProductModule,

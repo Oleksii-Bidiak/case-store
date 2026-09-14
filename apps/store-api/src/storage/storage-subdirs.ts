@@ -34,11 +34,31 @@ export const IMPORTS_SUBDIR = 'imports';
  */
 export const CONTENT_SUBDIR = 'content';
 
+/**
+ * The internal media library (TASK-441, plan 177).
+ *
+ * A subdir of its own rather than a fold into `content`, because the two have
+ * different origins and different lifetimes. A `content` file was uploaded INTO
+ * a form that already had a slot for it, so a row pointed at it from the moment
+ * it existed; a `media` file was uploaded into the library and may be referenced
+ * by nothing, by one entity, or by six. When an operator later asks "what is
+ * actually on this disk", the path is the only thing that answers it — and
+ * unlike the entity an image belongs to, the library IS a fixed, code-level
+ * target, so it can be a whitelisted constant instead of a request-derived
+ * segment, which is what this list exists to forbid.
+ *
+ * Served publicly like `products`/`branding`/`content`: the storefront's
+ * `next.config.ts` allows the whole `/uploads/**` path, so `/uploads/media/**`
+ * needs no config change.
+ */
+export const MEDIA_SUBDIR = 'media';
+
 export const STORAGE_SUBDIRS = [
   PRODUCTS_SUBDIR,
   BRANDING_SUBDIR,
   IMPORTS_SUBDIR,
   CONTENT_SUBDIR,
+  MEDIA_SUBDIR,
 ] as const;
 
 export type StorageSubdir = (typeof STORAGE_SUBDIRS)[number];
