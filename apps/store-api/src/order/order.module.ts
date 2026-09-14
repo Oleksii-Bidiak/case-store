@@ -12,6 +12,9 @@ import { OrderRepository } from './order.repository';
 // is not a method on OrderRepository.
 import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
+// TASK-485: the seam the auth side claims guest orders through. Imported here
+// (never the other way round) because this module is the one that IMPLEMENTS it.
+import { GUEST_ORDER_CLAIM_PORT } from '../common/ports/guest-order-claim.port';
 import { OrderController } from './order.controller';
 import { AdminOrderController } from './admin-order.controller';
 import { ReturnRepository } from './returns/return.repository';
@@ -69,7 +72,12 @@ import {
     ReturnRepository,
     ReturnService,
     CartIdentityInterceptor,
+    // TASK-485: alias, not a second instance — `useExisting` binds the token to
+    // the OrderService already provided above. `EmailVerificationService` pulls
+    // it out of the container by token, so nothing has to import this module and
+    // the AuthModule → OrderModule → UserModule → AuthModule cycle never forms.
+    { provide: GUEST_ORDER_CLAIM_PORT, useExisting: OrderService },
   ],
-  exports: [OrderService, ReturnService],
+  exports: [OrderService, ReturnService, GUEST_ORDER_CLAIM_PORT],
 })
 export class OrderModule {}

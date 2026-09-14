@@ -68,6 +68,8 @@ const prismaMock = {
     findMany: jest.fn(),
     count: jest.fn(),
     update: jest.fn(),
+    // TASK-485: claiming guest orders onto a freshly-verified account.
+    updateMany: jest.fn(),
   },
   // TASK-251: history read path.
   orderStatusHistory: {
@@ -1563,6 +1565,45 @@ describe('OrderRepository', () => {
         slug: true,
       });
       expect(include.items.select.addons).toBeDefined();
+    });
+  });
+
+  // ─── claimGuestOrders (TASK-338, wired by TASK-485) ─────────────────────────
+
+  describe('claimGuestOrders', () => {
+    beforeEach(() => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 2 });
+    });
+
+    it('writes ONLY the owner — the guest contact columns are left alone', async () => {
+      await repository.claimGuestOrders('user-uuid-1', 'guest@example.com');
+
+      // B-5 §5: the guest block is the snapshot of what was actually typed at
+      // checkout, and it is what the emailed status link and the public
+      // number+phone form (TASK-483) still answer to. Clearing it on claim would
+      // silently rewrite history and break both of those routes into the order.
+      const { data } = prismaMock.order.updateMany.mock.calls[0][0];
+      expect(data).toEqual({ userId: 'user-uuid-1' });
+    });
+
+    it('claims only unowned, live orders placed with that exact address', async () => {
+      await repository.claimGuestOrders('user-uuid-1', 'guest@example.com');
+
+      const { where } = prismaMock.order.updateMany.mock.calls[0][0];
+      // `userId: null` is what makes the call idempotent AND is the security
+      // boundary: without it, verifying an address would reassign orders that
+      // already belong to somebody else.
+      expect(where).toEqual({
+        userId: null,
+        guestEmail: 'guest@example.com',
+        deletedAt: null,
+      });
+    });
+
+    it('reports how many moved, so the caller can say so', async () => {
+      await expect(repository.claimGuestOrders('user-uuid-1', 'guest@example.com')).resolves.toBe(
+        2,
+      );
     });
   });
 });

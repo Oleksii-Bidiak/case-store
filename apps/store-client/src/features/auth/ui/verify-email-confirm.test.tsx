@@ -92,6 +92,44 @@ describe("VerifyEmailConfirm", () => {
     ).not.toBeInTheDocument();
   });
 
+  // TASK-485: confirming the address also attaches the guest orders placed with
+  // it. The count lives in this response and nowhere else — it describes an
+  // event, not a property of the account — so the link to the cabinet is what
+  // carries it to the banner there.
+  it("carries the claimed-order count through to the cabinet", async () => {
+    server.use(
+      http.post("*/api/auth/email/verify/confirm", () =>
+        HttpResponse.json({
+          data: { message: "Email address verified.", claimedOrders: 2 },
+        }),
+      ),
+    );
+
+    renderWithProviders(<VerifyEmailConfirm />);
+
+    expect(
+      await screen.findByRole("link", { name: d.toAccount }),
+    ).toHaveAttribute("href", "/account?claimed=2");
+  });
+
+  it("links plainly to the cabinet when nothing was claimed", async () => {
+    server.use(
+      http.post("*/api/auth/email/verify/confirm", () =>
+        HttpResponse.json({
+          data: { message: "Email address verified.", claimedOrders: 0 },
+        }),
+      ),
+    );
+
+    renderWithProviders(<VerifyEmailConfirm />);
+
+    // The case for nearly everybody: no parameter, so the banner stays silent
+    // rather than announcing a claim of zero.
+    expect(
+      await screen.findByRole("link", { name: d.toAccount }),
+    ).toHaveAttribute("href", "/account");
+  });
+
   it("shows a checking state while the request is in flight", () => {
     server.use(
       http.post(

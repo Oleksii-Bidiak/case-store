@@ -7,6 +7,9 @@ import { ProfileForm } from "@/features/profile";
 import { dict } from "@/shared/config";
 import { Button } from "@/shared/ui";
 import { AccountEmailVerification } from "./account-email-verification";
+// TASK-485: the one-time notice that confirming the address moved the shopper's
+// earlier guest orders onto this account.
+import { AccountClaimedOrders } from "./account-claimed-orders";
 
 /**
  * AccountProfileSection — the "Особисті дані" dashboard section. Reuses the real
@@ -24,6 +27,10 @@ export function AccountProfileSection({ user }: { user: UserEntity }) {
       <h1 className="mb-6 font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
         {d.profileHeading}
       </h1>
+
+      {/* Above the verification card on purpose: it reports something that has
+          just happened, while the card below reports a standing state. */}
+      <AccountClaimedOrders />
 
       <AccountEmailVerification user={user} />
 
