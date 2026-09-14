@@ -37,6 +37,13 @@ export interface ReturnWithItems {
    */
   restockedAt: Date | null;
   refundedAmount: { toString(): string } | null;
+  /**
+   * Who OPENED the request (TASK-469) — the customer's own id from the account
+   * page, the operator's id when the shop filed it for them, null for rows that
+   * predate the column. Not "whose order this is": that is `order.userId`, and on
+   * a guest order it is null while this one names a member of staff.
+   */
+  createdByUserId: string | null;
   createdAt: Date;
   updatedAt: Date;
   items: ReturnItemRow[];
@@ -53,5 +60,7 @@ export interface ReturnWithItems {
 export interface CreateReturnParams {
   orderId: string;
   reason?: string;
+  /** Whoever pressed the button — customer or operator (TASK-469). */
+  createdByUserId?: string | null;
   items: Array<{ orderItemId: string; quantity: number }>;
 }

@@ -52,6 +52,7 @@ const makeReturn = (overrides: Partial<ReturnWithItems> = {}): ReturnWithItems =
     resolvedAt: null,
     restockedAt: null,
     refundedAmount: null,
+    createdByUserId: USER_ID,
     createdAt: now,
     updatedAt: now,
     items: [
@@ -126,6 +127,31 @@ describe('ReturnService (TASK-340)', () => {
       expect(returnRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ orderId: ORDER_ID, items: dto.items }),
       );
+    });
+
+    // TASK-469: the customer door has always known who it was serving and threw
+    // the fact away. Now that a second door writes the same table, "who said
+    // this" stops being inferable from the row.
+    it('records the customer as the author of their own request', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await service.createReturn(USER_ID, ORDER_ID, dto);
+
+      expect(returnRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ createdByUserId: USER_ID }),
+      );
+    });
+
+    it('never shows the customer who opened it — that can be a member of staff', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      returnRepositoryMock.create.mockResolvedValue(
+        makeReturn({ createdByUserId: 'operator-uuid-1', operatorNotes: 'internal' }),
+      );
+
+      const result = await service.createReturn(USER_ID, ORDER_ID, dto);
+
+      expect(result.createdByUserId).toBeUndefined();
+      expect(result.operatorNotes).toBeUndefined();
     });
 
     it('404s on someone else’s order without admitting it exists', async () => {
@@ -224,6 +250,115 @@ describe('ReturnService (TASK-340)', () => {
         ).rejects.toThrow(BadRequestException);
       },
     );
+  });
+
+  // ─── adminCreateReturn (TASK-469) ───────────────────────────────────────────
+
+  describe('adminCreateReturn', () => {
+    const OPERATOR_ID = 'operator-uuid-1';
+    const dto = { items: [{ orderItemId: LINE_ID, quantity: 1 }] };
+
+    // The whole reason this door exists: the customer door is scoped by
+    // `order.userId !== userId`, and on a guest or phone order there IS no
+    // userId, so it can never open. Half the shop's orders were unreturnable.
+    it('opens a return against a GUEST order, which the customer door can never do', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
+
+      await expect(service.adminCreateReturn(OPERATOR_ID, ORDER_ID, dto)).resolves.toBeInstanceOf(
+        ReturnEntity,
+      );
+      expect(returnRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: ORDER_ID, createdByUserId: OPERATOR_ID }),
+      );
+    });
+
+    it('records the OPERATOR as the author, not the customer whose order it is', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await service.adminCreateReturn(OPERATOR_ID, ORDER_ID, dto);
+
+      expect(returnRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ createdByUserId: OPERATOR_ID }),
+      );
+    });
+
+    it('404s on an order that does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.adminCreateReturn(OPERATOR_ID, ORDER_ID, dto)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(returnRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    // Acting FOR a customer is not permission to break the customer's rules —
+    // the three checks below are the same ones the customer path runs, and a
+    // divergence between the doors would show up first as stock credited back
+    // for goods nobody bought.
+    it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
+      'refuses a return on a %s order, exactly as the customer door does',
+      async (status) => {
+        orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
+
+        await expect(service.adminCreateReturn(OPERATOR_ID, ORDER_ID, dto)).rejects.toThrow(
+          BadRequestException,
+        );
+      },
+    );
+
+    it('refuses a line that is not part of this order', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await expect(
+        service.adminCreateReturn(OPERATOR_ID, ORDER_ID, {
+          items: [{ orderItemId: 'someone-elses-line', quantity: 1 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('refuses more units than remain returnable', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      returnRepositoryMock.findByOrderId.mockResolvedValue([
+        makeReturn({ items: [{ ...makeReturn().items[0], quantity: 2 }] }),
+      ]);
+
+      await expect(
+        service.adminCreateReturn(OPERATOR_ID, ORDER_ID, {
+          items: [{ orderItemId: LINE_ID, quantity: 2 }],
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('answers with the internal fields — this response is read by an operator', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      returnRepositoryMock.create.mockResolvedValue(
+        makeReturn({ operatorNotes: 'called the customer', createdByUserId: OPERATOR_ID }),
+      );
+
+      const result = await service.adminCreateReturn(OPERATOR_ID, ORDER_ID, dto);
+
+      expect(result.operatorNotes).toBe('called the customer');
+      expect(result.createdByUserId).toBe(OPERATOR_ID);
+    });
+  });
+
+  describe('adminGetOrderReturns', () => {
+    it('answers for an order with no owner at all — the question the customer twin cannot', async () => {
+      returnRepositoryMock.findByOrderId.mockResolvedValue([makeReturn()]);
+
+      const result = await service.adminGetOrderReturns(ORDER_ID);
+
+      expect(result).toHaveLength(1);
+      expect(returnRepositoryMock.findByOrderId).toHaveBeenCalledWith(ORDER_ID);
+      // No ownership read: there is nobody to compare against.
+      expect(orderRepositoryMock.findById).not.toHaveBeenCalled();
+    });
+
+    it('is empty when nothing has been opened — the signal the REFUNDED dialog reads', async () => {
+      returnRepositoryMock.findByOrderId.mockResolvedValue([]);
+
+      await expect(service.adminGetOrderReturns(ORDER_ID)).resolves.toEqual([]);
+    });
   });
 
   // ─── resolveReturn ──────────────────────────────────────────────────────────

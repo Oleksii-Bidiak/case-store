@@ -14,7 +14,10 @@ import { AdminOrderController } from './admin-order.controller';
 import { ReturnRepository } from './returns/return.repository';
 import { ReturnService } from './returns/return.service';
 import { ReturnController } from './returns/return.controller';
-import { AdminReturnController } from './returns/admin-return.controller';
+import {
+  AdminOrderReturnController,
+  AdminReturnController,
+} from './returns/admin-return.controller';
 
 @Module({
   // UserModule provides UserRepository (recipient lookup for confirmation
@@ -39,7 +42,15 @@ import { AdminReturnController } from './returns/admin-return.controller';
     AddonServiceModule,
     SearchModule,
   ],
-  controllers: [OrderController, AdminOrderController, ReturnController, AdminReturnController],
+  controllers: [
+    OrderController,
+    AdminOrderController,
+    ReturnController,
+    AdminReturnController,
+    // TASK-469: the admin door onto a return, hung off the ORDER path rather than
+    // the returns queue — a return the shop opens is opened against an order.
+    AdminOrderReturnController,
+  ],
   // TASK-338: OrderController resolves the buyer's identity exactly as the cart
   // does — a JWT when there is one, the `cartToken` cookie otherwise — so a guest
   // converts the very cart they already own. CartIdentityInterceptor is listed
