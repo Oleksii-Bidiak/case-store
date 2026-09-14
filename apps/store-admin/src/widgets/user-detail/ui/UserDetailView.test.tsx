@@ -84,7 +84,10 @@ const FULL_CARD: Required<CardOverrides> = {
       productName: "iPhone 15 Pro Case",
       rating: 5,
       comment: "Чудовий чохол!",
-      isActive: true,
+      // TASK-446: `isActive` is gone from CustomerCardReviewEntity. The text now
+      // carries a three-value verdict, because REJECTED is a state a review keeps
+      // instead of being deleted out of existence.
+      textStatus: "APPROVED",
       createdAt: "2026-03-02T10:00:00.000Z",
     },
   ],
@@ -217,6 +220,38 @@ describe("UserDetailView (customer card, TASK-252)", () => {
     expect(screen.getByText("SUMMER20")).toBeInTheDocument();
     expect(screen.getByText("Питання про доставку")).toBeInTheDocument();
     expect(screen.getByText(dict.messages.statusNew)).toBeInTheDocument();
+  });
+
+  /**
+   * TASK-446 — the badge was driven by `isActive`, a field the backend dropped.
+   * It read `undefined` as «На модерації», so an approved review and a rejected
+   * one both showed as pending: the card could not tell «ще не читали» from
+   * «прочитали й відхилили», which is the exact distinction the three-value
+   * `textStatus` exists to make.
+   */
+  it.each([
+    ["PENDING", () => dict.users.cardReviewPending],
+    ["APPROVED", () => dict.users.cardReviewApproved],
+    ["REJECTED", () => dict.users.cardReviewRejected],
+  ])("labels a %s review text from textStatus", async (textStatus, label) => {
+    mockCard({
+      reviews: [
+        {
+          id: "review-1",
+          productId: "prod-1",
+          productName: "iPhone 15 Pro Case",
+          rating: 5,
+          comment: "Чудовий чохол!",
+          textStatus,
+          createdAt: "2026-03-02T10:00:00.000Z",
+        },
+      ],
+    });
+
+    renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+    await screen.findByText("iPhone 15 Pro Case");
+    expect(screen.getByText(label())).toBeInTheDocument();
   });
 
   it("renders the IN_PROGRESS contact-message status label, not the raw enum (TASK-256)", async () => {

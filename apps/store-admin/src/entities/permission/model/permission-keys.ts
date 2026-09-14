@@ -36,6 +36,16 @@ export const PERM = {
   carouselsWrite: "carousels:write",
   faqWrite: "faq:write",
   reviewsModerate: "reviews:moderate",
+  // TASK-446: answering a review PUBLICLY, as the shop, is its own capability and
+  // deliberately not folded into `reviews:moderate` — deciding what stays on the
+  // site and speaking on the shop's behalf to every visitor are different jobs.
+  //
+  // BRAND NEW, AND WITH NO BACKFILL ON PURPOSE. No existing MANAGER holds it, so
+  // the reply button is invisible for every manager on a fresh deploy until the
+  // owner ticks the box on the permissions screen. That is the intended state,
+  // not a gap to paper over: granting it client-side would hand out a button
+  // whose only possible outcome is a 403 from `@RequirePermission('reviews:write')`.
+  reviewsWrite: "reviews:write",
 
   discountsWrite: "discounts:write",
   newsletterRead: "newsletter:read",

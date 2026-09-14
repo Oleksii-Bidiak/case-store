@@ -4,22 +4,26 @@ import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { NeedsActionWidget } from "./NeedsActionWidget";
 
-function mockNeedsAction(counts: {
+interface NeedsActionCounts {
   newOrders: number;
   pendingReviews: number;
   unpaidInTransit: number;
   failedMails: number;
   pendingOver48h: number;
-}) {
+  /** TASK-446 — situations worth opening, not a count of reviews. */
+  ratingAbuse?: number;
+}
+
+function mockNeedsAction(counts: NeedsActionCounts) {
   server.use(
     http.get("*/api/admin/dashboard/needs-action", () =>
-      HttpResponse.json({ data: counts }),
+      HttpResponse.json({ data: { ratingAbuse: 0, ...counts } }),
     ),
   );
 }
 
 describe("NeedsActionWidget (TASK-248)", () => {
-  it("renders the five counters as cards", async () => {
+  it("renders the six counters as cards", async () => {
     mockNeedsAction({
       newOrders: 3,
       pendingReviews: 0,
@@ -46,6 +50,34 @@ describe("NeedsActionWidget (TASK-248)", () => {
     expect(
       screen.getByText(dict.dashboard.needsActionFailedMails),
     ).toBeInTheDocument();
+    // TASK-446: the 6th card.
+    expect(
+      screen.getByText(dict.dashboard.needsActionRatingAbuse),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * TASK-446. `ratingAbuse` counts SITUATIONS worth opening — a product that
+   * collected a burst of ratings in an hour, an address behind a run of 1★ — and
+   * the place to look at them is the reviews screen.
+   */
+  it("deep-links the rating-abuse card to the reviews screen", async () => {
+    mockNeedsAction({
+      newOrders: 0,
+      pendingReviews: 0,
+      unpaidInTransit: 0,
+      failedMails: 0,
+      pendingOver48h: 0,
+      ratingAbuse: 4,
+    });
+
+    renderWithProviders(<NeedsActionWidget />);
+
+    const link = (
+      await screen.findByText(dict.dashboard.needsActionRatingAbuse)
+    ).closest("a") as HTMLElement;
+    expect(link).toHaveAttribute("href", "/reviews");
+    expect(within(link).getByText("4")).toHaveClass("text-warning");
   });
 
   it("deep-links the first four cards and leaves the failed-mail card non-interactive", async () => {
@@ -133,6 +165,7 @@ describe("NeedsActionWidget (TASK-248)", () => {
       unpaidInTransit: 0,
       failedMails: 0,
       pendingOver48h: 0,
+      ratingAbuse: 0,
     });
 
     renderWithProviders(<NeedsActionWidget />);
@@ -140,5 +173,29 @@ describe("NeedsActionWidget (TASK-248)", () => {
     expect(
       await screen.findByText(dict.dashboard.needsActionAllClear),
     ).toBeInTheDocument();
+  });
+
+  /**
+   * TASK-446. A counter that renders but sits outside `nothingToDo` is the worst
+   * of both worlds: the widget shows a non-zero number AND tells the owner there
+   * is nothing to do, and the number is the one they would never have thought to
+   * look for on their own.
+   */
+  it("withholds 'all clear' while rating abuse is the only signal", async () => {
+    mockNeedsAction({
+      newOrders: 0,
+      pendingReviews: 0,
+      unpaidInTransit: 0,
+      failedMails: 0,
+      pendingOver48h: 0,
+      ratingAbuse: 2,
+    });
+
+    renderWithProviders(<NeedsActionWidget />);
+
+    await screen.findByText(dict.dashboard.needsActionRatingAbuse);
+    expect(
+      screen.queryByText(dict.dashboard.needsActionAllClear),
+    ).not.toBeInTheDocument();
   });
 });

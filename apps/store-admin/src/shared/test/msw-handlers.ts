@@ -43,6 +43,11 @@ export const handlers = [
         unpaidInTransit: 0,
         failedMails: 0,
         pendingOver48h: 0,
+        // TASK-446: the 6th counter. It has to be in the DEFAULT payload — MSW
+        // runs with `onUnhandledRequest: "error"` and several suites mount
+        // NeedsActionWidget incidentally, so a counter missing here renders as
+        // `undefined` in every one of them instead of failing in just this one.
+        ratingAbuse: 0,
       },
     }),
   ),
