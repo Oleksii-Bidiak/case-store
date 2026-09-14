@@ -62,4 +62,9 @@ export { orderStatusLabel, paymentStatusLabel } from "./status-label";
 
 export { isPreShipmentStatus } from "./is-pre-shipment-status";
 
+// TASK-470 / 471 / 472: the derived marks of B-1, computed identically for the
+// list row and the order card so the two can never flag different orders.
+export { orderDerivedMarks, minutesUntil } from "./order-marks";
+export type { OrderMark, OrderMarkKind, OrderMarkSource } from "./order-marks";
+
 export { historyActorLabel, historyChangeLabel } from "./history-label";

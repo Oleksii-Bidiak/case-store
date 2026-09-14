@@ -2,13 +2,22 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Clock3, Download, Loader2 } from "lucide-react";
+import {
+  Clock3,
+  Download,
+  Loader2,
+  PackageX,
+  Timer,
+  TimerOff,
+  Wallet,
+} from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { toast } from "@/shared/ui/toast";
 import {
   OrderEntityStatus,
   OrderEntityPaymentStatus,
+  orderDerivedMarks,
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
@@ -157,6 +166,15 @@ export function AdminOrderTable() {
   const paymentStatusParam = searchParams.get("paymentStatus") ?? "";
   const paymentMethodParam = searchParams.get("paymentMethod") ?? "";
   const pendingOverdue = searchParams.get("pendingOverdue") === "true";
+  // TASK-470 / 471: the four derived-mark filters. SERVER predicates, like
+  // `pendingOverdue` — none of them is a value of any one column, and filtering
+  // the visible page on the client would answer "how many on this page", which
+  // is the wrong number the moment the list is longer than one.
+  const hasDebt = searchParams.get("hasDebt") === "true";
+  const awaitingPayment = searchParams.get("awaitingPayment") === "true";
+  const reservationExpired = searchParams.get("reservationExpired") === "true";
+  const hasUnavailableItems =
+    searchParams.get("hasUnavailableItems") === "true";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
@@ -173,7 +191,7 @@ export function AdminOrderTable() {
   // reference implementation for it, and keeping a local copy was how the other
   // twelve tables ended up without one.
 
-  const { data, isLoading, isFetching, isError, refetch } =
+  const { data, dataUpdatedAt, isLoading, isFetching, isError, refetch } =
     useAdminOrderControllerFindAll(
       {
         page,
@@ -197,6 +215,13 @@ export function AdminOrderTable() {
           ? (paymentMethodParam as OrderEntityPaymentMethod)
           : undefined,
         pendingOverdue: pendingOverdue || undefined,
+        // TASK-470 / 471. `|| undefined` rather than the raw boolean, so an
+        // unticked chip leaves the param off the request entirely and the query
+        // key stays the one an unfiltered list already cached.
+        hasDebt: hasDebt || undefined,
+        awaitingPayment: awaitingPayment || undefined,
+        reservationExpired: reservationExpired || undefined,
+        hasUnavailableItems: hasUnavailableItems || undefined,
         sortBy,
         sortOrder,
       },
@@ -234,6 +259,13 @@ export function AdminOrderTable() {
           ? (paymentMethodParam as OrderEntityPaymentMethod)
           : undefined,
         pendingOverdue: pendingOverdue || undefined,
+        // TASK-470 / 471: the export is "the rows you are looking at". A mark
+        // filter that narrowed the screen and not the file would hand over a
+        // spreadsheet that silently disagrees with the list it came from.
+        hasDebt: hasDebt || undefined,
+        awaitingPayment: awaitingPayment || undefined,
+        reservationExpired: reservationExpired || undefined,
+        hasUnavailableItems: hasUnavailableItems || undefined,
       });
       // Rows = lines minus the header, which is only sound because the SERVER
       // now guarantees one order occupies one physical line: `toCsvRow` runs
@@ -300,6 +332,58 @@ export function AdminOrderTable() {
         value: method,
         label: PAYMENT_METHOD_LABELS[method] ?? method,
       })),
+    },
+  ];
+
+  /**
+   * The derived-mark toggles (TASK-470 / 471), beside the older
+   * `pendingOverdue` one and built exactly like it: `aria-pressed` is what makes
+   * a button a toggle for a screen reader, and the filled variant is the visual
+   * half of the same state.
+   *
+   * Toggles rather than `<Select>` options because none of these is a value of a
+   * column — each is a server predicate over two or three of them — and because
+   * an operator legitimately wants two at once ("delivered, unpaid AND missing a
+   * position"), which a single-choice Select cannot express.
+   *
+   * Written as data and mapped, not as four copied JSX blocks: the copies differ
+   * only in three strings, and the fifth mark added by hand is the one that
+   * forgets to reset `page`.
+   */
+  const markToggles: ReadonlyArray<{
+    param: string;
+    active: boolean;
+    label: string;
+    aria: string;
+    Icon: typeof Clock3;
+  }> = [
+    {
+      param: "hasDebt",
+      active: hasDebt,
+      label: dict.orders.debtChip,
+      aria: dict.orders.debtChipAria,
+      Icon: Wallet,
+    },
+    {
+      param: "awaitingPayment",
+      active: awaitingPayment,
+      label: dict.orders.awaitingPaymentChip,
+      aria: dict.orders.awaitingPaymentChipAria,
+      Icon: Timer,
+    },
+    {
+      param: "reservationExpired",
+      active: reservationExpired,
+      label: dict.orders.reservationExpiredChip,
+      aria: dict.orders.reservationExpiredChipAria,
+      Icon: TimerOff,
+    },
+    {
+      param: "hasUnavailableItems",
+      active: hasUnavailableItems,
+      label: dict.orders.unavailableItemsChip,
+      aria: dict.orders.unavailableItemsChipAria,
+      Icon: PackageX,
     },
   ];
 
@@ -372,6 +456,26 @@ export function AdminOrderTable() {
                 <Clock3 aria-hidden="true" className="size-3.5" />
                 {dict.orders.overdueChip}
               </Button>
+              {/* TASK-470 / 471: the same control for each derived mark. */}
+              {markToggles.map(({ param, active, label, aria, Icon }) => (
+                <Button
+                  key={param}
+                  type="button"
+                  variant={active ? "secondary" : "outline"}
+                  size="sm"
+                  aria-pressed={active}
+                  aria-label={aria}
+                  onClick={() =>
+                    updateParams({
+                      [param]: active ? undefined : "true",
+                      page: undefined,
+                    })
+                  }
+                >
+                  <Icon aria-hidden="true" className="size-3.5" />
+                  {label}
+                </Button>
+              ))}
             </div>
           }
           actions={
@@ -533,9 +637,30 @@ export function AdminOrderTable() {
                       )}
                     </TableCell>
                     <TableCell label={dict.orders.colStatus}>
-                      <Badge variant={orderStatusBadgeVariant(order.status)}>
-                        {orderStatusLabel(order.status)}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Badge variant={orderStatusBadgeVariant(order.status)}>
+                          {orderStatusLabel(order.status)}
+                        </Badge>
+                        {/* TASK-470 / 471 / 472: the derived marks of B-1, beside
+                            the status they qualify. Nothing here is stored and
+                            nothing here blocks anything — the marks exist so an
+                            operator can SEE the awkward states the system
+                            deliberately allows (a delivered order nobody paid
+                            for, a card order whose reservation is running out)
+                            rather than have them refused and then faked.
+
+                            The clock is `dataUpdatedAt`, not `Date.now()`:
+                            reading the real clock during render is impure (two
+                            rows sharing a deadline could disagree), and this is
+                            also the honest instant — «Очікує оплати · N хв» is a
+                            statement about the rows that were fetched, so it
+                            should count down from when they were. */}
+                        {orderDerivedMarks(order, dataUpdatedAt).map((mark) => (
+                          <Badge key={mark.kind} variant={mark.variant}>
+                            {mark.label}
+                          </Badge>
+                        ))}
+                      </div>
                     </TableCell>
                     <TableCell label={dict.orders.colPayment}>
                       <Badge

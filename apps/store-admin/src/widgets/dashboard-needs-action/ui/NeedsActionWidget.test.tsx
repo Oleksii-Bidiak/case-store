@@ -12,18 +12,22 @@ interface NeedsActionCounts {
   pendingOver48h: number;
   /** TASK-446 — situations worth opening, not a count of reviews. */
   ratingAbuse?: number;
+  /** TASK-470 — orders holding a line that can no longer be supplied. */
+  unavailableItems?: number;
 }
 
 function mockNeedsAction(counts: NeedsActionCounts) {
   server.use(
     http.get("*/api/admin/dashboard/needs-action", () =>
-      HttpResponse.json({ data: { ratingAbuse: 0, ...counts } }),
+      HttpResponse.json({
+        data: { ratingAbuse: 0, unavailableItems: 0, ...counts },
+      }),
     ),
   );
 }
 
 describe("NeedsActionWidget (TASK-248)", () => {
-  it("renders the six counters as cards", async () => {
+  it("renders every counter as a card", async () => {
     mockNeedsAction({
       newOrders: 3,
       pendingReviews: 0,
@@ -53,6 +57,10 @@ describe("NeedsActionWidget (TASK-248)", () => {
     // TASK-446: the 6th card.
     expect(
       screen.getByText(dict.dashboard.needsActionRatingAbuse),
+    ).toBeInTheDocument();
+    // TASK-470: the 7th.
+    expect(
+      screen.getByText(dict.dashboard.needsActionUnavailableItems),
     ).toBeInTheDocument();
   });
 
@@ -197,5 +205,74 @@ describe("NeedsActionWidget (TASK-248)", () => {
     expect(
       screen.queryByText(dict.dashboard.needsActionAllClear),
     ).not.toBeInTheDocument();
+  });
+
+  /**
+   * The «Недоступні позиції» tile (TASK-470).
+   *
+   * The aggregate of the fourth mark of B-1 §3, and the ONLY notification there
+   * is: the owner decided the buyer hears about a missing position from a
+   * person, never from an automatic mail. That makes the two properties below
+   * load-bearing rather than cosmetic — a tile nobody can click through, or one
+   * that an «Все під контролем» prints over, is a signal that reaches nobody.
+   */
+  describe("the «Недоступні позиції» tile (TASK-470)", () => {
+    it("renders as the seventh card", async () => {
+      mockNeedsAction({
+        newOrders: 0,
+        pendingReviews: 0,
+        unpaidInTransit: 0,
+        failedMails: 0,
+        pendingOver48h: 0,
+        unavailableItems: 4,
+      });
+
+      renderWithProviders(<NeedsActionWidget />);
+
+      const link = await screen.findByRole("link", {
+        name: new RegExp(dict.dashboard.needsActionUnavailableItems),
+      });
+      expect(within(link).getByText("4")).toHaveClass("text-warning");
+    });
+
+    it("deep-links to the list filtered by the SAME predicate it counts", async () => {
+      mockNeedsAction({
+        newOrders: 0,
+        pendingReviews: 0,
+        unpaidInTransit: 0,
+        failedMails: 0,
+        pendingOver48h: 0,
+        unavailableItems: 2,
+      });
+
+      renderWithProviders(<NeedsActionWidget />);
+
+      const link = await screen.findByRole("link", {
+        name: new RegExp(dict.dashboard.needsActionUnavailableItems),
+      });
+      // Not an approximation of the predicate — the predicate. A tile whose
+      // number and whose click-through disagree teaches an operator to distrust
+      // both.
+      expect(link).toHaveAttribute("href", "/orders?hasUnavailableItems=true");
+    });
+
+    it("withholds 'all clear' while it is the only signal", async () => {
+      mockNeedsAction({
+        newOrders: 0,
+        pendingReviews: 0,
+        unpaidInTransit: 0,
+        failedMails: 0,
+        pendingOver48h: 0,
+        ratingAbuse: 0,
+        unavailableItems: 1,
+      });
+
+      renderWithProviders(<NeedsActionWidget />);
+
+      await screen.findByText(dict.dashboard.needsActionUnavailableItems);
+      expect(
+        screen.queryByText(dict.dashboard.needsActionAllClear),
+      ).not.toBeInTheDocument();
+    });
   });
 });

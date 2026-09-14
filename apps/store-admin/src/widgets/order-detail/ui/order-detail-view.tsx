@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   isPreShipmentStatus,
   OrderEntityPaymentStatus,
+  orderDerivedMarks,
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
@@ -57,7 +58,7 @@ interface AddressFields {
  */
 export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   const router = useRouter();
-  const { data, isLoading, isError, error } =
+  const { data, dataUpdatedAt, isLoading, isError, error } =
     useAdminOrderControllerFindById(orderId);
 
   const isNotFound = error?.response?.status === 404;
@@ -139,6 +140,21 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                   {dict.orders.restockedAt(formatTime(order.restockedAt))}
                 </Badge>
               ) : null}
+              {/* TASK-470 / 471 / 472: the derived marks of B-1, computed by the
+                  same function the order LIST uses — so a row flagged there is
+                  flagged here, and an operator can trust a card without a chip.
+                  None of them is stored and none of them refuses a transition:
+                  the owner's rule is that only the physically impossible is
+                  blocked, and everything else is made visible.
+
+                  `dataUpdatedAt` rather than the real clock: reading it during
+                  render is impure, and the minute count is a statement about
+                  the order as it was fetched. */}
+              {orderDerivedMarks(order, dataUpdatedAt).map((mark) => (
+                <Badge key={mark.kind} variant={mark.variant}>
+                  {mark.label}
+                </Badge>
+              ))}
             </div>
             <p className="text-sm text-muted-foreground">
               {dict.orders.timeline(
@@ -237,15 +253,35 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                     <Fragment key={item.id}>
                       <TableRow>
                         <TableCell>
-                          <Link
-                            href={`/products/${item.productId}/edit`}
-                            aria-label={dict.orders.viewProductAria(
-                              item.productName,
-                            )}
-                            className="font-medium text-primary hover:underline"
-                          >
-                            {item.productName}
-                          </Link>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                              href={`/products/${item.productId}/edit`}
+                              aria-label={dict.orders.viewProductAria(
+                                item.productName,
+                              )}
+                              className="font-medium text-primary hover:underline"
+                            >
+                              {item.productName}
+                            </Link>
+                            {/* TASK-470: «Позиція недоступна». A LINE mark, not
+                                an order one — the server says which lines
+                                (`unavailableItemIds`), because only it can see
+                                whether the catalogue row was deleted,
+                                unpublished or oversold. Absent (never empty) on
+                                a response that did not measure it, so `?.`
+                                renders nothing rather than claiming "all fine".
+                                Nothing is sent to the buyer automatically: the
+                                choice between a replacement, a refund and
+                                waiting is made by a person (B-1 §3). */}
+                            {order.unavailableItemIds?.includes(item.id) ? (
+                              <Badge
+                                variant="destructive"
+                                title={dict.orders.markItemUnavailableHint}
+                              >
+                                {dict.orders.markItemUnavailable}
+                              </Badge>
+                            ) : null}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(item.price)}

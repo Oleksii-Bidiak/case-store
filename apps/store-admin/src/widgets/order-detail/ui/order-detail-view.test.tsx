@@ -520,3 +520,92 @@ describe("OrderDetailView — partial-refund sum (TASK-472)", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+/**
+ * The derived marks on the order card (TASK-470 / 471 / 472).
+ *
+ * The card and the list compute them with the same function, so the conditions
+ * themselves are pinned in `order-marks.test.ts`. What is pinned HERE is that
+ * they reach the two places on this page where an operator actually looks: the
+ * header, beside the status, and the line of the item that has gone.
+ *
+ * «Позиція недоступна» is the one mark the client cannot derive — only the
+ * server can see whether the catalogue row was deleted, unpublished or oversold
+ * — so it arrives as `unavailableItemIds`, and its ABSENCE has to mean "not
+ * measured" rather than "all fine".
+ */
+describe("OrderDetailView — the derived marks of B-1 (TASK-470/471/472)", () => {
+  const stub = (order: Record<string, unknown>) =>
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: { ...makeOrder(null), ...order } }),
+      ),
+    );
+
+  it("shows «Борг» in the header of a delivered, unpaid order", async () => {
+    stub({ status: "DELIVERED", paymentStatus: "PENDING", total: "1200.00" });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(await screen.findByText(/Борг\s/)).toHaveTextContent(/1\s?200/);
+  });
+
+  it("counts down the payment window of a card order", async () => {
+    stub({
+      paymentMethod: "ONLINE",
+      paymentStatus: "PENDING",
+      reservationExpiresAt: new Date(Date.now() + 17 * 60_000).toISOString(),
+    });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByText(/Очікує оплати · \d+ хв/),
+    ).toBeInTheDocument();
+  });
+
+  it("marks the line the server says can no longer be supplied", async () => {
+    stub({ unavailableItemIds: ["item-1"] });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByText(dict.orders.markItemUnavailable),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves a line unmarked when the server measured it and found it fine", async () => {
+    stub({ unavailableItemIds: [] });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    await screen.findByText("iPhone 15 Pro Case");
+    expect(
+      screen.queryByText(dict.orders.markItemUnavailable),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leaves a line unmarked when the response never measured availability", async () => {
+    // `unavailableItemIds` absent, not empty. The card must not invent an answer
+    // — and must not blank out either.
+    stub({});
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    await screen.findByText("iPhone 15 Pro Case");
+    expect(
+      screen.queryByText(dict.orders.markItemUnavailable),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not mark a line the order does not name", async () => {
+    stub({ unavailableItemIds: ["some-other-line"] });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    await screen.findByText("iPhone 15 Pro Case");
+    expect(
+      screen.queryByText(dict.orders.markItemUnavailable),
+    ).not.toBeInTheDocument();
+  });
+});
