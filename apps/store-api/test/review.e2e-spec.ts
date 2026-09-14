@@ -55,8 +55,11 @@ describe('ReviewController (e2e)', () => {
     isVerifiedPurchase: jest.fn(),
     findVerifiedPurchaserIds: jest.fn(),
     findExisting: jest.fn(),
-    // TASK-588: the email gate, asked once at submission.
+    // TASK-588: the email gate, asked at submission and again on restore.
     isEmailVerified: jest.fn(),
+    // TASK-589: the one-click account-wide lever.
+    hideAuthorReviews: jest.fn(),
+    restoreAuthorReviews: jest.fn(),
   };
 
   const authRepositoryMock = {
@@ -673,6 +676,109 @@ describe('ReviewController (e2e)', () => {
   // Declared LAST in the suite on purpose: the permission tests below rewrite the
   // MANAGER row through the real `PUT /api/admin/permissions`, and the mock is
   // stateful, so nothing may run after them expecting the original matrix.
+
+  /**
+   * One click that withdraws — or restores — an account's WHOLE contribution
+   * (TASK-589, the owner's 2026-09-10 decision).
+   *
+   * Per-row moderation is the wrong tool against a person rather than a sentence:
+   * an abuser with thirty ratings costs thirty clicks, and the ratings are not
+   * even in the queue, so nothing on the moderation screen shows them at all.
+   */
+  describe('POST /api/admin/reviews/authors/:userId/hide', () => {
+    const url = '/api/admin/reviews/authors/abuser-1/hide';
+
+    it('returns 401 without a JWT', async () => {
+      await request(app.getHttpServer()).post(url).expect(401);
+    });
+
+    it('returns 403 for a customer', async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(reviewRepositoryMock.hideAuthorReviews).not.toHaveBeenCalled();
+    });
+
+    it('withdraws every review of the account and says how many', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.hideAuthorReviews.mockResolvedValue(12);
+
+      const response = await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1');
+      // The number the confirmation quotes is what the database wrote, not what
+      // the operator assumed — the same rule as bulk moderation.
+      expect(response.body.data.updatedCount).toBe(12);
+    });
+
+    it('is not swallowed by the :id routes — "authors" reaches the right handler', async () => {
+      // `:id/reply` is two segments and this is three, so nothing shadows it
+      // today. The failure it guards against would surface as a 404 or a
+      // malformed-UUID complaint, neither of which reads as a routing problem.
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.hideAuthorReviews.mockResolvedValue(1);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/reviews/authors/abuser-1/hide')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(reviewRepositoryMock.upsertReply).not.toHaveBeenCalled();
+    });
+
+    it('is allowed to a manager who may moderate', async () => {
+      // Hiding an account's contribution IS moderation — a judgement about
+      // somebody else's words — so it rides the controller's `reviews:moderate`
+      // rather than the shop's own `reviews:write` voice.
+      const token = generateAccessToken(manager.id, manager.role);
+      reviewRepositoryMock.hideAuthorReviews.mockResolvedValue(3);
+
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1');
+    });
+  });
+
+  describe('POST /api/admin/reviews/authors/:userId/unhide', () => {
+    const url = '/api/admin/reviews/authors/forgiven-1/unhide';
+
+    it('returns 403 for a customer', async () => {
+      const token = generateAccessToken(customer.id, customer.role);
+
+      await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+
+      expect(reviewRepositoryMock.restoreAuthorReviews).not.toHaveBeenCalled();
+    });
+
+    it('gives the account its reviews back, and its ratings only if the address is proven', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
+      reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(5);
+
+      const response = await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      // Lifting the moderator's verdict says nothing about the email gate; an
+      // un-hide that forced `ratingVisible: true` would be a way around it.
+      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith('forgiven-1', false);
+      expect(response.body.data.updatedCount).toBe(5);
+    });
+  });
 
   describe('POST /api/admin/reviews/:id/reply', () => {
     const url = '/api/admin/reviews/review-e2e-1/reply';

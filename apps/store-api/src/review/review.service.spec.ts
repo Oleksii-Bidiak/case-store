@@ -59,8 +59,12 @@ const reviewRepositoryMock = {
   findVerifiedPurchaserIds: jest.fn(),
   findExisting: jest.fn(),
   // TASK-588: the email gate. Whether the author's address is proven is what
-  // decides if their stars count, and it is asked once, at submission.
+  // decides if their stars count — asked at submission, and again when a hidden
+  // account is restored.
   isEmailVerified: jest.fn(),
+  // TASK-589: the one-click account-wide lever.
+  hideAuthorReviews: jest.fn(),
+  restoreAuthorReviews: jest.fn(),
 };
 
 /** The address the submission arrived from — recorded since TASK-588. */
@@ -769,6 +773,50 @@ describe('ReviewService', () => {
         body: 'Дякуємо! Передали ваш відгук виробнику.',
         createdAt: now,
       });
+    });
+  });
+
+  // ─── hiding a whole account (TASK-589) ──────────────────────────────────────
+
+  /**
+   * The one-click lever from the owner's 2026-09-10 decision: everything this
+   * account ever wrote, gone, and back again.
+   *
+   * The interesting half is the RESTORE. `ratingVisible` is a denormalised flag
+   * folding TWO gates — the moderator's `hiddenAt` and the author's confirmed
+   * address — so lifting the first does not license the second. Setting it
+   * unconditionally true on restore would hand an unconfirmed account a counting
+   * rating it never earned, and the route to it would be an ordinary un-ban.
+   */
+  describe('hideAuthor / unhideAuthor', () => {
+    it('withdraws every review of the account in one call', async () => {
+      reviewRepositoryMock.hideAuthorReviews.mockResolvedValue(7);
+
+      await expect(service.hideAuthor('abuser-1')).resolves.toBe(7);
+      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1');
+    });
+
+    it('restores a confirmed author with their ratings counting again', async () => {
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(7);
+
+      await expect(service.unhideAuthor('forgiven-1')).resolves.toBe(7);
+      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith('forgiven-1', true);
+    });
+
+    it('restores an unconfirmed author WITHOUT counting their ratings', async () => {
+      // Un-hiding lifts the moderator's verdict; it says nothing about whether
+      // the address was ever proven. Writing `true` here would make un-banning a
+      // way around the email gate, and nothing on any screen would say so.
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
+      reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(3);
+
+      await service.unhideAuthor('unconfirmed-1');
+
+      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith(
+        'unconfirmed-1',
+        false,
+      );
     });
   });
 });

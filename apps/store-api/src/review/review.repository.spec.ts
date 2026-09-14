@@ -563,3 +563,75 @@ describe('ReviewRepository — what a submission records (TASK-588)', () => {
     await expect(repo.isEmailVerified('ghost')).resolves.toBe(false);
   });
 });
+
+/**
+ * Withdrawing — and restoring — an account's whole contribution (TASK-589).
+ *
+ * One click, every row: the abuse lever from the owner's 2026-09-10 decision.
+ * Both flags move together because they answer different halves of "is this
+ * visible": `hiddenAt` hides the TEXTS (three read paths filter on it) and
+ * `ratingVisible` takes the STARS out of every average. Writing one without the
+ * other is the failure that looks completely normal on screen — the reviews
+ * vanish and the product's score does not budge.
+ */
+describe('ReviewRepository — hiding a whole account (TASK-589)', () => {
+  let repo: ReviewRepository;
+
+  const reviewUpdateMany = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: { updateMany: reviewUpdateMany },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    reviewUpdateMany.mockResolvedValue({ count: 4 });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('stamps every row of the account and stops its ratings counting', async () => {
+    const written = await repo.hideAuthorReviews('abuser-1');
+
+    expect(reviewUpdateMany).toHaveBeenCalledTimes(1);
+    const args = reviewUpdateMany.mock.calls[0][0];
+    expect(args.where).toEqual({ userId: 'abuser-1' });
+    expect(args.data.ratingVisible).toBe(false);
+    expect(args.data.hiddenAt).toBeInstanceOf(Date);
+    expect(written).toBe(4);
+  });
+
+  it('takes rows that were already hidden too, rather than only the visible ones', async () => {
+    // Re-hiding must be idempotent: a filter like `hiddenAt: null` here would
+    // leave a row whose stars were somehow flipped back on still counting, and
+    // the operator would have clicked "hide" twice to no effect.
+    await repo.hideAuthorReviews('abuser-1');
+
+    expect(reviewUpdateMany.mock.calls[0][0].where).not.toHaveProperty('hiddenAt');
+  });
+
+  it('restores the account with the rating visibility the caller decided on', async () => {
+    await repo.restoreAuthorReviews('forgiven-1', true);
+
+    expect(reviewUpdateMany).toHaveBeenCalledWith({
+      where: { userId: 'forgiven-1' },
+      data: { hiddenAt: null, ratingVisible: true },
+    });
+  });
+
+  it('can restore an account whose ratings still must not count', async () => {
+    // Un-hiding is not a licence to skip the email gate: the caller may hand back
+    // `false` for an author who has still never confirmed their address, and this
+    // must write exactly that rather than "restored, therefore visible".
+    await repo.restoreAuthorReviews('unconfirmed-1', false);
+
+    expect(reviewUpdateMany.mock.calls[0][0].data).toEqual({
+      hiddenAt: null,
+      ratingVisible: false,
+    });
+  });
+});
