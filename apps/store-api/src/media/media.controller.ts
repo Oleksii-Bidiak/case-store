@@ -13,6 +13,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -119,6 +120,10 @@ export class MediaController {
 
   @Post()
   @RequirePermission('media:write')
+  // See the note on the product-gallery upload (TASK-586): the global 100/min is
+  // sized for JSON, and an upload is the one request that holds a multipart
+  // buffer and a decoded frame at the same time.
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @UseInterceptors(FileInterceptor('file', SINGLE_FILE))
   @ApiBearerAuth('access-token')
   @ApiConsumes('multipart/form-data')

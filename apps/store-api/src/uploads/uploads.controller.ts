@@ -1,5 +1,6 @@
 import { Controller, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -64,6 +65,12 @@ const SINGLE_FILE_BODY = {
 @ApiExtraModels(UploadedImageEntity, UploadedImageResponseEnvelope)
 @Controller('admin/uploads')
 @UseGuards(PermissionGuard)
+// Class-level rather than four copies: every route here is the same kind of
+// request (TASK-586). The global 100/min is sized for JSON, while an upload
+// holds a multipart buffer and then a decoded frame — the heaviest requests in
+// the API were also the least limited ones. 20/min matches the admin routes and
+// is far above any real rate of picking cover images by hand.
+@Throttle({ default: { limit: 20, ttl: 60000 } })
 export class UploadsController {
   constructor(private readonly uploads: ImageUploadService) {}
 

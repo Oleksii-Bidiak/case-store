@@ -67,12 +67,44 @@ const LQIP_QUALITY = 40;
  *
  * {@link MAX_IMAGE_BYTES} does NOT make this redundant: a compression bomb is
  * precisely a small file that decodes huge, so a byte cap cannot bound the
- * decoded frame. 100 Mpx is ~400 MB decoded at 4 B/px, which still fits the
- * 640 MB `mem_limit` the API container runs under (`docker-compose.prod.yml`),
- * and sits far above any real camera image that can fit inside the 20 MB byte
- * cap — so it rejects bombs without ever rejecting a photo.
+ * decoded frame. A 10000×10000 PNG of one flat colour is ~100 KB on the wire and
+ * 400 MB once decoded, and it passes every byte gate we have.
+ *
+ * WHY 60 AND NOT 100 Mpx (TASK-586). At 4 B/px this is ~240 MB of decoded frame
+ * against the 640 MB `mem_limit` the API container runs under
+ * (`docker-compose.prod.yml`), which leaves room for the process itself and for
+ * {@link IMAGE_DECODE_CONCURRENCY} to be raised later. The earlier 100 Mpx put a
+ * single decode at ~400 MB, and that number was reasoned about in isolation — one
+ * decode, no baseline RSS, no second request.
+ *
+ * It does not cut into real photographs. The ceiling only ever applies to a file
+ * that already fits the 20 MB byte cap, and 60 Mpx clears every 48/50 Mpx phone
+ * and camera sensor that produces one. JPEG barely touches the figure anyway —
+ * libvips shrinks it on load, decoding straight to a fraction of the frame. The
+ * formats that really do allocate the whole thing are PNG and WebP, which is to
+ * say: bombs, not cameras.
  */
-export const MAX_INPUT_PIXELS = 100_000_000;
+export const MAX_INPUT_PIXELS = 60_000_000;
+
+/**
+ * How many uploads may be decoded at the same time in one process (TASK-586).
+ *
+ * WHY A SEMAPHORE AND NOT `sharp.concurrency()`. They solve different problems
+ * and only one of them is ours: `sharp.concurrency(n)` caps the libvips threads
+ * used INSIDE one operation, while the memory that matters is one decoded frame
+ * PER operation. Node runs `toBuffer` on the libuv threadpool, four wide by
+ * default, so four concurrent uploads mean four frames resident at once —
+ * ~960 MB at this ceiling, inside a 640 MB container, which is an OOM kill of
+ * the whole process rather than a failed request.
+ *
+ * One at a time makes the worst case arithmetic instead of luck:
+ * {@link MAX_INPUT_PIXELS} × 4 B/px, once. Uploads are an operator action a
+ * handful at a time, and the admin panel already sends one file per request
+ * (see the queue in `use-image-upload-queue.ts`), so serialising costs nothing
+ * anybody will notice — the second upload waits out the first decode, which is
+ * under a second for a real photo.
+ */
+export const IMAGE_DECODE_CONCURRENCY = 1;
 
 /**
  * Wraps the `sharp` image library behind an injectable so callers
@@ -81,8 +113,19 @@ export const MAX_INPUT_PIXELS = 100_000_000;
  */
 @Injectable()
 export class ImageProcessor {
+  /** Decode slots in use, bounded by {@link IMAGE_DECODE_CONCURRENCY}. */
+  private inFlight = 0;
+
+  /** Callers parked until a slot frees up, served first-come-first-served. */
+  private readonly waiting: Array<() => void> = [];
+
   /**
    * Re-encode an uploaded image to WebP and derive a base64 LQIP from it.
+   *
+   * Serialised through {@link IMAGE_DECODE_CONCURRENCY} — see the constant for
+   * why the bound belongs here and not in `sharp.concurrency()`. A caller that
+   * arrives while a decode is running waits for it rather than allocating a
+   * second frame beside it.
    *
    * Order matters. `.rotate()` with no argument applies the EXIF orientation
    * tag, and it has to run BEFORE the metadata is dropped: `withMetadata()` is
@@ -106,6 +149,40 @@ export class ImageProcessor {
    * when flattened to a single WebP.
    */
   async process(buffer: Buffer): Promise<ProcessedImage> {
+    await this.acquireDecodeSlot();
+    try {
+      return await this.encode(buffer);
+    } finally {
+      this.releaseDecodeSlot();
+    }
+  }
+
+  /**
+   * Take a decode slot, waiting for one if they are all busy.
+   *
+   * A slot is HANDED OVER on release rather than freed and re-taken: if
+   * {@link releaseDecodeSlot} decremented the counter and the woken caller
+   * incremented it again, a third caller arriving in between would see a free
+   * slot that is already spoken for and the bound would quietly exceed itself.
+   */
+  private async acquireDecodeSlot(): Promise<void> {
+    if (this.inFlight < IMAGE_DECODE_CONCURRENCY) {
+      this.inFlight += 1;
+      return;
+    }
+    await new Promise<void>((resolve) => this.waiting.push(resolve));
+  }
+
+  private releaseDecodeSlot(): void {
+    const next = this.waiting.shift();
+    if (next) {
+      next();
+    } else {
+      this.inFlight -= 1;
+    }
+  }
+
+  private async encode(buffer: Buffer): Promise<ProcessedImage> {
     // `resolveWithObject` rather than a bare `toBuffer()`: sharp hands back the
     // encoded frame's width/height/size from the encode it just did, so the
     // dimensions cost nothing and cannot disagree with the bytes we store.

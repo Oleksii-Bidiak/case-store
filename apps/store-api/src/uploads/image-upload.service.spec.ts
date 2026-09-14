@@ -126,6 +126,35 @@ describe('ImageUploadService', () => {
       expect(storage.save).not.toHaveBeenCalled();
     });
 
+    // TASK-586. Multer's cap is per FILE; this is the per-REQUEST one, stated
+    // where the buffers actually are instead of only at the Caddy edge.
+    it('rejects a batch whose files together exceed one request budget', async () => {
+      const fifteenMb = () =>
+        makeFile({ size: 15 * 1024 * 1024, buffer: Buffer.alloc(15 * 1024 * 1024, 1) });
+
+      // Each file is legal on its own — 15 MB is under the 20 MB per-file cap.
+      await expect(service.storeAll([fifteenMb(), fifteenMb()], 'content')).rejects.toThrow(
+        PayloadTooLargeException,
+      );
+      expect(storage.save).not.toHaveBeenCalled();
+    });
+
+    it('blames the oversized FILE, not the batch, when one file is the problem', async () => {
+      // Both refusals are 413; the operator needs to be told which one applies,
+      // or "send fewer files" is advice that cannot work.
+      await expect(
+        service.storeAll([makeFile({ size: 21 * 1024 * 1024 })], 'content'),
+      ).rejects.toThrow(/20 MB/);
+    });
+
+    it('accepts a batch of ordinary photos', async () => {
+      const small = () => makeFile({ size: 900 * 1024, buffer: Buffer.alloc(900 * 1024, 1) });
+
+      await expect(service.storeAll([small(), small(), small()], 'content')).resolves.toHaveLength(
+        3,
+      );
+    });
+
     it('translates an undecodable raster file into 415, not a 500', async () => {
       imageProcessor.process.mockRejectedValue(new Error('unsupported image format'));
 

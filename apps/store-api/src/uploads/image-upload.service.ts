@@ -10,6 +10,7 @@ import { ImageProcessor, IStorageService, STORAGE_SERVICE, isStorageSubdir } fro
 import {
   ALLOWED_IMAGE_MIME_EXT,
   GIF_MIME,
+  IMAGE_MULTER_MAX_BYTES,
   MAX_IMAGE_BYTES,
   PUBLIC_UPLOADS_PREFIX,
 } from './image-upload.constants';
@@ -103,6 +104,7 @@ export class ImageUploadService {
     for (const file of files) {
       this.assertValidFile(file);
     }
+    this.assertBatchFitsInMemory(files);
 
     const stored: StoredImage[] = [];
     for (const file of files) {
@@ -119,6 +121,33 @@ export class ImageUploadService {
       });
     }
     return stored;
+  }
+
+  /**
+   * Refuse a batch whose files together exceed what one request may buffer
+   * (TASK-586).
+   *
+   * Multer's `fileSize` limit is PER FILE, so ten files of 25 MB each pass it
+   * individually while asking Node to hold 250 MB of untrusted bytes inside a
+   * 640 MB container. In production that never happens — Caddy's
+   * `request_body max_size` bounds the whole body first, and store-api listens
+   * only on loopback — but that is one external gate and a convention with the
+   * admin panel, and neither is visible from here. This is the same ceiling
+   * stated where the buffers actually are: dev has no Caddy in front of the API
+   * at all, and a future client that posts a real batch should get an
+   * explainable 413 from us rather than a connection cut further out.
+   *
+   * Checked after the per-file gates so the more specific refusal wins: a single
+   * oversized file should be told it is oversized, not that its batch is.
+   */
+  private assertBatchFitsInMemory(files: Express.Multer.File[]): void {
+    const total = files.reduce((sum, file) => sum + (file.buffer?.length ?? 0), 0);
+    if (total > IMAGE_MULTER_MAX_BYTES) {
+      throw new PayloadTooLargeException(
+        `Upload batch is too large: ${Math.round(total / 1024 / 1024)} MB in one request ` +
+          `(max ${Math.round(IMAGE_MULTER_MAX_BYTES / 1024 / 1024)} MB). Send fewer files at a time.`,
+      );
+    }
   }
 
   /**

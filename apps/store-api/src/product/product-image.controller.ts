@@ -12,6 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -86,6 +87,12 @@ export class ProductImageController {
   @Post()
   @UseGuards(PermissionGuard)
   @RequirePermission('products:write')
+  // 20/min, the rate the admin routes already use (TASK-586). The global 100/min
+  // is sized for JSON; an upload holds a multipart buffer and then a decoded
+  // frame, so the heaviest requests in the API were also the least limited ones.
+  // The admin panel uploads one file per request in a serial queue, so a real
+  // batch of twenty photos still fits inside the window.
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @UseInterceptors(FilesInterceptor('files', MAX_FILES_PER_UPLOAD, galleryMulterOptions))
   @ApiBearerAuth('access-token')
   @ApiConsumes('multipart/form-data')
