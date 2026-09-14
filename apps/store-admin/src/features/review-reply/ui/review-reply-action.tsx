@@ -76,10 +76,8 @@ export function ReviewReplyAction({
   review,
   onReplied,
 }: ReviewReplyActionProps) {
-  const queryClient = useQueryClient();
   const { can } = useAuth();
   const [isOpen, setOpen] = useState(false);
-  const reply = useAdminReviewControllerReply();
 
   const existing = review.reply?.body ?? "";
 
