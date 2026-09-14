@@ -6,6 +6,7 @@ import { PermissionGuard } from './permission.guard';
 import { PermissionRepository } from './permission.repository';
 import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
 import {
+  MANAGER_BACKFILL_TEMPLATE_NAME,
   MEDIA_BACKFILL_SOURCE_PERMISSIONS,
   MEDIA_PERMISSIONS,
   PERMISSIONS,
@@ -369,5 +370,133 @@ describe('media permission backfill migration', () => {
     // row is inert at best — and at worst it teaches the next reader that the
     // matrix governs the owner, which is the belief the whole design refuses.
     expect(statement).not.toContain('ADMIN');
+  });
+});
+
+/**
+ * The access-model migration (TASK-474, plan 181), pinned against the code the
+ * same way the media backfill above is.
+ *
+ * This migration changes no behaviour — nothing reads the new tables yet — which
+ * is exactly why it needs a test. Its whole value is in two properties that are
+ * invisible until the day they are missing:
+ *
+ *  1. THE SINGLE-OWNER INVARIANT IS A DATABASE CONSTRAINT, NOT A CONVENTION.
+ *     "Exactly one `isOwner = true`" is the hinge of the entire level model
+ *     (plan 178, decision 1): the owner is the only account nobody else may
+ *     touch. Enforced in application code it holds until the first concurrent
+ *     write or the first raw UPDATE; enforced as a partial unique index it holds
+ *     always. The index is DECLARED IN `schema.prisma` (Prisma's `partialIndexes`
+ *     preview feature) rather than hand-written here, so the schema stays the
+ *     source of truth and a future `migrate dev` cannot quietly generate it away
+ *     — this test asserts the generated DDL is actually present.
+ *
+ *  2. THE BACKFILL PRESERVES EXACTLY WHAT PEOPLE HAVE TODAY. Permissions move
+ *     from the role to the person, so every live MANAGER must come out of the
+ *     migration holding precisely the set their role granted — read under the
+ *     SAME predicate the runtime uses. Looser, and a permission the owner
+ *     deliberately revoked comes back; stricter, and an employee silently loses
+ *     access mid-shift. The real proof that the copy lands correctly is the
+ *     integration spec (`test/access-model-backfill.int-spec.ts`), which runs
+ *     these very statements against a real Postgres; this file pins the SQL's
+ *     intent against the code so the two halves cannot drift.
+ */
+describe('access model migration (TASK-474)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) => entry.endsWith('_access_model'));
+    if (!dir) {
+      throw new Error(
+        `No *_access_model migration under ${MIGRATIONS_ROOT}. Without it there is no ` +
+          'owner flag, no per-person permissions, and every live manager loses their ' +
+          'access the moment the guard stops reading role_permissions.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  /** Everything but the explanatory comment blocks. */
+  const stripComments = (text: string): string =>
+    text
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n');
+
+  /**
+   * One labelled section of the backfill. The markers live in the SQL because
+   * the integration spec slices on them too — it executes the real statements
+   * rather than a copy of them — and because the two halves of the backfill make
+   * opposite claims about roles: the owner flag necessarily names ADMIN, while
+   * the permission copy necessarily must not.
+   */
+  const section = (marker: string): string => {
+    const start = sql.indexOf(`-- backfill:${marker}:start`);
+    const end = sql.indexOf(`-- backfill:${marker}:end`);
+    if (start < 0 || end < 0) {
+      throw new Error(`Migration has no \`-- backfill:${marker}:{start,end}\` markers.`);
+    }
+    return stripComments(sql.slice(start, end));
+  };
+
+  const ddl = stripComments(sql);
+  const ownerFlag = section('owner');
+  const managerGrants = section('manager-permissions');
+
+  it('enforces "at most one owner" with a partial unique index, generated from the schema', () => {
+    // The exact DDL Prisma emits for
+    // `@@unique([isOwner], where: { isOwner: true }, map: "users_single_owner_key")`.
+    // Pinned verbatim: a PLAIN unique index on `is_owner` would allow one owner
+    // and exactly one non-owner in the whole shop, which is not the same rule.
+    expect(ddl).toContain(
+      'CREATE UNIQUE INDEX "users_single_owner_key" ON "users"("is_owner") WHERE ("is_owner" = true)',
+    );
+  });
+
+  it('hands the owner flag to the oldest live admin, and only when nobody holds it', () => {
+    expect(ownerFlag).toMatch(/"role"\s*=\s*'ADMIN'/);
+    expect(ownerFlag).toMatch(/ORDER BY[\s\S]*"created_at"\s+ASC/);
+    expect(ownerFlag).toMatch(/LIMIT\s+1/);
+    // Idempotence and the invariant in one clause: a second run cannot create a
+    // second owner, so re-running the backfill cannot trip the index.
+    expect(ownerFlag).toMatch(/NOT EXISTS/);
+  });
+
+  it('copies grants under the SAME predicate the runtime reads them with', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new PermissionRepository({
+      rolePermission: { findMany },
+    } as never);
+
+    await repository.findGrantedByRole(UserRole.MANAGER);
+
+    // What the guard really asks for today…
+    expect(findMany).toHaveBeenCalledWith({ where: { role: UserRole.MANAGER, allowed: true } });
+    // …and what the migration carries forward. `allowed = false` is a DELIBERATE
+    // revocation, not "never configured"; a backfill that ignored the column
+    // would hand every manager back a key the owner had taken away.
+    expect(managerGrants).toMatch(/"allowed"\s*=\s*true/);
+  });
+
+  it('copies grants only to managers who are still working here', () => {
+    // A deactivated or tombstoned account must come out of the migration with
+    // nothing. Otherwise the rows sit there waiting, and the day somebody
+    // re-enables the account to "check something" it comes back fully armed.
+    expect(managerGrants).toMatch(/"is_active"\s*=\s*true/);
+    expect(managerGrants).toMatch(/"deleted_at"\s+IS NULL/);
+  });
+
+  it('never copies rows to ADMIN, who is not subject to the matrix at all', () => {
+    // An ADMIN passes every permission check by construction, so rows for them
+    // would be inert at best — and at worst they would teach the next reader
+    // that the matrix governs the owner, which is the belief this model refuses.
+    expect(managerGrants).toContain("'MANAGER'");
+    expect(managerGrants).not.toContain('ADMIN');
+  });
+
+  it('names the preserved template exactly as the code names it', () => {
+    // The SQL creates it; TASK-475 onwards looks it up. One literal spelled in
+    // two places is a rename waiting to orphan the template.
+    expect(managerGrants).toContain(`'${MANAGER_BACKFILL_TEMPLATE_NAME}'`);
   });
 });

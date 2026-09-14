@@ -3,6 +3,13 @@
 
 generator client {
   provider = "prisma-client-js"
+  // `partialIndexes` (TASK-474) lets `User.isOwner` declare its "at most one
+  // owner" index HERE rather than as hand-written SQL in a migration. The rule is
+  // the hinge of the whole access model, and a rule that lives only in a past
+  // migration is one a future `migrate dev` can quietly generate away — it would
+  // see no such index in the schema and drop it, with no test failing and no
+  // symptom until the day a second owner appears.
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
@@ -206,6 +213,22 @@ model User {
   /// second factor mandatory at login, so an abandoned enrolment cannot lock
   /// anyone out.
   totpEnabledAt       DateTime? @map("totp_enabled_at")
+  /// The shop has exactly one owner, and this flag is who (TASK-474, plan 181).
+  ///
+  /// A FLAG RATHER THAN A `UserRole.OWNER` VALUE. A new enum member would ripple
+  /// through `STAFF_ROLES`, `admin-shell-guard`, the header badge, `create-user.dto`
+  /// and `GRANTABLE_ROLES` — for a state that by design has exactly one holder.
+  /// A column plus one line in the guard says the same thing. ADMIN keeps meaning
+  /// "passes every permission check"; what the owner has on top is authority over
+  /// other admins, which is an different axis from what a role expresses.
+  ///
+  /// THE UNIQUENESS IS A PARTIAL INDEX, AND THAT IS THE POINT. Only rows with
+  /// `true` are constrained, so every other account is unaffected. Enforced in
+  /// application code the rule survives until the first concurrent write or the
+  /// first `UPDATE` run by hand; enforced here it cannot be broken at all — and
+  /// ownership transfer is the one operation where "two owners for 200ms" would
+  /// mean two people who can each lock the other out.
+  isOwner             Boolean   @default(false) @map("is_owner")
 
   cart                    Cart?
   wishlist                Wishlist?
@@ -228,7 +251,11 @@ model User {
   notes                   UserNote[]
   /// Media-library assets this user uploaded (TASK-441).
   uploadedMedia           MediaAsset[]
+  /// What this PERSON may do (TASK-474). Replaces the role→permission matrix as
+  /// the source of truth; see UserPermission.
+  permissions             UserPermission[]
 
+  @@unique([isOwner], where: { isOwner: true }, map: "users_single_owner_key")
   @@index([deletedAt])
   @@map("users")
 }
@@ -1802,6 +1829,81 @@ model RolePermission {
   @@unique([role, permission])
   @@index([role])
   @@map("role_permissions")
+}
+
+/// What one PERSON may do (TASK-474, plan 181) — the successor to RolePermission,
+/// which is removed once the guard reads these rows instead (TASK-475).
+///
+/// WHY THE PERSON AND NOT THE ROLE. Two managers in a real shop are never the same
+/// job: one answers the phone and processes orders, the other writes the blog.
+/// With a role-wide matrix the only way to give the second one blog rights is to
+/// give them to the first one too, so the owner either over-grants or invents a
+/// role per employee. The owner hit this on the 2026-08-27 run: rights are edited
+/// on a screen that lists ROLES, while the person they are thinking about lives on
+/// another screen entirely.
+///
+/// Absence still means DENIED, exactly as before: a person with no rows can sign
+/// into the admin panel and see nothing, which is the intended default for a new
+/// hire rather than a broken state. There is deliberately no `allowed` column here
+/// — on a role, `allowed = false` distinguished "revoked" from "never configured"
+/// for a matrix screen that showed every possible key; a person's rights are shown
+/// as the set they hold, and deleting a row is how you take one away.
+///
+/// `permission` is text, not an enum, for the same reason as RolePermission: the
+/// CATALOGUE lives in code (`permission.catalog.ts`), because a permission exists
+/// only because an endpoint exists, so adding one is a code change plus data — never
+/// a schema migration.
+model UserPermission {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  /// Cascade: rights are meaningless without the person. A tombstoned account
+  /// (`deletedAt`) keeps its rows and is instead refused at the guard, which reads
+  /// the user row first — this cascade is about the hard delete, not the soft one.
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission String
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, permission])
+  @@index([userId])
+  @@map("user_permissions")
+}
+
+/// A named set of permissions the owner can apply to a person (TASK-474, plan 181):
+/// «Оператор замовлень», «Контент-менеджер», «Продавець».
+///
+/// APPLYING A TEMPLATE COPIES IT. There is deliberately no link from a person back
+/// to the template they were set up from (plan 178, decision 2). A live link would
+/// mean editing a template silently changes what somebody who is already working
+/// can do — a permission change nobody performed on anybody — and it would
+/// desynchronise the moment the owner ticks one extra box for one person. A copy
+/// has neither problem, and "what can this person do" is answerable by looking at
+/// exactly one place: their own rows.
+///
+/// That also makes templates safe to edit and delete at any time: nothing depends
+/// on them after the copy.
+model PermissionTemplate {
+  id          String                   @id @default(uuid())
+  name        String                   @unique
+  description String?
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  updatedAt   DateTime                 @updatedAt @map("updated_at")
+  items       PermissionTemplateItem[]
+
+  @@map("permission_templates")
+}
+
+/// One permission inside a template. Rows are inserted and deleted, never edited —
+/// which is why there is no `updatedAt` here and there is one on UserPermission.
+model PermissionTemplateItem {
+  id         String             @id @default(uuid())
+  templateId String             @map("template_id")
+  template   PermissionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  permission String
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  @@unique([templateId, permission])
+  @@map("permission_template_items")
 }
 
 /// Who did what, in the database rather than in ephemeral logs.

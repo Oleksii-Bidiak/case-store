@@ -10,6 +10,20 @@ export async function seedUsers(prisma: PrismaClient) {
   // The upsert is idempotent and re-asserts the ADMIN role + name on every run.
   // To grant a second admin, register the account normally and promote it:
   //   UPDATE users SET role='ADMIN' WHERE email='<email>';
+  //
+  // `isOwner` is set on BOTH halves of the upsert (TASK-474). The shop has
+  // exactly one owner, and owner-only actions — transferring ownership, making
+  // or unmaking an admin, touching another admin's account — are reachable by
+  // nobody else. Set it only on `create` and the first re-seed of an existing
+  // stand leaves a shop with no owner at all, which is not a visible failure:
+  // everything else keeps working until somebody needs one of those actions.
+  // Safe against the single-owner index because the seed creates exactly one
+  // admin and the upsert matches it by email — on a seeded stand that account is
+  // also the one the TASK-474 backfill picked (oldest live ADMIN). A stand that
+  // was hand-built with an OLDER admin under a different address would fail here
+  // on the unique index rather than quietly ending up with two owners, which is
+  // the right way round: reassigning ownership is a deliberate act (TASK-478),
+  // not something a seed script decides.
   const adminEmail = process.env.ADMIN_SEED_EMAIL ?? 'admin@store.com';
   const adminPassword = process.env.ADMIN_SEED_PASSWORD ?? 'Admin123!';
   const adminPasswordHash = await argon2.hash(adminPassword);
@@ -17,7 +31,13 @@ export async function seedUsers(prisma: PrismaClient) {
 
   const admin = await prisma.user.upsert({
     where: { email: adminEmail },
-    update: { role: 'ADMIN', isActive: true, firstName: 'Олександр', lastName: 'Коваленко' },
+    update: {
+      role: 'ADMIN',
+      isActive: true,
+      isOwner: true,
+      firstName: 'Олександр',
+      lastName: 'Коваленко',
+    },
     create: {
       email: adminEmail,
       passwordHash: adminPasswordHash,
@@ -25,6 +45,7 @@ export async function seedUsers(prisma: PrismaClient) {
       lastName: 'Коваленко',
       role: 'ADMIN',
       isActive: true,
+      isOwner: true,
     },
   });
 

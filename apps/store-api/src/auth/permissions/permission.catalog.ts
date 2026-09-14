@@ -215,6 +215,29 @@ export const MEDIA_PERMISSIONS = [
   'media:write',
 ] as const satisfies ReadonlyArray<Permission>;
 
+/**
+ * The template the access-model migration leaves behind (TASK-474, plan 181).
+ *
+ * That migration moves permissions off the ROLE and onto the PERSON: every live
+ * MANAGER is handed their own copy of whatever `role_permissions` granted the
+ * MANAGER role, and this template records the same set under a name. Two
+ * different jobs, which is why both exist:
+ *
+ *   - the per-person rows keep today's employees working after the guard stops
+ *     reading `role_permissions` (TASK-475);
+ *   - this template keeps the SHAPE of "a manager, as the shop had it" available
+ *     for the next hire, because once the rows are per-person there is otherwise
+ *     nothing left that remembers what a manager used to be.
+ *
+ * It is an ordinary, editable template with no special status — applying one
+ * COPIES its permissions onto a person (plan 178, decision 2), so editing it
+ * later cannot silently change anyone's access, and the owner may rename or
+ * delete it. The constant exists only so the migration's SQL and the code that
+ * looks the template up spell the name identically; `permission.catalog.spec.ts`
+ * asserts the migration uses exactly this literal.
+ */
+export const MANAGER_BACKFILL_TEMPLATE_NAME = 'Менеджер (як було)';
+
 /** Fast membership test for validating rows read out of the database. */
 export const PERMISSION_KEYS: ReadonlySet<string> = new Set(PERMISSIONS.map((p) => p.key));
 
