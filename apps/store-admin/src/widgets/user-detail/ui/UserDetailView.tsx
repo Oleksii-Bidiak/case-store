@@ -52,6 +52,33 @@ function contactStatusLabel(status: string): string {
 }
 
 /**
+ * Ukrainian labels for a review text's moderation verdict (TASK-446).
+ *
+ * Three values, not two. The previous badge was driven by `isActive`, a boolean
+ * the backend dropped when rejecting stopped being a delete: a refused review
+ * used to cease to exist, so «прочитали й відхилили» had no representation and
+ * did not need one. Now the row survives its own rejection and the card has to
+ * distinguish it from a review nobody has looked at yet.
+ */
+const REVIEW_STATUS_LABELS: Record<string, string> = {
+  PENDING: dict.users.cardReviewPending,
+  APPROVED: dict.users.cardReviewApproved,
+  REJECTED: dict.users.cardReviewRejected,
+};
+
+function reviewStatusLabel(status: string): string {
+  return REVIEW_STATUS_LABELS[status] ?? status;
+}
+
+function reviewBadgeVariant(
+  status: string,
+): "success" | "warning" | "destructive" {
+  if (status === "APPROVED") return "success";
+  if (status === "REJECTED") return "destructive";
+  return "warning";
+}
+
+/**
  * Admin customer-card page body (TASK-252).
  *
  * Fetches the enriched customer card by user ID via `useGetUserAdminCard` and
@@ -296,10 +323,14 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                       <span className="text-sm text-muted-foreground">
                         {review.rating}/5
                       </span>
-                      <Badge variant={review.isActive ? "success" : "warning"}>
-                        {review.isActive
-                          ? dict.users.cardReviewApproved
-                          : dict.users.cardReviewPending}
+                      {/* TASK-446: three states, from `textStatus`. The badge
+                          used to read `isActive`, a field the backend dropped
+                          when REJECTED stopped meaning "deleted" — so it saw
+                          `undefined` and labelled every review «На модерації»,
+                          including the ones a moderator had already read and
+                          published, and the ones they had read and refused. */}
+                      <Badge variant={reviewBadgeVariant(review.textStatus)}>
+                        {reviewStatusLabel(review.textStatus)}
                       </Badge>
                     </div>
                     {review.comment && (

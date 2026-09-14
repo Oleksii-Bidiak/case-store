@@ -1,10 +1,22 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { Prisma } from '@prisma/client';
+import { Prisma, type Review } from '@prisma/client';
 import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
-import { ReviewEntity, ReviewAggregateEntity, AdminReviewEntity } from './entities';
+import {
+  ReviewEntity,
+  ReviewAggregateEntity,
+  AdminReviewEntity,
+  OwnReviewEntity,
+  ReviewReplyEntity,
+} from './entities';
 import { ReviewModerationStatus } from './dto';
-import type { CreateReviewDto, ReviewListQueryDto, AdminReviewQueryDto } from './dto';
+import type {
+  CreateReviewDto,
+  ReviewListQueryDto,
+  AdminReviewQueryDto,
+  UpdateReviewDto,
+  CreateReviewReplyDto,
+} from './dto';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -45,8 +57,11 @@ export interface ModerationReviewsResult {
  * Responsibilities:
  *  - submission with the one-review-per-user-per-product guard (409) and the
  *    verified-purchase badge,
- *  - public reads gated to approved reviews only,
- *  - admin moderation (approve flips `isActive`; reject hard-deletes the row).
+ *  - public reads: the rating aggregate over every counting rating, alongside the
+ *    page of approved TEXTS — two different populations since TASK-585, which is
+ *    why `aggregate.ratingCount` and `meta.total` legitimately disagree,
+ *  - admin moderation of the TEXT (approve / reject), which never touches the
+ *    rating beside it.
  *
  * The service never touches Prisma directly — all persistence goes through
  * {@link ReviewRepository}.
@@ -66,8 +81,21 @@ export class ReviewService {
    * A user may review a product only once: the unique `(userId, productId)`
    * slot is checked up front and again defensively by catching Prisma's P2002
    * (handles the race where two requests pass the pre-check concurrently). The
-   * review is created pending (`isActive: false`) and carries a
-   * `verifiedPurchase` badge when the user has an order line item for it.
+   * text is created `PENDING` and carries a `verifiedPurchase` badge when the user
+   * has an order line item for it.
+   *
+   * ## The email gate (TASK-588, the owner's decision 7)
+   *
+   * A rating from an author who has not confirmed their address is STORED but
+   * does not count. Not refused: refusing would throw away the ratings of the
+   * many people who confirm a day later, and would tell a spammer exactly which
+   * of their accounts is worth verifying. The verdict is written into
+   * `ratingVisible` at insert time rather than derived on read, because the
+   * catalogue asks "does this count?" for every card on every page and cannot
+   * afford to join `users` for the answer.
+   *
+   * `createdIp` is recorded for the abuse signals (TASK-589) and for nothing
+   * else.
    *
    * @throws ConflictException when the user already reviewed the product.
    */
@@ -75,21 +103,38 @@ export class ReviewService {
     userId: string,
     productId: string,
     dto: CreateReviewDto,
+    createdIp: string | null,
   ): Promise<ReviewEntity> {
     const existing = await this.reviewRepository.findExisting(userId, productId);
     if (existing) {
       throw new ConflictException('You have already reviewed this product');
     }
 
-    const verifiedPurchase = await this.reviewRepository.isVerifiedPurchase(userId, productId);
+    const [verifiedPurchase, emailVerified, authorHidden] = await Promise.all([
+      this.reviewRepository.isVerifiedPurchase(userId, productId),
+      this.reviewRepository.isEmailVerified(userId),
+      this.reviewRepository.isAuthorHidden(userId),
+    ]);
 
-    let review;
+    // Both gates, and the moderator's outranks the author's own (TASK-598). A
+    // withdrawn account is not banned and not logged out, so without this arm it
+    // simply went on submitting: the thirty ratings a moderator had just pulled
+    // came straight back as thirty new ones that counted on arrival.
+    const ratingVisible = emailVerified && !authorHidden;
+
+    let review: Review;
     try {
       review = await this.reviewRepository.create({
         userId,
         productId,
         rating: dto.rating,
         comment: dto.comment ?? null,
+        ratingVisible,
+        createdIp,
+        // Stamped so the row is withdrawn on every path the flag governs — the
+        // public list, the author's own view, the moderation queue — and not only
+        // in the average.
+        hiddenAt: authorHidden ? new Date() : null,
       });
     } catch (error) {
       // P2002 = unique constraint violation: a concurrent request inserted the
@@ -100,14 +145,26 @@ export class ReviewService {
       throw error;
     }
 
-    this.logger.info({ reviewId: review.id, userId, productId }, 'Review submitted (pending)');
+    // `ratingVisible` is logged because it is the one thing about a submission
+    // that is invisible to the person who made it: an unconfirmed author sees
+    // their review accepted and their stars never appear anywhere.
+    this.logger.info(
+      { reviewId: review.id, userId, productId, ratingVisible },
+      'Review submitted (pending)',
+    );
     return ReviewEntity.fromPrisma(review, verifiedPurchase);
   }
 
   /**
-   * List a product's approved reviews (paginated) together with its rating
-   * aggregate. Only `isActive: true` reviews are returned — pending submissions
-   * never leak to the storefront.
+   * A product's approved review TEXTS (paginated) together with its rating
+   * aggregate.
+   *
+   * The two numbers are counted over DIFFERENT populations and are meant to
+   * differ: `aggregate.ratingCount` is every rating that counts (star-only rows
+   * included), `meta.total` is the texts this list can actually render. The owner
+   * accepted that explicitly on 2026-09-10 — «кількість оцінок і кількість
+   * відгуків можуть відрізнятись, і це нормально» — so nothing here reconciles
+   * them. Doing so would hide the very ratings the split exists to surface.
    */
   async getApprovedReviews(
     productId: string,
@@ -141,6 +198,57 @@ export class ReviewService {
   }
 
   /**
+   * The caller's own review of a product, or null (TASK-586).
+   *
+   * The storefront cannot offer «дописати текст» without first knowing there is a
+   * rating to add text to, and it cannot learn that from the public list: a
+   * star-only row deliberately never appears there. Hence a separate read, in the
+   * author's own projection — see {@link OwnReviewEntity} for what it does and
+   * does not carry.
+   */
+  async getOwnReview(userId: string, productId: string): Promise<OwnReviewEntity | null> {
+    const review = await this.reviewRepository.findOwnByProduct(userId, productId);
+    return review ? OwnReviewEntity.fromPrisma(review) : null;
+  }
+
+  /**
+   * The author adds or changes the text beside a rating they already left
+   * (TASK-586 — owner's decision 5, 2026-09-10). The new text goes back to
+   * moderation; the rating does not move.
+   *
+   * An ABSENT `comment` is not an erasure. `{}` is what a half-wired form sends,
+   * and reading it as «clear the text» would wipe a published comment, drop the
+   * row back into the queue, and leave the author with no copy of what they wrote
+   * — all in answer to a request that asked for nothing. So the row is returned
+   * unchanged instead.
+   *
+   * @throws NotFoundException when no such review exists, when it belongs to
+   *         somebody else, or when its author has been hidden — one answer for
+   *         three cases, because distinguishing them is what makes an oracle.
+   */
+  async updateOwnReview(
+    userId: string,
+    id: string,
+    dto: UpdateReviewDto,
+  ): Promise<OwnReviewEntity> {
+    const existing = await this.reviewRepository.findOwnById(id, userId);
+    if (!existing) {
+      throw new NotFoundException('Review not found');
+    }
+
+    if (dto.comment === undefined) {
+      return OwnReviewEntity.fromPrisma(existing);
+    }
+
+    const updated = await this.reviewRepository.updateComment(id, dto.comment);
+    this.logger.info(
+      { reviewId: id, userId },
+      'Review text edited by its author (back to PENDING)',
+    );
+    return OwnReviewEntity.fromPrisma(updated);
+  }
+
+  /**
    * List reviews for the admin moderation queue, filtered by status
    * (`pending` by default). Rows are enriched with author email and product
    * name for the admin table.
@@ -168,7 +276,8 @@ export class ReviewService {
   }
 
   /**
-   * Approve a pending review, publishing it to the storefront.
+   * Publish a pending review's TEXT to the storefront. The rating beside it is
+   * untouched — it was already counting, or is waiting on the author's email.
    *
    * @throws NotFoundException when no review has the given id.
    */
@@ -179,33 +288,64 @@ export class ReviewService {
     }
 
     const approved = await this.reviewRepository.approve(id);
-    this.logger.info({ reviewId: id }, 'Review approved');
+    this.logger.info({ reviewId: id }, 'Review text approved');
     return ReviewEntity.fromPrisma(approved);
   }
 
   /**
-   * Reject a review by hard-deleting it. This frees the unique
-   * `(userId, productId)` slot so the author may submit a new review later.
+   * Turn down a review's TEXT (TASK-585). The row survives and the rating keeps
+   * counting: a moderator judging a sentence is not judging the score, and the old
+   * hard delete conflated the two — quietly moving the product's average as a side
+   * effect, with no record that it had.
    *
    * @throws NotFoundException when no review has the given id.
    */
-  async rejectReview(id: string): Promise<void> {
+  async rejectReview(id: string): Promise<ReviewEntity> {
     const existing = await this.reviewRepository.findById(id);
     if (!existing) {
       throw new NotFoundException('Review not found');
     }
 
-    await this.reviewRepository.delete(id);
-    this.logger.info({ reviewId: id }, 'Review rejected (deleted)');
+    const rejected = await this.reviewRepository.rejectText(id);
+    this.logger.info({ reviewId: id }, 'Review text rejected (rating kept)');
+    return ReviewEntity.fromPrisma(rejected);
   }
 
   /**
-   * Approve or reject many reviews at once (TASK-356) — the moderation queue's
-   * per-row buttons applied to a selection, in one transaction.
+   * The shop answers a review (TASK-587 — owner's decision of 2026-09-14).
    *
-   * `reject` deletes. The log line says so, and says how many, because this is
-   * the one bulk action in the panel that destroys data: if an operator later
-   * asks "where did those reviews go", this is the record.
+   * One answer per review, so posting again REPLACES the text rather than adding
+   * a second: there is no thread, and a correction is a normal thing to need.
+   *
+   * `actorUserId` is recorded on the row for accountability and is deliberately
+   * absent from what comes back — the customer is answered by the shop, not by an
+   * employee. See {@link ReviewReplyEntity}.
+   *
+   * @throws NotFoundException when no review has the given id.
+   */
+  async replyToReview(
+    id: string,
+    actorUserId: string,
+    dto: CreateReviewReplyDto,
+  ): Promise<ReviewReplyEntity> {
+    const existing = await this.reviewRepository.findById(id);
+    if (!existing) {
+      throw new NotFoundException('Review not found');
+    }
+
+    const reply = await this.reviewRepository.upsertReply(id, actorUserId, dto.body);
+    this.logger.info({ reviewId: id, actorUserId }, 'Shop reply saved');
+    return ReviewReplyEntity.fromPrisma(reply);
+  }
+
+  /**
+   * Approve or reject many review TEXTS at once (TASK-356) — the moderation
+   * queue's per-row buttons applied to a selection, in one transaction.
+   *
+   * Both actions now write a status, so neither destroys anything. The log line
+   * still records the count: an operator who bulk-rejects forty rows and then asks
+   * "what happened to those reviews" gets an answer that matches what the database
+   * actually did, which the old «deleted» wording would no longer do.
    *
    * @throws NotFoundException when any id is unknown — nothing is written.
    */
@@ -222,9 +362,48 @@ export class ReviewService {
 
     this.logger.info(
       { action, count, reviewIds: ids },
-      action === 'reject' ? 'Reviews rejected in bulk (deleted)' : 'Reviews approved in bulk',
+      action === 'reject' ? 'Review texts rejected in bulk' : 'Review texts approved in bulk',
     );
 
+    return count;
+  }
+
+  /**
+   * Withdraw everything an account ever wrote — every rating and every text
+   * (TASK-589, the owner's 2026-09-10 decision).
+   *
+   * Per-row moderation is the wrong instrument here. It answers "is this sentence
+   * publishable", one click at a time, and an abuser with thirty ratings costs
+   * thirty clicks — while the RATINGS never reach the moderation queue at all, so
+   * the screen an operator is looking at does not even show the damage.
+   *
+   * Also called when an account is banned, which is the other half of the same
+   * decision: a ban that leaves the banned person's words on the storefront is
+   * not the action the operator thought they were taking.
+   *
+   * @returns how many reviews were withdrawn.
+   */
+  async hideAuthor(userId: string): Promise<number> {
+    const count = await this.reviewRepository.hideAuthorReviews(userId);
+    this.logger.info({ userId, count }, 'Author contribution hidden');
+    return count;
+  }
+
+  /**
+   * Restore an account's contribution (TASK-589).
+   *
+   * The email gate is RE-ASKED rather than assumed. `ratingVisible` folds two
+   * independent gates — a moderator's `hiddenAt` and a proven address — and this
+   * call lifts only the first. Forcing the second open would mean an account that
+   * never confirmed its address could be handed counting ratings by way of an
+   * ordinary un-ban, which no screen in the panel would report.
+   *
+   * @returns how many reviews were restored.
+   */
+  async unhideAuthor(userId: string): Promise<number> {
+    const ratingVisible = await this.reviewRepository.isEmailVerified(userId);
+    const count = await this.reviewRepository.restoreAuthorReviews(userId, ratingVisible);
+    this.logger.info({ userId, count, ratingVisible }, 'Author contribution restored');
     return count;
   }
 }

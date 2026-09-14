@@ -1,6 +1,26 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Review } from '@prisma/client';
+import { Prisma, Review, ReviewReply, ReviewTextStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import {
+  AUTHOR_NOT_HIDDEN,
+  COUNTS_TOWARD_RATING,
+  HAS_TEXT_TO_MODERATE,
+  moderationQueueWhere,
+} from './review.constants';
+
+/**
+ * Which pile of the moderation queue to show. Maps 1:1 onto {@link ReviewTextStatus}
+ * — the queue is about TEXTS, and since TASK-585 `rejected` is a population rather
+ * than a hole where deleted rows used to be.
+ */
+export type ReviewModerationFilter = 'pending' | 'approved' | 'rejected';
+
+/** Queue filter → the stored text status it selects. */
+const MODERATION_FILTER_STATUS: Record<ReviewModerationFilter, ReviewTextStatus> = {
+  pending: ReviewTextStatus.PENDING,
+  approved: ReviewTextStatus.APPROVED,
+  rejected: ReviewTextStatus.REJECTED,
+};
 
 /**
  * Raised by {@link ReviewRepository.moderateMany} when the batch names a review
@@ -17,21 +37,37 @@ export class ReviewsNotFoundError extends Error {
 }
 
 /**
- * Allowed fields for creating a review. The review is always inserted with
- * `isActive: false` (moderation gate) — that is enforced in the repository, not
- * passed in by callers.
+ * Allowed fields for creating a review. The moderation state is not one of them:
+ * the text is always inserted `PENDING` and that is enforced here, not passed in
+ * by callers.
  */
 export interface CreateReviewInput {
   userId: string;
   productId: string;
   rating: number;
   comment?: string | null;
+  /**
+   * The email gate's verdict at the moment of writing (TASK-588) — decided by the
+   * service, because "does this rating count?" is a business rule, not a query.
+   */
+  ratingVisible: boolean;
+  /**
+   * The address the submission arrived from, or null when it is not known.
+   * Never a placeholder: see the column's docblock in `schema.prisma`.
+   */
+  createdIp: string | null;
+  /**
+   * Set when the author was already withdrawn by a moderator (TASK-598), so the
+   * new row arrives withdrawn too. Null for everybody else.
+   */
+  hiddenAt?: Date | null;
 }
 
 /**
- * Aggregated approved-review rating for a single product. `ratingAverage` is
- * null when the product has no approved reviews. Mirrors the `ProductRating`
- * shape already used in `product.repository.ts`.
+ * Aggregated rating for a single product — every rating that counts, whatever
+ * became of the text beside it. `ratingAverage` is null when the product has no
+ * counting ratings at all. Mirrors the `ProductRating` shape already used in
+ * `product.repository.ts`, which must answer the same question the same way.
  */
 export interface ReviewAggregateData {
   ratingAverage: number | null;
@@ -39,12 +75,24 @@ export interface ReviewAggregateData {
 }
 
 /**
+ * A review with whatever the shop has answered — null when nobody has (TASK-587).
+ * At most one, by the `@unique` on `ReviewReply.reviewId`.
+ */
+export interface ReviewWithReply extends Review {
+  reply: ReviewReply | null;
+}
+
+/**
  * A moderation-queue row: the review enriched with the author's email/name and
  * the product's name and SKU, needed to render the admin table without extra
  * lookups. `sku` is nullable because `Product.sku` is — a position may be saved
  * before an article number is assigned.
+ *
+ * Carries the shop's reply too (TASK-587): a queue that does not show what was
+ * already answered invites an operator to answer it again, and the upsert behind
+ * the reply route would then overwrite a colleague's words without a trace.
  */
-export interface ReviewModerationRow extends Review {
+export interface ReviewModerationRow extends ReviewWithReply {
   user: { email: string };
   product: { name: string; sku: string | null };
 }
@@ -53,7 +101,7 @@ export interface ReviewModerationRow extends Review {
  * Result of a paginated review query.
  */
 export interface PaginatedReviewsResult {
-  reviews: Review[];
+  reviews: ReviewWithReply[];
   total: number;
 }
 
@@ -69,17 +117,26 @@ export interface PaginatedModerationResult {
  * ReviewRepository — all Prisma access for product reviews lives here
  * (Clean Architecture: services never touch PrismaClient directly).
  *
- * The `Review` model carries `isActive @default(false)` as the moderation gate:
- * a freshly submitted review is pending until an admin approves it.
+ * Since TASK-585 a review has TWO independent gates, and every query below picks
+ * exactly one of them: `ratingVisible` decides whether the stars count toward the
+ * product's score, `textStatus` decides whether the comment may be read. Reaching
+ * for the wrong one is the whole class of bug this split introduced — and both
+ * mistakes look completely normal on screen.
  */
 @Injectable()
 export class ReviewRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Insert a new review in the pending state (`isActive: false`). The unique
+   * Insert a new review with its text pending moderation. The unique
    * `(userId, productId)` constraint raises Prisma error P2002 when the user has
    * already reviewed the product — the service maps that to a 409.
+   *
+   * `textStatus` is written explicitly rather than left to the column default, so
+   * the invariant lives where it is enforced: no caller can submit pre-approved
+   * text. `ratingVisible` and `createdIp` come from the caller (TASK-588) — the
+   * first is the email gate's verdict, the second the only input the abuse
+   * signals will ever have for this row, and neither can be reconstructed later.
    */
   create(data: CreateReviewInput): Promise<Review> {
     return this.prisma.review.create({
@@ -88,14 +145,66 @@ export class ReviewRepository {
         productId: data.productId,
         rating: data.rating,
         comment: data.comment ?? null,
-        isActive: false,
+        ratingVisible: data.ratingVisible,
+        createdIp: data.createdIp,
+        hiddenAt: data.hiddenAt ?? null,
+        textStatus: ReviewTextStatus.PENDING,
       },
     });
   }
 
   /**
-   * List approved (`isActive: true`) reviews for a product, newest first,
-   * paginated. Returns the page of rows plus the total count for pagination.
+   * Has a moderator withdrawn this account's contribution (TASK-598)?
+   *
+   * `hideAuthorReviews` stamps the rows that exist at that moment and nothing
+   * consulted it again, so the lever did not hold: the account is not banned and
+   * not logged out, and every review it wrote AFTERWARDS arrived with
+   * `ratingVisible = true` and counted immediately. Hiding thirty ratings and
+   * watching thirty fresh ones appear is not a moderation action.
+   *
+   * Asked per submission rather than denormalised onto `User`: submission is not
+   * a hot path — it is capped at five an hour per account — and a second flag to
+   * keep in step is how `ratingVisible` and `hiddenAt` drifted apart in the first
+   * place.
+   */
+  async isAuthorHidden(userId: string): Promise<boolean> {
+    const hidden = await this.prisma.review.count({
+      where: { userId, hiddenAt: { not: null } },
+    });
+    return hidden > 0;
+  }
+
+  /**
+   * Whether this author has proven their address (TASK-588) — the email gate's
+   * only question.
+   *
+   * Asked at submission and at restore, never on a read path: `ratingVisible` is
+   * the denormalised answer precisely so the catalogue never has to join `users`
+   * for it. A missing row reads as unproven rather than falling through a
+   * truthiness check, so a deleted account cannot end up counting.
+   */
+  async isEmailVerified(userId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { emailVerifiedAt: true },
+    });
+    return user?.emailVerifiedAt != null;
+  }
+
+  /**
+   * The public list under a product: approved TEXTS, newest first, paginated.
+   *
+   * Three filters, each excluding something the page must never render:
+   *  - `textStatus: APPROVED` — a moderator has read it;
+   *  - a non-empty `comment` — a star-only rating is a perfectly valid review that
+   *    has nothing to show, and would render as an author, a date and an empty
+   *    speech bubble. This is why the rating count and the number of reviews
+   *    legitimately differ (the owner's decision, 2026-09-10);
+   *  - `hiddenAt: null` — a moderator removed this account's whole contribution.
+   *
+   * Deliberately NOT filtered on `ratingVisible`: an author whose email is not yet
+   * confirmed has no stars in the average, but an approved text of theirs is still
+   * a text a human chose to publish.
    */
   async findApprovedByProduct(
     productId: string,
@@ -103,13 +212,22 @@ export class ReviewRepository {
     limit: number,
   ): Promise<PaginatedReviewsResult> {
     const skip = (page - 1) * limit;
-    const where = { productId, isActive: true };
+    const where: Prisma.ReviewWhereInput = {
+      productId,
+      textStatus: ReviewTextStatus.APPROVED,
+      ...AUTHOR_NOT_HIDDEN,
+      ...HAS_TEXT_TO_MODERATE,
+    };
     const [reviews, total] = await Promise.all([
       this.prisma.review.findMany({
         where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        // The shop's answer travels with the review it answers (TASK-587). A
+        // second round-trip per page is the alternative, on a PUBLIC, uncached
+        // endpoint that already had one N+1 removed from it (TASK-298).
+        include: { reply: true },
       }),
       this.prisma.review.count({ where }),
     ]);
@@ -117,14 +235,20 @@ export class ReviewRepository {
   }
 
   /**
-   * Aggregate approved-review ratings for a single product: average rating and
-   * count. Returns `{ ratingAverage: null, ratingCount: 0 }` when the product
-   * has no approved reviews.
+   * The product's rating: average and count over every rating that COUNTS.
+   *
+   * Filtered by {@link COUNTS_TOWARD_RATING} and nothing else — the text's fate is
+   * irrelevant here, which is the owner's decision of 2026-09-10 made literal. A
+   * three-star rating whose comment is still in the queue is part of the average
+   * today.
+   *
+   * Returns `{ ratingAverage: null, ratingCount: 0 }` when nothing counts, so the
+   * storefront can say «ще немає оцінок» instead of rendering a zero-star product.
    */
   async aggregate(productId: string): Promise<ReviewAggregateData> {
     const groups = await this.prisma.review.groupBy({
       by: ['productId'],
-      where: { productId, isActive: true },
+      where: { productId, ...COUNTS_TOWARD_RATING },
       _avg: { rating: true },
       _count: { rating: true },
     });
@@ -136,19 +260,37 @@ export class ReviewRepository {
   }
 
   /**
-   * List reviews for the admin moderation queue, filtered by approval status,
+   * List reviews for the admin moderation queue, filtered by the TEXT's status,
    * newest first, paginated. Each row is enriched with the author email/name and
-   * the product name. `status === 'approved'` selects `isActive: true`;
-   * anything else (the `'pending'` default) selects `isActive: false`.
+   * the product name.
+   *
+   * Three piles rather than the old two: since TASK-585 a rejection is a verdict
+   * the row keeps, not a deletion, so `rejected` selects something that exists and
+   * can be re-read — or reversed.
+   *
+   * ## Why the queue is about TEXTS and not about rows (TASK-598)
+   *
+   * `textStatus` is written `PENDING` on every submission, star-only ones
+   * included, and this filtered on nothing else — so fifty customers leaving fifty
+   * silent five-star ratings produced fifty queue entries with an empty comment
+   * and a sidebar badge reading 50. There is nothing to approve in them: the
+   * public list requires a non-empty comment, so approving publishes nothing and
+   * the only way to clear the badge was to "reject" a review nobody wrote. The
+   * owner's decision of 2026-09-10 says star-only records do not appear in the
+   * list; they have no business making moderation work either.
+   *
+   * {@link HAS_TEXT_TO_MODERATE} is the same non-empty test the public list uses,
+   * and `hiddenAt` goes with it: a withdrawn account's sentences are not waiting
+   * for a verdict, they are withdrawn.
    */
   async findForModeration(
-    status: 'pending' | 'approved',
+    status: ReviewModerationFilter,
     page: number,
     limit: number,
     search?: string,
   ): Promise<PaginatedModerationResult> {
     const skip = (page - 1) * limit;
-    const where: Prisma.ReviewWhereInput = { isActive: status === 'approved' };
+    const where: Prisma.ReviewWhereInput = moderationQueueWhere(MODERATION_FILTER_STATUS[status]);
 
     // TASK-423: free-text search over the three things the queue actually
     // displays — the review text, who wrote it, and what it is about. The arms
@@ -178,6 +320,8 @@ export class ReviewRepository {
           // «Чохол силіконовий» could not tell WHICH one the review is about — and
           // the SKU is what they then search the catalogue by.
           product: { select: { name: true, sku: true } },
+          // What the shop has already said (TASK-587) — see ReviewModerationRow.
+          reply: true,
         },
       }),
       this.prisma.review.count({ where }),
@@ -194,36 +338,94 @@ export class ReviewRepository {
   }
 
   /**
-   * Approve a review — flip the moderation gate to `isActive: true` so it
-   * becomes visible on the storefront.
+   * The caller's OWN review of a product — what `GET /products/:id/reviews/mine`
+   * answers (TASK-586). Null when they have not reviewed it.
+   *
+   * `findFirst` rather than the `userId_productId` unique lookup, because
+   * {@link AUTHOR_NOT_HIDDEN} is not part of that index: a row whose author a
+   * moderator has hidden must come back as "nothing". Answering it here rather
+   * than at the endpoint keeps this lookup and {@link findOwnById} agreeing —
+   * otherwise the storefront offers an "add your text" form on a row the PATCH
+   * below will refuse, and the author is handed an error they can do nothing
+   * about.
    */
-  approve(id: string): Promise<Review> {
+  findOwnByProduct(userId: string, productId: string): Promise<Review | null> {
+    return this.prisma.review.findFirst({ where: { userId, productId, ...AUTHOR_NOT_HIDDEN } });
+  }
+
+  /**
+   * One review BY ID, scoped to its author (TASK-586).
+   *
+   * The author id is a FILTER, not a field to compare after fetching, and that is
+   * the authorisation: a row belonging to somebody else is not found, so the
+   * endpoint answers 404 and never 403. A 403 would confirm the row exists, which
+   * turns `PATCH /api/reviews/:id` into an id oracle — walk the space, keep what
+   * answers 403, and you have a map of real reviews without being allowed to read
+   * one.
+   *
+   * {@link AUTHOR_NOT_HIDDEN} for the same reason as above: a hidden account
+   * keeps no write access to its own rows.
+   */
+  findOwnById(id: string, userId: string): Promise<Review | null> {
+    return this.prisma.review.findFirst({ where: { id, userId, ...AUTHOR_NOT_HIDDEN } });
+  }
+
+  /**
+   * Write the author's text and send it back to moderation (TASK-586).
+   *
+   * Two fields, and no more. `rating` and `ratingVisible` are absent because an
+   * edit is a statement about the sentence, not about the score; `hiddenAt` is
+   * absent because an author must not be able to un-hide themselves by typing.
+   * The unconditional `PENDING` is the owner's decision 5 made literal — text that
+   * changed has not been read by anyone, whatever verdict the previous version
+   * carried.
+   */
+  updateComment(id: string, comment: string | null): Promise<Review> {
     return this.prisma.review.update({
       where: { id },
-      data: { isActive: true },
+      data: { comment, textStatus: ReviewTextStatus.PENDING },
     });
   }
 
   /**
-   * Hard-delete a review (reject action). Frees the unique `(userId, productId)`
-   * slot so the author may submit a fresh review later.
+   * Publish a review's TEXT. Touches nothing else: the rating was already counting
+   * (or already gated by the author's unconfirmed email), and approving a sentence
+   * is not a statement about either.
    */
-  async delete(id: string): Promise<void> {
-    await this.prisma.review.delete({ where: { id } });
+  approve(id: string): Promise<Review> {
+    return this.prisma.review.update({
+      where: { id },
+      data: { textStatus: ReviewTextStatus.APPROVED },
+    });
   }
 
   /**
-   * Approve or reject many reviews at once (TASK-356), in one transaction.
+   * Turn down a review's TEXT (TASK-585). The row stays, the rating keeps counting,
+   * and only the verdict moves.
    *
-   * All-or-nothing on purpose, and it matters more here than elsewhere: `reject`
-   * is a hard delete, so a partial batch would destroy an unknown subset of the
-   * operator's selection with no way to tell which. Missing ids abort before any
-   * write — including the case where a colleague moderated the same queue a
-   * second earlier, which is exactly when two people are working a review
-   * backlog together.
+   * This replaces a hard delete. The old behaviour had two costs that were never
+   * visible from the admin panel: the author's rating disappeared from the
+   * product's average, and the freed `(userId, productId)` slot let the same person
+   * post the same text again — so rejecting abuse was also inviting it back.
+   */
+  rejectText(id: string): Promise<Review> {
+    return this.prisma.review.update({
+      where: { id },
+      data: { textStatus: ReviewTextStatus.REJECTED },
+    });
+  }
+
+  /**
+   * Approve or reject many review TEXTS at once (TASK-356), in one transaction.
    *
-   * Returns how many rows were written, which for `reject` is how many were
-   * deleted.
+   * All-or-nothing on purpose: missing ids abort before any write — including the
+   * case where a colleague moderated the same queue a second earlier, which is
+   * exactly when two people are working a review backlog together. Nothing is
+   * destroyed either way since TASK-585, so a half-applied batch is now merely
+   * confusing rather than unrecoverable, but a moderation queue that silently
+   * skipped part of a selection would still leave rows nobody looks at again.
+   *
+   * Returns how many rows were written.
    */
   async moderateMany(ids: string[], action: 'approve' | 'reject'): Promise<number> {
     return this.prisma.$transaction(async (tx) => {
@@ -237,16 +439,81 @@ export class ReviewRepository {
         throw new ReviewsNotFoundError(ids.filter((id) => !known.has(id)));
       }
 
-      if (action === 'reject') {
-        const { count } = await tx.review.deleteMany({ where: { id: { in: ids } } });
-        return count;
-      }
-
       const { count } = await tx.review.updateMany({
         where: { id: { in: ids } },
-        data: { isActive: true },
+        data: {
+          textStatus: action === 'reject' ? ReviewTextStatus.REJECTED : ReviewTextStatus.APPROVED,
+        },
       });
       return count;
+    });
+  }
+
+  /**
+   * Withdraw an account's WHOLE contribution in one write (TASK-589) — every
+   * rating and every text, which is the abuse lever from the owner's 2026-09-10
+   * decision.
+   *
+   * BOTH flags move, because they answer different halves of "is this visible":
+   * `hiddenAt` is what the three text read-paths filter on, `ratingVisible` is
+   * what keeps the stars out of every average. Writing one without the other
+   * leaves a state that looks entirely normal — the reviews disappear and the
+   * product's score does not move.
+   *
+   * Unfiltered on `hiddenAt` on purpose: re-hiding must be idempotent, and a
+   * `hiddenAt: null` filter here would skip a row whose stars had somehow been
+   * flipped back on, leaving the operator clicking a button that does nothing.
+   *
+   * Returns how many rows were written.
+   */
+  async hideAuthorReviews(userId: string): Promise<number> {
+    const { count } = await this.prisma.review.updateMany({
+      where: { userId },
+      data: { hiddenAt: new Date(), ratingVisible: false },
+    });
+    return count;
+  }
+
+  /**
+   * Give an account its contribution back (TASK-589).
+   *
+   * `ratingVisible` is a PARAMETER rather than a hard `true`, and that is the
+   * whole point: the flag folds two gates — the moderator's `hiddenAt` and the
+   * author's confirmed address — so lifting the first does not waive the second.
+   * The service re-asks the email gate and passes the answer here; a `true`
+   * written blind would turn an ordinary un-ban into a way around it, with
+   * nothing on any screen to say so.
+   *
+   * Returns how many rows were written.
+   */
+  async restoreAuthorReviews(userId: string, ratingVisible: boolean): Promise<number> {
+    const { count } = await this.prisma.review.updateMany({
+      where: { userId },
+      data: { hiddenAt: null, ratingVisible },
+    });
+    return count;
+  }
+
+  /**
+   * Write the shop's answer to a review (TASK-587).
+   *
+   * An UPSERT keyed on `reviewId`, which the schema makes unique. Two reasons it
+   * is not a plain `create`:
+   *  - correcting a published answer is an ordinary need — a typo, a price that
+   *    changed, a promise the shop can no longer keep — and `create` would meet it
+   *    with a constraint violation;
+   *  - without the `@unique` a `create` would instead leave TWO answers under one
+   *    review, and nothing in the system says which of them renders.
+   *
+   * The `update` arm carries `authorUserId` deliberately: after an edit, the
+   * person answerable for the words on screen is whoever wrote THOSE words, not
+   * whoever answered first.
+   */
+  upsertReply(reviewId: string, authorUserId: string, body: string): Promise<ReviewReply> {
+    return this.prisma.reviewReply.upsert({
+      where: { reviewId },
+      create: { reviewId, authorUserId, body },
+      update: { authorUserId, body },
     });
   }
 

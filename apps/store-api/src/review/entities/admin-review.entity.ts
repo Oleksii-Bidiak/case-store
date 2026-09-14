@@ -1,13 +1,43 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { ReviewTextStatus } from '@prisma/client';
 import { ReviewEntity } from './review.entity';
+import { ReviewReplyEntity } from './review-reply.entity';
 import type { ReviewModerationRow } from '../review.repository';
 
 /**
  * Moderation-queue projection of a review. Extends {@link ReviewEntity} with the
  * author email and product name so the admin table can render rows without
- * extra client lookups.
+ * extra client lookups — and with the two moderation flags the public entity
+ * deliberately no longer carries (TASK-585).
  */
 export class AdminReviewEntity extends ReviewEntity {
+  /**
+   * The TEXT's verdict. Three values, not a boolean, because `REJECTED` is now a
+   * state a row keeps: a moderator has to be able to tell «ще не читали» from
+   * «прочитали й відхилили», which is exactly the distinction the old `isActive`
+   * could not express — it hard-deleted the second case out of existence.
+   */
+  @ApiProperty({
+    description: 'Moderation verdict on the review text',
+    enum: ReviewTextStatus,
+    example: ReviewTextStatus.PENDING,
+  })
+  textStatus!: ReviewTextStatus;
+
+  /**
+   * Whether this rating is counting toward the product's score right now.
+   *
+   * Shown beside the verdict because the two are independent and a moderator
+   * acting on one needs to see the other: a text can be approved while the rating
+   * is still gated on an unconfirmed email, and rejecting a text does not change
+   * this value at all.
+   */
+  @ApiProperty({
+    description: "Whether this rating counts toward the product's average",
+    example: true,
+  })
+  ratingVisible!: boolean;
+
   @ApiProperty({ description: 'Author email address', example: 'olena@example.com' })
   userEmail!: string;
 
@@ -42,8 +72,12 @@ export class AdminReviewEntity extends ReviewEntity {
     entity.rating = row.rating;
     entity.comment = row.comment;
     entity.verifiedPurchase = false;
-    entity.isActive = row.isActive;
+    entity.textStatus = row.textStatus;
+    entity.ratingVisible = row.ratingVisible;
     entity.createdAt = row.createdAt;
+    // What the shop already answered (TASK-587) — the panel needs it to show a
+    // "replied" state instead of offering a fresh answer that would overwrite it.
+    entity.reply = row.reply ? ReviewReplyEntity.fromPrisma(row.reply) : null;
     entity.userEmail = row.user.email;
     entity.productName = row.product.name;
     entity.productSku = row.product.sku;

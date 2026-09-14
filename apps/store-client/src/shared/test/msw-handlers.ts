@@ -282,4 +282,13 @@ export const handlers = [
   http.post("*/api/contact", () =>
     HttpResponse.json({ data: { id: "contact-1" } }, { status: 201 }),
   ),
+
+  // The caller's own review of a product (TASK-446). Defaults to "none", which
+  // is the shape every suite that merely MOUNTS the PDP wants: the submit form
+  // asks for this the moment an authenticated user sees it, and with
+  // `onUnhandledRequest: "error"` an unhandled call fails the whole suite.
+  // Tests about editing an existing review override it with `server.use(...)`.
+  http.get("*/api/products/:productId/reviews/mine", () =>
+    HttpResponse.json({ data: null }),
+  ),
 ];

@@ -5,6 +5,7 @@ import { SlugRedirectRepository } from '../slug-redirect';
 import { rankProductIdsBySales } from './bestseller-rank.util';
 import type { SpecFacetFilter } from './dto/product-list-query.dto';
 import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
+import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 
 /**
  * Slugs of a rename being persisted by this update — when present, the write
@@ -222,8 +223,16 @@ export interface UpdateProductInput {
 }
 
 /**
- * Aggregated approved-review rating for a product. `ratingAverage` is null
- * when the product has no approved reviews.
+ * Aggregated rating for a product — every rating that COUNTS, whatever became of
+ * the text beside it. `ratingAverage` is null when the product has no counting
+ * ratings.
+ *
+ * Not "approved-review": since TASK-585 a rating needs no moderator, and the
+ * predicate is `COUNTS_TOWARD_RATING` (`ratingVisible` alone). The distinction is
+ * worth spelling out here because this docblock is what the next person reads
+ * before deciding whether the aggregate should also consult `textStatus` — and
+ * adding that arm to one of the two repositories is exactly how the same product
+ * ends up showing two different scores one click apart.
  */
 export interface ProductRating {
   ratingAverage: number | null;
@@ -285,7 +294,8 @@ export interface VariantSiblingLite {
 
 /**
  * Result of a paginated product query. Each product is enriched with its
- * approved-review aggregate (for star ratings), its primary image (for cards),
+ * rating aggregate (for star ratings — every rating that counts, not only the
+ * ones whose text was approved), its primary image (for cards),
  * and the active sibling positions of its variant group (for the variant
  * summary). `variantSiblings` is absent for standalone products (no group).
  */
@@ -369,9 +379,14 @@ export class ProductRepository {
   ) {}
 
   /**
-   * Aggregate approved-review ratings for a set of products in a single query.
-   * Returns a map keyed by product id; products with no approved reviews are
-   * absent from the map (callers default them to `{ null, 0 }`).
+   * Aggregate ratings for a set of products in a single query. Returns a map keyed
+   * by product id; products nobody has rated are absent from the map (callers
+   * default them to `{ null, 0 }`).
+   *
+   * The filter is {@link COUNTS_TOWARD_RATING}, imported rather than written out,
+   * because `ReviewRepository.aggregate` asks the identical question for the PDP's
+   * reviews tab — one click from these cards. See that constant for why the flag is
+   * denormalised instead of joined.
    */
   private async getRatingsByProductId(productIds: string[]): Promise<Map<string, ProductRating>> {
     if (productIds.length === 0) {
@@ -379,7 +394,7 @@ export class ProductRepository {
     }
     const groups = await this.prisma.review.groupBy({
       by: ['productId'],
-      where: { productId: { in: productIds }, isActive: true },
+      where: { productId: { in: productIds }, ...COUNTS_TOWARD_RATING },
       _avg: { rating: true },
       _count: { rating: true },
     });

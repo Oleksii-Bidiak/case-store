@@ -324,7 +324,7 @@ export class UserRepository {
       productName: review.product.name,
       rating: review.rating,
       comment: review.comment,
-      isActive: review.isActive,
+      textStatus: review.textStatus,
       createdAt: review.createdAt,
     }));
   }

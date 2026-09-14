@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, ReviewTextStatus } from '@prisma/client';
 import argon2 from 'argon2';
 import { orderSpecs } from '../data/orders.data';
 import { hashStr } from '../lib/ids';
@@ -16,7 +16,7 @@ import { buildVerifiedPurchaseReviews } from '../lib/verified-purchase-reviews';
  * which is how it reached forty on a dev database, and no QA step could say «open
  * the product with the pending review» because it was never the same product.
  */
-const PENDING_REVIEW_TARGETS = [
+export const PENDING_REVIEW_TARGETS = [
   {
     slug: 'apple-iphone-16-pro-128gb-black',
     comment: 'Чудовий товар, прийшов швидко. Рекомендую!',
@@ -59,14 +59,46 @@ const PENDING_REVIEW_TARGETS = [
  * something to appear on. See `lib/verified-purchase-reviews.ts` for why the
  * reviewer pool alone can never produce one.
  */
+/**
+ * Texts for the bulk pool (TASK-598).
+ *
+ * Separate from `COMMENTS` in `lib/verified-purchase-reviews.ts` and deliberately
+ * so: those are written from the far side of a delivery, to sit under the
+ * «Підтверджена покупка» badge the demo shows off. These are ordinary catalogue
+ * reviews from accounts that bought nothing, which is most of what a real
+ * product page carries.
+ */
+const POOL_COMMENTS = [
+  'Користуюся вже місяць — враження тільки позитивні.',
+  'За ці гроші — чудовий варіант. Раджу.',
+  'Виглядає так само, як на фото. Якість гарна.',
+  'Брав для себе, потім замовив ще одну знайомим.',
+  'Все влаштовує, працює без нарікань.',
+  'Нормальна річ за свою ціну, очікування виправдані.',
+  'Трохи не такий відтінок, як очікував, але загалом задоволений.',
+  'Тримається міцно, зроблено акуратно.',
+];
+
 export async function seedReviews(prisma: PrismaClient) {
   const reviewerPasswordHash = await argon2.hash('Reviewer123!');
+
+  // Since TASK-588 a rating counts only while its author's address is proven, and
+  // these accounts confirm nothing — they are written straight into the table.
+  // Unstamped, the ~2 200 rows below are all invisible to the aggregate and every
+  // one of the 178 catalogue positions loses its stars, on a run that still
+  // prints «✓ Reviews: …» and exits zero.
+  //
+  // Stamped in the UPDATE arm as well as the CREATE arm, because these accounts
+  // already exist on every developer database: an `update: {}` would leave
+  // exactly the machines that seed most often broken, while a fresh database
+  // looked perfect.
+  const emailVerifiedAt = new Date();
 
   const reviewers: { id: string }[] = [];
   for (let i = 1; i <= 20; i++) {
     const reviewer = await prisma.user.upsert({
       where: { email: `reviewer${i}@store.com` },
-      update: {},
+      update: { emailVerifiedAt },
       create: {
         email: `reviewer${i}@store.com`,
         passwordHash: reviewerPasswordHash,
@@ -74,6 +106,7 @@ export async function seedReviews(prisma: PrismaClient) {
         lastName: String(i),
         role: 'CUSTOMER',
         isActive: true,
+        emailVerifiedAt,
       },
     });
     reviewers.push(reviewer);
@@ -86,7 +119,7 @@ export async function seedReviews(prisma: PrismaClient) {
   for (let i = 1; i <= 3; i++) {
     const reviewer = await prisma.user.upsert({
       where: { email: `pending-reviewer${i}@store.com` },
-      update: {},
+      update: { emailVerifiedAt },
       create: {
         email: `pending-reviewer${i}@store.com`,
         passwordHash: reviewerPasswordHash,
@@ -94,6 +127,7 @@ export async function seedReviews(prisma: PrismaClient) {
         lastName: String(i),
         role: 'CUSTOMER',
         isActive: true,
+        emailVerifiedAt,
       },
     });
     pendingReviewers.push(reviewer);
@@ -125,12 +159,20 @@ export async function seedReviews(prisma: PrismaClient) {
   const poolCreatedAt = new Date(now - 60 * 60 * 1000);
   const verifiedCreatedAt = new Date(now);
 
+  // Since TASK-585 a seeded review needs BOTH flags set explicitly. `ratingVisible`
+  // is true on every row — including the pending ones — because the rating counts
+  // the moment it is given; the column default is `false`, so leaving it out would
+  // seed 178 products with zero stars. The reviewer accounts above are stamped
+  // confirmed (TASK-588) so this stays true of a review written by hand on top of
+  // the seed, not merely of the seeded rows.
+  // `textStatus` is what still separates the six queue items from the rest.
   const rows: {
     userId: string;
     productId: string;
     rating: number;
     comment?: string;
-    isActive: boolean;
+    ratingVisible: boolean;
+    textStatus: ReviewTextStatus;
     createdAt: Date;
   }[] = [];
 
@@ -140,11 +182,29 @@ export async function seedReviews(prisma: PrismaClient) {
     for (let i = 0; i < count; i++) {
       // Ratings skew positive (mostly 4–5) with occasional lower scores.
       const r = hashStr(`${product.slug}:${i}`) % 100;
+      // Roughly every third row carries a text (TASK-598). Before the split the
+      // public list filtered on `isActive` alone, so these comment-less rows all
+      // rendered — as an author, a date and an empty bubble. Now they are
+      // correctly excluded, and with nothing to replace them a freshly seeded
+      // shop showed «4.6 · 12 оцінок» above an EMPTY reviews tab on 173 of 178
+      // positions, which reads as a broken feature rather than a working one.
+      // A share rather than all of them, because the rating count legitimately
+      // exceeding the review count is exactly what the split is meant to show.
+      //
+      // The first row of every product is forced, so "no position has an empty
+      // tab" is a property of the code rather than a lucky hash: a share alone
+      // leaves it to chance for each of the 178 positions, and the one that came
+      // up empty would be found by a customer, not by a test.
+      const hasText = i === 0 || hashStr(`${product.slug}:text:${i}`) % 3 === 0;
       rows.push({
         userId: reviewers[i].id,
         productId: product.id,
         rating: r < 55 ? 5 : r < 80 ? 4 : r < 93 ? 3 : r < 98 ? 2 : 1,
-        isActive: true,
+        comment: hasText
+          ? POOL_COMMENTS[hashStr(`${product.slug}:c:${i}`) % POOL_COMMENTS.length]
+          : undefined,
+        ratingVisible: true,
+        textStatus: ReviewTextStatus.APPROVED,
         createdAt: poolCreatedAt,
       });
     }
@@ -158,7 +218,10 @@ export async function seedReviews(prisma: PrismaClient) {
       productId: productIdBySlug.get(target.slug)!,
       rating: 3 + (hashStr(`pending:${target.slug}`) % 3), // 3..5
       comment: target.comment,
-      isActive: false,
+      // The rating counts like any other; only the TEXT waits to be read. These six
+      // are the moderation queue, not six invisible ratings.
+      ratingVisible: true,
+      textStatus: ReviewTextStatus.PENDING,
       createdAt: poolCreatedAt,
     });
   });
@@ -207,7 +270,8 @@ export async function seedReviews(prisma: PrismaClient) {
       productId,
       rating: spec.rating,
       comment: spec.comment,
-      isActive: true,
+      ratingVisible: true,
+      textStatus: ReviewTextStatus.APPROVED,
       createdAt: verifiedCreatedAt,
     };
   });

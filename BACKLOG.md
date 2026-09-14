@@ -44,7 +44,9 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-588**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-604**.
+> (План 183 узяв 588–597. Спершу він узяв був 585–594, але хвиля 177 змерджилась у develop під час
+> роботи й забрала 584–587 — довелось перенумерувати, рівно як описано в TASK-545.)
 
 ### Етап 0 — Config & docs cleanup
 
@@ -676,13 +678,38 @@
 | TASK-443 | B-1 Життєвий цикл замовлення: матриця статусів, джерело заявки на повернення, товар недоступний у замовленні — рішення 2026-09-11, реалізація в TASK-431/468…473 | ✅ | [178](docs/plans/178-brainstorms.md) |
 | TASK-444 | B-2 Видалення товару і категорії | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-445 | B-3 Ролі й доступи: два рівні через `isOwner` (власник + заступники), права на людину замість ролі + шаблони, окремий розділ «Персонал», `customers:card` — рішення 2026-09-11, реалізація в TASK-474…482 | ✅ | [178](docs/plans/178-brainstorms.md) |
-| TASK-446 | Відгуки (рішення 2026-09-10): оцінки рахуються одразу, у списку лише схвалені **з текстом**, пагінація по 10, дописати текст до оцінки, захист від зловживань оцінками (throttle, «від покупців», сигнал на дашборд); відкриті лише відповіді й підпис автора | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-446 | B-4 Відгуки (рішення 2026-09-10, п. 1–7): оцінки рахуються одразу, у списку лише схвалені **з текстом**, пагінація по 10, дописати текст до оцінки, захист від зловживань оцінками — плюс два відкриті питання, закриті 2026-09-14: відповідає **лише магазин** (одна відповідь, без треду автора, право `reviews:write`), підпис автора лишається «Покупець». Реалізація в TASK-588…592 | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
 | TASK-447 | B-5 Видимість замовлення для гостя й телефонного покупця: номер лишається 8 символами UUID, публічна форма «номер + телефон» без адреси, токен і лист для операторських замовлень, приєднання при підтвердженні пошти — рішення 2026-09-11, реалізація в TASK-483…486 | ✅ | [178](docs/plans/178-brainstorms.md) |
 | TASK-448 | B-6 Доставка не лише НП: самовивіз, кур'єр, екран `/settings/delivery` (TASK-374) | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-449 | B-7 Сповіщення: Telegram-бот власнику (S), outbox із каналами, SMS-коди | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-450 | B-8 Детальна статистика: перші звіти, Umami API | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-451 | B-9 Головна як контент; перегляд vs редагування в адмінці; прев'ю як на вітрині | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-458 | B-10 Фасети каталогу: мультивибір, наявність і колір, розширений набір фасетів, лічильники, SEO-сторінки сумісності — рішення 2026-09-11 (з порівнянням із Rozetka/Allo), реалізація в TASK-487…490 + уточнення TASK-414 | ✅ | [178](docs/plans/178-brainstorms.md) |
+
+### План 183 — Відгуки: оцінка окремо від тексту (реалізація B-4 / TASK-446)
+
+> Рішення — план 178, розділ B-4, плюс два питання, закриті власником 2026-09-14. Один прапорець
+> `Review.isActive` розведено на три незалежні поля; відхилення тексту більше не видаляє оцінку.
+> **Міграція `20260914120000_review_rating_text_split` до реальної БД ще не застосована.**
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-588 | Міграція: `isActive` → `ratingVisible` + `textStatus` (PENDING/APPROVED/REJECTED) + `hiddenAt` + `createdIp`; модель `ReviewReply` з `@unique` на `reviewId` («без треду» як інваріант схеми); бекфіл грандфазерить усі наявні рядки в `rating_visible = true` | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-589 | Оцінка рахується одразу (обидва агрегати — у `review.repository` і `product.repository` — переведено разом); публічний список лише `APPROVED` **з непорожнім текстом**; `DELETE /admin/reviews/:id` → `PATCH /admin/reviews/:id/reject` зі збереженням `operationId`; bulk-відхилення теж не видаляє | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-590 | `GET /api/products/:productId/reviews/mine` і `PATCH /api/reviews/:id`: автор дописує текст до вже поставленої оцінки, оцінка незмінна, правка повертає текст у `PENDING`; не-автор дістає 404, а не 403 (403 зробив би ендпоінт оракулом перебору) | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-591 | Відповідь магазину: нове право `reviews:write`, `POST /api/admin/reviews/:id/reply` з upsert-семантикою, `authorUserId` для підзвітності але не для показу покупцю | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-592 | Throttle на створення оцінок: іменовані `reviewsAccount` 5/год і `reviewsIp` 20/добу зі `skipIf` на маркер `@ReviewSubmissionThrottle()` — без нього сконфігурований throttler обмежив би **кожен** маршрут; оцінка з непідтвердженої пошти не рахується до підтвердження; сідер ставить `emailVerifiedAt` рецензентам | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-593 | Сигнал `ratingAbuse` у «Потребує дії» (>10 оцінок на товар за годину; ≥3 оцінки 1★ з однієї адреси за добу, `null` IP не групується); `POST /admin/reviews/authors/:userId/hide` і `/unhide`; бан акаунта тепер теж ховає оцінки й тексти — доти не ховав нічого | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-594 | Вітрина: пагінація по 10 через `?reviewPage=` (складається з `?tab=reviews`), відповідь магазину під відгуком, дописування тексту до власної оцінки з чесним показом стану тексту до відправки | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-595 | Адмінка: три черги замість двох («На модерації» / «Схвалені» / «Відхилені»), діалог відповіді за правом `reviews:write`, приховування всіх оцінок автора з підтвердженням, картка `ratingAbuse`; `UserDetailView` читав неіснуючий `isActive` і підписував кожен відгук як «На модерації» | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-596 | [хвіст] `AdminReviewEntity` не віддає `hiddenAt`, а `findForModeration` по ньому не фільтрує, тож панель не відрізняє «модератор приховав акаунт» від «пошта не підтверджена» — обидва зводяться до `ratingVisible = false`, а дії на них різні. Обхід безпечний (повернення перепитує email-гейт), але чесний бейдж вимагає поля з бекенду | ⬜ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-597 | [хвіст, запуск] Новий ключ `reviews:write` приходить **без бекфілу** — за задумом каталогу «за замовчуванням заборонено». На свіжому деплої жоден MANAGER не побачить кнопку «Відповісти», доки власник не поставить галочку в екрані прав. Поведінка правильна, але крок треба виконати | ⬜ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-598 | [ревʼю 183] Трекер `reviewsAccount` читав `req.user`, якого на той момент ще немає (глобальний throttler-гард іде перед маршрутним `JwtAuthGuard`), тож обидва бакети рахували адресу; приховування автора не заважало йому писати нові оцінки; оцінки без тексту засмічували чергу модерації і бейдж; сигнал накрутки не гасився дією оператора; коментар із пробілів давав порожню бульбашку; `{"comment": null}` мовчки стирав текст; чернетка відповіді в адмінці перетирала чужу опубліковану; пейджер вітрини показував сторінку, з якої пішов | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-599 | [хвіст ревʼю] Розбан стирає рішення модератора: `activateUser` безумовно кличе `unhideAuthor`, а `restoreAuthorReviews` чистить `hiddenAt` **усім** рядкам користувача. Бан і ручне приховування пишуть одну колонку, і розбан їх не розрізняє — спам повертається на вітрину без сліду. Чесний фікс — розрізнення на рівні схеми (`hiddenReason`), окремою міграцією | ⬜ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-600 | [хвіст ревʼю] Немає індексу під burst-запит сигналу накрутки: `GROUP BY product_id WHERE created_at >= …`, а жоден із трьох нових індексів не веде з `createdAt` → seq-scan на кожному читанні «Потребує дії» (а воно інвалідується після кожного замовлення й кожного відгуку). Нешкідливо на 2k рядків, росте лінійно. Наступною міграцією, разом із TASK-599 | ⬜ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-601 | [хвіст ревʼю] Картка `ratingAbuse` не веде нікуди дієвого: `href="/reviews"` без фільтра, а `createdIp` взагалі не виходить за межі API, тож оператор не бачить ні товару з бурстом, ні адреси з серією 1★. Туди ж — подвійний облік: один зловмисник на одному товарі рахується і як товар, і як адреса | ⬜ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-602 | [хвіст ревʼю] Сигнал накрутки не має int-spec на живому Postgres: пороги (10 проти 11 за годину, 2 проти 3 одиниць за добу) і виключення `createdIp = NULL` покриті лише моками, які перевіряють аргументи, а не результат. TASK-238 саме так і проїхала ревʼю | ⬜ | [183](docs/plans/183-reviews-moderation-split.md) |
+| TASK-603 | [хвіст ревʼю] `deleteUser` не ховає відгуки, хоча `deactivateUser` ховає: сильніша дія робить менше — у мʼяко видаленого акаунта тексти лишаються на вітрині, а оцінки в середньому балі. Або кликати `hideAuthor` і звідти, або записати в плані, чому мʼяке видалення свідомо зберігає внесок | ⬜ | [183](docs/plans/183-reviews-moderation-split.md) |
 
 ### План 180 — Замовлення після B-1 і B-5 (🟡 до запуску; після плану 175 і TASK-466)
 
@@ -778,6 +805,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-588**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-604**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

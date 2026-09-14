@@ -12,6 +12,7 @@ import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { AuthRepository } from '../auth/auth.repository';
 import { AuthService } from '../auth/auth.service';
+import { ReviewService } from '../review/review.service';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -80,6 +81,14 @@ const authServiceMock = {
   setPassword: jest.fn(),
 };
 
+// ReviewService is injected so that banning an account also withdraws what it
+// wrote (TASK-589). The check the owner asked for in decision 7(г) — «бан вже
+// ховає відгуки, перевірити чи ховає оцінки» — measured that it hid NEITHER.
+const reviewServiceMock = {
+  hideAuthor: jest.fn(),
+  unhideAuthor: jest.fn(),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('UserService', () => {
@@ -95,6 +104,7 @@ describe('UserService', () => {
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: AuthRepository, useValue: authRepositoryMock },
         { provide: AuthService, useValue: authServiceMock },
+        { provide: ReviewService, useValue: reviewServiceMock },
       ],
     }).compile();
 
@@ -365,7 +375,7 @@ describe('UserService', () => {
         productName: 'iPhone 15 Pro Case',
         rating: 5,
         comment: 'Great!',
-        isActive: true,
+        textStatus: 'APPROVED',
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
       },
     ];
@@ -547,6 +557,29 @@ describe('UserService', () => {
       );
       expect(repository.deactivate).not.toHaveBeenCalled();
     });
+
+    // TASK-589, answering the owner's 7(г). A ban used to leave the banned
+    // account's reviews on the storefront AND its ratings in every average — so
+    // the one action an operator reaches for against an abuser did nothing at all
+    // about what the abuser wrote. The account could not log in; its words and
+    // its one-star scores stayed exactly where they were.
+    it('withdraws the banned account’s reviews and ratings as well as its sessions', async () => {
+      repository.findById.mockResolvedValue(mockUser);
+      repository.deactivate.mockResolvedValue(mockDeactivatedUser);
+
+      await service.deactivateUser('user-uuid-2', ADMIN_ID);
+
+      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith('user-uuid-2');
+    });
+
+    it('does not touch the reviews of an account it refused to ban', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(service.deactivateUser('nonexistent-id', ADMIN_ID)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(reviewServiceMock.hideAuthor).not.toHaveBeenCalled();
+    });
   });
 
   // ─── activateUser ───────────────────────────────────────────────────────────
@@ -572,6 +605,18 @@ describe('UserService', () => {
 
       await expect(service.activateUser('nonexistent-id')).rejects.toThrow(NotFoundException);
       expect(repository.activate).not.toHaveBeenCalled();
+    });
+
+    it('gives a restored account its reviews back', async () => {
+      // The mirror of the ban. Un-banning without this leaves the account able to
+      // log in and post while everything it wrote before stays invisible — a
+      // half-lifted punishment nobody can see the shape of.
+      repository.findById.mockResolvedValue(mockDeactivatedUser);
+      repository.activate.mockResolvedValue({ ...mockDeactivatedUser, isActive: true });
+
+      await service.activateUser('user-uuid-2');
+
+      expect(reviewServiceMock.unhideAuthor).toHaveBeenCalledWith('user-uuid-2');
     });
   });
 

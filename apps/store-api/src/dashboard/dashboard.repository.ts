@@ -1,11 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { MailOutboxStatus, OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  MailOutboxStatus,
+  OrderStatus,
+  PaymentStatus,
+  Prisma,
+  ReviewTextStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { moderationQueueWhere } from '../review/review.constants';
 import {
   DASHBOARD_WINDOW_DAYS,
   LOW_STOCK_LIMIT,
   LOW_STOCK_THRESHOLD,
+  ONE_STAR_RUN_THRESHOLD,
+  ONE_STAR_RUN_WINDOW_HOURS,
   PENDING_STALE_HOURS,
+  RATING_BURST_THRESHOLD,
+  RATING_BURST_WINDOW_HOURS,
   REPEAT_BUYER_WINDOW_DAYS,
   TOP_PRODUCTS_LIMIT,
   type DailyDataPoint,
@@ -264,24 +275,93 @@ export class DashboardRepository {
 
   /**
    * "Needs action" counters for the dashboard widget + sidebar badges
-   * (TASK-248). Four independent COUNT reads run in a single `Promise.all` —
-   * no N+1, no joins, mirroring the `getSummary()` parallelization style:
+   * (TASK-248). Independent reads run in a single `Promise.all` — no N+1, no
+   * joins, mirroring the `getSummary()` parallelization style:
    *   - `newOrders`       — orders awaiting confirmation (`status = PENDING`)
-   *   - `pendingReviews`  — reviews awaiting moderation (`isActive = false`,
-   *                         matching `ReviewRepository.findForModeration('pending')`)
+   *   - `pendingReviews`  — review TEXTS awaiting a verdict, counted with the exact
+   *                         `where` of `ReviewRepository.findForModeration('pending')`.
+   *                         Deliberately not about ratings: since TASK-585 a rating
+   *                         needs no moderator, so counting invisible ratings here
+   *                         would send an operator to a queue with nothing to do —
+   *                         which is what `textStatus = PENDING` alone did until
+   *                         TASK-598, because star-only rows are written PENDING too
    *   - `unpaidInTransit` — active-but-unpaid orders ({@link unrealizedOrderWhere})
    *   - `failedMails`     — outbox rows permanently failed (`status = FAILED`)
+   *   - `ratingAbuse`     — bursts and one-star runs ({@link getRatingAbuseCount})
    */
   async getNeedsAction(): Promise<NeedsAction> {
-    const [newOrders, pendingReviews, unpaidInTransit, failedMails, pendingOver48h] =
+    const [newOrders, pendingReviews, unpaidInTransit, failedMails, pendingOver48h, ratingAbuse] =
       await Promise.all([
         this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
-        this.prisma.review.count({ where: { isActive: false } }),
+        this.prisma.review.count({ where: moderationQueueWhere(ReviewTextStatus.PENDING) }),
         this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
         this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
         this.prisma.order.count({ where: this.pendingOver48hWhere() }),
+        this.getRatingAbuseCount(),
       ]);
-    return { newOrders, pendingReviews, unpaidInTransit, failedMails, pendingOver48h };
+    return {
+      newOrders,
+      pendingReviews,
+      unpaidInTransit,
+      failedMails,
+      pendingOver48h,
+      ratingAbuse,
+    };
+  }
+
+  /**
+   * How many things currently look like rating abuse (TASK-589) — the owner's
+   * decision 7: «>10 оцінок на один товар за годину, або серія 1★ з однієї IP».
+   *
+   * Two `groupBy … having` queries, and the value is a count of FLAGGED THINGS —
+   * distinct products plus distinct addresses — not of reviews. The widget's job
+   * is to say how many situations are worth opening, and a review count would
+   * read as an emergency the first time one product legitimately went viral.
+   *
+   * ## `createdIp: { not: null }` is load-bearing
+   *
+   * The column arrived with TASK-588, so it is null on every earlier row — the
+   * whole seeded catalogue included. Prisma groups nulls like any other value, so
+   * without this filter the second query returns one group of ~2 200 one-star-ish
+   * rows and the panel opens on a single "address" responsible for the entire
+   * shop. Absent means "we do not know", never "the same as the last one".
+   *
+   * ## `hiddenAt: null` is what makes it clearable (TASK-598)
+   *
+   * Hiding the author is the action this signal exists to prompt, and it leaves
+   * the rows in place. Counting them anyway produced a "needs action" number that
+   * the action did not change — still there an hour later, still there a day
+   * later — and an operator who clicks through twice and finds nothing to do stops
+   * clicking. A counter no action can clear is worse than no counter.
+   */
+  private async getRatingAbuseCount(): Promise<number> {
+    const [burstProducts, oneStarAddresses] = await Promise.all([
+      this.prisma.review.groupBy({
+        by: ['productId'],
+        where: {
+          hiddenAt: null,
+          createdAt: { gte: this.hoursAgo(RATING_BURST_WINDOW_HOURS) },
+        },
+        having: { productId: { _count: { gt: RATING_BURST_THRESHOLD } } },
+      }),
+      this.prisma.review.groupBy({
+        by: ['createdIp'],
+        where: {
+          rating: 1,
+          hiddenAt: null,
+          createdIp: { not: null },
+          createdAt: { gte: this.hoursAgo(ONE_STAR_RUN_WINDOW_HOURS) },
+        },
+        having: { createdIp: { _count: { gte: ONE_STAR_RUN_THRESHOLD } } },
+      }),
+    ]);
+
+    return burstProducts.length + oneStarAddresses.length;
+  }
+
+  /** The instant `hours` ago — the left edge of a rolling abuse window. */
+  private hoursAgo(hours: number): Date {
+    return new Date(Date.now() - hours * 60 * 60 * 1000);
   }
 
   /**

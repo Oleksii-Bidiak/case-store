@@ -101,23 +101,53 @@ describe('ReviewRepository — findForModeration search', () => {
     expect(reviewFindMany.mock.calls[0][0].include).toEqual({
       user: { select: { email: true } },
       product: { select: { name: true, sku: true } },
+      // TASK-587: and whatever the shop has already answered. Without it the
+      // panel offers "reply" on every row, including the ones that carry one, and
+      // an operator working a backlog overwrites a colleague's answer having
+      // never seen it.
+      reply: true,
     });
   });
 
-  it('filters on the moderation gate alone when no term is given', async () => {
+  /**
+   * What every queue read carries besides the status (TASK-598).
+   *
+   * A star-only row is written `PENDING` like any other, and the queue used to
+   * show it: an entry with an empty comment, which approving publishes nowhere
+   * and only rejecting removes — a verdict on a review nobody wrote. `hiddenAt`
+   * joins it because a withdrawn account's sentences are not awaiting a verdict.
+   */
+  const QUEUE_ARMS = { hiddenAt: null, comment: { not: null }, NOT: { comment: '' } };
+
+  it('filters on the TEXT status and on there being a text to judge', async () => {
     await repo.findForModeration('pending', 1, 20);
 
-    expect(issuedWhere()).toEqual({ isActive: false });
+    expect(issuedWhere()).toEqual({ textStatus: 'PENDING', ...QUEUE_ARMS });
     // The COUNT must carry the same `where`, or the pager claims pages the list
     // cannot show.
-    expect(reviewCount).toHaveBeenCalledWith({ where: { isActive: false } });
+    expect(reviewCount).toHaveBeenCalledWith({
+      where: { textStatus: 'PENDING', ...QUEUE_ARMS },
+    });
+  });
+
+  // TASK-585: the queue's third tab. Rejecting no longer deletes, so there is now
+  // a population of REJECTED rows that exists and was previously unreachable —
+  // without this arm a moderator cannot see, or undo, anything they turned down.
+  it('reaches the rejected pile, which is a population now that reject does not delete', async () => {
+    await repo.findForModeration('rejected', 1, 20);
+
+    expect(issuedWhere()).toEqual({ textStatus: 'REJECTED', ...QUEUE_ARMS });
+    expect(reviewCount).toHaveBeenCalledWith({
+      where: { textStatus: 'REJECTED', ...QUEUE_ARMS },
+    });
   });
 
   it('ORs the term across review text, author email and product name', async () => {
     await repo.findForModeration('approved', 1, 20, 'чохол');
 
     expect(issuedWhere()).toEqual({
-      isActive: true,
+      textStatus: 'APPROVED',
+      ...QUEUE_ARMS,
       OR: [
         { comment: { contains: 'чохол', mode: 'insensitive' } },
         { user: { email: { contains: 'чохол', mode: 'insensitive' } } },
@@ -145,5 +175,480 @@ describe('ReviewRepository — findForModeration search', () => {
 
     expect(issuedWhere().OR).toBeUndefined();
     expect(reviewFindMany.mock.calls[0][0]).toMatchObject({ skip: 50, take: 50 });
+  });
+});
+
+/**
+ * The rating/text split (TASK-585) — the two read paths that used to share one
+ * `isActive` flag and must now diverge.
+ *
+ * Prisma is mocked, so what is pinned is the WHERE SHAPE, and that is the whole
+ * risk: both failures are silent on screen. An aggregate that still filters on the
+ * text status quietly refuses to count a rating the owner decided counts
+ * immediately; a public list that filters on `ratingVisible` instead of the text
+ * status starts publishing unmoderated comments.
+ */
+describe('ReviewRepository — rating aggregate vs public text list (TASK-585)', () => {
+  let repo: ReviewRepository;
+
+  const reviewFindMany = jest.fn();
+  const reviewCount = jest.fn();
+  const reviewGroupBy = jest.fn();
+  const reviewUpdate = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: {
+      findMany: reviewFindMany,
+      count: reviewCount,
+      groupBy: reviewGroupBy,
+      update: reviewUpdate,
+    },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    reviewFindMany.mockResolvedValue([]);
+    reviewCount.mockResolvedValue(0);
+    reviewGroupBy.mockResolvedValue([]);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  // ─── 1. the aggregate counts ratings, not texts ─────────────────────────────
+
+  it('counts EVERY visible rating, whether or not its text was approved', async () => {
+    // The owner's decision of 2026-09-10: stars count the moment they are given.
+    // A three-star rating whose comment is still in the moderation queue is part
+    // of the product's average today, not whenever someone gets round to reading
+    // the sentence next to it.
+    reviewGroupBy.mockResolvedValue([
+      { productId: 'product-1', _avg: { rating: 4.5 }, _count: { rating: 8 } },
+    ]);
+
+    const result = await repo.aggregate('product-1');
+
+    expect(reviewGroupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { productId: 'product-1', ratingVisible: true } }),
+    );
+    expect(result).toEqual({ ratingAverage: 4.5, ratingCount: 8 });
+  });
+
+  it('does not consult the text status when aggregating', async () => {
+    await repo.aggregate('product-1');
+
+    // Spelled out separately from the `toEqual` above because this is the exact
+    // regression: leaving a `textStatus` arm in the aggregate would still produce
+    // a plausible-looking average — just the OLD one.
+    expect(reviewGroupBy.mock.calls[0][0].where).not.toHaveProperty('textStatus');
+  });
+
+  it('reports no rating at all rather than zero when the product has none', async () => {
+    reviewGroupBy.mockResolvedValue([]);
+
+    expect(await repo.aggregate('product-1')).toEqual({ ratingAverage: null, ratingCount: 0 });
+  });
+
+  // ─── 2. the public list shows approved TEXTS ────────────────────────────────
+
+  it('lists only approved texts, and only rows that actually have one', async () => {
+    await repo.findApprovedByProduct('product-1', 1, 10);
+
+    const where = reviewFindMany.mock.calls[0][0].where;
+    expect(where).toEqual({
+      productId: 'product-1',
+      textStatus: 'APPROVED',
+      hiddenAt: null,
+      comment: { not: null },
+      NOT: { comment: '' },
+    });
+    // A star-only row is APPROVED-able and must still never reach the list: it
+    // would render as an author, a date and an empty speech bubble.
+    expect(where).not.toHaveProperty('ratingVisible');
+  });
+
+  // TASK-587: the shop's answer travels with the review it answers. A second
+  // round-trip per page would be the alternative, on a PUBLIC, uncached endpoint
+  // that already fought off one N+1 (TASK-298).
+  it('brings the shop reply along with the public list', async () => {
+    await repo.findApprovedByProduct('product-1', 1, 10);
+
+    expect(reviewFindMany.mock.calls[0][0].include).toEqual({ reply: true });
+  });
+
+  it('counts the page with the same filter, so `meta.total` matches what is shown', async () => {
+    await repo.findApprovedByProduct('product-1', 1, 10);
+
+    expect(reviewCount).toHaveBeenCalledWith({ where: reviewFindMany.mock.calls[0][0].where });
+  });
+
+  // ─── 3. rejecting a text leaves the rating alone ────────────────────────────
+
+  it('rejects a TEXT by status, never by deleting the row', async () => {
+    reviewUpdate.mockResolvedValue({ id: 'review-1' });
+
+    await repo.rejectText('review-1');
+
+    expect(reviewUpdate).toHaveBeenCalledWith({
+      where: { id: 'review-1' },
+      data: { textStatus: 'REJECTED' },
+    });
+    // Neither the rating nor its visibility may appear in the update: a moderator
+    // turning down a sentence must not move the product's score.
+    const written = reviewUpdate.mock.calls[0][0].data;
+    expect(written).not.toHaveProperty('rating');
+    expect(written).not.toHaveProperty('ratingVisible');
+  });
+});
+
+/**
+ * Bulk moderation (TASK-585) — the per-row buttons applied to a selection.
+ *
+ * `reject` used to `deleteMany`. It now writes a status, which is the difference
+ * between an operator clearing a backlog and an operator destroying an unknown
+ * number of ratings.
+ */
+describe('ReviewRepository — moderateMany writes statuses, never deletes', () => {
+  let repo: ReviewRepository;
+
+  const txFindMany = jest.fn();
+  const txUpdateMany = jest.fn();
+  const txDeleteMany = jest.fn();
+  const tx = {
+    review: { findMany: txFindMany, updateMany: txUpdateMany, deleteMany: txDeleteMany },
+  };
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: {},
+    $transaction: jest.fn((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    txUpdateMany.mockResolvedValue({ count: 2 });
+    txDeleteMany.mockResolvedValue({ count: 2 });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('rejects a batch by setting REJECTED — the ratings survive', async () => {
+    txFindMany.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
+
+    const count = await repo.moderateMany(['a', 'b'], 'reject');
+
+    expect(txDeleteMany).not.toHaveBeenCalled();
+    expect(txUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['a', 'b'] } },
+      data: { textStatus: 'REJECTED' },
+    });
+    expect(count).toBe(2);
+  });
+
+  it('approves a batch by setting APPROVED', async () => {
+    txFindMany.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
+
+    await repo.moderateMany(['a', 'b'], 'approve');
+
+    expect(txUpdateMany).toHaveBeenCalledWith({
+      where: { id: { in: ['a', 'b'] } },
+      data: { textStatus: 'APPROVED' },
+    });
+  });
+
+  it('still aborts the whole batch on an unknown id', async () => {
+    txFindMany.mockResolvedValue([{ id: 'a' }]);
+
+    await expect(repo.moderateMany(['a', 'gone'], 'reject')).rejects.toThrow(/gone/);
+    expect(txUpdateMany).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The author's own row (TASK-586) — the two lookups and the one write behind
+ * «дописати текст до вже поставленої оцінки» (owner's decision 5).
+ *
+ * Prisma is mocked, so what is pinned is the WHERE SHAPE, and here that shape IS
+ * the authorisation. `findOwnById` carries the author id as a FILTER rather than
+ * fetching the row and comparing afterwards; drop that arm and the endpoint
+ * happily lets anyone rewrite anyone's review, with nothing on screen to show for
+ * it.
+ */
+describe("ReviewRepository — the author's own review (TASK-586)", () => {
+  let repo: ReviewRepository;
+
+  const reviewFindFirst = jest.fn();
+  const reviewUpdate = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: { findFirst: reviewFindFirst, update: reviewUpdate },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    reviewFindFirst.mockResolvedValue(null);
+    reviewUpdate.mockResolvedValue({ id: 'review-1' });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('finds the caller’s own row for a product, and skips a hidden one', async () => {
+    await repo.findOwnByProduct('user-1', 'product-1');
+
+    expect(reviewFindFirst).toHaveBeenCalledWith({
+      where: { userId: 'user-1', productId: 'product-1', hiddenAt: null },
+    });
+  });
+
+  it('scopes the by-id lookup to the author, so a stranger finds nothing', async () => {
+    await repo.findOwnById('review-1', 'user-1');
+
+    expect(reviewFindFirst).toHaveBeenCalledWith({
+      where: { id: 'review-1', userId: 'user-1', hiddenAt: null },
+    });
+  });
+
+  it('writes the new text and sends it back to moderation, touching nothing else', async () => {
+    await repo.updateComment('review-1', 'Added a week later');
+
+    expect(reviewUpdate).toHaveBeenCalledWith({
+      where: { id: 'review-1' },
+      data: { comment: 'Added a week later', textStatus: 'PENDING' },
+    });
+    // An edit is a statement about the TEXT. A `rating` or `ratingVisible` in this
+    // payload would let an author move the product's score from a comment box.
+    const written = reviewUpdate.mock.calls[0][0].data;
+    expect(written).not.toHaveProperty('rating');
+    expect(written).not.toHaveProperty('ratingVisible');
+    expect(written).not.toHaveProperty('hiddenAt');
+  });
+});
+
+/**
+ * The shop's reply (TASK-587) — one per review, by the schema's `@unique` on
+ * `ReviewReply.reviewId` and by the owner's decision that there is no thread.
+ *
+ * The write is an UPSERT for a plain reason: fixing a typo in a published answer
+ * is a real need, and `create` would answer it with a unique-constraint error at
+ * best, or a second row at worst. A second row is not a lesser feature — it is a
+ * review with two shop answers and no rule about which one renders.
+ */
+describe('ReviewRepository — the shop replies once (TASK-587)', () => {
+  let repo: ReviewRepository;
+
+  const replyUpsert = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: {},
+    reviewReply: { upsert: replyUpsert },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    replyUpsert.mockResolvedValue({ id: 'reply-1' });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('upserts on the review id, so posting again REPLACES the answer', async () => {
+    await repo.upsertReply('review-1', 'staff-1', 'Дякуємо!');
+
+    expect(replyUpsert).toHaveBeenCalledWith({
+      where: { reviewId: 'review-1' },
+      create: { reviewId: 'review-1', authorUserId: 'staff-1', body: 'Дякуємо!' },
+      update: { authorUserId: 'staff-1', body: 'Дякуємо!' },
+    });
+  });
+
+  it('re-attributes a corrected answer to whoever corrected it', async () => {
+    // The `update` arm carries `authorUserId` deliberately: after an edit, the
+    // person answerable for the words on screen is the one who wrote THOSE words,
+    // not whoever opened the thread.
+    await repo.upsertReply('review-1', 'second-staffer', 'Уточнення.');
+
+    expect(replyUpsert.mock.calls[0][0].update).toEqual({
+      authorUserId: 'second-staffer',
+      body: 'Уточнення.',
+    });
+  });
+});
+
+/**
+ * What a submission records (TASK-588).
+ *
+ * Two columns arrive with the row and can never be reconstructed afterwards:
+ * `ratingVisible`, the email gate's verdict at the moment of writing, and
+ * `createdIp`, the only input the abuse signals have. Both are decided by the
+ * service and written verbatim here; what this block pins is that the write
+ * actually carries them and that `textStatus` stays the repository's own
+ * invariant rather than something a caller can set.
+ */
+describe('ReviewRepository — what a submission records (TASK-588)', () => {
+  let repo: ReviewRepository;
+
+  const reviewCreate = jest.fn();
+  const userFindUnique = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: { create: reviewCreate },
+    user: { findUnique: userFindUnique },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    reviewCreate.mockResolvedValue({ id: 'review-1' });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('writes the email gate’s verdict and the submitter’s address', async () => {
+    await repo.create({
+      userId: 'user-1',
+      productId: 'product-1',
+      rating: 5,
+      comment: 'Чудово',
+      ratingVisible: true,
+      createdIp: '203.0.113.42',
+    });
+
+    expect(reviewCreate).toHaveBeenCalledWith({
+      data: {
+        userId: 'user-1',
+        productId: 'product-1',
+        rating: 5,
+        comment: 'Чудово',
+        ratingVisible: true,
+        createdIp: '203.0.113.42',
+        // Null unless the service says the author is already withdrawn (TASK-598).
+        hiddenAt: null,
+        textStatus: 'PENDING',
+      },
+    });
+  });
+
+  it('leaves an unknown address null instead of defaulting it to anything', async () => {
+    await repo.create({
+      userId: 'user-1',
+      productId: 'product-1',
+      rating: 1,
+      ratingVisible: false,
+      createdIp: null,
+    });
+
+    expect(reviewCreate.mock.calls[0][0].data).toMatchObject({
+      createdIp: null,
+      ratingVisible: false,
+      comment: null,
+    });
+  });
+
+  it('asks the user table whether the author’s address is proven', async () => {
+    userFindUnique.mockResolvedValue({ emailVerifiedAt: new Date('2026-09-01T00:00:00.000Z') });
+
+    await expect(repo.isEmailVerified('user-1')).resolves.toBe(true);
+    expect(userFindUnique).toHaveBeenCalledWith({
+      where: { id: 'user-1' },
+      select: { emailVerifiedAt: true },
+    });
+  });
+
+  it('treats an unstamped address — and a missing user — as unproven', async () => {
+    userFindUnique.mockResolvedValueOnce({ emailVerifiedAt: null });
+    await expect(repo.isEmailVerified('user-1')).resolves.toBe(false);
+
+    // A user row that is gone must not read as "verified" by falling through a
+    // truthiness check on undefined.
+    userFindUnique.mockResolvedValueOnce(null);
+    await expect(repo.isEmailVerified('ghost')).resolves.toBe(false);
+  });
+});
+
+/**
+ * Withdrawing — and restoring — an account's whole contribution (TASK-589).
+ *
+ * One click, every row: the abuse lever from the owner's 2026-09-10 decision.
+ * Both flags move together because they answer different halves of "is this
+ * visible": `hiddenAt` hides the TEXTS (three read paths filter on it) and
+ * `ratingVisible` takes the STARS out of every average. Writing one without the
+ * other is the failure that looks completely normal on screen — the reviews
+ * vanish and the product's score does not budge.
+ */
+describe('ReviewRepository — hiding a whole account (TASK-589)', () => {
+  let repo: ReviewRepository;
+
+  const reviewUpdateMany = jest.fn();
+
+  const prismaMock = {
+    order: { findMany: jest.fn() },
+    orderItem: { findFirst: jest.fn() },
+    review: { updateMany: reviewUpdateMany },
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    reviewUpdateMany.mockResolvedValue({ count: 4 });
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [ReviewRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(ReviewRepository);
+  });
+
+  it('stamps every row of the account and stops its ratings counting', async () => {
+    const written = await repo.hideAuthorReviews('abuser-1');
+
+    expect(reviewUpdateMany).toHaveBeenCalledTimes(1);
+    const args = reviewUpdateMany.mock.calls[0][0];
+    expect(args.where).toEqual({ userId: 'abuser-1' });
+    expect(args.data.ratingVisible).toBe(false);
+    expect(args.data.hiddenAt).toBeInstanceOf(Date);
+    expect(written).toBe(4);
+  });
+
+  it('takes rows that were already hidden too, rather than only the visible ones', async () => {
+    // Re-hiding must be idempotent: a filter like `hiddenAt: null` here would
+    // leave a row whose stars were somehow flipped back on still counting, and
+    // the operator would have clicked "hide" twice to no effect.
+    await repo.hideAuthorReviews('abuser-1');
+
+    expect(reviewUpdateMany.mock.calls[0][0].where).not.toHaveProperty('hiddenAt');
+  });
+
+  it('restores the account with the rating visibility the caller decided on', async () => {
+    await repo.restoreAuthorReviews('forgiven-1', true);
+
+    expect(reviewUpdateMany).toHaveBeenCalledWith({
+      where: { userId: 'forgiven-1' },
+      data: { hiddenAt: null, ratingVisible: true },
+    });
+  });
+
+  it('can restore an account whose ratings still must not count', async () => {
+    // Un-hiding is not a licence to skip the email gate: the caller may hand back
+    // `false` for an author who has still never confirmed their address, and this
+    // must write exactly that rather than "restored, therefore visible".
+    await repo.restoreAuthorReviews('unconfirmed-1', false);
+
+    expect(reviewUpdateMany.mock.calls[0][0].data).toEqual({
+      hiddenAt: null,
+      ratingVisible: false,
+    });
   });
 });

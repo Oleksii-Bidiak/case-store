@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { Prisma, Review } from '@prisma/client';
+import { Prisma, Review, ReviewReply, ReviewTextStatus } from '@prisma/client';
 import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
 import { ReviewService } from './review.service';
 import { ReviewModerationStatus } from './dto';
@@ -18,7 +18,23 @@ const makeReview = (overrides: Partial<Review> = {}): Review => ({
   productId: PRODUCT_ID,
   rating: 5,
   comment: 'Great case!',
-  isActive: false,
+  // The submission default since TASK-585: the rating waits on the email gate,
+  // the text waits on a moderator, and the two are no longer the same question.
+  ratingVisible: false,
+  textStatus: ReviewTextStatus.PENDING,
+  hiddenAt: null,
+  createdIp: null,
+  createdAt: now,
+  updatedAt: now,
+  ...overrides,
+});
+
+/** A shop reply row as Prisma returns it — author id included, as the table has it. */
+const makeReply = (overrides: Partial<ReviewReply> = {}): ReviewReply => ({
+  id: 'reply-uuid-1',
+  reviewId: 'review-uuid-1',
+  authorUserId: 'staff-uuid-1',
+  body: 'Дякуємо! Передали ваш відгук виробнику.',
   createdAt: now,
   updatedAt: now,
   ...overrides,
@@ -32,13 +48,30 @@ const reviewRepositoryMock = {
   aggregate: jest.fn(),
   findForModeration: jest.fn(),
   findById: jest.fn(),
+  findOwnByProduct: jest.fn(),
+  findOwnById: jest.fn(),
+  updateComment: jest.fn(),
+  upsertReply: jest.fn(),
   approve: jest.fn(),
-  delete: jest.fn(),
+  rejectText: jest.fn(),
   moderateMany: jest.fn(),
   isVerifiedPurchase: jest.fn(),
   findVerifiedPurchaserIds: jest.fn(),
   findExisting: jest.fn(),
+  // TASK-588: the email gate. Whether the author's address is proven is what
+  // decides if their stars count — asked at submission, and again when a hidden
+  // account is restored.
+  isEmailVerified: jest.fn(),
+  // TASK-598: the same lever, asked at submission — hiding an account has to stop
+  // it writing NEW ratings, not merely withdraw the ones it already wrote.
+  isAuthorHidden: jest.fn(),
+  // TASK-589: the one-click account-wide lever.
+  hideAuthorReviews: jest.fn(),
+  restoreAuthorReviews: jest.fn(),
 };
+
+/** The address the submission arrived from — recorded since TASK-588. */
+const SUBMITTER_IP = '203.0.113.42';
 
 const pinoLoggerMock = {
   setContext: jest.fn(),
@@ -54,6 +87,10 @@ describe('ReviewService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // The ordinary author: nobody has withdrawn them. Stated rather than left to
+    // an undefined mock, because "not hidden" is now an input to whether a
+    // submitted rating counts.
+    reviewRepositoryMock.isAuthorHidden.mockResolvedValue(false);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -69,33 +106,139 @@ describe('ReviewService', () => {
   // ─── submitReview ───────────────────────────────────────────────────────────
 
   describe('submitReview', () => {
+    /** Every submission now carries the address it came from (TASK-588). */
+    const submit = (dto: { rating: number; comment?: string }, ip: string | null = SUBMITTER_IP) =>
+      service.submitReview(USER_ID, PRODUCT_ID, dto, ip);
+
     it('throws ConflictException when the user already reviewed the product', async () => {
       reviewRepositoryMock.findExisting.mockResolvedValue(makeReview());
 
-      await expect(service.submitReview(USER_ID, PRODUCT_ID, { rating: 4 })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(submit({ rating: 4 })).rejects.toBeInstanceOf(ConflictException);
       expect(reviewRepositoryMock.create).not.toHaveBeenCalled();
     });
 
-    it('creates a pending review (isActive = false) and returns the entity', async () => {
+    it('refuses to let a withdrawn account write itself back into the average', async () => {
+      // TASK-598. Hiding an author stamps the rows that exist at that moment and
+      // nothing asked again, so the lever did not hold: the account is not banned
+      // and not logged out, and a moderator who withdrew thirty ratings watched
+      // thirty fresh ones appear — counting on arrival, texts back in the queue.
       reviewRepositoryMock.findExisting.mockResolvedValue(null);
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      // Address proven: the email gate alone would let this one through.
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.isAuthorHidden.mockResolvedValue(true);
       reviewRepositoryMock.create.mockResolvedValue(makeReview());
 
-      const result = await service.submitReview(USER_ID, PRODUCT_ID, {
-        rating: 5,
-        comment: 'Great case!',
-      });
+      await submit({ rating: 1, comment: 'Same abuser, new review' });
+
+      const written = reviewRepositoryMock.create.mock.calls[0][0];
+      expect(written.ratingVisible).toBe(false);
+      // Stamped, not merely uncounted: `hiddenAt` is what the text paths filter
+      // on, so without it the sentence would still reach the moderation queue.
+      expect(written.hiddenAt).toBeInstanceOf(Date);
+    });
+
+    it('creates the review and returns the entity', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      const result = await submit({ rating: 5, comment: 'Great case!' });
 
       expect(reviewRepositoryMock.create).toHaveBeenCalledWith({
         userId: USER_ID,
         productId: PRODUCT_ID,
         rating: 5,
         comment: 'Great case!',
+        ratingVisible: false,
+        createdIp: SUBMITTER_IP,
+        hiddenAt: null,
       });
-      expect(result.isActive).toBe(false);
       expect(result.id).toBe('review-uuid-1');
+    });
+
+    // ── TASK-588: the email gate ─────────────────────────────────────────────
+    //
+    // The owner's decision 7: an unverified author's rating is STORED but does
+    // not count. Not refused — refusing would lose the rating for the many
+    // people who confirm later, and would tell a spammer exactly which accounts
+    // are worth verifying. Stored-and-silent is also why the flag is
+    // denormalised: the catalogue reads it on every card and cannot afford to
+    // join `users` for the answer.
+    it('counts the rating of an author whose address is proven', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview({ ratingVisible: true }));
+
+      await submit({ rating: 5 });
+
+      expect(reviewRepositoryMock.isEmailVerified).toHaveBeenCalledWith(USER_ID);
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ ratingVisible: true }),
+      );
+    });
+
+    it('stores an unconfirmed author’s rating but keeps it out of the average', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      await submit({ rating: 1 });
+
+      // Stored — the row is written, comment and all.
+      expect(reviewRepositoryMock.create).toHaveBeenCalledTimes(1);
+      // …and silent.
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ ratingVisible: false }),
+      );
+    });
+
+    it('records the address the submission came from', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      await submit({ rating: 4 }, '198.51.100.7');
+
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ createdIp: '198.51.100.7' }),
+      );
+    });
+
+    it('writes an unknown address as null rather than inventing one', async () => {
+      // `createdIp` is the input to «a run of 1★ from one address». A placeholder
+      // string would group every address-less row together and read as one very
+      // busy abuser; null means "we do not know" and is excluded by the signal.
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      await submit({ rating: 4 }, null);
+
+      expect(reviewRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ createdIp: null }),
+      );
+    });
+
+    // TASK-585: the public entity stops advertising moderation state. It used to
+    // carry `isActive`, which told the author's own browser — and anyone reading
+    // the response — that their text was queued, and told an admin's approve call
+    // nothing useful either. Moderation state now lives on the admin projection.
+    it('does not tell the storefront anything about moderation state', async () => {
+      reviewRepositoryMock.findExisting.mockResolvedValue(null);
+      reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
+      reviewRepositoryMock.create.mockResolvedValue(makeReview());
+
+      const result = await submit({ rating: 5 });
+
+      expect(result).not.toHaveProperty('isActive');
+      expect(result).not.toHaveProperty('textStatus');
+      expect(result).not.toHaveProperty('ratingVisible');
     });
 
     it('returns verifiedPurchase = true when the user has purchased the product', async () => {
@@ -103,7 +246,7 @@ describe('ReviewService', () => {
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(true);
       reviewRepositoryMock.create.mockResolvedValue(makeReview());
 
-      const result = await service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 });
+      const result = await submit({ rating: 5 });
 
       expect(result.verifiedPurchase).toBe(true);
     });
@@ -113,7 +256,7 @@ describe('ReviewService', () => {
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
       reviewRepositoryMock.create.mockResolvedValue(makeReview());
 
-      const result = await service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 });
+      const result = await submit({ rating: 5 });
 
       expect(result.verifiedPurchase).toBe(false);
     });
@@ -128,9 +271,7 @@ describe('ReviewService', () => {
         }),
       );
 
-      await expect(service.submitReview(USER_ID, PRODUCT_ID, { rating: 5 })).rejects.toBeInstanceOf(
-        ConflictException,
-      );
+      await expect(submit({ rating: 5 })).rejects.toBeInstanceOf(ConflictException);
     });
   });
 
@@ -139,7 +280,7 @@ describe('ReviewService', () => {
   describe('getApprovedReviews', () => {
     it('returns only approved reviews with aggregate and pagination meta', async () => {
       reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
-        reviews: [makeReview({ isActive: true })],
+        reviews: [makeReview({ textStatus: ReviewTextStatus.APPROVED, ratingVisible: true })],
         total: 1,
       });
       reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
@@ -149,10 +290,32 @@ describe('ReviewService', () => {
 
       expect(reviewRepositoryMock.findApprovedByProduct).toHaveBeenCalledWith(PRODUCT_ID, 1, 10);
       expect(result.data).toHaveLength(1);
-      expect(result.data[0].isActive).toBe(true);
+      expect(result.data[0]).not.toHaveProperty('isActive');
       expect(result.aggregate.ratingAverage).toBe(5);
       expect(result.aggregate.ratingCount).toBe(1);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 10, totalPages: 1 });
+    });
+
+    // TASK-585: the two numbers on the reviews tab are now allowed to disagree, and
+    // the owner said so explicitly — "кількість оцінок і кількість відгуків можуть
+    // відрізнятись, і це нормально". The aggregate counts ratings (star-only rows
+    // included); `meta.total` counts the texts the list can actually render. A
+    // service that quietly reconciled them would be hiding the ratings the split
+    // exists to surface.
+    it('lets the rating count exceed the number of texts on the page', async () => {
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [makeReview({ textStatus: ReviewTextStatus.APPROVED, ratingVisible: true })],
+        total: 1,
+      });
+      // Nine ratings on the product, one of them with an approved text.
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 4.4, ratingCount: 9 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
+
+      const result = await service.getApprovedReviews(PRODUCT_ID, {});
+
+      expect(result.aggregate.ratingCount).toBe(9);
+      expect(result.meta.total).toBe(1);
+      expect(result.data).toHaveLength(1);
     });
 
     // TASK-298: the badge used to be resolved with one `isVerifiedPurchase` call PER review
@@ -162,8 +325,12 @@ describe('ReviewService', () => {
       const nonBuyer = 'user-non-buyer';
       reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
         reviews: [
-          makeReview({ id: 'r-buyer', userId: buyer, isActive: true }),
-          makeReview({ id: 'r-non-buyer', userId: nonBuyer, isActive: true }),
+          makeReview({ id: 'r-buyer', userId: buyer, textStatus: ReviewTextStatus.APPROVED }),
+          makeReview({
+            id: 'r-non-buyer',
+            userId: nonBuyer,
+            textStatus: ReviewTextStatus.APPROVED,
+          }),
         ],
         total: 2,
       });
@@ -263,6 +430,45 @@ describe('ReviewService', () => {
       );
     });
 
+    // TASK-585: rejected rows survive now, so there is a third pile to look at.
+    // Without this filter the only way to review a moderation decision would be
+    // to remember it.
+    it('passes the rejected status through — those rows still exist', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({ reviews: [], total: 0 });
+
+      await service.getReviewsForModeration({ status: ReviewModerationStatus.REJECTED });
+
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'rejected',
+        1,
+        20,
+        undefined,
+      );
+    });
+
+    // TASK-585: the admin projection is where moderation state lives now that the
+    // public one has none. A queue row that cannot say whether a rating is still
+    // counting leaves the moderator unable to tell an approved text from a hidden
+    // account's approved text.
+    it('exposes the text status and the rating visibility on the queue row', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({ textStatus: ReviewTextStatus.REJECTED, ratingVisible: true }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: 'CASE-IP15P-BLK' },
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getReviewsForModeration({});
+
+      expect(result.data[0].textStatus).toBe('REJECTED');
+      expect(result.data[0].ratingVisible).toBe(true);
+      expect(result.data[0]).not.toHaveProperty('isActive');
+    });
+
     // TASK-423: the queue had no search at all. A term that reached the service
     // but not the repository would render a full, unfiltered queue — which looks
     // like "nothing matched my typo" rather than "the filter was dropped".
@@ -292,32 +498,50 @@ describe('ReviewService', () => {
 
     it('approves the review and returns the entity', async () => {
       reviewRepositoryMock.findById.mockResolvedValue(makeReview());
-      reviewRepositoryMock.approve.mockResolvedValue(makeReview({ isActive: true }));
+      reviewRepositoryMock.approve.mockResolvedValue(
+        makeReview({ textStatus: ReviewTextStatus.APPROVED }),
+      );
 
       const result = await service.approveReview('review-uuid-1');
 
       expect(reviewRepositoryMock.approve).toHaveBeenCalledWith('review-uuid-1');
-      expect(result.isActive).toBe(true);
+      expect(result.id).toBe('review-uuid-1');
     });
   });
 
-  // ─── rejectReview ─────────────────────────────────────────────────────────────
+  // ─── rejectReview (TASK-585: the rating is not collateral) ───────────────────
 
   describe('rejectReview', () => {
     it('throws NotFoundException when the review does not exist', async () => {
       reviewRepositoryMock.findById.mockResolvedValue(null);
 
       await expect(service.rejectReview('missing')).rejects.toBeInstanceOf(NotFoundException);
-      expect(reviewRepositoryMock.delete).not.toHaveBeenCalled();
+      expect(reviewRepositoryMock.rejectText).not.toHaveBeenCalled();
     });
 
-    it('hard-deletes the review when it exists', async () => {
-      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
-      reviewRepositoryMock.delete.mockResolvedValue(undefined);
+    it('marks the text REJECTED and leaves the rating exactly where it was', async () => {
+      // The whole point of TASK-585. Rejecting used to hard-delete the row, so a
+      // moderator binning one unusable sentence also removed a 5★ from the
+      // product's average — a score change nobody asked for and nothing recorded.
+      reviewRepositoryMock.findById.mockResolvedValue(
+        makeReview({ rating: 5, ratingVisible: true }),
+      );
+      reviewRepositoryMock.rejectText.mockResolvedValue(
+        makeReview({ rating: 5, ratingVisible: true, textStatus: ReviewTextStatus.REJECTED }),
+      );
 
-      await service.rejectReview('review-uuid-1');
+      const result = await service.rejectReview('review-uuid-1');
 
-      expect(reviewRepositoryMock.delete).toHaveBeenCalledWith('review-uuid-1');
+      expect(reviewRepositoryMock.rejectText).toHaveBeenCalledWith('review-uuid-1');
+      expect(result.rating).toBe(5);
+      expect(result.id).toBe('review-uuid-1');
+    });
+
+    // The destructive path is gone from the seam itself, not merely unused: a
+    // `delete` still hanging off the repository is a loaded gun for the next
+    // person who reads "reject" and reaches for the obvious method.
+    it('leaves the repository with no delete method to reach for', () => {
+      expect(ReviewRepository.prototype).not.toHaveProperty('delete');
     });
   });
 
@@ -333,7 +557,7 @@ describe('ReviewService', () => {
       expect(reviewRepositoryMock.moderateMany).toHaveBeenCalledWith(['a', 'b', 'c'], 'approve');
     });
 
-    it('passes reject through as reject — it is a delete, not an inverse approve', async () => {
+    it('passes reject through as reject — it is a text verdict, not an inverse approve', async () => {
       reviewRepositoryMock.moderateMany.mockResolvedValue(2);
 
       await service.moderateMany(['a', 'b'], 'reject');
@@ -349,14 +573,278 @@ describe('ReviewService', () => {
       );
     });
 
-    it('logs the destructive path with its count — this is the only record of a bulk delete', async () => {
+    // TASK-585: the log line must stop saying "deleted". Nothing is deleted any
+    // more, and a log that claims otherwise is worse than no log — it is what an
+    // operator would be shown when they ask where a review went, and it would send
+    // them looking for a row that is still sitting in the table.
+    it('records a bulk rejection without claiming anything was deleted', async () => {
       reviewRepositoryMock.moderateMany.mockResolvedValue(5);
 
       await service.moderateMany(['a', 'b', 'c', 'd', 'e'], 'reject');
 
       expect(pinoLoggerMock.info).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'reject', count: 5 }),
-        expect.stringContaining('deleted'),
+        expect.not.stringContaining('deleted'),
+      );
+    });
+  });
+
+  // ─── getOwnReview (TASK-586) ────────────────────────────────────────────────
+  //
+  // The author's own view of their own row. It exists because of the owner's
+  // decision 5 (2026-09-10): a person may come back and add text to a rating they
+  // already left — and the storefront cannot offer that without first being told
+  // there is a rating to add text to. The public list cannot answer it, because a
+  // star-only row never appears there.
+
+  describe('getOwnReview', () => {
+    it('answers null when this author has not reviewed this product', async () => {
+      reviewRepositoryMock.findOwnByProduct.mockResolvedValue(null);
+
+      await expect(service.getOwnReview(USER_ID, PRODUCT_ID)).resolves.toBeNull();
+    });
+
+    it("tells the author their own text's verdict — and nothing the moderator keeps private", async () => {
+      // `textStatus` IS the author's business: «на модерації» and «відхилено» are
+      // the two things they need told, and withholding them leaves someone
+      // re-submitting into a queue they cannot see. `hiddenAt` and `createdIp` are
+      // not: one is a moderator's lever the author must not be able to probe, the
+      // other is theirs but is kept for abuse signals, not for display.
+      reviewRepositoryMock.findOwnByProduct.mockResolvedValue(
+        makeReview({ textStatus: ReviewTextStatus.REJECTED, createdIp: '203.0.113.7' }),
+      );
+
+      const result = await service.getOwnReview(USER_ID, PRODUCT_ID);
+
+      expect(result).not.toBeNull();
+      expect(result?.textStatus).toBe(ReviewTextStatus.REJECTED);
+      expect(result?.rating).toBe(5);
+      expect(result).not.toHaveProperty('hiddenAt');
+      expect(result).not.toHaveProperty('createdIp');
+    });
+  });
+
+  // ─── updateOwnReview (TASK-586) ─────────────────────────────────────────────
+
+  describe('updateOwnReview', () => {
+    it('asks for the row BY AUTHOR, so a stranger gets a 404 and not a 403', async () => {
+      // A 403 would confirm the row exists. That turns `PATCH /api/reviews/:id`
+      // into an enumeration oracle: walk ids, keep the ones that answer 403, and
+      // you have a map of which review ids are real without ever being allowed to
+      // read one. Authorship therefore belongs in the LOOKUP, not in a check after
+      // it — a row that is not yours simply is not found.
+      reviewRepositoryMock.findOwnById.mockResolvedValue(null);
+
+      await expect(
+        service.updateOwnReview(USER_ID, 'someone-elses-review', { comment: 'mine now' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+
+      expect(reviewRepositoryMock.findOwnById).toHaveBeenCalledWith(
+        'someone-elses-review',
+        USER_ID,
+      );
+      expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
+    });
+
+    it('sends the edited text back to moderation', async () => {
+      reviewRepositoryMock.findOwnById.mockResolvedValue(
+        makeReview({ comment: null, textStatus: ReviewTextStatus.PENDING }),
+      );
+      reviewRepositoryMock.updateComment.mockResolvedValue(
+        makeReview({ comment: 'Added a week later', textStatus: ReviewTextStatus.PENDING }),
+      );
+
+      const result = await service.updateOwnReview(USER_ID, 'review-uuid-1', {
+        comment: 'Added a week later',
+      });
+
+      expect(reviewRepositoryMock.updateComment).toHaveBeenCalledWith(
+        'review-uuid-1',
+        'Added a week later',
+      );
+      expect(result.comment).toBe('Added a week later');
+      expect(result.textStatus).toBe(ReviewTextStatus.PENDING);
+    });
+
+    it('never asks the repository to touch the rating', async () => {
+      // The rating is a one-shot act (owner's decision 5 covers the TEXT only).
+      // Letting an edit move it would reopen exactly the abuse surface the whole
+      // task exists to close: rate five stars, wait for the average to move, edit
+      // to one. The service must not even have the words to ask.
+      reviewRepositoryMock.findOwnById.mockResolvedValue(makeReview({ rating: 5 }));
+      reviewRepositoryMock.updateComment.mockResolvedValue(makeReview({ rating: 5 }));
+
+      await service.updateOwnReview(USER_ID, 'review-uuid-1', { comment: 'still great' });
+
+      const args = reviewRepositoryMock.updateComment.mock.calls[0];
+      expect(args).toEqual(['review-uuid-1', 'still great']);
+    });
+
+    it('treats an absent comment as no edit at all, rather than as an erasure', async () => {
+      // `{}` is what a half-wired form sends. Reading it as «clear the text» would
+      // wipe a published comment AND drop it back into the moderation queue, and
+      // the author would have no copy of what they wrote.
+      const existing = makeReview({
+        comment: 'Published months ago',
+        textStatus: ReviewTextStatus.APPROVED,
+      });
+      reviewRepositoryMock.findOwnById.mockResolvedValue(existing);
+
+      const result = await service.updateOwnReview(USER_ID, 'review-uuid-1', {});
+
+      expect(reviewRepositoryMock.updateComment).not.toHaveBeenCalled();
+      expect(result.comment).toBe('Published months ago');
+      expect(result.textStatus).toBe(ReviewTextStatus.APPROVED);
+    });
+  });
+
+  // ─── replyToReview (TASK-587) ───────────────────────────────────────────────
+  //
+  // Owner's decision, 2026-09-14: only the SHOP replies, anyone holding
+  // `reviews:write` may write on its behalf, there is no author thread, and the
+  // customer byline stays «Покупець».
+
+  describe('replyToReview', () => {
+    it('throws NotFoundException when the review does not exist', async () => {
+      reviewRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(
+        service.replyToReview('missing', 'staff-uuid-1', { body: 'Дякуємо!' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
+      expect(reviewRepositoryMock.upsertReply).not.toHaveBeenCalled();
+    });
+
+    it('records WHO at the shop wrote it', async () => {
+      // Accountability, not attribution: the customer is answered by the shop, but
+      // somebody has to be answerable internally for what the shop said.
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+      reviewRepositoryMock.upsertReply.mockResolvedValue(makeReply());
+
+      await service.replyToReview('review-uuid-1', 'staff-uuid-1', { body: 'Дякуємо!' });
+
+      expect(reviewRepositoryMock.upsertReply).toHaveBeenCalledWith(
+        'review-uuid-1',
+        'staff-uuid-1',
+        'Дякуємо!',
+      );
+    });
+
+    it('returns the text and the date, and nothing that names a person', async () => {
+      // The storefront renders the SHOP. Leaking `authorUserId` here is how a
+      // later "improvement" ends up putting an employee's name under a review.
+      reviewRepositoryMock.findById.mockResolvedValue(makeReview());
+      reviewRepositoryMock.upsertReply.mockResolvedValue(makeReply());
+
+      const result = await service.replyToReview('review-uuid-1', 'staff-uuid-1', {
+        body: 'Дякуємо!',
+      });
+
+      expect(result.body).toBe('Дякуємо! Передали ваш відгук виробнику.');
+      expect(result.createdAt).toEqual(now);
+      expect(result).not.toHaveProperty('authorUserId');
+      expect(result).not.toHaveProperty('authorUser');
+    });
+  });
+
+  // ─── the reply on the read paths (TASK-587) ─────────────────────────────────
+
+  describe('the shop reply as customers and moderators see it', () => {
+    it('hangs the reply under the review on the public list', async () => {
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [{ ...makeReview({ textStatus: ReviewTextStatus.APPROVED }), reply: makeReply() }],
+        total: 1,
+      });
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
+
+      const result = await service.getApprovedReviews(PRODUCT_ID, {});
+
+      expect(result.data[0].reply).toEqual({
+        body: 'Дякуємо! Передали ваш відгук виробнику.',
+        createdAt: now,
+      });
+    });
+
+    it('says null rather than omitting the field when nobody has answered', async () => {
+      // An absent key and an explicit null read the same in JSON but not in
+      // TypeScript, and the storefront branches on this to decide whether to
+      // render the reply block at all.
+      reviewRepositoryMock.findApprovedByProduct.mockResolvedValue({
+        reviews: [{ ...makeReview({ textStatus: ReviewTextStatus.APPROVED }), reply: null }],
+        total: 1,
+      });
+      reviewRepositoryMock.aggregate.mockResolvedValue({ ratingAverage: 5, ratingCount: 1 });
+      reviewRepositoryMock.findVerifiedPurchaserIds.mockResolvedValue(new Set<string>());
+
+      const result = await service.getApprovedReviews(PRODUCT_ID, {});
+
+      expect(result.data[0].reply).toBeNull();
+    });
+
+    it('shows the moderation queue what was already answered', async () => {
+      // Without it the panel offers "reply" on rows that already carry one, and an
+      // operator working a backlog silently overwrites a colleague's answer.
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview(),
+            user: { email: 'olena@example.com' },
+            product: { name: 'Чохол', sku: 'CASE-1' },
+            reply: makeReply(),
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getReviewsForModeration({});
+
+      expect(result.data[0].reply).toEqual({
+        body: 'Дякуємо! Передали ваш відгук виробнику.',
+        createdAt: now,
+      });
+    });
+  });
+
+  // ─── hiding a whole account (TASK-589) ──────────────────────────────────────
+
+  /**
+   * The one-click lever from the owner's 2026-09-10 decision: everything this
+   * account ever wrote, gone, and back again.
+   *
+   * The interesting half is the RESTORE. `ratingVisible` is a denormalised flag
+   * folding TWO gates — the moderator's `hiddenAt` and the author's confirmed
+   * address — so lifting the first does not license the second. Setting it
+   * unconditionally true on restore would hand an unconfirmed account a counting
+   * rating it never earned, and the route to it would be an ordinary un-ban.
+   */
+  describe('hideAuthor / unhideAuthor', () => {
+    it('withdraws every review of the account in one call', async () => {
+      reviewRepositoryMock.hideAuthorReviews.mockResolvedValue(7);
+
+      await expect(service.hideAuthor('abuser-1')).resolves.toBe(7);
+      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1');
+    });
+
+    it('restores a confirmed author with their ratings counting again', async () => {
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(7);
+
+      await expect(service.unhideAuthor('forgiven-1')).resolves.toBe(7);
+      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith('forgiven-1', true);
+    });
+
+    it('restores an unconfirmed author WITHOUT counting their ratings', async () => {
+      // Un-hiding lifts the moderator's verdict; it says nothing about whether
+      // the address was ever proven. Writing `true` here would make un-banning a
+      // way around the email gate, and nothing on any screen would say so.
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
+      reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(3);
+
+      await service.unhideAuthor('unconfirmed-1');
+
+      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith(
+        'unconfirmed-1',
+        false,
       );
     });
   });

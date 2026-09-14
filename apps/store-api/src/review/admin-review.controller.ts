@@ -1,12 +1,12 @@
 import {
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
   Patch,
+  Post,
   Query,
   UseGuards,
 } from '@nestjs/common';
@@ -21,9 +21,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ReviewService } from './review.service';
-import { ReviewEntity, AdminReviewEntity } from './entities';
-import { AdminReviewQueryDto, BulkReviewModerationDto } from './dto';
+import { ReviewEntity, AdminReviewEntity, ReviewReplyEntity } from './entities';
+import { AdminReviewQueryDto, BulkReviewModerationDto, CreateReviewReplyDto } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { CurrentUser } from '../auth';
 
 /**
  * Pagination metadata for the admin moderation queue.
@@ -64,26 +65,57 @@ class AdminReviewResponseEnvelope {
 /**
  * Admin-only review moderation endpoints, gated on `reviews:moderate` (TASK-334).
  *
- *   GET    /api/admin/reviews             — moderation queue (pending|approved)
- *   PATCH  /api/admin/reviews/:id/approve — publish a pending review
- *   DELETE /api/admin/reviews/:id         — reject (hard delete)
+ *   GET   /api/admin/reviews             — queue (pending|approved|rejected)
+ *   PATCH /api/admin/reviews/:id/approve — publish a review's text
+ *   PATCH /api/admin/reviews/:id/reject  — turn down a review's text
+ *   POST  /api/admin/reviews/:id/reply   — answer as the shop (`reviews:write`)
+ *
+ * Every moderation action here is about the TEXT (TASK-585). None of them touches
+ * the rating, which counts on its own the moment it is given. The reply (TASK-587)
+ * is not moderation at all — it is the shop speaking — and carries its own
+ * permission, which overrides the controller's.
  *
  * Separate from the public {@link import('./review.controller').ReviewController}
  * — mirrors the AdminOrderController vs OrderController split.
  */
 /**
  * What a bulk moderation call reports back: how many rows the database actually
- * wrote. For `reject` that is how many were DELETED — which is the number the
- * operator's confirmation should quote, not the number they asked for.
+ * wrote — which is the number the operator's confirmation should quote, not the
+ * number they asked for.
  */
 class BulkReviewModerationResult {
-  @ApiProperty({ description: 'Reviews written (for reject, deleted)', example: 7 })
+  @ApiProperty({ description: 'Review texts written', example: 7 })
   updatedCount!: number;
 }
 
 class BulkReviewModerationResponse {
   @ApiProperty({ type: BulkReviewModerationResult })
   data!: BulkReviewModerationResult;
+}
+
+/**
+ * What hiding or restoring a whole account reports back (TASK-589): the number of
+ * reviews the database actually wrote. Same shape and same reasoning as the bulk
+ * moderation result above — the operator's confirmation should quote what
+ * happened, not what was intended.
+ */
+class AuthorModerationResult {
+  @ApiProperty({ description: 'Reviews written', example: 12 })
+  updatedCount!: number;
+}
+
+class AuthorModerationResponse {
+  @ApiProperty({ type: AuthorModerationResult })
+  data!: AuthorModerationResult;
+}
+
+/**
+ * Response envelope for the shop's reply — the same two fields a customer sees,
+ * so an operator can never be shown an author name the storefront does not have.
+ */
+class ReviewReplyResponseEnvelope {
+  @ApiProperty({ type: ReviewReplyEntity })
+  data!: ReviewReplyEntity;
 }
 
 @ApiTags('Reviews')
@@ -95,6 +127,10 @@ class BulkReviewModerationResponse {
   AdminReviewResponseEnvelope,
   BulkReviewModerationResult,
   BulkReviewModerationResponse,
+  AuthorModerationResult,
+  AuthorModerationResponse,
+  ReviewReplyEntity,
+  ReviewReplyResponseEnvelope,
 )
 @Controller('admin/reviews')
 @UseGuards(PermissionGuard)
@@ -105,8 +141,9 @@ export class AdminReviewController {
   /**
    * GET /api/admin/reviews
    *
-   * Paginated moderation queue. `status=pending` (default) lists submissions
-   * awaiting approval; `status=approved` lists already-published reviews.
+   * Paginated moderation queue. `status=pending` (default) lists texts awaiting a
+   * verdict, `status=approved` the published ones, `status=rejected` the turned-down
+   * ones — a pile that only exists because rejecting stopped deleting (TASK-585).
    */
   @Get()
   @ApiBearerAuth('access-token')
@@ -114,7 +151,11 @@ export class AdminReviewController {
     summary: 'List reviews for moderation (admin)',
     operationId: 'adminReviewControllerList',
   })
-  @ApiQuery({ name: 'status', required: false, description: 'Filter: pending | approved' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter: pending | approved | rejected',
+  })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (1-based)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 100)' })
   @ApiQuery({
@@ -136,14 +177,14 @@ export class AdminReviewController {
   /**
    * PATCH /api/admin/reviews/moderate
    *
-   * Approve or reject many reviews at once (TASK-356) — the per-row buttons
+   * Approve or reject many review TEXTS at once (TASK-356) — the per-row buttons
    * below, applied to the operator's selection, in one transaction.
    *
-   * **`action: "reject"` DELETES.** It is the bulk form of `DELETE :id`, which
-   * hard-deletes so the author's unique `(userId, productId)` slot is freed.
-   * That is why the payload names the action instead of carrying an `isActive`
-   * boolean: a flag would have made an irreversible operation look like a
-   * toggle, and the admin UI gates it behind a count-bearing confirmation.
+   * `reject` no longer deletes (TASK-585): it writes `textStatus = REJECTED` and
+   * leaves every rating counting. The payload still names the action rather than
+   * carrying a boolean, because approve and reject are two verdicts among three
+   * states, not two ends of one switch — `PENDING` is the third and no action
+   * returns to it.
    *
    * DECLARED BEFORE the `:id` routes. `moderate` is one segment and `:id/approve`
    * is two, so nothing shadows it today — but that holds only until someone adds
@@ -161,7 +202,7 @@ export class AdminReviewController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Number of reviews written (for `reject`, deleted)',
+    description: 'Number of review texts written',
     type: BulkReviewModerationResponse,
   })
   @ApiResponse({ status: 400, description: 'Validation error — empty, oversized or non-UUID ids' })
@@ -170,6 +211,81 @@ export class AdminReviewController {
   async moderateMany(@Body() dto: BulkReviewModerationDto): Promise<BulkReviewModerationResponse> {
     const updatedCount = await this.reviewService.moderateMany(dto.ids, dto.action);
 
+    return { data: { updatedCount } };
+  }
+
+  /**
+   * POST /api/admin/reviews/authors/:userId/hide
+   *
+   * Withdraw an account's WHOLE contribution — every rating and every text — in
+   * one click (TASK-589, the owner's 2026-09-10 decision).
+   *
+   * The per-row buttons below answer a different question: "is this sentence
+   * publishable?". Against a PERSON they are the wrong instrument — thirty
+   * ratings cost thirty clicks, and the ratings are not in the moderation queue
+   * at all, so the screen the operator is working does not show them.
+   *
+   * DECLARED BEFORE the `:id` routes, for the reason spelled out on
+   * `@Patch('moderate')`. `authors/:userId/hide` is three segments and `:id/reply`
+   * is two, so nothing shadows it today — but that holds only until somebody adds
+   * a `@Post(':id/:action')`, and the failure would then read as a 404 about a
+   * review that exists.
+   *
+   * Inherits the controller's `reviews:moderate`: withdrawing somebody's
+   * contribution is a judgement about their words, which is exactly what that
+   * permission is for — unlike the reply below, where the shop speaks in its own
+   * name.
+   */
+  @Post('authors/:userId/hide')
+  // 200, not the POST default of 201: nothing is created, and the honest answer
+  // is how many rows were written.
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Hide every review of one account (admin)',
+    operationId: 'adminReviewControllerHideAuthor',
+  })
+  @ApiParam({ name: 'userId', description: 'Author UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Reviews withdrawn — ratings and texts alike',
+    type: AuthorModerationResponse,
+  })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Forbidden — reviews:moderate required' })
+  async hideAuthor(@Param('userId') userId: string): Promise<AuthorModerationResponse> {
+    const updatedCount = await this.reviewService.hideAuthor(userId);
+    return { data: { updatedCount } };
+  }
+
+  /**
+   * POST /api/admin/reviews/authors/:userId/unhide
+   *
+   * Give an account its contribution back (TASK-589).
+   *
+   * NOT a symmetric undo of the ratings. `hiddenAt` is cleared unconditionally,
+   * but whether the stars count again is decided by re-asking the email gate:
+   * `ratingVisible` folds both gates, and this route lifts only the moderator's.
+   * See {@link ReviewService.unhideAuthor}.
+   */
+  @Post('authors/:userId/unhide')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Restore every review of one account (admin)',
+    operationId: 'adminReviewControllerUnhideAuthor',
+  })
+  @ApiParam({ name: 'userId', description: 'Author UUID' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Reviews restored; their ratings count again only if the author’s address is confirmed',
+    type: AuthorModerationResponse,
+  })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  @ApiResponse({ status: 403, description: 'Forbidden — reviews:moderate required' })
+  async unhideAuthor(@Param('userId') userId: string): Promise<AuthorModerationResponse> {
+    const updatedCount = await this.reviewService.unhideAuthor(userId);
     return { data: { updatedCount } };
   }
 
@@ -194,20 +310,93 @@ export class AdminReviewController {
   }
 
   /**
-   * DELETE /api/admin/reviews/:id
+   * PATCH /api/admin/reviews/:id/reject
    *
-   * Reject a review by hard-deleting it (frees the unique slot so the author may
-   * re-submit). Returns 204 No Content.
+   * Turn down a review's TEXT. The row stays and the rating keeps counting
+   * (TASK-585).
+   *
+   * Was `DELETE /api/admin/reviews/:id`. The verb had to change with the
+   * behaviour: a DELETE that leaves the row in place is a lie to every client that
+   * reads the method, and this one would be read by an admin panel deciding
+   * whether to warn the operator that something is about to be destroyed.
+   *
+   * `operationId` is deliberately unchanged, so the generated frontend hook keeps
+   * its name and the panel's call site is a verb/URL change rather than a rename.
    */
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @Patch(':id/reject')
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Reject a review (admin)', operationId: 'adminReviewControllerReject' })
+  @ApiOperation({
+    summary: 'Reject a review text (admin)',
+    operationId: 'adminReviewControllerReject',
+  })
   @ApiParam({ name: 'id', description: 'Review UUID' })
-  @ApiResponse({ status: 204, description: 'Review rejected (deleted)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Review text rejected; the rating is untouched',
+    type: AdminReviewResponseEnvelope,
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   @ApiResponse({ status: 404, description: 'Review not found' })
-  async reject(@Param('id') id: string): Promise<void> {
-    await this.reviewService.rejectReview(id);
+  async reject(@Param('id') id: string): Promise<AdminReviewResponseEnvelope> {
+    const review = await this.reviewService.rejectReview(id);
+    return { data: review };
+  }
+
+  /**
+   * POST /api/admin/reviews/:id/reply
+   *
+   * The shop answers a review (TASK-587, owner's decision of 2026-09-14). Only the
+   * shop answers — there is no author thread — and the customer byline under the
+   * review stays «Покупець».
+   *
+   * UPSERT, NOT APPEND. One reply per review, enforced by the `@unique` on
+   * `ReviewReply.reviewId`. Posting again REPLACES the text, because correcting a
+   * published answer is an ordinary need and a second row would be a review with
+   * two shop answers and no rule about which one renders.
+   *
+   * `authorUserId` is stamped from the acting admin FOR ACCOUNTABILITY and is not
+   * shown to customers — {@link ReviewReplyEntity} carries the body and the date
+   * and nothing else. This is not an oversight to be "fixed" by rendering the
+   * name: the storefront speaks as the shop, deliberately.
+   *
+   * ITS OWN PERMISSION, overriding the controller's. `PermissionGuard` treats a
+   * handler-level `@RequirePermission` as a full override of the class-level one,
+   * so this route needs `reviews:write` and does NOT accept `reviews:moderate`.
+   * The split is the point: moderating is a judgement about somebody else's
+   * sentence, replying is the business speaking in public.
+   *
+   * ROUTE ORDER: a POST, and the only one on this controller, so nothing can
+   * shadow it today. It is still declared among the `:id` routes rather than
+   * above them for the reason spelled out on `@Patch('moderate')` — a future
+   * `@Post(':id')` added ABOVE this line would swallow `/:id/reply`, and the
+   * failure would read as a malformed-UUID complaint rather than a routing bug.
+   */
+  @Post(':id/reply')
+  // 200, not the POST default of 201: on the second call this replaces an answer
+  // that already exists, and "Created" would be the wrong word for it half the
+  // time. One status for one operation the operator cannot tell apart.
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('reviews:write')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Reply to a review as the shop (admin)',
+    operationId: 'adminReviewControllerReply',
+  })
+  @ApiParam({ name: 'id', description: 'Review UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Reply saved — replacing the previous one if there was any',
+    type: ReviewReplyResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Validation error — empty or oversized reply' })
+  @ApiResponse({ status: 403, description: 'Forbidden — reviews:write required' })
+  @ApiResponse({ status: 404, description: 'Review not found' })
+  async reply(
+    @Param('id') id: string,
+    @CurrentUser('id') adminUserId: string,
+    @Body() dto: CreateReviewReplyDto,
+  ): Promise<ReviewReplyResponseEnvelope> {
+    const saved = await this.reviewService.replyToReview(id, adminUserId, dto);
+    return { data: saved };
   }
 }

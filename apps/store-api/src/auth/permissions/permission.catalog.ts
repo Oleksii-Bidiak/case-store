@@ -108,6 +108,21 @@ export const PERMISSIONS = [
   { key: 'carousels:write', zone: PERMISSION_ZONES.CONTENT, label: 'Каруселі головної' },
   { key: 'faq:write', zone: PERMISSION_ZONES.CONTENT, label: 'FAQ' },
   { key: 'reviews:moderate', zone: PERMISSION_ZONES.CONTENT, label: 'Модерувати відгуки' },
+  // Deliberately NOT folded into `reviews:moderate` (TASK-591). Moderating is a
+  // judgement about somebody ELSE's sentence — publish it or do not. Replying is
+  // the shop SPEAKING, under its own name, on a public page, in an answer no
+  // second person reads before a customer does. Those are different amounts of
+  // trust, and an owner who hands out the first should not silently be handing
+  // out the second. Denied by default like every new key, so ticking it is a
+  // deliberate act.
+  //
+  // And deliberately WITHOUT the data migration `media:read`/`media:write` carry
+  // below: those two backfill because they carved an capability out of keys
+  // people already held, so a silent backfill preserves what an operator could
+  // do yesterday. Replying to a customer in public is something nobody could do
+  // yesterday. There is nothing to preserve, so granting it is the owner's call
+  // (TASK-597).
+  { key: 'reviews:write', zone: PERMISSION_ZONES.CONTENT, label: 'Відповідати на відгуки' },
   // The media library (TASK-441). Two keys, because reading and writing really
   // are different capabilities here: the picker embedded in every content form
   // needs to LIST assets, while uploading, retagging and deleting them is the

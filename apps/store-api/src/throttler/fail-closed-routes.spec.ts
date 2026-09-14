@@ -6,7 +6,9 @@ import { OrderController } from '../order/order.controller';
 import { LiqPayWebhookController } from '../payment/liqpay-webhook.controller';
 import { ProductController } from '../product/product.controller';
 import { ReviewController } from '../review/review.controller';
+import { ReviewUpdateController } from '../review/review-update.controller';
 import { FAIL_CLOSED_THROTTLE_KEY } from './fail-closed-throttle.decorator';
+import { REVIEW_SUBMISSION_THROTTLE_KEY } from './review-submission-throttle.decorator';
 
 /**
  * TASK-401 — WHICH routes refuse to be served without a working rate limiter.
@@ -32,6 +34,11 @@ describe('Fail-closed route classification', () => {
       ['POST /api/auth/login', AuthController.prototype.login],
       ['POST /api/auth/password-reset/request', AuthController.prototype.requestPasswordReset],
       ['POST /api/products/:productId/reviews', ReviewController.prototype.submit],
+      // TASK-586. Editing a review re-queues its text for moderation, so an
+      // uncapped PATCH floods exactly the same backlog as an uncapped POST — and
+      // does it from ONE review row, which the `@@unique([userId, productId])`
+      // guard on submission cannot help with.
+      ['PATCH /api/reviews/:id', ReviewUpdateController.prototype.update],
       ['POST /api/orders', OrderController.prototype.createOrder],
       ['POST /api/newsletter/subscribe', NewsletterController.prototype.subscribe],
       ['POST /api/newsletter/unsubscribe', NewsletterController.prototype.unsubscribe],
@@ -60,5 +67,40 @@ describe('Fail-closed route classification', () => {
     it('an authenticated non-public write is not fail-closed', () => {
       expect(isFailClosed(OrderController.prototype.cancelOrder)).toBeUndefined();
     });
+  });
+});
+
+/**
+ * TASK-588 — WHICH route the two review buckets actually count.
+ *
+ * The buckets themselves are exercised end to end in
+ * `test/rate-limit-reviews.e2e-spec.ts`, but against a probe controller: that
+ * suite would stay green with the decorator missing from the real route, which is
+ * the same blind spot the fail-closed classification above exists to cover. The
+ * failure mode is identical too — nothing errors, nothing logs, the five-an-hour
+ * cap is simply not there.
+ *
+ * The opposite direction matters as much. The marker is an opt-in to a
+ * FIVE-AN-HOUR limit; pasted onto any other route it would look like ordinary
+ * hardening and behave like an outage.
+ */
+const isReviewSubmission = (handler: unknown): unknown =>
+  Reflect.getMetadata(REVIEW_SUBMISSION_THROTTLE_KEY, handler as object);
+
+describe('Review-submission throttle classification (TASK-588)', () => {
+  it('POST /api/products/:productId/reviews opts into the account and address buckets', () => {
+    expect(isReviewSubmission(ReviewController.prototype.submit)).toBe(true);
+  });
+
+  it('the author’s own edit does NOT — an edit creates no rating', () => {
+    // The owner's rule is about CREATING ratings. `PATCH /api/reviews/:id` keeps
+    // the ordinary `default` throttle: it re-queues a text for moderation (which
+    // is why it is fail-closed above) but can never add a star to an average.
+    expect(isReviewSubmission(ReviewUpdateController.prototype.update)).toBeUndefined();
+  });
+
+  it('no ordinary route is quietly capped at five an hour', () => {
+    expect(isReviewSubmission(ProductController.prototype.findAll)).toBeUndefined();
+    expect(isReviewSubmission(OrderController.prototype.createOrder)).toBeUndefined();
   });
 });

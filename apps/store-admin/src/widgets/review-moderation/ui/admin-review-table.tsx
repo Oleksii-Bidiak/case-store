@@ -14,9 +14,12 @@ import {
 } from "@/entities/review";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import { useReviewBulkModeration } from "@/features/review-bulk-moderation";
+import { ReviewReplyAction } from "@/features/review-reply";
+import { ReviewAuthorModerationAction } from "@/features/review-author-moderation";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
 import { formatDate } from "@/shared/lib";
 import {
+  Badge,
   BulkActionsBar,
   Button,
   Checkbox,
@@ -73,11 +76,61 @@ function truncate(value: string | null | undefined): string {
 }
 
 /**
+ * How the queue names a reviewer: the email's local-part, never the address.
+ *
+ * Module-level and used by every call site, because the queue names the same
+ * person in five places — the row label, the selection checkbox, the author
+ * cell, the live-region announcement and the author-moderation confirm — and
+ * four of them used to inline `split("@")[0]` themselves. A confirm dialog that
+ * asks about «olena» while the row above it reads «olena@example.com» is a
+ * dialog the operator has to stop and reconcile before they can answer it.
+ */
+function authorOf(email: string): string {
+  return email.split("@")[0];
+}
+
+/**
+ * The queue the URL asks for, defaulting to the one an absent param returns.
+ *
+ * Reads the generated enum instead of listing the values here: the filter is
+ * built from the same source below, so a fourth verdict added by the API becomes
+ * a tab that WORKS the moment someone adds its label, rather than one that
+ * silently serves the pending queue under a rejected chip.
+ */
+function resolveStatus(raw: string | null): AdminReviewControllerListStatus {
+  const known = Object.values(AdminReviewControllerListStatus);
+  return known.includes(raw as AdminReviewControllerListStatus)
+    ? (raw as AdminReviewControllerListStatus)
+    : AdminReviewControllerListStatus.pending;
+}
+
+/**
  * AdminReviewTable — moderation queue for product reviews. The status filter
- * (`?status=pending|approved`, default `pending`), the search (`?search=`), the
- * page (`?page=`) and the page size (`?limit=`) live in the URL. Pending rows
- * expose Approve / Reject actions; approved rows are read-only. Mutations
- * invalidate the list so the queue refreshes in place.
+ * (`?status=pending|approved|rejected`, default `pending`), the search
+ * (`?search=`), the page (`?page=`) and the page size (`?limit=`) live in the
+ * URL. Mutations invalidate the list so the queue refreshes in place.
+ *
+ * ── TASK-446: three queues, and rejecting is no longer a delete ──────────────
+ * `Review.isActive` is gone. The TEXT now carries a three-value `textStatus` and
+ * the RATING carries its own `ratingVisible`, and the two are independent.
+ * «Відхилити» used to call `DELETE /admin/reviews/:id`, which hard-deleted the
+ * row — taking the rating out of the product's average and freeing the author's
+ * `(userId, productId)` slot. It now calls `PATCH …/:id/reject`, which marks the
+ * text REJECTED and leaves the rating counting; the author rewrites their own
+ * text from the storefront rather than re-submitting a fresh review.
+ *
+ * That makes REJECTED a state a row KEEPS, so there are three queues where there
+ * were two — and the per-row actions can no longer be hard-coded to `pending`.
+ * Each tab offers what is actually useful on it: approve on `rejected` (a
+ * moderator changing their mind — the case the hard delete made impossible),
+ * reject on `approved`, both on `pending`. An action that is already the row's
+ * state is not offered, because clicking it changes nothing the operator can
+ * see and reads as a broken button.
+ *
+ * Row SELECTION stays on `pending` alone. Bulk is a triage tool for the queue
+ * that accumulates; on the settled tabs the useful action is per-row and a
+ * checkbox column whose bar offers the one verdict the tab already has would be
+ * noise.
  *
  * ── TASK-423: the queue had no search at all ────────────────────────────────
  * Triaging a backlog meant paging through it, and "what did this customer write
@@ -111,10 +164,11 @@ function AdminReviewTableView() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
-  const statusParam =
-    searchParams.get("status") === AdminReviewControllerListStatus.approved
-      ? AdminReviewControllerListStatus.approved
-      : AdminReviewControllerListStatus.pending;
+  // Three values now, so this reads the enum rather than testing for one of
+  // them. An unrecognised `?status=` still falls back to `pending` — the queue
+  // an absent param really returns — but «rejected» must NOT land there, or the
+  // chip would say one queue while the rows came from another.
+  const statusParam = resolveStatus(searchParams.get("status"));
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
@@ -133,6 +187,11 @@ function AdminReviewTableView() {
   const reviews = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
   const isPending = statusParam === AdminReviewControllerListStatus.pending;
+  // What each tab is FOR, rather than one hard-coded queue. Approving an already
+  // approved text, or re-rejecting a rejected one, is a button that changes
+  // nothing visible — which reads as a broken button, not as a no-op.
+  const canApprove = statusParam !== AdminReviewControllerListStatus.approved;
+  const canReject = statusParam !== AdminReviewControllerListStatus.rejected;
 
   const invalidateList = () => {
     void queryClient.invalidateQueries({
@@ -182,6 +241,11 @@ function AdminReviewTableView() {
           value: AdminReviewControllerListStatus.approved,
           label: dict.reviews.filterApproved,
         },
+        // TASK-446: a queue that could not exist while rejecting was a delete.
+        {
+          value: AdminReviewControllerListStatus.rejected,
+          label: dict.reviews.filterRejected,
+        },
       ],
       // A link someone shared may spell the default out (`?status=pending`).
       // The rows are the same either way, so the chip must read as the filter it
@@ -198,7 +262,6 @@ function AdminReviewTableView() {
   // buttons: approved rows are read-only here, and a checkbox column with
   // nothing to apply to it is worse than no column.
   const selectableIds = isPending ? reviews.map((review) => review.id) : [];
-  const authorOf = (email: string) => email.split("@")[0];
   const reviewById = new Map(reviews.map((review) => [review.id, review]));
 
   const selection = useRowSelection({
@@ -313,11 +376,12 @@ function AdminReviewTableView() {
                 <TableHead>{dict.reviews.colRating}</TableHead>
                 <TableHead>{dict.reviews.colComment}</TableHead>
                 <TableHead>{dict.reviews.colDate}</TableHead>
-                {isPending && (
-                  <TableHead className="text-right">
-                    {dict.common.actions}
-                  </TableHead>
-                )}
+                {/* Always present since TASK-446: reply and author-moderation
+                    live here on every tab, and the verdict buttons vary by tab
+                    rather than by queue membership. */}
+                <TableHead className="text-right">
+                  {dict.common.actions}
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -332,7 +396,7 @@ function AdminReviewTableView() {
                     key={review.id}
                     rowLabel={dict.reviews.rowAria(
                       review.productName,
-                      review.userEmail.split("@")[0],
+                      authorOf(review.userEmail),
                     )}
                     data-state={
                       selection.isSelected(review.id) ? "selected" : undefined
@@ -349,7 +413,7 @@ function AdminReviewTableView() {
                         disabled={bulk.isPending || busy}
                         label={dict.reviews.bulk.selectRow(
                           review.productName,
-                          review.userEmail.split("@")[0],
+                          authorOf(review.userEmail),
                         )}
                       />
                     )}
@@ -385,16 +449,40 @@ function AdminReviewTableView() {
                       label={dict.reviews.colAuthor}
                       className="text-sm text-muted-foreground"
                     >
-                      {review.userEmail.split("@")[0]}
+                      {authorOf(review.userEmail)}
                     </TableCell>
                     <TableCell label={dict.reviews.colRating}>
-                      <ReviewStars rating={review.rating} />
+                      <div className="flex flex-col items-start gap-1">
+                        <ReviewStars rating={review.rating} />
+                        {/* TASK-446: `ratingVisible` folds a moderator's hide and
+                            an unconfirmed email into one flag, and the row cannot
+                            tell which. It reports the EFFECT, which is true either
+                            way — without it a moderator reads a 1★ and assumes it
+                            is dragging the average down when it may not count at
+                            all. */}
+                        {!review.ratingVisible && (
+                          <Badge variant="secondary">
+                            {dict.reviews.ratingNotCounted}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell
                       label={dict.reviews.colComment}
                       className="max-w-xs text-sm text-muted-foreground max-md:max-w-none"
                     >
-                      {truncate(review.comment)}
+                      <div className="flex flex-col items-start gap-1">
+                        <span>{truncate(review.comment)}</span>
+                        {/* The reply is an UPSERT — answering again replaces what
+                            is published. A row that was already answered has to
+                            say so here, or a second operator overwrites the first
+                            without ever seeing there was one. */}
+                        {review.reply && (
+                          <Badge variant="secondary">
+                            {dict.reviews.replyBadge}
+                          </Badge>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell
                       label={dict.reviews.colDate}
@@ -402,12 +490,12 @@ function AdminReviewTableView() {
                     >
                       {formatDate(review.createdAt)}
                     </TableCell>
-                    {isPending && (
-                      <TableCell
-                        label={dict.common.actions}
-                        className="text-right max-md:text-left"
-                      >
-                        <div className="flex justify-end gap-2">
+                    <TableCell
+                      label={dict.common.actions}
+                      className="text-right max-md:text-left"
+                    >
+                      <div className="flex flex-wrap justify-end gap-2 max-md:justify-start">
+                        {canApprove && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -419,6 +507,8 @@ function AdminReviewTableView() {
                             )}
                             {dict.reviews.approve}
                           </Button>
+                        )}
+                        {canReject && (
                           <Button
                             variant="destructive"
                             size="sm"
@@ -430,9 +520,18 @@ function AdminReviewTableView() {
                             )}
                             {dict.reviews.reject}
                           </Button>
-                        </div>
-                      </TableCell>
-                    )}
+                        )}
+                        {/* Both render nothing without their own permission —
+                            `reviews:write` for the reply, `reviews:moderate` for
+                            the author action. */}
+                        <ReviewReplyAction review={review} />
+                        <ReviewAuthorModerationAction
+                          userId={review.userId}
+                          author={authorOf(review.userEmail)}
+                          ratingVisible={review.ratingVisible}
+                        />
+                      </div>
+                    </TableCell>
                   </TableRow>
                 );
               })}

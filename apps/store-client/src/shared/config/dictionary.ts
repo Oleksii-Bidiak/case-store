@@ -939,6 +939,9 @@ export const dict = {
     noComment: "Без коментаря",
     verifiedPurchase: "Підтверджена покупка",
     anonymous: "Покупець",
+    // The SHOP's answer under a review (TASK-446). Deliberately impersonal: the
+    // storefront shows that the shop replied, never which employee wrote it.
+    shopReply: "Відповідь магазину",
     // Submit form
     leaveReview: "Залишити відгук",
     loginToReview: "Увійдіть, щоб залишити відгук",
@@ -953,6 +956,25 @@ export const dict = {
     submitSuccess: "Дякуємо! Ваш відгук надіслано на модерацію.",
     submitError: "Не вдалося надіслати відгук. Спробуйте ще раз.",
     alreadyReviewed: "Ви вже залишили відгук на цей товар.",
+    // ── Editing the text of a rating already left (TASK-446, decision 5) ──────
+    // The rating is a one-shot act; only the TEXT can be added or rewritten, so
+    // the copy explains the locked control instead of showing a mute disabled
+    // one, and warns about re-moderation BEFORE the author presses save.
+    yourReview: "Ваш відгук",
+    ratingLocked: "Оцінку змінити не можна — редагувати можна лише текст.",
+    textLabel: "Ваш текст",
+    addTextHint:
+      "Ви вже поставили оцінку. Додайте текст — після модерації він з'явиться серед відгуків.",
+    textPending:
+      "Текст на модерації — він з'явиться у відгуках після перевірки.",
+    textApproved: "Текст опубліковано.",
+    textRejected:
+      "Текст не пройшов модерацію і не опублікований. Ви можете переписати його та надіслати ще раз.",
+    editResetsModeration: "Після збереження текст знову піде на модерацію.",
+    saveText: "Зберегти текст",
+    saving: "Зберігаємо…",
+    updateSuccess: "Дякуємо! Текст надіслано на модерацію.",
+    updateError: "Не вдалося зберегти текст. Спробуйте ще раз.",
   },
 
   addToCart: {

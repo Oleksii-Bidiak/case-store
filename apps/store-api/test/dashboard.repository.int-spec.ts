@@ -7,6 +7,7 @@ import {
   OrderStatus,
   PaymentStatus,
   OrderHistoryChangeType,
+  ReviewTextStatus,
 } from '@prisma/client';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
@@ -466,13 +467,26 @@ describe('DashboardRepository (integration)', () => {
         },
       });
 
-      // Reviews: 1 awaiting moderation (isActive: false), 1 approved (excluded).
+      // Reviews: 1 text awaiting moderation (PENDING), 1 already read (APPROVED,
+      // excluded). Since TASK-585 the counter is about the TEXT queue, not about
+      // whether a rating counts — `ratingVisible` is deliberately left at its
+      // default on both rows to prove the counter does not look at it.
       // Unique per (userId, productId), so two distinct products.
       await prisma.review.create({
-        data: { userId, productId: paidProductId, rating: 4, isActive: false },
+        data: {
+          userId,
+          productId: paidProductId,
+          rating: 4,
+          textStatus: ReviewTextStatus.PENDING,
+        },
       });
       await prisma.review.create({
-        data: { userId, productId: unpaidProductId, rating: 5, isActive: true },
+        data: {
+          userId,
+          productId: unpaidProductId,
+          rating: 5,
+          textStatus: ReviewTextStatus.APPROVED,
+        },
       });
 
       // Mail outbox: 1 FAILED (counted), 1 SENT (excluded).
@@ -504,7 +518,8 @@ describe('DashboardRepository (integration)', () => {
 
       // Only the PENDING order.
       expect(needsAction.newOrders).toBe(1);
-      // Only the isActive: false review.
+      // Only the review whose TEXT is still PENDING. Both rows have an invisible
+      // rating; if the counter still looked at rating visibility it would say 2.
       expect(needsAction.pendingReviews).toBe(1);
       // PENDING + CONFIRMED-unpaid; the CANCELLED order is excluded.
       expect(needsAction.unpaidInTransit).toBe(2);

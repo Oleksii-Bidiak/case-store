@@ -129,6 +129,12 @@ export const dict = {
     needsActionFailedMails: "Помилки надсилання пошти",
     // TASK-251: 5th needs-action card — orders sitting too long in PENDING.
     needsActionPendingOver48h: "Довго в очікуванні (>48 год)",
+    // TASK-446: 6th card. It counts SITUATIONS to look at, not reviews — a
+    // product that collected a burst of ratings in an hour, an address behind a
+    // run of 1★ — so the label is «сигнали», not a number of відгуків. An
+    // operator reading it as "N reviews to moderate" would go looking for N rows
+    // that do not exist, and would not go looking for the burst that does.
+    needsActionRatingAbuse: "Сигнали накрутки оцінок",
     // Sidebar count-badge aria labels (mirror messages.unreadBadgeAria).
     newOrdersBadgeAria: (n: number) => `${n} нових замовлень`,
     pendingReviewsBadgeAria: (n: number) => `${n} відгуків на модерації`,
@@ -2201,6 +2207,11 @@ export const dict = {
     filterStatusAria: "Фільтр за статусом",
     filterPending: "На розгляді",
     filterApproved: "Опубліковані",
+    // TASK-446: «Відхилено» is a state a row now KEEPS. Rejecting used to delete
+    // the row, so there was nothing to list and no third tab to offer; now the
+    // rejected text stays, the rating goes on counting, and a moderator who wants
+    // to change their mind needs an address to find it at.
+    filterRejected: "Відхилені",
     colProduct: "Товар",
     colAuthor: "Автор",
     colRating: "Оцінка",
@@ -2208,11 +2219,15 @@ export const dict = {
     colDate: "Надіслано",
     noComment: "—",
     approve: "Схвалити",
-    reject: "Відхилити",
+    // TASK-446: the button says TEXT because only the text is withdrawn. The old
+    // «Відхилити» described a hard delete that took the rating out of the
+    // product's average with it — an operator who still reads it that way will
+    // reject a one-star review believing the score recovers, and it will not.
+    reject: "Відхилити текст",
     emptyQueue: "Немає відгуків для модерації.",
     loadError: "Не вдалося завантажити відгуки. Спробуйте ще раз.",
     approveSuccess: "Відгук схвалено.",
-    rejectSuccess: "Відгук відхилено.",
+    rejectSuccess: "Текст відгуку знято з сайту. Оцінка й далі враховується.",
     actionError: "Не вдалося виконати дію. Спробуйте ще раз.",
     ratingAria: (rating: number) => `${rating} з 5 зірок`,
     // TASK-276: names the card-mode row group for screen readers.
@@ -2221,16 +2236,20 @@ export const dict = {
     // Bulk moderation over the on-screen selection (TASK-356).
     bulk: {
       approve: (count: number) => `Схвалити (${count})`,
-      reject: (count: number) => `Відхилити (${count})`,
+      reject: (count: number) => `Відхилити текст (${count})`,
       selectRow: (product: string, author: string) =>
         `Вибрати відгук на «${product}» від ${author}`,
-      // Rejecting DELETES the reviews permanently — the prompt says so, and
-      // says how many, because nothing can undo it.
+      // TASK-446: this prompt used to warn about a permanent loss. It no longer
+      // happens — the row stays, the rating goes on counting, and the author can
+      // rewrite the text from the storefront. The prompt still asks, because the
+      // texts do leave the site and the count is worth seeing before they do; it
+      // now describes what the action actually costs instead of scaring the
+      // operator away from a reversible one.
       rejectConfirm: (count: number) =>
-        `Відхилити ${count} відг.? Їх буде видалено назавжди — скасувати цю дію неможливо.`,
+        `Зняти текст із ${count} відг.? Тексти зникнуть із сайту, оцінки й далі враховуватимуться в рейтингу, а автори зможуть переписати свій відгук.`,
       announceSaving: (count: number) => `Обробка ${count} відг.…`,
       announceApproved: (count: number) => `Схвалено відгуків: ${count}`,
-      announceRejected: (count: number) => `Видалено відгуків: ${count}`,
+      announceRejected: (count: number) => `Відхилено текстів: ${count}`,
       announceFailed: "Не вдалося виконати масову дію",
     },
 
@@ -2248,6 +2267,60 @@ export const dict = {
     colSku: "Артикул",
     noSku: "без артикулу",
     productLinkAria: (product: string) => `Відкрити картку товару «${product}»`,
+
+    // --- The shop's public reply (TASK-446, permission `reviews:write`) --------
+    //
+    // A separate permission from moderating, and the copy has to earn it: the
+    // moderator decides what stays on the site, the person answering SPEAKS as
+    // the shop under their own name to every visitor. The dialog says "публічна"
+    // in as many words because nothing else on this screen is.
+    replyAction: "Відповісти",
+    replyEditAction: "Змінити відповідь",
+    replyBadge: "Є відповідь",
+    replyTitle: "Відповідь магазину",
+    replyDescription: (product: string) =>
+      `Публічна відповідь під відгуком на «${product}». Її бачать усі відвідувачі сайту.`,
+    replyReviewLabel: "Відгук покупця",
+    replyLabel: "Текст відповіді",
+    replyPlaceholder: "Дякуємо за відгук! …",
+    replySubmit: "Опублікувати відповідь",
+    // Upsert, not append: a second answer REPLACES the first. Said before the
+    // operator types, not after they lose the old one.
+    replyReplaceNote:
+      "Магазин уже відповідав на цей відгук. Збереження замінить попередню відповідь.",
+    replySuccess: "Відповідь опубліковано.",
+    replyError: "Не вдалося зберегти відповідь. Спробуйте ще раз.",
+
+    // --- Withdrawing one account's whole contribution (TASK-446) --------------
+    //
+    // The one action on this screen whose blast radius is not the row it sits in:
+    // it takes every rating and every text that account ever left, on every
+    // product. The copy has to say "ВСІ" and "на всіх товарах" out loud, because
+    // the button lives in a row about one product and everything around it reads
+    // as being about that one review.
+    hideAuthorAction: "Приховати всі оцінки автора",
+    unhideAuthorAction: "Повернути оцінки автора",
+    hideAuthorTitle: "Приховати весь внесок автора?",
+    hideAuthorDescription: (author: string) =>
+      `Приховає ВСІ відгуки та оцінки акаунта ${author} — на всіх товарах, а не лише на цьому. Тексти зникнуть із сайту, а оцінки перестануть враховуватися в рейтингах.`,
+    hideAuthorConfirm: "Приховати все",
+    hideAuthorSuccess: (count: number) => `Приховано відгуків автора: ${count}`,
+    hideAuthorError: "Не вдалося приховати відгуки автора. Спробуйте ще раз.",
+    unhideAuthorTitle: "Повернути внесок автора?",
+    // The email gate is re-asked on restore (`ReviewService.unhideAuthor`), so
+    // this promise is deliberately conditional — an un-ban is not a shortcut to a
+    // counting rating for an address nobody has confirmed.
+    unhideAuthorDescription: (author: string) =>
+      `Поверне всі відгуки акаунта ${author} на сайт. Оцінки знову враховуватимуться в рейтингах лише якщо пошту цього акаунта підтверджено.`,
+    unhideAuthorConfirm: "Повернути все",
+    unhideAuthorSuccess: (count: number) =>
+      `Повернуто відгуків автора: ${count}`,
+    unhideAuthorError: "Не вдалося повернути відгуки автора. Спробуйте ще раз.",
+    // `ratingVisible` folds two independent gates — a moderator's hide and an
+    // unconfirmed email — and the moderation row does not say which. The badge
+    // therefore reports the EFFECT, which is true either way, and never guesses
+    // at the cause.
+    ratingNotCounted: "Оцінка не враховується",
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------
@@ -2616,6 +2689,11 @@ export const dict = {
     cardNoReviews: "Відгуків ще немає.",
     cardReviewPending: "На модерації",
     cardReviewApproved: "Опубліковано",
+    // TASK-446: a third state, because the review text now survives its own
+    // rejection. The old two-state badge was driven by `isActive`, which the
+    // backend dropped: a rejected review simply vanished from the card, so
+    // «ще не читали» and «прочитали й відхилили» looked identical — both absent.
+    cardReviewRejected: "Текст відхилено",
     cardCoupons: "Використані купони",
     cardNoCoupons: "Купони ще не використовувались.",
     cardMessages: "Звернення (за email)",
@@ -2895,6 +2973,11 @@ export const dict = {
       delete: "видалено",
       deleteCategory: "видалено категорію",
       deleteLogo: "видалено логотип",
+      // TASK-589. The audit action set is DERIVED from the guarded mutating
+      // routes, so `POST /admin/reviews/authors/:userId/hide` produces
+      // `review.hideAuthor` the moment it exists — and without a verb here the
+      // owner's audit log prints the raw key.
+      hideAuthor: "приховано відгуки автора",
       moderateMany: "промодеровано (масово)",
       publish: "опубліковано",
       refund: "повернено кошти",
@@ -2904,6 +2987,11 @@ export const dict = {
       reorder: "змінено порядок",
       reorderBrands: "змінено порядок брендів",
       reorderCategories: "змінено порядок категорій",
+      // TASK-587. The audit action set is DERIVED from the guarded mutating
+      // routes, so `POST /admin/reviews/:id/reply` produces `review.reply` the
+      // moment it exists — and without a verb here the owner's audit log prints
+      // the raw key. One label, no UI: the reply screen itself is TASK-591.
+      reply: "надано відповідь",
       resolve: "закрито",
       setCategoryTemplate: "налаштовано шаблон категорії",
       setGroupMany: "призначено групу (масово)",
@@ -2912,6 +3000,7 @@ export const dict = {
       setProductDelta: "задано винятки для товару",
       setStatus: "змінено статус",
       setStatusMany: "змінено статус (масово)",
+      unhideAuthor: "повернено відгуки автора",
       unpublish: "знято з публікації",
       update: "змінено",
       updateBrand: "змінено бренд",

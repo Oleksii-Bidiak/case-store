@@ -93,6 +93,10 @@ describe('Admin Dashboard (e2e)', () => {
     unpaidInTransit: 7,
     failedMails: 1,
     pendingOver48h: 1,
+    // TASK-589. Counted here for the same reason as the other five: the envelope
+    // is what the admin widget reads, and a counter the repository computes but
+    // the response drops is a tile that is permanently, silently empty.
+    ratingAbuse: 2,
   };
 
   const dashboardRepositoryMock = {
@@ -301,7 +305,7 @@ describe('Admin Dashboard (e2e)', () => {
         .expect(403);
     });
 
-    it('should return 200 with the four counters wrapped in a data envelope for an admin token', async () => {
+    it('should return 200 with every counter wrapped in a data envelope for an admin token', async () => {
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
 
       const response = await request(app.getHttpServer())
@@ -316,23 +320,24 @@ describe('Admin Dashboard (e2e)', () => {
           unpaidInTransit: 7,
           failedMails: 1,
           pendingOver48h: 1,
+          ratingAbuse: 2,
         },
       });
-      expect(typeof response.body.data.newOrders).toBe('number');
-      expect(typeof response.body.data.pendingReviews).toBe('number');
-      expect(typeof response.body.data.unpaidInTransit).toBe('number');
-      expect(typeof response.body.data.failedMails).toBe('number');
-      expect(typeof response.body.data.pendingOver48h).toBe('number');
+      for (const counter of Object.keys(needsActionFixture)) {
+        expect(typeof response.body.data[counter]).toBe('number');
+      }
     });
 
     it('should return zeroed counters when nothing needs action', async () => {
-      dashboardRepositoryMock.getNeedsAction.mockResolvedValueOnce({
+      const quiet: NeedsAction = {
         newOrders: 0,
         pendingReviews: 0,
         unpaidInTransit: 0,
         failedMails: 0,
         pendingOver48h: 0,
-      });
+        ratingAbuse: 0,
+      };
+      dashboardRepositoryMock.getNeedsAction.mockResolvedValueOnce(quiet);
 
       const token = generateAccessToken('admin-e2e-1', 'ADMIN');
 
@@ -341,13 +346,7 @@ describe('Admin Dashboard (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(response.body.data).toEqual({
-        newOrders: 0,
-        pendingReviews: 0,
-        unpaidInTransit: 0,
-        failedMails: 0,
-        pendingOver48h: 0,
-      });
+      expect(response.body.data).toEqual(quiet);
     });
   });
 });

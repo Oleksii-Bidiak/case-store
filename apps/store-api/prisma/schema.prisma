@@ -150,6 +150,24 @@ enum PageKind {
   HUB
 }
 
+/// The fate of a review's TEXT — and only its text (TASK-584).
+///
+/// Split out of the old single `Review.isActive` flag because the owner decided
+/// (2026-09-10) that a star rating counts the moment it is given, while the
+/// sentence next to it still has to be read by a human. One boolean could not say
+/// both, so rejecting a comment used to hard-delete the row and take the rating
+/// with it — silently moving the product's average score as a side effect of a
+/// moderation decision that was never about the score.
+///
+/// `REJECTED` is a state rather than a deletion so the rating survives, and so a
+/// moderator can see that a text was already judged instead of meeting it again
+/// in the queue.
+enum ReviewTextStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 // Models
 
 model User {
@@ -194,6 +212,10 @@ model User {
   orders                  Order[]
   addresses               Address[]
   reviews                 Review[]
+  /// Replies this staff account wrote on customers' reviews (TASK-584). A real
+  /// back-relation, unlike `UserNote.authorId`: a reply is published text signed by
+  /// the shop, so it must not outlive the account answerable for it.
+  reviewReplies           ReviewReply[]
   refreshTokens           RefreshToken[]
   passwordResetTokens     PasswordResetToken[]
   discountRedemptions     DiscountRedemption[]
@@ -722,21 +744,104 @@ model Address {
 }
 
 model Review {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  productId String   @map("product_id")
-  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  id        String  @id @default(uuid())
+  userId    String  @map("user_id")
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String  @map("product_id")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   rating    Int // 1-5
   comment   String?
-  isActive  Boolean  @default(false) @map("is_active") // Requires admin approval
+
+  /// Whether this rating counts toward the product's average and rating count.
+  ///
+  /// A DENORMALISED *effective* flag, not a fact about the review — it folds
+  /// together "is the author's email confirmed?" and "has a moderator hidden this
+  /// account?" and is recomputed at the four events that can change either
+  /// (submission, email confirmation, an account hidden, an account restored).
+  /// Deliberately not derived on read: the rating aggregate runs on every
+  /// catalogue page for every card on it, and a join to `users` on that path — to
+  /// ask a question whose answer changes perhaps twice in an account's lifetime —
+  /// is a cost the listing cannot carry.
+  ///
+  /// Default `false`, so a brand-new account's stars wait until its address is
+  /// proven rather than counting first and being retracted afterwards.
+  ratingVisible Boolean @default(false) @map("rating_visible")
+
+  /// The fate of the TEXT, independent of the rating above.
+  ///
+  /// Rejecting a comment leaves `rating` and `ratingVisible` untouched, so a
+  /// moderator binning an unusable sentence can no longer move the product's score
+  /// as a side effect — which is exactly what the old hard-delete did. Defaults to
+  /// `PENDING` because a text is what gets read and can libel someone; the stars
+  /// beside it need no such gate.
+  textStatus ReviewTextStatus @default(PENDING) @map("text_status")
+
+  /// Set when a moderator removed this account's WHOLE contribution — every rating
+  /// and every text — in one click (the abuse lever from the 2026-09-10 decision).
+  ///
+  /// Sticky on purpose. It outranks the email gate, so an abuser who finally clicks
+  /// the confirmation link in their inbox does not quietly un-hide themselves: the
+  /// recompute that follows a confirmation must leave a hidden row hidden. A
+  /// timestamp rather than a boolean because "hidden when" is the question an
+  /// appeal actually asks.
+  hiddenAt DateTime? @map("hidden_at")
+
+  /// The address the submission came from, kept only for the abuse signals the
+  /// owner asked for: a per-IP daily cap, and "a run of 1★ from one address".
+  ///
+  /// Nullable and null for every row written before this column existed, so absent
+  /// means "we do not know", never "same IP as the last one" — a signal that
+  /// treated null as a value would flag the entire seeded catalogue as one abuser.
+  createdIp String? @map("created_ip")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
+  /// At most one reply, stated by the schema rather than by convention: the owner
+  /// decided the shop answers once and there is no thread, so a second reply is not
+  /// a feature waiting to be switched on — it is a bug, and the `@unique` on
+  /// `ReviewReply.reviewId` is what refuses it.
+  reply ReviewReply?
+
   @@unique([userId, productId]) // One review per user per product
-  @@index([productId])
-  @@index([isActive])
+  // The two read paths, each with its own gate leading with `productId`. The old
+  // bare `@@index([productId])` is gone rather than kept: Postgres serves a
+  // productId-only lookup from the leftmost prefix of either composite, so a third
+  // index would only cost writes.
+  @@index([productId, ratingVisible])
+  @@index([productId, textStatus])
+  // Abuse queries only: "how many submissions from this address today". Leads with
+  // the address because that is what is known when the question is asked.
+  @@index([createdIp, createdAt])
   @@map("reviews")
+}
+
+/// The shop's single answer to a review (TASK-584).
+///
+/// Separate table rather than a `replyBody` column on `Review` because a reply has
+/// its own author and its own timestamps — "who from the shop said this, and when"
+/// is what a customer complaint about a reply turns on, and a pair of nullable
+/// columns on `Review` could not answer it without pretending the review's author
+/// wrote them.
+model ReviewReply {
+  id       String @id @default(uuid())
+  /// `@unique` is the invariant, not an optimisation: replies are shop-only with NO
+  /// thread (owner's decision), so "one reply per review" is enforced by the
+  /// database instead of trusted to whichever endpoint writes next.
+  reviewId String @unique @map("review_id")
+  review   Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  /// The staff account that wrote it. Cascades with that account: a reply whose
+  /// author no longer exists would be published under an anonymous shop voice
+  /// nobody can be asked about.
+  authorUserId String @map("author_user_id")
+  authorUser   User   @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("review_replies")
 }
 
 model RefreshToken {
