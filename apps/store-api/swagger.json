@@ -18404,7 +18404,7 @@
         "properties": {
           "comment": {
             "type": "string",
-            "description": "The review text (max 1000 chars). Writing or changing it sends the text back to moderation. Omit the field entirely to leave the existing text — and its verdict — untouched.",
+            "description": "The review text (max 1000 chars). Writing or changing it sends the text back to moderation. Omit the field entirely to leave the existing text — and its verdict — untouched; sending null or an empty string is rejected rather than treated as an erase.",
             "maxLength": 1000,
             "example": "Came back a month later: still perfect."
           }
