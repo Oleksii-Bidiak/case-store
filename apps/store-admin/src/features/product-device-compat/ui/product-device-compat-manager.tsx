@@ -14,12 +14,21 @@ import { Button, Checkbox, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 interface ProductDeviceCompatManagerProps {
-  productId: string;
+  /**
+   * The product whose compat set this is. Omitted in STAGED mode (TASK-442), on
+   * `/products/new`: the selection is held by the parent until the product
+   * exists, and no save button is offered.
+   */
+  productId?: string;
   /** The product's group id (null when standalone) — gates the bulk action. */
-  groupId: string | null;
+  groupId?: string | null;
   /** Device model ids the product is currently compatible with. */
-  initialModelIds: string[];
+  initialModelIds?: string[];
+  /** STAGED mode: the full next selection, after every tick/untick. */
+  onStage?: (deviceModelIds: string[]) => void;
 }
+
+const NO_MODEL_IDS: string[] = [];
 
 /**
  * ProductDeviceCompatManager — the admin "Сумісні пристрої" control (TASK-190).
@@ -32,11 +41,18 @@ interface ProductDeviceCompatManagerProps {
  * `selected` seeds once from `initialModelIds` at mount — the parent only renders
  * this component after the product has loaded, so no async re-seed guard is
  * needed (docs/conventions/forms.md).
+ *
+ * STAGED MODE (TASK-442). Without a `productId` the save (and the group bulk
+ * action, which is inherently about siblings that already exist) drop away and
+ * every tick is reported to the parent instead. The brand/model queries stay
+ * live: they are global taxonomy, keyed by nothing, so the create form offers
+ * the same checkboxes as the edit form.
  */
 export function ProductDeviceCompatManager({
   productId,
-  groupId,
-  initialModelIds,
+  groupId = null,
+  initialModelIds = NO_MODEL_IDS,
+  onStage,
 }: ProductDeviceCompatManagerProps) {
   const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(
@@ -63,22 +79,24 @@ export function ProductDeviceCompatManager({
   }, [models]);
 
   const toggle = (modelId: string, checked: boolean) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (checked) next.add(modelId);
-      else next.delete(modelId);
-      return next;
-    });
+    const next = new Set(selected);
+    if (checked) next.add(modelId);
+    else next.delete(modelId);
+    setSelected(next);
+    // STAGED mode: the parent is the only place this selection survives until
+    // the product exists, so it learns about every tick as it happens.
+    onStage?.([...next]);
   };
 
   const deviceModelIds = [...selected];
 
   const invalidate = () =>
     queryClient.invalidateQueries({
-      queryKey: getProductControllerFindByIdQueryKey(productId),
+      queryKey: getProductControllerFindByIdQueryKey(productId ?? ""),
     });
 
   const handleSave = () => {
+    if (!productId) return;
     update.mutate(
       { id: productId, data: { deviceModelIds } },
       {
@@ -165,22 +183,29 @@ export function ProductDeviceCompatManager({
         })}
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" onClick={handleSave} disabled={pending}>
-          {update.isPending ? dict.common.saving : dict.productCompat.title}
-        </Button>
-        {groupId && (
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleApplyToGroup}
-            disabled={pending}
-            title={dict.productCompat.applyToGroupHint}
-          >
-            {dict.productCompat.applyToGroup}
+      {productId ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" onClick={handleSave} disabled={pending}>
+            {update.isPending ? dict.common.saving : dict.productCompat.title}
           </Button>
-        )}
-      </div>
+          {groupId && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleApplyToGroup}
+              disabled={pending}
+              title={dict.productCompat.applyToGroupHint}
+            >
+              {dict.productCompat.applyToGroup}
+            </Button>
+          )}
+        </div>
+      ) : (
+        // Nothing to save to yet — «Створити товар» carries this selection.
+        <p className="text-sm text-muted-foreground">
+          {dict.productCompat.stagedHint}
+        </p>
+      )}
     </div>
   );
 }

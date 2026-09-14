@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -20,7 +20,6 @@ import {
   useProductImageControllerDelete,
   useProductImageControllerList,
   useProductImageControllerReorder,
-  useProductImageControllerUpload,
   type ProductImageEntity,
 } from "@/entities/product";
 import {
@@ -36,27 +35,33 @@ import {
   useAnnouncer,
 } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
-import { imageUploadErrorMessage } from "@/features/content-image-upload";
 import { dict } from "@/shared/config";
+import {
+  useImageUploadQueue,
+  type UploadDrainSummary,
+  type UploadQueueItem,
+  type UploadQueueStatus,
+} from "../model/use-image-upload-queue";
 
 interface ProductImageManagerProps {
-  productId: string;
+  /**
+   * The product these photos belong to. LIVE mode.
+   *
+   * Omitted in STAGED mode (TASK-442), on `/products/new`: the product does not
+   * exist yet, so there is no `:id` to upload to and nothing to list. The panel
+   * then holds nothing of its own — `value` / `onStage` make it a controlled
+   * input over the parent's `File[]`, and `CreateProductView` replays that list
+   * through the same queue once `POST /products` has answered.
+   */
+  productId?: string;
+  /** STAGED mode: the files the operator has picked so far. */
+  value?: File[];
+  /** STAGED mode: the full next list, after a pick / reorder / removal. */
+  onStage?: (files: File[]) => void;
 }
 
-/** One queued file and what happened to it. */
-type QueueStatus = "queued" | "uploading" | "done" | "failed";
-
-interface QueueItem {
-  /** Stable key for React and for `patch()` — a filename is not unique. */
-  id: string;
-  name: string;
-  file: File;
-  status: QueueStatus;
-  /** Operator-readable failure reason, set when `status === "failed"`. */
-  error?: string;
-}
-
-let queueSeq = 0;
+/** Stable identity so the staged `useMemo` below does not churn in live mode. */
+const NO_FILES: File[] = [];
 
 /**
  * Admin product-image manager: drag a batch of photos in (or pick them), reorder
@@ -66,25 +71,19 @@ let queueSeq = 0;
  * `useAnnouncer()` to report each upload, and a hook called in the same component
  * that renders the provider would read the default no-op context.
  */
-export function ProductImageManager({ productId }: ProductImageManagerProps) {
+export function ProductImageManager(props: ProductImageManagerProps) {
   return (
     <LiveAnnouncer>
-      <ProductImageManagerView productId={productId} />
+      <ProductImageManagerView {...props} />
     </LiveAnnouncer>
   );
 }
 
 /**
- * ONE REQUEST PER FILE (TASK-424), even though the endpoint accepts ten.
- *
- * The batch endpoint validates every file before writing any of them, which is
- * right for the API and wrong for this screen: dropping twelve photos of which
- * one is over the size cap meant all twelve were refused with a single unexplained
- * toast, and the operator had no way to tell which file was the problem. A
- * request per file buys a per-file outcome, a per-file reason, and a retry that
- * re-sends only what failed. Uploads run strictly in sequence so the images keep
- * the order they were dropped in (`sortOrder` is assigned server-side, per
- * request) and so a drop of thirty photos does not open thirty sockets at once.
+ * The queue mechanics — one request per file, one drain loop at a time — live in
+ * `../model/use-image-upload-queue`, which is also what the create flow replays
+ * staged photos through. Read its docblock before changing anything about
+ * ordering, concurrency or the `isUploading` latch.
  *
  * Reordering is move-buttons, not drag-and-drop: it is the WCAG 2.2 SC 2.5.7
  * non-dragging path and predates this change. Dragging FILES IN is a different
@@ -92,27 +91,27 @@ export function ProductImageManager({ productId }: ProductImageManagerProps) {
  * picker button remains the accessible path for uploading, and the drop zone is
  * an addition, never the only way in.
  */
-function ProductImageManagerView({ productId }: ProductImageManagerProps) {
+function ProductImageManagerView({
+  productId,
+  value,
+  onStage,
+}: ProductImageManagerProps) {
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
   const { announcePolite, announceAssertive } = useAnnouncer();
 
-  /**
-   * Files accepted but not yet sent, and whether a loop is draining them.
-   *
-   * Refs, not state: `runQueue` below reads both after every `await`, and a
-   * state snapshot captured when the loop started would never see a batch
-   * dropped while it was running.
-   */
-  const pendingRef = useRef<QueueItem[]>([]);
-  const isDrainingRef = useRef(false);
+  const isStaged = !productId;
+  const staged = value ?? NO_FILES;
 
-  const listQueryKey = getProductImageControllerListQueryKey(productId);
-  const { data, isLoading, isError } = useProductImageControllerList(productId);
+  const listQueryKey = getProductImageControllerListQueryKey(productId ?? "");
+  const { data, isLoading, isError } = useProductImageControllerList(
+    productId ?? "",
+    // Nothing to list before the product exists. The hook is still called —
+    // rules of hooks — it just never reaches the network (TASK-442).
+    { query: { enabled: !isStaged } },
+  );
   const images = [...(data?.data ?? [])].sort(
     (a, b) => a.sortOrder - b.sortOrder,
   );
@@ -120,118 +119,68 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: listQueryKey });
 
-  const upload = useProductImageControllerUpload();
+  const queue = useImageUploadQueue();
   const reorder = useProductImageControllerReorder();
   const remove = useProductImageControllerDelete();
-  const busy = isUploading || reorder.isPending || remove.isPending;
+  const busy = queue.isUploading || reorder.isPending || remove.isPending;
 
-  const patch = (id: string, changes: Partial<QueueItem>) =>
-    setQueue((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...changes } : item)),
-    );
-
-  /**
-   * Queue the given items and upload them one after another, reporting each one.
-   *
-   * ONE DRAIN LOOP AT A TIME — this is the whole reason `pendingRef` exists.
-   * The drop zone cannot be disabled the way the picker button is (a browser
-   * drops files on whatever is under the cursor), so a second drop lands here
-   * while the first batch is still going. When each call looped over its OWN
-   * argument, that second drop started a SECOND loop, and whichever finished
-   * first called `setIsUploading(false)` — re-enabling «Очистити список»,
-   * «Повторити невдалі» and every per-image move/primary/delete control while
-   * the other loop was still uploading. Drop 20 photos, then 2 more: the 2-file
-   * loop wins, the operator presses «Очистити список», `setQueue([])` runs and
-   * the remaining 18 uploads go invisible (`patch()` matches no row any more);
-   * or they reorder/delete, and the `reorder` payload is computed from a gallery
-   * the server is still appending to. Appending to one queue that one loop
-   * drains keeps `isUploading` true until the LAST file has settled AND keeps
-   * the second drop — refusing it (an `if (busy) return`) would silently lose
-   * photos the operator watched land in the zone. Do not "simplify" this back
-   * into a loop over `items`.
-   */
-  const runQueue = async (items: QueueItem[]) => {
-    if (items.length === 0) return;
-    pendingRef.current = [...pendingRef.current, ...items];
-    // A loop is already running — it will pick these up on its next turn.
-    if (isDrainingRef.current) return;
-
-    isDrainingRef.current = true;
-    setIsUploading(true);
-    let done = 0;
-    let failed = 0;
-
-    for (;;) {
-      const item = pendingRef.current.shift();
-      if (!item) break;
-      patch(item.id, { status: "uploading", error: undefined });
-      try {
-        await upload.mutateAsync({
-          productId,
-          data: { files: [item.file] },
-        });
-        patch(item.id, { status: "done" });
-        done += 1;
-        announcePolite(dict.productImages.announceUploaded(item.name));
-      } catch (error) {
-        const message = imageUploadErrorMessage(error, dict.productImages);
-        patch(item.id, { status: "failed", error: message });
-        failed += 1;
-        announceAssertive(
-          dict.productImages.announceFailed(item.name, message),
-        );
-      }
-    }
-
-    // Released together, and only once `pendingRef` is empty: any drop that
-    // arrives from here on starts a fresh loop, which re-disables the controls
-    // synchronously in the same drop handler — there is no window in which a
-    // file is in flight and the gallery is live.
-    isDrainingRef.current = false;
-    setIsUploading(false);
-    // Refetch once, at the end: the grid below is the same list every request
-    // appended to, and invalidating per file would re-render it N times.
-    await invalidate();
-
-    // One summary for everything this loop drained: two overlapping drops were
-    // a single upload from the operator's point of view, and two toasts (one of
-    // them counting only half the files) is how the old double loop announced
-    // "Завантаження завершено: 2" with 18 files still to go.
-    if (failed === 0) {
-      toast.success(dict.productImages.toastUploaded);
-    } else {
-      toast.error(dict.productImages.toastUploadFailed);
-    }
-    announcePolite(dict.productImages.announceAllDone(done, failed));
+  /** Per-file screen-reader reporting, shared by the initial run and retries. */
+  const announcers = {
+    onItemUploaded: (item: { name: string }) =>
+      announcePolite(dict.productImages.announceUploaded(item.name)),
+    onItemFailed: (item: { name: string }, reason: string) =>
+      announceAssertive(dict.productImages.announceFailed(item.name, reason)),
   };
 
-  const enqueue = (fileList: FileList | null) => {
+  /**
+   * One summary for everything a loop drained: two overlapping drops are a
+   * single upload from the operator's point of view, and two toasts (one of them
+   * counting only half the files) is how the old double loop announced
+   * "Завантаження завершено: 2" with 18 files still to go. A run that only
+   * JOINED a running loop resolves to `null` and reports nothing.
+   */
+  const report = (run: Promise<UploadDrainSummary | null>) => {
+    void run.then(async (summary) => {
+      if (!summary) return;
+      // Refetch once, at the end: the grid below is the same list every request
+      // appended to, and invalidating per file would re-render it N times.
+      await invalidate();
+      if (summary.failed === 0) {
+        toast.success(dict.productImages.toastUploaded);
+      } else {
+        toast.error(dict.productImages.toastUploadFailed);
+      }
+      announcePolite(
+        dict.productImages.announceAllDone(summary.done, summary.failed),
+      );
+    });
+  };
+
+  const accept = (fileList: FileList | null) => {
     const files = Array.from(fileList ?? []);
     if (files.length === 0) return;
-    const items: QueueItem[] = files.map((file) => ({
-      id: `q${(queueSeq += 1)}`,
-      name: file.name,
-      file,
-      status: "queued",
-    }));
-    // Keep finished rows visible alongside the new ones: an operator who drops a
-    // second batch should still see which file from the first one failed.
-    setQueue((prev) => [...prev, ...items]);
-    void runQueue(items);
+    if (!productId) {
+      onStage?.([...staged, ...files]);
+      return;
+    }
+    report(queue.enqueue(productId, files, announcers));
   };
 
   const retryFailed = () => {
-    const failed = queue.filter((item) => item.status === "failed");
-    void runQueue(failed);
+    if (!productId) return;
+    report(queue.retry(productId, queue.failedItems, announcers));
   };
 
-  const retryOne = (item: QueueItem) => void runQueue([item]);
+  const retryOne = (item: UploadQueueItem) => {
+    if (!productId) return;
+    report(queue.retry(productId, [item], announcers));
+  };
 
-  const failedCount = queue.filter((item) => item.status === "failed").length;
-  const doneCount = queue.filter((item) => item.status === "done").length;
+  const failedCount = queue.failedItems.length;
 
   /** Persist a full ordering + primary flag for the current image set. */
   const persistOrder = (ordered: ProductImageEntity[], primaryId: string) => {
+    if (!productId) return;
     reorder.mutate(
       {
         productId,
@@ -264,7 +213,7 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
   const setPrimary = (id: string) => persistOrder(images, id);
 
   const confirmDelete = () => {
-    if (!pendingDeleteId) return;
+    if (!pendingDeleteId || !productId) return;
     remove.mutate(
       { productId, imageId: pendingDeleteId },
       {
@@ -277,6 +226,52 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
       },
     );
   };
+
+  // ── Staged-mode editing: pure array moves on the parent's list ─────────────
+  const stagedMove = (index: number, direction: -1 | 1) => {
+    const target = index + direction;
+    if (target < 0 || target >= staged.length) return;
+    const next = [...staged];
+    [next[index], next[target]] = [next[target], next[index]];
+    onStage?.(next);
+  };
+
+  /** The first staged photo becomes the cover, so "make primary" is "move to front". */
+  const stagedSetPrimary = (index: number) => {
+    if (index === 0) return;
+    const next = [...staged];
+    const [picked] = next.splice(index, 1);
+    onStage?.([picked, ...next]);
+  };
+
+  const stagedRemove = (index: number) =>
+    onStage?.(staged.filter((_, i) => i !== index));
+
+  /**
+   * Object URLs for the staged thumbnails, revoked when the list changes or the
+   * panel unmounts. Guarded: jsdom ships no `createObjectURL`, and a staged
+   * photo with no preview is a degraded row, not a crashed panel.
+   */
+  const previews = useMemo(
+    () =>
+      staged.map((file) => ({
+        file,
+        url:
+          typeof URL !== "undefined" &&
+          typeof URL.createObjectURL === "function"
+            ? URL.createObjectURL(file)
+            : null,
+      })),
+    [staged],
+  );
+  useEffect(
+    () => () => {
+      for (const preview of previews) {
+        if (preview.url) URL.revokeObjectURL(preview.url);
+      }
+    },
+    [previews],
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -296,10 +291,10 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
           event.preventDefault();
           setIsDragging(false);
           // No `busy` guard here, unlike the picker button: a drop mid-upload
-          // joins the queue the running `runQueue` loop is draining (see its
+          // joins the queue the running loop is draining (see the hook's
           // docblock) instead of starting a second one, so the photos are kept
           // rather than silently refused.
-          enqueue(event.dataTransfer.files);
+          accept(event.dataTransfer.files);
         }}
         className={cn(
           "flex flex-col items-center gap-2 rounded-lg border-2 border-dashed border-border bg-muted/20 px-4 py-6 text-center transition-colors",
@@ -321,7 +316,11 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
           disabled={busy}
           onClick={() => fileInputRef.current?.click()}
         >
-          {isUploading ? <Loader2 className="animate-spin" /> : <ImagePlus />}
+          {queue.isUploading ? (
+            <Loader2 className="animate-spin" />
+          ) : (
+            <ImagePlus />
+          )}
           {dict.productImages.upload}
         </Button>
         <input
@@ -331,7 +330,7 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
           multiple
           className="hidden"
           onChange={(event) => {
-            enqueue(event.target.files);
+            accept(event.target.files);
             // Clear it so re-picking the SAME file after a failure still fires
             // `change` (the value would otherwise be unchanged).
             event.target.value = "";
@@ -340,15 +339,23 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
         <p className="text-xs text-muted-foreground">
           {dict.productImages.hint}
         </p>
+        {isStaged && (
+          <p className="text-xs text-muted-foreground">
+            {dict.productImages.stagedHint}
+          </p>
+        )}
       </div>
 
-      {queue.length > 0 && (
+      {!isStaged && queue.items.length > 0 && (
         <section className="flex flex-col gap-2 rounded-lg border border-border p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">
               {dict.productImages.queueHeading}{" "}
               <span className="font-normal text-muted-foreground">
-                {dict.productImages.queueProgress(doneCount, queue.length)}
+                {dict.productImages.queueProgress(
+                  queue.doneCount,
+                  queue.items.length,
+                )}
               </span>
             </h3>
             <div className="flex gap-2">
@@ -357,7 +364,7 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={isUploading}
+                  disabled={queue.isUploading}
                   onClick={retryFailed}
                 >
                   <RotateCcw />
@@ -368,8 +375,8 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={isUploading}
-                onClick={() => setQueue([])}
+                disabled={queue.isUploading}
+                onClick={queue.clear}
               >
                 {dict.productImages.clearQueue}
               </Button>
@@ -377,7 +384,7 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
           </div>
 
           <ul className="flex flex-col gap-1">
-            {queue.map((item) => (
+            {queue.items.map((item) => (
               <li
                 key={item.id}
                 className="flex flex-wrap items-center gap-2 text-sm"
@@ -401,7 +408,7 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
                     type="button"
                     variant="ghost"
                     size="sm"
-                    disabled={isUploading}
+                    disabled={queue.isUploading}
                     onClick={() => retryOne(item)}
                   >
                     <RotateCcw />
@@ -414,7 +421,97 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
         </section>
       )}
 
-      {isLoading ? (
+      {isStaged ? (
+        previews.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {dict.productImages.stagedEmpty}
+          </p>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">
+              {dict.productImages.stagedCount(previews.length)}
+            </p>
+            <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+              {previews.map((preview, index) => (
+                <li
+                  key={`${preview.file.name}-${index}`}
+                  className="relative overflow-hidden rounded-lg border border-border bg-card"
+                >
+                  <div className="aspect-square w-full overflow-hidden bg-muted">
+                    {preview.url && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={preview.url}
+                        alt={preview.file.name}
+                        className="h-full w-full object-cover"
+                      />
+                    )}
+                  </div>
+
+                  {index === 0 && (
+                    <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">
+                      <Star className="size-3 fill-current" />{" "}
+                      {dict.productImages.primary}
+                    </span>
+                  )}
+
+                  <p className="truncate px-1.5 pt-1.5 text-xs text-muted-foreground">
+                    {preview.file.name}
+                  </p>
+
+                  <div className="flex items-center justify-between gap-1 p-1.5">
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={dict.productImages.moveLeft}
+                        disabled={index === 0}
+                        onClick={() => stagedMove(index, -1)}
+                      >
+                        <ArrowLeft />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={dict.productImages.moveRight}
+                        disabled={index === previews.length - 1}
+                        onClick={() => stagedMove(index, 1)}
+                      >
+                        <ArrowRight />
+                      </Button>
+                    </div>
+                    <div className="flex gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={dict.productImages.setPrimary}
+                        disabled={index === 0}
+                        onClick={() => stagedSetPrimary(index)}
+                      >
+                        <Star />
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={dict.productImages.removeStaged(
+                          preview.file.name,
+                        )}
+                        onClick={() => stagedRemove(index)}
+                      >
+                        <Trash2 className="text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )
+      ) : isLoading ? (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <div
@@ -538,7 +635,7 @@ function ProductImageManagerView({ productId }: ProductImageManagerProps) {
   );
 }
 
-const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
+const QUEUE_STATUS_LABEL: Record<UploadQueueStatus, string> = {
   queued: dict.productImages.statusQueued,
   uploading: dict.productImages.statusUploading,
   done: dict.productImages.statusDone,
@@ -546,7 +643,7 @@ const QUEUE_STATUS_LABEL: Record<QueueStatus, string> = {
 };
 
 /** Per-row status glyph. Decorative — the text next to it carries the meaning. */
-function QueueStatusIcon({ status }: { status: QueueStatus }) {
+function QueueStatusIcon({ status }: { status: UploadQueueStatus }) {
   if (status === "uploading") {
     return (
       <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
