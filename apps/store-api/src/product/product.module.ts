@@ -15,6 +15,7 @@ import { BrandModule } from '../brand';
 import { DeviceModule } from '../device';
 import { AttributeDefinitionModule } from '../attribute-definition';
 import { SlugRedirectModule } from '../slug-redirect';
+import { MediaModule } from '../media';
 
 @Module({
   // DeviceModule supplies DeviceRepository for validating device-compat ids
@@ -30,6 +31,11 @@ import { SlugRedirectModule } from '../slug-redirect';
     DeviceModule,
     AttributeDefinitionModule,
     SlugRedirectModule,
+    // MediaRepository — so a gallery can take a picture that is already in the
+    // library instead of a freshly uploaded file (TASK-441). No cycle: the media
+    // module reads the product tables through Prisma directly and imports
+    // nothing from here.
+    MediaModule,
   ],
   controllers: [ProductController, ProductImageController],
   providers: [

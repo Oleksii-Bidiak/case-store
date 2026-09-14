@@ -16,6 +16,9 @@ import { MediaUsageRepository } from './media-usage.repository';
   imports: [UploadsModule],
   controllers: [MediaController],
   providers: [MediaService, MediaRepository, MediaUsageRepository],
-  exports: [MediaService],
+  // `MediaRepository` is exported (mirroring DeviceModule) so `ProductImageService`
+  // can look an asset up when attaching it to a gallery, without a second Prisma
+  // call site for `media_assets` (TASK-441).
+  exports: [MediaService, MediaRepository],
 })
 export class MediaModule {}

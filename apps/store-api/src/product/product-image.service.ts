@@ -15,6 +15,7 @@ import {
 } from '../cache';
 import { PRODUCTS_SUBDIR } from '../storage';
 import { ImageUploadService } from '../uploads';
+import { MediaRepository } from '../media';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 /** A reorder instruction for one image. */
@@ -40,6 +41,10 @@ export class ProductImageService {
     private readonly productRepository: ProductRepository,
     private readonly imageRepository: ProductImageRepository,
     private readonly uploads: ImageUploadService,
+    // The media library's own repository, injected the way `ProductService`
+    // already injects `DeviceRepository` / `CategoryRepository` — one owner per
+    // table, no second Prisma call site for `media_assets` (TASK-441).
+    private readonly mediaRepository: MediaRepository,
     private readonly cache: CacheService,
     private readonly revalidation: RevalidationNotifier,
   ) {}
@@ -100,6 +105,62 @@ export class ProductImageService {
         isPrimary: input.isPrimary,
       }),
     );
+  }
+
+  /**
+   * Attach a picture that is ALREADY in the media library to this product
+   * (TASK-441).
+   *
+   * WHY THIS EXISTS AT ALL. Every other image field in the admin is a URL
+   * string, so "use the library instead of uploading again" is a `setValue`
+   * there. A product gallery is not a string: it is a row in `product_images`
+   * with a sort order and a cover flag, and until now the ONLY way to create one
+   * was to post a file. Without this route the media picker would work in five
+   * places out of six, and the one place operators re-upload the same photo most
+   * — a phone case shot reused across colour variants — would be the exception.
+   *
+   * NOTHING IS COPIED. One file on disk, one URL, two rows pointing at it: that
+   * is the whole point of a library, and it is also why `MediaService.delete`
+   * refuses while anything references the URL. Re-storing the bytes under a new
+   * name would give the operator a second asset that looks identical and a
+   * library that grows with every reuse.
+   *
+   * The sort/primary rules are the upload path's, verbatim — first picture of a
+   * product with none becomes the cover, everything else goes on the end — so a
+   * gallery cannot behave one way for uploaded photos and another for picked
+   * ones. `mediaAssetId` is recorded as PROVENANCE only; see the schema note on
+   * why usage is still computed by URL and never read off this column.
+   */
+  async attachAsset(productId: string, mediaAssetId: string): Promise<ProductImageEntity> {
+    const product = await this.productRepository.findById(productId);
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    const asset = await this.mediaRepository.findById(mediaAssetId);
+    if (!asset) {
+      throw new NotFoundException('Media asset not found');
+    }
+
+    const maxSortOrder = await this.imageRepository.getMaxSortOrder(productId);
+
+    const image = await this.imageRepository.create({
+      id: randomUUID(),
+      productId,
+      url: asset.url,
+      // The asset's own alt text comes with it. An operator who curated it once
+      // in the library should not have to retype it per product — and a gallery
+      // row with no alt is the accessibility defect the library was meant to fix.
+      alt: asset.alt,
+      blurDataUrl: asset.blurDataUrl,
+      sortOrder: maxSortOrder + 1,
+      isPrimary: maxSortOrder < 0,
+      mediaAssetId: asset.id,
+    });
+
+    await this.evictProductCaches(productId, product.slug);
+
+    return image;
   }
 
   /**

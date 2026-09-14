@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { ProductRepository } from '../src/product/product.repository';
 import { ProductImageRepository } from '../src/product/product-image.repository';
+import { MediaRepository } from '../src/media';
 import { ImageProcessor, STORAGE_SERVICE } from '../src/storage';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -28,6 +29,7 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
 
 const PRODUCT_ID = 'product-e2e-1';
 const IMAGE_ID = '550e8400-e29b-41d4-a716-446655440000';
+const ASSET_ID = '770e8400-e29b-41d4-a716-446655440222';
 
 describe('ProductImageController (e2e)', () => {
   let app: INestApplication;
@@ -42,9 +44,14 @@ describe('ProductImageController (e2e)', () => {
   const imageRepositoryMock = {
     getMaxSortOrder: jest.fn(),
     bulkCreate: jest.fn(),
+    create: jest.fn(),
     findById: jest.fn(),
     delete: jest.fn(),
     updateMany: jest.fn(),
+  };
+
+  const mediaRepositoryMock = {
+    findById: jest.fn(),
   };
 
   const storageMock = {
@@ -96,6 +103,8 @@ describe('ProductImageController (e2e)', () => {
       .useValue(productRepositoryMock)
       .overrideProvider(ProductImageRepository)
       .useValue(imageRepositoryMock)
+      .overrideProvider(MediaRepository)
+      .useValue(mediaRepositoryMock)
       .overrideProvider(STORAGE_SERVICE)
       .useValue(storageMock)
       .overrideProvider(ImageProcessor)
@@ -267,6 +276,100 @@ describe('ProductImageController (e2e)', () => {
           contentType: 'text/plain',
         })
         .expect(400);
+    });
+  });
+
+  // ─── POST /api/products/:id/images/attach ─────────────────────────────────
+
+  describe('POST /api/products/:id/images/attach', () => {
+    const libraryAsset = {
+      id: ASSET_ID,
+      url: 'http://localhost:3001/uploads/media/autumn.webp',
+      alt: 'Осіння банерна зйомка',
+      blurDataUrl: 'data:image/webp;base64,LIBRARYBLUR',
+    };
+
+    it('returns 401 without a token', async () => {
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(401);
+    });
+
+    it('returns 403 for a non-admin user', async () => {
+      const token = generateAccessToken('customer-1', 'CUSTOMER');
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(403);
+
+      expect(imageRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 201 with a row reusing the stored file, and saves nothing new', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      mediaRepositoryMock.findById.mockResolvedValue(libraryAsset);
+      imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
+      imageRepositoryMock.create.mockImplementation((input: unknown) => Promise.resolve(input));
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(201);
+
+      expect(response.body.data.url).toBe(libraryAsset.url);
+      expect(response.body.data.alt).toBe(libraryAsset.alt);
+      expect(response.body.data.blurDataUrl).toBe(libraryAsset.blurDataUrl);
+      // First picture of an empty gallery becomes the cover — the upload route's
+      // rule, so the gallery behaves the same however a photo got into it.
+      expect(response.body.data.isPrimary).toBe(true);
+      expect(response.body.data.sortOrder).toBe(0);
+      // One file on disk, two rows pointing at it.
+      expect(storageMock.save).not.toHaveBeenCalled();
+      expect(imageProcessorMock.process).not.toHaveBeenCalled();
+      expect(imageRepositoryMock.create.mock.calls[0][0].mediaAssetId).toBe(ASSET_ID);
+    });
+
+    it('returns 404 for an asset that does not exist', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      mediaRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(404);
+
+      expect(imageRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for a product that does not exist', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(null);
+      mediaRepositoryMock.findById.mockResolvedValue(libraryAsset);
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: ASSET_ID })
+        .expect(404);
+    });
+
+    it('returns 400 when the body is not a UUID', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+
+      await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images/attach`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ mediaAssetId: 'http://evil.tld/photo.png' })
+        .expect(400);
+
+      expect(mediaRepositoryMock.findById).not.toHaveBeenCalled();
     });
   });
 

@@ -12,10 +12,20 @@ import { ProductImageRepository } from './product-image.repository';
 import { CacheService } from '../cache';
 import { ImageProcessor, STORAGE_SERVICE } from '../storage';
 import { ImageUploadService } from '../uploads';
+import { MediaRepository } from '../media';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111';
 const SLUG = 'iphone-15-case';
+const ASSET_ID = '22222222-2222-2222-2222-222222222222';
+
+/** A library row as Prisma hands it back — only the fields an attach reads. */
+const LIBRARY_ASSET = {
+  id: ASSET_ID,
+  url: 'http://localhost:3001/uploads/media/autumn.webp',
+  alt: 'Осіння банерна зйомка',
+  blurDataUrl: 'data:image/webp;base64,LIBRARYBLUR',
+};
 
 function makeFile(overrides: Partial<Express.Multer.File> = {}): Express.Multer.File {
   return {
@@ -39,10 +49,12 @@ describe('ProductImageService', () => {
   let imageRepository: {
     getMaxSortOrder: jest.Mock;
     bulkCreate: jest.Mock;
+    create: jest.Mock;
     findById: jest.Mock;
     delete: jest.Mock;
     updateMany: jest.Mock;
   };
+  let mediaRepository: { findById: jest.Mock };
   let storage: { save: jest.Mock; delete: jest.Mock };
   let imageProcessor: { process: jest.Mock; detectFormat: jest.Mock; probe: jest.Mock };
   let cache: { del: jest.Mock; delByPrefix: jest.Mock };
@@ -55,10 +67,12 @@ describe('ProductImageService', () => {
     imageRepository = {
       getMaxSortOrder: jest.fn().mockResolvedValue(-1),
       bulkCreate: jest.fn().mockResolvedValue(undefined),
+      create: jest.fn((input) => Promise.resolve(input)),
       findById: jest.fn(),
       delete: jest.fn(),
       updateMany: jest.fn().mockResolvedValue(undefined),
     };
+    mediaRepository = { findById: jest.fn().mockResolvedValue(LIBRARY_ASSET) };
     storage = {
       save: jest.fn().mockResolvedValue('products/abc.webp'),
       delete: jest.fn().mockResolvedValue(undefined),
@@ -94,6 +108,7 @@ describe('ProductImageService', () => {
         ImageUploadService,
         { provide: ProductRepository, useValue: productRepository },
         { provide: ProductImageRepository, useValue: imageRepository },
+        { provide: MediaRepository, useValue: mediaRepository },
         { provide: STORAGE_SERVICE, useValue: storage },
         { provide: ImageProcessor, useValue: imageProcessor },
         { provide: CacheService, useValue: cache },
@@ -213,6 +228,69 @@ describe('ProductImageService', () => {
       const rows = imageRepository.bulkCreate.mock.calls[0][0];
       expect(rows[0].isPrimary).toBe(false);
       expect(rows[0].sortOrder).toBe(3);
+    });
+  });
+
+  describe('attachAsset', () => {
+    it('throws NotFound when the product does not exist', async () => {
+      productRepository.findById.mockResolvedValue(null);
+
+      await expect(service.attachAsset(PRODUCT_ID, ASSET_ID)).rejects.toThrow(NotFoundException);
+      expect(imageRepository.create).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFound when the media asset does not exist', async () => {
+      mediaRepository.findById.mockResolvedValue(null);
+
+      await expect(service.attachAsset(PRODUCT_ID, ASSET_ID)).rejects.toThrow(NotFoundException);
+      // Nothing half-written: no gallery row, and no cache purge announcing a
+      // change that never happened.
+      expect(imageRepository.create).not.toHaveBeenCalled();
+      expect(cache.del).not.toHaveBeenCalled();
+    });
+
+    it('reuses the stored file — the URL, LQIP and alt come off the asset, nothing is re-saved', async () => {
+      const image = await service.attachAsset(PRODUCT_ID, ASSET_ID);
+
+      // The whole point of a library: one file, two rows pointing at it.
+      expect(storage.save).not.toHaveBeenCalled();
+      expect(imageProcessor.process).not.toHaveBeenCalled();
+
+      const row = imageRepository.create.mock.calls[0][0];
+      expect(row.url).toBe(LIBRARY_ASSET.url);
+      expect(row.blurDataUrl).toBe(LIBRARY_ASSET.blurDataUrl);
+      expect(row.alt).toBe(LIBRARY_ASSET.alt);
+      // Provenance, recorded but never used to answer "is this asset in use".
+      expect(row.mediaAssetId).toBe(ASSET_ID);
+      expect(image.url).toBe(LIBRARY_ASSET.url);
+    });
+
+    it('makes the first picture of an empty gallery the cover', async () => {
+      imageRepository.getMaxSortOrder.mockResolvedValue(-1);
+
+      await service.attachAsset(PRODUCT_ID, ASSET_ID);
+
+      const row = imageRepository.create.mock.calls[0][0];
+      expect(row.isPrimary).toBe(true);
+      expect(row.sortOrder).toBe(0);
+    });
+
+    it('appends to a gallery that already has photos, leaving the cover alone', async () => {
+      imageRepository.getMaxSortOrder.mockResolvedValue(2);
+
+      await service.attachAsset(PRODUCT_ID, ASSET_ID);
+
+      const row = imageRepository.create.mock.calls[0][0];
+      expect(row.isPrimary).toBe(false);
+      expect(row.sortOrder).toBe(3);
+    });
+
+    it('evicts the product caches and purges the storefront', async () => {
+      await service.attachAsset(PRODUCT_ID, ASSET_ID);
+
+      expect(cache.del).toHaveBeenCalled();
+      expect(cache.delByPrefix).toHaveBeenCalled();
+      expect(revalidation.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
     });
   });
 
