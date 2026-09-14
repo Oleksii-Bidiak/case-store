@@ -45,8 +45,11 @@ export interface ModerationReviewsResult {
  * Responsibilities:
  *  - submission with the one-review-per-user-per-product guard (409) and the
  *    verified-purchase badge,
- *  - public reads gated to approved reviews only,
- *  - admin moderation (approve flips `isActive`; reject hard-deletes the row).
+ *  - public reads: the rating aggregate over every counting rating, alongside the
+ *    page of approved TEXTS — two different populations since TASK-585, which is
+ *    why `aggregate.ratingCount` and `meta.total` legitimately disagree,
+ *  - admin moderation of the TEXT (approve / reject), which never touches the
+ *    rating beside it.
  *
  * The service never touches Prisma directly — all persistence goes through
  * {@link ReviewRepository}.
@@ -66,8 +69,8 @@ export class ReviewService {
    * A user may review a product only once: the unique `(userId, productId)`
    * slot is checked up front and again defensively by catching Prisma's P2002
    * (handles the race where two requests pass the pre-check concurrently). The
-   * review is created pending (`isActive: false`) and carries a
-   * `verifiedPurchase` badge when the user has an order line item for it.
+   * text is created `PENDING` and carries a `verifiedPurchase` badge when the user
+   * has an order line item for it.
    *
    * @throws ConflictException when the user already reviewed the product.
    */
@@ -105,9 +108,15 @@ export class ReviewService {
   }
 
   /**
-   * List a product's approved reviews (paginated) together with its rating
-   * aggregate. Only `isActive: true` reviews are returned — pending submissions
-   * never leak to the storefront.
+   * A product's approved review TEXTS (paginated) together with its rating
+   * aggregate.
+   *
+   * The two numbers are counted over DIFFERENT populations and are meant to
+   * differ: `aggregate.ratingCount` is every rating that counts (star-only rows
+   * included), `meta.total` is the texts this list can actually render. The owner
+   * accepted that explicitly on 2026-09-10 — «кількість оцінок і кількість
+   * відгуків можуть відрізнятись, і це нормально» — so nothing here reconciles
+   * them. Doing so would hide the very ratings the split exists to surface.
    */
   async getApprovedReviews(
     productId: string,
@@ -168,7 +177,8 @@ export class ReviewService {
   }
 
   /**
-   * Approve a pending review, publishing it to the storefront.
+   * Publish a pending review's TEXT to the storefront. The rating beside it is
+   * untouched — it was already counting, or is waiting on the author's email.
    *
    * @throws NotFoundException when no review has the given id.
    */
@@ -179,33 +189,37 @@ export class ReviewService {
     }
 
     const approved = await this.reviewRepository.approve(id);
-    this.logger.info({ reviewId: id }, 'Review approved');
+    this.logger.info({ reviewId: id }, 'Review text approved');
     return ReviewEntity.fromPrisma(approved);
   }
 
   /**
-   * Reject a review by hard-deleting it. This frees the unique
-   * `(userId, productId)` slot so the author may submit a new review later.
+   * Turn down a review's TEXT (TASK-585). The row survives and the rating keeps
+   * counting: a moderator judging a sentence is not judging the score, and the old
+   * hard delete conflated the two — quietly moving the product's average as a side
+   * effect, with no record that it had.
    *
    * @throws NotFoundException when no review has the given id.
    */
-  async rejectReview(id: string): Promise<void> {
+  async rejectReview(id: string): Promise<ReviewEntity> {
     const existing = await this.reviewRepository.findById(id);
     if (!existing) {
       throw new NotFoundException('Review not found');
     }
 
-    await this.reviewRepository.delete(id);
-    this.logger.info({ reviewId: id }, 'Review rejected (deleted)');
+    const rejected = await this.reviewRepository.rejectText(id);
+    this.logger.info({ reviewId: id }, 'Review text rejected (rating kept)');
+    return ReviewEntity.fromPrisma(rejected);
   }
 
   /**
-   * Approve or reject many reviews at once (TASK-356) — the moderation queue's
-   * per-row buttons applied to a selection, in one transaction.
+   * Approve or reject many review TEXTS at once (TASK-356) — the moderation
+   * queue's per-row buttons applied to a selection, in one transaction.
    *
-   * `reject` deletes. The log line says so, and says how many, because this is
-   * the one bulk action in the panel that destroys data: if an operator later
-   * asks "where did those reviews go", this is the record.
+   * Both actions now write a status, so neither destroys anything. The log line
+   * still records the count: an operator who bulk-rejects forty rows and then asks
+   * "what happened to those reviews" gets an answer that matches what the database
+   * actually did, which the old «deleted» wording would no longer do.
    *
    * @throws NotFoundException when any id is unknown — nothing is written.
    */
@@ -222,7 +236,7 @@ export class ReviewService {
 
     this.logger.info(
       { action, count, reviewIds: ids },
-      action === 'reject' ? 'Reviews rejected in bulk (deleted)' : 'Reviews approved in bulk',
+      action === 'reject' ? 'Review texts rejected in bulk' : 'Review texts approved in bulk',
     );
 
     return count;

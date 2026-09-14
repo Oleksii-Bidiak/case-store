@@ -3,6 +3,7 @@ import {
   PaymentStatus,
   DiscountType,
   ContactMessageStatus,
+  ReviewTextStatus,
   type ContactMessage,
 } from '@prisma/client';
 import { ApiProperty } from '@nestjs/swagger';
@@ -40,8 +41,8 @@ export class CustomerCardOrderEntity {
 
 /**
  * One product-review row on the customer card. `productName` is joined so the
- * admin sees what was reviewed without a second lookup; `isActive` is the
- * moderation state (false = pending approval).
+ * admin sees what was reviewed without a second lookup; `textStatus` is the
+ * moderation verdict on the comment (TASK-585).
  */
 export class CustomerCardReviewEntity {
   @ApiProperty({ description: 'Review id', example: '550e8400-e29b-41d4-a716-446655440000' })
@@ -65,8 +66,12 @@ export class CustomerCardReviewEntity {
   })
   comment!: string | null;
 
-  @ApiProperty({ description: 'Moderation state — true = approved/published', example: true })
-  isActive!: boolean;
+  @ApiProperty({
+    description: 'Moderation verdict on the review text',
+    enum: ReviewTextStatus,
+    example: ReviewTextStatus.APPROVED,
+  })
+  textStatus!: ReviewTextStatus;
 
   @ApiProperty({ description: 'Review creation timestamp', example: '2026-01-01T00:00:00.000Z' })
   createdAt!: Date;
@@ -199,7 +204,7 @@ export class UserAdminCardEntity {
       productName: review.productName,
       rating: review.rating,
       comment: review.comment,
-      isActive: review.isActive,
+      textStatus: review.textStatus,
       createdAt: review.createdAt,
     }));
     entity.redeemedCoupons = parts.redeemedCoupons.map((coupon) => ({

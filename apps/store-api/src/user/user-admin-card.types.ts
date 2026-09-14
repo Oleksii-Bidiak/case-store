@@ -1,4 +1,4 @@
-import { OrderStatus, PaymentStatus, DiscountType, Prisma } from '@prisma/client';
+import { OrderStatus, PaymentStatus, DiscountType, Prisma, ReviewTextStatus } from '@prisma/client';
 
 /**
  * Internal TypeScript shapes + list-size constants for the admin customer card
@@ -45,7 +45,12 @@ export interface AdminCardReviewRow {
   productName: string;
   rating: number;
   comment: string | null;
-  isActive: boolean;
+  /**
+   * The TEXT's verdict (TASK-585), not a published/unpublished boolean: a rejected
+   * text stays on the customer's record now, and an admin reading their history
+   * must be able to tell it from one nobody has looked at yet.
+   */
+  textStatus: ReviewTextStatus;
   createdAt: Date;
 }
 

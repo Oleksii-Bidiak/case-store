@@ -1,5 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { MailOutboxStatus, OrderStatus, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  MailOutboxStatus,
+  OrderStatus,
+  PaymentStatus,
+  Prisma,
+  ReviewTextStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma';
 import {
   DASHBOARD_WINDOW_DAYS,
@@ -267,8 +273,11 @@ export class DashboardRepository {
    * (TASK-248). Four independent COUNT reads run in a single `Promise.all` —
    * no N+1, no joins, mirroring the `getSummary()` parallelization style:
    *   - `newOrders`       — orders awaiting confirmation (`status = PENDING`)
-   *   - `pendingReviews`  — reviews awaiting moderation (`isActive = false`,
-   *                         matching `ReviewRepository.findForModeration('pending')`)
+   *   - `pendingReviews`  — review TEXTS awaiting a verdict (`textStatus = PENDING`,
+   *                         matching `ReviewRepository.findForModeration('pending')`).
+   *                         Deliberately not about ratings: since TASK-585 a rating
+   *                         needs no moderator, so counting invisible ratings here
+   *                         would send an operator to a queue with nothing to do
    *   - `unpaidInTransit` — active-but-unpaid orders ({@link unrealizedOrderWhere})
    *   - `failedMails`     — outbox rows permanently failed (`status = FAILED`)
    */
@@ -276,7 +285,7 @@ export class DashboardRepository {
     const [newOrders, pendingReviews, unpaidInTransit, failedMails, pendingOver48h] =
       await Promise.all([
         this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
-        this.prisma.review.count({ where: { isActive: false } }),
+        this.prisma.review.count({ where: { textStatus: ReviewTextStatus.PENDING } }),
         this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
         this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
         this.prisma.order.count({ where: this.pendingOver48hWhere() }),

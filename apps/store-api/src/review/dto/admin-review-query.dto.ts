@@ -3,12 +3,17 @@ import { Transform, Type } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 /**
- * Moderation-queue filter status. `pending` lists reviews awaiting approval
- * (`isActive: false`); `approved` lists already-published reviews.
+ * Moderation-queue filter — the TEXT's status, one value per
+ * {@link import('@prisma/client').ReviewTextStatus}.
+ *
+ * `rejected` exists since TASK-585 because rejecting stopped deleting. The pile
+ * of turned-down texts is now a real population, and without a filter for it a
+ * moderator could neither review their own decisions nor undo one.
  */
 export enum ReviewModerationStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
+  REJECTED = 'rejected',
 }
 
 /**

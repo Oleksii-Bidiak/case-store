@@ -1,15 +1,4 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  Patch,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiExtraModels,
@@ -64,20 +53,23 @@ class AdminReviewResponseEnvelope {
 /**
  * Admin-only review moderation endpoints, gated on `reviews:moderate` (TASK-334).
  *
- *   GET    /api/admin/reviews             — moderation queue (pending|approved)
- *   PATCH  /api/admin/reviews/:id/approve — publish a pending review
- *   DELETE /api/admin/reviews/:id         — reject (hard delete)
+ *   GET   /api/admin/reviews             — queue (pending|approved|rejected)
+ *   PATCH /api/admin/reviews/:id/approve — publish a review's text
+ *   PATCH /api/admin/reviews/:id/reject  — turn down a review's text
+ *
+ * Every action here is about the TEXT (TASK-585). None of them touches the rating,
+ * which counts on its own the moment it is given.
  *
  * Separate from the public {@link import('./review.controller').ReviewController}
  * — mirrors the AdminOrderController vs OrderController split.
  */
 /**
  * What a bulk moderation call reports back: how many rows the database actually
- * wrote. For `reject` that is how many were DELETED — which is the number the
- * operator's confirmation should quote, not the number they asked for.
+ * wrote — which is the number the operator's confirmation should quote, not the
+ * number they asked for.
  */
 class BulkReviewModerationResult {
-  @ApiProperty({ description: 'Reviews written (for reject, deleted)', example: 7 })
+  @ApiProperty({ description: 'Review texts written', example: 7 })
   updatedCount!: number;
 }
 
@@ -105,8 +97,9 @@ export class AdminReviewController {
   /**
    * GET /api/admin/reviews
    *
-   * Paginated moderation queue. `status=pending` (default) lists submissions
-   * awaiting approval; `status=approved` lists already-published reviews.
+   * Paginated moderation queue. `status=pending` (default) lists texts awaiting a
+   * verdict, `status=approved` the published ones, `status=rejected` the turned-down
+   * ones — a pile that only exists because rejecting stopped deleting (TASK-585).
    */
   @Get()
   @ApiBearerAuth('access-token')
@@ -114,7 +107,11 @@ export class AdminReviewController {
     summary: 'List reviews for moderation (admin)',
     operationId: 'adminReviewControllerList',
   })
-  @ApiQuery({ name: 'status', required: false, description: 'Filter: pending | approved' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    description: 'Filter: pending | approved | rejected',
+  })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (1-based)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 100)' })
   @ApiQuery({
@@ -136,14 +133,14 @@ export class AdminReviewController {
   /**
    * PATCH /api/admin/reviews/moderate
    *
-   * Approve or reject many reviews at once (TASK-356) — the per-row buttons
+   * Approve or reject many review TEXTS at once (TASK-356) — the per-row buttons
    * below, applied to the operator's selection, in one transaction.
    *
-   * **`action: "reject"` DELETES.** It is the bulk form of `DELETE :id`, which
-   * hard-deletes so the author's unique `(userId, productId)` slot is freed.
-   * That is why the payload names the action instead of carrying an `isActive`
-   * boolean: a flag would have made an irreversible operation look like a
-   * toggle, and the admin UI gates it behind a count-bearing confirmation.
+   * `reject` no longer deletes (TASK-585): it writes `textStatus = REJECTED` and
+   * leaves every rating counting. The payload still names the action rather than
+   * carrying a boolean, because approve and reject are two verdicts among three
+   * states, not two ends of one switch — `PENDING` is the third and no action
+   * returns to it.
    *
    * DECLARED BEFORE the `:id` routes. `moderate` is one segment and `:id/approve`
    * is two, so nothing shadows it today — but that holds only until someone adds
@@ -161,7 +158,7 @@ export class AdminReviewController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Number of reviews written (for `reject`, deleted)',
+    description: 'Number of review texts written',
     type: BulkReviewModerationResponse,
   })
   @ApiResponse({ status: 400, description: 'Validation error — empty, oversized or non-UUID ids' })
@@ -194,20 +191,35 @@ export class AdminReviewController {
   }
 
   /**
-   * DELETE /api/admin/reviews/:id
+   * PATCH /api/admin/reviews/:id/reject
    *
-   * Reject a review by hard-deleting it (frees the unique slot so the author may
-   * re-submit). Returns 204 No Content.
+   * Turn down a review's TEXT. The row stays and the rating keeps counting
+   * (TASK-585).
+   *
+   * Was `DELETE /api/admin/reviews/:id`. The verb had to change with the
+   * behaviour: a DELETE that leaves the row in place is a lie to every client that
+   * reads the method, and this one would be read by an admin panel deciding
+   * whether to warn the operator that something is about to be destroyed.
+   *
+   * `operationId` is deliberately unchanged, so the generated frontend hook keeps
+   * its name and the panel's call site is a verb/URL change rather than a rename.
    */
-  @Delete(':id')
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @Patch(':id/reject')
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Reject a review (admin)', operationId: 'adminReviewControllerReject' })
+  @ApiOperation({
+    summary: 'Reject a review text (admin)',
+    operationId: 'adminReviewControllerReject',
+  })
   @ApiParam({ name: 'id', description: 'Review UUID' })
-  @ApiResponse({ status: 204, description: 'Review rejected (deleted)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Review text rejected; the rating is untouched',
+    type: AdminReviewResponseEnvelope,
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   @ApiResponse({ status: 404, description: 'Review not found' })
-  async reject(@Param('id') id: string): Promise<void> {
-    await this.reviewService.rejectReview(id);
+  async reject(@Param('id') id: string): Promise<AdminReviewResponseEnvelope> {
+    const review = await this.reviewService.rejectReview(id);
+    return { data: review };
   }
 }

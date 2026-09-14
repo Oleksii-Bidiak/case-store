@@ -17,7 +17,7 @@ export class NeedsActionDto {
 
   @ApiProperty({
     type: Number,
-    description: 'Reviews awaiting moderation (isActive = false)',
+    description: 'Review texts awaiting a moderation verdict (textStatus = PENDING)',
     example: 2,
   })
   pendingReviews!: number;

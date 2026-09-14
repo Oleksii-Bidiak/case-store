@@ -369,9 +369,19 @@ export class ProductRepository {
   ) {}
 
   /**
-   * Aggregate approved-review ratings for a set of products in a single query.
-   * Returns a map keyed by product id; products with no approved reviews are
-   * absent from the map (callers default them to `{ null, 0 }`).
+   * Aggregate ratings for a set of products in a single query. Returns a map keyed
+   * by product id; products nobody has rated are absent from the map (callers
+   * default them to `{ null, 0 }`).
+   *
+   * `ratingVisible` is the ONLY filter, and it must stay identical to
+   * `ReviewRepository.aggregate`'s (TASK-585). These two methods answer the same
+   * question for two screens one click apart — the stars on a catalogue card and
+   * the stars above the reviews tab — so a filter added to one and not the other
+   * shows the same product two different scores, with nothing failing anywhere.
+   *
+   * It is also why the flag is denormalised rather than derived: this query runs
+   * for every card of every catalogue page, and a join to `users` here to re-ask
+   * "is the author's email confirmed?" is a cost the listing cannot carry.
    */
   private async getRatingsByProductId(productIds: string[]): Promise<Map<string, ProductRating>> {
     if (productIds.length === 0) {
@@ -379,7 +389,7 @@ export class ProductRepository {
     }
     const groups = await this.prisma.review.groupBy({
       by: ['productId'],
-      where: { productId: { in: productIds }, isActive: true },
+      where: { productId: { in: productIds }, ratingVisible: true },
       _avg: { rating: true },
       _count: { rating: true },
     });

@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, ReviewTextStatus } from '@prisma/client';
 import argon2 from 'argon2';
 import { orderSpecs } from '../data/orders.data';
 import { hashStr } from '../lib/ids';
@@ -125,12 +125,18 @@ export async function seedReviews(prisma: PrismaClient) {
   const poolCreatedAt = new Date(now - 60 * 60 * 1000);
   const verifiedCreatedAt = new Date(now);
 
+  // Since TASK-585 a seeded review needs BOTH flags set explicitly. `ratingVisible`
+  // is true on every row — including the pending ones — because the rating counts
+  // the moment it is given and none of these accounts has a confirmed email, so
+  // leaving it to the column default would seed 178 products with zero stars.
+  // `textStatus` is what still separates the six queue items from the rest.
   const rows: {
     userId: string;
     productId: string;
     rating: number;
     comment?: string;
-    isActive: boolean;
+    ratingVisible: boolean;
+    textStatus: ReviewTextStatus;
     createdAt: Date;
   }[] = [];
 
@@ -144,7 +150,8 @@ export async function seedReviews(prisma: PrismaClient) {
         userId: reviewers[i].id,
         productId: product.id,
         rating: r < 55 ? 5 : r < 80 ? 4 : r < 93 ? 3 : r < 98 ? 2 : 1,
-        isActive: true,
+        ratingVisible: true,
+        textStatus: ReviewTextStatus.APPROVED,
         createdAt: poolCreatedAt,
       });
     }
@@ -158,7 +165,10 @@ export async function seedReviews(prisma: PrismaClient) {
       productId: productIdBySlug.get(target.slug)!,
       rating: 3 + (hashStr(`pending:${target.slug}`) % 3), // 3..5
       comment: target.comment,
-      isActive: false,
+      // The rating counts like any other; only the TEXT waits to be read. These six
+      // are the moderation queue, not six invisible ratings.
+      ratingVisible: true,
+      textStatus: ReviewTextStatus.PENDING,
       createdAt: poolCreatedAt,
     });
   });
@@ -207,7 +217,8 @@ export async function seedReviews(prisma: PrismaClient) {
       productId,
       rating: spec.rating,
       comment: spec.comment,
-      isActive: true,
+      ratingVisible: true,
+      textStatus: ReviewTextStatus.APPROVED,
       createdAt: verifiedCreatedAt,
     };
   });

@@ -365,7 +365,7 @@ describe('UserService', () => {
         productName: 'iPhone 15 Pro Case',
         rating: 5,
         comment: 'Great!',
-        isActive: true,
+        textStatus: 'APPROVED',
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
       },
     ];

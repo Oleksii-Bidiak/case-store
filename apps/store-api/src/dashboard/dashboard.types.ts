@@ -111,7 +111,7 @@ export interface DashboardSummary {
 export interface NeedsAction {
   /** Orders awaiting confirmation (`status = PENDING`). */
   newOrders: number;
-  /** Reviews awaiting moderation (`isActive = false`). */
+  /** Review texts awaiting a moderation verdict (`textStatus = PENDING`). */
   pendingReviews: number;
   /** Active orders not yet paid (`paymentStatus != PAID` AND `status NOT IN (CANCELLED, REFUNDED)`). */
   unpaidInTransit: number;

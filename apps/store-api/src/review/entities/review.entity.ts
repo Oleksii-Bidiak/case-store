@@ -7,6 +7,12 @@ import { Review } from '@prisma/client';
  * This is a clean domain entity — not the raw Prisma model. The
  * `verifiedPurchase` flag is computed by the service (it is not a column) and
  * indicates whether the author has an order line item for this product.
+ *
+ * Carries NO moderation state since TASK-585. It used to expose `isActive`, which
+ * was moderation bookkeeping leaking onto a public endpoint — it told any reader
+ * which texts were queued or turned down, and told the storefront nothing it
+ * renders. Moderation state lives on {@link AdminReviewEntity}, behind the
+ * `reviews:moderate` permission, where the people who act on it are.
  */
 export class ReviewEntity {
   @ApiProperty({
@@ -45,12 +51,6 @@ export class ReviewEntity {
   })
   verifiedPurchase!: boolean;
 
-  @ApiProperty({
-    description: 'Whether the review is approved and visible on the storefront',
-    example: false,
-  })
-  isActive!: boolean;
-
   @ApiProperty({ description: 'Creation timestamp', example: '2026-06-30T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -67,7 +67,6 @@ export class ReviewEntity {
     entity.rating = review.rating;
     entity.comment = review.comment;
     entity.verifiedPurchase = verifiedPurchase;
-    entity.isActive = review.isActive;
     entity.createdAt = review.createdAt;
     return entity;
   }
