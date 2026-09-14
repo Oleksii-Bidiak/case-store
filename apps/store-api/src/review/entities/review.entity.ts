@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Review } from '@prisma/client';
+import { Review, ReviewReply } from '@prisma/client';
+import { ReviewReplyEntity } from './review-reply.entity';
 
 /**
  * Domain entity representing a single product review exposed to clients.
@@ -55,11 +56,34 @@ export class ReviewEntity {
   createdAt!: Date;
 
   /**
+   * The shop's answer, or null when nobody has answered (TASK-587).
+   *
+   * At most one — the owner decided the shop replies once and there is no thread,
+   * and `@unique` on `ReviewReply.reviewId` is what enforces it. Explicitly null
+   * rather than absent: the storefront branches on this to decide whether to
+   * render the reply block, and an optional key would make that branch depend on
+   * whether the field happened to be serialised.
+   */
+  @ApiProperty({
+    type: ReviewReplyEntity,
+    nullable: true,
+    description: 'The shop’s reply to this review, or null',
+  })
+  reply!: ReviewReplyEntity | null;
+
+  /**
    * Build a ReviewEntity from a Prisma `Review` plus the computed
    * `verifiedPurchase` flag (defaults to false when not provided, e.g. on the
    * public list where no per-author purchase lookup is performed).
+   *
+   * The reply is optional in the INPUT because the write paths (submit, approve,
+   * reject) return a bare `Review` and a freshly written row has no reply to
+   * carry; it is never optional in the OUTPUT.
    */
-  static fromPrisma(review: Review, verifiedPurchase = false): ReviewEntity {
+  static fromPrisma(
+    review: Review & { reply?: ReviewReply | null },
+    verifiedPurchase = false,
+  ): ReviewEntity {
     const entity = new ReviewEntity();
     entity.id = review.id;
     entity.userId = review.userId;
@@ -68,6 +92,7 @@ export class ReviewEntity {
     entity.comment = review.comment;
     entity.verifiedPurchase = verifiedPurchase;
     entity.createdAt = review.createdAt;
+    entity.reply = review.reply ? ReviewReplyEntity.fromPrisma(review.reply) : null;
     return entity;
   }
 }

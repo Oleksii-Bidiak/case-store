@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ReviewTextStatus } from '@prisma/client';
 import { ReviewEntity } from './review.entity';
+import { ReviewReplyEntity } from './review-reply.entity';
 import type { ReviewModerationRow } from '../review.repository';
 
 /**
@@ -74,6 +75,9 @@ export class AdminReviewEntity extends ReviewEntity {
     entity.textStatus = row.textStatus;
     entity.ratingVisible = row.ratingVisible;
     entity.createdAt = row.createdAt;
+    // What the shop already answered (TASK-587) — the panel needs it to show a
+    // "replied" state instead of offering a fresh answer that would overwrite it.
+    entity.reply = row.reply ? ReviewReplyEntity.fromPrisma(row.reply) : null;
     entity.userEmail = row.user.email;
     entity.productName = row.product.name;
     entity.productSku = row.product.sku;

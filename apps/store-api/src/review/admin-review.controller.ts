@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiExtraModels,
@@ -10,9 +21,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { ReviewService } from './review.service';
-import { ReviewEntity, AdminReviewEntity } from './entities';
-import { AdminReviewQueryDto, BulkReviewModerationDto } from './dto';
+import { ReviewEntity, AdminReviewEntity, ReviewReplyEntity } from './entities';
+import { AdminReviewQueryDto, BulkReviewModerationDto, CreateReviewReplyDto } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { CurrentUser } from '../auth';
 
 /**
  * Pagination metadata for the admin moderation queue.
@@ -56,9 +68,12 @@ class AdminReviewResponseEnvelope {
  *   GET   /api/admin/reviews             — queue (pending|approved|rejected)
  *   PATCH /api/admin/reviews/:id/approve — publish a review's text
  *   PATCH /api/admin/reviews/:id/reject  — turn down a review's text
+ *   POST  /api/admin/reviews/:id/reply   — answer as the shop (`reviews:write`)
  *
- * Every action here is about the TEXT (TASK-585). None of them touches the rating,
- * which counts on its own the moment it is given.
+ * Every moderation action here is about the TEXT (TASK-585). None of them touches
+ * the rating, which counts on its own the moment it is given. The reply (TASK-587)
+ * is not moderation at all — it is the shop speaking — and carries its own
+ * permission, which overrides the controller's.
  *
  * Separate from the public {@link import('./review.controller').ReviewController}
  * — mirrors the AdminOrderController vs OrderController split.
@@ -78,6 +93,15 @@ class BulkReviewModerationResponse {
   data!: BulkReviewModerationResult;
 }
 
+/**
+ * Response envelope for the shop's reply — the same two fields a customer sees,
+ * so an operator can never be shown an author name the storefront does not have.
+ */
+class ReviewReplyResponseEnvelope {
+  @ApiProperty({ type: ReviewReplyEntity })
+  data!: ReviewReplyEntity;
+}
+
 @ApiTags('Reviews')
 @ApiExtraModels(
   AdminReviewEntity,
@@ -87,6 +111,8 @@ class BulkReviewModerationResponse {
   AdminReviewResponseEnvelope,
   BulkReviewModerationResult,
   BulkReviewModerationResponse,
+  ReviewReplyEntity,
+  ReviewReplyResponseEnvelope,
 )
 @Controller('admin/reviews')
 @UseGuards(PermissionGuard)
@@ -221,5 +247,63 @@ export class AdminReviewController {
   async reject(@Param('id') id: string): Promise<AdminReviewResponseEnvelope> {
     const review = await this.reviewService.rejectReview(id);
     return { data: review };
+  }
+
+  /**
+   * POST /api/admin/reviews/:id/reply
+   *
+   * The shop answers a review (TASK-587, owner's decision of 2026-09-14). Only the
+   * shop answers — there is no author thread — and the customer byline under the
+   * review stays «Покупець».
+   *
+   * UPSERT, NOT APPEND. One reply per review, enforced by the `@unique` on
+   * `ReviewReply.reviewId`. Posting again REPLACES the text, because correcting a
+   * published answer is an ordinary need and a second row would be a review with
+   * two shop answers and no rule about which one renders.
+   *
+   * `authorUserId` is stamped from the acting admin FOR ACCOUNTABILITY and is not
+   * shown to customers — {@link ReviewReplyEntity} carries the body and the date
+   * and nothing else. This is not an oversight to be "fixed" by rendering the
+   * name: the storefront speaks as the shop, deliberately.
+   *
+   * ITS OWN PERMISSION, overriding the controller's. `PermissionGuard` treats a
+   * handler-level `@RequirePermission` as a full override of the class-level one,
+   * so this route needs `reviews:write` and does NOT accept `reviews:moderate`.
+   * The split is the point: moderating is a judgement about somebody else's
+   * sentence, replying is the business speaking in public.
+   *
+   * ROUTE ORDER: a POST, and the only one on this controller, so nothing can
+   * shadow it today. It is still declared among the `:id` routes rather than
+   * above them for the reason spelled out on `@Patch('moderate')` — a future
+   * `@Post(':id')` added ABOVE this line would swallow `/:id/reply`, and the
+   * failure would read as a malformed-UUID complaint rather than a routing bug.
+   */
+  @Post(':id/reply')
+  // 200, not the POST default of 201: on the second call this replaces an answer
+  // that already exists, and "Created" would be the wrong word for it half the
+  // time. One status for one operation the operator cannot tell apart.
+  @HttpCode(HttpStatus.OK)
+  @RequirePermission('reviews:write')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Reply to a review as the shop (admin)',
+    operationId: 'adminReviewControllerReply',
+  })
+  @ApiParam({ name: 'id', description: 'Review UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Reply saved — replacing the previous one if there was any',
+    type: ReviewReplyResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Validation error — empty or oversized reply' })
+  @ApiResponse({ status: 403, description: 'Forbidden — reviews:write required' })
+  @ApiResponse({ status: 404, description: 'Review not found' })
+  async reply(
+    @Param('id') id: string,
+    @CurrentUser('id') adminUserId: string,
+    @Body() dto: CreateReviewReplyDto,
+  ): Promise<ReviewReplyResponseEnvelope> {
+    const saved = await this.reviewService.replyToReview(id, adminUserId, dto);
+    return { data: saved };
   }
 }

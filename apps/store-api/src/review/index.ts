@@ -8,6 +8,7 @@ export { ReviewRepository } from './review.repository';
 export type {
   CreateReviewInput,
   ReviewAggregateData,
+  ReviewWithReply,
   ReviewModerationRow,
   ReviewModerationFilter,
 } from './review.repository';
@@ -20,10 +21,12 @@ export {
   ReviewAggregateEntity,
   AdminReviewEntity,
   OwnReviewEntity,
+  ReviewReplyEntity,
 } from './entities';
 export {
   CreateReviewDto,
   UpdateReviewDto,
+  CreateReviewReplyDto,
   ReviewListQueryDto,
   AdminReviewQueryDto,
   ReviewModerationStatus,

@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Review, ReviewTextStatus } from '@prisma/client';
+import { Prisma, Review, ReviewReply, ReviewTextStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { AUTHOR_NOT_HIDDEN, COUNTS_TOWARD_RATING } from './review.constants';
 
@@ -55,12 +55,24 @@ export interface ReviewAggregateData {
 }
 
 /**
+ * A review with whatever the shop has answered — null when nobody has (TASK-587).
+ * At most one, by the `@unique` on `ReviewReply.reviewId`.
+ */
+export interface ReviewWithReply extends Review {
+  reply: ReviewReply | null;
+}
+
+/**
  * A moderation-queue row: the review enriched with the author's email/name and
  * the product's name and SKU, needed to render the admin table without extra
  * lookups. `sku` is nullable because `Product.sku` is — a position may be saved
  * before an article number is assigned.
+ *
+ * Carries the shop's reply too (TASK-587): a queue that does not show what was
+ * already answered invites an operator to answer it again, and the upsert behind
+ * the reply route would then overwrite a colleague's words without a trace.
  */
-export interface ReviewModerationRow extends Review {
+export interface ReviewModerationRow extends ReviewWithReply {
   user: { email: string };
   product: { name: string; sku: string | null };
 }
@@ -69,7 +81,7 @@ export interface ReviewModerationRow extends Review {
  * Result of a paginated review query.
  */
 export interface PaginatedReviewsResult {
-  reviews: Review[];
+  reviews: ReviewWithReply[];
   total: number;
 }
 
@@ -153,6 +165,10 @@ export class ReviewRepository {
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
+        // The shop's answer travels with the review it answers (TASK-587). A
+        // second round-trip per page is the alternative, on a PUBLIC, uncached
+        // endpoint that already had one N+1 removed from it (TASK-298).
+        include: { reply: true },
       }),
       this.prisma.review.count({ where }),
     ]);
@@ -230,6 +246,8 @@ export class ReviewRepository {
           // «Чохол силіконовий» could not tell WHICH one the review is about — and
           // the SKU is what they then search the catalogue by.
           product: { select: { name: true, sku: true } },
+          // What the shop has already said (TASK-587) — see ReviewModerationRow.
+          reply: true,
         },
       }),
       this.prisma.review.count({ where }),
@@ -354,6 +372,29 @@ export class ReviewRepository {
         },
       });
       return count;
+    });
+  }
+
+  /**
+   * Write the shop's answer to a review (TASK-587).
+   *
+   * An UPSERT keyed on `reviewId`, which the schema makes unique. Two reasons it
+   * is not a plain `create`:
+   *  - correcting a published answer is an ordinary need — a typo, a price that
+   *    changed, a promise the shop can no longer keep — and `create` would meet it
+   *    with a constraint violation;
+   *  - without the `@unique` a `create` would instead leave TWO answers under one
+   *    review, and nothing in the system says which of them renders.
+   *
+   * The `update` arm carries `authorUserId` deliberately: after an edit, the
+   * person answerable for the words on screen is whoever wrote THOSE words, not
+   * whoever answered first.
+   */
+  upsertReply(reviewId: string, authorUserId: string, body: string): Promise<ReviewReply> {
+    return this.prisma.reviewReply.upsert({
+      where: { reviewId },
+      create: { reviewId, authorUserId, body },
+      update: { authorUserId, body },
     });
   }
 

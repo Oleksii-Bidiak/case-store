@@ -7,6 +7,7 @@ import {
   ReviewAggregateEntity,
   AdminReviewEntity,
   OwnReviewEntity,
+  ReviewReplyEntity,
 } from './entities';
 import { ReviewModerationStatus } from './dto';
 import type {
@@ -14,6 +15,7 @@ import type {
   ReviewListQueryDto,
   AdminReviewQueryDto,
   UpdateReviewDto,
+  CreateReviewReplyDto,
 } from './dto';
 
 const DEFAULT_PAGE = 1;
@@ -271,6 +273,33 @@ export class ReviewService {
     const rejected = await this.reviewRepository.rejectText(id);
     this.logger.info({ reviewId: id }, 'Review text rejected (rating kept)');
     return ReviewEntity.fromPrisma(rejected);
+  }
+
+  /**
+   * The shop answers a review (TASK-587 — owner's decision of 2026-09-14).
+   *
+   * One answer per review, so posting again REPLACES the text rather than adding
+   * a second: there is no thread, and a correction is a normal thing to need.
+   *
+   * `actorUserId` is recorded on the row for accountability and is deliberately
+   * absent from what comes back — the customer is answered by the shop, not by an
+   * employee. See {@link ReviewReplyEntity}.
+   *
+   * @throws NotFoundException when no review has the given id.
+   */
+  async replyToReview(
+    id: string,
+    actorUserId: string,
+    dto: CreateReviewReplyDto,
+  ): Promise<ReviewReplyEntity> {
+    const existing = await this.reviewRepository.findById(id);
+    if (!existing) {
+      throw new NotFoundException('Review not found');
+    }
+
+    const reply = await this.reviewRepository.upsertReply(id, actorUserId, dto.body);
+    this.logger.info({ reviewId: id, actorUserId }, 'Shop reply saved');
+    return ReviewReplyEntity.fromPrisma(reply);
   }
 
   /**

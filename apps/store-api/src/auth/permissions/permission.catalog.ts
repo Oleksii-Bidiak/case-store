@@ -108,6 +108,14 @@ export const PERMISSIONS = [
   { key: 'carousels:write', zone: PERMISSION_ZONES.CONTENT, label: 'Каруселі головної' },
   { key: 'faq:write', zone: PERMISSION_ZONES.CONTENT, label: 'FAQ' },
   { key: 'reviews:moderate', zone: PERMISSION_ZONES.CONTENT, label: 'Модерувати відгуки' },
+  // Deliberately NOT folded into `reviews:moderate` (TASK-587). Moderating is a
+  // judgement about somebody ELSE's sentence — publish it or do not. Replying is
+  // the shop SPEAKING, under its own name, on a public page, in an answer no
+  // second person reads before a customer does. Those are different amounts of
+  // trust, and an owner who hands out the first should not silently be handing
+  // out the second. Denied by default like every new key, so ticking it is a
+  // deliberate act.
+  { key: 'reviews:write', zone: PERMISSION_ZONES.CONTENT, label: 'Відповідати на відгуки' },
 
   // ── Знижки та маркетинг ───────────────────────────────────────────────────
   { key: 'discounts:write', zone: PERMISSION_ZONES.MARKETING, label: 'Промокоди та знижки' },

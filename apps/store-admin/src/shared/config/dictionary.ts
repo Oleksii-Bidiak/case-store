@@ -2848,6 +2848,11 @@ export const dict = {
       reorder: "змінено порядок",
       reorderBrands: "змінено порядок брендів",
       reorderCategories: "змінено порядок категорій",
+      // TASK-587. The audit action set is DERIVED from the guarded mutating
+      // routes, so `POST /admin/reviews/:id/reply` produces `review.reply` the
+      // moment it exists — and without a verb here the owner's audit log prints
+      // the raw key. One label, no UI: the reply screen itself is TASK-591.
+      reply: "надано відповідь",
       resolve: "закрито",
       setCategoryTemplate: "налаштовано шаблон категорії",
       setGroupMany: "призначено групу (масово)",
