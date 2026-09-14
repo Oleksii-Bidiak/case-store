@@ -3334,7 +3334,7 @@
             "description": "Product not found"
           },
           "413": {
-            "description": "File too large"
+            "description": "A file exceeds the 20 MB limit, or the batch exceeds the 25 MB one request may carry. The per-file limit is not the whole story here: several legal files can still be too much together, so a batch of large photos should be sent one file per request."
           }
         },
         "security": [
@@ -3343,6 +3343,65 @@
           }
         ],
         "summary": "Upload product images (admin)",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
+    "/api/products/{productId}/images/attach": {
+      "post": {
+        "operationId": "productImageControllerAttach",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "description": "Product UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttachImageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Image attached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductImageEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid payload (mediaAssetId is not a UUID)"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — products:write required"
+          },
+          "404": {
+            "description": "Product or media asset not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Attach a media-library image to a product (admin)",
         "tags": [
           "Products"
         ]
@@ -3492,7 +3551,7 @@
             "description": "Forbidden — categories:write required"
           },
           "413": {
-            "description": "File exceeds the 5 MB limit"
+            "description": "File exceeds the 20 MB limit"
           },
           "415": {
             "description": "File contents are not a valid image"
@@ -3553,7 +3612,7 @@
             "description": "Forbidden — brands:write required"
           },
           "413": {
-            "description": "File exceeds the 5 MB limit"
+            "description": "File exceeds the 20 MB limit"
           },
           "415": {
             "description": "File contents are not a valid image"
@@ -3614,7 +3673,7 @@
             "description": "Forbidden — banners:write required"
           },
           "413": {
-            "description": "File exceeds the 5 MB limit"
+            "description": "File exceeds the 20 MB limit"
           },
           "415": {
             "description": "File contents are not a valid image"
@@ -3675,7 +3734,7 @@
             "description": "Forbidden — blog:write required"
           },
           "413": {
-            "description": "File exceeds the 5 MB limit"
+            "description": "File exceeds the 20 MB limit"
           },
           "415": {
             "description": "File contents are not a valid image"
@@ -5030,6 +5089,284 @@
         "summary": "List a category's filterable spec facets",
         "tags": [
           "Categories"
+        ]
+      }
+    },
+    "/api/admin/media": {
+      "post": {
+        "operationId": "mediaControllerUpload",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "alt": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Asset stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaAssetResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No file, or a disallowed MIME type"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — media:write required"
+          },
+          "413": {
+            "description": "File exceeds the 20 MB limit"
+          },
+          "415": {
+            "description": "File contents are not a valid image"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Upload an image into the media library (admin)",
+        "tags": [
+          "Media"
+        ]
+      },
+      "get": {
+        "operationId": "mediaControllerFindAll",
+        "parameters": [
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Free-text search. Matches alt text (case-insensitive substring) OR an exact tag — an operator looking for \"банер\" does not remember which field they typed it into.",
+            "schema": {
+              "example": "iphone",
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to assets carrying this exact tag. Combined with `search` as AND.",
+            "schema": {
+              "example": "банер",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": {
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Items per page",
+            "schema": {
+              "default": 24,
+              "example": 24,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of the library",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthenticated"
+          },
+          "403": {
+            "description": "Forbidden — media:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List media assets with search and pagination (admin)",
+        "tags": [
+          "Media"
+        ]
+      }
+    },
+    "/api/admin/media/{id}": {
+      "get": {
+        "operationId": "mediaControllerFindById",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Media asset UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Asset found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaAssetResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — media:read required"
+          },
+          "404": {
+            "description": "Media asset not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get one media asset and every place that uses it (admin)",
+        "tags": [
+          "Media"
+        ]
+      },
+      "patch": {
+        "operationId": "mediaControllerUpdate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Media asset UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MediaMetadataDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Asset updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaAssetResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input data"
+          },
+          "403": {
+            "description": "Forbidden — media:write required"
+          },
+          "404": {
+            "description": "Media asset not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Edit a media asset’s alt text and tags (admin)",
+        "tags": [
+          "Media"
+        ]
+      },
+      "delete": {
+        "operationId": "mediaControllerDelete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Media asset UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Asset and its file deleted"
+          },
+          "403": {
+            "description": "Forbidden — media:write required"
+          },
+          "404": {
+            "description": "Media asset not found"
+          },
+          "409": {
+            "description": "Still in use. The message names every place that references it; the full structured list is on GET /api/admin/media/:id."
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Delete a media asset — only when nothing uses it (admin)",
+        "tags": [
+          "Media"
         ]
       }
     },
@@ -15618,6 +15955,31 @@
           "data"
         ]
       },
+      "AttachImageDto": {
+        "type": "object",
+        "properties": {
+          "mediaAssetId": {
+            "type": "string",
+            "description": "Id of the media-library asset to attach to this product",
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "mediaAssetId"
+        ]
+      },
+      "ProductImageEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProductImageEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ReorderImageDto": {
         "type": "object",
         "properties": {
@@ -16544,6 +16906,328 @@
         "required": [
           "data"
         ]
+      },
+      "MediaAssetEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Asset id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "url": {
+            "type": "string",
+            "description": "Absolute public URL of the stored file",
+            "example": "http://localhost:3001/uploads/media/8f1c….webp"
+          },
+          "blurDataUrl": {
+            "type": "string",
+            "description": "base64 LQIP for `next/image` blur-up; null for an animated-GIF passthrough",
+            "nullable": true,
+            "example": "data:image/webp;base64,UklGR…"
+          },
+          "width": {
+            "type": "number",
+            "description": "Pixel width of the STORED render. 0 means unknown — every asset the TASK-441 backfill created from an existing product photo carries 0, because those numbers live inside the files and a migration cannot read them.",
+            "example": 2000
+          },
+          "height": {
+            "type": "number",
+            "description": "Pixel height of the stored render; 0 = unknown",
+            "example": 1333
+          },
+          "bytes": {
+            "type": "number",
+            "description": "Size of the stored file in bytes; 0 = unknown",
+            "example": 184320
+          },
+          "mime": {
+            "type": "string",
+            "description": "Media type of the stored file",
+            "example": "image/webp"
+          },
+          "alt": {
+            "type": "string",
+            "description": "Alternative text, shared by every consumer of this asset",
+            "nullable": true,
+            "example": "Смартфон Apple iPhone 16 Pro — вигляд спереду"
+          },
+          "tags": {
+            "description": "Free-form operator tags used for filtering the library",
+            "example": [
+              "iphone",
+              "банер"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "uploadedById": {
+            "type": "string",
+            "description": "Who uploaded it; null for assets created by the TASK-441 backfill",
+            "nullable": true,
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "usedInCount": {
+            "type": "number",
+            "description": "How many places currently reference this asset. COMPUTED on every read, never stored — see MediaUsageRepository. 0 is the only state in which a delete succeeds.",
+            "example": 0
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp",
+            "example": "2026-09-14T10:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last update timestamp",
+            "example": "2026-09-14T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "blurDataUrl",
+          "width",
+          "height",
+          "bytes",
+          "mime",
+          "alt",
+          "tags",
+          "uploadedById",
+          "usedInCount",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "MediaUsageEntity": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "description": "Which column holds the reference. One per COLUMN, not per table: an article can use the same asset as its cover, as its social card and inside its body, and an operator told only \"used by this article\" cannot tell which to change.",
+            "enum": [
+              "PRODUCT_IMAGE",
+              "PRODUCT_DESCRIPTION",
+              "PRODUCT_OG_IMAGE",
+              "CATEGORY_IMAGE",
+              "CATEGORY_OG_IMAGE",
+              "BRAND_LOGO",
+              "BANNER_IMAGE",
+              "BLOG_COVER_IMAGE",
+              "BLOG_OG_IMAGE",
+              "BLOG_CONTENT",
+              "PAGE_CONTENT",
+              "PAGE_OG_IMAGE",
+              "SEO_DEFAULT_OG_IMAGE",
+              "SEO_STORE_LOGO"
+            ],
+            "example": "PRODUCT_IMAGE"
+          },
+          "entityId": {
+            "type": "string",
+            "description": "Primary key of the referencing row (the singleton id for site settings)",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "label": {
+            "type": "string",
+            "description": "What the operator calls that row — a product name, an article title. The admin panel supplies its own Ukrainian wording for `kind` and uses this for the \"which one\", so no UI copy lives in the API.",
+            "example": "Apple iPhone 16 Pro"
+          }
+        },
+        "required": [
+          "kind",
+          "entityId",
+          "label"
+        ]
+      },
+      "MediaAssetDetailEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Asset id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "url": {
+            "type": "string",
+            "description": "Absolute public URL of the stored file",
+            "example": "http://localhost:3001/uploads/media/8f1c….webp"
+          },
+          "blurDataUrl": {
+            "type": "string",
+            "description": "base64 LQIP for `next/image` blur-up; null for an animated-GIF passthrough",
+            "nullable": true,
+            "example": "data:image/webp;base64,UklGR…"
+          },
+          "width": {
+            "type": "number",
+            "description": "Pixel width of the STORED render. 0 means unknown — every asset the TASK-441 backfill created from an existing product photo carries 0, because those numbers live inside the files and a migration cannot read them.",
+            "example": 2000
+          },
+          "height": {
+            "type": "number",
+            "description": "Pixel height of the stored render; 0 = unknown",
+            "example": 1333
+          },
+          "bytes": {
+            "type": "number",
+            "description": "Size of the stored file in bytes; 0 = unknown",
+            "example": 184320
+          },
+          "mime": {
+            "type": "string",
+            "description": "Media type of the stored file",
+            "example": "image/webp"
+          },
+          "alt": {
+            "type": "string",
+            "description": "Alternative text, shared by every consumer of this asset",
+            "nullable": true,
+            "example": "Смартфон Apple iPhone 16 Pro — вигляд спереду"
+          },
+          "tags": {
+            "description": "Free-form operator tags used for filtering the library",
+            "example": [
+              "iphone",
+              "банер"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "uploadedById": {
+            "type": "string",
+            "description": "Who uploaded it; null for assets created by the TASK-441 backfill",
+            "nullable": true,
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "usedInCount": {
+            "type": "number",
+            "description": "How many places currently reference this asset. COMPUTED on every read, never stored — see MediaUsageRepository. 0 is the only state in which a delete succeeds.",
+            "example": 0
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp",
+            "example": "2026-09-14T10:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last update timestamp",
+            "example": "2026-09-14T10:00:00.000Z"
+          },
+          "usedIn": {
+            "description": "Every current reference to this asset, in a stable order. Empty means the asset can be deleted.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaUsageEntity"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "url",
+          "blurDataUrl",
+          "width",
+          "height",
+          "bytes",
+          "mime",
+          "alt",
+          "tags",
+          "uploadedById",
+          "usedInCount",
+          "createdAt",
+          "updatedAt",
+          "usedIn"
+        ]
+      },
+      "MediaPaginationMetaEntity": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Total assets matching the filters",
+            "example": 125
+          },
+          "page": {
+            "type": "number",
+            "description": "Current page (1-based)",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "description": "Items per page",
+            "example": 24
+          },
+          "totalPages": {
+            "type": "number",
+            "description": "Total number of pages",
+            "example": 6
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "MediaListResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MediaAssetEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/MediaPaginationMetaEntity"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "MediaAssetResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MediaAssetDetailEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "MediaMetadataDto": {
+        "type": "object",
+        "properties": {
+          "alt": {
+            "type": "string",
+            "description": "Alternative text shared by every consumer of this asset",
+            "example": "Смартфон Apple iPhone 16 Pro — вигляд спереду"
+          },
+          "tags": {
+            "description": "Operator tags. Accepts a JSON array, a repeated multipart field, or one comma-separated string; duplicates differing only in case are collapsed.",
+            "example": [
+              "iphone",
+              "банер"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "WishlistItemEntity": {
         "type": "object",

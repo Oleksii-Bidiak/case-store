@@ -4,10 +4,12 @@ export {
   PRODUCTS_SUBDIR,
   BRANDING_SUBDIR,
   IMPORTS_SUBDIR,
+  CONTENT_SUBDIR,
+  MEDIA_SUBDIR,
   STORAGE_SUBDIRS,
   type StorageSubdir,
   isStorageSubdir,
 } from './storage-subdirs';
 export { LocalDiskStorageService } from './local-disk-storage.service';
-export { ImageProcessor, type ProcessedImage } from './image-processor.service';
+export { ImageProcessor, type ImageProbe, type ProcessedImage } from './image-processor.service';
 export { sanitizeSvg } from './sanitize-svg';

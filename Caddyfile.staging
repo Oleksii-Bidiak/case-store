@@ -70,6 +70,15 @@ api.{$DOMAIN} {
 	}
 	header X-Robots-Tag "noindex, nofollow, noarchive"
 
+	# Kept in sync with the production Caddyfile (TASK-439) — staging carries it
+	# too, otherwise an upload that the real store rejects at the edge would be
+	# accepted here and the difference would only surface in production. See that
+	# file for why 25MB is a whole-BODY cap and why the 10-files-per-request
+	# endpoint does not make it mis-set.
+	request_body {
+		max_size 25MB
+	}
+
 	# Kept in sync with the production Caddyfile (TASK-387): uploads are
 	# content-addressed, so their bytes never change under a given URL.
 	@uploads path /uploads/*

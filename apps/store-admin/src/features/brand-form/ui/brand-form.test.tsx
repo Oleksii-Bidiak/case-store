@@ -8,6 +8,13 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import {
+  LIBRARY_ASSET_ALT,
+  MEDIA_PERMISSIONS,
+  makeMediaAsset,
+  pickFromLibrary,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { BrandForm } from "./brand-form";
 
 jest.mock("sonner", () => ({
@@ -42,6 +49,44 @@ function stubUpload(status = 201) {
 
 const logoField = () =>
   screen.getByLabelText(dict.brandForm.logo) as HTMLInputElement;
+
+describe("BrandForm — media library picker (TASK-441)", () => {
+  const noop = () => {};
+
+  it("writes the picked asset's URL into the very field the upload writes to", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: LIBRARY_ASSET_ALT, url: STORED_URL }),
+    ]);
+    renderWithProviders(<BrandForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    await pickFromLibrary();
+
+    // Same field, same preview, same submitted value as an upload — the picker
+    // is a third way IN, not a second place the value can live.
+    await waitFor(() => expect(logoField()).toHaveValue(STORED_URL));
+    expect(screen.getByAltText(dict.brandForm.logoUpload.alt)).toHaveAttribute(
+      "src",
+      STORED_URL,
+    );
+  });
+
+  it("leaves the form working unchanged for an operator with no media keys", async () => {
+    const uploaded = stubUpload();
+    renderWithProviders(<BrandForm onSubmit={noop} isPending={false} />);
+
+    expect(
+      screen.queryByRole("button", { name: dict.mediaPicker.trigger }),
+    ).not.toBeInTheDocument();
+
+    // The old path still works, which is the whole point of hiding rather than
+    // disabling: nobody loses a feature by not being granted a new one.
+    await userEvent.upload(fileInput(), pickFile());
+    await waitFor(() => expect(uploaded).toEqual(["logo.png"]));
+    await waitFor(() => expect(logoField()).toHaveValue(STORED_URL));
+  });
+});
 
 describe("BrandForm — logo upload (TASK-424)", () => {
   const noop = () => {};

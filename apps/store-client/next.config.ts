@@ -105,8 +105,13 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_CURRENCY: process.env.NEXT_PUBLIC_CURRENCY,
   },
   images: {
-    // Whitelist exactly the store-api uploads origin. An empty `port` means
-    // "any port" in Next.js, so a hostname without an explicit port still works.
+    // Whitelist exactly the store-api uploads origin. An empty `port` matches a
+    // URL that carries no explicit port either (`match-remote-pattern.js`
+    // compares `url.port` to the pattern's), which is what a production
+    // `https://api.mystore.ua` looks like — it is NOT "any port", so a src on a
+    // non-default port is rejected unless the pattern names that port. Here the
+    // port comes from NEXT_PUBLIC_API_URL, so dev (`:3001`) and production
+    // (none) both line up on their own.
     remotePatterns: [
       {
         protocol: apiUrl.protocol.replace(":", "") as "http" | "https",
@@ -138,6 +143,59 @@ const nextConfig: NextConfig = {
     // re-encoding down on a 2-vCPU box, where a cold catalogue page is 40-60
     // transforms (TASK-387).
     minimumCacheTTL: 60 * 60 * 24,
+    // Deliberately NO `formats: ['image/avif', 'image/webp']` (TASK-440).
+    //
+    // This is the answer to "why don't we serve AVIF, it's smaller" — measured,
+    // not assumed, so it does not have to be re-argued from intuition.
+    //
+    // WHAT WAS MEASURED. Next 16.2.12 encodes AVIF as
+    // `.avif({ quality: max(q - 20, 1), effort: 3 })` and WebP as
+    // `.webp({ quality: q })` with q defaulting to 75 (`imageConfigDefault`),
+    // both after `.rotate().resize(w, …)` — see
+    // `next/dist/server/image-optimizer.js`. That exact pipeline was replayed on
+    // a 2000×1500 WebP q80 source (what store-api now stores, TASK-439) with
+    // `sharp.concurrency(1)`, median of 7 runs, pinned to one core. Per
+    // transform, on a typical 406 KB photo:
+    //
+    //   width   256    640    828   1080   1920   2000 (lightbox, `sizes=100vw`)
+    //   AVIF     99    230    347    565   1551   2112 ms
+    //   WebP     44     79    103    138    322    398 ms
+    //   saved    31%    37%    37%    36%    26%    43% of bytes
+    //
+    // AVIF costs 1.8-5.3× the CPU, and the saving is SMALLEST (23-26%) at the
+    // widths where the cost is largest — the trade gets worse exactly where it
+    // would need to get better.
+    //
+    // WHY THAT DECIDES IT ON A 2-vCPU BOX (CX22, `docs/deploy/10-capacity.md`).
+    // Next sets `sharp.concurrency(floor(cores / 2))` = 1 there, so image
+    // optimization owns ONE core, shared with Postgres, store-api, Meilisearch
+    // and Caddy. Those figures are already from one pinned core, and a Xeon vCPU
+    // is slower again — putting the first render of a lightbox-width AVIF around
+    // 4 s (≈5.6 s for a busy photo), past this plan's 1 s budget by a wide
+    // margin and uncomfortably close to a hard limit of the optimizer's own.
+    //
+    // THE FAILURE MODE IS WORSE THAN "SLOW". The optimizer wraps the pipeline in
+    // `.timeout({ seconds: 7 })`, and on failure it does NOT 500 — it falls back
+    // to serving the ORIGINAL upstream file. A timed-out AVIF encode therefore
+    // burns 7 s of the box's only spare core and then ships the full 2000px,
+    // 400-860 KB source to a phone that asked for a 256px thumbnail. No error,
+    // no log line: just a slow shop and a bandwidth bill.
+    //
+    // AND THE COST IS NOT AS ONE-OFF AS `minimumCacheTTL` SUGGESTS. A day-long
+    // TTL does amortise each variant, but enabling AVIF roughly DOUBLES the
+    // number of variants (AVIF for capable browsers, WebP for the rest), so it
+    // doubles both the cold-cache work after every deploy and the disk the
+    // optimizer cache holds — and the cold number is what every visitor gets
+    // after a deploy (`scripts/load/images.js`).
+    //
+    // WHAT WOULD CHANGE THE ANSWER: more cores (the encode parallelises), or
+    // pre-generating AVIF once at upload time in store-api's `ImageProcessor`
+    // instead of per-variant in the request path. Both are real options; neither
+    // is a `formats` line. Re-measure on the real 2-vCPU stand before deciding —
+    // the numbers above are a single-core LOCAL PROXY, not the target machine.
+    // NOTE for whoever does: `scripts/load/images.js` cannot see AVIF as written,
+    // because the optimizer picks the format from the request's `Accept` header
+    // and the harness sends none.
   },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];

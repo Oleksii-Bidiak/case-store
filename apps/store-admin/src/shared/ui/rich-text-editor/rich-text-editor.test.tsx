@@ -1,20 +1,12 @@
 import * as React from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-import { dict } from "@/shared/config";
-
 // Import the module, NOT `./index`: the barrel wraps this component in
 // `next/dynamic({ ssr: false, loading: () => null })`, which renders nothing at
 // all under jsdom.
 import { RichTextEditor } from "./rich-text-editor";
 
 const EDITOR_LABEL = "Текстовий редактор";
-const EDIT_ANYWAY = dict.contentPreview.unsupportedEditAnyway;
-
-/** The TASK-467 banner, or `null` when the editor is showing the full document. */
-function truncationBanner() {
-  return screen.queryByText(dict.contentPreview.unsupportedTitle);
-}
 
 /**
  * The shape of the three admin content forms: the editor mounts with an empty
@@ -189,38 +181,159 @@ describe("RichTextEditor", () => {
   });
 
   /**
-   * TASK-467 — the server's allow-list (`sanitize-rich-text.ts`) keeps markup
-   * this editor's Tiptap schema may not be able to represent; whatever it
-   * cannot represent it drops on seed, and `getHTML()` is then already the
-   * truncated document, so the first keystroke would save the loss. The editor
-   * must say so and refuse to be typed into until the operator accepts that
-   * cost.
+   * TASK-547 — the editor's schema IS the server's allow-list now.
    *
-   * TASK-434 shrank the gap to a single tag. Tables and H1/H4 are now part of
-   * the schema and must NOT warn any more; `img` is still dropped, because
-   * showing images means uploading them and that endpoint (TASK-424) is not
-   * merged. The two halves are tested together on purpose — a banner that
-   * fires on everything is as useless as one that never fires.
+   * These tests are the PROOF that let TASK-467's truncation banner be deleted
+   * rather than merely assumed obsolete. That banner existed because seeding a
+   * document the schema could not represent left `getHTML()` already shortened,
+   * so the operator's first keystroke saved the loss — and the supplier
+   * catalogue import really does write vendor `<img>` into the same
+   * `description` column.
+   *
+   * So the question is not "does the button work" but "does an `<img>` the
+   * operator never typed come back out intact". The server keeps exactly two
+   * attributes on an image (`sanitize-rich-text.ts` → `img: ['src', 'alt']`),
+   * so exactly two must survive the round trip. If either of these tests ever
+   * fails, the probe + banner has to come back for the attribute that broke —
+   * see the schema table in `rich-text-editor.tsx`.
    */
-  describe("markup the editor cannot render (TASK-467)", () => {
-    const TABLE_HTML =
-      "<p>Характеристики</p><table><tbody><tr><th>Вага</th><td>120 г</td></tr></tbody></table>";
+  describe("images survive the round trip (TASK-547)", () => {
     const IMAGE_HTML =
       '<p>Огляд</p><img src="https://example.com/case.jpg" alt="Чохол">';
-    // Everything here round-trips through the schema unchanged in substance —
-    // Tiptap still reformats it (attribute order, self-closing tags), which is
-    // exactly why detection is by tag presence and not by document equality.
-    const ORDINARY_HTML = [
-      "<h2>Заголовок</h2>",
-      "<h3>Підзаголовок</h3>",
-      "<p>Текст із <strong>жирним</strong> та ",
-      '<a href="https://example.com">посиланням</a>.</p>',
-      "<ul><li>Пункт один</li><li>Пункт два</li></ul>",
-    ].join("");
+
+    /** The editor's own serialisation, forced out by a real edit. */
+    async function emittedHtml(onChange: jest.Mock): Promise<string> {
+      fireEvent.click(screen.getByLabelText("Горизонтальна лінія"));
+      await waitFor(() => expect(onChange).toHaveBeenCalled());
+      return onChange.mock.calls.at(-1)?.[0] as string;
+    }
+
+    it("renders a stored image and keeps the editor editable", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value={IMAGE_HTML} onChange={onChange} />);
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(editable.querySelector("img")).not.toBeNull());
+
+      const img = editable.querySelector("img")!;
+      expect(img).toHaveAttribute("src", "https://example.com/case.jpg");
+      expect(img).toHaveAttribute("alt", "Чохол");
+      // The text around it is untouched, and nothing is locked or warned about.
+      expect(editable).toHaveTextContent("Огляд");
+      expect(editable).toHaveAttribute("contenteditable", "true");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(onChange).not.toHaveBeenCalled();
+    });
+
+    it("serialises both allowed attributes back out — the thing the banner used to guard", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value={IMAGE_HTML} onChange={onChange} />);
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(editable.querySelector("img")).not.toBeNull());
+
+      // This is the exact moment the old bug fired: the FIRST edit pushes
+      // `getHTML()` into the form, and before TASK-547 that string had no
+      // `<img>` in it at all.
+      const html = await emittedHtml(onChange);
+      expect(html).toContain('src="https://example.com/case.jpg"');
+      expect(html).toContain('alt="Чохол"');
+      expect(html).toContain("Огляд");
+    });
+
+    it("keeps an image that carries no alt at all", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value='<img src="https://example.com/bare.webp">'
+          onChange={onChange}
+        />,
+      );
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(editable.querySelector("img")).not.toBeNull());
+
+      const html = await emittedHtml(onChange);
+      expect(html).toContain('src="https://example.com/bare.webp"');
+      // A missing alt stays missing rather than becoming `alt=""` — the two are
+      // different statements in HTML, and inventing "decorative" for every
+      // imported picture would be a lie told at scale.
+      expect(html).not.toContain("alt=");
+    });
+
+    it("drops only what the server drops anyway", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value='<img src="https://example.com/x.webp" alt="X" title="X" width="400">'
+          onChange={onChange}
+        />,
+      );
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(editable.querySelector("img")).not.toBeNull());
+
+      const html = await emittedHtml(onChange);
+      expect(html).toContain('alt="X"');
+      // `title` and `width` are NOT on `allowedAttributes.img`, so the server
+      // strips them on the next save whatever this editor does. Losing them
+      // here is therefore not a loss to warn about — it is the two sides
+      // agreeing.
+      expect(html).not.toContain("title=");
+      expect(html).not.toContain("width=");
+    });
+
+    it("puts a picked image into the document through the toolbar slot", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value="<p>Текст</p>"
+          onChange={onChange}
+          imagePicker={(insert) => (
+            <button
+              type="button"
+              onClick={() =>
+                insert({ src: "/uploads/media/new.webp", alt: "Нове фото" })
+              }
+            >
+              Вставити зображення
+            </button>
+          )}
+        />,
+      );
+
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() => expect(editable).toHaveTextContent("Текст"));
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Вставити зображення" }),
+      );
+
+      await waitFor(() => expect(editable.querySelector("img")).not.toBeNull());
+      const html = onChange.mock.calls.at(-1)?.[0] as string;
+      expect(html).toContain('src="/uploads/media/new.webp"');
+      expect(html).toContain('alt="Нове фото"');
+      // The text that was already there is still there.
+      expect(html).toContain("Текст");
+    });
+
+    it("renders no image control when no picker is supplied", async () => {
+      render(<RichTextEditor value="<p>Текст</p>" onChange={jest.fn()} />);
+
+      await screen.findByLabelText(EDITOR_LABEL);
+      expect(
+        screen.queryByRole("button", { name: "Вставити зображення" }),
+      ).not.toBeInTheDocument();
+    });
 
     it("keeps a stored table and says nothing (TASK-434)", async () => {
       const onChange = jest.fn();
-      render(<RichTextEditor value={TABLE_HTML} onChange={onChange} />);
+      render(
+        <RichTextEditor
+          value="<p>Характеристики</p><table><tbody><tr><th>Вага</th><td>120 г</td></tr></tbody></table>"
+          onChange={onChange}
+        />,
+      );
 
       const editable = await screen.findByLabelText(EDITOR_LABEL);
       await waitFor(() =>
@@ -229,7 +342,6 @@ describe("RichTextEditor", () => {
 
       expect(editable).toHaveTextContent("Вага");
       expect(editable).toHaveTextContent("120 г");
-      expect(truncationBanner()).not.toBeInTheDocument();
       expect(editable).toHaveAttribute("contenteditable", "true");
       expect(onChange).not.toHaveBeenCalled();
     });
@@ -247,95 +359,42 @@ describe("RichTextEditor", () => {
       await waitFor(() => expect(editable.querySelector("h1")).not.toBeNull());
 
       expect(editable.querySelector("h4")).not.toBeNull();
-      expect(truncationBanner()).not.toBeInTheDocument();
       expect(editable).toHaveAttribute("contenteditable", "true");
     });
 
-    it("warns and locks the editor when the value contains an image", async () => {
+    it("stays editable for ordinary rich content", async () => {
       const onChange = jest.fn();
-      render(<RichTextEditor value={IMAGE_HTML} onChange={onChange} />);
-
-      const editable = await screen.findByLabelText(EDITOR_LABEL);
-      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
-
-      expect(
-        screen.getByText(
-          new RegExp(dict.contentPreview.unsupportedImages, "i"),
-        ),
-      ).toBeInTheDocument();
-      expect(editable).toHaveAttribute("contenteditable", "false");
-    });
-
-    it("stays silent and editable for ordinary rich content", async () => {
-      const onChange = jest.fn();
-      render(<RichTextEditor value={ORDINARY_HTML} onChange={onChange} />);
+      render(
+        <RichTextEditor
+          value={[
+            "<h2>Заголовок</h2>",
+            "<h3>Підзаголовок</h3>",
+            "<p>Текст із <strong>жирним</strong> та ",
+            '<a href="https://example.com">посиланням</a>.</p>',
+            "<ul><li>Пункт один</li><li>Пункт два</li></ul>",
+          ].join("")}
+          onChange={onChange}
+        />,
+      );
 
       const editable = await screen.findByLabelText(EDITOR_LABEL);
       await waitFor(() => expect(editable).toHaveTextContent("Заголовок"));
 
-      expect(truncationBanner()).not.toBeInTheDocument();
-      expect(
-        screen.queryByRole("button", { name: EDIT_ANYWAY }),
-      ).not.toBeInTheDocument();
       expect(editable).toHaveAttribute("contenteditable", "true");
       expect(screen.getByLabelText("Жирний")).toBeEnabled();
     });
 
-    it("unlocks on «edit anyway» and keeps the warning standing", async () => {
-      const onChange = jest.fn();
-      render(<RichTextEditor value={IMAGE_HTML} onChange={onChange} />);
-
-      const editable = await screen.findByLabelText(EDITOR_LABEL);
-      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
-
-      fireEvent.click(screen.getByRole("button", { name: EDIT_ANYWAY }));
-
-      await waitFor(() =>
-        expect(editable).toHaveAttribute("contenteditable", "true"),
-      );
-      // The consent removes the lock, not the warning.
-      expect(truncationBanner()).toBeInTheDocument();
-      expect(
-        screen.queryByRole("button", { name: EDIT_ANYWAY }),
-      ).not.toBeInTheDocument();
-      expect(screen.getByLabelText("Жирний")).toBeEnabled();
-    });
-
-    it("offers no «edit anyway» while the editor is disabled", async () => {
-      const onChange = jest.fn();
+    it("keeps a disabled editor read-only, images or not", async () => {
       render(
-        <RichTextEditor value={IMAGE_HTML} onChange={onChange} disabled />,
+        <RichTextEditor value={IMAGE_HTML} onChange={jest.fn()} disabled />,
       );
 
       const editable = await screen.findByLabelText(EDITOR_LABEL);
-      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
+      await waitFor(() => expect(editable.querySelector("img")).not.toBeNull());
 
-      // `disabled` is the caller's word and outranks the latch: the operator
-      // must not be able to talk their way past it.
-      expect(
-        screen.queryByRole("button", { name: EDIT_ANYWAY }),
-      ).not.toBeInTheDocument();
+      // `disabled` is the caller's word and is the ONLY lock left now that the
+      // truncation latch is gone.
       expect(editable).toHaveAttribute("contenteditable", "false");
-    });
-
-    it("gives the next entity a fresh verdict (forms.md Rule 2b)", async () => {
-      const onChange = jest.fn();
-      const { rerender } = render(
-        <RichTextEditor value={IMAGE_HTML} onChange={onChange} resetKey="a" />,
-      );
-      const editable = await screen.findByLabelText(EDITOR_LABEL);
-      await waitFor(() => expect(truncationBanner()).toBeInTheDocument());
-
-      rerender(
-        <RichTextEditor
-          value="<p>Звичайний опис</p>"
-          onChange={onChange}
-          resetKey="b"
-        />,
-      );
-
-      await waitFor(() => expect(truncationBanner()).not.toBeInTheDocument());
-      expect(editable).toHaveAttribute("contenteditable", "true");
     });
   });
 

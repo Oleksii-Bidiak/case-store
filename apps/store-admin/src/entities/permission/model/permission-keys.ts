@@ -47,6 +47,15 @@ export const PERM = {
   // whose only possible outcome is a 403 from `@RequirePermission('reviews:write')`.
   reviewsWrite: "reviews:write",
 
+  // TASK-441 — the media library. Two keys, not one: `media:read` gates the
+  // library screen AND the picker that will sit inside every content form, so it
+  // cannot be the write permission of any one entity; `media:write` gates the
+  // destructive half (upload, retag, delete) a picker does not need. Both are
+  // backfilled onto existing roles by the migration that introduced them — see
+  // MEDIA_BACKFILL_SOURCE_PERMISSIONS in the API's `permission.catalog.ts`.
+  mediaRead: "media:read",
+  mediaWrite: "media:write",
+
   discountsWrite: "discounts:write",
   newsletterRead: "newsletter:read",
 

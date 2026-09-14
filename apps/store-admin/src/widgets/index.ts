@@ -117,3 +117,5 @@ export { ReturnDetailView, ReturnDetailSkeleton } from "./return-detail";
 export { CatalogImportView } from "./catalog-import-view";
 // Search-index maintenance (TASK-377)
 export { SearchIndexView } from "./search-index-view";
+// Internal media library (TASK-441)
+export { MediaLibraryView, MediaLibrarySkeleton } from "./media-library-view";

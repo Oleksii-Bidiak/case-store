@@ -108,14 +108,28 @@ export const PERMISSIONS = [
   { key: 'carousels:write', zone: PERMISSION_ZONES.CONTENT, label: 'Каруселі головної' },
   { key: 'faq:write', zone: PERMISSION_ZONES.CONTENT, label: 'FAQ' },
   { key: 'reviews:moderate', zone: PERMISSION_ZONES.CONTENT, label: 'Модерувати відгуки' },
-  // Deliberately NOT folded into `reviews:moderate` (TASK-587). Moderating is a
+  // Deliberately NOT folded into `reviews:moderate` (TASK-591). Moderating is a
   // judgement about somebody ELSE's sentence — publish it or do not. Replying is
   // the shop SPEAKING, under its own name, on a public page, in an answer no
   // second person reads before a customer does. Those are different amounts of
   // trust, and an owner who hands out the first should not silently be handing
   // out the second. Denied by default like every new key, so ticking it is a
   // deliberate act.
+  //
+  // And deliberately WITHOUT the data migration `media:read`/`media:write` carry
+  // below: those two backfill because they carved an capability out of keys
+  // people already held, so a silent backfill preserves what an operator could
+  // do yesterday. Replying to a customer in public is something nobody could do
+  // yesterday. There is nothing to preserve, so granting it is the owner's call
+  // (TASK-597).
   { key: 'reviews:write', zone: PERMISSION_ZONES.CONTENT, label: 'Відповідати на відгуки' },
+  // The media library (TASK-441). Two keys, because reading and writing really
+  // are different capabilities here: the picker embedded in every content form
+  // needs to LIST assets, while uploading, retagging and deleting them is the
+  // librarian's job. See MEDIA_BACKFILL_SOURCE_PERMISSIONS below for why these
+  // two — uniquely in this catalogue — ship with a data migration attached.
+  { key: 'media:read', zone: PERMISSION_ZONES.CONTENT, label: 'Переглядати медіатеку' },
+  { key: 'media:write', zone: PERMISSION_ZONES.CONTENT, label: 'Завантажувати та видаляти медіа' },
 
   // ── Знижки та маркетинг ───────────────────────────────────────────────────
   { key: 'discounts:write', zone: PERMISSION_ZONES.MARKETING, label: 'Промокоди та знижки' },
@@ -159,6 +173,47 @@ export const PERMISSIONS = [
 
 /** Every valid permission key, as a union type. */
 export type Permission = (typeof PERMISSIONS)[number]['key'];
+
+/**
+ * The permissions whose holders were granted `media:read` + `media:write` by the
+ * TASK-441 backfill migration (`…_backfill_media_permissions`).
+ *
+ * WHY A BACKFILL AT ALL, WHEN THE RULE AT THE TOP OF THIS FILE SAYS DEFAULT IS
+ * DENIED. Because these two keys are not a new admin SECTION — they are a
+ * capability every one of these roles already exercises today, through a
+ * different door. A manager who may edit banners already uploads banner artwork
+ * (`POST /admin/uploads/banners`); the media library only gives that same upload
+ * a place to live afterwards. Shipping the keys denied-by-default would take the
+ * picker out of every content form the moment it appears there, and the symptom
+ * — an empty "Обрати з медіатеки" panel, no error, no 403 visible to the
+ * operator — reads as a broken screen rather than as a missing permission.
+ *
+ * That is the narrow case where a backfill is right, and it is narrow on purpose:
+ * the grant follows an EXISTING grant one-for-one and adds no reach. It is not a
+ * licence to backfill the next new key. Compare `customers:write`, where the
+ * opposite call was made (see its note above): splitting a key would have
+ * silently REMOVED something, so the label was widened instead.
+ *
+ * This list is the code half of the contract; the SQL is the other half, and
+ * `permission.catalog.spec.ts` asserts the two say the same thing — including
+ * that the migration only counts a row as a grant under exactly the predicate
+ * `PermissionRepository.findGrantedByRole` uses (`allowed = true`). A backfill
+ * that disagreed with the runtime check would hand the keys to a role the matrix
+ * screen shows as having nothing.
+ */
+export const MEDIA_BACKFILL_SOURCE_PERMISSIONS = [
+  'products:write',
+  'categories:write',
+  'brands:write',
+  'banners:write',
+  'blog:write',
+] as const satisfies ReadonlyArray<Permission>;
+
+/** The keys that backfill grants. */
+export const MEDIA_PERMISSIONS = [
+  'media:read',
+  'media:write',
+] as const satisfies ReadonlyArray<Permission>;
 
 /** Fast membership test for validating rows read out of the database. */
 export const PERMISSION_KEYS: ReadonlySet<string> = new Set(PERMISSIONS.map((p) => p.key));

@@ -5,7 +5,7 @@ import { toast } from "@/shared/ui/toast";
 import {
   imageUploadErrorMessage,
   type ImageUploadCopy,
-} from "./image-upload-copy";
+} from "@/shared/lib/image-upload-error";
 
 /**
  * The shape of an Orval upload mutation, narrowed to what this hook uses.

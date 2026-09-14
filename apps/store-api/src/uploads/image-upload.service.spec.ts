@@ -27,7 +27,7 @@ function makeFile(overrides: Partial<Express.Multer.File> = {}): Express.Multer.
 describe('ImageUploadService', () => {
   let service: ImageUploadService;
   let storage: { save: jest.Mock; read: jest.Mock; delete: jest.Mock };
-  let imageProcessor: { process: jest.Mock; detectFormat: jest.Mock };
+  let imageProcessor: { process: jest.Mock; detectFormat: jest.Mock; probe: jest.Mock };
 
   beforeEach(async () => {
     storage = {
@@ -39,8 +39,12 @@ describe('ImageUploadService', () => {
       process: jest.fn().mockResolvedValue({
         webp: Buffer.from('optimized-webp'),
         blurDataUrl: 'data:image/webp;base64,BLUR',
+        width: 2000,
+        height: 1333,
+        bytes: 'optimized-webp'.length,
       }),
       detectFormat: jest.fn().mockResolvedValue('jpeg'),
+      probe: jest.fn().mockResolvedValue({ format: 'jpeg', width: 2000, height: 1333 }),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -74,6 +78,14 @@ describe('ImageUploadService', () => {
         url: 'http://localhost:3001/uploads/content/abc.webp',
         relativePath: 'content/abc.webp',
         blurDataUrl: 'data:image/webp;base64,BLUR',
+        // Facts about what was WRITTEN, carried for the media library (TASK-441).
+        // `bytes` is the length of the buffer handed to storage, never the size
+        // the client uploaded — the whole point of the re-encode is that the two
+        // differ.
+        width: 2000,
+        height: 1333,
+        bytes: Buffer.from('optimized-webp').length,
+        mime: 'image/webp',
       });
       // The trailing slash on PUBLIC_BASE_URL must not double up in the URL.
       expect(stored.url).not.toContain('//uploads');
@@ -88,8 +100,8 @@ describe('ImageUploadService', () => {
       expect(storage.save).not.toHaveBeenCalled();
     });
 
-    it('rejects a file over 5 MB with 413', async () => {
-      await expect(service.store(makeFile({ size: 6 * 1024 * 1024 }), 'content')).rejects.toThrow(
+    it('rejects a file over 20 MB with 413', async () => {
+      await expect(service.store(makeFile({ size: 21 * 1024 * 1024 }), 'content')).rejects.toThrow(
         PayloadTooLargeException,
       );
       expect(storage.save).not.toHaveBeenCalled();
@@ -114,6 +126,35 @@ describe('ImageUploadService', () => {
       expect(storage.save).not.toHaveBeenCalled();
     });
 
+    // TASK-586. Multer's cap is per FILE; this is the per-REQUEST one, stated
+    // where the buffers actually are instead of only at the Caddy edge.
+    it('rejects a batch whose files together exceed one request budget', async () => {
+      const fifteenMb = () =>
+        makeFile({ size: 15 * 1024 * 1024, buffer: Buffer.alloc(15 * 1024 * 1024, 1) });
+
+      // Each file is legal on its own — 15 MB is under the 20 MB per-file cap.
+      await expect(service.storeAll([fifteenMb(), fifteenMb()], 'content')).rejects.toThrow(
+        PayloadTooLargeException,
+      );
+      expect(storage.save).not.toHaveBeenCalled();
+    });
+
+    it('blames the oversized FILE, not the batch, when one file is the problem', async () => {
+      // Both refusals are 413; the operator needs to be told which one applies,
+      // or "send fewer files" is advice that cannot work.
+      await expect(
+        service.storeAll([makeFile({ size: 21 * 1024 * 1024 })], 'content'),
+      ).rejects.toThrow(/20 MB/);
+    });
+
+    it('accepts a batch of ordinary photos', async () => {
+      const small = () => makeFile({ size: 900 * 1024, buffer: Buffer.alloc(900 * 1024, 1) });
+
+      await expect(service.storeAll([small(), small(), small()], 'content')).resolves.toHaveLength(
+        3,
+      );
+    });
+
     it('translates an undecodable raster file into 415, not a 500', async () => {
       imageProcessor.process.mockRejectedValue(new Error('unsupported image format'));
 
@@ -126,7 +167,7 @@ describe('ImageUploadService', () => {
 
   describe('GIF passthrough', () => {
     it('stores the original bytes with no LQIP when the buffer really is a GIF', async () => {
-      imageProcessor.detectFormat.mockResolvedValue('gif');
+      imageProcessor.probe.mockResolvedValue({ format: 'gif', width: 320, height: 240 });
       storage.save.mockResolvedValue('content/abc.gif');
       const gif = makeFile({ mimetype: 'image/gif', buffer: Buffer.from('gif-bytes') });
 
@@ -137,12 +178,19 @@ describe('ImageUploadService', () => {
       expect(buffer).toEqual(Buffer.from('gif-bytes'));
       expect(ext).toBe('gif');
       expect(stored.blurDataUrl).toBeNull();
+      // A passthrough still reports its real shape and type — the media library
+      // records those, and a GIF that arrived as 0x0 would be indistinguishable
+      // from a backfilled row whose dimensions are genuinely unknown.
+      expect(stored.width).toBe(320);
+      expect(stored.height).toBe(240);
+      expect(stored.bytes).toBe(Buffer.from('gif-bytes').length);
+      expect(stored.mime).toBe('image/gif');
     });
 
     it('sniffs the bytes rather than trusting image/gif', async () => {
       // This is the only branch that writes client bytes verbatim, so a polyglot
       // announced as a GIF would otherwise be served from our own origin.
-      imageProcessor.detectFormat.mockResolvedValue(null);
+      imageProcessor.probe.mockResolvedValue(null);
       const polyglot = makeFile({
         mimetype: 'image/gif',
         buffer: Buffer.from('<script>alert(1)</script>'),

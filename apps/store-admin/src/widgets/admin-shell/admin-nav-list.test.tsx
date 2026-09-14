@@ -202,6 +202,33 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("gates «Медіатека» on the read key alone (TASK-441)", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    // `media:read` is enough to SEE the library: the screen is useful to anyone
+    // allowed to look at a picture, and `media:write` is checked inside it to
+    // decide whether the upload zone and the delete render. Requiring the write
+    // key here would hide the library from a manager allowed to browse it.
+    renderNav({ isOwner: false, permissions: ["media:read"] });
+
+    expect(
+      await screen.findByRole("link", { name: dict.nav.media }),
+    ).toHaveAttribute("href", "/media");
+  });
+
+  it("hides «Медіатека» from a manager holding neither media key (TASK-441)", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderNav({ isOwner: false, permissions: ["blog:write"] });
+
+    expect(
+      await screen.findByRole("link", { name: dict.nav.blog }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.nav.media }),
+    ).not.toBeInTheDocument();
+  });
+
   it("hides the owner-only sections from a manager, whatever they are granted", async () => {
     mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
 

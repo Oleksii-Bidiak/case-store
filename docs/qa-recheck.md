@@ -705,7 +705,7 @@
       🎯 ✔️ санітайзер працює · 📝 було: алерта немає, скрипт присутній на вітрині
 - [🔁] **AD-CNT-10 — Редактор тексту.** **Зроби:** зроби заголовки, список, посилання, встав
       картинку. **Має бути:** усе зберігається і так само виглядає на вітрині.
-      🎯 TASK-434 + TASK-399 · 📝 було: картинку вставити не можна, тільки url на обкладинку. я це вже писав, але напишу ще раз - треба повноцінний редактор, а не поточний обрубок.
+      🎯 TASK-434 + TASK-399 + TASK-547 · 📝 було: картинку вставити не можна, тільки url на обкладинку. я це вже писав, але напишу ще раз - треба повноцінний редактор, а не поточний обрубок.
 - [🔁] **AD-CNT-20 — Редагування і прев'ю.** **Зроби:** `/banners/[id]/edit` → зміни картинку.
       **Має бути:** живе прев'ю показує результат до збереження.
       🎯 TASK-424 · 📝 було: немає можливості завантажити зображення
@@ -1053,6 +1053,9 @@
 - **TASK-434** — AD-CNT-10
 - **TASK-435** — SF-CNT-26
 - **TASK-436** — SF-CNT-05
+- **TASK-439** — AD-CAT-09, AD-CAT-13, AD-CNT-20, AD-CNT-21
+- **TASK-441** — AD-CAT-09, AD-CAT-13, AD-CNT-10, AD-CNT-20, AD-CNT-21, AD-PROD-02
+- **TASK-442** — AD-PROD-02, AD-PROD-25
 - **TASK-443** — AD-ORD-17, AD-RET-01, AD-RET-02, AD-RET-03, AD-RET-04, AD-RET-05, AD-RET-06, AD-RET-07, AD-RET-08, AD-RET-09, AD-RET-10, AD-RET-11, AD-RET-12
 - **TASK-444** — AD-CAT-11
 - **TASK-445** — AD-CRM-20
@@ -1061,3 +1064,6 @@
 - **TASK-453** — AD-MKT-08
 - **TASK-457** — SF-SRCH-10, SF-CHK-04, SF-CHK-05, SF-CHK-06, SF-CHK-11, SF-CHK-13, SF-PAY-01, SF-PAY-12, SF-ACC-06, SF-ACC-07, SF-ACC-09, SF-ACC-20, SF-ACC-21, SF-ACC-23, SF-AUTH-06, SF-AUTH-07, SF-AUTH-14, SF-AUTH-18, SF-AUTH-19, SF-AUTH-20, SF-AUTH-22, SF-SEO-09, SF-SEO-11, SF-SEO-12, SF-SEO-13, SF-SEO-14, SF-SEO-15, SF-SEO-16, SF-UX-09, SF-UX-11, AD-AUTH-05, AD-DASH-10, AD-DASH-12, AD-DEV-09, AD-ORD-11, AD-ORD-12, AD-ORD-15, AD-ORD-18, AD-ORD-19, AD-ORD-20, AD-ORD-24
 - **TASK-458** — SF-CAT-11
+- **TASK-547** — AD-CNT-10
+- **TASK-585** — AD-PROD-02
+- **TASK-586** — AD-CAT-09, AD-CAT-13, AD-CNT-20, AD-CNT-21, AD-PROD-02

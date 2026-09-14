@@ -1,1 +1,4 @@
-export { ProductAddonDeltaPanel } from "./ui/product-addon-delta-panel";
+export {
+  ProductAddonDeltaPanel,
+  type StagedAddon,
+} from "./ui/product-addon-delta-panel";

@@ -1,5 +1,6 @@
 import { Controller, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -64,6 +65,12 @@ const SINGLE_FILE_BODY = {
 @ApiExtraModels(UploadedImageEntity, UploadedImageResponseEnvelope)
 @Controller('admin/uploads')
 @UseGuards(PermissionGuard)
+// Class-level rather than four copies: every route here is the same kind of
+// request (TASK-586). The global 100/min is sized for JSON, while an upload
+// holds a multipart buffer and then a decoded frame — the heaviest requests in
+// the API were also the least limited ones. 20/min matches the admin routes and
+// is far above any real rate of picking cover images by hand.
+@Throttle({ default: { limit: 20, ttl: 60000 } })
 export class UploadsController {
   constructor(private readonly uploads: ImageUploadService) {}
 
@@ -82,7 +89,7 @@ export class UploadsController {
   @ApiResponse({ status: 400, description: 'No file, or a disallowed MIME type' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — categories:write required' })
-  @ApiResponse({ status: 413, description: 'File exceeds the 5 MB limit' })
+  @ApiResponse({ status: 413, description: 'File exceeds the 20 MB limit' })
   @ApiResponse({ status: 415, description: 'File contents are not a valid image' })
   uploadCategoryImage(
     @UploadedFile() file?: Express.Multer.File,
@@ -105,7 +112,7 @@ export class UploadsController {
   @ApiResponse({ status: 400, description: 'No file, or a disallowed MIME type' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — brands:write required' })
-  @ApiResponse({ status: 413, description: 'File exceeds the 5 MB limit' })
+  @ApiResponse({ status: 413, description: 'File exceeds the 20 MB limit' })
   @ApiResponse({ status: 415, description: 'File contents are not a valid image' })
   uploadBrandLogo(
     @UploadedFile() file?: Express.Multer.File,
@@ -128,7 +135,7 @@ export class UploadsController {
   @ApiResponse({ status: 400, description: 'No file, or a disallowed MIME type' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — banners:write required' })
-  @ApiResponse({ status: 413, description: 'File exceeds the 5 MB limit' })
+  @ApiResponse({ status: 413, description: 'File exceeds the 20 MB limit' })
   @ApiResponse({ status: 415, description: 'File contents are not a valid image' })
   uploadBannerImage(
     @UploadedFile() file?: Express.Multer.File,
@@ -151,7 +158,7 @@ export class UploadsController {
   @ApiResponse({ status: 400, description: 'No file, or a disallowed MIME type' })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — blog:write required' })
-  @ApiResponse({ status: 413, description: 'File exceeds the 5 MB limit' })
+  @ApiResponse({ status: 413, description: 'File exceeds the 20 MB limit' })
   @ApiResponse({ status: 415, description: 'File contents are not a valid image' })
   uploadBlogCover(
     @UploadedFile() file?: Express.Multer.File,

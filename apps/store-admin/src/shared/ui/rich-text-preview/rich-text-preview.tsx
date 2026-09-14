@@ -54,10 +54,11 @@ export interface RichTextPreviewProps {
  * The original argument was "the schema has no Image, Link or raw-HTML
  * extension". Half of that was already untrue when it was written — StarterKit
  * v3 bundles Link, so the schema has carried an `href`-bearing mark all along —
- * and TASK-434 added TableKit and H1/H4 on top. An argument that was only ever
- * true by accident must not be inherited, so here is the one that holds:
+ * and TASK-434 added TableKit and H1/H4 on top, TASK-547 an Image node. An
+ * argument that was only ever true by accident must not be inherited, so here
+ * is the one that holds:
  *
- * 1. The two attribute-bearing types are each constrained AT THE SCHEMA, not by
+ * 1. The attribute-bearing types are each constrained AT THE SCHEMA, not by
  *    being absent.
  *    - Link runs `isAllowedUri` on parse, on render, on `setLink`/`toggleLink`,
  *      on autolink and on paste. `RichTextEditor` narrows it to the server's
@@ -68,6 +69,16 @@ export interface RichTextPreviewProps {
  *    - Table cells hold `colspan`/`rowspan`/`colwidth` (numbers) and `align`
  *      (one of three literals, rendered into a fixed `text-align: …` template).
  *      None of them is free-form, and none of them is a URL or a handler.
+ *    - Image (TASK-547) declares exactly `src` and `alt` and NOTHING else, so
+ *      no `on*` handler can ever be serialized onto it however the HTML was
+ *      pasted — the serializer emits declared attributes only. `src` itself is
+ *      free-form, and that is deliberately NOT treated like an `href`: an
+ *      `<img src>` is not a script sink. `javascript:` there does nothing in
+ *      any current browser, and an SVG fetched through `<img src="data:…">`
+ *      runs no script — that is the whole reason `sanitize-rich-text.ts` can
+ *      afford to allow `data:` on `img` while allowing it nowhere else. The
+ *      worst a hostile `src` achieves here is an off-site request made by the
+ *      admin who is previewing their own draft.
  * 2. Editor output is schema-constrained by construction. `getHTML()` is
  *    ProseMirror's schema-driven serializer: it emits registered node/mark
  *    types and their declared attributes, nothing else. Pasted HTML is
@@ -75,23 +86,25 @@ export interface RichTextPreviewProps {
  *    and every `on*` handler are dropped before they could reach this string.
  * 3. What this component actually receives is the FORM FIELD, not the editor's
  *    output — and on an edit form that field is seeded from the stored entity
- *    and can be previewed before the admin types anything. It can also hold
- *    markup the schema cannot represent: that is precisely why TASK-467 added
- *    the truncation latch to `RichTextEditor`, and the value this preview
- *    renders is the ORIGINAL string, not the latched one. So the invariant is
- *    NOT "this came from the current editor session" — it is the narrower but
- *    true one: every string that reaches this component either came from the
- *    editor above it or passed `sanitizeRichText()` on the way into the
- *    database. Both write paths of pages, blog posts and products go through
- *    it, and so does the catalogue import.
+ *    and can be previewed before the admin types anything. Until TASK-547 it
+ *    could also hold markup the schema could not represent (that gap is what
+ *    TASK-467's truncation latch existed to warn about; the schema now matches
+ *    the server's allow-list tag for tag, so the gap and the latch are both
+ *    gone). Either way the invariant here is NOT "this came from the current
+ *    editor session" — it is the narrower but true one: every string that
+ *    reaches this component either came from the editor above it or passed
+ *    `sanitizeRichText()` on the way into the database. Both write paths of
+ *    pages, blog posts and products go through it, and so does the catalogue
+ *    import.
  * 4. The real barrier is therefore on the server: `sanitizeRichText()` runs on
  *    every write path, and the storefront renders only what came back through
  *    it. This preview is a rendering of already-gated content, not a trust
  *    boundary of its own.
  *
- * REVISIT if any of the four stops being true — in particular if a raw-HTML,
- * markdown-paste or `Image`-with-src extension is added (none of those is
- * constrained the same way), if `isAllowedUri` is loosened, or if a NEW write
+ * REVISIT if any of the four stops being true — in particular if a raw-HTML or
+ * markdown-paste extension is added (neither is constrained the same way), if
+ * a node gains a free-form attribute that IS a script sink (an `href`, a
+ * `style`, anything `on*`), if `isAllowedUri` is loosened, or if a NEW write
  * path stores rich text without `sanitizeRichText()`. The cheap insurance, if
  * that day comes, is a DOMPurify pass here — `isomorphic-dompurify` is already
  * a dependency of the storefront, which does exactly that on /legal and /info.

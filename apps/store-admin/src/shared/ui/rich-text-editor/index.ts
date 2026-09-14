@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 
 import type { RichTextEditorProps } from "./rich-text-editor";
 
-export type { RichTextEditorProps } from "./rich-text-editor";
+export type { RichTextEditorProps, RichTextImage } from "./rich-text-editor";
 
 /**
  * SSR-safe RichTextEditor. Tiptap touches the DOM on init, so the underlying

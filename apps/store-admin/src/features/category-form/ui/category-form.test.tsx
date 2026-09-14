@@ -7,6 +7,12 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import {
+  MEDIA_PERMISSIONS,
+  makeMediaAsset,
+  pickFromLibrary,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { CategoryForm } from "./category-form";
 import {
   categoryFormValuesToDto,
@@ -66,6 +72,54 @@ async function submitForm() {
     screen.getByRole("button", { name: dict.categoryForm.submit }),
   );
 }
+
+describe("CategoryForm — media library picker (TASK-441)", () => {
+  const TILE_URL = "http://localhost:3001/uploads/media/tile.webp";
+
+  it("writes the picked asset's URL into the image field and submits it", async () => {
+    stubCategories();
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: "Плитка категорії", url: TILE_URL }),
+    ]);
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <CategoryForm onSubmit={onSubmit} isPending={false} />,
+      { auth: { permissions: MEDIA_PERMISSIONS } },
+    );
+
+    await userEvent.type(
+      screen.getByLabelText(dict.categoryForm.name),
+      "Чохли",
+    );
+    await pickFromLibrary("Плитка категорії");
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(dict.categoryForm.image)).toHaveValue(
+        TILE_URL,
+      ),
+    );
+
+    await submitForm();
+
+    // Reaching `onSubmit` is the part that matters: a value written outside the
+    // form's own state would show on screen and then not be saved.
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ image: TILE_URL });
+  });
+
+  it("offers no picker to an operator with no media keys", () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm onSubmit={jest.fn()} isPending={false} />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: dict.mediaPicker.trigger }),
+    ).not.toBeInTheDocument();
+    // The field itself is untouched — the old paths are still the whole feature.
+    expect(screen.getByLabelText(dict.categoryForm.image)).toHaveValue("");
+  });
+});
 
 describe("CategoryForm — parent persistence (TASK-149)", () => {
   it("CREATE: keeps the chosen parent through submit", async () => {

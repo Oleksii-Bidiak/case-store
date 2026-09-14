@@ -120,7 +120,11 @@ export { Skeleton } from "./skeleton";
 export { AdminFormSkeleton } from "./admin-form-skeleton";
 export { Textarea } from "./textarea";
 export { Toaster } from "./sonner";
-export { RichTextEditor, type RichTextEditorProps } from "./rich-text-editor";
+export {
+  RichTextEditor,
+  type RichTextEditorProps,
+  type RichTextImage,
+} from "./rich-text-editor";
 export {
   SeoSnippetPreview,
   type SeoSnippetPreviewProps,

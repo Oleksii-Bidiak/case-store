@@ -226,6 +226,8 @@ model User {
   /// relation for notes this user WROTE — `UserNote.authorId` has no foreign key,
   /// so an author's account can be deleted without taking their notes with it.
   notes                   UserNote[]
+  /// Media-library assets this user uploaded (TASK-441).
+  uploadedMedia           MediaAsset[]
 
   @@index([deletedAt])
   @@map("users")
@@ -437,9 +439,96 @@ model ProductImage {
   sortOrder   Int      @default(0) @map("sort_order")
   isPrimary   Boolean  @default(false) @map("is_primary")
   createdAt   DateTime @default(now()) @map("created_at")
+  /// PROVENANCE link to the media library (TASK-441): "this photo came from that
+  /// asset". Nullable, and `SetNull` rather than `Cascade` — removing a library
+  /// entry must never delete a product's photo row.
+  ///
+  /// It is emphatically NOT how "is this asset still used" is answered. That is
+  /// computed by matching `url` (see `MediaUsageRepository`), because a column
+  /// like this one is only ever set by the code paths that remembered to set it:
+  /// the importer, the seed and every pre-TASK-441 upload leave it null, so a
+  /// usage check reading it would report a photo-bearing asset as unused and
+  /// happily delete the file underneath a live product page.
+  mediaAssetId String? @map("media_asset_id")
+  mediaAsset   MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
 
   @@index([productId, sortOrder])
+  @@index([mediaAssetId])
   @@map("product_images")
+}
+
+/// One image in the internal media library (TASK-441, plan 177).
+///
+/// The library exists because an image was, until now, a property of whatever
+/// form uploaded it: the same photo is wanted in a product gallery, a category
+/// tile, a banner and an article, and it could only be put on disk through a
+/// form that already had a slot for it. An asset here is a row of its own —
+/// uploaded once, referenced anywhere.
+///
+/// NEITHER `isActive` NOR `deletedAt` applies (both conventions are deliberately
+/// skipped, not forgotten). `isActive` is a reversible visibility toggle for
+/// things the storefront renders on their own; an asset has no page to hide.
+/// `deletedAt` is an audit tombstone for user data; deleting an asset really
+/// removes its bytes from disk, so a tombstone row would outlive its file and
+/// point at a 404. Deletion here is real — and refused outright while anything
+/// still uses the URL.
+///
+/// There is deliberately no `usedIn` column. See `MediaUsageRepository` for the
+/// full reasoning: a stored list is only refreshed by the write paths that know
+/// about it, and every future place that records an image URL makes it quietly
+/// wrong.
+model MediaAsset {
+  id           String   @id @default(uuid())
+  /// Absolute public URL of the stored file — byte-for-byte the SAME string that
+  /// gets written into every consuming column. Unique because usage is computed
+  /// by matching this value: two rows for one URL would make "where is this
+  /// used" ambiguous and let a delete take the file out from under the other row.
+  url          String   @unique
+  /// base64 LQIP for `next/image` blur-up; null for an animated-GIF passthrough,
+  /// which is stored untouched and has none.
+  blurDataUrl  String?  @map("blur_data_url")
+  /// Pixel dimensions and byte size of the STORED render (post-resize, post-WebP)
+  /// — not of the file the operator picked.
+  ///
+  /// `0` means UNKNOWN, and that is exactly what the TASK-441 backfill wrote for
+  /// every pre-existing `ProductImage`: those three numbers live only inside the
+  /// files themselves, and a migration that opened every file to find them would
+  /// be both slow and, for rows pointing at a URL we never served, impossible.
+  /// Zero is the honest answer; a plausible-looking made-up number is not.
+  width        Int      @default(0)
+  height       Int      @default(0)
+  bytes        Int      @default(0)
+  mime         String
+  /// Alternative text, shared by every consumer of the asset. Searchable.
+  alt          String?
+  /// Free-form operator tags ("осінь", "банер", "iphone"). Searchable.
+  tags         String[] @default([])
+  /// Who uploaded it. Null for backfilled rows — nobody uploaded those THROUGH
+  /// the library, and naming an arbitrary admin would be a fabricated fact.
+  uploadedById String?  @map("uploaded_by_id")
+  uploadedBy   User?    @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  productImages ProductImage[]
+
+  /// Tag search (`tags has …`) is an array-containment query, which a btree
+  /// cannot serve at all — GIN is the index that makes it an index lookup
+  /// instead of a sequential scan.
+  @@index([tags], type: Gin)
+  /// The list is ordered newest-first and paginated, so this is the index the
+  /// default read actually uses.
+  @@index([createdAt])
+  /// NOTE — there is intentionally NO index on `alt`. The alt search is a
+  /// case-insensitive SUBSTRING match (`ILIKE '%…%'`), and a btree index is
+  /// useless for that: it would be dead weight that looks like protection. The
+  /// index that would work is a trigram GIN (`USING gin (alt gin_trgm_ops)`),
+  /// and that needs `CREATE EXTENSION pg_trgm` — a privilege the client's
+  /// managed Postgres may not grant the application role, which would turn a
+  /// deploy into an outage. Deferred on purpose: a media library holding a few
+  /// thousand rows scans in single-digit milliseconds, and when it does not, the
+  /// fix is one migration plus one `ops: raw("gin_trgm_ops")`.
+  @@map("media_assets")
 }
 
 model Cart {

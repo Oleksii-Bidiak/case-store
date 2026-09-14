@@ -10,6 +10,7 @@ import { ImageProcessor, IStorageService, STORAGE_SERVICE, isStorageSubdir } fro
 import {
   ALLOWED_IMAGE_MIME_EXT,
   GIF_MIME,
+  IMAGE_MULTER_MAX_BYTES,
   MAX_IMAGE_BYTES,
   PUBLIC_UPLOADS_PREFIX,
 } from './image-upload.constants';
@@ -22,6 +23,22 @@ export interface StoredImage {
   relativePath: string;
   /** base64 LQIP for `next/image` blur-up, or null for a GIF passthrough. */
   blurDataUrl: string | null;
+  /**
+   * Facts about the bytes that were actually written (TASK-441).
+   *
+   * Additive, and deliberately so: every existing caller ignores them, while the
+   * media library needs them on the row it creates. The alternative — having the
+   * library re-open the file it just handed to this service — would be a second
+   * decode of the same bytes and a second place that could disagree about them.
+   *
+   * `width`/`height` are 0 only when the format could not report them; `bytes`
+   * is always the real length of the stored buffer.
+   */
+  width: number;
+  height: number;
+  bytes: number;
+  /** Media type of the STORED file (`image/webp`, or `image/gif` passthrough). */
+  mime: string;
 }
 
 /**
@@ -30,7 +47,7 @@ export interface StoredImage {
  * routes (`UploadsController`).
  *
  * It exists because the same eight steps were about to be written a second time.
- * They are, in order: reject an unlisted MIME type (415), reject over 5 MB (413),
+ * They are, in order: reject an unlisted MIME type (415), reject over 20 MB (413),
  * sniff the real format from the bytes, re-encode raster to WebP + derive an
  * LQIP, pass animated GIFs through untouched, narrow the target subdir through
  * the storage whitelist, write the bytes, and assemble the public URL. Getting
@@ -87,14 +104,50 @@ export class ImageUploadService {
     for (const file of files) {
       this.assertValidFile(file);
     }
+    this.assertBatchFitsInMemory(files);
 
     const stored: StoredImage[] = [];
     for (const file of files) {
-      const { buffer, ext, blurDataUrl } = await this.prepareFile(file);
-      const relativePath = await this.storage.save(buffer, ext, subdir);
-      stored.push({ url: this.publicUrl(relativePath), relativePath, blurDataUrl });
+      const prepared = await this.prepareFile(file);
+      const relativePath = await this.storage.save(prepared.buffer, prepared.ext, subdir);
+      stored.push({
+        url: this.publicUrl(relativePath),
+        relativePath,
+        blurDataUrl: prepared.blurDataUrl,
+        width: prepared.width,
+        height: prepared.height,
+        bytes: prepared.buffer.length,
+        mime: prepared.mime,
+      });
     }
     return stored;
+  }
+
+  /**
+   * Refuse a batch whose files together exceed what one request may buffer
+   * (TASK-586).
+   *
+   * Multer's `fileSize` limit is PER FILE, so ten files of 25 MB each pass it
+   * individually while asking Node to hold 250 MB of untrusted bytes inside a
+   * 640 MB container. In production that never happens — Caddy's
+   * `request_body max_size` bounds the whole body first, and store-api listens
+   * only on loopback — but that is one external gate and a convention with the
+   * admin panel, and neither is visible from here. This is the same ceiling
+   * stated where the buffers actually are: dev has no Caddy in front of the API
+   * at all, and a future client that posts a real batch should get an
+   * explainable 413 from us rather than a connection cut further out.
+   *
+   * Checked after the per-file gates so the more specific refusal wins: a single
+   * oversized file should be told it is oversized, not that its batch is.
+   */
+  private assertBatchFitsInMemory(files: Express.Multer.File[]): void {
+    const total = files.reduce((sum, file) => sum + (file.buffer?.length ?? 0), 0);
+    if (total > IMAGE_MULTER_MAX_BYTES) {
+      throw new PayloadTooLargeException(
+        `Upload batch is too large: ${Math.round(total / 1024 / 1024)} MB in one request ` +
+          `(max ${Math.round(IMAGE_MULTER_MAX_BYTES / 1024 / 1024)} MB). Send fewer files at a time.`,
+      );
+    }
   }
 
   /**
@@ -110,20 +163,36 @@ export class ImageUploadService {
    * A raster file whose bytes `sharp` cannot decode fails the re-encode, which is
    * translated to 415 here rather than surfacing as a 500.
    */
-  private async prepareFile(
-    file: Express.Multer.File,
-  ): Promise<{ buffer: Buffer; ext: string; blurDataUrl: string | null }> {
+  private async prepareFile(file: Express.Multer.File): Promise<{
+    buffer: Buffer;
+    ext: string;
+    mime: string;
+    blurDataUrl: string | null;
+    width: number;
+    height: number;
+  }> {
     if (file.mimetype === GIF_MIME) {
-      const format = await this.imageProcessor.detectFormat(file.buffer);
-      if (format !== 'gif') {
+      // `probe` rather than `detectFormat`: the gate is identical (a buffer that
+      // is not really a GIF is refused), and the same single metadata read also
+      // yields the dimensions the media library records. Two reads would be two
+      // chances for the stored row to disagree with the stored bytes.
+      const probe = await this.imageProcessor.probe(file.buffer);
+      if (probe?.format !== 'gif') {
         throw new UnsupportedMediaTypeException('File contents are not a valid GIF image');
       }
-      return { buffer: file.buffer, ext: ALLOWED_IMAGE_MIME_EXT[GIF_MIME], blurDataUrl: null };
+      return {
+        buffer: file.buffer,
+        ext: ALLOWED_IMAGE_MIME_EXT[GIF_MIME],
+        mime: GIF_MIME,
+        blurDataUrl: null,
+        width: probe.width,
+        height: probe.height,
+      };
     }
 
     try {
-      const { webp, blurDataUrl } = await this.imageProcessor.process(file.buffer);
-      return { buffer: webp, ext: 'webp', blurDataUrl };
+      const { webp, blurDataUrl, width, height } = await this.imageProcessor.process(file.buffer);
+      return { buffer: webp, ext: 'webp', mime: 'image/webp', blurDataUrl, width, height };
     } catch {
       throw new UnsupportedMediaTypeException('File contents are not a decodable image');
     }
@@ -139,7 +208,7 @@ export class ImageUploadService {
       );
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      throw new PayloadTooLargeException('File exceeds the 5 MB limit');
+      throw new PayloadTooLargeException('File exceeds the 20 MB limit');
     }
   }
 

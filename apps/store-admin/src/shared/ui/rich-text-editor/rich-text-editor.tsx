@@ -23,14 +23,20 @@ import {
   Table as TableIcon,
   Trash2,
   RemoveFormatting,
-  TriangleAlert,
   type LucideIcon,
 } from "lucide-react";
 
-import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { ImageNode } from "./image-node";
+
+/** One image, as the editor stores it — exactly the server's `img` allow-list. */
+export interface RichTextImage {
+  src: string;
+  /** `null`/omitted = no alt at all; `""` = deliberately decorative. */
+  alt?: string | null;
+}
 
 export interface RichTextEditorProps {
   /** Current HTML value (Tiptap output). */
@@ -47,6 +53,20 @@ export interface RichTextEditorProps {
   disabled?: boolean;
   placeholder?: string;
   className?: string;
+  /**
+   * Renders whatever control supplies a picture, into the toolbar (TASK-547).
+   *
+   * A SLOT rather than a built-in button, because the only sensible source of
+   * an image is the media library — and this component lives in `shared`, which
+   * may not import `@/entities/media` or `@/features/media-picker`. The same
+   * shape as the upload queue's injected `send`: the mechanism lives down here,
+   * the thing that knows about the API is handed in from above.
+   *
+   * Omit it and the editor simply has no insert button. It still RENDERS and
+   * round-trips `<img>` either way, which is the part that matters for content
+   * that arrived from the catalogue import.
+   */
+  imagePicker?: (insert: (image: RichTextImage) => void) => React.ReactNode;
 }
 
 /**
@@ -309,80 +329,52 @@ const TABLE_PROSE = [
 ].join(" ");
 
 /**
- * Markup the SERVER keeps but THIS editor's schema throws away (TASK-467).
+ * ── THE EDITOR'S SCHEMA IS NOW THE SERVER'S ALLOW-LIST, TAG FOR TAG ─────────
  *
- * Derived by subtracting the Tiptap schema configured above from the shared
- * server-side allow-list in
- * `apps/store-api/src/common/sanitize/sanitize-rich-text.ts`
- * (`RICH_TEXT_POLICY.allowedTags`). After TASK-434 that difference is exactly
- * one tag:
+ * Until TASK-547 this file carried a `LOSSY_CONSTRUCTS` table, a
+ * `detectDroppedConstructs()` diff and a warning banner that put the editor
+ * read-only until the operator consented. It existed for one real failure:
+ * seeding a document containing markup this schema could not represent left
+ * `editor.getHTML()` ALREADY truncated, so the operator's first keystroke fired
+ * `onUpdate`, pushed the shortened HTML into the form and saved it — silently,
+ * irreversibly, and chosen by nobody. The catalogue import makes that concrete
+ * rather than theoretical: it writes vendor HTML straight into the same
+ * `description` column through `sanitizeRichText()`, so a real product
+ * description can carry an `<img>` nobody here typed.
  *
- *   allow-list                    this schema
- *   img ......................... no Image extension → dropped
- *
- * Everything else the server keeps, this editor can now represent:
+ * All of it is gone because the gap it measured has closed. Subtract this
+ * schema from `RICH_TEXT_POLICY.allowedTags` in
+ * `apps/store-api/src/common/sanitize/sanitize-rich-text.ts` and nothing is
+ * left:
  *
  *   h1…h4 ....................... `heading: { levels: [1, 2, 3, 4] }`
+ *   p, br, hr, strong/b, em/i,
+ *   u, s, ul, ol, li,
+ *   blockquote, code, pre ....... StarterKit
  *   a ........................... Link (bundled by StarterKit v3)
  *   table/tr/th/td .............. TableKit
  *   thead/tbody ................. parsed away, re-emitted as <tbody> — the
  *                                 ProseMirror table model has no separate
- *                                 header SECTION, only header CELLS, so a
+ *                                 header SECTION, only header CELLS, so
  *                                 `<thead><tr><th>` round-trips as
- *                                 `<tbody><tr><th>`: same cells, same text,
- *                                 no loss to warn about.
+ *                                 `<tbody><tr><th>`: same cells, same text
+ *   img ......................... {@link ImageNode}, carrying `src` and `alt`
+ *                                 and nothing else — which is precisely the
+ *                                 server's `allowedAttributes.img`
  *
- * `img` is not an oversight either: rendering images means uploading them, and
- * the shared upload endpoint (`POST /api/admin/uploads/content`, TASK-424) is
- * not merged. Adding an Image extension that can only take a pasted URL would
- * trade a loud warning for a half-feature, so the warning stays until the
- * endpoint lands.
- *
- * This is not a hypothetical: the supplier catalogue import writes vendor HTML
- * straight into the same `description` column via `ProductService.create/update`
- * → `sanitizeRichText()`, so a real product description may legitimately carry
- * an `<img>` the operator never typed. Seeding such a document is harmless — the `setContent` below passes
- * `emitUpdate: false` — but `editor.getHTML()` is ALREADY the truncated
- * document, so the operator's first keystroke would fire `onUpdate`, push the
- * truncated HTML into the form and save it. Silent, irreversible, and never
- * chosen by anyone.
- *
- * WHEN EITHER SIDE MOVES, THIS TABLE IS THE THING TO UPDATE — nothing else in
- * this file hardcodes the schema.
- *
- * Detection is by TAG PRESENCE, never by whole-document comparison. Tiptap
- * always reformats what it round-trips (attribute order, `<b>` → `<strong>`,
- * self-closing tags), so an equality check would fire on ordinary content — and
- * a false banner on every product would be worse than the bug it warns about.
- * Probing the OUTPUT too (not just the input) keeps this self-correcting: the
- * `table`, `h1` and `h4` probes removed here would have gone quiet on their
- * own the moment TableKit and the wider heading levels landed, list or no
- * list. The list is trimmed anyway, so the next reader is not left wondering
- * which of these the editor actually loses.
+ * WHEN WOULD IT HAVE TO COME BACK? Only if the two sides diverge again: the
+ * server's allow-list grows a tag or an `img` attribute this schema has no node
+ * for, or an extension is removed from here without removing it there. Either
+ * change must be made in both files at once; if that is ever impossible, the
+ * mechanism to restore is a per-TAG presence probe comparing the incoming HTML
+ * against `editor.getHTML()` right after the seeding `setContent`, plus a
+ * read-only latch — never a whole-document comparison, because Tiptap always
+ * reformats what it round-trips (attribute order, `<b>` → `<strong>`,
+ * self-closing tags) and an equality check would fire on ordinary content. A
+ * banner on every product would have been worse than the bug it warned about.
+ * `rich-text-editor.test.tsx` keeps the round-trip assertions that make the
+ * removal checkable rather than merely asserted.
  */
-const LOSSY_CONSTRUCTS: ReadonlyArray<{ probe: RegExp; label: string }> = [
-  { probe: /<img[\s/>]/i, label: dict.contentPreview.unsupportedImages },
-];
-
-/**
- * Human-readable list of the constructs present in `input` but gone from
- * `rendered` (the editor's own HTML after seeding), or `""` when nothing was
- * lost. A string rather than an array on purpose: `useState` bails out of a
- * re-render on an equal string, so ordinary content — the overwhelming majority
- * — costs no extra render pass, and the banner needs the joined form anyway.
- *
- * The de-duplication survives a one-entry list on purpose: probes are per TAG
- * and labels are per CONCEPT, so two probes sharing a label (as `h1`/`h4` did
- * until TASK-434) is the normal case whenever this list grows again.
- */
-function detectDroppedConstructs(input: string, rendered: string): string {
-  const dropped: string[] = [];
-  for (const { probe, label } of LOSSY_CONSTRUCTS) {
-    if (dropped.includes(label)) continue;
-    if (probe.test(input) && !probe.test(rendered)) dropped.push(label);
-  }
-  return dropped.join(", ");
-}
 
 /**
  * Headless Tiptap rich-text editor styled to match the admin's Input/Textarea.
@@ -422,12 +414,11 @@ function detectDroppedConstructs(input: string, rendered: string): string {
  * clears both refs when it changes, from an effect declared ahead of the
  * seeding one so the clear always lands first.
  *
- * Seeding has a second failure mode, unrelated to timing: the incoming HTML may
- * contain markup this editor's schema cannot represent, in which case the seed
- * silently truncates the document (TASK-467). That is detected right after each
- * seeding `setContent` and answered with a banner + a read-only latch — see
- * {@link LOSSY_CONSTRUCTS} above for the full reasoning and the maintenance
- * rule.
+ * Seeding used to have a second failure mode, unrelated to timing: markup the
+ * schema could not represent was dropped on seed and saved on the next
+ * keystroke. That is gone — the schema and the server's allow-list now match
+ * tag for tag; see the block comment above the extension list for what would
+ * bring the warning back.
  *
  * Always import the default export from `./index` (dynamic, ssr:false) — Tiptap
  * touches the DOM on init and must not render on the server.
@@ -439,6 +430,7 @@ export function RichTextEditor({
   disabled = false,
   placeholder,
   className,
+  imagePicker,
 }: RichTextEditorProps) {
   // The last `value` this component has seen from the outside — either seeded
   // into the document or recognised as the echo of our own `onChange`.
@@ -448,14 +440,6 @@ export function RichTextEditor({
   // `resetKey` clears it, see the block comment above.
   const hasLocalEditsRef = React.useRef(false);
   const lastResetKeyRef = React.useRef(resetKey);
-  // TASK-467 truncation latch. `droppedConstructs` is the verdict of the last
-  // seeding round-trip (see `detectDroppedConstructs`): non-empty means the
-  // document on screen is NOT the document on the server, so the editor stays
-  // read-only until the operator explicitly consents via the banner. Both are
-  // scoped to one entity, exactly like `hasLocalEditsRef` — `resetKey` clears
-  // them so the next entity gets its own verdict (forms.md Rule 2b).
-  const [droppedConstructs, setDroppedConstructs] = React.useState("");
-  const [editAnyway, setEditAnyway] = React.useState(false);
 
   // The inline URL editor: `null` is closed, a string is the draft being typed
   // (so "" is open-and-empty, which is how a link is removed).
@@ -469,7 +453,7 @@ export function RichTextEditor({
       StarterKit.configure({
         // h1…h4 is the server allow-list, verbatim (`sanitize-rich-text.ts`).
         // Narrower would mean silently demoting stored headings to <p> on the
-        // next save — see {@link LOSSY_CONSTRUCTS}.
+        // next save — see the schema table above.
         heading: { levels: [1, 2, 3, 4] },
         // Link ships INSIDE StarterKit v3, so it must be configured through
         // this option and not registered again as a separate extension:
@@ -494,6 +478,9 @@ export function RichTextEditor({
       // find it back at default width after a reload. Not offering the handle
       // is more honest than offering one that forgets.
       TableKit.configure({ table: { resizable: false } }),
+      // `src` + `alt`, matching the server's `allowedAttributes.img` exactly —
+      // see {@link ImageNode} and the schema table above (TASK-547).
+      ImageNode,
     ],
     content: value,
     editable: !disabled,
@@ -604,23 +591,39 @@ export function RichTextEditor({
     if (linkEditorOpen) linkInputRef.current?.focus();
   }, [linkEditorOpen]);
 
-  // The document Tiptap is showing is missing markup the server stored, and the
-  // operator has not yet said "I know, let me edit anyway" (TASK-467).
-  const truncated = droppedConstructs !== "";
-  const lockedByTruncation = truncated && !editAnyway;
-  // The two locks COMPOSE — they never override each other. `disabled` is the
-  // caller's word and always wins: a disabled editor stays disabled even after
-  // the operator consents, and the consent button is not offered at all.
-  const editable = !disabled && !lockedByTruncation;
+  const editable = !disabled;
 
-  // Keep the editor editable state in sync with `disabled` and the truncation
-  // latch. The second argument is NOT cosmetic: `setEditable()` emits an
-  // `update` event by default even though the document did not change, and that
-  // event ran `onChange` with the editor's own (still empty) HTML on the very
-  // first commit — overwriting the value the form had just seeded and leaving
-  // `content` as "<p></p>" to save. That was the other half of TASK-399's data
-  // loss, and it would land again here: the truncation latch flips this flag on
-  // the commit right after seeding, i.e. at exactly the same moment.
+  /**
+   * Put one picture into the document, wherever the caret is.
+   *
+   * `insertContent` rather than a custom command: a command would need a
+   * declaration merge onto Tiptap's `Commands` interface to be callable in
+   * TypeScript, and this node has exactly one operation.
+   *
+   * `focus()` first, because the control that calls this is a dialog several tab
+   * stops away — without it ProseMirror inserts at whatever stale selection the
+   * document had, which after a fresh seed is position 0.
+   */
+  const insertImage = React.useCallback(
+    (image: RichTextImage) => {
+      editor
+        ?.chain()
+        .focus()
+        .insertContent({
+          type: "image",
+          attrs: { src: image.src, alt: image.alt ?? null },
+        })
+        .run();
+    },
+    [editor],
+  );
+
+  // Keep the editor editable state in sync with `disabled`. The second argument
+  // is NOT cosmetic: `setEditable()` emits an `update` event by default even
+  // though the document did not change, and that event ran `onChange` with the
+  // editor's own (still empty) HTML on the very first commit — overwriting the
+  // value the form had just seeded and leaving `content` as "<p></p>" to save.
+  // That was the other half of TASK-399's data loss.
   React.useEffect(() => {
     editor?.setEditable(editable, false);
   }, [editor, editable]);
@@ -638,11 +641,6 @@ export function RichTextEditor({
     lastResetKeyRef.current = resetKey;
     hasLocalEditsRef.current = false;
     lastSeededRef.current = null;
-    // A verdict (and a consent) belongs to the entity it was reached about — a
-    // new entity gets a fresh one, or B would inherit A's banner and A's
-    // "edit anyway" (TASK-467).
-    setDroppedConstructs("");
-    setEditAnyway(false);
     // A half-typed URL belongs to the document it was being typed into.
     setLinkDraft(null);
     setLinkRejected(false);
@@ -668,23 +666,6 @@ export function RichTextEditor({
     if (hasLocalEditsRef.current) return;
 
     editor.commands.setContent(next, { emitUpdate: false });
-
-    // TASK-467: the document is now whatever Tiptap's schema could keep of
-    // `next`. Diff the two by tag presence and latch the verdict. `setContent`
-    // is synchronous, so `getHTML()` here is already the post-seed document.
-    //
-    // This verdict cannot be derived during render — it needs the document
-    // AFTER seeding, and seeding is this effect — so it is state set from an
-    // effect by necessity, not by preference. `setState` bails out on an equal
-    // string, which is why the verdict is stored joined rather than as an array:
-    // ordinary content (the overwhelming majority) costs no extra render pass.
-    //
-    // The consent is cleared alongside: it was given about the previous
-    // document, and this is a different one. In practice this only reaches a
-    // consenting operator who had not yet typed anything — one keystroke sets
-    // `hasLocalEditsRef` and the effect returns above, long before here.
-    setDroppedConstructs(detectDroppedConstructs(next, editor.getHTML()));
-    setEditAnyway(false);
   }, [editor, value]);
 
   const showPlaceholder = Boolean(placeholder) && editor?.isEmpty;
@@ -699,45 +680,6 @@ export function RichTextEditor({
       )}
       data-slot="rich-text-editor"
     >
-      {/*
-        `role="status"` (polite), not `alert`: the banner appears a beat after
-        mount, when the seed lands, so an assertive interruption would fight the
-        operator's own navigation. The live region is mounted UNCONDITIONALLY
-        and stays empty while the document is intact — a region that appears
-        together with its text is frequently not announced at all, since screen
-        readers watch for content inserted into a region they already know.
-      */}
-      <div role="status" data-slot="rich-text-editor-truncation-warning">
-        {truncated && (
-          <div className="flex flex-wrap items-start gap-x-3 gap-y-2 border-b border-warning/40 bg-warning/10 px-3 py-2">
-            <TriangleAlert
-              className="mt-0.5 h-4 w-4 shrink-0 text-warning"
-              aria-hidden
-            />
-            <p className="min-w-0 flex-1 text-sm text-foreground">
-              <span className="font-medium">
-                {dict.contentPreview.unsupportedTitle}
-              </span>{" "}
-              {dict.contentPreview.unsupportedBody(droppedConstructs)}
-            </p>
-            {/*
-              No consent button while `disabled`: the caller's word outranks the
-              latch, so offering a way past it would be a lie.
-            */}
-            {!disabled && !editAnyway && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setEditAnyway(true)}
-              >
-                {dict.contentPreview.unsupportedEditAnyway}
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
       <div className="flex flex-wrap items-center gap-0.5 border-b border-input p-1">
         {TOOLBAR_GROUPS.map((group, groupIndex) => (
           <React.Fragment key={groupIndex}>
@@ -784,6 +726,24 @@ export function RichTextEditor({
             })}
           </React.Fragment>
         ))}
+
+        {/*
+          The image control, supplied by the caller (TASK-547). It sits after
+          every built-in group and behind the same separator, so the strip reads
+          as one toolbar rather than a toolbar with something bolted on.
+
+          Rendered only once the editor exists: `insertImage` is a no-op before
+          that, and a button that silently does nothing is worse than one that
+          appears a tick later. While `disabled`, the wrapper's
+          `pointer-events-none` already makes it unclickable — the same
+          treatment every other control gets.
+        */}
+        {imagePicker && editor && (
+          <>
+            <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+            {imagePicker(insertImage)}
+          </>
+        )}
       </div>
 
       {/*

@@ -50,6 +50,29 @@ admin.{$DOMAIN} {
 api.{$DOMAIN} {
 	header X-Robots-Tag "noindex, nofollow"
 
+	# Refuse an oversized upload at the edge (TASK-439). Without this, a body
+	# larger than the app's cap is streamed all the way into Node before Multer
+	# aborts it — bandwidth and memory spent on a request that was always going
+	# to fail. Caddy reads 25MB as DECIMAL — 25,000,000 bytes — so this is very
+	# slightly stricter than IMAGE_MULTER_MAX_BYTES (25 × 1024 × 1024 =
+	# 26,214,400) in `apps/store-api/src/uploads/image-upload.constants.ts`, which
+	# is the right way round: the outermost gate should close first. Both sit well
+	# above the 20 MB (20,971,520 B) business cap that produces the human-readable
+	# 413 one layer further in, so a legitimate 20 MB photo plus its multipart
+	# envelope has ~4 MB of headroom here.
+	#
+	# READ THIS BEFORE "FIXING" THE NUMBER: max_size bounds the whole REQUEST
+	# BODY, while the product-gallery endpoint accepts up to 10 files per
+	# request. Those two facts do not contradict each other and the limit is not
+	# mis-set — a batch of small images fits easily, and a batch of large ones is
+	# meant to go one file per request, which is exactly what the admin panel
+	# does (see the "ONE REQUEST PER FILE" docblock in
+	# `product-image-manager.tsx`). Raising this to 10 × 25MB would only make
+	# Node hold 250 MB of untrusted bytes inside a 640 MB container.
+	request_body {
+		max_size 25MB
+	}
+
 	# Uploaded files are content-addressed — every upload gets a fresh UUID
 	# filename (`local-disk-storage.service.ts`), so a URL's bytes never change
 	# and a replacement is simply a different URL. NestJS's ServeStatic answers
