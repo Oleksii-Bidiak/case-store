@@ -2,17 +2,14 @@ import {
   Injectable,
   BadRequestException,
   NotFoundException,
-  ConflictException,
   ForbiddenException,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
 import { AuthRepository } from '../auth/auth.repository';
-import { AuthService } from '../auth/auth.service';
 import { ReviewService } from '../review/review.service';
 import { UserEntity, UserAdminCardEntity } from './entities';
-import { UpdateProfileDto, UserListQueryDto, CreateUserDto } from './dto';
-import { hashPassword } from '../common/security';
+import { UpdateProfileDto, UserListQueryDto } from './dto';
+import { assertMayManage, type PermissionActor } from '../auth/permissions';
 import {
   CUSTOMER_CARD_RECENT_ORDERS_LIMIT,
   CUSTOMER_CARD_REVIEWS_LIMIT,
@@ -43,7 +40,6 @@ export class UserService {
   constructor(
     private readonly userRepository: UserRepository,
     private readonly authRepository: AuthRepository,
-    private readonly authService: AuthService,
     private readonly reviewService: ReviewService,
   ) {}
 
@@ -149,12 +145,15 @@ export class UserService {
   }
 
   /**
-   * Get a user by ID (admin-only).
-   * Returns a UserEntity with sensitive fields stripped.
-   * Throws NotFoundException if the user does not exist.
+   * Get a CUSTOMER by ID (admin surface).
+   *
+   * Scoped through `findCustomerById` since TASK-476: a service account answers
+   * 404 here and is read on `/api/admin/staff/:id` instead, behind `staff:read`.
+   * Same answer for a staff id and a missing one, so `customers:read` cannot be
+   * used to probe for administrators.
    */
   async findById(id: string): Promise<UserEntity> {
-    const user = await this.userRepository.findById(id);
+    const user = await this.userRepository.findCustomerById(id);
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -177,7 +176,7 @@ export class UserService {
    * @throws NotFoundException when the user does not exist (or is soft-deleted).
    */
   async getAdminCard(id: string): Promise<UserAdminCardEntity> {
-    const user = await this.userRepository.findById(id);
+    const user = await this.userRepository.findCustomerById(id);
 
     if (!user) {
       throw new NotFoundException('User not found');
@@ -203,120 +202,14 @@ export class UserService {
     });
   }
 
-  /**
-   * Provision a staff account from the admin UI (owner-only, TASK-333/317).
-   *
-   * The reason this endpoint exists: hiring someone used to require a developer
-   * with shell access to run `scripts/create-admin.ts` on the server. A kadrova
-   * operation that routes through an engineer is a permanent bottleneck — and
-   * the script only ever makes ADMINs, so "hire a blog editor" meant handing out
-   * full access to orders, prices and customer data.
-   *
-   * @throws ConflictException when the email is already taken
-   */
-  async createUser(dto: CreateUserDto): Promise<UserEntity> {
-    const existing = await this.userRepository.findByEmail(dto.email);
-    if (existing) {
-      throw new ConflictException('Email is already taken');
-    }
-
-    const passwordHash = await hashPassword(dto.password);
-
-    const created = await this.userRepository.create({
-      email: dto.email,
-      passwordHash,
-      role: dto.role,
-      firstName: dto.firstName,
-      lastName: dto.lastName,
-    });
-
-    return UserEntity.fromPrisma(created);
-  }
-
-  /**
-   * Reset someone else's password (owner-only, TASK-333).
-   *
-   * Routed through {@link AuthService.setPassword} so an owner-initiated reset
-   * is byte-for-byte the same operation as a self-service one: same hash
-   * parameters, same session revocation, same lockout clearing. A second
-   * implementation here would be the one that eventually forgets to revoke the
-   * old sessions — and "the owner reset the password of a compromised account"
-   * is exactly when that matters.
-   *
-   * @throws NotFoundException when the target user does not exist
-   */
-  async setUserPassword(id: string, newPassword: string): Promise<UserEntity> {
-    const user = await this.userRepository.findById(id);
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    await this.authService.setPassword(id, newPassword);
-
-    return UserEntity.fromPrisma(user);
-  }
-
-  /**
-   * Change a user's role (owner-only, TASK-317/334).
-   *
-   * @throws ForbiddenException when the caller targets their own account, or
-   *         when the change would leave the shop with no working admin
-   * @throws NotFoundException when the target user does not exist
-   */
-  async updateUserRole(id: string, role: UserRole, adminId: string): Promise<UserEntity> {
-    // Self-demotion is the single most effective way to lock yourself out, and
-    // it is never what someone means to do. Mirrors the self-ban guard below.
-    if (id === adminId) {
-      throw new ForbiddenException('Cannot change your own role');
-    }
-
-    const user = await this.userRepository.findById(id);
-
-    if (!user) {
-      throw new NotFoundException('User not found');
-    }
-
-    if (user.role === role) {
-      return UserEntity.fromPrisma(user);
-    }
-
-    if (user.role === UserRole.ADMIN) {
-      await this.assertNotLastAdmin(id, 'demote');
-    }
-
-    const updated = await this.userRepository.updateRole(id, role);
-
-    // A demoted employee must not keep a working session: their access token
-    // still carries the old role for up to 15 minutes, and although
-    // PermissionGuard re-reads the role from the database on every admin
-    // request (so the token buys nothing there), revoking is what stops them
-    // silently refreshing into a new one.
-    await this.authRepository.revokeAllUserTokens(id);
-
-    return UserEntity.fromPrisma(updated);
-  }
-
-  /**
-   * Refuse an operation that would leave the shop without a single admin who
-   * can actually sign in (TASK-334).
-   *
-   * Deactivating, deleting or demoting the last ADMIN locks the owner out of
-   * their own shop, and the only way back is shell access to the production
-   * database (`scripts/create-admin.ts`). The self-targeting guards are not
-   * enough on their own: two admins can lock each other out, and an owner who
-   * created a second admin and then deleted the first would hit exactly this.
-   */
-  private async assertNotLastAdmin(id: string, operation: string): Promise<void> {
-    const remaining = await this.userRepository.countActiveAdmins(id);
-
-    if (remaining === 0) {
-      throw new ForbiddenException(
-        `Cannot ${operation} the last active administrator — the shop would have no way back in. ` +
-          'Create another administrator first.',
-      );
-    }
-  }
+  // `createUser`, `setUserPassword` and `updateUserRole` moved to `StaffService`
+  // in TASK-476, with their routes: provisioning an account, setting somebody
+  // else's password and changing a role are three of the four doors that decide
+  // who runs the shop, and they now go through the level rule
+  // (`auth/permissions/access-level.ts`) on `/api/admin/staff`.
+  //
+  // `assertNotLastAdmin` is gone rather than moved — see the note where
+  // `countActiveAdmins` used to be in `UserRepository`.
 
   /**
    * Deactivate a user by setting isActive = false (admin-only).
@@ -331,26 +224,29 @@ export class UserService {
    * storefront and its one-star ratings stayed in every average. An operator
    * banning an abuser reasonably believes they have dealt with the abuse.
    *
-   * @param id      the target user to deactivate
-   * @param adminId the calling admin's own id — an admin cannot ban themselves
-   * @throws ForbiddenException when an admin targets their own account, or when
-   *         the target is the last active administrator
-   * @throws NotFoundException when the target user does not exist
+   * TASK-476 narrowed WHO this can be done to, and nothing else about it. The
+   * lookup is customer-scoped, so the `customers:write` holder who could once
+   * switch off an administrator from here now gets a 404; the level rule runs on
+   * top as the same assertion the staff surface uses, so all four doors read
+   * alike even though this one can only ever see level 0.
+   *
+   * @param id    the target customer to deactivate
+   * @param actor the caller as the guard resolved them from the database
+   * @throws ForbiddenException when the caller targets their own account
+   * @throws NotFoundException when no CUSTOMER with this id exists
    */
-  async deactivateUser(id: string, adminId: string): Promise<UserEntity> {
-    if (id === adminId) {
+  async deactivateUser(id: string, actor: PermissionActor): Promise<UserEntity> {
+    if (id === actor.id) {
       throw new ForbiddenException('Cannot deactivate your own account');
     }
 
-    const user = await this.userRepository.findById(id);
+    const user = await this.userRepository.findCustomerById(id);
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    if (user.role === UserRole.ADMIN) {
-      await this.assertNotLastAdmin(id, 'deactivate');
-    }
+    assertMayManage(actor, user);
 
     const deactivatedUser = await this.userRepository.deactivate(id);
 
@@ -373,25 +269,28 @@ export class UserService {
    * revoked so existing sessions cannot outlive the deletion. The row is kept so
    * the user's historical orders still resolve.
    *
-   * @param id      the target user to delete
-   * @param adminId the calling admin's own id — an admin cannot delete themselves
-   * @throws ForbiddenException when an admin targets their own account
-   * @throws NotFoundException when the target user does not exist
+   * Customer-scoped since TASK-476: deleting a service account is a personnel
+   * decision and belongs on `/api/admin/staff`, where the level rule decides who
+   * may reach whom. `@OwnerOnly()` stays on the route regardless — this task
+   * widens nobody's power.
+   *
+   * @param id    the target customer to delete
+   * @param actor the caller as the guard resolved them from the database
+   * @throws ForbiddenException when the caller targets their own account
+   * @throws NotFoundException when no CUSTOMER with this id exists
    */
-  async deleteUser(id: string, adminId: string): Promise<UserEntity> {
-    if (id === adminId) {
+  async deleteUser(id: string, actor: PermissionActor): Promise<UserEntity> {
+    if (id === actor.id) {
       throw new ForbiddenException('Cannot delete your own account');
     }
 
-    const user = await this.userRepository.findById(id);
+    const user = await this.userRepository.findCustomerById(id);
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
 
-    if (user.role === UserRole.ADMIN) {
-      await this.assertNotLastAdmin(id, 'delete');
-    }
+    assertMayManage(actor, user);
 
     const mangledEmail = `deleted:${user.id}:${user.email}`;
 
@@ -404,15 +303,23 @@ export class UserService {
   }
 
   /**
-   * Activate a user by setting isActive = true (admin-only).
-   * Throws NotFoundException if the user does not exist.
+   * Activate a customer account (admin surface).
+   *
+   * Takes the actor and runs the same assertion as its mirror image. Restoring an
+   * account looks harmless next to banning one, which is precisely why the pair
+   * drifted before: `deactivate` had a self-targeting guard and `activate` had
+   * nothing at all, so un-banning was the unchecked half of the same decision.
+   *
+   * @throws NotFoundException when no CUSTOMER with this id exists
    */
-  async activateUser(id: string): Promise<UserEntity> {
-    const user = await this.userRepository.findById(id);
+  async activateUser(id: string, actor: PermissionActor): Promise<UserEntity> {
+    const user = await this.userRepository.findCustomerById(id);
 
     if (!user) {
       throw new NotFoundException('User not found');
     }
+
+    assertMayManage(actor, user);
 
     const activatedUser = await this.userRepository.activate(id);
 

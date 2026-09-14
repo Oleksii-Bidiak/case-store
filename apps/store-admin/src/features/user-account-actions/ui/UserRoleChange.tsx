@@ -9,8 +9,8 @@ import {
   getUserControllerFindAllQueryKey,
   getUserControllerFindByIdQueryKey,
   roleLabel,
-  useUpdateUserRole,
-  type UpdateUserRoleDtoRole,
+  useUpdateStaffRole,
+  type UpdateStaffRoleDtoRole,
 } from "@/entities/user";
 import { useAuth } from "@/entities/session";
 import {
@@ -33,19 +33,26 @@ interface UserRoleChangeProps {
 }
 
 /**
- * Change a user's role (TASK-317, owner-only on the API).
+ * Change a user's role (TASK-317; `PATCH /api/admin/staff/:id/role` since
+ * TASK-476).
  *
- * Two refusals come back from the server and both are worth showing verbatim
- * rather than as "не вдалося": changing your OWN role (the fastest way to lock
- * yourself out, and never intentional) and demoting the LAST active
- * administrator (which would leave the shop with no way back in short of shell
- * access to the production database). The self-check is mirrored here only so
- * the control is visibly disabled instead of failing on click.
+ * The refusals that come back are worth showing verbatim rather than as «не
+ * вдалося», and there are three kinds now: changing your OWN role (the fastest
+ * way to lock yourself out, and never intentional), acting on somebody at or
+ * above your own level, and handing out a level at or above your own. The
+ * last-active-administrator refusal is gone — the level rule replaced it with the
+ * stronger invariant that the owner cannot be demoted at all.
+ *
+ * The self-check is mirrored here only so the control is visibly disabled instead
+ * of failing on click. The level checks are deliberately NOT mirrored: the level
+ * of the person on screen is server truth, and a second copy of the rule in the
+ * browser is the copy that goes stale. TASK-480 gives this control the level badge
+ * that makes the server's answer predictable before the click.
  */
 export function UserRoleChange({ userId, currentRole }: UserRoleChangeProps) {
   const queryClient = useQueryClient();
   const { userId: actorId } = useAuth();
-  const updateRole = useUpdateUserRole();
+  const updateRole = useUpdateStaffRole();
 
   // forms.md Rule 1a — seeded from server data, resynchronised during render
   // when the fetched role changes (e.g. after another tab updated it).
@@ -62,7 +69,7 @@ export function UserRoleChange({ userId, currentRole }: UserRoleChangeProps) {
     if (isSelf || role === currentRole) return;
 
     updateRole.mutate(
-      { id: userId, data: { role: role as UpdateUserRoleDtoRole } },
+      { id: userId, data: { role: role as UpdateStaffRoleDtoRole } },
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({

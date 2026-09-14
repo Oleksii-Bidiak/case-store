@@ -592,9 +592,9 @@ export class AuthService {
    *
    * The shared tail of "the password just changed", whatever proved the right to
    * change it: the owner's current password ({@link changePassword}), a
-   * single-use reset token ({@link confirmPasswordReset}), or the shop owner
-   * resetting an employee's ({@link UserService.setUserPassword}). Keeping the
-   * hash write and the revoke together is what stops a future path from doing
+   * single-use reset token ({@link confirmPasswordReset}), or an owner or deputy
+   * admin resetting an employee's (`StaffService.setPassword`, TASK-476). Keeping
+   * the hash write and the revoke together is what stops a future path from doing
    * one without the other.
    *
    * `clearFailedLogins` is included deliberately: an account that got locked out

@@ -46,10 +46,17 @@ describe('UserController (e2e)', () => {
     revokeAllUserTokens: jest.fn(),
   };
 
-  // Mock UserRepository — for user management endpoints
+  // Mock UserRepository — for the customer-management endpoints.
+  //
+  // Two lookups since TASK-476, and which one a route uses is the contract:
+  // `findById` serves `/api/users/me` (staff read their own profile there too),
+  // `findCustomerById` serves every ADMIN-facing route, so a service account
+  // simply does not resolve through this controller any more.
   const userRepositoryMock = {
     findById: jest.fn(),
+    findCustomerById: jest.fn(),
     findByEmail: jest.fn(),
+    softDelete: jest.fn(),
     findAll: jest.fn(),
     update: jest.fn(),
     deactivate: jest.fn(),
@@ -383,7 +390,7 @@ describe('UserController (e2e)', () => {
     it('should return 200 with user details for admin', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue({
+      userRepositoryMock.findCustomerById.mockResolvedValue({
         ...testUser,
         id: 'user-detail-id',
         email: 'detail@example.com',
@@ -403,7 +410,7 @@ describe('UserController (e2e)', () => {
     it('should return 404 for non-existent user', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .get('/api/users/nonexistent-id')
@@ -481,7 +488,7 @@ describe('UserController (e2e)', () => {
     it('should return 200 with a fully-shaped customer card for admin', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue({
+      userRepositoryMock.findCustomerById.mockResolvedValue({
         ...testUser,
         id: 'user-detail-id',
         email: 'detail@example.com',
@@ -518,7 +525,7 @@ describe('UserController (e2e)', () => {
     it('should return 404 when the user is not found', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .get('/api/users/nonexistent-id/admin-card')
@@ -546,7 +553,7 @@ describe('UserController (e2e)', () => {
     it('should deactivate user and return updated user for admin', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue({
+      userRepositoryMock.findCustomerById.mockResolvedValue({
         ...testUser,
         id: 'user-to-deactivate',
         isActive: true,
@@ -570,7 +577,7 @@ describe('UserController (e2e)', () => {
     it('should return 404 when deactivating non-existent user', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .patch('/api/users/nonexistent-id/deactivate')
@@ -611,7 +618,7 @@ describe('UserController (e2e)', () => {
     it('should activate user and return updated user for admin', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue({
+      userRepositoryMock.findCustomerById.mockResolvedValue({
         ...testUser,
         id: 'user-to-activate',
         isActive: false,
@@ -635,12 +642,66 @@ describe('UserController (e2e)', () => {
     it('should return 404 when activating non-existent user', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .patch('/api/users/nonexistent-id/activate')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  // ─── The customer scope of this controller (TASK-476) ───────────────────────
+
+  describe('what this controller is NOT any more', () => {
+    it('has no create / password / role routes left — they answer 404 from the router', async () => {
+      // Moved to `/api/admin/staff`. 404 rather than 403 is the honest signal: an
+      // old client is not "not allowed", it is calling something that is gone.
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .post('/api/users')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ email: 'x@example.com', password: 'StrongP@ss123', role: 'MANAGER' })
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .post('/api/users/some-id/password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ newPassword: 'StrongP@ss123' })
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .patch('/api/users/some-id/role')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ role: 'MANAGER' })
+        .expect(404);
+    });
+
+    it('reads every admin-facing route through the CUSTOMER-scoped lookup', async () => {
+      // The property that lets this controller stay under `customers:read` /
+      // `customers:write`: `findById` (which would resolve a service account) is
+      // reserved for `/api/users/me`.
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
+
+      for (const [method, url] of [
+        ['get', '/api/users/staff-id'],
+        ['get', '/api/users/staff-id/admin-card'],
+        ['patch', '/api/users/staff-id/deactivate'],
+        ['patch', '/api/users/staff-id/activate'],
+      ] as const) {
+        await request(app.getHttpServer())
+          [method](url)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      }
+
+      expect(userRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(userRepositoryMock.findCustomerById).toHaveBeenCalledTimes(4);
+      expect(userRepositoryMock.deactivate).not.toHaveBeenCalled();
+      expect(userRepositoryMock.activate).not.toHaveBeenCalled();
     });
   });
 });

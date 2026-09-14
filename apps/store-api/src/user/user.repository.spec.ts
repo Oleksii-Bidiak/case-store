@@ -132,39 +132,61 @@ describe('UserRepository (soft-delete behaviour)', () => {
       ]);
     });
 
+    // ── The CUSTOMER scope (TASK-476) ──
+    //
+    // The clause that makes `/api/users` safe to leave under `customers:read`.
+    // Until this task the same list carried every service account, so an operator
+    // hired to phone customers could enumerate the administrators — and
+    // `customers:write` next door could switch one off.
+    it('always restricts to CUSTOMER, whatever else was asked for', async () => {
+      prismaMock.user.findMany.mockResolvedValue([]);
+      prismaMock.user.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, role: 'ADMIN' as UserRole, search: 'olena' });
+
+      const { AND } = prismaMock.user.findMany.mock.calls[0][0].where;
+      // First clause, and not replaceable: asking for ADMIN ANDs a contradiction
+      // rather than widening the scope, so the page comes back empty.
+      expect(AND[0]).toEqual({ role: 'CUSTOMER' });
+      expect(AND).toContainEqual({ role: 'ADMIN' });
+      expect(prismaMock.user.count.mock.calls[0][0].where).toEqual(
+        prismaMock.user.findMany.mock.calls[0][0].where,
+      );
+    });
+
     // ── isActive filter (TASK-150 B5) ──
-    it('constrains where.isActive to true when isActive: true', async () => {
+    it('constrains isActive to true when isActive: true', async () => {
       prismaMock.user.findMany.mockResolvedValue([]);
       prismaMock.user.count.mockResolvedValue(0);
 
       await repository.findAll({ page: 1, limit: 20, isActive: true });
 
-      expect(prismaMock.user.findMany.mock.calls[0][0].where).toEqual(
-        expect.objectContaining({ isActive: true, deletedAt: null }),
-      );
-      expect(prismaMock.user.count.mock.calls[0][0].where).toEqual(
-        expect.objectContaining({ isActive: true }),
-      );
+      expect(prismaMock.user.findMany.mock.calls[0][0].where.deletedAt).toBeNull();
+      expect(prismaMock.user.findMany.mock.calls[0][0].where.AND).toContainEqual({
+        isActive: true,
+      });
+      expect(prismaMock.user.count.mock.calls[0][0].where.AND).toContainEqual({ isActive: true });
     });
 
-    it('constrains where.isActive to false when isActive: false', async () => {
+    it('constrains isActive to false when isActive: false', async () => {
       prismaMock.user.findMany.mockResolvedValue([]);
       prismaMock.user.count.mockResolvedValue(0);
 
       await repository.findAll({ page: 1, limit: 20, isActive: false });
 
-      expect(prismaMock.user.findMany.mock.calls[0][0].where).toEqual(
-        expect.objectContaining({ isActive: false, deletedAt: null }),
-      );
+      expect(prismaMock.user.findMany.mock.calls[0][0].where.AND).toContainEqual({
+        isActive: false,
+      });
     });
 
-    it('omits where.isActive entirely when isActive is undefined (all statuses)', async () => {
+    it('omits the isActive clause entirely when isActive is undefined (all statuses)', async () => {
       prismaMock.user.findMany.mockResolvedValue([]);
       prismaMock.user.count.mockResolvedValue(0);
 
       await repository.findAll({ page: 1, limit: 20 });
 
-      expect(prismaMock.user.findMany.mock.calls[0][0].where).not.toHaveProperty('isActive');
+      const { AND } = prismaMock.user.findMany.mock.calls[0][0].where;
+      expect(AND.some((clause: Record<string, unknown>) => 'isActive' in clause)).toBe(false);
     });
 
     // ── Multi-token search (TASK-406) ──
@@ -175,6 +197,8 @@ describe('UserRepository (soft-delete behaviour)', () => {
     // holds the first and the last name together.
     describe('search', () => {
       const whereOfFindAll = () => prismaMock.user.findMany.mock.calls[0][0].where;
+      /** The token clauses, past the CUSTOMER scope that always leads (TASK-476). */
+      const searchClauses = () => whereOfFindAll().AND.slice(1);
 
       beforeEach(() => {
         prismaMock.user.findMany.mockResolvedValue([]);
@@ -184,27 +208,23 @@ describe('UserRepository (soft-delete behaviour)', () => {
       it('ANDs one OR-over-columns clause per token so «John Doe» matches a split name', async () => {
         await repository.findAll({ page: 1, limit: 20, search: 'John Doe' });
 
-        expect(whereOfFindAll()).toEqual(
-          expect.objectContaining({
-            deletedAt: null,
-            AND: [
-              {
-                OR: [
-                  { email: { contains: 'John', mode: 'insensitive' } },
-                  { firstName: { contains: 'John', mode: 'insensitive' } },
-                  { lastName: { contains: 'John', mode: 'insensitive' } },
-                ],
-              },
-              {
-                OR: [
-                  { email: { contains: 'Doe', mode: 'insensitive' } },
-                  { firstName: { contains: 'Doe', mode: 'insensitive' } },
-                  { lastName: { contains: 'Doe', mode: 'insensitive' } },
-                ],
-              },
+        expect(whereOfFindAll().deletedAt).toBeNull();
+        expect(searchClauses()).toEqual([
+          {
+            OR: [
+              { email: { contains: 'John', mode: 'insensitive' } },
+              { firstName: { contains: 'John', mode: 'insensitive' } },
+              { lastName: { contains: 'John', mode: 'insensitive' } },
             ],
-          }),
-        );
+          },
+          {
+            OR: [
+              { email: { contains: 'Doe', mode: 'insensitive' } },
+              { firstName: { contains: 'Doe', mode: 'insensitive' } },
+              { lastName: { contains: 'Doe', mode: 'insensitive' } },
+            ],
+          },
+        ]);
         // The flat OR is gone — leaving it would widen the result to "any token
         // in any column", i.e. every John and every Doe in the shop.
         expect(whereOfFindAll()).not.toHaveProperty('OR');
@@ -213,16 +233,16 @@ describe('UserRepository (soft-delete behaviour)', () => {
       it('is word-order insensitive — «doe john» builds the same conjunction', async () => {
         await repository.findAll({ page: 1, limit: 20, search: 'doe john' });
 
-        const { AND } = whereOfFindAll();
-        expect(AND).toHaveLength(2);
-        expect(AND[0].OR[1]).toEqual({ firstName: { contains: 'doe', mode: 'insensitive' } });
-        expect(AND[1].OR[1]).toEqual({ firstName: { contains: 'john', mode: 'insensitive' } });
+        const clauses = searchClauses();
+        expect(clauses).toHaveLength(2);
+        expect(clauses[0].OR[1]).toEqual({ firstName: { contains: 'doe', mode: 'insensitive' } });
+        expect(clauses[1].OR[1]).toEqual({ firstName: { contains: 'john', mode: 'insensitive' } });
       });
 
       it('keeps a single token working as one OR across the three columns («john@»)', async () => {
         await repository.findAll({ page: 1, limit: 20, search: 'john@' });
 
-        expect(whereOfFindAll().AND).toEqual([
+        expect(searchClauses()).toEqual([
           {
             OR: [
               { email: { contains: 'john@', mode: 'insensitive' } },
@@ -238,9 +258,9 @@ describe('UserRepository (soft-delete behaviour)', () => {
         // silently turning a typo into "no filter at all".
         await repository.findAll({ page: 1, limit: 20, search: '  John   Doe  ' });
 
-        const { AND } = whereOfFindAll();
-        expect(AND).toHaveLength(2);
-        expect(AND[0].OR[0]).toEqual({ email: { contains: 'John', mode: 'insensitive' } });
+        const clauses = searchClauses();
+        expect(clauses).toHaveLength(2);
+        expect(clauses[0].OR[0]).toEqual({ email: { contains: 'John', mode: 'insensitive' } });
       });
 
       it('applies the same clause to the count query so pagination totals agree', async () => {
@@ -252,7 +272,8 @@ describe('UserRepository (soft-delete behaviour)', () => {
       it('adds no search clause at all for an absent or whitespace-only query', async () => {
         await repository.findAll({ page: 1, limit: 20, search: '   ' });
 
-        expect(whereOfFindAll()).not.toHaveProperty('AND');
+        // Only the CUSTOMER scope survives — and it survives unconditionally.
+        expect(whereOfFindAll().AND).toEqual([{ role: 'CUSTOMER' }]);
         expect(whereOfFindAll()).not.toHaveProperty('OR');
       });
     });

@@ -25,9 +25,16 @@ interface CreateStaffButtonProps {
  * доступу» heading (where you go to decide what a manager may do), and the
  * empty state of a filtered-to-nobody list.
  *
- * Owner-gated here rather than at every call site: creating staff is
- * `@OwnerOnly()` on the API, and a button that answers 403 is worse than no
- * button. Renders nothing for a manager.
+ * Owner-gated here rather than at every call site: a button that answers 403 is
+ * worse than no button. Renders nothing for a manager.
+ *
+ * SINCE TASK-476 THIS GATE IS NARROWER THAN THE API. `POST /api/admin/staff` is
+ * `staff:write` now, so a deputy admin may hire a MANAGER — they just cannot
+ * appoint another ADMIN. Widening the gate correctly means hiding the ADMIN
+ * option from a deputy rather than only the button, and that belongs with the
+ * `/staff` section and its «призначення адміна» dialog (TASK-480). Narrow is the
+ * safe direction to be wrong in meanwhile: nobody gains a control they will be
+ * refused.
  */
 export function CreateStaffButton({
   variant = "default",

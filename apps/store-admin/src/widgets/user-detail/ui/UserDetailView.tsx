@@ -17,7 +17,6 @@ import { UserBanToggle } from "@/features/user-ban-toggle";
 import { UserNotesPanel } from "@/features/user-notes";
 import {
   DeleteUserDialog,
-  UserPasswordResetDialog,
   UserRoleChange,
 } from "@/features/user-account-actions";
 import {
@@ -96,7 +95,6 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
   const router = useRouter();
   const { isOwner } = useAuth();
   const { data, isLoading, isError, error } = useGetUserAdminCard(userId);
-  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   const isNotFound = error?.response?.status === 404;
@@ -464,15 +462,16 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
 
               <Separator />
 
+              {/* «Скинути пароль» stood here until TASK-476 and is not a button
+                  any more, for the same reason the permissions link stopped being
+                  one: the route it called moved to `/api/admin/staff/:id/password`,
+                  which answers 404 for a CUSTOMER — and this screen only ever shows
+                  customers now. A control whose one outcome is «не знайдено» is
+                  worse than no control. The dialog component survives, repointed,
+                  and mounts on the staff card in TASK-480 where the target IS
+                  staff. A shopper who cannot sign in uses the self-service reset,
+                  which is the only path that proves they own the address. */}
               <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setResetPasswordOpen(true)}
-                >
-                  {dict.users.passwordResetHeading}
-                </Button>
                 <Button
                   type="button"
                   variant="destructive"
@@ -483,11 +482,6 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                 </Button>
               </div>
 
-              <UserPasswordResetDialog
-                userId={user.id}
-                open={resetPasswordOpen}
-                onOpenChange={setResetPasswordOpen}
-              />
               <DeleteUserDialog
                 userId={user.id}
                 email={user.email}

@@ -4,9 +4,9 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
-  CreateUserDtoRole,
-  getUserControllerFindAllQueryKey,
-  useCreateUser,
+  CreateStaffDtoRole,
+  getListStaffQueryKey,
+  useCreateStaff,
 } from "@/entities/user";
 import {
   Button,
@@ -44,6 +44,12 @@ interface CreateUserDialogProps {
  * every time. The role select offers ADMIN and MANAGER only; shoppers register
  * themselves on the storefront and the API rejects `CUSTOMER` here outright.
  *
+ * Posts to `POST /api/admin/staff` since TASK-476. ADMIN is still offered in the
+ * select and is still refused by the API for a deputy admin — only the owner
+ * appoints administrators. TASK-480 builds the `/staff` section that hides the
+ * option a deputy cannot use; until then a 403 explains it, which is the same
+ * thing the owner-only button did before.
+ *
  * The password is typed by the owner and handed over out-of-band. There is no
  * invitation email yet, so the copy tells the operator to pass it on personally
  * and points them at the employee's own profile page for changing it.
@@ -53,13 +59,13 @@ export function CreateUserDialog({
   onOpenChange,
 }: CreateUserDialogProps) {
   const queryClient = useQueryClient();
-  const createUser = useCreateUser();
+  const createStaff = useCreateStaff();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
-  const [role, setRole] = useState<string>(CreateUserDtoRole.MANAGER);
+  const [role, setRole] = useState<string>(CreateStaffDtoRole.MANAGER);
   const [error, setError] = useState<string | null>(null);
 
   const reset = () => {
@@ -67,7 +73,7 @@ export function CreateUserDialog({
     setPassword("");
     setFirstName("");
     setLastName("");
-    setRole(CreateUserDtoRole.MANAGER);
+    setRole(CreateStaffDtoRole.MANAGER);
     setError(null);
   };
 
@@ -89,20 +95,24 @@ export function CreateUserDialog({
     }
     setError(null);
 
-    createUser.mutate(
+    createStaff.mutate(
       {
         data: {
           email: email.trim(),
           password,
-          role: role as (typeof CreateUserDtoRole)[keyof typeof CreateUserDtoRole],
+          role: role as (typeof CreateStaffDtoRole)[keyof typeof CreateStaffDtoRole],
           firstName: firstName.trim() || undefined,
           lastName: lastName.trim() || undefined,
         },
       },
       {
         onSuccess: (res) => {
+          // The STAFF list, not the customer list (TASK-476). A new service
+          // account never appears in `/api/users` any more, so invalidating that
+          // query would refetch a list the account is not in and leave the one it
+          // IS in stale.
           void queryClient.invalidateQueries({
-            queryKey: getUserControllerFindAllQueryKey(),
+            queryKey: getListStaffQueryKey(),
           });
           toast.success(d.createToastDone(res.data.email));
           close(false);
@@ -196,10 +206,10 @@ export function CreateUserDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value={CreateUserDtoRole.MANAGER}>
+                <SelectItem value={CreateStaffDtoRole.MANAGER}>
                   {d.roleManager}
                 </SelectItem>
-                <SelectItem value={CreateUserDtoRole.ADMIN}>
+                <SelectItem value={CreateStaffDtoRole.ADMIN}>
                   {d.roleAdmin}
                 </SelectItem>
               </SelectContent>
@@ -217,12 +227,12 @@ export function CreateUserDialog({
               type="button"
               variant="outline"
               onClick={() => close(false)}
-              disabled={createUser.isPending}
+              disabled={createStaff.isPending}
             >
               {dict.common.cancel}
             </Button>
-            <Button type="submit" disabled={createUser.isPending}>
-              {createUser.isPending ? dict.common.saving : d.createSubmit}
+            <Button type="submit" disabled={createStaff.isPending}>
+              {createStaff.isPending ? dict.common.saving : d.createSubmit}
             </Button>
           </DialogFooter>
         </form>

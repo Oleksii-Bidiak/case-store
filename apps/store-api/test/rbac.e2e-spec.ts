@@ -111,11 +111,16 @@ describe('RBAC guards (e2e)', () => {
   };
   const userRepositoryMock = {
     findById: jest.fn(),
+    // Customer-scoped since TASK-476 — every admin-facing read on `/api/users`
+    // goes through it, and "no such customer" is the right answer for the made-up
+    // ids this suite uses.
+    findCustomerById: jest.fn().mockResolvedValue(null),
     findByEmail: jest.fn(),
     findAll: jest.fn(),
     update: jest.fn(),
     deactivate: jest.fn(),
     activate: jest.fn(),
+    softDelete: jest.fn(),
   };
   const cartRepositoryMock = { findByUserId: jest.fn() };
   const mailServiceMock = { sendOrderConfirmation: jest.fn().mockResolvedValue(undefined) };
@@ -130,12 +135,22 @@ describe('RBAC guards (e2e)', () => {
       count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockResolvedValue({}),
     },
-    user: { findUnique: jest.fn(), create: jest.fn() },
+    user: {
+      findUnique: jest.fn(),
+      create: jest.fn(),
+      // The «Персонал» list (TASK-476) is one of the surfaces gated here, so it
+      // has to be reachable for a caller who IS allowed — a 500 would prove
+      // nothing about the guard.
+      findMany: jest.fn().mockResolvedValue([]),
+      count: jest.fn().mockResolvedValue(0),
+    },
+    userPermission: { groupBy: jest.fn().mockResolvedValue([]) },
     refreshToken: {
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
+      groupBy: jest.fn().mockResolvedValue([]),
     },
   };
 
@@ -232,16 +247,17 @@ describe('RBAC guards (e2e)', () => {
     const ownerAuth = () => `Bearer ${token(admin.id, admin.role)}`;
 
     it('passes an @OwnerOnly route — the reserve is theirs', async () => {
-      // `PATCH /api/users/:id/role` is one of the four doors the reserve closes:
-      // demoting somebody is how you remove them.
-      const response = await request(app.getHttpServer())
-        .patch('/api/users/some-user/role')
+      // `DELETE /api/users/:id` is what is left of the reserve on this controller
+      // after TASK-476 moved the three staff doors to `/api/admin/staff`, where a
+      // deputy admin can reach them for managers. This one stays owner-only.
+      //
+      // 404, because `some-user` is not a customer in the mocked repository — i.e.
+      // past the guard and into the handler, which is the whole assertion. 403
+      // would mean the reserve was closed to its own holder.
+      await request(app.getHttpServer())
+        .delete('/api/users/some-user')
         .set('Authorization', ownerAuth())
-        .send({ role: 'MANAGER' });
-
-      // Past the guard. What the mocked service then does is not this suite's
-      // subject — only that 403 is not the answer.
-      expect(response.status).not.toBe(403);
+        .expect(404);
     });
 
     it('passes an ordinary permission route without holding the row', async () => {
@@ -280,31 +296,27 @@ describe('RBAC guards (e2e)', () => {
     });
 
     it('is REFUSED every @OwnerOnly route — the check runs before the admin bypass', async () => {
-      // The assertion this task turns on. A deputy passes every permission, so
-      // the ONLY thing between them and the four doors that decide who runs the
-      // shop is the order of two lines in the guard.
-      await request(app.getHttpServer())
-        .patch('/api/users/some-user/role')
-        .set('Authorization', deputyAuth())
-        .send({ role: 'ADMIN' })
-        .expect(403);
-
-      await request(app.getHttpServer())
-        .post('/api/users/some-user/password')
-        .set('Authorization', deputyAuth())
-        .send({ password: 'StrongP@ss123' })
-        .expect(403);
-
-      await request(app.getHttpServer())
-        .post('/api/users')
-        .set('Authorization', deputyAuth())
-        .send({ email: 'x@example.com', password: 'StrongP@ss123', role: 'ADMIN' })
-        .expect(403);
-
+      // The assertion this suite turns on. A deputy passes every permission, so
+      // the ONLY thing between them and the owner's reserve is the order of two
+      // lines in the guard.
       await request(app.getHttpServer())
         .delete('/api/users/some-user')
         .set('Authorization', deputyAuth())
         .expect(403);
+    });
+
+    it('reaches the staff surface that `@OwnerOnly` used to fence off (TASK-476)', async () => {
+      // The other half of the same decision, and the reason a deputy exists at
+      // all. Creating a manager, resetting their password and changing their role
+      // WERE `@OwnerOnly` — so hiring anyone required the owner personally. They
+      // are `staff:write` now, which a deputy holds by level; who may be reached
+      // through them is decided per target by the level rule, not by this guard.
+      // The refusals that matter (another admin, the owner) live in
+      // `staff.e2e-spec.ts`, where the targets can be spelled out.
+      await request(app.getHttpServer())
+        .get('/api/admin/staff')
+        .set('Authorization', deputyAuth())
+        .expect(200);
     });
   });
 
@@ -360,15 +372,23 @@ describe('RBAC guards (e2e)', () => {
       }
     });
 
-    it('is refused every owner-only route (user management cannot be granted)', async () => {
+    it('is refused all staff management — neither owner-only nor grantable is reachable', async () => {
+      // `DELETE /api/users/:id` is still `@OwnerOnly`; the staff routes are
+      // `staff:*`, which is `grantable: false` and so appears on no screen. Two
+      // different mechanisms, one answer, and a manager must hit both walls.
       await request(app.getHttpServer())
-        .post('/api/users')
+        .delete('/api/users/some-user')
+        .set('Authorization', managerAuth())
+        .expect(403);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/staff')
         .set('Authorization', managerAuth())
         .send({ email: 'x@example.com', password: 'StrongP@ss123', role: 'ADMIN' })
         .expect(403);
 
       await request(app.getHttpServer())
-        .patch('/api/users/some-user/role')
+        .patch('/api/admin/staff/some-user/role')
         .set('Authorization', managerAuth())
         .send({ role: 'ADMIN' })
         .expect(403);

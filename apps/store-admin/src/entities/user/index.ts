@@ -13,14 +13,22 @@ export {
   // Enriched admin customer card (TASK-252).
   useGetUserAdminCard,
   getGetUserAdminCardQueryKey,
-  // Staff management (TASK-317 / TASK-333) — all owner-only on the API.
-  // `useDeleteUser` had been generated for a long time and wired to nothing.
-  useCreateUser,
-  useSetUserPassword,
-  useUpdateUserRole,
+  // Staff management (TASK-317 / TASK-333, moved to `/api/admin/staff` in
+  // TASK-476). The three mutations are `staff:write` now rather than owner-only:
+  // a deputy admin may hire and rescue a MANAGER, and the level rule refuses them
+  // on another admin or on the owner. `useDeleteUser` still targets
+  // `DELETE /api/users/:id`, which stayed owner-only and CUSTOMER-only.
+  //
+  // These live under `@/entities/user` until TASK-480 builds the `/staff`
+  // section and gives them an entity of their own; moving them now would be a
+  // second refactor of the same imports.
+  useCreateStaff,
+  useSetStaffPassword,
+  useUpdateStaffRole,
+  getListStaffQueryKey,
   useDeleteUser,
-  CreateUserDtoRole,
-  UpdateUserRoleDtoRole,
+  CreateStaffDtoRole,
+  UpdateStaffRoleDtoRole,
   // Role value object (used for filters and badge mapping).
   UserEntityRole,
   // Customer-notes journal (TASK-430) — staff-only, append-only. There is no
@@ -35,9 +43,9 @@ export type {
   UserListResponseEnvelope,
   UserResponseEnvelope,
   UserControllerFindAllParams,
-  CreateUserDto,
-  SetUserPasswordDto,
-  UpdateUserRoleDto,
+  CreateStaffDto,
+  SetStaffPasswordDto,
+  UpdateStaffRoleDto,
   // Enriched admin customer card types (TASK-252).
   UserAdminCardEntity,
   UserAdminCardResponseEnvelope,

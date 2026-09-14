@@ -22,6 +22,15 @@ export {
   OWNER_ONLY_KEY,
 } from './require-permission.decorator';
 export { PermissionGuard } from './permission.guard';
+export { CurrentActor } from './current-actor.decorator';
+export {
+  AccessLevel,
+  levelOf,
+  levelOfRole,
+  assertMayManage,
+  assertMayAssign,
+  type LevelledAccount,
+} from './access-level';
 export { PermissionService, type EffectivePermissions } from './permission.service';
 export { PermissionRepository, type PermissionActor } from './permission.repository';
 export { PermissionModule } from './permission.module';

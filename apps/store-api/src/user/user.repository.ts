@@ -33,19 +33,6 @@ export interface UpdateUserInput {
 }
 
 /**
- * Fields accepted when the owner provisions a staff account from the admin UI
- * (TASK-333). `passwordHash` is already hashed by the service — a repository
- * that took a plaintext password would be one refactor away from storing it.
- */
-export interface CreateStaffUserInput {
-  email: string;
-  passwordHash: string;
-  role: UserRole;
-  firstName?: string;
-  lastName?: string;
-}
-
-/**
  * Result of a paginated user query.
  */
 export interface PaginatedUsersResult {
@@ -70,6 +57,27 @@ export class UserRepository {
   }
 
   /**
+   * Find a CUSTOMER by id — the lookup every admin-facing `/api/users/:id` route
+   * uses since TASK-476.
+   *
+   * THE SCOPE IS THE ENFORCEMENT. `/api/users` is the customer surface now, and
+   * "refuses a staff target" is not a separate check that a future route could
+   * forget: a service account simply does not resolve here, so reading one,
+   * deactivating one or deleting one through this module answers 404. A staff
+   * target and a missing id give the same answer on purpose — a `customers:read`
+   * holder must not be able to probe for service accounts.
+   *
+   * Deliberately NOT used by `getProfile`/`updateProfile`: `/api/users/me` is how
+   * staff read their own profile too, and scoping that to customers would lock
+   * every manager out of their own account page.
+   */
+  findCustomerById(id: string): Promise<User | null> {
+    return this.prisma.user.findFirst({
+      where: { id, deletedAt: null, role: UserRole.CUSTOMER },
+    });
+  }
+
+  /**
    * Find a user by email address.
    * Returns the user record or null if not found. Excludes soft-deleted users
    * (their email is mangled on delete, but the guard is explicit for safety).
@@ -79,11 +87,20 @@ export class UserRepository {
   }
 
   /**
-   * Find all users with pagination and optional filtering.
-   * Supports filtering by role, active status, and text search
-   * across email, firstName, and lastName fields.
+   * One page of CUSTOMERS, with optional filtering and text search.
    *
-   * Returns the paginated user list and total count for pagination metadata.
+   * CUSTOMER-ONLY SINCE TASK-476, AND ENFORCED HERE RATHER THAN AT THE
+   * CONTROLLER. `role: CUSTOMER` is ANDed into every query in this method, so no
+   * caller — no query string, no service, no future route — can widen this list
+   * back into the service accounts. That is not hypothetical tidiness: until this
+   * task the list was under `customers:read`, so an operator hired to phone
+   * customers could enumerate every administrator, and `customers:write` next
+   * door could switch one off. Staff live in `StaffRepository` now, behind
+   * non-grantable keys.
+   *
+   * The `role` param survives and narrows WITHIN that scope, which means asking
+   * for ADMIN here returns an empty page. That is the truth rather than an error:
+   * there are no administrators among the customers.
    */
   async findAll(params: FindAllParams): Promise<PaginatedUsersResult> {
     const { page, limit, role, isActive, search } = params;
@@ -112,15 +129,16 @@ export class UserRepository {
     ];
 
     // Build the where clause from optional filters. Soft-deleted users
-    // (tombstoned) must never appear in any admin listing.
-    const where: Prisma.UserWhereInput = { deletedAt: null };
+    // (tombstoned) must never appear in any admin listing, and the CUSTOMER scope
+    // is the first clause rather than an overridable field — see the docblock.
+    const and: Prisma.UserWhereInput[] = [{ role: UserRole.CUSTOMER }];
 
     if (role !== undefined) {
-      where.role = role;
+      and.push({ role });
     }
 
     if (isActive !== undefined) {
-      where.isActive = isActive;
+      and.push({ isActive });
     }
 
     // Multi-token search (TASK-406). One OR over the three columns can only
@@ -131,16 +149,17 @@ export class UserRepository {
     // in a different column than its neighbour. Word order stops mattering as a
     // side effect («doe john» finds the same account), and a single-token query
     // behaves exactly as it did before.
-    const searchTokens = search?.trim().split(/\s+/).filter(Boolean) ?? [];
-    if (searchTokens.length > 0) {
-      where.AND = searchTokens.map((token) => ({
+    for (const token of search?.trim().split(/\s+/).filter(Boolean) ?? []) {
+      and.push({
         OR: [
           { email: { contains: token, mode: 'insensitive' } },
           { firstName: { contains: token, mode: 'insensitive' } },
           { lastName: { contains: token, mode: 'insensitive' } },
         ],
-      }));
+      });
     }
+
+    const where: Prisma.UserWhereInput = { deletedAt: null, AND: and };
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
@@ -155,46 +174,19 @@ export class UserRepository {
     return { users, total };
   }
 
-  /**
-   * Create a staff account from the admin UI (TASK-333/317).
-   *
-   * `emailVerifiedAt` is left null: the owner typed this address, nobody has
-   * proven it, and stamping it verified here would launder an assumption into a
-   * fact. The employee proves it through the normal TASK-342 flow.
-   */
-  create(data: CreateStaffUserInput): Promise<User> {
-    return this.prisma.user.create({ data });
-  }
-
-  /**
-   * Change a user's role (TASK-317/334). Callers MUST run the last-admin guard
-   * first — this method is deliberately dumb about policy.
-   */
-  updateRole(id: string, role: UserRole): Promise<User> {
-    return this.prisma.user.update({ where: { id }, data: { role } });
-  }
-
-  /**
-   * How many live, active ADMIN accounts exist (TASK-334).
-   *
-   * The input to every "you cannot remove the last admin" check. Counts only
-   * rows that could actually sign in today — a deactivated or soft-deleted admin
-   * is not a way back into the shop, so counting one would let the owner strip
-   * the only working admin while the guard reported everything was fine.
-   *
-   * `excludeUserId` answers the question the callers actually ask: "if I
-   * demote/deactivate/delete THIS one, is anybody left?"
-   */
-  countActiveAdmins(excludeUserId?: string): Promise<number> {
-    return this.prisma.user.count({
-      where: {
-        role: UserRole.ADMIN,
-        isActive: true,
-        deletedAt: null,
-        ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
-      },
-    });
-  }
+  // `create`, `updateRole` and `countActiveAdmins` used to live here.
+  //
+  // The first two moved to `StaffRepository` in TASK-476 along with the routes
+  // that called them: `/api/users` no longer mints accounts or changes roles.
+  //
+  // `countActiveAdmins` is GONE rather than moved, and so is `assertNotLastAdmin`
+  // in the service. It answered "if I remove this one, is anybody left?" — a
+  // weaker question than the one that matters, and one it could answer "yes" to
+  // while an admin removed the owner. The replacement is the level rule in
+  // `auth/permissions/access-level.ts`: OWNER is the maximum level and
+  // `assertMayManage` requires strictly greater, so the owner cannot be demoted,
+  // deactivated or deleted by anyone — the shop cannot be stranded because the one
+  // account that can always sign in cannot be removed at all.
 
   /**
    * Update a user's profile fields.

@@ -28,7 +28,11 @@ describe("CreateStaffButton", () => {
     expect(screen.getByText(dict.users.createDescription)).toBeInTheDocument();
   });
 
-  it("renders nothing for a manager — POST /users is @OwnerOnly()", () => {
+  // The gate is still `isOwner` after TASK-476, which is narrower than the API it
+  // guards (`POST /api/admin/staff` is `staff:write`, so a deputy admin may hire a
+  // MANAGER). Deliberate: widening it correctly means also hiding the ADMIN option
+  // from a deputy, which is the `/staff` section's job (TASK-480).
+  it("renders nothing for a manager", () => {
     renderWithProviders(
       <WithAuth isOwner={false}>
         <CreateStaffButton />

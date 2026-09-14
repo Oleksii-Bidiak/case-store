@@ -1,7 +1,6 @@
 import {
   Controller,
   Get,
-  Post,
   Put,
   Patch,
   Delete,
@@ -23,15 +22,15 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { UserService } from './user.service';
-import {
-  UpdateProfileDto,
-  UserListQueryDto,
-  CreateUserDto,
-  SetUserPasswordDto,
-  UpdateUserRoleDto,
-} from './dto';
+import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { JwtAuthGuard } from '../auth/guards';
-import { PermissionGuard, RequirePermission, OwnerOnly } from '../auth/permissions';
+import {
+  CurrentActor,
+  PermissionGuard,
+  RequirePermission,
+  OwnerOnly,
+  type PermissionActor,
+} from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators';
 import {
   UserEntity,
@@ -197,105 +196,19 @@ export class UserController {
     return this.userService.findAll(query);
   }
 
-  /**
-   * POST /api/users (TASK-333/317)
-   *
-   * Create an ADMIN or MANAGER account from the admin UI. Owner-only.
-   *
-   * Before this existed the only way to add staff was a developer running
-   * `scripts/create-admin.ts` on the server — and that script only makes
-   * ADMINs, so "hire someone to write the blog" meant handing over the orders,
-   * the prices and every customer's personal data.
-   */
-  @Post()
-  @UseGuards(PermissionGuard)
-  @OwnerOnly()
-  @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Create a staff account (owner-only)', operationId: 'createUser' })
-  @ApiResponse({ status: 201, description: 'Staff account created', type: UserResponseEnvelope })
-  @ApiResponse({ status: 400, description: 'Invalid input (weak password / bad role)' })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner-only' })
-  @ApiResponse({ status: 409, description: 'Email is already taken' })
-  async create(@Body() dto: CreateUserDto): Promise<UserResponse> {
-    const user = await this.userService.createUser(dto);
-
-    return { data: user };
-  }
-
-  /**
-   * POST /api/users/:id/password (TASK-333)
-   *
-   * Reset someone else's password. Owner-only.
-   *
-   * The employee-forgot-their-password path. Revokes every session the target
-   * held, exactly as a self-service change does — an owner resetting a password
-   * because an account may be compromised must not leave the intruder signed in.
-   */
-  @Post(':id/password')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(PermissionGuard)
-  @OwnerOnly()
-  @ApiBearerAuth('access-token')
-  @ApiOperation({
-    summary: "Reset another user's password (owner-only)",
-    operationId: 'setUserPassword',
-  })
-  @ApiParam({ name: 'id', description: 'User UUID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Password reset; target sessions revoked',
-    type: UserResponseEnvelope,
-  })
-  @ApiResponse({ status: 400, description: 'Invalid input (weak password)' })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner-only' })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  async setPassword(
-    @Param('id') id: string,
-    @Body() dto: SetUserPasswordDto,
-  ): Promise<UserResponse> {
-    const user = await this.userService.setUserPassword(id, dto.newPassword);
-
-    return { data: user };
-  }
-
-  /**
-   * PATCH /api/users/:id/role (TASK-317/334)
-   *
-   * Change a user's role. Owner-only, and refused when it would leave the shop
-   * without a single administrator who can sign in.
-   */
-  @Patch(':id/role')
-  @UseGuards(PermissionGuard)
-  @OwnerOnly()
-  @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: "Change a user's role (owner-only)", operationId: 'updateUserRole' })
-  @ApiParam({ name: 'id', description: 'User UUID' })
-  @ApiResponse({
-    status: 200,
-    description: 'Role updated; target sessions revoked',
-    type: UserResponseEnvelope,
-  })
-  @ApiResponse({ status: 400, description: 'Invalid role' })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden — owner-only, your own account, or the last active administrator',
-  })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  async updateRole(
-    @Param('id') id: string,
-    @Body() dto: UpdateUserRoleDto,
-    @CurrentUser('id') adminId: string,
-  ): Promise<UserResponse> {
-    const user = await this.userService.updateUserRole(id, dto.role, adminId);
-
-    return { data: user };
-  }
+  // `POST /`, `POST /:id/password` and `PATCH /:id/role` used to be here.
+  //
+  // TASK-476 moved all three to `/api/admin/staff`, where the level rule decides
+  // who may reach whom. They were `@OwnerOnly()`, which made them safe and also
+  // made a deputy admin useless: the owner had to be at their desk for a manager
+  // to be hired or rescued from a forgotten password. The three doors are now open
+  // to an admin over managers and shut to everybody over admins and the owner.
 
   /**
    * GET /api/users/:id
    *
-   * Returns a specific user by ID.
-   * Admin-only endpoint.
+   * A CUSTOMER by id. A service account answers 404 — it is read on
+   * `/api/admin/staff/:id` under `staff:read`.
    */
   @Get(':id')
   @UseGuards(PermissionGuard)
@@ -348,30 +261,33 @@ export class UserController {
   /**
    * PATCH /api/users/:id/deactivate
    *
-   * Deactivates a user account (sets isActive = false).
-   * Admin-only endpoint.
+   * Switch a CUSTOMER account off. Still `customers:write` — the same operator who
+   * answers the phone deals with an abusive shopper — but a staff id answers 404
+   * now. Until TASK-476 this route was the widest hole in the access model: a
+   * manager holding `customers:write` could deactivate an administrator, and the
+   * only thing between them and the owner was a count of remaining admins.
    */
   @Patch(':id/deactivate')
   @UseGuards(PermissionGuard)
   @RequirePermission('customers:write')
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Deactivate user (admin)' })
+  @ApiOperation({ summary: 'Deactivate a customer' })
   @ApiParam({ name: 'id', description: 'User UUID' })
   @ApiResponse({
     status: 200,
-    description: 'User deactivated',
+    description: 'Customer deactivated',
     type: UserResponseEnvelope,
   })
-  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 404, description: 'No customer with this id' })
   @ApiResponse({
     status: 403,
     description: 'Forbidden — admin access required, or cannot deactivate your own account',
   })
   async deactivateUser(
     @Param('id') id: string,
-    @CurrentUser('id') adminId: string,
+    @CurrentActor() actor: PermissionActor,
   ): Promise<UserResponse> {
-    const user = await this.userService.deactivateUser(id, adminId);
+    const user = await this.userService.deactivateUser(id, actor);
 
     return { data: user };
   }
@@ -379,24 +295,27 @@ export class UserController {
   /**
    * PATCH /api/users/:id/activate
    *
-   * Activates a user account (sets isActive = true).
-   * Admin-only endpoint.
+   * The mirror of deactivation, and customer-scoped for the same reason: an
+   * account switched off on this surface is switched back on here.
    */
   @Patch(':id/activate')
   @UseGuards(PermissionGuard)
   @RequirePermission('customers:write')
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Activate user (admin)' })
+  @ApiOperation({ summary: 'Activate a customer' })
   @ApiParam({ name: 'id', description: 'User UUID' })
   @ApiResponse({
     status: 200,
-    description: 'User activated',
+    description: 'Customer activated',
     type: UserResponseEnvelope,
   })
-  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 404, description: 'No customer with this id' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async activateUser(@Param('id') id: string): Promise<UserResponse> {
-    const user = await this.userService.activateUser(id);
+  async activateUser(
+    @Param('id') id: string,
+    @CurrentActor() actor: PermissionActor,
+  ): Promise<UserResponse> {
+    const user = await this.userService.activateUser(id, actor);
 
     return { data: user };
   }
@@ -404,24 +323,33 @@ export class UserController {
   /**
    * DELETE /api/users/:id
    *
-   * Soft-deletes a user account (sets `deletedAt`, hides it from all reads,
+   * Soft-deletes a CUSTOMER account (stamps `deletedAt`, hides it from all reads,
    * mangles the email to free it for re-registration, and revokes all sessions).
-   * Admin-only; an admin cannot delete their own account. Returns 204 No Content.
+   * Returns 204 No Content.
+   *
+   * KEEPS `@OwnerOnly()` DELIBERATELY. Every other door in this task got WIDER —
+   * an admin may now do to a manager what only the owner could do before — and
+   * this one did not, because nothing in plan 181 asked for it. Deleting a
+   * customer erases a person's record; the narrow rule costs an owner one click
+   * and is not the bottleneck the staff routes were.
    */
   @Delete(':id')
   @UseGuards(PermissionGuard)
   @OwnerOnly()
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Delete user (admin, soft-delete)', operationId: 'deleteUser' })
+  @ApiOperation({
+    summary: 'Delete a customer (owner-only, soft-delete)',
+    operationId: 'deleteUser',
+  })
   @ApiParam({ name: 'id', description: 'User UUID' })
-  @ApiResponse({ status: 204, description: 'User deleted' })
-  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({ status: 204, description: 'Customer deleted' })
+  @ApiResponse({ status: 404, description: 'No customer with this id' })
   @ApiResponse({
     status: 403,
-    description: 'Forbidden — admin access required, or cannot delete your own account',
+    description: 'Forbidden — owner-only, or cannot delete your own account',
   })
-  async remove(@Param('id') id: string, @CurrentUser('id') adminId: string): Promise<void> {
-    await this.userService.deleteUser(id, adminId);
+  async remove(@Param('id') id: string, @CurrentActor() actor: PermissionActor): Promise<void> {
+    await this.userService.deleteUser(id, actor);
   }
 }

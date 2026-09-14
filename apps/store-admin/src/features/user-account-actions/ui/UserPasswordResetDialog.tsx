@@ -6,7 +6,7 @@ import { toast } from "@/shared/ui/toast";
 import {
   getGetUserAdminCardQueryKey,
   getUserControllerFindByIdQueryKey,
-  useSetUserPassword,
+  useSetStaffPassword,
 } from "@/entities/user";
 import {
   Button,
@@ -31,7 +31,8 @@ interface UserPasswordResetDialogProps {
 }
 
 /**
- * Reset someone else's password (TASK-333, owner-only).
+ * Reset someone else's password (TASK-333; `POST /api/admin/staff/:id/password`
+ * since TASK-476, so a deputy admin can rescue a manager without the owner).
  *
  * The API routes this through the same `AuthService.setPassword` as a
  * self-service reset, so it revokes the target's sessions AND clears the
@@ -45,7 +46,7 @@ export function UserPasswordResetDialog({
   onOpenChange,
 }: UserPasswordResetDialogProps) {
   const queryClient = useQueryClient();
-  const setPassword = useSetUserPassword();
+  const setPassword = useSetStaffPassword();
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 

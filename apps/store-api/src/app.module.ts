@@ -16,6 +16,7 @@ import { PermissionModule } from './auth/permissions';
 import { AuditModule } from './audit';
 import { AuditInterceptor } from './audit/audit.interceptor';
 import { UserModule } from './user';
+import { StaffModule } from './staff';
 import { UserNoteModule } from './user-note';
 import { ProductModule } from './product';
 import { UploadsModule } from './uploads';
@@ -161,8 +162,13 @@ import { buildPinoHttpOptions } from './config/pino.config';
     // Admin action log (global — provides AuditService everywhere, TASK-318)
     AuditModule,
 
-    // User management
+    // Customer accounts. Since TASK-476 this surface is CUSTOMERS ONLY — service
+    // accounts live in StaffModule below, behind non-grantable staff:* keys.
     UserModule,
+
+    // «Персонал»: service accounts and the level rule that governs them
+    // (TASK-476). After UserModule, whose UserRepository it injects.
+    StaffModule,
 
     // Staff notes on a customer card (TASK-430) — after UserModule, whose
     // UserRepository it injects.

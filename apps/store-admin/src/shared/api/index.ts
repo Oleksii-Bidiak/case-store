@@ -12,6 +12,8 @@ export type { ErrorType, BodyType, RefreshOutcome } from "./instance";
 // NOTE: `generated/` is git-ignored — run `npm run generate:api` after checkout.
 export * from "./generated/auth/auth";
 export * from "./generated/users/users";
+// «Персонал» (TASK-476) — service accounts, separate from the customer list.
+export * from "./generated/staff/staff";
 export * from "./generated/products/products";
 export * from "./generated/product-groups/product-groups";
 export * from "./generated/categories/categories";

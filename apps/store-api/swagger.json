@@ -5889,162 +5889,6 @@
         "tags": [
           "Users"
         ]
-      },
-      "post": {
-        "operationId": "createUser",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateUserDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Staff account created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input (weak password / bad role)"
-          },
-          "403": {
-            "description": "Forbidden — owner-only"
-          },
-          "409": {
-            "description": "Email is already taken"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Create a staff account (owner-only)",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/users/{id}/password": {
-      "post": {
-        "operationId": "setUserPassword",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "User UUID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetUserPasswordDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Password reset; target sessions revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input (weak password)"
-          },
-          "403": {
-            "description": "Forbidden — owner-only"
-          },
-          "404": {
-            "description": "User not found"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Reset another user's password (owner-only)",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/users/{id}/role": {
-      "patch": {
-        "operationId": "updateUserRole",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "User UUID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateUserRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Role updated; target sessions revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid role"
-          },
-          "403": {
-            "description": "Forbidden — owner-only, your own account, or the last active administrator"
-          },
-          "404": {
-            "description": "User not found"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Change a user's role (owner-only)",
-        "tags": [
-          "Users"
-        ]
       }
     },
     "/api/users/{id}": {
@@ -6104,13 +5948,13 @@
         ],
         "responses": {
           "204": {
-            "description": "User deleted"
+            "description": "Customer deleted"
           },
           "403": {
-            "description": "Forbidden — admin access required, or cannot delete your own account"
+            "description": "Forbidden — owner-only, or cannot delete your own account"
           },
           "404": {
-            "description": "User not found"
+            "description": "No customer with this id"
           }
         },
         "security": [
@@ -6118,7 +5962,7 @@
             "access-token": []
           }
         ],
-        "summary": "Delete user (admin, soft-delete)",
+        "summary": "Delete a customer (owner-only, soft-delete)",
         "tags": [
           "Users"
         ]
@@ -6183,7 +6027,7 @@
         ],
         "responses": {
           "200": {
-            "description": "User deactivated",
+            "description": "Customer deactivated",
             "content": {
               "application/json": {
                 "schema": {
@@ -6196,7 +6040,7 @@
             "description": "Forbidden — admin access required, or cannot deactivate your own account"
           },
           "404": {
-            "description": "User not found"
+            "description": "No customer with this id"
           }
         },
         "security": [
@@ -6204,7 +6048,7 @@
             "access-token": []
           }
         ],
-        "summary": "Deactivate user (admin)",
+        "summary": "Deactivate a customer",
         "tags": [
           "Users"
         ]
@@ -6226,7 +6070,7 @@
         ],
         "responses": {
           "200": {
-            "description": "User activated",
+            "description": "Customer activated",
             "content": {
               "application/json": {
                 "schema": {
@@ -6239,7 +6083,7 @@
             "description": "Forbidden — admin access required"
           },
           "404": {
-            "description": "User not found"
+            "description": "No customer with this id"
           }
         },
         "security": [
@@ -6247,7 +6091,7 @@
             "access-token": []
           }
         ],
-        "summary": "Activate user (admin)",
+        "summary": "Activate a customer",
         "tags": [
           "Users"
         ]
@@ -6812,6 +6656,401 @@
         "summary": "Reply to a review as the shop (admin)",
         "tags": [
           "Reviews"
+        ]
+      }
+    },
+    "/api/admin/staff": {
+      "get": {
+        "operationId": "listStaff",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": {
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Number of items per page",
+            "schema": {
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "role",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to one staff role (ADMIN or MANAGER)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "CUSTOMER",
+                "ADMIN",
+                "MANAGER"
+              ]
+            }
+          },
+          {
+            "name": "isActive",
+            "required": false,
+            "in": "query",
+            "description": "Filter by active status",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by email, first name, or last name",
+            "schema": {
+              "example": "olena",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Sort field (createdAt, email)",
+            "schema": {
+              "default": "createdAt",
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "description": "Sort order (asc or desc)",
+            "schema": {
+              "default": "desc",
+              "example": "desc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated staff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List staff accounts",
+        "tags": [
+          "Staff"
+        ]
+      },
+      "post": {
+        "operationId": "createStaff",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStaffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Staff account created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (weak password / bad role)"
+          },
+          "403": {
+            "description": "Forbidden — requires staff:write, or the level is at or above your own"
+          },
+          "409": {
+            "description": "Email is already taken"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create a staff account",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}": {
+      "get": {
+        "operationId": "getStaff",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get a staff account",
+        "tags": [
+          "Staff"
+        ]
+      },
+      "delete": {
+        "operationId": "deleteStaff",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Staff account deleted"
+          },
+          "403": {
+            "description": "Forbidden — your own account, or a target at or above your level"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Delete a staff account (soft delete)",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}/role": {
+      "patch": {
+        "operationId": "updateStaffRole",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStaffRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated; target sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid role"
+          },
+          "403": {
+            "description": "Forbidden — your own account, a level at or above your own, or the shop owner"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Change an account's role",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}/password": {
+      "post": {
+        "operationId": "setStaffPassword",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetStaffPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset; target sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (weak password)"
+          },
+          "403": {
+            "description": "Forbidden — the target is at or above your level"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reset a staff member's password",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}/status": {
+      "patch": {
+        "operationId": "updateStaffStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStaffStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — your own account, or a target at or above your level"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Activate or deactivate a staff account",
+        "tags": [
+          "Staff"
         ]
       }
     },
@@ -17841,78 +18080,6 @@
           }
         }
       },
-      "CreateUserDto": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "description": "Email address (also the login)",
-            "example": "manager@example.com"
-          },
-          "password": {
-            "type": "string",
-            "description": "Initial password (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
-            "example": "StrongP@ss123",
-            "minLength": 8
-          },
-          "role": {
-            "type": "string",
-            "description": "Staff role. CUSTOMER is rejected — use public registration for shoppers.",
-            "enum": [
-              "ADMIN",
-              "MANAGER"
-            ],
-            "example": "MANAGER"
-          },
-          "firstName": {
-            "type": "string",
-            "description": "First name",
-            "example": "Olena"
-          },
-          "lastName": {
-            "type": "string",
-            "description": "Last name",
-            "example": "Kovalenko"
-          }
-        },
-        "required": [
-          "email",
-          "password",
-          "role"
-        ]
-      },
-      "SetUserPasswordDto": {
-        "type": "object",
-        "properties": {
-          "newPassword": {
-            "type": "string",
-            "description": "New password for the target account (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
-            "example": "StrongP@ss123",
-            "minLength": 8
-          }
-        },
-        "required": [
-          "newPassword"
-        ]
-      },
-      "UpdateUserRoleDto": {
-        "type": "object",
-        "properties": {
-          "role": {
-            "type": "string",
-            "description": "New role for the account",
-            "enum": [
-              "CUSTOMER",
-              "ADMIN",
-              "MANAGER"
-            ],
-            "example": "MANAGER"
-          }
-        },
-        "required": [
-          "role"
-        ]
-      },
       "ReviewReplyEntity": {
         "type": "object",
         "properties": {
@@ -18443,6 +18610,258 @@
         },
         "required": [
           "body"
+        ]
+      },
+      "StaffUserEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address (also the login)",
+            "example": "manager@example.com"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "description": "Account role",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "isOwner": {
+            "type": "boolean",
+            "description": "True for the ONE account that owns the shop. Nobody may act on it.",
+            "example": false
+          },
+          "level": {
+            "type": "number",
+            "description": "Access level: 3 owner, 2 admin, 1 manager, 0 customer. Manage only levels below your own.",
+            "example": 1
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the account may sign in",
+            "example": true
+          },
+          "permissionCount": {
+            "type": "number",
+            "description": "How many permissions are granted to this person personally",
+            "example": 7
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "description": "When this account last held a live session; null if never",
+            "format": "date-time",
+            "nullable": true
+          },
+          "emailVerifiedAt": {
+            "type": "string",
+            "description": "When the email address was verified; null if never",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lockedUntil": {
+            "type": "string",
+            "description": "Locked out until this instant; null when not locked",
+            "format": "date-time",
+            "nullable": true
+          },
+          "failedLoginAttempts": {
+            "type": "number",
+            "description": "Consecutive failed login attempts",
+            "example": 0
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Account creation timestamp"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last update timestamp"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "firstName",
+          "lastName",
+          "phone",
+          "role",
+          "isOwner",
+          "level",
+          "isActive",
+          "permissionCount",
+          "lastSeenAt",
+          "emailVerifiedAt",
+          "lockedUntil",
+          "failedLoginAttempts",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "StaffResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StaffUserEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "StaffPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "example": 4
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 20
+          },
+          "totalPages": {
+            "type": "number",
+            "example": 1
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "StaffListResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffUserEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/StaffPaginationMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "CreateStaffDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address (also the login)",
+            "example": "manager@example.com"
+          },
+          "password": {
+            "type": "string",
+            "description": "Initial password (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
+            "example": "StrongP@ss123",
+            "minLength": 8
+          },
+          "role": {
+            "type": "string",
+            "description": "Staff role. CUSTOMER is rejected — use public registration for shoppers. ADMIN may only be chosen by the owner.",
+            "enum": [
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name",
+            "example": "Olena"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name",
+            "example": "Kovalenko"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "role"
+        ]
+      },
+      "UpdateStaffRoleDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "New role for the account",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "SetStaffPasswordDto": {
+        "type": "object",
+        "properties": {
+          "newPassword": {
+            "type": "string",
+            "description": "New password for the target account (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
+            "example": "StrongP@ss123",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "newPassword"
+        ]
+      },
+      "UpdateStaffStatusDto": {
+        "type": "object",
+        "properties": {
+          "isActive": {
+            "type": "boolean",
+            "description": "true activates the account, false deactivates it",
+            "example": false
+          }
+        },
+        "required": [
+          "isActive"
         ]
       },
       "UserNoteEntity": {

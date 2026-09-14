@@ -4,7 +4,8 @@ import { UserRole } from '@prisma/client';
 import { IsStaffPassword, STAFF_PASSWORD_DESCRIPTION } from '../../common/validators';
 
 /**
- * Body of `POST /api/users` — owner-only staff provisioning (TASK-333/317).
+ * Body of `POST /api/admin/staff` — provisioning a staff account (TASK-333/317,
+ * moved here from `POST /api/users` in TASK-476).
  *
  * The role is restricted to ADMIN | MANAGER on purpose. This endpoint exists so
  * hiring someone stops requiring a developer with shell access
@@ -12,11 +13,17 @@ import { IsStaffPassword, STAFF_PASSWORD_DESCRIPTION } from '../../common/valida
  * is for, and offering it here would just be a way to mint an account whose
  * email nobody ever proved.
  *
+ * ADMIN BEING VALID HERE IS NOT THE SAME AS BEING ALLOWED. The DTO says which
+ * values are well-formed; `assertMayAssign` in `StaffService` says who may hand
+ * them out, and it refuses a deputy admin creating another ADMIN. Enforcing the
+ * level in the DTO instead would need the caller's identity inside a validator —
+ * and would put half the level rule somewhere `access-level.spec.ts` cannot see.
+ *
  * Which is also why the password keeps the STRICT policy while shoppers moved to
  * a looser one (TASK-407): this endpoint only ever mints accounts that can reach
  * the admin panel.
  */
-export class CreateUserDto {
+export class CreateStaffDto {
   @ApiProperty({ description: 'Email address (also the login)', example: 'manager@example.com' })
   @IsEmail({}, { message: 'Please provide a valid email address' })
   email!: string;
@@ -30,7 +37,8 @@ export class CreateUserDto {
   password!: string;
 
   @ApiProperty({
-    description: 'Staff role. CUSTOMER is rejected — use public registration for shoppers.',
+    description:
+      'Staff role. CUSTOMER is rejected — use public registration for shoppers. ADMIN may only be chosen by the owner.',
     enum: [UserRole.ADMIN, UserRole.MANAGER],
     example: UserRole.MANAGER,
   })
