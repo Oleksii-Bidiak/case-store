@@ -22,7 +22,7 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { FailClosedThrottle } from '../throttler';
 import { ReviewService, PaginationMeta } from './review.service';
-import { ReviewEntity, ReviewAggregateEntity } from './entities';
+import { ReviewEntity, ReviewAggregateEntity, OwnReviewEntity } from './entities';
 import { CreateReviewDto, ReviewListQueryDto } from './dto';
 import { JwtAuthGuard, CurrentUser } from '../auth';
 
@@ -54,6 +54,19 @@ class ReviewResponseEnvelope {
 }
 
 /**
+ * Response envelope for the author's own review — `data` is null when they have
+ * not reviewed the product, which is the normal answer, not an error.
+ */
+class OwnReviewResponseEnvelope {
+  @ApiProperty({
+    type: OwnReviewEntity,
+    nullable: true,
+    description: 'The caller’s own review of this product, or null if they have none',
+  })
+  data!: OwnReviewEntity | null;
+}
+
+/**
  * Response envelope for the public product-reviews list: the page of approved
  * reviews, the product's rating aggregate, and pagination metadata.
  */
@@ -71,8 +84,9 @@ class ReviewListResponseEnvelope {
 /**
  * Public + authenticated product-review endpoints.
  *
- *   POST /api/products/:productId/reviews  — submit (auth required)
- *   GET  /api/products/:productId/reviews  — public approved list + aggregate
+ *   POST /api/products/:productId/reviews       — submit (auth required)
+ *   GET  /api/products/:productId/reviews       — public approved list + aggregate
+ *   GET  /api/products/:productId/reviews/mine  — the caller's own review (auth required)
  *
  * The product is addressed by its UUID (`:productId`), not slug: the PDP client
  * already holds the product id, avoiding an extra slug→id lookup per fetch.
@@ -81,9 +95,11 @@ class ReviewListResponseEnvelope {
 @ApiExtraModels(
   ReviewEntity,
   ReviewAggregateEntity,
+  OwnReviewEntity,
   ReviewPaginationMeta,
   ReviewResponseEnvelope,
   ReviewListResponseEnvelope,
+  OwnReviewResponseEnvelope,
 )
 @Controller('products/:productId/reviews')
 export class ReviewController {
@@ -149,5 +165,43 @@ export class ReviewController {
     @Query() query: ReviewListQueryDto,
   ): Promise<{ data: ReviewEntity[]; aggregate: ReviewAggregateEntity; meta: PaginationMeta }> {
     return this.reviewService.getApprovedReviews(productId, query);
+  }
+
+  /**
+   * GET /api/products/:productId/reviews/mine
+   *
+   * The caller's own review of this product, or null (TASK-586). Without it the
+   * storefront cannot know there is a rating to add text to: the public list
+   * above shows approved TEXTS only, so a star-only row — exactly the case
+   * «дописати текст» exists for — is invisible there by design.
+   *
+   * DECLARED WITH A LITERAL PATH AHEAD OF ANY `:id` ROUTE, for the same reason
+   * `AdminReviewController.moderateMany` puts `@Patch('moderate')` above
+   * `@Patch(':id/approve')`: Nest matches in declaration order, so a `@Get(':id')`
+   * added above this line would swallow `/mine` and hand the id "mine" to a UUID
+   * lookup. The failure would surface as a 404 or a validation complaint about a
+   * malformed id — nothing that reads as a routing problem. There is no such
+   * route here today; this note is what keeps it from being added carelessly.
+   */
+  @Get('mine')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: "The caller's own review of this product",
+    operationId: 'reviewControllerMine',
+  })
+  @ApiParam({ name: 'productId', description: 'Product UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'The caller’s own review, or null when they have not reviewed this product',
+    type: OwnReviewResponseEnvelope,
+  })
+  @ApiResponse({ status: 401, description: 'Authentication required' })
+  async mine(
+    @CurrentUser('id') userId: string,
+    @Param('productId') productId: string,
+  ): Promise<OwnReviewResponseEnvelope> {
+    const review = await this.reviewService.getOwnReview(userId, productId);
+    return { data: review };
   }
 }

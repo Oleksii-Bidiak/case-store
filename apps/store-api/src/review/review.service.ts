@@ -2,9 +2,19 @@ import { ConflictException, Injectable, NotFoundException } from '@nestjs/common
 import { PinoLogger } from 'nestjs-pino';
 import { Prisma } from '@prisma/client';
 import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
-import { ReviewEntity, ReviewAggregateEntity, AdminReviewEntity } from './entities';
+import {
+  ReviewEntity,
+  ReviewAggregateEntity,
+  AdminReviewEntity,
+  OwnReviewEntity,
+} from './entities';
 import { ReviewModerationStatus } from './dto';
-import type { CreateReviewDto, ReviewListQueryDto, AdminReviewQueryDto } from './dto';
+import type {
+  CreateReviewDto,
+  ReviewListQueryDto,
+  AdminReviewQueryDto,
+  UpdateReviewDto,
+} from './dto';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -147,6 +157,57 @@ export class ReviewService {
       aggregate: ReviewAggregateEntity.fromAggregate(aggregate),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
+  }
+
+  /**
+   * The caller's own review of a product, or null (TASK-586).
+   *
+   * The storefront cannot offer «дописати текст» without first knowing there is a
+   * rating to add text to, and it cannot learn that from the public list: a
+   * star-only row deliberately never appears there. Hence a separate read, in the
+   * author's own projection — see {@link OwnReviewEntity} for what it does and
+   * does not carry.
+   */
+  async getOwnReview(userId: string, productId: string): Promise<OwnReviewEntity | null> {
+    const review = await this.reviewRepository.findOwnByProduct(userId, productId);
+    return review ? OwnReviewEntity.fromPrisma(review) : null;
+  }
+
+  /**
+   * The author adds or changes the text beside a rating they already left
+   * (TASK-586 — owner's decision 5, 2026-09-10). The new text goes back to
+   * moderation; the rating does not move.
+   *
+   * An ABSENT `comment` is not an erasure. `{}` is what a half-wired form sends,
+   * and reading it as «clear the text» would wipe a published comment, drop the
+   * row back into the queue, and leave the author with no copy of what they wrote
+   * — all in answer to a request that asked for nothing. So the row is returned
+   * unchanged instead.
+   *
+   * @throws NotFoundException when no such review exists, when it belongs to
+   *         somebody else, or when its author has been hidden — one answer for
+   *         three cases, because distinguishing them is what makes an oracle.
+   */
+  async updateOwnReview(
+    userId: string,
+    id: string,
+    dto: UpdateReviewDto,
+  ): Promise<OwnReviewEntity> {
+    const existing = await this.reviewRepository.findOwnById(id, userId);
+    if (!existing) {
+      throw new NotFoundException('Review not found');
+    }
+
+    if (dto.comment === undefined) {
+      return OwnReviewEntity.fromPrisma(existing);
+    }
+
+    const updated = await this.reviewRepository.updateComment(id, dto.comment);
+    this.logger.info(
+      { reviewId: id, userId },
+      'Review text edited by its author (back to PENDING)',
+    );
+    return OwnReviewEntity.fromPrisma(updated);
   }
 
   /**

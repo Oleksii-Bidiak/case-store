@@ -246,6 +246,55 @@ export class ReviewRepository {
   }
 
   /**
+   * The caller's OWN review of a product — what `GET /products/:id/reviews/mine`
+   * answers (TASK-586). Null when they have not reviewed it.
+   *
+   * `findFirst` rather than the `userId_productId` unique lookup, because the
+   * third arm is not part of that index: a row whose author a moderator has
+   * hidden must come back as "nothing". Answering it here rather than at the
+   * endpoint keeps this lookup and {@link findOwnById} agreeing — otherwise the
+   * storefront offers an "add your text" form on a row the PATCH below will
+   * refuse, and the author is handed an error they can do nothing about.
+   */
+  findOwnByProduct(userId: string, productId: string): Promise<Review | null> {
+    return this.prisma.review.findFirst({ where: { userId, productId, hiddenAt: null } });
+  }
+
+  /**
+   * One review BY ID, scoped to its author (TASK-586).
+   *
+   * The author id is a FILTER, not a field to compare after fetching, and that is
+   * the authorisation: a row belonging to somebody else is not found, so the
+   * endpoint answers 404 and never 403. A 403 would confirm the row exists, which
+   * turns `PATCH /api/reviews/:id` into an id oracle — walk the space, keep what
+   * answers 403, and you have a map of real reviews without being allowed to read
+   * one.
+   *
+   * `hiddenAt: null` for the same reason as above: a hidden account keeps no
+   * write access to its own rows.
+   */
+  findOwnById(id: string, userId: string): Promise<Review | null> {
+    return this.prisma.review.findFirst({ where: { id, userId, hiddenAt: null } });
+  }
+
+  /**
+   * Write the author's text and send it back to moderation (TASK-586).
+   *
+   * Two fields, and no more. `rating` and `ratingVisible` are absent because an
+   * edit is a statement about the sentence, not about the score; `hiddenAt` is
+   * absent because an author must not be able to un-hide themselves by typing.
+   * The unconditional `PENDING` is the owner's decision 5 made literal — text that
+   * changed has not been read by anyone, whatever verdict the previous version
+   * carried.
+   */
+  updateComment(id: string, comment: string | null): Promise<Review> {
+    return this.prisma.review.update({
+      where: { id },
+      data: { comment, textStatus: ReviewTextStatus.PENDING },
+    });
+  }
+
+  /**
    * Publish a review's TEXT. Touches nothing else: the rating was already counting
    * (or already gated by the author's unconfirmed email), and approving a sentence
    * is not a statement about either.
