@@ -97,19 +97,22 @@ export function trackReviewAuthor(req: Record<string, unknown>): Promise<string>
  * checkout, and the shop would 429 after five clicks. See
  * {@link ReviewSubmissionThrottle} for the opt-in marker these read.
  */
+const onlyOnReviewSubmission: ThrottlerOptions['skipIf'] = (context) =>
+  !isReviewSubmissionRoute(context);
+
 const REVIEW_SUBMISSION_THROTTLERS: ThrottlerOptions[] = [
   {
     name: 'reviewsAccount',
     limit: REVIEWS_PER_ACCOUNT_PER_HOUR,
     ttl: ONE_HOUR_MS,
     getTracker: trackReviewAuthor,
-    skipIf: (context) => !isReviewSubmissionRoute(context),
+    skipIf: onlyOnReviewSubmission,
   },
   {
     name: 'reviewsIp',
     limit: REVIEWS_PER_IP_PER_DAY,
     ttl: ONE_DAY_MS,
-    skipIf: (context) => !isReviewSubmissionRoute(context),
+    skipIf: onlyOnReviewSubmission,
   },
 ];
 
