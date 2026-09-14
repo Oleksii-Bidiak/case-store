@@ -2588,15 +2588,68 @@ describe('OrderService', () => {
         });
       });
 
-      it('records the money without a status move when REFUNDED is not reachable', async () => {
-        // Nothing shipped, so the order cannot become REFUNDED — but the money
-        // really did go back and the ledger has to say so.
+      it('refuses a full refund on an order the plan would leave live (TASK-431)', async () => {
+        // Nothing shipped, so the order cannot become REFUNDED either — and a
+        // paymentStatus of REFUNDED on a still-PENDING order is exactly what the
+        // cross-rule forbids (the customer would hold the goods AND the cash).
+        // Before TASK-431 this wrote the refund anyway; now the webhook door
+        // refuses it the same way the admin door 409s, leaving the contradiction
+        // where an operator can see it.
         seed(makePayment({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }));
 
         await service.applyPaymentEvent(refund);
 
-        expect(lastPlan().paymentStatusChange?.to).toBe(PaymentStatus.REFUNDED);
+        const plan = lastPlan();
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.REFUNDED);
+        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan.statusChange).toBeUndefined();
+        expect(plan.refusedPaymentStatusChange).toEqual({
+          current: PaymentStatus.PAID,
+          rejected: PaymentStatus.REFUNDED,
+        });
+      });
+
+      it.each([OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
+        'refuses the same full refund on a %s order',
+        async (status) => {
+          seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
+
+          await service.applyPaymentEvent(refund);
+
+          expect(lastPlan().paymentStatusChange).toBeUndefined();
+          expect(lastPlan().refusedPaymentStatusChange).toEqual({
+            current: PaymentStatus.PAID,
+            rejected: PaymentStatus.REFUNDED,
+          });
+        },
+      );
+
+      it.each([OrderStatus.SHIPPED, OrderStatus.CANCELLED])(
+        'accepts it on a %s order, which the same plan closes or has closed',
+        async (status) => {
+          seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
+
+          await service.applyPaymentEvent(refund);
+
+          expect(lastPlan().paymentStatusChange).toEqual({
+            from: PaymentStatus.PAID,
+            to: PaymentStatus.REFUNDED,
+          });
+          expect(lastPlan().statusChange).toEqual({ from: status, to: OrderStatus.REFUNDED });
+        },
+      );
+
+      it('accepts it on an order already REFUNDED, without a second status row', async () => {
+        seed(makePayment({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.PAID }));
+
+        await service.applyPaymentEvent(refund);
+
+        expect(lastPlan().paymentStatusChange).toEqual({
+          from: PaymentStatus.PAID,
+          to: PaymentStatus.REFUNDED,
+        });
         expect(lastPlan().statusChange).toBeUndefined();
+        expect(lastPlan().refusedPaymentStatusChange).toBeUndefined();
       });
 
       it('never auto-restocks — the goods have to come back first (TASK-124)', async () => {

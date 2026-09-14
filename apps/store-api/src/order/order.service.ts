@@ -1178,6 +1178,13 @@ export class OrderService {
    * PARTIALLY_REFUNDED is deliberately NOT constrained: refunding one line out of
    * three on a DELIVERED order is an ordinary day, and it is exactly the case
    * that used to force the operator to choose between two lies.
+   *
+   * Asked on BOTH doors, like the table itself — the admin write answers a
+   * violation with 409, {@link planPaymentApplication} with a refusal row — and
+   * on the webhook door it is asked of the status the plan will LEAVE the order
+   * in, since a refund that closes the order in the same transaction lands
+   * consistent. Keeping it in one place is the point: a cross-rule enforced on
+   * one door only is not a rule, it is a preference of that door.
    */
   private isPaymentTargetReachable(orderStatus: OrderStatus, to: PaymentStatus): boolean {
     if (to !== PaymentStatus.REFUNDED) return true;
@@ -1441,8 +1448,12 @@ export class OrderService {
    *   attempt must never un-pay a paid order. The order itself is NOT cancelled —
    *   the customer may retry, and the reservation worker owns the deadline.
    * - **REFUNDED** moves the order's payment to REFUNDED and, where the state
-   *   machine permits, the order to REFUNDED. Stock is deliberately NOT credited
-   *   back: the goods have to physically return first (TASK-124's rule, unchanged).
+   *   machine permits, the order to REFUNDED — and only where it does: on an
+   *   order that can reach neither (PENDING/CONFIRMED/PROCESSING) the event is
+   *   refused rather than written, because a full refund on a live order is the
+   *   one payment combination the cross-rule forbids outright (see the branch).
+   *   Stock is deliberately NOT credited back: the goods have to physically
+   *   return first (TASK-124's rule, unchanged).
    * - **IGNORED** — "still processing" — changes nothing. There is no PENDING
    *   outcome for exactly this reason: treating "not finished yet" as an event to
    *   act on is how an order flips to paid before the money exists.
@@ -1555,12 +1566,38 @@ export class OrderService {
             },
           };
         }
+        // The cross-rule, on this door too (TASK-431). `isPaymentTargetReachable`
+        // is asked of the status the order will HAVE once this plan lands, not
+        // the one it has now: a DELIVERED order whose refund moves it to REFUNDED
+        // in the same transaction ends up consistent, so it passes. What does not
+        // pass is PENDING/CONFIRMED/PROCESSING — none of them may become REFUNDED
+        // (rule 3 of ORDER_TRANSITIONS: there is nothing to refund yet), so the
+        // money would land on an order the shop still considers live. That is the
+        // exact combination the admin door answers with 409; here it becomes the
+        // same refusal this door uses everywhere else — attempt written, columns
+        // untouched, a history row and a warning for the operator, who cancels
+        // the order and then records the money by hand.
+        const movesOrderToRefunded = canTransition(order.status, OrderStatus.REFUNDED);
+        const statusAfterPlan = movesOrderToRefunded ? OrderStatus.REFUNDED : order.status;
+
+        if (!this.isPaymentTargetReachable(statusAfterPlan, PaymentStatus.REFUNDED)) {
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.REFUNDED,
+            settledAt: now,
+            refusedPaymentStatusChange: {
+              current: order.paymentStatus,
+              rejected: PaymentStatus.REFUNDED,
+            },
+          };
+        }
+
         return {
           ...base,
           attemptStatus: PaymentAttemptStatus.REFUNDED,
           settledAt: now,
           paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.REFUNDED },
-          ...(canTransition(order.status, OrderStatus.REFUNDED)
+          ...(movesOrderToRefunded
             ? { statusChange: { from: order.status, to: OrderStatus.REFUNDED } }
             : {}),
         };
