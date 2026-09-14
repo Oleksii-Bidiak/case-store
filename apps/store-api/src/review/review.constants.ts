@@ -25,3 +25,31 @@ import { Prisma } from '@prisma/client';
 export const COUNTS_TOWARD_RATING = {
   ratingVisible: true,
 } as const satisfies Prisma.ReviewWhereInput;
+
+/**
+ * "A moderator has not withdrawn this account's contribution" — the second shared
+ * predicate, now asked by three queries for one reason (TASK-586).
+ *
+ * `hiddenAt` is the abuse lever from the 2026-09-10 decision: one click removes
+ * an account's WHOLE contribution, every rating and every text. Three read paths
+ * have to honour that, and they reach it from different directions, which is
+ * precisely why the arm is easy to leave out of one of them:
+ *  - `findApprovedByProduct` — nobody may read a hidden author's text;
+ *  - `findOwnByProduct` — the storefront must not offer an "add your text" form
+ *    on a row the PATCH will refuse;
+ *  - `findOwnById` — a hidden author keeps no write access to their own rows.
+ *
+ * The three consequences differ; the QUESTION is one, so it is written once. Miss
+ * it in the first and hidden text is published; miss it in the third and a
+ * moderated abuser goes on editing into the queue. Neither failure shows up on
+ * screen as anything but normal operation.
+ *
+ * Note the asymmetry with {@link COUNTS_TOWARD_RATING} above, which has no
+ * `hiddenAt` arm and must not grow one: that predicate runs against
+ * `ratingVisible`, the denormalised *effective* flag which already folds this in.
+ * Here there is no such flag — `textStatus` says what a MODERATOR thought of one
+ * sentence, not whether its author still has standing.
+ */
+export const AUTHOR_NOT_HIDDEN = {
+  hiddenAt: null,
+} as const satisfies Prisma.ReviewWhereInput;

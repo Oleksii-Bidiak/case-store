@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, Review, ReviewTextStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
-import { COUNTS_TOWARD_RATING } from './review.constants';
+import { AUTHOR_NOT_HIDDEN, COUNTS_TOWARD_RATING } from './review.constants';
 
 /**
  * Which pile of the moderation queue to show. Maps 1:1 onto {@link ReviewTextStatus}
@@ -141,7 +141,7 @@ export class ReviewRepository {
     const where: Prisma.ReviewWhereInput = {
       productId,
       textStatus: ReviewTextStatus.APPROVED,
-      hiddenAt: null,
+      ...AUTHOR_NOT_HIDDEN,
       comment: { not: null },
       // `not: null` alone lets an empty string through, and the submission DTO
       // accepts one — `comment: ''` is a star-only review wearing a text's clothes.
@@ -249,15 +249,16 @@ export class ReviewRepository {
    * The caller's OWN review of a product — what `GET /products/:id/reviews/mine`
    * answers (TASK-586). Null when they have not reviewed it.
    *
-   * `findFirst` rather than the `userId_productId` unique lookup, because the
-   * third arm is not part of that index: a row whose author a moderator has
-   * hidden must come back as "nothing". Answering it here rather than at the
-   * endpoint keeps this lookup and {@link findOwnById} agreeing — otherwise the
-   * storefront offers an "add your text" form on a row the PATCH below will
-   * refuse, and the author is handed an error they can do nothing about.
+   * `findFirst` rather than the `userId_productId` unique lookup, because
+   * {@link AUTHOR_NOT_HIDDEN} is not part of that index: a row whose author a
+   * moderator has hidden must come back as "nothing". Answering it here rather
+   * than at the endpoint keeps this lookup and {@link findOwnById} agreeing —
+   * otherwise the storefront offers an "add your text" form on a row the PATCH
+   * below will refuse, and the author is handed an error they can do nothing
+   * about.
    */
   findOwnByProduct(userId: string, productId: string): Promise<Review | null> {
-    return this.prisma.review.findFirst({ where: { userId, productId, hiddenAt: null } });
+    return this.prisma.review.findFirst({ where: { userId, productId, ...AUTHOR_NOT_HIDDEN } });
   }
 
   /**
@@ -270,11 +271,11 @@ export class ReviewRepository {
    * answers 403, and you have a map of real reviews without being allowed to read
    * one.
    *
-   * `hiddenAt: null` for the same reason as above: a hidden account keeps no
-   * write access to its own rows.
+   * {@link AUTHOR_NOT_HIDDEN} for the same reason as above: a hidden account
+   * keeps no write access to its own rows.
    */
   findOwnById(id: string, userId: string): Promise<Review | null> {
-    return this.prisma.review.findFirst({ where: { id, userId, hiddenAt: null } });
+    return this.prisma.review.findFirst({ where: { id, userId, ...AUTHOR_NOT_HIDDEN } });
   }
 
   /**
