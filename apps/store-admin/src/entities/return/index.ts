@@ -9,6 +9,13 @@ export {
   useAdminReturnControllerResolve,
   getAdminReturnControllerFindAllQueryKey,
   getAdminReturnControllerFindByIdQueryKey,
+  // TASK-469 — the admin door onto a return, hung off the ORDER path. The read
+  // answers "is there a return on this order yet?", which is the question the
+  // REFUNDED dialog asks before offering to create one; the customer-facing twin
+  // cannot answer it for an operator, being scoped to the caller's own orders.
+  useAdminOrderReturnControllerFindForOrder,
+  useAdminOrderReturnControllerCreate,
+  getAdminOrderReturnControllerFindForOrderQueryKey,
   // Status enum value object (filters, badge mapping, the resolve picker).
   ReturnEntityStatus,
 } from "@/shared/api";
@@ -17,6 +24,8 @@ export type {
   ReturnEntity,
   ReturnItemEntity,
   ResolveReturnDto,
+  CreateReturnDto,
+  ReturnItemDto,
   AdminReturnControllerFindAllParams,
   AdminReturnListResponse,
   AdminReturnResponseEnvelope,

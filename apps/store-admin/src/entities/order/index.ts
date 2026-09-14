@@ -26,6 +26,10 @@ export {
   // Status / payment enum value objects (used for filters and badge mapping).
   OrderEntityStatus,
   OrderEntityPaymentStatus,
+  // TASK-468: how the order is BEING paid for, as opposed to whether it has been.
+  // The «оплату не підтверджено — відправляти?» warning needs both: on
+  // ON_DELIVERY an unpaid shipment is simply how cash-on-delivery works.
+  OrderEntityPaymentMethod,
   // History change-type discriminator (TASK-251).
   OrderStatusHistoryEntityChangeType,
   // TASK-341: how the customer will pay on an operator-created order.
