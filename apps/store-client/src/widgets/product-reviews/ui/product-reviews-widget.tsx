@@ -147,7 +147,7 @@ export function ProductReviewsWidget({ productId }: ProductReviewsWidgetProps) {
   const pathname = usePathname();
   const page = resolveReviewPageParam(searchParams.get(REVIEW_PAGE_PARAM));
 
-  const { data, isPending, isError } = useReviewControllerList(
+  const { data, isPending, isFetching, isError } = useReviewControllerList(
     productId,
     { page, limit: REVIEWS_PER_PAGE },
     {
@@ -196,7 +196,13 @@ export function ProductReviewsWidget({ productId }: ProductReviewsWidgetProps) {
   const totalPages = meta?.totalPages ?? 1;
 
   return (
-    <div className="flex flex-col gap-6">
+    // `aria-busy` while a page is in flight (TASK-598). `keepPreviousData`
+    // suppresses `isPending` for every page change after the first, so without
+    // this the panel is entirely stale and says nothing: the URL already reads
+    // `reviewPage=3` while the screen shows page 2, and on a slow link a shopper
+    // cannot tell the click from a click that failed. A screen reader was told
+    // nothing at all.
+    <div className="flex flex-col gap-6" aria-busy={isFetching}>
       {count > 0 && aggregate ? (
         <div className="flex items-center gap-3">
           <RatingStars
@@ -211,7 +217,11 @@ export function ProductReviewsWidget({ productId }: ProductReviewsWidgetProps) {
       ) : null}
 
       {reviews.length > 0 ? (
-        <ul className="flex flex-col">
+        <ul
+          className={`flex flex-col transition-opacity ${
+            isFetching ? "opacity-60" : ""
+          }`}
+        >
           {reviews.map((review) => (
             <ReviewRow key={review.id} review={review} />
           ))}
@@ -227,7 +237,12 @@ export function ProductReviewsWidget({ productId }: ProductReviewsWidgetProps) {
           primitive's default `<nav>` name is the right one. */}
       {totalPages > 1 && meta && (
         <Pagination
-          currentPage={meta.page}
+          // The page from the ADDRESS, not from `meta` (TASK-598): under
+          // `keepPreviousData` the payload still describes the previous page, so
+          // `meta.page` kept `aria-current="page"` on the number the shopper had
+          // just left — the pager disagreeing with the URL, which reads as a
+          // click that did not register.
+          currentPage={page}
           totalPages={totalPages}
           buildHref={buildPageHref}
         />

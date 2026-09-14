@@ -153,6 +153,51 @@ describe("ReviewReplyAction (TASK-446)", () => {
     );
   });
 
+  /**
+   * TASK-598 — the other half of Rule 2a, and the dangerous half.
+   *
+   * `keepDirtyValues` holds a dirty field against every later `values`, and
+   * closing the dialog unmounts the textarea without clearing that flag. So an
+   * abandoned draft was held for the life of the row, while the button label and
+   * the "saving will replace it" line went on reading the SERVER value — the UI
+   * said "there is a published answer and saving replaces it" over a box showing
+   * something else entirely.
+   */
+  it("drops an abandoned draft, so it cannot overwrite an answer published meanwhile", async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderAction(makeReview());
+
+    // Types an answer, thinks better of it, closes the dialog without saving.
+    await user.click(screen.getByRole("button", { name: d.replyAction }));
+    await user.type(
+      await screen.findByLabelText(d.replyLabel),
+      "Чернетка, яку передумали",
+    );
+    await user.click(screen.getByRole("button", { name: dict.common.cancel }));
+
+    // Meanwhile a colleague answers this review; the list refetches.
+    rerender(
+      <WithAuth isOwner={false} permissions={[PERM.reviewsWrite]}>
+        <ReviewReplyAction
+          review={makeReview({
+            reply: {
+              body: "Чужа опублікована відповідь",
+              createdAt: "2026-06-02T10:00:00.000Z",
+            },
+          })}
+        />
+      </WithAuth>,
+    );
+
+    // Reopening must show what is LIVE. Showing the old draft under a label that
+    // says "edit the reply" is how a colleague's words get overwritten unseen.
+    await user.click(screen.getByRole("button", { name: d.replyEditAction }));
+
+    expect(await screen.findByLabelText(d.replyLabel)).toHaveValue(
+      "Чужа опублікована відповідь",
+    );
+  });
+
   it("refuses to submit an empty answer", async () => {
     const user = userEvent.setup();
     let posted = false;
