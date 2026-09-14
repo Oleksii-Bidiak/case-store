@@ -200,6 +200,40 @@ export class DashboardRepository {
   }
 
   /**
+   * The "at least one line can no longer be supplied" order predicate
+   * (TASK-470) — the aggregate behind the «Недоступні позиції» tile.
+   *
+   * Written here rather than imported from `OrderRepository`, for the same
+   * reason {@link unrealizedOrderWhere} is: no cross-module `dashboard`→`order`
+   * dependency. The two restate the owner's four conditions (B-1 §3) — deleted,
+   * unpublished, oversold, or a reservation the TTL worker released — and the
+   * list's `hasUnavailableItems` filter is the deep-link target of this tile, so
+   * the number and the rows it opens have to agree condition for condition.
+   *
+   * CANCELLED and REFUNDED orders are excluded: their stock returned because the
+   * order ENDED, and counting them would make the tile a permanent, growing
+   * number nobody can ever clear.
+   */
+  private unavailableItemsOrderWhere(): Prisma.OrderWhereInput {
+    return {
+      deletedAt: null,
+      status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+      OR: [
+        {
+          items: {
+            some: {
+              product: {
+                OR: [{ deletedAt: { not: null } }, { isActive: false }, { stock: { lt: 0 } }],
+              },
+            },
+          },
+        },
+        { restockedAt: { not: null } },
+      ],
+    };
+  }
+
+  /**
    * Unrealized (pending-payment) revenue: sum of `Order.total` for orders that
    * are still active but not yet paid — `paymentStatus != PAID` AND `status NOT
    * IN (CANCELLED, REFUNDED)`. This is the receivable pipeline, the complement to
@@ -288,17 +322,30 @@ export class DashboardRepository {
    *   - `unpaidInTransit` — active-but-unpaid orders ({@link unrealizedOrderWhere})
    *   - `failedMails`     — outbox rows permanently failed (`status = FAILED`)
    *   - `ratingAbuse`     — bursts and one-star runs ({@link getRatingAbuseCount})
+   *   - `unavailableItems`— open orders with a line that can no longer be supplied
+   *                         ({@link unavailableItemsOrderWhere}, TASK-470). The one
+   *                         counter here that nothing ELSE in the system reacts to:
+   *                         the owner's decision (B-1 §3) is that the buyer is told
+   *                         by a person, so this tile is the only notification there is
    */
   async getNeedsAction(): Promise<NeedsAction> {
-    const [newOrders, pendingReviews, unpaidInTransit, failedMails, pendingOver48h, ratingAbuse] =
-      await Promise.all([
-        this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
-        this.prisma.review.count({ where: moderationQueueWhere(ReviewTextStatus.PENDING) }),
-        this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
-        this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
-        this.prisma.order.count({ where: this.pendingOver48hWhere() }),
-        this.getRatingAbuseCount(),
-      ]);
+    const [
+      newOrders,
+      pendingReviews,
+      unpaidInTransit,
+      failedMails,
+      pendingOver48h,
+      ratingAbuse,
+      unavailableItems,
+    ] = await Promise.all([
+      this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
+      this.prisma.review.count({ where: moderationQueueWhere(ReviewTextStatus.PENDING) }),
+      this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
+      this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
+      this.prisma.order.count({ where: this.pendingOver48hWhere() }),
+      this.getRatingAbuseCount(),
+      this.prisma.order.count({ where: this.unavailableItemsOrderWhere() }),
+    ]);
     return {
       newOrders,
       pendingReviews,
@@ -306,6 +353,7 @@ export class DashboardRepository {
       failedMails,
       pendingOver48h,
       ratingAbuse,
+      unavailableItems,
     };
   }
 

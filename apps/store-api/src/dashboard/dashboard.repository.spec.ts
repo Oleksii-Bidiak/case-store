@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { OrderStatus } from '@prisma/client';
 import { DashboardRepository } from './dashboard.repository';
 import { PrismaService } from '../prisma';
 
@@ -138,5 +139,89 @@ describe('DashboardRepository — the rating-abuse signal (TASK-589)', () => {
     const needsAction = await repo.getNeedsAction();
 
     expect(needsAction.ratingAbuse).toBe(0);
+  });
+});
+
+/**
+ * The «Недоступні позиції» tile (TASK-470).
+ *
+ * The aggregate of the fourth mark of owner decision B-1 §3, and the one signal
+ * in the whole system that NOTHING else reacts to: the owner decided the buyer
+ * is told by a person, not by an automatic mail, so this tile is the entire
+ * notification. If its predicate is wrong the shop finds out from the customer.
+ *
+ * Two ways it can be wrong, and they fail in opposite directions. Forget the
+ * `status` exclusion and every cancelled order the shop ever had lands in the
+ * count, which then only ever grows — an operator learns within a week that the
+ * tile means nothing. Ask about the wrong columns and it sits at a calm zero
+ * while orders quietly cannot be shipped.
+ */
+describe('DashboardRepository — the «Недоступні позиції» tile (TASK-470)', () => {
+  let repo: DashboardRepository;
+
+  const orderCount = jest.fn().mockResolvedValue(0);
+
+  const prismaMock = {
+    order: { count: orderCount },
+    review: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
+    mailOutbox: { count: jest.fn().mockResolvedValue(0) },
+  };
+
+  /** The `where` of the count issued for the unavailable-items tile. */
+  const unavailableWhere = () =>
+    orderCount.mock.calls
+      .map((call) => call[0].where)
+      .find((where: Record<string, unknown>) => Array.isArray(where.OR));
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    orderCount.mockResolvedValue(0);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [DashboardRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(DashboardRepository);
+  });
+
+  it('counts orders whose line product is deleted, unpublished or oversold', async () => {
+    await repo.getNeedsAction();
+
+    expect(unavailableWhere().OR).toContainEqual({
+      items: {
+        some: {
+          product: {
+            OR: [{ deletedAt: { not: null } }, { isActive: false }, { stock: { lt: 0 } }],
+          },
+        },
+      },
+    });
+  });
+
+  it('also counts an order whose reservation the TTL worker released', async () => {
+    // Stock is taken at creation, so "someone else bought it" cannot happen on
+    // its own — it can only happen after the hold was released.
+    await repo.getNeedsAction();
+
+    expect(unavailableWhere().OR).toContainEqual({ restockedAt: { not: null } });
+  });
+
+  it('excludes orders that have already ended', async () => {
+    await repo.getNeedsAction();
+
+    expect(unavailableWhere().status).toEqual({
+      notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
+    });
+  });
+
+  it('excludes soft-deleted orders', async () => {
+    await repo.getNeedsAction();
+
+    expect(unavailableWhere().deletedAt).toBeNull();
+  });
+
+  it('reports the count as a number, zero included', async () => {
+    const needsAction = await repo.getNeedsAction();
+
+    expect(needsAction.unavailableItems).toBe(0);
   });
 });

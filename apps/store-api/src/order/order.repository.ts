@@ -88,6 +88,33 @@ const ORDERS_INCLUDE = {
  */
 const ADMIN_ORDERS_INCLUDE = {
   ...ORDERS_INCLUDE,
+  /**
+   * The same lines as {@link ORDERS_INCLUDE}, plus the three catalogue columns
+   * that decide whether a line is still orderable (TASK-470): `deletedAt`,
+   * `isActive`, `stock`.
+   *
+   * Spread from the shared include rather than restated, so a column added to an
+   * order line is carried here by construction. Admin-only on purpose: "this
+   * position is no longer available" is a message for the operator who has to
+   * ring the customer and offer a choice, and the owner's decision (B-1 §3) is
+   * explicitly that NOTHING is sent to the buyer automatically. A customer-facing
+   * read therefore never joins these, and the entity reports nothing rather than
+   * reporting "all fine".
+   */
+  items: {
+    ...ORDERS_INCLUDE.items,
+    select: {
+      ...ORDERS_INCLUDE.items.select,
+      product: {
+        select: {
+          ...ORDERS_INCLUDE.items.select.product.select,
+          deletedAt: true,
+          isActive: true,
+          stock: true,
+        },
+      },
+    },
+  },
   user: {
     select: { id: true, email: true, firstName: true, lastName: true },
   },
@@ -107,6 +134,41 @@ const ADMIN_ORDERS_INCLUDE = {
    */
   returns: { select: { refundedAmount: true } },
 } satisfies Prisma.OrderInclude;
+
+/**
+ * Orders holding at least one line that can no longer be supplied (TASK-470).
+ *
+ * The WHERE behind the `hasUnavailableItems` list filter, and the exact
+ * predicate `DashboardRepository`'s «Недоступні позиції» tile counts — written
+ * independently there rather than imported, for the same reason
+ * `unpaidInTransit` is: the dashboard must not depend on the order module. The
+ * two are kept in step by both restating the owner's four conditions (B-1 §3),
+ * which is also what `OrderEntity.findUnavailableItemIds` evaluates per line.
+ *
+ * CANCELLED and REFUNDED orders are excluded here exactly as they are in the
+ * entity: their stock came back because they ENDED, and counting them would bury
+ * the handful of orders an operator must actually ring about under every
+ * cancelled order the shop ever had.
+ */
+function unavailableItemsWhere(): Prisma.OrderWhereInput {
+  return {
+    status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+    OR: [
+      {
+        items: {
+          some: {
+            product: {
+              OR: [{ deletedAt: { not: null } }, { isActive: false }, { stock: { lt: 0 } }],
+            },
+          },
+        },
+      },
+      // The fourth condition: the TTL worker released this order's hold while the
+      // order itself is still expected to be fulfilled.
+      { restockedAt: { not: null } },
+    ],
+  };
+}
 
 /**
  * Column set for the admin CSV export (TASK-425).
@@ -717,6 +779,43 @@ export class OrderRepository {
         createdAt: { lt: new Date(Date.now() - PENDING_STALE_HOURS * 60 * 60 * 1000) },
       });
     }
+    // TASK-470 / 471: the derived-mark filters. Same `AND` array and the same
+    // reason as TASK-425's — `unpaidInTransit` above owns `where.status` and
+    // `where.paymentStatus` outright, and a filter the operator can see on screen
+    // but that never reached the query is the worst possible outcome.
+    //
+    // Each condition is written here EXACTLY as the B-1 catalogue states it, and
+    // `orderDerivedLabels()` in the admin panel states it again for the row it
+    // renders. The two are kept identical by the marks being derived on both
+    // sides from the same columns, never stored: there is no third copy that can
+    // go stale between them.
+    if (query.hasDebt) {
+      and.push({
+        status: OrderStatus.DELIVERED,
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
+      });
+    }
+    // `gt` / `lte` against a single `now` taken here, so the two flags partition
+    // the same set at the same instant rather than at two instants a query apart.
+    // Rows with a NULL deadline match neither comparison — correct: an order with
+    // no timed reservation is in neither state.
+    const now = new Date();
+    if (query.awaitingPayment) {
+      and.push({
+        paymentMethod: PaymentMethod.ONLINE,
+        paymentStatus: PaymentStatus.PENDING,
+        reservationExpiresAt: { gt: now },
+      });
+    }
+    if (query.reservationExpired) {
+      and.push({
+        paymentMethod: PaymentMethod.ONLINE,
+        paymentStatus: PaymentStatus.PENDING,
+        reservationExpiresAt: { lte: now },
+      });
+    }
+    if (query.hasUnavailableItems) and.push(unavailableItemsWhere());
+
     if (and.length > 0) where.AND = and;
 
     return where;

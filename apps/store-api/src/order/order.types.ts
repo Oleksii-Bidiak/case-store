@@ -64,7 +64,29 @@ export interface OrderItemRow {
   quantity: number;
   price: { toString(): string }; // Prisma Decimal
   createdAt: Date;
-  product: { id: string; name: string; slug: string; images: Array<{ url: string }> };
+  product: {
+    id: string;
+    name: string;
+    slug: string;
+    images: Array<{ url: string }>;
+    /**
+     * ── Availability columns (TASK-470) ────────────────────────────────────
+     * Joined by `ADMIN_ORDERS_INCLUDE` only, so they are OPTIONAL: a
+     * customer-facing read never asks for them, and `undefined` there means
+     * "not measured", never "available". `OrderEntity.fromPrisma` reads that
+     * distinction directly — it omits `unavailableItemIds` entirely rather
+     * than reporting an empty array it did not measure.
+     *
+     * `deletedAt != null` = the catalogue row is a tombstone; `isActive =
+     * false` = unpublished; `stock < 0` = oversold after an inventory
+     * correction. The three conditions of owner decision B-1 §3 that live on
+     * the PRODUCT; the fourth (the reservation lifted by TTL) lives on the
+     * order itself.
+     */
+    deletedAt?: Date | null;
+    isActive?: boolean;
+    stock?: number;
+  };
   /**
    * Frozen add-on snapshots bought with this line (TASK-174). `name`/`price` are
    * copied at order-creation time, exactly like `OrderItem.price` snapshots
@@ -162,6 +184,16 @@ export interface OrderWithItems {
    * response.
    */
   internalNotes?: string | null;
+  /**
+   * When the order-access token currently on this row was issued (TASK-484).
+   *
+   * The TTL of a guest's status link is counted from HERE, not from `createdAt`:
+   * an operator can re-issue the link at any point in the order's life (B-5 §4),
+   * and a clock started at checkout would hand out a link that was already dead
+   * the moment it was pasted into a chat. Null on every order minted before the
+   * column existed, which is why every reader falls back to `createdAt`.
+   */
+  accessTokenIssuedAt?: Date | null;
   items: OrderItemRow[];
   /**
    * Owning user account, selected only by the admin read paths
