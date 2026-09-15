@@ -836,6 +836,23 @@ export const dict = {
     // TASK-414 — facets beyond the first few fold behind this toggle.
     moreFacets: (n: number) => `Ще фільтри (${n})`,
     fewerFacets: "Згорнути фільтри",
+    // TASK-489 / B-10 §4 — «Силікон (12)». The number is the products behind
+    // that value WITH the rest of the selection applied, so it is also what the
+    // drawer's «Показати N товарів» will read after ticking it.
+    facetCount: (n: number) => `(${n})`,
+    // Spoken form of the same number. The digits alone would be announced as a
+    // bare "12" glued onto the value's name; this makes the checkbox's
+    // accessible name read «Силікон, 12 товарів». Same mod10/mod100 rule as
+    // `mobileApply` above.
+    facetCountAria: (n: number) => {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      let word = "товарів";
+      if (mod10 === 1 && mod100 !== 11) word = "товар";
+      else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20))
+        word = "товари";
+      return `${n} ${word}`;
+    },
   },
 
   product: {

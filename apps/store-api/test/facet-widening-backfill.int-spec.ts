@@ -9,6 +9,9 @@ import { AttributeDefinitionService } from '../src/attribute-definition/attribut
 import { CategoryRepository } from '../src/category/category.repository';
 import { PrismaService } from '../src/prisma';
 import { SlugRedirectRepository } from '../src/slug-redirect';
+import { BrandRepository } from '../src/brand/brand.repository';
+import { DeviceRepository } from '../src/device/device.repository';
+import { CatalogueFilterResolver } from '../src/catalog-filter/catalogue-filter.resolver';
 
 /**
  * The widened facet set, against a REAL Postgres (TASK-488 / owner decision
@@ -77,9 +80,11 @@ describe('Widening the catalogue facet set: backfill + the TEXT rule (integratio
     return facets.map((facet) => facet.definition.key);
   }
 
+  /** The VALUES of one facet (their TASK-489 counts are asserted elsewhere). */
   async function facetValues(categoryId: string, key: string): Promise<string[]> {
     const facets = await facetService.getFilterableSpecs(categoryId);
-    return facets.find((facet) => facet.definition.key === key)?.values ?? [];
+    const facet = facets.find((entry) => entry.definition.key === key);
+    return (facet?.values ?? []).map((entry) => entry.value);
   }
 
   async function definitionByKey(categoryId: string, key: string) {
@@ -172,6 +177,9 @@ describe('Widening the catalogue facet set: backfill + the TEXT rule (integratio
         CategoryRepository,
         AttributeDefinitionRepository,
         AttributeDefinitionService,
+        BrandRepository,
+        DeviceRepository,
+        CatalogueFilterResolver,
       ],
     }).compile();
 

@@ -4,6 +4,7 @@ import { AttributeType } from '@prisma/client';
 import { AttributeDefinitionService } from './attribute-definition.service';
 import { AttributeDefinitionRepository } from './attribute-definition.repository';
 import { CategoryRepository } from '../category';
+import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import {
   ReorderDuplicateIdError,
   ReorderNotFoundError,
@@ -17,22 +18,25 @@ describe('AttributeDefinitionService', () => {
     findById: jest.fn(),
     findByCategoryAndKey: jest.fn(),
     findEffectiveForCategory: jest.fn(),
-    findDistinctValuesByKey: jest.fn(),
+    findValueCountsByKey: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
     reorder: jest.fn(),
   };
   const categoryRepository = { findById: jest.fn(), findSubtreeIds: jest.fn() };
+  const catalogueFilters = { resolve: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     categoryRepository.findById.mockResolvedValue({ id: 'cat' });
+    catalogueFilters.resolve.mockResolvedValue({});
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AttributeDefinitionService,
         { provide: AttributeDefinitionRepository, useValue: repo },
         { provide: CategoryRepository, useValue: categoryRepository },
+        { provide: CatalogueFilterResolver, useValue: catalogueFilters },
       ],
     }).compile();
     service = module.get(AttributeDefinitionService);
@@ -222,17 +226,79 @@ describe('AttributeDefinitionService', () => {
     };
     const internalDef = { ...materialDef, id: 'd-int', key: 'internal', isFilterable: false };
 
-    it('returns only isFilterable definitions paired with distinct subtree values', async () => {
+    /** The public-visibility half of the params every call below must carry. */
+    const publicScope = {
+      isActive: true,
+      categoryActiveOnly: true,
+      deleted: false,
+    };
+
+    it('returns only isFilterable definitions paired with counted subtree values', async () => {
       repo.findEffectiveForCategory.mockResolvedValue([materialDef, internalDef]);
       categoryRepository.findSubtreeIds.mockResolvedValue(['cat', 'child']);
-      repo.findDistinctValuesByKey.mockResolvedValue(new Map([['material', ['Силікон', 'Шкіра']]]));
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([
+          [
+            'material',
+            [
+              { value: 'Силікон', count: 12 },
+              { value: 'Шкіра', count: 3 },
+            ],
+          ],
+        ]),
+      );
 
       const result = await service.getFilterableSpecs('cat');
 
       expect(result).toHaveLength(1);
       expect(result[0].definition.key).toBe('material');
-      expect(result[0].values).toEqual(['Силікон', 'Шкіра']);
-      expect(repo.findDistinctValuesByKey).toHaveBeenCalledWith(['material'], ['cat', 'child']);
+      expect(result[0].values).toEqual([
+        { value: 'Силікон', count: 12 },
+        { value: 'Шкіра', count: 3 },
+      ]);
+      expect(repo.findValueCountsByKey).toHaveBeenCalledWith(
+        ['material'],
+        expect.objectContaining({ categoryIds: ['cat', 'child'], ...publicScope }),
+      );
+    });
+
+    it('forwards the ACTIVE filters so the counts describe the same slice (TASK-489)', async () => {
+      // The substance of the task: a count that ignored the brand/price/stock
+      // filters would advertise «Силікон (12)» on a page that then shows eight.
+      repo.findEffectiveForCategory.mockResolvedValue([materialDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      catalogueFilters.resolve.mockResolvedValue({ brandId: 'brand-1', deviceModelId: 'dev-1' });
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([['material', [{ value: 'Силікон', count: 2 }]]]),
+      );
+
+      await service.getFilterableSpecs('cat', {
+        brand: 'apple',
+        device: 'iphone-15',
+        minPrice: 100,
+        maxPrice: 900,
+        search: 'чохол',
+        specs: 'form:Накладка',
+        inStock: true,
+        onSale: true,
+      });
+
+      expect(catalogueFilters.resolve).toHaveBeenCalledWith({
+        brand: 'apple',
+        device: 'iphone-15',
+      });
+      expect(repo.findValueCountsByKey).toHaveBeenCalledWith(['material'], {
+        categoryIds: ['cat'],
+        brandId: 'brand-1',
+        deviceModelId: 'dev-1',
+        minPrice: 100,
+        maxPrice: 900,
+        search: 'чохол',
+        specFilters: [{ key: 'form', values: ['Накладка'] }],
+        inStock: true,
+        onSale: true,
+        ...publicScope,
+      });
     });
 
     it('returns an empty list (no subtree query) when no filterable specs exist', async () => {
@@ -249,7 +315,9 @@ describe('AttributeDefinitionService', () => {
       const colorDef = { ...materialDef, id: 'd-color', key: 'color', label: 'Колір' };
       repo.findEffectiveForCategory.mockResolvedValue([materialDef, colorDef]);
       categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
-      repo.findDistinctValuesByKey.mockResolvedValue(new Map([['material', ['Силікон']]]));
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([['material', [{ value: 'Силікон', count: 1 }]]]),
+      );
 
       const result = await service.getFilterableSpecs('cat');
 
@@ -271,10 +339,16 @@ describe('AttributeDefinitionService', () => {
       };
       repo.findEffectiveForCategory.mockResolvedValue([materialDef, protectionDef]);
       categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
-      repo.findDistinctValuesByKey.mockResolvedValue(
+      repo.findValueCountsByKey.mockResolvedValue(
         new Map([
-          ['material', ['Силікон']],
-          ['protection', ['Посилені кути', 'Бортик над екраном']],
+          ['material', [{ value: 'Силікон', count: 4 }]],
+          [
+            'protection',
+            [
+              { value: 'Посилені кути', count: 2 },
+              { value: 'Бортик над екраном', count: 1 },
+            ],
+          ],
         ]),
       );
 
@@ -282,7 +356,7 @@ describe('AttributeDefinitionService', () => {
 
       expect(result.map((facet) => facet.definition.key)).toEqual(['material']);
       // Not even queried for: the TEXT definition never reaches the value scan.
-      expect(repo.findDistinctValuesByKey).toHaveBeenCalledWith(['material'], ['cat']);
+      expect(repo.findValueCountsByKey).toHaveBeenCalledWith(['material'], expect.anything());
     });
 
     it('drops a filterable NUMBER definition for the same reason', async () => {
@@ -312,34 +386,52 @@ describe('AttributeDefinitionService', () => {
       };
       repo.findEffectiveForCategory.mockResolvedValue([materialDef, magsafeDef]);
       categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
-      repo.findDistinctValuesByKey.mockResolvedValue(
+      repo.findValueCountsByKey.mockResolvedValue(
         new Map([
-          ['material', ['Силікон']],
-          ['magsafe', ['false', 'true']],
+          ['material', [{ value: 'Силікон', count: 5 }]],
+          [
+            'magsafe',
+            [
+              { value: 'false', count: 3 },
+              { value: 'true', count: 2 },
+            ],
+          ],
         ]),
       );
 
       const result = await service.getFilterableSpecs('cat');
 
       expect(result.map((facet) => facet.definition.key)).toEqual(['material', 'magsafe']);
-      expect(result[1].values).toEqual(['false', 'true']);
+      expect(result[1].values).toEqual([
+        { value: 'false', count: 3 },
+        { value: 'true', count: 2 },
+      ]);
     });
 
     it('surfaces the colour facet once its subtree has values', async () => {
       const colorDef = { ...materialDef, id: 'd-color', key: 'color', label: 'Колір' };
       repo.findEffectiveForCategory.mockResolvedValue([colorDef, materialDef]);
       categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
-      repo.findDistinctValuesByKey.mockResolvedValue(
+      repo.findValueCountsByKey.mockResolvedValue(
         new Map([
-          ['color', ['Білий', 'Чорний']],
-          ['material', ['Силікон']],
+          [
+            'color',
+            [
+              { value: 'Білий', count: 2 },
+              { value: 'Чорний', count: 7 },
+            ],
+          ],
+          ['material', [{ value: 'Силікон', count: 9 }]],
         ]),
       );
 
       const result = await service.getFilterableSpecs('cat');
 
       expect(result.map((facet) => facet.definition.key)).toEqual(['color', 'material']);
-      expect(result[0].values).toEqual(['Білий', 'Чорний']);
+      expect(result[0].values).toEqual([
+        { value: 'Білий', count: 2 },
+        { value: 'Чорний', count: 7 },
+      ]);
     });
   });
 

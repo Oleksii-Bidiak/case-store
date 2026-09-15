@@ -13,6 +13,9 @@ import { parseSpecFilters } from '../src/product/dto/product-list-query.dto';
 import { ProductRepository } from '../src/product/product.repository';
 import { PrismaService } from '../src/prisma';
 import { SlugRedirectRepository } from '../src/slug-redirect';
+import { BrandRepository } from '../src/brand/brand.repository';
+import { DeviceRepository } from '../src/device/device.repository';
+import { CatalogueFilterResolver } from '../src/catalog-filter/catalogue-filter.resolver';
 
 /**
  * The colour bridge, end to end, against a REAL Postgres (TASK-487).
@@ -122,6 +125,9 @@ describe('Colour as a catalogue facet: backfill + bridge (integration)', () => {
         CategoryRepository,
         AttributeDefinitionRepository,
         AttributeDefinitionService,
+        BrandRepository,
+        DeviceRepository,
+        CatalogueFilterResolver,
       ],
     }).compile();
 
@@ -384,7 +390,8 @@ describe('Colour as a catalogue facet: backfill + bridge (integration)', () => {
     it('offers colour in filterable-specs, ahead of the older facet', async () => {
       const facets = await facetService.getFilterableSpecs(rootId);
       expect(facets.map((facet) => facet.definition.key)).toEqual(['color', 'material']);
-      expect(facets[0].values).toEqual(['Білий', 'Синій', 'Чорний']);
+      // Values carry their product counts since TASK-489.
+      expect(facets[0].values.map((entry) => entry.value)).toEqual(['Білий', 'Синій', 'Чорний']);
     });
 
     it('offers colour in the CHILD category too — definitions inherit downward', async () => {

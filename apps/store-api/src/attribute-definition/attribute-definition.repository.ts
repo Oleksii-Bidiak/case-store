@@ -4,6 +4,14 @@ import { PrismaService } from '../prisma';
 import { CategoryRepository } from '../category';
 import { COLOR_SPEC_KEY, COLOR_SPEC_LABEL } from '../common/color-axis';
 import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
+// The listing's OWN where-builder, imported as a pure function (TASK-489). It is
+// not a second copy and not a service edge: facet counts must describe exactly
+// the slice the listing returns, so there is one builder and two callers.
+import {
+  ON_SALE_PRODUCT_IDS_SQL,
+  buildProductListWhere,
+  type ProductListWhereParams,
+} from '../product/product-list-where';
 
 /**
  * Advisory-lock namespace for attribute definitions (TASK-298). The prefix is MANDATORY —
@@ -23,6 +31,16 @@ const bucketLockKey = (categoryId: string): string => lockKey(LOCK_RESOURCE, cat
 
 /** Either the singleton client or an interactive-transaction one (TASK-298). */
 type AttributeDefinitionDbClient = PrismaService | ReorderTx;
+
+/**
+ * One facet value plus how many products in the CURRENT catalogue slice carry
+ * it (TASK-489). A value with no products is never emitted — a count of zero is
+ * an absence, not a row.
+ */
+export interface FacetValueCount {
+  value: string;
+  count: number;
+}
 
 /**
  * Fields for creating a structured-spec template. `categoryId` is supplied by
@@ -237,36 +255,126 @@ export class AttributeDefinitionRepository {
   }
 
   /**
-   * Collect the DISTINCT spec values currently in use for a set of definition
-   * keys among ACTIVE, non-deleted products in a set of categories (the subtree)
-   * — TASK-191 facet options. Matched by definition `key` (not id) so values
-   * assigned against an ancestor's definition and a leaf's override of the same
-   * key are pooled together. Returns a Map keyed by definition key, each value
-   * list sorted ascending.
+   * Count the products behind every spec value in use for a set of definition
+   * keys, over the slice of the catalogue the listing would currently return
+   * (TASK-489, owner decision B-10 §4 — «Силікон (12)»).
+   *
+   * Matched by definition `key` (not id) so values assigned against an
+   * ancestor's definition and a leaf's override of the same key are pooled
+   * together, exactly as the `?specs=` filter pools them. Values are returned
+   * ascending; a value NO product in the slice carries is simply absent, which
+   * is what «нульові значення ховаються» means — a facet never offers a tick
+   * that leads to an empty page.
+   *
+   * ── Why one query per SELECTED facet ────────────────────────────────────────
+   * A facet's own selection must NOT narrow its own counts. With
+   * `material:Силікон` ticked, counting «TPU» under the full filter set yields
+   * zero — no product is both — so every other value in that facet would
+   * collapse and the facet would become un-changeable: the shopper could add
+   * values but never swap one. So facet X is counted with every OTHER filter
+   * applied and X's own `where.AND` entry removed. Facets with nothing selected
+   * share one query, because for them "everything else" IS the full filter set.
+   *
+   * Cost is therefore `1 + 1 + (selected facets)` queries per catalogue page,
+   * capped by `MAX_SPEC_FACETS` at eight; at this catalogue's volume that is the
+   * sizing the owner signed off on.
+   *
+   * @param params the SAME narrowing params the listing runs (subtree ids,
+   * brand, device, price, search, inStock, onSale, visibility), built by the
+   * shared {@link buildProductListWhere} so the two cannot drift apart.
    */
-  async findDistinctValuesByKey(
+  async findValueCountsByKey(
     keys: string[],
-    categoryIds: string[],
-  ): Promise<Map<string, string[]>> {
-    if (keys.length === 0 || categoryIds.length === 0) {
+    params: ProductListWhereParams,
+  ): Promise<Map<string, FacetValueCount[]>> {
+    if (keys.length === 0 || params.categoryIds?.length === 0) {
       return new Map();
     }
-    const rows = await this.prisma.productAttributeValue.findMany({
-      where: {
-        definition: { key: { in: keys } },
-        product: { categoryId: { in: categoryIds }, isActive: true, deletedAt: null },
-      },
-      select: { value: true, definition: { select: { key: true } } },
-      orderBy: { value: 'asc' },
-    });
 
-    const byKey = new Map<string, Set<string>>();
-    for (const row of rows) {
-      const bucket = byKey.get(row.definition.key) ?? new Set<string>();
-      bucket.add(row.value);
-      byKey.set(row.definition.key, bucket);
+    // definitionId → key. `productAttributeValue` carries only the id, and
+    // Prisma's `groupBy` can group by scalar columns of the model alone, so the
+    // key has to be resolved here rather than joined in. One indexed read of a
+    // table with one row per (category, spec) — the catalogue's smallest.
+    const definitions = await this.prisma.attributeDefinition.findMany({
+      where: { key: { in: keys } },
+      select: { id: true, key: true },
+    });
+    if (definitions.length === 0) {
+      return new Map();
     }
-    return new Map([...byKey.entries()].map(([k, set]) => [k, [...set]]));
+    const keyByDefinitionId = new Map(definitions.map((def) => [def.id, def.key]));
+    const definitionIdsByKey = new Map<string, string[]>();
+    for (const def of definitions) {
+      definitionIdsByKey.set(def.key, [...(definitionIdsByKey.get(def.key) ?? []), def.id]);
+    }
+
+    // Resolved ONCE and reused by every counting query below — the on-sale set
+    // does not depend on which facet is being excluded.
+    const onSaleIds = params.onSale ? await this.findOnSaleProductIds() : undefined;
+
+    const selectedKeys = new Set((params.specFilters ?? []).map((facet) => facet.key));
+    const unselectedKeys = keys.filter((key) => !selectedKeys.has(key));
+
+    const counts = new Map<string, Map<string, number>>();
+
+    const tally = async (countedKeys: string[], whereParams: ProductListWhereParams) => {
+      const definitionIds = countedKeys.flatMap((key) => definitionIdsByKey.get(key) ?? []);
+      if (definitionIds.length === 0) {
+        return;
+      }
+      const rows = await this.prisma.productAttributeValue.groupBy({
+        by: ['definitionId', 'value'],
+        where: {
+          definitionId: { in: definitionIds },
+          product: buildProductListWhere(whereParams, onSaleIds),
+        },
+        _count: { productId: true },
+        orderBy: { value: 'asc' },
+      });
+
+      for (const row of rows) {
+        const key = keyByDefinitionId.get(row.definitionId);
+        if (key === undefined) continue;
+        const bucket = counts.get(key) ?? new Map<string, number>();
+        // Summing rather than replacing: two definitions may share a key (an
+        // ancestor's and a leaf's override of it) and both be in use in this
+        // subtree. `@@unique([productId, definitionId])` means one product
+        // contributes at most one row PER definition, so the only way to
+        // double-count a product here is for it to carry the same key twice —
+        // which the spec editor, writing against the EFFECTIVE definition of a
+        // key, does not produce.
+        bucket.set(row.value, (bucket.get(row.value) ?? 0) + row._count.productId);
+        counts.set(key, bucket);
+      }
+    };
+
+    await Promise.all([
+      tally(unselectedKeys, params),
+      // Each selected facet counted WITHOUT itself — see the note above.
+      ...[...selectedKeys]
+        .filter((key) => keys.includes(key))
+        .map((key) =>
+          tally([key], {
+            ...params,
+            specFilters: (params.specFilters ?? []).filter((facet) => facet.key !== key),
+          }),
+        ),
+    ]);
+
+    return new Map(
+      [...counts.entries()].map(([key, bucket]) => [
+        key,
+        [...bucket.entries()]
+          .map(([value, count]) => ({ value, count }))
+          .sort((a, b) => (a.value < b.value ? -1 : a.value > b.value ? 1 : 0)),
+      ]),
+    );
+  }
+
+  /** The on-sale id prefetch of the shared listing where-builder (TASK-179). */
+  private async findOnSaleProductIds(): Promise<string[]> {
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(ON_SALE_PRODUCT_IDS_SQL);
+    return rows.map((row) => row.id);
   }
 
   /**

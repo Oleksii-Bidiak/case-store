@@ -22,6 +22,7 @@ import {
   clearFilterUpdates,
   hasActiveFilters as computeHasActiveFilters,
 } from "../model/active-filters";
+import { toFacetQueryParams } from "../model/facet-query";
 import { SearchInput } from "./search-input";
 import { BrandFilter } from "./brand-filter";
 import { DeviceModelFilter } from "./device-model-filter";
@@ -179,6 +180,10 @@ export function ProductFilters({
   const hasBrands = (brandsData?.data.length ?? 0) > 0;
   const { data: specsData } = useCategoryControllerGetFilterableSpecs(
     categoryId ?? "",
+    // The SAME params `SpecFacets` sends (TASK-489), or this gate would fetch a
+    // second, differently-keyed copy of the facet list — and could then open a
+    // disclosure onto a control that self-hides because its own list is narrower.
+    toFacetQueryParams(currentParams),
     { query: { enabled: collapsible && Boolean(categoryId) } },
   );
   const hasSpecs = Boolean(categoryId) && (specsData?.data.length ?? 0) > 0;
@@ -362,7 +367,7 @@ export function ProductFilters({
           dict.filters.specsTitle,
           <SpecFacets
             categoryId={categoryId}
-            specs={currentParams.specs}
+            currentParams={currentParams}
             onFilterChange={onFilterChange}
             idPrefix={idPrefix}
             cardClassName=""
@@ -373,7 +378,7 @@ export function ProductFilters({
       ) : (
         <SpecFacets
           categoryId={categoryId}
-          specs={currentParams.specs}
+          currentParams={currentParams}
           onFilterChange={onFilterChange}
           idPrefix={idPrefix}
         />

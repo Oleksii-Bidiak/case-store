@@ -12,6 +12,7 @@ import {
   removeSpecValue,
 } from "../model/spec-facet";
 import { clearFilterUpdates } from "../model/active-filters";
+import { toFacetQueryParams } from "../model/facet-query";
 
 interface ActiveFilterChipsProps {
   currentParams: ProductControllerFindAllParams;
@@ -49,6 +50,10 @@ export function ActiveFilterChips({
   // until there is both a category and something selected to label.
   const { data: facetsData } = useCategoryControllerGetFilterableSpecs(
     categoryId ?? "",
+    // The SAME params the sidebar sends (TASK-489) — the labels come free off
+    // the request it already makes, and a different param set here would be a
+    // second request fetching the same definitions.
+    toFacetQueryParams(currentParams),
     {
       query: { enabled: Boolean(categoryId) && Boolean(currentParams.specs) },
     },

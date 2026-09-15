@@ -32,7 +32,9 @@ function facet(
       isFilterable: true,
       sortOrder: 0,
     },
-    values,
+    // Counted since TASK-489 — the chips row reads only the definition, but the
+    // fixture must still be the shape the endpoint actually returns.
+    values: values.map((value, index) => ({ value, count: index + 1 })),
   };
 }
 

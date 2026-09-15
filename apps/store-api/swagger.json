@@ -5208,6 +5208,86 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Active brand (manufacturer) SLUG — `?brand=apple` (TASK-420).",
+            "schema": {
+              "example": "apple",
+              "type": "string"
+            }
+          },
+          {
+            "name": "device",
+            "required": false,
+            "in": "query",
+            "description": "Active compatible device-model SLUG — `?device=iphone-15` (TASK-420).",
+            "schema": {
+              "example": "iphone-15",
+              "type": "string"
+            }
+          },
+          {
+            "name": "minPrice",
+            "required": false,
+            "in": "query",
+            "description": "Active minimum price filter",
+            "schema": {
+              "example": "10.00",
+              "type": "number"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "required": false,
+            "in": "query",
+            "description": "Active maximum price filter",
+            "schema": {
+              "example": "100.00",
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Active keyword search",
+            "schema": {
+              "example": "чохол",
+              "type": "string"
+            }
+          },
+          {
+            "name": "specs",
+            "required": false,
+            "in": "query",
+            "description": "Active structured-spec selection — `key:v1,v2;key2:v3`, the same grammar as the listing's `specs`. Each facet is counted with its OWN selection removed, so ticking a second value in a facet a shopper is already filtering by stays possible.",
+            "schema": {
+              "example": "material:Силікон,TPU;case-type:Накладка",
+              "type": "string"
+            }
+          },
+          {
+            "name": "inStock",
+            "required": false,
+            "in": "query",
+            "description": "Active «В наявності» filter — `stock > 0` (TASK-414).",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "onSale",
+            "required": false,
+            "in": "query",
+            "description": "Active on-sale filter (compareAtPrice > price), TASK-179.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5222,7 +5302,7 @@
             }
           }
         },
-        "summary": "List a category's filterable spec facets",
+        "summary": "List a category's filterable spec facets with product counts",
         "tags": [
           "Categories"
         ]
@@ -17987,6 +18067,25 @@
           }
         }
       },
+      "FacetValueCountEntity": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The stored spec value, as it appears in `?specs=`",
+            "example": "TPU"
+          },
+          "count": {
+            "type": "number",
+            "description": "Products in the current slice carrying this value (never 0)",
+            "example": 12
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ]
+      },
       "FilterableSpecEntity": {
         "type": "object",
         "properties": {
@@ -17994,14 +18093,10 @@
             "$ref": "#/components/schemas/AttributeDefinitionEntity"
           },
           "values": {
-            "description": "Distinct values in use for this spec within the category subtree",
-            "example": [
-              "Силікон",
-              "Шкіра"
-            ],
+            "description": "Values in use for this spec within the current catalogue slice, each with the number of products behind it. Ascending by value; never empty and never a zero count.",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/FacetValueCountEntity"
             }
           }
         },

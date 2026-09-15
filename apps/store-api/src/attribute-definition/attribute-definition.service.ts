@@ -11,12 +11,15 @@ import {
 } from './attribute-definition.repository';
 import { FACETABLE_TYPES, isFacetableType } from './attribute-definition.constants';
 import { CategoryRepository } from '../category';
+import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
+import { parseSpecFilters } from '../product/dto/product-list-query.dto';
 import { reorderErrorToHttp } from '../common/reorder';
 import { AttributeDefinitionEntity, FilterableSpecEntity } from './entities';
 import {
   CreateAttributeDefinitionDto,
   UpdateAttributeDefinitionDto,
   ReorderAttributeDefinitionsDto,
+  FilterableSpecsQueryDto,
 } from './dto';
 
 /**
@@ -30,6 +33,9 @@ export class AttributeDefinitionService {
   constructor(
     private readonly repository: AttributeDefinitionRepository,
     private readonly categoryRepository: CategoryRepository,
+    // Slug → id for the facet endpoint's `?brand=&device=` (TASK-420/489).
+    // Provided, not imported as a module, exactly as `ProductModule` does it.
+    private readonly catalogueFilters: CatalogueFilterResolver,
   ) {}
 
   /** List a category's OWN templates (not inherited ones), for the admin editor. */
@@ -69,18 +75,58 @@ export class AttributeDefinitionService {
    * but it was always true of every inherited spec. An empty facet renders as a
    * filter control a shopper can open and find nothing in, which reads as a
    * broken page rather than as "no such filter here".
+   *
+   * Since TASK-489 the values are not the definition's declared `options` and
+   * not even the subtree's distinct values, but the values IN THE CURRENT SLICE
+   * with their product counts — «Силікон (12)», where 12 accounts for the brand,
+   * device, price, search, availability and other-facet filters `query` carries.
+   * Two consequences, both deliberate:
+   *   - a value nothing in the slice carries is ABSENT, not shown at zero: the
+   *     old behaviour let a shopper tick «TPU» and land on an empty page, and
+   *     that is the defect this task removes;
+   *   - each facet is counted with its OWN selection lifted, which is why the
+   *     repository takes the whole filter set rather than a ready-made `where`.
+   *     Counting «TPU» under `material:Силікон` would give zero for every value
+   *     but the ticked one, and the facet could then never be changed, only
+   *     added to.
    */
-  async getFilterableSpecs(categoryId: string): Promise<FilterableSpecEntity[]> {
+  async getFilterableSpecs(
+    categoryId: string,
+    query: FilterableSpecsQueryDto = {},
+  ): Promise<FilterableSpecEntity[]> {
     const effective = await this.repository.findEffectiveForCategory(categoryId);
     const filterable = effective.filter((def) => def.isFilterable && isFacetableType(def.type));
     if (filterable.length === 0) {
       return [];
     }
 
-    const subtreeIds = await this.categoryRepository.findSubtreeIds(categoryId);
-    const valuesByKey = await this.repository.findDistinctValuesByKey(
+    const [subtreeIds, filters] = await Promise.all([
+      this.categoryRepository.findSubtreeIds(categoryId),
+      // Slug → id, the same resolution the listing does (TASK-420): the
+      // repositories below never learn what a slug is.
+      this.catalogueFilters.resolve({ brand: query.brand, device: query.device }),
+    ]);
+
+    const valuesByKey = await this.repository.findValueCountsByKey(
       filterable.map((def) => def.key),
-      subtreeIds,
+      {
+        categoryIds: subtreeIds,
+        brandId: filters.brandId,
+        deviceModelId: filters.deviceModelId,
+        minPrice: query.minPrice,
+        maxPrice: query.maxPrice,
+        search: query.search,
+        specFilters: parseSpecFilters(query.specs),
+        inStock: query.inStock,
+        onSale: query.onSale,
+        // The public visibility rules, spelled the way `ProductService.findAll`
+        // spells them: only positions on sale (TASK-230), only in categories on
+        // sale (TASK-297), never a tombstone (TASK-427). A count that ignored
+        // any of the three would promise products the listing then refuses.
+        isActive: true,
+        categoryActiveOnly: true,
+        deleted: false,
+      },
     );
 
     return filterable

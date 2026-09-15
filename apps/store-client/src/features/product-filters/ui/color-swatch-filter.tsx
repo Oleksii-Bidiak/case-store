@@ -1,13 +1,19 @@
 "use client";
 
 import { Check } from "lucide-react";
+import type { FacetValueCountEntity } from "@/entities/category";
+import { dict } from "@/shared/config";
 import { colorSwatch } from "@/shared/lib";
 
 interface ColorSwatchFilterProps {
   /** Ids are built by the caller so the facet's `<fieldset>` can own the prefix. */
   idPrefix: string;
-  /** Every colour offered by this category, in the order the API returned them. */
-  values: string[];
+  /**
+   * Every colour offered in the CURRENT catalogue slice, each with the number of
+   * products behind it (TASK-489), in the order the API returned them. A colour
+   * nothing in the slice carries is not in this list at all.
+   */
+  values: FacetValueCountEntity[];
   /** Colours currently ticked in the URL. */
   selected: string[];
   onToggle: (value: string) => void;
@@ -46,7 +52,7 @@ export function ColorSwatchFilter({
 }: ColorSwatchFilterProps) {
   return (
     <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto overscroll-contain py-0.5">
-      {values.map((value) => {
+      {values.map(({ value, count }) => {
         const swatch = colorSwatch(value);
         const isSelected = selected.includes(value);
         const id = `${idPrefix}-${value}`;
@@ -89,6 +95,18 @@ export function ColorSwatchFilter({
               )}
             </span>
             <span className="min-w-0 truncate">{value}</span>
+            {/* Same split as `FilterCheckbox`: digits for the eye, a spoken
+                quantity for the screen reader, both inside the `<label>` so the
+                count is part of the control's accessible name. */}
+            <span
+              aria-hidden="true"
+              className="shrink-0 font-mono text-xs text-muted-foreground"
+            >
+              {dict.filters.facetCount(count)}
+            </span>
+            <span className="sr-only">
+              {dict.filters.facetCountAria(count)}
+            </span>
           </label>
         );
       })}
