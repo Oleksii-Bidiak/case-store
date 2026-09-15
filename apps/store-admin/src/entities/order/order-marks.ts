@@ -72,9 +72,53 @@ const SETTLED_PAYMENT_STATUSES: ReadonlyArray<OrderEntityPaymentStatus> = [
   OrderEntityPaymentStatus.REFUNDED,
 ];
 
+/**
+ * Payment methods whose reservation runs on a clock.
+ *
+ * Mirrors the server twin exactly — `resolveReservationDeadline` gives a
+ * deadline to everything except ON_DELIVERY, and `findExpiredReservations`
+ * cancels on `IN (ONLINE, INSTALLMENTS)`. Listed rather than written as
+ * `!== ON_DELIVERY` so a sixth method has to be considered here deliberately
+ * instead of silently inheriting a countdown.
+ */
+const TIMED_RESERVATION_METHODS: ReadonlyArray<OrderEntityPaymentMethod> = [
+  OrderEntityPaymentMethod.ONLINE,
+  OrderEntityPaymentMethod.INSTALLMENTS,
+];
+
 /** Whole minutes left on a reservation; never negative. */
 export function minutesUntil(deadline: string, now: number): number {
   return Math.max(0, Math.ceil((Date.parse(deadline) - now) / 60_000));
+}
+
+/**
+ * What «Борг» should actually say — the total minus whatever went back.
+ *
+ * The mark fires for every unsettled payment status, PARTIALLY_REFUNDED
+ * included, and that is the catalogue's wording, not an oversight (B-1 §1: an
+ * open money question is worth showing). The AMOUNT was the oversight: it was
+ * always `total`, so a fully paid order with one line refunded rendered «Борг
+ * 12 000 ₴» beside «Повернуто 1 200 ₴ з 12 000 ₴» — two numbers on one card,
+ * neither of which anyone owed (review of plan 180).
+ *
+ * Subtracted in integer kopiykas so 1 200,10 does not become 1 200,099999.
+ * `refundedTotal` absent means the read did not join the returns, and then the
+ * honest answer is the total: inventing a smaller debt from a measurement we do
+ * not have would be the same class of lie in the other direction. Clamped at
+ * zero — an over-refund is a different problem and must not print a negative
+ * debt.
+ */
+function outstandingAmount(
+  total: string,
+  refundedTotal?: string | null,
+): number {
+  const totalKop = Math.round(Number(total) * 100);
+  if (refundedTotal == null) return totalKop / 100;
+
+  const refundedKop = Math.round(Number(refundedTotal) * 100);
+  if (!Number.isFinite(refundedKop)) return totalKop / 100;
+
+  return Math.max(0, totalKop - refundedKop) / 100;
 }
 
 export function orderDerivedMarks(
@@ -87,13 +131,20 @@ export function orderDerivedMarks(
   // as unsettled here, exactly as the catalogue states it (∉ {PAID, REFUNDED}):
   // the operator still has an open money question on that order, and the whole
   // point of the mark is that it is visible rather than correct-by-omission.
+  //
+  // The amount, though, is the total MINUS what went back — see
+  // `outstandingAmount`. Showing the full total on a partially refunded order
+  // printed a debt nobody had, right next to the chip that said how much had
+  // been returned (review of plan 180).
   if (
     order.status === OrderEntityStatus.DELIVERED &&
     !SETTLED_PAYMENT_STATUSES.includes(order.paymentStatus)
   ) {
     marks.push({
       kind: "debt",
-      label: dict.orders.markDebt(formatCurrency(order.total)),
+      label: dict.orders.markDebt(
+        formatCurrency(outstandingAmount(order.total, order.refundedTotal)),
+      ),
       variant: "destructive",
     });
   }
@@ -101,8 +152,14 @@ export function orderDerivedMarks(
   // «Очікує оплати · N хв» / «Резерв сплив» — the same triple on either side of
   // the deadline. A null deadline is neither: an order with no timed reservation
   // is not waiting for one to run out.
+  //
+  // The method test is a SET, not `=== ONLINE` (review of plan 180). BNPL orders
+  // get a deadline too — `resolveReservationDeadline` excludes only ON_DELIVERY,
+  // and `findExpiredReservations` cancels on `paymentMethod IN (ONLINE,
+  // INSTALLMENTS)` — so an `=== ONLINE` chip meant the one class of order the
+  // worker will silently cancel was the one class with no warning on screen.
   if (
-    order.paymentMethod === OrderEntityPaymentMethod.ONLINE &&
+    TIMED_RESERVATION_METHODS.includes(order.paymentMethod) &&
     order.paymentStatus === OrderEntityPaymentStatus.PENDING &&
     order.reservationExpiresAt
   ) {

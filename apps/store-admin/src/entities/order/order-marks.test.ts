@@ -165,6 +165,34 @@ describe("orderDerivedMarks — the reservation window (TASK-471)", () => {
     ).toEqual([]);
   });
 
+  it("counts down a BNPL order too — the worker cancels those on the same clock", () => {
+    // `resolveReservationDeadline` excludes only ON_DELIVERY, and
+    // `findExpiredReservations` cancels on IN (ONLINE, INSTALLMENTS). An
+    // `=== ONLINE` chip meant the one class of order that gets auto-cancelled was
+    // the one class with no warning anywhere on screen (review of plan 180).
+    expect(
+      kinds(
+        buildOrder({
+          paymentMethod: OrderEntityPaymentMethod.INSTALLMENTS,
+          paymentStatus: OrderEntityPaymentStatus.PENDING,
+          reservationExpiresAt: "2026-09-14T12:23:00.000Z",
+        }),
+      ),
+    ).toEqual(["awaitingPayment"]);
+  });
+
+  it("marks a BNPL reservation as expired once its deadline passes", () => {
+    expect(
+      kinds(
+        buildOrder({
+          paymentMethod: OrderEntityPaymentMethod.INSTALLMENTS,
+          paymentStatus: OrderEntityPaymentStatus.PENDING,
+          reservationExpiresAt: "2026-09-14T11:59:00.000Z",
+        }),
+      ),
+    ).toEqual(["reservationExpired"]);
+  });
+
   it("marks neither state for a cash-on-delivery order", () => {
     // A courier-paid order is unpaid until the parcel is handed over; it is not
     // waiting for a payment window to close.
@@ -248,6 +276,57 @@ describe("orderDerivedMarks — the marks coexist", () => {
         }),
       ),
     ).toEqual(["debt", "partiallyRefunded"]);
+  });
+
+  it("states the debt as what is left, not as the whole order", () => {
+    // The chip FIRING on a partially refunded order is the catalogue's wording.
+    // The AMOUNT was not: it was always `total`, so this card showed «Борг
+    // 1 200 ₴» beside «Повернуто 499 ₴ з 1 200 ₴» — two figures, neither of them
+    // a debt anyone had (review of plan 180). 1200 − 499 = 701.
+    const marks = orderDerivedMarks(
+      buildOrder({
+        status: OrderEntityStatus.DELIVERED,
+        paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
+        refundedTotal: "499.00",
+        total: "1200.00",
+      }),
+      NOW,
+    );
+
+    const debt = marks.find((mark) => mark.kind === "debt");
+    expect(debt?.label).toContain("701");
+    expect(debt?.label).not.toContain("1 200");
+  });
+
+  it("falls back to the total when the read did not measure the refunds", () => {
+    // `refundedTotal` absent means "not measured". Inventing a smaller debt from
+    // a measurement we do not have is the same lie in the other direction.
+    const marks = orderDerivedMarks(
+      buildOrder({
+        status: OrderEntityStatus.DELIVERED,
+        paymentStatus: OrderEntityPaymentStatus.PENDING,
+        total: "1200.00",
+      }),
+      NOW,
+    );
+
+    expect(marks.find((mark) => mark.kind === "debt")?.label).toContain("200");
+  });
+
+  it("never prints a negative debt when more went back than came in", () => {
+    const marks = orderDerivedMarks(
+      buildOrder({
+        status: OrderEntityStatus.DELIVERED,
+        paymentStatus: OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
+        refundedTotal: "1500.00",
+        total: "1200.00",
+      }),
+      NOW,
+    );
+
+    expect(marks.find((mark) => mark.kind === "debt")?.label).not.toContain(
+      "-",
+    );
   });
 
   it("reports nothing at all for an ordinary, healthy order", () => {

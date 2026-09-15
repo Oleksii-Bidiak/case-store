@@ -239,9 +239,10 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
 
   @ApiProperty({
     description:
-      'Filter to card orders still within their payment window — paymentMethod = ONLINE AND ' +
-      'paymentStatus = PENDING AND reservationExpiresAt in the future. The ' +
-      '«Очікує оплати · N хв» mark (TASK-471).',
+      'Filter to orders still within their payment window — paymentMethod IN (ONLINE, ' +
+      'INSTALLMENTS) AND paymentStatus = PENDING AND reservationExpiresAt in the future. ' +
+      'The «Очікує оплати · N хв» mark (TASK-471). BNPL is included because it holds a ' +
+      'timed reservation too and the auto-cancel worker acts on the same set.',
     example: true,
     required: false,
   })
@@ -257,7 +258,7 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
 
   @ApiProperty({
     description:
-      'Filter to card orders whose payment window has closed — the same triple as ' +
+      'Filter to orders whose payment window has closed — the same triple as ' +
       '`awaitingPayment` with `reservationExpiresAt` in the past. The «Резерв сплив» mark ' +
       '(TASK-471). Deliberately a separate flag, not a tri-state: the two are opposite ' +
       'answers to the same question and an operator acts differently on each.',

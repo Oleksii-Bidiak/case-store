@@ -1520,11 +1520,11 @@ describe('OrderRepository', () => {
       });
     });
 
-    it('«Очікує оплати» is an ONLINE PENDING order whose deadline is still ahead', async () => {
+    it('«Очікує оплати» is a timed-reservation PENDING order whose deadline is still ahead', async () => {
       const where = await whereFor({ awaitingPayment: true });
 
       expect(where.AND).toContainEqual({
-        paymentMethod: PaymentMethod.ONLINE,
+        paymentMethod: { in: [PaymentMethod.ONLINE, PaymentMethod.INSTALLMENTS] },
         paymentStatus: PaymentStatus.PENDING,
         reservationExpiresAt: { gt: NOW },
       });
@@ -1534,10 +1534,23 @@ describe('OrderRepository', () => {
       const where = await whereFor({ reservationExpired: true });
 
       expect(where.AND).toContainEqual({
-        paymentMethod: PaymentMethod.ONLINE,
+        paymentMethod: { in: [PaymentMethod.ONLINE, PaymentMethod.INSTALLMENTS] },
         paymentStatus: PaymentStatus.PENDING,
         reservationExpiresAt: { lte: NOW },
       });
+    });
+
+    it('includes BNPL — the worker cancels those too, so they must be visible', async () => {
+      // `resolveReservationDeadline` gives INSTALLMENTS a deadline and
+      // `findExpiredReservations` cancels on IN (ONLINE, INSTALLMENTS). Filtering
+      // on `= ONLINE` hid exactly the orders about to be auto-cancelled (review
+      // of plan 180).
+      const where = await whereFor({ awaitingPayment: true });
+
+      const methods = (where.AND as Array<Record<string, { in?: unknown[] }>>)
+        .map((clause) => clause.paymentMethod)
+        .filter(Boolean);
+      expect(methods[0]?.in).toContain(PaymentMethod.INSTALLMENTS);
     });
 
     it('splits the reservation window at ONE instant, not two', async () => {

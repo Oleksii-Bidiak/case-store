@@ -251,6 +251,24 @@ const DEFAULT_LIMIT = 10;
  */
 const SEARCH_PHONE_MIN_DIGITS = 3;
 
+/**
+ * The payment methods whose stock reservation runs on a clock (review of plan
+ * 180).
+ *
+ * Kept as one list so the two mark filters below, `resolveReservationDeadline`
+ * (which gives a deadline to everything but ON_DELIVERY) and
+ * `PaymentRepository.findExpiredReservations` (which cancels on this exact set)
+ * cannot drift. They did: the filters were written as `= ONLINE` while the
+ * worker already cancelled INSTALLMENTS too, so a BNPL order was auto-cancelled
+ * without ever having shown «Очікує оплати» or «Резерв сплив» to anyone.
+ */
+// Mutable on purpose: Prisma's generated `in` filter takes `PaymentMethod[]`
+// and refuses a `readonly` array. Copied at each use site below.
+const TIMED_RESERVATION_METHODS: PaymentMethod[] = [
+  PaymentMethod.ONLINE,
+  PaymentMethod.INSTALLMENTS,
+];
+
 @Injectable()
 export class OrderRepository {
   private readonly logger = new Logger(OrderRepository.name);
@@ -819,16 +837,21 @@ export class OrderRepository {
     // Rows with a NULL deadline match neither comparison — correct: an order with
     // no timed reservation is in neither state.
     const now = new Date();
+    // The method test is a SET, not `= ONLINE` (review of plan 180): BNPL orders
+    // carry a deadline as well (`resolveReservationDeadline` excludes only
+    // ON_DELIVERY) and `findExpiredReservations` cancels them on
+    // `IN (ONLINE, INSTALLMENTS)`. An ONLINE-only filter hid exactly the orders
+    // the worker was about to cancel.
     if (query.awaitingPayment) {
       and.push({
-        paymentMethod: PaymentMethod.ONLINE,
+        paymentMethod: { in: [...TIMED_RESERVATION_METHODS] },
         paymentStatus: PaymentStatus.PENDING,
         reservationExpiresAt: { gt: now },
       });
     }
     if (query.reservationExpired) {
       and.push({
-        paymentMethod: PaymentMethod.ONLINE,
+        paymentMethod: { in: [...TIMED_RESERVATION_METHODS] },
         paymentStatus: PaymentStatus.PENDING,
         reservationExpiresAt: { lte: now },
       });
