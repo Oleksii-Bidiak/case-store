@@ -28,6 +28,7 @@ import { CategoryModule } from './category';
 import { BrandModule } from './brand';
 import { AddonServiceModule } from './addon-service';
 import { DeviceModule } from './device';
+import { CatalogLandingModule } from './catalog-landing';
 import { AttributeDefinitionModule } from './attribute-definition';
 import { PagesModule } from './pages';
 import { BlogModule } from './blog';
@@ -207,6 +208,9 @@ import { buildPinoHttpOptions } from './config/pino.config';
 
     // Device-compatibility taxonomy (device brands/models + compat, TASK-190)
     DeviceModule,
+
+    // Category × device-model SEO landing pages (TASK-490)
+    CatalogLandingModule,
 
     // Structured-spec templates (TASK-191)
     AttributeDefinitionModule,

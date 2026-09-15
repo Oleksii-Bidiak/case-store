@@ -70,6 +70,27 @@ describe("catalog active-filter helpers", () => {
     expect(countActiveFilters(params, { includeCategory: false })).toBe(1);
   });
 
+  // TASK-490 — on a compat landing page the device is the second URL SEGMENT,
+  // not a filter the drawer can change; badging it would promise a control the
+  // panel does not render.
+  it("excludes the device when the route owns it", () => {
+    const params = {
+      page: 1,
+      limit: 20,
+      category: "chohly",
+      device: "iphone-15-pro",
+      brand: "apple",
+    };
+
+    expect(countActiveFilters(params)).toBe(3);
+    expect(
+      countActiveFilters(params, {
+        includeCategory: false,
+        includeDevice: false,
+      }),
+    ).toBe(1);
+  });
+
   it("treats an empty string as no filter", () => {
     expect(
       countActiveFilters({ page: 1, limit: 20, search: "", specs: "" }),
@@ -103,6 +124,21 @@ describe("catalog active-filter helpers", () => {
       expect("category" in updates).toBe(false);
       expect(updates.specs).toBeUndefined();
       expect("inStock" in updates).toBe(true);
+    });
+
+    // TASK-490 — `/catalog/[category]/[device]` locks BOTH taxonomy segments.
+    // A reset that dropped the device would leave the page listing the whole
+    // category under an «… для iPhone 15 Pro» heading.
+    it("keeps the device out of the updates when the route owns it", () => {
+      const updates = clearFilterUpdates({
+        includeCategory: false,
+        includeDevice: false,
+      });
+
+      expect("device" in updates).toBe(false);
+      expect("category" in updates).toBe(false);
+      expect("brand" in updates).toBe(true);
+      expect("specs" in updates).toBe(true);
     });
 
     // A reset that does not clear everything the panel can set is the exact

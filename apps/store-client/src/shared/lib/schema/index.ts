@@ -18,3 +18,5 @@ export {
   flattenActiveCategories,
 } from "./fetchAllCategories";
 export type { FlatCategoryRoute } from "./fetchAllCategories";
+export { fetchAllCompatLandingPages } from "./fetchCompatLandingPages";
+export type { CompatLandingRoute } from "./fetchCompatLandingPages";

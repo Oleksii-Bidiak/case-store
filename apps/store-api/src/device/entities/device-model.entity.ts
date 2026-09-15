@@ -48,6 +48,40 @@ export class DeviceModelEntity {
   @ApiProperty({ description: 'Whether the model is active and publicly visible', example: true })
   isActive!: boolean;
 
+  /**
+   * Admin SEO/copy overrides for the compatibility landing page (TASK-490).
+   * Null means "no override" — the storefront renders its generated template
+   * («Чохли для iPhone 15 Pro») instead. Exposed on the PUBLIC entity on
+   * purpose: the only consumer is the public landing page's `<head>`, and
+   * everything in these three fields is written to be published.
+   */
+  @ApiProperty({
+    description: 'Admin override for the compatibility landing page <title> (null = generated)',
+    example: 'Чохли для iPhone 15 Pro — купити в MobileStore',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  metaTitle!: string | null;
+
+  @ApiProperty({
+    description: 'Admin override for the landing page meta description (null = generated)',
+    example: 'Понад 40 чохлів для iPhone 15 Pro: силікон, шкіра, MagSafe.',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  metaDescription!: string | null;
+
+  @ApiProperty({
+    description: 'Admin override for the landing page lead paragraph under the H1',
+    example: 'Усі чохли, що точно сідають на iPhone 15 Pro.',
+    type: String,
+    nullable: true,
+    required: false,
+  })
+  description!: string | null;
+
   @ApiProperty({
     description: 'Owning device brand name (when the brand relation is loaded)',
     example: 'Apple',
@@ -67,6 +101,9 @@ export class DeviceModelEntity {
     series: string | null;
     releaseYear: number | null;
     isActive: boolean;
+    metaTitle?: string | null;
+    metaDescription?: string | null;
+    description?: string | null;
     brand?: { name: string } | null;
   }): DeviceModelEntity {
     const entity = new DeviceModelEntity();
@@ -77,6 +114,12 @@ export class DeviceModelEntity {
     entity.series = model.series;
     entity.releaseYear = model.releaseYear;
     entity.isActive = model.isActive;
+    // `?? null` rather than a plain copy: the mapper is also fed by narrowed
+    // `select`s (and by unit-test fixtures) that predate TASK-490 and carry no
+    // such key at all — an absent override and a cleared one are the same thing.
+    entity.metaTitle = model.metaTitle ?? null;
+    entity.metaDescription = model.metaDescription ?? null;
+    entity.description = model.description ?? null;
     if (model.brand) {
       entity.brandName = model.brand.name;
     }

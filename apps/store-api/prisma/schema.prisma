@@ -1391,6 +1391,25 @@ model DeviceModel {
   releaseYear   Int?        @map("release_year")
   isActive      Boolean     @default(true) @map("is_active")
 
+  /// Admin-editable copy for the compatibility landing page
+  /// `/catalog/<категорія>/<модель>` (TASK-490, plan 182 F3). The page's texts
+  /// are GENERATED from a dictionary template («Чохли для iPhone 15 Pro») and
+  /// these three fields OVERRIDE that template field by field — the same
+  /// nullable admin-override shape `Category` has carried since TASK-236, and
+  /// the same precedence (an admin value beats the generated one).
+  ///
+  /// They hang off the DEVICE and not off the pair because the pair has no row
+  /// to hang anything on: a landing page exists exactly while some active
+  /// product of that category is compatible with this model. One model's copy
+  /// is therefore shared by every category page it appears on — the right
+  /// granularity for "iPhone 15 Pro", which is the half of the title that is
+  /// actually the search query.
+  metaTitle       String? @map("meta_title")
+  metaDescription String? @map("meta_description")
+  /// On-page lead paragraph under the H1 — NOT the meta description. Null falls
+  /// back to the generated subtitle.
+  description     String?
+
   compat ProductDeviceCompat[]
 
   @@index([deviceBrandId])

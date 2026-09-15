@@ -1,12 +1,15 @@
 /**
  * Listing canonical/noindex policy (plan 143, Decisions 1–4). One pure rule for
- * every catalog listing route (`/products`, `/categories/[slug]`):
+ * every catalog listing route (`/products`, `/categories/[slug]`, and since
+ * TASK-490 `/catalog/[category]/[device]`):
  *
  * 1. Sort params (`sortBy`/`sortOrder`) never affect canonical or robots — the
  *    helper has no parameter for them at all; callers must not pass them.
  * 2. Any present filter param → `robots: { index: false, follow: true }` and NO
  *    canonical (noindex and canonical are mutually exclusive signals — house
  *    convention, same shape as `/search` and the `noindexSite` kill switch).
+ *    ONE opt-in exception, `filteredCanonicalPath`, for the compatibility
+ *    landing pages, whose consolidation target is a different path (TASK-490).
  * 3. Canonical target: `categoryCanonicalPath` when set and no filter is present
  *    (the `/products?category=` → `/categories/[slug]` redirect), else
  *    `basePath`. Page > 1 appends `?page=N`; page ≤ 1 / invalid is omitted.
@@ -14,8 +17,8 @@
  *    `""` counts as absent, and `onSale` counts only when literally `"true"`.
  *
  * `ListingFilterParams` is a closed, explicit list on purpose: a new filter
- * param added to the API contract must be consciously added here (and at both
- * page call sites) or it visibly escapes the noindex rule at review time.
+ * param added to the API contract must be consciously added here (and at all
+ * three page call sites) or it visibly escapes the noindex rule at review time.
  *
  * Returns a **relative** `canonicalPath` — SITE_URL is a call-site concern,
  * mirroring `resolveSeo()`.
@@ -58,6 +61,25 @@ export interface ListingMetadataInput {
    * `/categories/[slug]`, which is already category-scoped by its own segment.
    */
   categoryCanonicalPath?: string;
+  /**
+   * `/catalog/[category]/[device]` only (TASK-490, owner decision B-10 §5) —
+   * where a FILTERED view of this page consolidates to. When set and a filter is
+   * present, the result carries the `noindex,follow` robots AND this canonical,
+   * which is the one deliberate exception to Decision 2's "never both".
+   *
+   * Why the exception is confined to this route. On `/products` and
+   * `/categories/[slug]` a filtered view's unfiltered twin is the SAME URL minus
+   * the query string, so `noindex,follow` alone is complete: a crawler that
+   * drops the params is already home, and adding a canonical would only restate
+   * it with a second, conflicting signal. On a compatibility landing page the
+   * target the owner chose is a DIFFERENT path — the category — which no amount
+   * of param-stripping reaches, so it has to be named.
+   *
+   * It is NOT the unfiltered compat page itself, deliberately: B-10 §5 draws the
+   * line at one indexable dimension (compatibility), and every other facet
+   * consolidates back onto the category rather than deepening the farm.
+   */
+  filteredCanonicalPath?: string;
 }
 
 export interface ListingMetadataResult {
@@ -103,8 +125,15 @@ export function buildListingMetadata(
 ): ListingMetadataResult {
   // Decision 2 — a filtered view is noindex,follow and gets NO canonical: the
   // two are mutually exclusive signals, never emitted together.
+  //
+  // …unless the route names an explicit consolidation target that param-
+  // stripping cannot reach (`filteredCanonicalPath`, TASK-490) — see its doc
+  // comment for why that is confined to the compatibility landing pages.
   if (hasAnyFilter(input.filters ?? {})) {
-    return { robots: { index: false, follow: true } };
+    const robots = { index: false, follow: true };
+    return input.filteredCanonicalPath
+      ? { robots, canonicalPath: input.filteredCanonicalPath }
+      : { robots };
   }
 
   // Decision 3 — the category landing absorbs the `?category=` view's

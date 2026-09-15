@@ -8198,6 +8198,74 @@
         ]
       }
     },
+    "/api/catalog/compat-pages": {
+      "get": {
+        "operationId": "catalogLandingControllerFindCompatPages",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Compatibility landing pages, sorted by (category slug, device slug)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompatLandingListResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List every existing category × device-model landing page",
+        "tags": [
+          "Catalog"
+        ]
+      }
+    },
+    "/api/catalog/compat-pages/{categorySlug}/{deviceSlug}": {
+      "get": {
+        "operationId": "catalogLandingControllerFindCompatPage",
+        "parameters": [
+          {
+            "name": "categorySlug",
+            "required": true,
+            "in": "path",
+            "description": "Category slug",
+            "schema": {
+              "example": "chohly",
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceSlug",
+            "required": true,
+            "in": "path",
+            "description": "Device model slug",
+            "schema": {
+              "example": "iphone-15-pro",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The landing page — its existence is the 200 itself",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompatLandingDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such pair, or the pair has no visible products"
+          }
+        },
+        "summary": "Get one category × device-model landing page",
+        "tags": [
+          "Catalog"
+        ]
+      }
+    },
     "/api/pages": {
       "get": {
         "operationId": "PageController_findAll",
@@ -17525,6 +17593,24 @@
             "description": "Whether the model is active and publicly visible",
             "example": true
           },
+          "metaTitle": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page <title> (null = generated)",
+            "example": "Чохли для iPhone 15 Pro — купити в MobileStore",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Admin override for the landing page meta description (null = generated)",
+            "example": "Понад 40 чохлів для iPhone 15 Pro: силікон, шкіра, MagSafe.",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "Admin override for the landing page lead paragraph under the H1",
+            "example": "Усі чохли, що точно сідають на iPhone 15 Pro.",
+            "nullable": true
+          },
           "brandName": {
             "type": "string",
             "description": "Owning device brand name (when the brand relation is loaded)",
@@ -17782,6 +17868,21 @@
             "description": "Whether the model is active and publicly visible",
             "example": true,
             "default": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page <title>",
+            "example": "Чохли для iPhone 15 Pro — купити в MobileStore"
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page meta description",
+            "example": "Понад 40 чохлів для iPhone 15 Pro: силікон, шкіра, MagSafe."
+          },
+          "description": {
+            "type": "string",
+            "description": "Admin override for the landing page lead paragraph under the H1",
+            "example": "Усі чохли, що точно сідають на iPhone 15 Pro."
           }
         },
         "required": [
@@ -17823,6 +17924,24 @@
             "type": "boolean",
             "description": "Whether the model is active and publicly visible",
             "example": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page <title>",
+            "example": "Чохли для iPhone 15 Pro — купити в MobileStore",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page meta description",
+            "example": "Понад 40 чохлів для iPhone 15 Pro: силікон, шкіра, MagSafe.",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "Admin override for the landing page lead paragraph under the H1",
+            "example": "Усі чохли, що точно сідають на iPhone 15 Pro.",
+            "nullable": true
           }
         }
       },
@@ -20741,6 +20860,138 @@
             "example": true
           }
         }
+      },
+      "CompatLandingPageEntity": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Category identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "categorySlug": {
+            "type": "string",
+            "description": "Category slug — the first URL segment",
+            "example": "chohly"
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category display name",
+            "example": "Чохли"
+          },
+          "deviceModelId": {
+            "type": "string",
+            "description": "Device model identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "deviceSlug": {
+            "type": "string",
+            "description": "Device model slug — the second URL segment",
+            "example": "iphone-15-pro"
+          },
+          "deviceName": {
+            "type": "string",
+            "description": "Device model display name",
+            "example": "iPhone 15 Pro"
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Visible products behind this pair (category subtree × model). Always ≥ 1.",
+            "example": 24
+          }
+        },
+        "required": [
+          "categoryId",
+          "categorySlug",
+          "categoryName",
+          "deviceModelId",
+          "deviceSlug",
+          "deviceName",
+          "productCount"
+        ]
+      },
+      "CompatLandingDetailEntity": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Category identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "categorySlug": {
+            "type": "string",
+            "description": "Category slug",
+            "example": "chohly"
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category display name",
+            "example": "Чохли"
+          },
+          "deviceModel": {
+            "description": "The compatible device model, including its admin copy overrides",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeviceModelEntity"
+              }
+            ]
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Visible products on this page. Always ≥ 1.",
+            "example": 24
+          }
+        },
+        "required": [
+          "categoryId",
+          "categorySlug",
+          "categoryName",
+          "deviceModel",
+          "productCount"
+        ]
+      },
+      "CompatLandingListMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Number of existing compatibility landing pages",
+            "example": 312
+          }
+        },
+        "required": [
+          "total"
+        ]
+      },
+      "CompatLandingListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Every (category × device model) pair with at least one visible product",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompatLandingPageEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/CompatLandingListMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "CompatLandingDetailResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompatLandingDetailEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
       },
       "PageEntity": {
         "type": "object",

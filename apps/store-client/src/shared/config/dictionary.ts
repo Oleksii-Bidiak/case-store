@@ -487,6 +487,22 @@ export const dict = {
     categoryFallback: "Категорія",
     categorySubtitle: (name: string) =>
       `Товари з категорії «${name}» — фільтруйте за ціною та сортуйте зручним способом.`,
+    // Compatibility landing pages `/catalog/<категорія>/<модель>` (TASK-490,
+    // owner decision B-10 §5). Templates, not fixed strings: the page has no
+    // copy of its own, it is generated per (категорія × модель) pair. Whatever
+    // an admin types into the device model's own SEO fields WINS over these —
+    // the template is the floor, not the ceiling.
+    //
+    // «Чохли» + «iPhone 15 Pro» → «Чохли для iPhone 15 Pro»: the category name
+    // is already the nominative plural the shop lists it under, which is the
+    // form this phrase needs, so no declension is attempted.
+    compatHeading: (categoryName: string, deviceName: string) =>
+      `${categoryName} для ${deviceName}`,
+    compatSubtitle: (categoryName: string, deviceName: string) =>
+      `Усі товари категорії «${categoryName}», сумісні з ${deviceName}. Фільтруйте за ціною, брендом і характеристиками.`,
+    // Last crumb of the compat page's breadcrumb trail — the device alone, since
+    // the category is the crumb right before it.
+    compatBreadcrumb: (deviceName: string) => deviceName,
     // In-catalog keyword search (`/products?search=…`, distinct from /search).
     searchTitle: (q: string) => `Пошук: «${q}»`,
     searchSubtitle: (q: string) => `Результати каталогу за запитом «${q}».`,
@@ -1774,6 +1790,17 @@ export const dict = {
     categoriesTitle: "Категорії",
     categoriesDescription:
       "Усі категорії товарів магазину — оберіть розділ і перейдіть до потрібних товарів.",
+    // Compatibility landing pages (TASK-490). The <title>/description twin of
+    // `catalog.compatHeading`/`compatSubtitle`: same pair, phrased for a SERP
+    // snippet rather than for the top of the page. Both are overridden field by
+    // field by the device model's admin `metaTitle`/`metaDescription`.
+    compatTitle: (categoryName: string, deviceName: string) =>
+      `${categoryName} для ${deviceName}`,
+    compatDescription: (categoryName: string, deviceName: string) =>
+      `${categoryName} для ${deviceName} у MobileStore — перевірена сумісність, оригінальні аксесуари та швидка доставка по Україні.`,
+    // Shown only for the split second before notFound() owns the response: a
+    // 404 still needs *a* metadata object (same shape as the category landing).
+    compatFallbackTitle: "Сумісні аксесуари",
     productFallbackTitle: "Товар",
     productFallbackDescription: "Переглянути деталі товару.",
     pageFallbackTitle: "Сторінка",

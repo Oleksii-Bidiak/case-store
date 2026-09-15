@@ -70,4 +70,38 @@ export class CreateDeviceModelDto {
   @IsOptional()
   @IsBoolean({ message: 'isActive must be true or false' })
   isActive?: boolean;
+
+  // ─── Compatibility-landing copy (TASK-490) ─────────────────────────────────
+  // Overrides for `/catalog/<категорія>/<модель>`; omitted means "generated".
+  // Same 255/500 caps the category form uses, so one admin habit covers both.
+
+  @ApiProperty({
+    description: 'Admin override for the compatibility landing page <title>',
+    example: 'Чохли для iPhone 15 Pro — купити в MobileStore',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255, { message: 'Meta title must be at most 255 characters' })
+  metaTitle?: string;
+
+  @ApiProperty({
+    description: 'Admin override for the compatibility landing page meta description',
+    example: 'Понад 40 чохлів для iPhone 15 Pro: силікон, шкіра, MagSafe.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
+  metaDescription?: string;
+
+  @ApiProperty({
+    description: 'Admin override for the landing page lead paragraph under the H1',
+    example: 'Усі чохли, що точно сідають на iPhone 15 Pro.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000, { message: 'Description must be at most 2000 characters' })
+  description?: string;
 }

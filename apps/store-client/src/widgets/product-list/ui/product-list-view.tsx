@@ -47,6 +47,18 @@ interface ProductListViewProps {
    * category, filterable specs) take.
    */
   lockedCategory?: { id: string; slug: string };
+  /**
+   * Fix the compatible device to the one the route names — the second segment
+   * of `/catalog/[category]/[device]` (TASK-490, «Чохли для iPhone 15 Pro»).
+   *
+   * The exact twin of `lockedCategory` one axis over: the effective device is
+   * always this one whatever the query string says, the «Сумісний пристрій»
+   * control disappears from the panel, no removable device chip is offered, and
+   * «скинути всі» clears everything else but never un-locks the device. Without
+   * it the sidebar would let a shopper switch to another model while the URL,
+   * the H1, the `<title>` and the canonical all kept naming the old one.
+   */
+  lockedDevice?: { slug: string };
 }
 
 const PAGE_SIZE = 20;
@@ -76,6 +88,7 @@ const ASIDE_SCROLL_BOX =
 export function ProductListView({
   initialParams,
   lockedCategory,
+  lockedDevice,
 }: ProductListViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -97,7 +110,8 @@ export function ProductListView({
       searchParams.get("category") ??
       initialParams.category,
     brand: searchParams.get("brand") ?? initialParams.brand,
-    device: searchParams.get("device") ?? initialParams.device,
+    device:
+      lockedDevice?.slug ?? searchParams.get("device") ?? initialParams.device,
     search: searchParams.get("search") ?? initialParams.search,
     sortBy: searchParams.get("sortBy") ?? initialParams.sortBy ?? "createdAt",
     sortOrder:
@@ -137,6 +151,9 @@ export function ProductListView({
   // which is exactly how `specs` went uncounted.
   const activeFilterCount = countActiveFilters(params, {
     includeCategory: false,
+    // A route-locked device is not a filter the drawer can change (TASK-490),
+    // so badging it would promise a control that is not in there.
+    includeDevice: !lockedDevice,
   });
 
   const applyFilters = useCallback(
@@ -170,10 +187,16 @@ export function ProductListView({
   );
 
   const clearFilters = useCallback(() => {
-    // The category is fixed by the route on a landing page, not a clearable
-    // filter — «скинути всі» drops everything else but never un-locks it.
-    applyFilters(clearFilterUpdates({ includeCategory: !lockedCategory }));
-  }, [applyFilters, lockedCategory]);
+    // Whatever the route fixes — the category on a category landing page, the
+    // category AND the device on a compat one — is not a clearable filter:
+    // «скинути всі» drops everything else but never un-locks a segment.
+    applyFilters(
+      clearFilterUpdates({
+        includeCategory: !lockedCategory,
+        includeDevice: !lockedDevice,
+      }),
+    );
+  }, [applyFilters, lockedCategory, lockedDevice]);
 
   const buildPageHref = useCallback(
     (targetPage: number) => {
@@ -257,6 +280,7 @@ export function ProductListView({
         currentParams={params}
         brandName={activeBrandName}
         categoryId={activeCategoryId}
+        lockedDevice={Boolean(lockedDevice)}
         onFilterChange={applyFilters}
       />
 
@@ -269,6 +293,7 @@ export function ProductListView({
           <ProductFilters
             currentParams={params}
             categoryId={activeCategoryId}
+            lockedDevice={Boolean(lockedDevice)}
             onFilterChange={applyFilters}
           />
         </aside>
@@ -302,6 +327,7 @@ export function ProductListView({
               idPrefix="filter-m"
               currentParams={params}
               categoryId={activeCategoryId}
+              lockedDevice={Boolean(lockedDevice)}
               onFilterChange={applyFilters}
               collapsible
             />

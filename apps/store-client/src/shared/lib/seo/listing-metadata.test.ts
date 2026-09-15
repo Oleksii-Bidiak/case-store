@@ -262,3 +262,79 @@ describe("buildListingMetadata — empty filters object (case 24)", () => {
     ).toEqual({ canonicalPath: "/products" });
   });
 });
+
+describe("buildListingMetadata — compatibility landing pages (cases 27–31, TASK-490)", () => {
+  const COMPAT = "/catalog/chohly/iphone-15-pro";
+  const CATEGORY = "/categories/chohly";
+
+  it("case 27: the UNFILTERED compat page is self-canonical and indexable", () => {
+    // Not the category: `/catalog/<категорія>/<модель>` is the ONE facet
+    // combination with an address of its own (owner decision B-10 §5), so it
+    // competes for the index rather than handing its equity to the category.
+    expect(
+      buildListingMetadata({
+        basePath: COMPAT,
+        filteredCanonicalPath: CATEGORY,
+      }),
+    ).toEqual({ canonicalPath: COMPAT });
+  });
+
+  it("case 28: page 2 of an unfiltered compat page keeps ?page=2 on itself", () => {
+    expect(
+      buildListingMetadata({
+        basePath: COMPAT,
+        filteredCanonicalPath: CATEGORY,
+        page: 2,
+      }),
+    ).toEqual({ canonicalPath: `${COMPAT}?page=2` });
+  });
+
+  it("case 29: ?specs= on a compat page → noindex,follow AND canonical to the category", () => {
+    // The acceptance criterion of plan 182 item 490, and the ONE place the
+    // house rule "never a canonical together with noindex" is relaxed: the
+    // consolidation target is a different PATH, which no amount of
+    // param-stripping would reach on its own.
+    expect(
+      buildListingMetadata({
+        basePath: COMPAT,
+        filteredCanonicalPath: CATEGORY,
+        filters: { specs: "material:Силікон" },
+      }),
+    ).toEqual({ ...NOINDEX_FOLLOW, canonicalPath: CATEGORY });
+  });
+
+  it("case 30: any other facet does the same, and the page number is dropped", () => {
+    // A filtered view consolidates onto ONE url, never a paginated one —
+    // `?page=3` of a filtered slice has no counterpart on the category.
+    for (const filters of [
+      { brand: "apple" },
+      { minPrice: "100" },
+      { inStock: "true" },
+      { onSale: "true" },
+      { search: "чохол" },
+      // A second, contradicting device in the QUERY — the segment already names
+      // one, so this can only be a stale or hand-edited URL.
+      { device: "galaxy-s24" },
+    ]) {
+      expect(
+        buildListingMetadata({
+          basePath: COMPAT,
+          filteredCanonicalPath: CATEGORY,
+          filters,
+          page: 3,
+        }),
+      ).toEqual({ ...NOINDEX_FOLLOW, canonicalPath: CATEGORY });
+    }
+  });
+
+  it("case 31: without the opt-in, a filtered listing still gets NO canonical", () => {
+    // The exception is confined to the route that asks for it: `/products` and
+    // `/categories/[slug]` keep emitting the bare noindex.
+    expect(
+      buildListingMetadata({
+        basePath: "/categories/chohly",
+        filters: { specs: "material:Силікон" },
+      }),
+    ).toEqual(NOINDEX_FOLLOW);
+  });
+});

@@ -63,6 +63,15 @@ interface ProductFiltersProps {
    * returning user sees what's applied without scrolling five full cards.
    */
   collapsible?: boolean;
+  /**
+   * The compatible device is fixed by the route — `/catalog/[category]/[device]`
+   * (TASK-490). The «Сумісний пристрій» control is not rendered at all, and
+   * «скинути всі» leaves the device alone, for the same reason the category
+   * chips row disappears on a category landing page: a control that rewrites
+   * half of the current URL's meaning while the address bar keeps the old
+   * spelling is a bug, not a filter.
+   */
+  lockedDevice?: boolean;
 }
 
 const cardClass =
@@ -83,6 +92,7 @@ export function ProductFilters({
   onFilterChange,
   idPrefix = "filter",
   collapsible = false,
+  lockedDevice = false,
 }: ProductFiltersProps) {
   // Committed price bounds from the URL, clamped into the slider domain.
   const committedMin = clampPrice(currentParams.minPrice ?? 0);
@@ -158,7 +168,14 @@ export function ProductFilters({
   // `includeCategory: false` — the category's control is the chips row above the
   // grid (TASK-216) and, on a category landing page, the route itself; clearing
   // it from in here would navigate the shopper somewhere they did not ask to go.
-  const panelFilterScope = { includeCategory: false } as const;
+  //
+  // `includeDevice` follows the same rule one segment down: on
+  // `/catalog/[category]/[device]` the device IS the route (TASK-490), so the
+  // panel neither offers it nor clears it.
+  const panelFilterScope = {
+    includeCategory: false,
+    includeDevice: !lockedDevice,
+  } as const;
   const hasActiveFilters = computeHasActiveFilters(
     currentParams,
     panelFilterScope,
@@ -283,16 +300,18 @@ export function ProductFilters({
         />
       )}
 
-      {/* Device compatibility (TASK-190) — brand → model cascade */}
-      {renderSection(
-        dict.filters.deviceTitle,
-        <DeviceModelFilter
-          idPrefix={idPrefix}
-          currentDeviceModelSlug={currentParams.device}
-          onChange={(device) => onFilterChange({ device })}
-        />,
-        Boolean(currentParams.device),
-      )}
+      {/* Device compatibility (TASK-190) — brand → model cascade. Absent when
+          the route already names the device (TASK-490). */}
+      {!lockedDevice &&
+        renderSection(
+          dict.filters.deviceTitle,
+          <DeviceModelFilter
+            idPrefix={idPrefix}
+            currentDeviceModelSlug={currentParams.device}
+            onChange={(device) => onFilterChange({ device })}
+          />,
+          Boolean(currentParams.device),
+        )}
 
       {/* Price range */}
       {renderSection(

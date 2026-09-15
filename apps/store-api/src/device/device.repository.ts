@@ -53,6 +53,10 @@ export interface CreateDeviceModelInput {
   series?: string | null;
   releaseYear?: number | null;
   isActive?: boolean;
+  /** Compatibility-landing copy overrides (TASK-490); absent/null = generated. */
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  description?: string | null;
 }
 
 /** Allowed fields for updating a device model. */
@@ -63,6 +67,10 @@ export interface UpdateDeviceModelInput {
   series?: string | null;
   releaseYear?: number | null;
   isActive?: boolean;
+  /** Compatibility-landing copy overrides (TASK-490); explicit null clears one. */
+  metaTitle?: string | null;
+  metaDescription?: string | null;
+  description?: string | null;
 }
 
 /** A device model row with its brand relation loaded (for labelling). */
@@ -299,6 +307,11 @@ export class DeviceRepository {
         series: data.series ?? null,
         releaseYear: data.releaseYear ?? null,
         isActive: data.isActive ?? true,
+        // TASK-490 — landing-page copy overrides; `?? null` keeps "not provided"
+        // and "explicitly cleared" the same thing on CREATE.
+        metaTitle: data.metaTitle ?? null,
+        metaDescription: data.metaDescription ?? null,
+        description: data.description ?? null,
       },
     });
   }

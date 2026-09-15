@@ -81,6 +81,11 @@ export function EditDeviceModelView({ modelId }: EditDeviceModelViewProps) {
     series: model.series ?? "",
     releaseYear: model.releaseYear != null ? String(model.releaseYear) : "",
     isActive: model.isActive,
+    // TASK-490 — the compat-landing copy. `?? ""` so a cleared override seeds
+    // an empty (not an uncontrolled) input, same as `series` above.
+    metaTitle: model.metaTitle ?? "",
+    metaDescription: model.metaDescription ?? "",
+    description: model.description ?? "",
   };
 
   return (

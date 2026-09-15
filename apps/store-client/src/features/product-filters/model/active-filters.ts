@@ -49,6 +49,17 @@ export interface ActiveFilterOptions {
    * (the category is the route itself — «скинути всі» must not un-lock it).
    */
   includeCategory?: boolean;
+  /**
+   * Count/clear the compatible device alongside the rest. Defaults to `true`.
+   *
+   * Set `false` on `/catalog/[category]/[device]` (TASK-490), where the device
+   * is half of the URL PATH. There, clearing or changing it from inside the
+   * panel would leave the query string describing one device while the address
+   * bar — and the `<title>`, the H1 and the canonical — still claim another.
+   * Exactly the same reasoning as `includeCategory` on a category landing page,
+   * for the second segment.
+   */
+  includeDevice?: boolean;
 }
 
 /** Is this one filter currently narrowing the list? */
@@ -67,10 +78,13 @@ function isActive(
 /** The filters currently narrowing the list, in `CATALOG_FILTER_KEYS` order. */
 export function activeFilterKeys(
   params: ProductControllerFindAllParams,
-  { includeCategory = true }: ActiveFilterOptions = {},
+  { includeCategory = true, includeDevice = true }: ActiveFilterOptions = {},
 ): CatalogFilterKey[] {
   return CATALOG_FILTER_KEYS.filter(
-    (key) => (includeCategory || key !== "category") && isActive(params, key),
+    (key) =>
+      (includeCategory || key !== "category") &&
+      (includeDevice || key !== "device") &&
+      isActive(params, key),
   );
 }
 
@@ -97,10 +111,12 @@ export function hasActiveFilters(
  */
 export function clearFilterUpdates({
   includeCategory = true,
+  includeDevice = true,
 }: ActiveFilterOptions = {}): Record<string, undefined> {
   const updates: Record<string, undefined> = {};
   for (const key of CATALOG_FILTER_KEYS) {
     if (!includeCategory && key === "category") continue;
+    if (!includeDevice && key === "device") continue;
     updates[key] = undefined;
   }
   return updates;
