@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-642**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-651**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -426,7 +426,7 @@
 
 | TASK-373 | [🟡 до запуску] Повернення товару недосяжне **з боку вітрини**: у `store-client` немає жодного виклику створення заявки — покупець не має кнопки «подати заявку на повернення» ні в кабінеті, ні на сторінці замовлення, хоча `POST /api/orders/:orderId/returns` існує і покритий тестами (TASK-340). Разом із TASK-370 (немає пункту меню в адмінці) це означає, що функція повернень зроблена й недосяжна з **обох** боків UI: подати заявку можна лише через Swagger, побачити — лише вписавши URL руками (E-21/E-22). Виявлено звіркою `user-stories.md` із кодом (TASK-369). **Зроблено 2026-09-15:** фіча `features/return-request` — кнопка на замовленні `DELIVERED` у «Моїх замовленнях» і діалог, який рахує доступні до повернення одиниці (куплено мінус заявлене живими заявками; відхилена заявка звільняє свої). Покупець без акаунта (гість, телефон) іде через операторську заявку TASK-469 | ✅ | [180](docs/plans/180-orders-after-b1-b5.md) |
 
-| TASK-374 | [🟢 після запуску] `settings:delivery` — єдине право, що стереже справжній маршрут API (`AdminDeliveryController`) **без екрана в адмінці**: у `store-admin` ключ не згадується взагалі. Власник ставить галочку «Доставка» і вважає, що делегував налаштування, а делегувати нічого — сторінки немає. Або намалювати екран, або прибрати право з каталогу, як уже зробили зі `stock:write`: галочка, яка нічого не дає, гірша за відсутню (див. коментар у `permissions-without-routes.ts`). Зверни увагу: механізм бейджа «не діє» існує, але його множина порожня, тож цей розрив він **не** ловить (E-30). Виявлено звіркою `user-stories.md` із кодом (TASK-369) | ⬜ | — |
+| TASK-374 | [🟢 після запуску] `settings:delivery` — єдине право, що стереже справжній маршрут API (`AdminDeliveryController`) **без екрана в адмінці**: у `store-admin` ключ не згадується взагалі. Власник ставить галочку «Доставка» і вважає, що делегував налаштування, а делегувати нічого — сторінки немає. Або намалювати екран, або прибрати право з каталогу, як уже зробили зі `stock:write`: галочка, яка нічого не дає, гірша за відсутню (див. коментар у `permissions-without-routes.ts`). Зверни увагу: механізм бейджа «не діє» існує, але його множина порожня, тож цей розрив він **не** ловить (E-30). Виявлено звіркою `user-stories.md` із кодом (TASK-369). **Рішення B-6 (2026-09-15):** малюємо екран — він потрібен і сам по собі, бо на ньому живуть перемикачі методів доставки й точки самовивозу; закриється разом із TASK-644 | ⬜ | [184](docs/plans/184-delivery-methods.md) |
 
 | TASK-375 | [🔴 запуск] `/api/docs-json` віддавав повну OpenAPI-спеку **в кожному середовищі, крім development** (`main.ts`, гілка `else`): інтерактивний Swagger UI у проді закритий, а сира спека — ні, тож анонімний запит отримував карту всіх 175 маршрутів, зокрема адмінських, разом зі схемами DTO. Привід був легітимний і **встиг зникнути двічі**: спеку тягнув білд фронтів на Vercel (`curl … /api/docs-json`, `docs/archive/deploy-vercel.md`), але той ранбук superseded самостійним хостингом, а з TASK-325 контракт лежить у git — Orval читає файл, а не мережу. Виявлено з питання власника, чому `swagger.json` потрапляє в git. **Закрито 2026-08-01:** увесь Swagger-блок узято під `nodeEnv === 'development'` — поза ним не монтується ні UI, ні JSON (заодно прод більше не будує документ на старті). Доведено живим прогоном, а не читанням коду: у прод-режимі `/api/docs` і `/api/docs-json` → **404** при `/health` і `/api/products` → 200; у dev обидва → 200. Автотестом не покривається — e2e піднімають застосунок через `Test.createTestingModule`, повз `main.ts`, тож гейт лишається ручним: SYS-17 у `qa-manual-full.md`/`qa-demo-server.md` і security-смоук у `manual-qa-pending.md` розширені на `docs-json` | ✅ | — |
 
@@ -684,7 +684,7 @@
 | TASK-445 | B-3 Ролі й доступи: два рівні через `isOwner` (власник + заступники), права на людину замість ролі + шаблони, окремий розділ «Персонал», `customers:card` — рішення 2026-09-11, реалізація в TASK-474…482 | ✅ | [178](docs/plans/178-brainstorms.md) |
 | TASK-446 | B-4 Відгуки (рішення 2026-09-10, п. 1–7): оцінки рахуються одразу, у списку лише схвалені **з текстом**, пагінація по 10, дописати текст до оцінки, захист від зловживань оцінками — плюс два відкриті питання, закриті 2026-09-14: відповідає **лише магазин** (одна відповідь, без треду автора, право `reviews:write`), підпис автора лишається «Покупець». Реалізація в TASK-588…592 | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
 | TASK-447 | B-5 Видимість замовлення для гостя й телефонного покупця: номер лишається 8 символами UUID, публічна форма «номер + телефон» без адреси, токен і лист для операторських замовлень, приєднання при підтвердженні пошти — рішення 2026-09-11, реалізація в TASK-483…486 | ✅ | [178](docs/plans/178-brainstorms.md) |
-| TASK-448 | B-6 Доставка не лише НП: самовивіз, кур'єр, екран `/settings/delivery` (TASK-374) | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-448 | B-6 Доставка не лише НП: чотири методи (`NOVA_POSHTA`/`PICKUP`/`COURIER`/`OTHER`), `PickupPoint` як сутність, фіксована ціна кур'єра + поріг безкоштовності, матриця доставка × оплата на бекенді, екран `/settings/delivery` — рішення 2026-09-15, реалізація в TASK-642…650 | ✅ | [178](docs/plans/178-brainstorms.md) |
 | TASK-449 | B-7 Сповіщення: Telegram-бот власнику (S), outbox із каналами, SMS-коди | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-450 | B-8 Детальна статистика: перші звіти, Umami API | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-451 | B-9 Головна як контент; перегляд vs редагування в адмінці; прев'ю як на вітрині | ⬜ | [178](docs/plans/178-brainstorms.md) |
@@ -823,6 +823,25 @@
 | TASK-489 | Лічильники біля значень фасета з урахуванням уже вибраних фільтрів («Силікон (12)») + приховування нульових значень: агрегат у `product.repository`, `GET /categories/:id/filterable-specs` віддає counts, кнопка мобільної шторки стає «Показати N товарів». Обсяг росту — facet distribution у Meilisearch (уже в стеку), окремої задачі не заводимо | ⬜ | [182](docs/plans/182-catalogue-facets.md) |
 | TASK-490 | SEO-сторінки сумісності `/catalog/<категорія>/<модель>` («Чохли для iPhone 15 Pro»): маршрут на парі категорія × `DeviceModel`, власні H1/title/опис, sitemap; решта фасетів лишається query-параметрами з `canonical` на категорію і `noindex` — свідома межа проти ферми майже однакових сторінок | ⬜ | [182](docs/plans/182-catalogue-facets.md) |
 
+### План 184 — Способи доставки після B-6 (🟡 до запуску)
+
+> Рішення — план 178, «Рішення 2026-09-15 (B-6)». Чотири методи (`NOVA_POSHTA`, `PICKUP`,
+> `COURIER`, `OTHER`), `PickupPoint` як сутність, фіксована ціна кур'єра + поріг безкоштовності
+> тільки для нього, матриця доставка × оплата на бекенді. **TASK-644 закриває TASK-374.**
+> TASK-642 блокує решту; TASK-643 блокує 644–648. Деталі — [184](docs/plans/184-delivery-methods.md).
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-642 | Схема: `enum DeliveryMethod`, `Order.deliveryMethod`/`pickupPointId`, модель `PickupPoint` (`isActive`, без `deletedAt`), поля `DeliverySetting` (4 перемикачі, місто/ціна/поріг кур'єра); міграція через `migrate diff --script` + бекфіл `OTHER` там, де немає `npCityRef` — порахувати рядки до і після | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+| TASK-643 | Бекенд: `deliveryMethod`/`pickupPointId` у `CreateOrderDto`, гілка розрахунку вартості за методом (`order.service.ts:308-321`), матриця доставка × оплата окремим модулем із перевіркою на створенні (`OTHER`+`ONLINE` → 400), знімок методу в `shippingAddress`, публічний `GET /api/delivery/methods`, нові поля в `AdminDeliveryController.PUT`; TDD — модуль входить у `total` | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+| TASK-644 | Адмінка: екран `/settings/delivery` під `settings:delivery` — відправник НП, перемикачі методів, місто/ціна/поріг кур'єра; форма за `docs/conventions/forms.md` (`values`/`reset()`). **Закриває TASK-374** | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+| TASK-645 | Адмінка: CRUD точок самовивозу на тому ж екрані — створення, редагування, «Активна», `sortOrder`; деактивація як основна дія, видалення як другорядна (знімок на замовленні робить `SetNull` безпечним) | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+| TASK-646 | Вітрина: радіогрупа способу доставки на кроці 1 чекауту + гілки полів; список із `GET /api/delivery/methods` через Orval-хук; zod через `superRefine` (один `CheckoutFormValues`), недоступні за матрицею оплати — вимкнені з причиною, як `PaymentMethodBlocker` | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+| TASK-647 | Вітрина й пошта: рядок доставки за методом у підсумку, блок доставки в листі (`order-confirmation.template.ts:167,279`) і на сторінках замовлення; «Вартість уточнить оператор» замість «Доставка: 0 грн» там, де вартість не рахувалась | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+| TASK-648 | Адмінка: фільтр за способом доставки поруч із фільтром оплати (`order.repository.ts:818`), бейдж у списку й блок у картці (для `PICKUP` — назва точки), колонка методу в експорті CSV (`order.service.ts:724`) | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+| TASK-649 | Доки й ручні перевірки: `SF-*`/`AD-*` у `docs/qa-recheck.md` + ids у Appendix А, розділ «Доставка» в `docs/admin-guide.md`, кроки персон у `docs/user-stories.md` | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+| TASK-650 | [побічна, знайдена в B-6] Вітрина не надсилає `paymentMethod` (`use-checkout.ts:77-107`), і платіжний хендофф його не проставляє — тому **кожне** онлайн-замовлення зі storefront лягає як `ON_DELIVERY` і не отримує `reservationExpiresAt`, тобто 30-хв звільнення стоку не працює жодного разу; заразом застарів коментар у `payment-methods.ts` | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+
 ### План 179 — Якість: безпека, доки, моніторинг, пайплайн, ревʼю, повторний прогін
 
 > **S0 — першими, до будь-якого мержу:** TASK-460…467 і TASK-491…495 у таблиці нижче — 460/461/495
@@ -872,6 +891,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-642**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-651**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
