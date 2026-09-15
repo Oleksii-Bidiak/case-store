@@ -33,7 +33,12 @@ const NAV_USERS = "Користувачі";
 const HEADING_TEMPLATES = "Шаблони прав";
 const CTA_HIRE = "Новий співробітник";
 const COPY_RULE_FRAGMENT = "НЕ змінює прав тих, хто вже працює";
-const FULL_ACCESS_FRAGMENT = "Повний доступ мают";
+/** What `staffDisplayName` renders for the seeded admin: name over address. */
+const E2E_ADMIN_NAME = "E2E Admin";
+// Both verb forms, because the seed creates exactly ONE admin and the heading
+// declines: «Повний доступ МАЄ 1 особа» / «…МАЮТЬ 2 особи». A plural-only
+// fragment passes only on a stand that happens to have hired a second admin.
+const FULL_ACCESS_PATTERN = /Повний доступ (має|мають) \d+ (особа|особи|осіб)/;
 
 test.describe("admin «Персонал» (TASK-480)", () => {
   // Own session per test: the saved-state shortcut does not survive this API's
@@ -64,10 +69,18 @@ test.describe("admin «Персонал» (TASK-480)", () => {
     // Decision 5: the number of administrators is not capped, it is made
     // visible — permanently, above the list, rather than behind a filter
     // somebody would have to think to apply.
-    await expect(page.getByText(FULL_ACCESS_FRAGMENT).first()).toBeVisible();
+    await expect(page.getByText(FULL_ACCESS_PATTERN).first()).toBeVisible();
+
+    // The panel NAMES them, which is the whole point of decision 5 — a count on
+    // its own answers "how many", never "who". So the link carries the person's
+    // name when there is one and falls back to the address only when there is
+    // not; the seeded account has both, so accept either rather than pinning
+    // the spec to which fixture happens to be in the database.
     await expect(
       page
-        .getByRole("link", { name: new RegExp(E2E_ADMIN_EMAIL, "i") })
+        .getByRole("link", {
+          name: new RegExp(`${E2E_ADMIN_NAME}|${E2E_ADMIN_EMAIL}`, "i"),
+        })
         .first(),
     ).toBeVisible();
   });
