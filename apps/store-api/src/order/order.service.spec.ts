@@ -10,8 +10,9 @@ import {
 import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
+import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
-import { OrderEntity } from './entities';
+import { OrderEntity, PublicOrderEntity, type PublicOrderRow } from './entities';
 import { CartRepository, CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
@@ -30,6 +31,7 @@ import type {
   PaymentWithOrderRow,
 } from './order.types';
 import type { CreateOrderDto } from './dto';
+import { OrderErrorCode } from './order.errors';
 import { PaymentOutcome, type PaymentEventInput } from '../payment/payment.types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -176,6 +178,8 @@ const orderRepositoryMock = {
   findByIdForAdmin: jest.fn(),
   // TASK-338: guest order access + claiming on registration.
   findByAccessTokenHash: jest.fn(),
+  // TASK-484: re-issuing a buyer's link.
+  rotateAccessToken: jest.fn(),
   // TASK-335/336: waybill + internal notes, and who to email about a shipment.
   updateDetails: jest.fn(),
   findRecipient: jest.fn(),
@@ -249,6 +253,11 @@ const discountServiceMock = {
   redeem: jest.fn(),
 };
 
+// TASK-483: the public lookup's own repository — one method, deliberately.
+const orderLookupRepositoryMock = {
+  findByNumberAndPhone: jest.fn(),
+};
+
 const pinoLoggerMock = {
   setContext: jest.fn(),
   info: jest.fn(),
@@ -289,6 +298,7 @@ describe('OrderService', () => {
       providers: [
         OrderService,
         { provide: OrderRepository, useValue: orderRepositoryMock },
+        { provide: OrderLookupRepository, useValue: orderLookupRepositoryMock },
         { provide: CartRepository, useValue: cartRepositoryMock },
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: MailOutboxService, useValue: mailOutboxServiceMock },
@@ -1076,6 +1086,88 @@ describe('OrderService', () => {
     });
   });
 
+  // ─── The cross-rule, asked from the ORDER side (review of plan 180) ──────────
+  //
+  // TASK-431 forbids «full refund on a live order» when the PAYMENT moves. The
+  // identical pair was reachable when the ORDER moved instead, and reviving is
+  // not an exotic path: CANCELLED + REFUNDED is what every cancelled-and-repaid
+  // order looks like, and `ORDER_TRANSITIONS[CANCELLED]` contains the whole
+  // pre-shipment run. One click produced a PROCESSING order with every hryvnia
+  // recorded as returned — goods being picked for a customer who has the money.
+  //
+  // It was also a one-way door: `PAYMENT_TRANSITIONS[REFUNDED]` is empty by
+  // design, so afterwards the operator could not correct the payment label
+  // either. That is why this is refused rather than merely warned about — the
+  // usual B-1 answer of "make it visible" has nowhere to lead.
+
+  describe('updateStatus — reviving an order whose money is already back', () => {
+    const seedRefunded = (status: OrderStatus) =>
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+    it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
+      'refuses CANCELLED → %s with 409 ORDER_REVIVE_REFUNDED_PAYMENT',
+      async (to) => {
+        seedRefunded(OrderStatus.CANCELLED);
+
+        await expect(service.updateStatus('order-uuid-1', to, ADMIN_ID)).rejects.toMatchObject({
+          response: { error: 'ORDER_REVIVE_REFUNDED_PAYMENT' },
+        });
+      },
+    );
+
+    it('writes nothing when it refuses — no revive, no status write', async () => {
+      seedRefunded(OrderStatus.CANCELLED);
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.PROCESSING, ADMIN_ID),
+      ).rejects.toThrow(ConflictException);
+
+      expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('still allows the terminal pair to be corrected (CANCELLED → REFUNDED)', async () => {
+      seedRefunded(OrderStatus.CANCELLED);
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID),
+      ).resolves.toBeDefined();
+    });
+
+    it('leaves a PARTIALLY_REFUNDED order revivable — one line back is an ordinary day', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        }),
+      );
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.PROCESSING,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        }),
+      );
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.PROCESSING, ADMIN_ID),
+      ).resolves.toBeDefined();
+    });
+
+    it('drops the unreachable targets from the picker instead of offering them', async () => {
+      seedRefunded(OrderStatus.CANCELLED);
+
+      const result = await service.getAllowedTransitions('order-uuid-1');
+
+      // ORDER_TRANSITIONS[CANCELLED] is [PENDING, CONFIRMED, PROCESSING, REFUNDED].
+      expect(result.allowed).toEqual([OrderStatus.REFUNDED]);
+    });
+  });
+
   // ─── updateStatus — decoupled (no auto-derive) (TASK-151) ─────────────────────
   // TASK-151: coupling removed — paymentStatus is no longer auto-derived from the
   // target order status. Advancing the order status leaves the existing payment
@@ -1261,21 +1353,24 @@ describe('OrderService', () => {
         ADMIN_ID,
       );
 
+      // The write is pinned to the status the transition was validated against
+      // (review of plan 180) — see `adminUpdatePaymentStatus`.
       expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         PaymentStatus.PAID,
         ADMIN_ID,
+        { expectedFrom: PaymentStatus.PENDING },
       );
       expect(result).toBeInstanceOf(OrderEntity);
       expect(result.paymentStatus).toBe(PaymentStatus.PAID);
     });
 
-    it('sets REFUNDED on a DELIVERED order without changing the order status', async () => {
+    it('sets REFUNDED on a CANCELLED order without changing the order status', async () => {
       orderRepositoryMock.findById.mockResolvedValue(
-        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+        makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID }),
       );
       orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
-        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.REFUNDED }),
+        makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.REFUNDED }),
       );
 
       const result = await service.adminUpdatePaymentStatus(
@@ -1288,9 +1383,26 @@ describe('OrderService', () => {
         'order-uuid-1',
         PaymentStatus.REFUNDED,
         ADMIN_ID,
+        { expectedFrom: PaymentStatus.PAID },
       );
-      expect(result.status).toBe(OrderStatus.DELIVERED);
+      expect(result.status).toBe(OrderStatus.CANCELLED);
       expect(result.paymentStatus).toBe(PaymentStatus.REFUNDED);
+    });
+
+    it('answers 409 when another operator moved the payment underneath the write', async () => {
+      // Both operators read PAID. One lands REFUNDED, the other PARTIALLY_REFUNDED.
+      // Both passed validation against PAID, but the second would apply
+      // REFUNDED → PARTIALLY_REFUNDED, which `PAYMENT_TRANSITIONS` forbids.
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID }),
+      );
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(null);
+
+      await expect(
+        service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.REFUNDED, ADMIN_ID),
+      ).rejects.toMatchObject({
+        response: { error: 'ORDER_PAYMENT_TRANSITION_INVALID' },
+      });
     });
 
     it('throws NotFoundException when the order does not exist', async () => {
@@ -1300,6 +1412,127 @@ describe('OrderService', () => {
         service.adminUpdatePaymentStatus('missing', PaymentStatus.PAID, ADMIN_ID),
       ).rejects.toThrow(NotFoundException);
       expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    // ─── The payment state machine on the ADMIN door (TASK-431) ───────────────
+    // This door has an operator in front of it, so an illegal move is a 409 they
+    // can read. (The webhook door must NOT behave this way — see
+    // `applyPaymentEvent` below.)
+
+    it('refuses an illegal payment transition with a coded 409 and writes nothing', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+      await expect(
+        service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.PAID, ADMIN_ID),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('refuses a full REFUNDED while the order is still DELIVERED, with its own code', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      await expect(
+        service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.REFUNDED, ADMIN_ID),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: { error: OrderErrorCode.REFUND_REQUIRES_CLOSED_ORDER },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('allows PARTIALLY_REFUNDED on a DELIVERED order (the cross-rule binds only full refunds)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        }),
+      );
+
+      const result = await service.adminUpdatePaymentStatus(
+        'order-uuid-1',
+        PaymentStatus.PARTIALLY_REFUNDED,
+        ADMIN_ID,
+      );
+
+      expect(result.paymentStatus).toBe(PaymentStatus.PARTIALLY_REFUNDED);
+    });
+
+    it('refuses re-asserting the current payment status (no duplicate history row)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      await expect(
+        service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.PAID, ADMIN_ID),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── getAllowedPaymentTransitions (TASK-431) ─────────────────────────────────
+
+  describe('getAllowedPaymentTransitions', () => {
+    it('returns the legal targets and the lock token for a PENDING payment', async () => {
+      const updatedAt = new Date('2026-09-14T10:00:00.000Z');
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING, updatedAt }),
+      );
+
+      await expect(service.getAllowedPaymentTransitions('order-uuid-1')).resolves.toEqual({
+        current: PaymentStatus.PENDING,
+        allowed: [PaymentStatus.PAID, PaymentStatus.FAILED],
+        updatedAt,
+      });
+    });
+
+    it('hides REFUNDED while the order is live, and keeps PARTIALLY_REFUNDED', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const result = await service.getAllowedPaymentTransitions('order-uuid-1');
+
+      expect(result.allowed).toEqual([PaymentStatus.PARTIALLY_REFUNDED]);
+    });
+
+    it('offers REFUNDED once the order itself is CANCELLED', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const result = await service.getAllowedPaymentTransitions('order-uuid-1');
+
+      expect(result.allowed).toEqual([PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED]);
+    });
+
+    it('offers nothing from REFUNDED', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+      const result = await service.getAllowedPaymentTransitions('order-uuid-1');
+
+      expect(result.allowed).toEqual([]);
+    });
+
+    it('throws NotFoundException when the order does not exist', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.getAllowedPaymentTransitions('missing')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -1692,7 +1925,127 @@ describe('OrderService', () => {
         ADMIN_ID,
       );
 
-      expect(result.internalNotes).toBe('Paid cash at the counter');
+      expect(result.order.internalNotes).toBe('Paid cash at the counter');
+    });
+
+    // ── TASK-484: the buyer's way to see a phone order ────────────────────────
+
+    it('mints an access token and stores only its SHA-256', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      const { accessUrl } = await service.adminCreateOrder(dto, ADMIN_ID);
+
+      const rawToken = accessUrl!.split('/').pop()!;
+      const [params] = orderRepositoryMock.createManual.mock.calls.at(-1)!;
+      expect(params.accessTokenHash).toBe(createHash('sha256').update(rawToken).digest('hex'));
+      // The raw value is returned to the caller and never handed to the DB.
+      expect(JSON.stringify(params)).not.toContain(rawToken);
+    });
+
+    it('hands the operator a link to the same page a guest checkout produces', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      const { accessUrl } = await service.adminCreateOrder(dto, ADMIN_ID);
+
+      expect(accessUrl).toMatch(/^https:\/\/shop\.example\.com\/orders\/guest\/[0-9a-f]{64}$/);
+    });
+
+    it('sends the same confirmation letter when the customer dictated an email', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+
+      await service.adminCreateOrder(dto, ADMIN_ID);
+
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          to: guestContact.email,
+          orderStatusUrl: expect.stringContaining('/orders/guest/'),
+          // TASK-483: and the route back that does not depend on the letter.
+          orderLookupUrl: 'https://shop.example.com/orders/status',
+        }),
+      );
+    });
+
+    it('sends no letter when the operator only had a name and a number', async () => {
+      await service.adminCreateOrder(
+        { ...dto, contact: { ...guestContact, email: undefined } },
+        ADMIN_ID,
+      );
+
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).not.toHaveBeenCalled();
+    });
+
+    it('still stores a token on a dev box with no STORE_CLIENT_URL — only the URL is missing', async () => {
+      const { accessUrl } = await service.adminCreateOrder(dto, ADMIN_ID);
+
+      expect(accessUrl).toBeNull();
+      const [params] = orderRepositoryMock.createManual.mock.calls.at(-1)!;
+      expect(params.accessTokenHash).toMatch(/^[0-9a-f]{64}$/);
+    });
+  });
+
+  // ─── issueOrderAccessLink (TASK-484) ─────────────────────────────────────────
+
+  describe('issueOrderAccessLink', () => {
+    const ORDER_ID = 'order-uuid-1';
+
+    beforeEach(() => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      orderRepositoryMock.rotateAccessToken.mockResolvedValue(now);
+    });
+
+    it('writes a fresh hash, so the link the buyer had stops working', async () => {
+      const { url } = await service.issueOrderAccessLink(ORDER_ID);
+
+      const rawToken = url.split('/').pop()!;
+      expect(orderRepositoryMock.rotateAccessToken).toHaveBeenCalledWith(
+        ORDER_ID,
+        createHash('sha256').update(rawToken).digest('hex'),
+      );
+    });
+
+    it('reports when it was issued — the TTL is counted from there, not from the order date', async () => {
+      const { issuedAt } = await service.issueOrderAccessLink(ORDER_ID);
+
+      expect(issuedAt).toBe(now);
+    });
+
+    it('never returns the same link twice', async () => {
+      const first = await service.issueOrderAccessLink(ORDER_ID);
+      const second = await service.issueOrderAccessLink(ORDER_ID);
+
+      expect(first.url).not.toBe(second.url);
+    });
+
+    it('404s for an order that does not exist, writing nothing', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.issueOrderAccessLink(ORDER_ID)).rejects.toThrow(NotFoundException);
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('refuses BEFORE writing when there is no storefront address to link to', async () => {
+      // Rotating here would kill a working link and hand back nothing usable.
+      configValues.clear();
+
+      await expect(service.issueOrderAccessLink(ORDER_ID)).rejects.toThrow(BadRequestException);
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('logs the rotation without the token or the URL that carries it', async () => {
+      const { url } = await service.issueOrderAccessLink(ORDER_ID);
+
+      // The operator log is shipped, searched and pasted into tickets. A link in
+      // it is a credential in it: anybody who can read the log could then open
+      // the customer's order, which is the exact thing hashing at rest prevents
+      // on the database side.
+      const rawToken = url.split('/').pop()!;
+      const logged = pinoLoggerMock.info.mock.calls.filter(
+        ([context]) => (context as { event?: string })?.event === 'order.access_link_issued',
+      );
+      expect(logged).toHaveLength(1);
+      expect(JSON.stringify(logged)).not.toContain(rawToken);
+      expect(logged[0][0]).toEqual({ event: 'order.access_link_issued', orderId: ORDER_ID });
     });
   });
 
@@ -2197,6 +2550,57 @@ describe('OrderService', () => {
       await expect(service.getGuestOrder(RAW_TOKEN)).rejects.toThrow(NotFoundException);
     });
 
+    // ── TASK-484: the clock starts when the LINK was issued ───────────────────
+    // An operator can now re-issue a link at any point in an order's life. If the
+    // window were still measured from `createdAt`, a link issued into a Viber
+    // chat two months after the order would be dead before it was pasted — and
+    // it would 404 identically to a stolen one, so nothing would ever report it.
+
+    it('counts the window from the re-issue, not from the order date', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 30);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({
+          userId: null,
+          createdAt: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000),
+          accessTokenIssuedAt: new Date(),
+        }),
+      );
+
+      await expect(service.getGuestOrder(RAW_TOKEN)).resolves.toBeInstanceOf(OrderEntity);
+    });
+
+    it('expires a link whose re-issue is itself older than the window', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 30);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({
+          // A recent order whose link was minted long ago is not a thing an
+          // operator can produce — but a fresh `createdAt` must not resurrect a
+          // stale token if one ever is, so the rule is read off one column only.
+          userId: null,
+          createdAt: new Date(),
+          accessTokenIssuedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+        }),
+      );
+
+      await expect(service.getGuestOrder(RAW_TOKEN)).rejects.toThrow(NotFoundException);
+    });
+
+    it('falls back to the order date for orders minted before the column existed', async () => {
+      configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 30);
+      orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
+        makeOrder({
+          userId: null,
+          createdAt: new Date(Date.now() - 29 * 24 * 60 * 60 * 1000),
+          accessTokenIssuedAt: null,
+        }),
+      );
+
+      // The migration added the column without a backfill, so every pre-484
+      // guest order carries null here. Treating null as "expired" would have
+      // broken every link already in a customer's inbox.
+      await expect(service.getGuestOrder(RAW_TOKEN)).resolves.toBeInstanceOf(OrderEntity);
+    });
+
     it('answers expired and unknown identically (no oracle for token guessing)', async () => {
       configValues.set('GUEST_ORDER_TOKEN_TTL_DAYS', 1);
       orderRepositoryMock.findByAccessTokenHash.mockResolvedValue(
@@ -2208,6 +2612,185 @@ describe('OrderService', () => {
       const unknown = await service.getGuestOrder(RAW_TOKEN).catch((err: Error) => err.message);
 
       expect(expired).toBe(unknown);
+    });
+  });
+
+  // ─── lookupOrders (TASK-483) ─────────────────────────────────────────────────
+  // The public "number + phone" form. Two properties are load-bearing and are
+  // asserted here rather than left to the e2e: EVERY failure is the same 404,
+  // and the phone is normalised the way the columns were (TASK-466).
+
+  describe('lookupOrders', () => {
+    const ORDER_ID = '94f5f971-1111-2222-3333-444455556666';
+
+    const makeRow = (overrides: Partial<PublicOrderRow> = {}): PublicOrderRow => ({
+      id: ORDER_ID,
+      createdAt: now,
+      status: OrderStatus.SHIPPED,
+      paymentStatus: PaymentStatus.PENDING,
+      paymentMethod: null,
+      subtotal: '69.97',
+      discount: '0.00',
+      shippingCost: '70.00',
+      addonsTotal: null,
+      total: '139.97',
+      trackingNumber: '20450000000001',
+      shippingAddress: {
+        firstName: 'Олена',
+        lastName: 'Шевченко',
+        address1: 'вул. Хрещатик, 1, кв. 12',
+        city: 'Київ',
+        phone: '+380671112233',
+        npWarehouseName: 'Відділення №12',
+      },
+      items: [
+        {
+          quantity: 2,
+          price: '29.99',
+          product: { name: 'Чохол MagSafe' },
+          addons: [{ name: 'Страхування', price: '99.00' }],
+        },
+      ],
+      ...overrides,
+    });
+
+    it('queries by the exact 8-character prefix, lowercased, with the "#" stripped', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([makeRow()]);
+
+      await service.lookupOrders({ number: '# 94F5 F971 ', phone: '+380671112233' });
+
+      expect(orderLookupRepositoryMock.findByNumberAndPhone).toHaveBeenCalledWith(
+        '94f5f971',
+        '380671112233',
+      );
+    });
+
+    it('normalises the phone the way the columns were normalised (TASK-466)', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([makeRow()]);
+
+      // A customer dictates their number without the country code. `phoneDigits`
+      // would leave this as `0671112233` and match nothing at all — the exact
+      // defect TASK-466 fixed in the columns.
+      await service.lookupOrders({ number: '94f5f971', phone: '067 111 22 33' });
+
+      expect(orderLookupRepositoryMock.findByNumberAndPhone).toHaveBeenCalledWith(
+        '94f5f971',
+        '380671112233',
+      );
+    });
+
+    it('404s on a number shorter than 8 characters WITHOUT querying anything', async () => {
+      // The whole point: a 3-character prefix would match strangers' orders.
+      await expect(service.lookupOrders({ number: '94f', phone: '+380671112233' })).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(orderLookupRepositoryMock.findByNumberAndPhone).not.toHaveBeenCalled();
+    });
+
+    it('404s on a number that is the right length but not hex', async () => {
+      await expect(
+        service.lookupOrders({ number: 'ZZZZZZZZ', phone: '+380671112233' }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(orderLookupRepositoryMock.findByNumberAndPhone).not.toHaveBeenCalled();
+    });
+
+    it('answers malformed, unknown and wrong-phone with the IDENTICAL message', async () => {
+      const malformed = await service
+        .lookupOrders({ number: '94f', phone: '+380671112233' })
+        .catch((err: Error) => err.message);
+
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([]);
+      const unknown = await service
+        .lookupOrders({ number: '00000000', phone: '+380671112233' })
+        .catch((err: Error) => err.message);
+      const wrongPhone = await service
+        .lookupOrders({ number: '94f5f971', phone: '+380670000000' })
+        .catch((err: Error) => err.message);
+
+      expect(malformed).toBe(unknown);
+      expect(unknown).toBe(wrongPhone);
+    });
+
+    it('returns a LIST — an 8-character prefix can collide, and a collision is one person', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([
+        makeRow(),
+        makeRow({ id: '94f5f971-9999-8888-7777-666655554444' }),
+      ]);
+
+      const result = await service.lookupOrders({ number: '94f5f971', phone: '+380671112233' });
+
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBeInstanceOf(PublicOrderEntity);
+    });
+
+    it('shows the number, the statuses, the lines, the money, the branch and the ТТН', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([makeRow()]);
+
+      const [order] = await service.lookupOrders({
+        number: '94f5f971',
+        phone: '+380671112233',
+      });
+
+      expect(order.number).toBe('94F5F971');
+      expect(order.status).toBe(OrderStatus.SHIPPED);
+      expect(order.paymentStatus).toBe(PaymentStatus.PENDING);
+      expect(order.items).toEqual([
+        {
+          productName: 'Чохол MagSafe',
+          quantity: 2,
+          price: '29.99',
+          lineTotal: '59.98',
+          addons: ['Страхування'],
+        },
+      ]);
+      expect(order.total).toBe('139.97');
+      expect(order.delivery).toEqual({ city: 'Київ', warehouse: 'Відділення №12' });
+      expect(order.trackingNumber).toBe('20450000000001');
+    });
+
+    it('never carries the street, the phone, the email, the notes or the raw id', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([makeRow()]);
+
+      const [order] = await service.lookupOrders({
+        number: '94f5f971',
+        phone: '+380671112233',
+      });
+
+      // Serialised, because that is what actually leaves the process — a field
+      // present on the instance but stripped by a decorator would still be a bug
+      // here, and a field absent from the class cannot be either.
+      const wire = JSON.stringify(order);
+      expect(wire).not.toContain('Хрещатик');
+      expect(wire).not.toContain('380671112233');
+      expect(wire).not.toContain(ORDER_ID);
+      expect(order).not.toHaveProperty('id');
+      expect(order).not.toHaveProperty('guest');
+      expect(order).not.toHaveProperty('notes');
+      expect(order).not.toHaveProperty('internalNotes');
+      expect(order.delivery).not.toHaveProperty('address1');
+    });
+
+    it('shows the city but no branch for a courier delivery (and still no street)', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([
+        makeRow({
+          shippingAddress: {
+            firstName: 'Олена',
+            lastName: 'Шевченко',
+            address1: 'вул. Хрещатик, 1, кв. 12',
+            city: 'Київ',
+          },
+        }),
+      ]);
+
+      const [order] = await service.lookupOrders({
+        number: '94f5f971',
+        phone: '+380671112233',
+      });
+
+      expect(order.delivery).toEqual({ city: 'Київ', warehouse: null });
+      expect(JSON.stringify(order)).not.toContain('Хрещатик');
     });
   });
 
@@ -2466,15 +3049,74 @@ describe('OrderService', () => {
         });
       });
 
-      it('records the money without a status move when REFUNDED is not reachable', async () => {
-        // Nothing shipped, so the order cannot become REFUNDED — but the money
-        // really did go back and the ledger has to say so.
+      it('refuses a full refund on an order the plan would leave live (TASK-431)', async () => {
+        // Nothing shipped, so the order cannot become REFUNDED either — and a
+        // paymentStatus of REFUNDED on a still-PENDING order is exactly what the
+        // cross-rule forbids (the customer would hold the goods AND the cash).
+        // Before TASK-431 this wrote the refund anyway; now the webhook door
+        // refuses it the same way the admin door 409s, leaving the contradiction
+        // where an operator can see it.
         seed(makePayment({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PAID }));
 
         await service.applyPaymentEvent(refund);
 
-        expect(lastPlan().paymentStatusChange?.to).toBe(PaymentStatus.REFUNDED);
+        const plan = lastPlan();
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.REFUNDED);
+        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan.statusChange).toBeUndefined();
+        expect(plan.refusedPaymentStatusChange).toEqual({
+          current: PaymentStatus.PAID,
+          rejected: PaymentStatus.REFUNDED,
+          // `crossRule`, not `table` — PAID → REFUNDED is a move the table
+          // allows; what refused it is the order still being live. Without the
+          // discriminator the log line contradicts the table it cites (review of
+          // plan 180).
+          reason: 'crossRule',
+        });
+      });
+
+      it.each([OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
+        'refuses the same full refund on a %s order',
+        async (status) => {
+          seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
+
+          await service.applyPaymentEvent(refund);
+
+          expect(lastPlan().paymentStatusChange).toBeUndefined();
+          expect(lastPlan().refusedPaymentStatusChange).toEqual({
+            current: PaymentStatus.PAID,
+            rejected: PaymentStatus.REFUNDED,
+            reason: 'crossRule',
+          });
+        },
+      );
+
+      it.each([OrderStatus.SHIPPED, OrderStatus.CANCELLED])(
+        'accepts it on a %s order, which the same plan closes or has closed',
+        async (status) => {
+          seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
+
+          await service.applyPaymentEvent(refund);
+
+          expect(lastPlan().paymentStatusChange).toEqual({
+            from: PaymentStatus.PAID,
+            to: PaymentStatus.REFUNDED,
+          });
+          expect(lastPlan().statusChange).toEqual({ from: status, to: OrderStatus.REFUNDED });
+        },
+      );
+
+      it('accepts it on an order already REFUNDED, without a second status row', async () => {
+        seed(makePayment({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.PAID }));
+
+        await service.applyPaymentEvent(refund);
+
+        expect(lastPlan().paymentStatusChange).toEqual({
+          from: PaymentStatus.PAID,
+          to: PaymentStatus.REFUNDED,
+        });
         expect(lastPlan().statusChange).toBeUndefined();
+        expect(lastPlan().refusedPaymentStatusChange).toBeUndefined();
       });
 
       it('never auto-restocks — the goods have to come back first (TASK-124)', async () => {
@@ -2516,6 +3158,123 @@ describe('OrderService', () => {
       await expect(
         service.applyPaymentEvent(makeEvent({ outcome: PaymentOutcome.IGNORED, amount: '0.01' })),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    // ── The payment state machine on the WEBHOOK door (TASK-431) ──────────────
+    // The whole point of the second door: this one may not raise. LiqPay and the
+    // reconcile worker retry anything that is not a 2xx, so a 409 here is not a
+    // refusal — it is the same event every few minutes until a human notices.
+
+    describe('an illegal payment move from a provider event', () => {
+      it('never throws; it records the attempt and leaves the order alone', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.REFUNDED }));
+
+        const result = await service.applyPaymentEvent(makeEvent());
+
+        expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
+        const plan = lastPlan();
+        // The attempt did succeed at the provider — that fact is still written.
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
+        // Nothing about the ORDER moves: not the payment status, not `paidAt`,
+        // not the reservation, not the order status.
+        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan.paidAt).toBeUndefined();
+        expect(plan.clearReservation).toBeUndefined();
+        expect(plan.statusChange).toBeUndefined();
+      });
+
+      it('records the refusal as an OrderStatusHistory row that claims no movement', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.PARTIALLY_REFUNDED }));
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().refusedPaymentStatusChange).toEqual({
+          current: PaymentStatus.PARTIALLY_REFUNDED,
+          rejected: PaymentStatus.PAID,
+          reason: 'table',
+        });
+      });
+
+      it('refuses a refund callback for money we never recorded as received', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.PENDING }));
+
+        await service.applyPaymentEvent(
+          makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed' }),
+        );
+
+        const plan = lastPlan();
+        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan.statusChange).toBeUndefined();
+        expect(plan.refusedPaymentStatusChange).toEqual({
+          current: PaymentStatus.PENDING,
+          rejected: PaymentStatus.REFUNDED,
+          // This one IS the table: PENDING → REFUNDED is money coming back that
+          // never arrived.
+          reason: 'table',
+        });
+      });
+
+      it('accepts PARTIALLY_REFUNDED → REFUNDED as the second half of one refund', async () => {
+        seed(
+          makePayment({
+            status: OrderStatus.DELIVERED,
+            paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          }),
+        );
+
+        await service.applyPaymentEvent(
+          makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed' }),
+        );
+
+        const plan = lastPlan();
+        expect(plan.paymentStatusChange).toEqual({
+          from: PaymentStatus.PARTIALLY_REFUNDED,
+          to: PaymentStatus.REFUNDED,
+        });
+        expect(plan.refusedPaymentStatusChange).toBeUndefined();
+      });
+    });
+
+    describe('idempotency of a repeated callback (TASK-431 acceptance)', () => {
+      it('treats a second PAID callback as a no-op — not an error, not a second row', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.PAID }));
+
+        const result = await service.applyPaymentEvent(makeEvent());
+
+        expect(result).toEqual({ applied: false, orderId: 'order-uuid-1' });
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+
+      it('writes no second FAILED history row when the order is already FAILED', async () => {
+        seed(
+          makePayment(
+            { paymentStatus: PaymentStatus.FAILED },
+            { status: PaymentAttemptStatus.FAILED },
+          ),
+        );
+
+        const result = await service.applyPaymentEvent(
+          makeEvent({ outcome: PaymentOutcome.FAILED, providerStatus: 'failure' }),
+        );
+
+        expect(result.applied).toBe(false);
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+
+      it('still records a fresh FAILED attempt on an already-FAILED order, without a status row', async () => {
+        // The attempt row is new (a second card was tried and also declined), so
+        // it is written — but FAILED → FAILED is not a move, so no history row.
+        seed(makePayment({ paymentStatus: PaymentStatus.FAILED }));
+
+        await service.applyPaymentEvent(
+          makeEvent({ outcome: PaymentOutcome.FAILED, providerStatus: 'failure' }),
+        );
+
+        const plan = lastPlan();
+        expect(plan.attemptStatus).toBe(PaymentAttemptStatus.FAILED);
+        expect(plan.paymentStatusChange).toBeUndefined();
+        expect(plan.refusedPaymentStatusChange).toBeUndefined();
+      });
     });
   });
 
@@ -2687,6 +3446,52 @@ describe('OrderService', () => {
       const entity = OrderEntity.fromPrisma(makeOrder({ restockedAt }));
 
       expect(entity.restockedAt).toEqual(restockedAt);
+    });
+  });
+
+  // ─── OrderEntity.fromPrisma — refundedTotal (TASK-472) ────────────────────────
+  // The X of "Повернуто X з Y": Σ Return.refundedAmount, derived at read time and
+  // stored nowhere.
+
+  describe('OrderEntity.fromPrisma — refundedTotal', () => {
+    it('omits the field entirely when the read did not join the returns', () => {
+      const entity = OrderEntity.fromPrisma(makeOrder());
+
+      // Absent, NOT '0.00': a customer-facing read has not measured anything, and
+      // a zero would assert that nothing was refunded.
+      expect(entity.refundedTotal).toBeUndefined();
+      expect('refundedTotal' in entity).toBe(false);
+    });
+
+    it('reports 0.00 for an order that has no returns at all', () => {
+      const entity = OrderEntity.fromPrisma(makeOrder({ returns: [] }));
+
+      expect(entity.refundedTotal).toBe('0.00');
+    });
+
+    it('sums several partial refunds in cents (no floating-point drift)', () => {
+      const entity = OrderEntity.fromPrisma(
+        makeOrder({
+          returns: [
+            { refundedAmount: { toString: () => '33.33' } },
+            { refundedAmount: { toString: () => '33.33' } },
+            { refundedAmount: { toString: () => '33.33' } },
+          ],
+        }),
+      );
+
+      expect(entity.refundedTotal).toBe('99.99');
+    });
+
+    it('skips a return that has not paid anything out yet (null amount)', () => {
+      const entity = OrderEntity.fromPrisma(
+        makeOrder({
+          returns: [{ refundedAmount: { toString: () => '499' } }, { refundedAmount: null }],
+        }),
+      );
+
+      // Also pads, like every other money string on the entity.
+      expect(entity.refundedTotal).toBe('499.00');
     });
   });
 });

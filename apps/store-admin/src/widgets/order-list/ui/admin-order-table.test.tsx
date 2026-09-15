@@ -4,9 +4,11 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { OrderEntityPaymentStatus, paymentStatusLabel } from "@/entities/order";
 import { AdminOrderTable } from "./admin-order-table";
 
 // next/navigation is unavailable under jsdom — mock the router + URL state.
@@ -441,6 +443,47 @@ describe("AdminOrderTable — queue filters (TASK-425)", () => {
     expect(mockReplace).toHaveBeenCalledWith("/orders?paymentStatus=PAID");
   });
 
+  // TASK-472. The option list claimed "every value of the enum" and no test held
+  // it to that, which is how PARTIALLY_REFUNDED could be added to the enum and
+  // missed here. Asserted against `OrderEntityPaymentStatus` itself, so the next
+  // value added to the enum fails this test instead of silently going missing.
+  it("offers every payment status, PARTIALLY_REFUNDED included", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    await userEvent.click(
+      screen.getByRole("combobox", {
+        name: dict.orders.filterPaymentStatusAria,
+      }),
+    );
+
+    for (const status of Object.values(OrderEntityPaymentStatus)) {
+      expect(
+        screen.getByRole("option", { name: paymentStatusLabel(status) }),
+      ).toBeInTheDocument();
+    }
+  });
+
+  it("filters by PARTIALLY_REFUNDED from the picker", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.orders.empty);
+
+    await userEvent.click(
+      screen.getByRole("combobox", {
+        name: dict.orders.filterPaymentStatusAria,
+      }),
+    );
+    await userEvent.click(
+      screen.getByRole("option", {
+        name: dict.orderStatus.paymentLabels.PARTIALLY_REFUNDED,
+      }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      "/orders?paymentStatus=PARTIALLY_REFUNDED",
+    );
+  });
+
   it("toggles the «waiting too long» chip into a SERVER filter", async () => {
     const seen = captureListUrl();
     renderWithProviders(<AdminOrderTable />);
@@ -659,5 +702,232 @@ describe("AdminOrderTable — CSV export (TASK-425)", () => {
       expect(toastError).toHaveBeenCalledWith(dict.orders.exportError),
     );
     expect(clickSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The derived marks and their filters (TASK-470 / 471 / 472).
+ *
+ * Two halves, and they fail differently. The CHIPS are pure rendering over the
+ * row the API returned — worth testing because each is a compound condition and
+ * a wrong one is invisible: the order quietly carries no chip, and an operator
+ * concludes it is fine. The FILTERS are worth testing because they must reach
+ * the SERVER: the marks are conditions over three or four columns and the list
+ * is paginated, so anything filtered on the client would answer "how many on
+ * this page" while looking exactly like the right answer.
+ */
+describe("AdminOrderTable — the derived marks of B-1 (TASK-470/471/472)", () => {
+  const captureUrl = (): { current: string } => {
+    const seen = { current: "" };
+    server.use(
+      http.get("*/api/admin/orders", ({ request }) => {
+        seen.current = request.url;
+        return HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+    );
+    return seen;
+  };
+
+  const stubRow = (row: Record<string, unknown>) =>
+    server.use(
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({
+          data: [{ ...makeOrderRow(null), ...row }],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+    );
+
+  /**
+   * Queries are scoped to the TABLE on purpose. Every mark has a filter toggle
+   * in the toolbar carrying the same words, which is the point — the operator
+   * clicks the toggle that matches the chip they just read — but it means an
+   * unscoped `getByText` would find the control as readily as the row.
+   */
+  const table = async () => {
+    // Wait for a cell of the real row first: the loading SKELETON is a <table>
+    // too, so `findByRole("table")` resolves against it and every query inside
+    // then misses.
+    await screen.findByText("user-uui…");
+    return within(screen.getByRole("table"));
+  };
+
+  describe("the chips on a row", () => {
+    it("flags a delivered order nobody paid for", async () => {
+      stubRow({
+        status: "DELIVERED",
+        paymentStatus: "PENDING",
+        total: "1200.00",
+      });
+
+      renderWithProviders(<AdminOrderTable />);
+
+      // The amount is IN the chip: an operator about to ring the customer needs
+      // the figure, not a flag that something is wrong.
+      expect((await table()).getByText(/Борг\s/)).toHaveTextContent(/1\s?200/);
+    });
+
+    it("counts down the payment window on a card order", async () => {
+      stubRow({
+        paymentMethod: "ONLINE",
+        paymentStatus: "PENDING",
+        reservationExpiresAt: new Date(Date.now() + 23 * 60_000).toISOString(),
+      });
+
+      renderWithProviders(<AdminOrderTable />);
+
+      expect(
+        (await table()).getByText(/Очікує оплати · \d+ хв/),
+      ).toBeInTheDocument();
+    });
+
+    it("says «Резерв сплив» once the window has closed", async () => {
+      stubRow({
+        paymentMethod: "ONLINE",
+        paymentStatus: "PENDING",
+        reservationExpiresAt: "2020-01-01T00:00:00.000Z",
+      });
+
+      renderWithProviders(<AdminOrderTable />);
+
+      expect(
+        (await table()).getByText(dict.orders.markReservationExpired),
+      ).toBeInTheDocument();
+    });
+
+    it("shows the refunded fraction on a partially refunded order", async () => {
+      stubRow({
+        paymentStatus: "PARTIALLY_REFUNDED",
+        refundedTotal: "499.00",
+        total: "1200.00",
+      });
+
+      renderWithProviders(<AdminOrderTable />);
+
+      // `\d` after the words, because the payment BADGE beside it reads exactly
+      // «Частково повернуто» — the mark is the one that carries the fraction.
+      const chip = (await table()).getByText(/Частково повернуто \d/);
+      expect(chip).toHaveTextContent(/499/);
+      expect(chip).toHaveTextContent(/1\s?200/);
+    });
+
+    it("draws no mark at all on an ordinary paid order", async () => {
+      stubRow({ status: "PROCESSING", paymentStatus: "PAID" });
+
+      renderWithProviders(<AdminOrderTable />);
+
+      const row = await table();
+      expect(row.getByText("Оплачено")).toBeInTheDocument();
+      expect(row.queryByText(/Борг/)).not.toBeInTheDocument();
+      expect(row.queryByText(/Очікує оплати ·/)).not.toBeInTheDocument();
+      expect(
+        row.queryByText(dict.orders.markReservationExpired),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("the toggles that filter by them", () => {
+    const TOGGLES: ReadonlyArray<[string, string]> = [
+      [dict.orders.debtChipAria, "hasDebt"],
+      [dict.orders.awaitingPaymentChipAria, "awaitingPayment"],
+      [dict.orders.reservationExpiredChipAria, "reservationExpired"],
+      [dict.orders.unavailableItemsChipAria, "hasUnavailableItems"],
+    ];
+
+    it.each(TOGGLES)(
+      "«%s» writes ?%s=true and never filters client-side",
+      async (aria, param) => {
+        const seen = captureUrl();
+        renderWithProviders(<AdminOrderTable />);
+        await screen.findByText(dict.orders.empty);
+
+        const chip = screen.getByRole("button", { name: aria });
+        // Off by default, and it says so to a screen reader rather than by colour.
+        expect(chip).toHaveAttribute("aria-pressed", "false");
+
+        await userEvent.click(chip);
+
+        expect(mockReplace).toHaveBeenCalledWith(`/orders?${param}=true`);
+        expect(seen.current).not.toContain(param);
+      },
+    );
+
+    it.each(TOGGLES)(
+      "renders «%s» pressed and asks the API for ?%s when deep-linked",
+      async (aria, param) => {
+        const seen = captureUrl();
+        mockSearchParams = new URLSearchParams(`${param}=true`);
+
+        renderWithProviders(<AdminOrderTable />);
+        await screen.findByText(dict.orders.empty);
+
+        expect(screen.getByRole("button", { name: aria })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        );
+        await waitFor(() => expect(seen.current).toContain(`${param}=true`));
+      },
+    );
+
+    it("clicking a pressed toggle clears it", async () => {
+      mockSearchParams = new URLSearchParams("hasDebt=true");
+      renderWithProviders(<AdminOrderTable />);
+      await screen.findByText(dict.orders.empty);
+
+      await userEvent.click(
+        screen.getByRole("button", { name: dict.orders.debtChipAria }),
+      );
+
+      expect(mockReplace).toHaveBeenCalledWith("/orders");
+    });
+
+    it("composes two marks at once", async () => {
+      // Independent booleans rather than one `?mark=` choice, precisely so this
+      // question — "delivered, unpaid AND missing a position" — is expressible.
+      const seen = captureUrl();
+      mockSearchParams = new URLSearchParams(
+        "hasDebt=true&hasUnavailableItems=true",
+      );
+
+      renderWithProviders(<AdminOrderTable />);
+      await screen.findByText(dict.orders.empty);
+
+      await waitFor(() => expect(seen.current).toContain("hasDebt=true"));
+      expect(seen.current).toContain("hasUnavailableItems=true");
+    });
+
+    it("carries the mark filters into the CSV export", async () => {
+      // The export's promise is "the rows you are looking at"; a file that
+      // silently disagrees with the screen it came from gives no hint that it is
+      // the one lying.
+      mockSearchParams = new URLSearchParams("hasUnavailableItems=true");
+      const exportSeen = { current: "" };
+      server.use(
+        http.get("*/api/admin/orders", () =>
+          HttpResponse.json({
+            data: [makeOrderRow(null)],
+            meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+          }),
+        ),
+        http.get("*/api/admin/orders/export", ({ request }) => {
+          exportSeen.current = request.url;
+          return HttpResponse.text("id\r\norder-uuid-12345678");
+        }),
+      );
+
+      renderWithProviders(<AdminOrderTable />);
+      await screen.findByText("user-uui…");
+
+      await userEvent.click(
+        screen.getByRole("button", { name: dict.orders.exportCsv }),
+      );
+
+      await waitFor(() =>
+        expect(exportSeen.current).toContain("hasUnavailableItems=true"),
+      );
+    });
   });
 });

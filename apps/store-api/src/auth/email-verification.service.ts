@@ -1,9 +1,14 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
 import { AuthRepository } from './auth.repository';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+import {
+  GUEST_ORDER_CLAIM_PORT,
+  type GuestOrderClaimPort,
+} from '../common/ports/guest-order-claim.port';
 
 /** Bytes of entropy for an opaque verification token (→ 64 hex chars). */
 const VERIFICATION_TOKEN_BYTES = 32;
@@ -48,6 +53,9 @@ export class EmailVerificationService {
     private readonly mailOutboxService: MailOutboxService,
     private readonly config: ConfigService,
     private readonly logger: PinoLogger,
+    // TASK-485: used to reach the order side WITHOUT importing OrderModule —
+    // see `guest-order-claim.port.ts` for the cycle that would otherwise form.
+    private readonly moduleRef: ModuleRef,
   ) {
     this.logger.setContext(EmailVerificationService.name);
     this.expiration = this.config.get<string>(
@@ -98,9 +106,19 @@ export class EmailVerificationService {
    * Confirm a verification token. Public — the click arrives from an email
    * client with no session.
    *
+   * ── TASK-485: this is where guest orders become yours ─────────────────────
+   * Confirming is the moment the account has PROVEN it owns the address, and an
+   * address is the only thing linking a guest checkout to a person. So the claim
+   * runs here and nowhere earlier: at registration the same call would hand a
+   * stranger's phone number, order totals and delivery address to anybody who
+   * typed that stranger's email into the signup form, because signing in with an
+   * unverified address is not blocked today (B-5 §5).
+   *
+   * @returns the proven address and how many guest orders moved onto the account
+   *   (0 for the overwhelming majority — most people never ordered as a guest).
    * @throws BadRequestException with a single generic message for every failure.
    */
-  async confirm(rawToken: string): Promise<{ email: string }> {
+  async confirm(rawToken: string): Promise<{ email: string; claimedOrders: number }> {
     const stored = await this.authRepository.findEmailVerificationToken(rawToken);
 
     const isInvalid =
@@ -142,7 +160,44 @@ export class EmailVerificationService {
       'Email address verified',
     );
 
-    return { email: stored.email };
+    const claimedOrders = await this.claimGuestOrders(stored.user.id, stored.email);
+
+    return { email: stored.email, claimedOrders };
+  }
+
+  /**
+   * Move this address's guest orders onto the account that has just proven it
+   * (TASK-485).
+   *
+   * ── Why failure here is swallowed ─────────────────────────────────────────
+   * The verification itself is already committed and its token already burned by
+   * the time this runs, so throwing would answer 400 — "your link is invalid" —
+   * to somebody whose address was in fact verified a millisecond ago, and they
+   * would have no way to retry. A claim that did not happen costs the shopper a
+   * tidier order list; it costs them nothing they cannot still reach, because a
+   * guest order remains readable through the link emailed at checkout and
+   * through the public number+phone form (TASK-483). So the outage is logged
+   * loudly and the verification stands.
+   *
+   * Claiming is idempotent (`userId: null` is part of the WHERE), so a retry
+   * from any other path can never double-claim.
+   */
+  private async claimGuestOrders(userId: string, email: string): Promise<number> {
+    try {
+      // `strict: false` searches the whole container: the provider lives in
+      // OrderModule, which this module deliberately does not import.
+      const claimPort = this.moduleRef.get<GuestOrderClaimPort>(GUEST_ORDER_CLAIM_PORT, {
+        strict: false,
+      });
+
+      return await claimPort.claimGuestOrders(userId, email);
+    } catch (error) {
+      this.logger.error(
+        { event: 'user.guestOrderClaimFailed', userId, err: error },
+        'Email was verified but guest orders could not be claimed',
+      );
+      return 0;
+    }
   }
 
   /** Parse "24h" / "30m" into milliseconds; falls back to 24h. */

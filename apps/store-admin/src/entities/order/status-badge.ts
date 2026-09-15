@@ -1,12 +1,7 @@
 import { OrderEntityStatus, OrderEntityPaymentStatus } from "@/shared/api";
 
 type BadgeVariant =
-  | "default"
-  | "secondary"
-  | "destructive"
-  | "outline"
-  | "success"
-  | "warning";
+  "default" | "secondary" | "destructive" | "outline" | "success" | "warning";
 
 /**
  * Map an order status to a shadcn/ui `Badge` variant. Shared by the order list
@@ -36,6 +31,11 @@ export function orderStatusBadgeVariant(status: string): BadgeVariant {
 /**
  * Map a payment status to a shadcn/ui `Badge` variant. Paid = green `success`,
  * awaiting payment = amber `warning`, failed/refunded = red `destructive`.
+ *
+ * PARTIALLY_REFUNDED (TASK-431) is amber, not red: part of the money is still
+ * the shop's and the order is usually still live, so it belongs with "needs
+ * attention" rather than with "this one is closed and reversed". Red would put
+ * it next to a full refund on the list and hide the difference that matters.
  */
 export function paymentStatusBadgeVariant(status: string): BadgeVariant {
   switch (status) {
@@ -44,6 +44,7 @@ export function paymentStatusBadgeVariant(status: string): BadgeVariant {
     case OrderEntityPaymentStatus.FAILED:
     case OrderEntityPaymentStatus.REFUNDED:
       return "destructive";
+    case OrderEntityPaymentStatus.PARTIALLY_REFUNDED:
     case OrderEntityPaymentStatus.PENDING:
     default:
       return "warning";

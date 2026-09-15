@@ -4,13 +4,13 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { ReturnStatus } from '@prisma/client';
+import { ReturnStatus, UserRole } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { RETURN_SORT_FIELDS } from '../src/order/returns/dto';
 import { PrismaService } from '../src/prisma';
-import { PermissionRepository } from '../src/auth/permissions';
+import { PermissionRepository, PermissionService } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
@@ -42,6 +42,7 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
 describe('Admin returns queue (e2e)', () => {
   let app: INestApplication;
   let jwtService: JwtService;
+  let permissionService: PermissionService;
 
   const authRepositoryMock = {
     findByEmail: jest.fn(),
@@ -68,14 +69,21 @@ describe('Admin returns queue (e2e)', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
-    return: { count: jest.fn(), findMany: jest.fn() },
+    return: { count: jest.fn(), findMany: jest.fn(), create: jest.fn() },
+    // The order-scoped return routes read the order first (review of plan 180).
+    order: { findFirst: jest.fn() },
     // The list path uses the ARRAY form of $transaction; awaiting the operations
     // it was handed is what the real client does with that form.
     $transaction: jest.fn(),
   };
 
+  // Named rather than inline so the RBAC block below can drive the MANAGER's
+  // grants through `replaceRoleGrants` and assert what the NEXT request sees.
+  const permissionRepositoryMock = createPermissionRepositoryMock();
+
   const testAdmin = { id: 'admin-e2e-1', role: 'ADMIN' as const };
   const testCustomer = { id: 'customer-e2e-1', role: 'CUSTOMER' as const };
+  const testManager = { id: 'manager-e2e-1', role: 'MANAGER' as const };
 
   const url = '/api/admin/returns';
   const now = new Date('2026-07-10T10:00:00.000Z');
@@ -118,7 +126,7 @@ describe('Admin returns queue (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
       .overrideProvider(PermissionRepository)
-      .useValue(createPermissionRepositoryMock())
+      .useValue(permissionRepositoryMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(APP_GUARD)
@@ -127,6 +135,7 @@ describe('Admin returns queue (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
+    permissionService = moduleFixture.get<PermissionService>(PermissionService);
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -297,6 +306,92 @@ describe('Admin returns queue (e2e)', () => {
       // limit 20, not 10: TASK-423 unified the admin page size across every
       // table, and the returns queue was one of the two that disagreed.
       expect(response.body.meta).toEqual({ total: 3, page: 1, limit: 20, totalPages: 1 });
+    });
+  });
+
+  // ─── The permission keys, on the SERVER (review of plan 180) ────────────────
+  //
+  // `returns:read` and `returns:write` are keys this wave introduced, and until
+  // now the only thing asserting them was the admin panel's own gate —
+  // `returns-permission-gate.test.tsx`, which hides a menu entry. That is the
+  // cosmetic half. Nothing proved the API itself refuses a caller without the
+  // key, so moving `@RequirePermission('returns:write')` off the handler — after
+  // which the class-level `returns:read` governs it, and every manager who can
+  // VIEW the queue can open returns for customers — would leave every suite
+  // green.
+  //
+  // "Not 403" rather than 201 on the granted case, on purpose: the order does
+  // not exist in this fixture, so 404 is the honest answer past the guard, and
+  // the guard is what these cases pin.
+
+  describe('the returns permission keys are enforced by the API, not just the UI', () => {
+    const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
+    const orderReturnsUrl = `/api/admin/orders/${orderId}/returns`;
+    const lineId = '550e8400-e29b-41d4-a716-446655440001';
+
+    const managerToken = () => `Bearer ${generateAccessToken(testManager.id, 'MANAGER')}`;
+
+    /**
+     * Set the MANAGER's grants through the SERVICE, not the repository double.
+     *
+     * `PermissionService` caches a role's grant set for 60 seconds and evicts
+     * that cache inside `setRoleGrants`. Writing to the repository double
+     * directly leaves the previous set cached, so the next request is answered
+     * from a matrix nobody is looking at.
+     */
+    const grantManager = (permissions: string[]) =>
+      permissionService.setRoleGrants(UserRole.MANAGER, permissions);
+
+    beforeEach(async () => {
+      prismaServiceMock.order.findFirst.mockResolvedValue(null);
+      await grantManager([]);
+    });
+
+    afterAll(async () => {
+      // The matrix is stateful and shared with the rest of the process.
+      await grantManager([]);
+    });
+
+    it('refuses the queue to a manager holding no returns key at all', async () => {
+      await request(app.getHttpServer()).get(url).set('Authorization', managerToken()).expect(403);
+    });
+
+    it('opens the queue once returns:read is granted', async () => {
+      await grantManager(['returns:read']);
+
+      await request(app.getHttpServer()).get(url).set('Authorization', managerToken()).expect(200);
+    });
+
+    it('refuses the per-order return list without returns:read', async () => {
+      await request(app.getHttpServer())
+        .get(orderReturnsUrl)
+        .set('Authorization', managerToken())
+        .expect(403);
+    });
+
+    it('refuses to OPEN a return for a manager who may only read them', async () => {
+      // The whole point of two keys: seeing the queue is not permission to
+      // decide that a customer is sending goods back.
+      await grantManager(['returns:read']);
+
+      await request(app.getHttpServer())
+        .post(orderReturnsUrl)
+        .set('Authorization', managerToken())
+        .send({ items: [{ orderItemId: lineId, quantity: 1 }] })
+        .expect(403);
+      expect(prismaServiceMock.return.create).not.toHaveBeenCalled();
+    });
+
+    it('lets the write through once returns:write is granted', async () => {
+      await grantManager(['returns:read', 'returns:write']);
+
+      const response = await request(app.getHttpServer())
+        .post(orderReturnsUrl)
+        .set('Authorization', managerToken())
+        .send({ items: [{ orderItemId: lineId, quantity: 1 }] });
+
+      expect(response.status).not.toBe(403);
+      expect(response.status).toBe(404);
     });
   });
 });

@@ -2,9 +2,14 @@ import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import { AccountView } from "./account-view";
 
-// next/navigation is not available under jsdom — mock the router.
+// next/navigation is not available under jsdom — mock the router. The profile
+// section also reads the URL since TASK-485 (the claimed-guest-orders banner),
+// so the search params and pathname have to be answerable too; an empty query
+// is the ordinary case and keeps that banner silent.
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
+  usePathname: () => "/account",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 const d = dict.account.dashboard;

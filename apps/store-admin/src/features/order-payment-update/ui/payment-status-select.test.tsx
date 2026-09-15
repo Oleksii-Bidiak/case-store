@@ -9,6 +9,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import {
+  getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
 } from "@/entities/order";
@@ -25,11 +26,30 @@ jest.mock("@/shared/ui/toast", () => ({
 
 const ORDER_ID = "order-uuid-1";
 
-function stubPatch(status = 200) {
+/**
+ * The option list comes from the server now (TASK-431), so every test declares
+ * what the server says is legal. That is the behaviour under test: before this,
+ * the component invented the list from the enum and the server had no say.
+ */
+function stubTransitions(current: string, allowed: string[]) {
+  server.use(
+    http.get("*/api/admin/orders/:orderId/allowed-payment-transitions", () =>
+      HttpResponse.json({
+        data: {
+          current,
+          allowed,
+          updatedAt: "2026-09-14T10:00:00.000Z",
+        },
+      }),
+    ),
+  );
+}
+
+function stubPatch(status = 200, body?: unknown) {
   server.use(
     http.patch("*/api/admin/orders/:orderId/payment-status", () => {
       if (status !== 200) {
-        return new HttpResponse(null, { status });
+        return HttpResponse.json(body ?? null, { status });
       }
       return HttpResponse.json({
         data: { id: ORDER_ID, status: "PENDING", paymentStatus: "PAID" },
@@ -38,15 +58,9 @@ function stubPatch(status = 200) {
   );
 }
 
-function renderSelect(
-  currentPaymentStatus = "PENDING",
-  queryClient?: QueryClient,
-) {
+function renderSelect(queryClient?: QueryClient) {
   return renderWithProviders(
-    <PaymentStatusSelect
-      orderId={ORDER_ID}
-      currentPaymentStatus={currentPaymentStatus}
-    />,
+    <PaymentStatusSelect orderId={ORDER_ID} />,
     queryClient ? { queryClient } : {},
   );
 }
@@ -67,63 +81,179 @@ function spyingQueryClient() {
 
 const openSelect = async () =>
   userEvent.click(
-    screen.getByRole("combobox", { name: dict.orderStatus.paymentUpdateAria }),
+    await screen.findByRole("combobox", {
+      name: dict.orderStatus.paymentUpdateAria,
+    }),
   );
 
-describe("PaymentStatusSelect (TASK-151)", () => {
+describe("PaymentStatusSelect (TASK-151, TASK-431)", () => {
   beforeEach(() => {
     toastSuccess.mockClear();
     toastError.mockClear();
   });
 
-  it("lists every payment status except the current one", async () => {
-    renderSelect("PENDING");
+  it("offers exactly the statuses the server calls legal — not every other value", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
+    renderSelect();
     await openSelect();
 
-    // Current status (Очікує оплати) is excluded; the other three are offered.
     expect(
       screen.getByRole("option", { name: "Оплачено" }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("option", { name: "Помилка оплати" }),
     ).toBeInTheDocument();
+    // The old component listed these too, purely because they were not the
+    // current value. Neither is reachable from PENDING.
     expect(
-      screen.getByRole("option", { name: "Кошти повернено" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("option", { name: "Кошти повернено" }),
+    ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("option", { name: "Очікує оплати" }),
+      screen.queryByRole("option", { name: "Частково повернуто" }),
     ).not.toBeInTheDocument();
   });
 
+  it("offers a PARTIAL refund but not a full one on a delivered, paid order", async () => {
+    stubTransitions("PAID", ["PARTIALLY_REFUNDED"]);
+    renderSelect();
+    await openSelect();
+
+    expect(
+      screen.getByRole("option", { name: "Частково повернуто" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "Кошти повернено" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says so, rather than rendering an empty dropdown, when nothing is possible", async () => {
+    stubTransitions("REFUNDED", []);
+    renderSelect();
+
+    expect(
+      await screen.findByText(dict.orderStatus.noPaymentTransitions),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("explains the missing full refund instead of leaving the operator guessing", async () => {
+    stubTransitions("PAID", ["PARTIALLY_REFUNDED"]);
+    renderSelect();
+
+    expect(
+      await screen.findByText(dict.orderStatus.paymentTransitionsHint),
+    ).toBeInTheDocument();
+  });
+
+  it("shows an error line when the option list cannot be read", async () => {
+    server.use(
+      http.get(
+        "*/api/admin/orders/:orderId/allowed-payment-transitions",
+        () => new HttpResponse(null, { status: 500 }),
+      ),
+    );
+    renderSelect();
+
+    expect(
+      await screen.findByText(dict.orderStatus.paymentTransitionsLoadError),
+    ).toBeInTheDocument();
+  });
+
   it("calls the mutation and shows a success toast when a status is picked", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
     stubPatch(200);
-    renderSelect("PENDING");
+    renderSelect();
 
     await openSelect();
     await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
 
-    await screen.findByRole("combobox"); // settle
-    expect(toastSuccess).toHaveBeenCalledWith(
-      dict.orderStatus.paymentToastUpdated("Оплачено"),
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(
+        dict.orderStatus.paymentToastUpdated("Оплачено"),
+      ),
     );
     expect(toastError).not.toHaveBeenCalled();
   });
 
-  it("shows an error toast when the update fails", async () => {
+  it("shows the generic error toast when the update fails for a non-conflict reason", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
     stubPatch(500);
-    renderSelect("PENDING");
+    renderSelect();
 
     await openSelect();
     await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
 
-    await new Promise((r) => setTimeout(r, 0));
-    expect(toastError).toHaveBeenCalledWith(
-      dict.orderStatus.paymentToastFailed,
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        dict.orderStatus.paymentToastFailed,
+      ),
     );
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
+  // ── The two coded 409s (TASK-431) ──────────────────────────────────────────
+  // A refused write must say WHICH refusal it was: "that move is impossible" and
+  // "cancel the order first" have different next actions.
+
+  it("toasts the coded message for an illegal payment transition", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
+    stubPatch(409, {
+      error: "ORDER_PAYMENT_TRANSITION_INVALID",
+      message: "Order payment status cannot move from REFUNDED to PAID",
+      statusCode: 409,
+    });
+    renderSelect();
+
+    await openSelect();
+    await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        dict.orderStatus.conflict.ORDER_PAYMENT_TRANSITION_INVALID,
+      ),
+    );
+  });
+
+  it("toasts the cross-rule message when a full refund needs the order closed first", async () => {
+    stubTransitions("PAID", ["PARTIALLY_REFUNDED", "REFUNDED"]);
+    stubPatch(409, {
+      error: "ORDER_REFUND_REQUIRES_CLOSED_ORDER",
+      message: "A full refund needs the order cancelled or refunded first",
+      statusCode: 409,
+    });
+    renderSelect();
+
+    await openSelect();
+    await userEvent.click(
+      screen.getByRole("option", { name: "Кошти повернено" }),
+    );
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        dict.orderStatus.conflict.ORDER_REFUND_REQUIRES_CLOSED_ORDER,
+      ),
+    );
+  });
+
+  it("refetches its own option list after a refusal, so the stale choice disappears", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
+    stubPatch(409, { error: "ORDER_PAYMENT_TRANSITION_INVALID" });
+    const { queryClient, invalidate } = spyingQueryClient();
+    renderSelect(queryClient);
+
+    await openSelect();
+    await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey:
+          getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey(ORDER_ID),
+      }),
+    );
+  });
+
   it("disables the trigger while the mutation is in flight", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
     server.use(
       http.patch("*/api/admin/orders/:orderId/payment-status", async () => {
         await delay(100);
@@ -132,12 +262,11 @@ describe("PaymentStatusSelect (TASK-151)", () => {
         });
       }),
     );
-    renderSelect("PENDING");
+    renderSelect();
 
     await openSelect();
     await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
 
-    // Mutation is pending → the trigger is disabled until it resolves.
     expect(
       screen.getByRole("combobox", {
         name: dict.orderStatus.paymentUpdateAria,
@@ -154,9 +283,10 @@ describe("PaymentStatusSelect (TASK-151)", () => {
   // the move as stale. The operator, alone in one tab, was told somebody else
   // had just changed the order.
   it("invalidates the allowed-transitions key, so the next status change is not refused as stale", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
     stubPatch(200);
     const { queryClient, invalidate } = spyingQueryClient();
-    renderSelect("PENDING", queryClient);
+    renderSelect(queryClient);
 
     await openSelect();
     await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
@@ -170,9 +300,10 @@ describe("PaymentStatusSelect (TASK-151)", () => {
   });
 
   it("invalidates the history key, because the write adds a PAYMENT_STATUS audit row", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
     stubPatch(200);
     const { queryClient, invalidate } = spyingQueryClient();
-    renderSelect("PENDING", queryClient);
+    renderSelect(queryClient);
 
     await openSelect();
     await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));

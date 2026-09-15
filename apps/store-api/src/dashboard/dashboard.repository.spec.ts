@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { DashboardRepository } from './dashboard.repository';
 import { PrismaService } from '../prisma';
 
@@ -138,5 +139,163 @@ describe('DashboardRepository — the rating-abuse signal (TASK-589)', () => {
     const needsAction = await repo.getNeedsAction();
 
     expect(needsAction.ratingAbuse).toBe(0);
+  });
+});
+
+/**
+ * The «Недоступні позиції» tile (TASK-470).
+ *
+ * The aggregate of the fourth mark of owner decision B-1 §3, and the one signal
+ * in the whole system that NOTHING else reacts to: the owner decided the buyer
+ * is told by a person, not by an automatic mail, so this tile is the entire
+ * notification. If its predicate is wrong the shop finds out from the customer.
+ *
+ * Two ways it can be wrong, and they fail in opposite directions. Forget the
+ * `status` exclusion and every cancelled order the shop ever had lands in the
+ * count, which then only ever grows — an operator learns within a week that the
+ * tile means nothing. Ask about the wrong columns and it sits at a calm zero
+ * while orders quietly cannot be shipped.
+ */
+describe('DashboardRepository — the «Недоступні позиції» tile (TASK-470)', () => {
+  let repo: DashboardRepository;
+
+  const orderCount = jest.fn().mockResolvedValue(0);
+
+  const prismaMock = {
+    order: { count: orderCount },
+    review: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
+    mailOutbox: { count: jest.fn().mockResolvedValue(0) },
+  };
+
+  /** The `where` of the count issued for the unavailable-items tile. */
+  const unavailableWhere = () =>
+    orderCount.mock.calls
+      .map((call) => call[0].where)
+      .find((where: Record<string, unknown>) => Array.isArray(where.OR));
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    orderCount.mockResolvedValue(0);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [DashboardRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(DashboardRepository);
+  });
+
+  it('counts orders whose line product is deleted, unpublished or oversold', async () => {
+    await repo.getNeedsAction();
+
+    expect(unavailableWhere().OR).toContainEqual({
+      items: {
+        some: {
+          product: {
+            OR: [{ deletedAt: { not: null } }, { isActive: false }, { stock: { lt: 0 } }],
+          },
+        },
+      },
+    });
+  });
+
+  it('also counts an order whose reservation the TTL worker released', async () => {
+    // Stock is taken at creation, so "someone else bought it" cannot happen on
+    // its own — it can only happen after the hold was released.
+    await repo.getNeedsAction();
+
+    expect(unavailableWhere().OR).toContainEqual({ restockedAt: { not: null } });
+  });
+
+  it('excludes orders that have already ended', async () => {
+    await repo.getNeedsAction();
+
+    expect(unavailableWhere().status).toEqual({
+      notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
+    });
+  });
+
+  it('excludes soft-deleted orders', async () => {
+    await repo.getNeedsAction();
+
+    expect(unavailableWhere().deletedAt).toBeNull();
+  });
+
+  it('reports the count as a number, zero included', async () => {
+    const needsAction = await repo.getNeedsAction();
+
+    expect(needsAction.unavailableItems).toBe(0);
+  });
+});
+
+/**
+ * The receivable predicate after `PARTIALLY_REFUNDED` (review of plan 180).
+ *
+ * `unrealizedOrderWhere` is the single source of truth behind three numbers —
+ * the unrealized-revenue figure, its 30-day twin, and the `unpaidInTransit`
+ * needs-action count. It used to read "active but `paymentStatus != PAID`",
+ * which was exhaustive while the enum had four values.
+ *
+ * Adding a fifth broke it silently and in the expensive direction: a
+ * PARTIALLY_REFUNDED order is one that was paid IN FULL and had part of the
+ * money sent back, so it is owed nothing — yet `!= PAID` added its ENTIRE total
+ * to the receivables figure and put it in the queue of customers to chase. No
+ * test failed, because none of the three numbers asserted the predicate.
+ *
+ * This is deliberately NOT the same rule as the «Борг» mark, which fires on
+ * `∉ {PAID, REFUNDED}` (B-1 §1): the mark asks "is there an open money question
+ * here", this asks "how much have we not been paid". A partially refunded order
+ * answers yes to the first and zero to the second.
+ */
+describe('DashboardRepository — what counts as money still owed (review of plan 180)', () => {
+  let repo: DashboardRepository;
+
+  const orderCount = jest.fn().mockResolvedValue(0);
+  const orderAggregate = jest.fn().mockResolvedValue({ _sum: { total: null } });
+
+  const prismaMock = {
+    order: { count: orderCount, aggregate: orderAggregate },
+    review: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
+    mailOutbox: { count: jest.fn().mockResolvedValue(0) },
+  };
+
+  /**
+   * The `where` of the receivable count — the one carrying both a compound
+   * `paymentStatus` and the terminal-status exclusion, and no `OR` (that one is
+   * the unavailable-items tile).
+   */
+  const receivableWhere = () =>
+    orderCount.mock.calls
+      .map((call) => call[0].where)
+      .find(
+        (where: Record<string, unknown>) =>
+          !Array.isArray(where.OR) &&
+          typeof where.paymentStatus === 'object' &&
+          where.paymentStatus !== null,
+      );
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    orderCount.mockResolvedValue(0);
+    orderAggregate.mockResolvedValue({ _sum: { total: null } });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [DashboardRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(DashboardRepository);
+  });
+
+  it('does not treat a partially refunded order as money still owed', async () => {
+    await repo.getNeedsAction();
+
+    expect(receivableWhere().paymentStatus).toEqual({
+      notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+    });
+  });
+
+  it('still excludes orders that have already ended', async () => {
+    await repo.getNeedsAction();
+
+    expect(receivableWhere().status).toEqual({
+      notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
+    });
   });
 });

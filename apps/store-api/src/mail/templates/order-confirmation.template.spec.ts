@@ -147,6 +147,54 @@ describe('buildOrderConfirmationEmail', () => {
     });
   });
 
+  // ─── TASK-483: the route back that does not depend on this letter ───────────
+
+  describe('public lookup link', () => {
+    const LOOKUP_URL = 'https://shop.example.com/orders/status';
+
+    it('carries the lookup link in BOTH parts when one is supplied', () => {
+      const { html, text } = buildOrderConfirmationEmail(
+        baseParams({ orderLookupUrl: LOOKUP_URL }),
+      );
+
+      expect(html).toContain(LOOKUP_URL);
+      // The plain-text part matters most here: a client that strips HTML is
+      // exactly the one whose reader is most likely to lose the link.
+      expect(text).toContain(LOOKUP_URL);
+    });
+
+    it('is sent to ACCOUNT buyers too — there is no token link for them', () => {
+      const { html } = buildOrderConfirmationEmail(baseParams({ orderLookupUrl: LOOKUP_URL }));
+
+      expect(html).not.toContain('/orders/guest/');
+      expect(html).toContain(LOOKUP_URL);
+    });
+
+    it('stops claiming the emailed link is the ONLY way in once the form exists', () => {
+      const withForm = buildOrderConfirmationEmail(
+        baseParams({
+          orderStatusUrl: 'https://shop.example.com/orders/guest/tok',
+          orderLookupUrl: LOOKUP_URL,
+        }),
+      );
+      const withoutForm = buildOrderConfirmationEmail(
+        baseParams({ orderStatusUrl: 'https://shop.example.com/orders/guest/tok' }),
+      );
+
+      expect(withoutForm.html).toContain('єдиний спосіб');
+      expect(withForm.html).not.toContain('єдиний спосіб');
+      expect(withForm.text).not.toContain('єдиний спосіб');
+    });
+
+    it('renders nothing (and no "undefined") when no lookup URL is configured', () => {
+      const { html, text } = buildOrderConfirmationEmail(baseParams());
+
+      expect(html).not.toContain('undefined');
+      expect(text).not.toContain('undefined');
+      expect(html).not.toContain('/orders/status');
+    });
+  });
+
   describe('edge cases', () => {
     it('omits the address block (no crash) when shippingAddress is null', () => {
       const params = baseParams();

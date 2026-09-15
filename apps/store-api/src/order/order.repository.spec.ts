@@ -68,6 +68,8 @@ const prismaMock = {
     findMany: jest.fn(),
     count: jest.fn(),
     update: jest.fn(),
+    // TASK-485: claiming guest orders onto a freshly-verified account.
+    updateMany: jest.fn(),
   },
   // TASK-251: history read path.
   orderStatusHistory: {
@@ -159,6 +161,36 @@ describe('OrderRepository', () => {
         where: { id: 'product-uuid-1', stock: { gte: 2 } },
         data: { stock: { decrement: 2 } },
       });
+    });
+
+    // ── The guest link's two columns move together (review of plan 180) ───────
+    // `rotateAccessToken`'s docblock states the invariant: a path that writes the
+    // hash without the issue time produces either an eternal link or a stillborn
+    // one, because the TTL is counted from `accessTokenIssuedAt`. This path used
+    // to be that path, and survived only on `getGuestOrder`'s `?? createdAt`
+    // fallback — remove that as dead code and every confirmation mail would ship
+    // an already-expired link.
+
+    it('stamps the guest link with the moment it was issued, not just its hash', async () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await repository.createFromCart({
+        ...baseParams,
+        userId: null,
+        guest: {
+          email: 'guest@example.com',
+          phone: '+380501234567',
+          name: 'Olena',
+          accessTokenHash: 'sha256-of-the-raw-token',
+        },
+      } as CreateOrderParams);
+
+      const data = tx.order.create.mock.calls[0][0].data;
+      expect(data.accessTokenHash).toBe('sha256-of-the-raw-token');
+      expect(data.accessTokenIssuedAt).toBeInstanceOf(Date);
     });
 
     it('throws ConflictException and aborts when no stock row is affected (oversell guard)', async () => {
@@ -794,8 +826,13 @@ describe('OrderRepository', () => {
   describe('updatePaymentStatus', () => {
     const seedTx = () => {
       const tx = makeTx();
-      tx.order.findUniqueOrThrow.mockResolvedValue({ paymentStatus: PaymentStatus.PENDING });
+      // First call reads the pre-update status for the history row; the last one
+      // re-reads the joined order to return.
+      tx.order.findUniqueOrThrow
+        .mockResolvedValueOnce({ paymentStatus: PaymentStatus.PENDING })
+        .mockResolvedValue({ id: 'order-1', items: [] });
       tx.order.update.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
       return tx;
     };
@@ -808,8 +845,45 @@ describe('OrderRepository', () => {
       expect(tx.order.update).toHaveBeenCalledWith({
         where: { id: 'order-1' },
         data: { paymentStatus: PaymentStatus.PAID },
-        include: expect.any(Object),
       });
+    });
+
+    // ── The compare-and-set (review of plan 180) ──────────────────────────────
+    // The service validates against a status read in an earlier query. Two
+    // operators picking DIFFERENT legal moves in the same second both pass that
+    // validation, and the second write lands on a row the first already moved —
+    // composing two legal moves into a transition the table forbids, and leaving
+    // two history rows that claim the same starting point.
+
+    it('pins the write to the status the caller validated against', async () => {
+      const tx = seedTx();
+
+      await repository.updatePaymentStatus('order-1', PaymentStatus.REFUNDED, 'admin-uuid-1', {
+        expectedFrom: PaymentStatus.PAID,
+      });
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', paymentStatus: PaymentStatus.PAID },
+        data: { paymentStatus: PaymentStatus.REFUNDED },
+      });
+      // The unconditional door stays shut when a premise was declared.
+      expect(tx.order.update).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing — not even history — when the premise is gone', async () => {
+      const tx = seedTx();
+      tx.order.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await repository.updatePaymentStatus(
+        'order-1',
+        PaymentStatus.REFUNDED,
+        'admin-uuid-1',
+        { expectedFrom: PaymentStatus.PAID },
+      );
+
+      expect(result).toBeNull();
+      // A change that did not take effect is not an event.
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
     });
 
     it('writes a PAYMENT_STATUS history row (from pre-update → new) in the same transaction', async () => {
@@ -1122,13 +1196,26 @@ describe('OrderRepository', () => {
       await repository.findAll({ unpaidInTransit: true });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      // paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED).
-      expect(where.paymentStatus).toEqual({ not: PaymentStatus.PAID });
+      // "money we still expect" AND status NOT IN (CANCELLED, REFUNDED).
+      // PARTIALLY_REFUNDED sits with PAID: it is only reachable FROM PAID, so
+      // the money arrived and the shop is owed nothing.
+      expect(where.paymentStatus).toEqual({
+        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      });
       expect(where.status).toEqual({
         notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
       });
       // Still excludes soft-deleted orders.
       expect(where.deletedAt).toBeNull();
+    });
+
+    it('does not count a partially refunded order as unpaid', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ unpaidInTransit: true });
+
+      const where = prismaMock.order.count.mock.calls[0][0].where;
+      expect(where.paymentStatus.notIn).toContain(PaymentStatus.PARTIALLY_REFUNDED);
     });
 
     it('composes the unpaidInTransit filter with the created-at date range', async () => {
@@ -1137,7 +1224,9 @@ describe('OrderRepository', () => {
       await repository.findAll({ unpaidInTransit: true, dateFrom: '2026-01-01' });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      expect(where.paymentStatus).toEqual({ not: PaymentStatus.PAID });
+      expect(where.paymentStatus).toEqual({
+        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      });
       expect(where.status).toEqual({
         notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
       });
@@ -1317,7 +1406,9 @@ describe('OrderRepository', () => {
         paymentStatus: PaymentStatus.PENDING,
       });
 
-      expect(where.paymentStatus).toEqual({ not: PaymentStatus.PAID });
+      expect(where.paymentStatus).toEqual({
+        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      });
       expect(where.AND).toContainEqual({ paymentStatus: PaymentStatus.PENDING });
     });
 
@@ -1412,6 +1503,209 @@ describe('OrderRepository', () => {
       expect(prismaMock.order.findMany.mock.calls[0][0].orderBy).toEqual({
         createdAt: 'asc',
       });
+    });
+  });
+
+  /**
+   * The derived-mark filters (TASK-470 / 471).
+   *
+   * Two properties are worth a test each, and they are different properties.
+   *
+   * The first is that every one of them goes through the `AND` array. TASK-579
+   * is an open defect exactly here: `unpaidInTransit` assigns `where.status` and
+   * `where.paymentStatus` directly, over the top of whatever the literal above
+   * already put there. A mark filter written the same way would be swallowed
+   * whole by a preset the operator had also switched on — and a filter that is
+   * visibly lit on screen while being absent from the query is worse than one
+   * that never worked at all.
+   *
+   * The second is that the conditions ARE the catalogue's. These are the same
+   * four sentences the admin panel re-states to decide which chip to draw on a
+   * row; if the two ever disagree, the list shows rows without the chip that put
+   * them there.
+   */
+  describe('findAll — the derived-mark filters (TASK-470/471)', () => {
+    const NOW = new Date('2026-09-14T12:00:00.000Z');
+
+    const whereFor = async (query: Parameters<typeof repository.findAll>[0]) => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+      await repository.findAll(query);
+      return prismaMock.order.count.mock.calls[0][0].where;
+    };
+
+    beforeEach(() => {
+      jest.useFakeTimers().setSystemTime(NOW);
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it('«Борг» is DELIVERED and paid neither fully nor back', async () => {
+      const where = await whereFor({ hasDebt: true });
+
+      expect(where.AND).toContainEqual({
+        status: OrderStatus.DELIVERED,
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
+      });
+    });
+
+    it('«Очікує оплати» is a timed-reservation PENDING order whose deadline is still ahead', async () => {
+      const where = await whereFor({ awaitingPayment: true });
+
+      expect(where.AND).toContainEqual({
+        paymentMethod: { in: [PaymentMethod.ONLINE, PaymentMethod.INSTALLMENTS] },
+        paymentStatus: PaymentStatus.PENDING,
+        reservationExpiresAt: { gt: NOW },
+      });
+    });
+
+    it('«Резерв сплив» is the same triple with the deadline behind us', async () => {
+      const where = await whereFor({ reservationExpired: true });
+
+      expect(where.AND).toContainEqual({
+        paymentMethod: { in: [PaymentMethod.ONLINE, PaymentMethod.INSTALLMENTS] },
+        paymentStatus: PaymentStatus.PENDING,
+        reservationExpiresAt: { lte: NOW },
+      });
+    });
+
+    it('includes BNPL — the worker cancels those too, so they must be visible', async () => {
+      // `resolveReservationDeadline` gives INSTALLMENTS a deadline and
+      // `findExpiredReservations` cancels on IN (ONLINE, INSTALLMENTS). Filtering
+      // on `= ONLINE` hid exactly the orders about to be auto-cancelled (review
+      // of plan 180).
+      const where = await whereFor({ awaitingPayment: true });
+
+      const methods = (where.AND as Array<Record<string, { in?: unknown[] }>>)
+        .map((clause) => clause.paymentMethod)
+        .filter(Boolean);
+      expect(methods[0]?.in).toContain(PaymentMethod.INSTALLMENTS);
+    });
+
+    it('splits the reservation window at ONE instant, not two', async () => {
+      // `gt` and `lte` against the same `now`, so an order cannot fall into both
+      // halves or into neither because the clock moved between two `new Date()`s.
+      const where = await whereFor({ awaitingPayment: true, reservationExpired: true });
+
+      const deadlines = (where.AND as Array<Record<string, unknown>>)
+        .map((clause) => clause.reservationExpiresAt)
+        .filter(Boolean);
+      expect(deadlines).toEqual([{ gt: NOW }, { lte: NOW }]);
+    });
+
+    it('«Позиція недоступна» asks about the product, and skips ended orders', async () => {
+      const where = await whereFor({ hasUnavailableItems: true });
+
+      expect(where.AND).toContainEqual({
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+        OR: [
+          {
+            items: {
+              some: {
+                product: {
+                  OR: [{ deletedAt: { not: null } }, { isActive: false }, { stock: { lt: 0 } }],
+                },
+              },
+            },
+          },
+          { restockedAt: { not: null } },
+        ],
+      });
+    });
+
+    it('survives the unpaidInTransit preset instead of being overwritten by it', async () => {
+      // TASK-579's failure mode, asserted rather than assumed: the preset owns
+      // `where.status` outright, so a mark condition written onto `where` would
+      // vanish here without a sound.
+      const where = await whereFor({ unpaidInTransit: true, hasDebt: true });
+
+      expect(where.status).toEqual({ notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] });
+      expect(where.AND).toContainEqual({
+        status: OrderStatus.DELIVERED,
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
+      });
+    });
+
+    it('adds no AND clause at all when no mark is filtered on', async () => {
+      const where = await whereFor({});
+
+      expect(where.AND).toBeUndefined();
+    });
+  });
+
+  /**
+   * TASK-470: the admin read has to JOIN what the mark is derived from.
+   *
+   * Without these three columns `OrderEntity` reports `unavailableItemIds` as
+   * absent — which is the correct answer to a question that was never asked, and
+   * means the chip silently never renders. The failure is invisible from the UI
+   * side: the field is optional, so nothing throws and nothing logs.
+   */
+  describe('findAll — the availability join (TASK-470)', () => {
+    it('joins deletedAt / isActive / stock on each line product', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({});
+
+      const include = prismaMock.order.findMany.mock.calls[0][0].include;
+      expect(include.items.select.product.select).toMatchObject({
+        deletedAt: true,
+        isActive: true,
+        stock: true,
+      });
+    });
+
+    it('keeps the fields the order card already renders', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({});
+
+      const include = prismaMock.order.findMany.mock.calls[0][0].include;
+      expect(include.items.select.product.select).toMatchObject({
+        name: true,
+        slug: true,
+      });
+      expect(include.items.select.addons).toBeDefined();
+    });
+  });
+
+  // ─── claimGuestOrders (TASK-338, wired by TASK-485) ─────────────────────────
+
+  describe('claimGuestOrders', () => {
+    beforeEach(() => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 2 });
+    });
+
+    it('writes ONLY the owner — the guest contact columns are left alone', async () => {
+      await repository.claimGuestOrders('user-uuid-1', 'guest@example.com');
+
+      // B-5 §5: the guest block is the snapshot of what was actually typed at
+      // checkout, and it is what the emailed status link and the public
+      // number+phone form (TASK-483) still answer to. Clearing it on claim would
+      // silently rewrite history and break both of those routes into the order.
+      const { data } = prismaMock.order.updateMany.mock.calls[0][0];
+      expect(data).toEqual({ userId: 'user-uuid-1' });
+    });
+
+    it('claims only unowned, live orders placed with that exact address', async () => {
+      await repository.claimGuestOrders('user-uuid-1', 'guest@example.com');
+
+      const { where } = prismaMock.order.updateMany.mock.calls[0][0];
+      // `userId: null` is what makes the call idempotent AND is the security
+      // boundary: without it, verifying an address would reassign orders that
+      // already belong to somebody else.
+      expect(where).toEqual({
+        userId: null,
+        guestEmail: 'guest@example.com',
+        deletedAt: null,
+      });
+    });
+
+    it('reports how many moved, so the caller can say so', async () => {
+      await expect(repository.claimGuestOrders('user-uuid-1', 'guest@example.com')).resolves.toBe(
+        2,
+      );
     });
   });
 });

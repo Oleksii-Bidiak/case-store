@@ -8,13 +8,22 @@ import { DiscountModule } from '../discount';
 import { AddonServiceModule } from '../addon-service';
 import { SearchModule } from '../search';
 import { OrderRepository } from './order.repository';
+// TASK-483: the public lookup's own narrow query — see its docblock for why it
+// is not a method on OrderRepository.
+import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
+// TASK-485: the seam the auth side claims guest orders through. Imported here
+// (never the other way round) because this module is the one that IMPLEMENTS it.
+import { GUEST_ORDER_CLAIM_PORT } from '../common/ports/guest-order-claim.port';
 import { OrderController } from './order.controller';
 import { AdminOrderController } from './admin-order.controller';
 import { ReturnRepository } from './returns/return.repository';
 import { ReturnService } from './returns/return.service';
 import { ReturnController } from './returns/return.controller';
-import { AdminReturnController } from './returns/admin-return.controller';
+import {
+  AdminOrderReturnController,
+  AdminReturnController,
+} from './returns/admin-return.controller';
 
 @Module({
   // UserModule provides UserRepository (recipient lookup for confirmation
@@ -39,7 +48,15 @@ import { AdminReturnController } from './returns/admin-return.controller';
     AddonServiceModule,
     SearchModule,
   ],
-  controllers: [OrderController, AdminOrderController, ReturnController, AdminReturnController],
+  controllers: [
+    OrderController,
+    AdminOrderController,
+    ReturnController,
+    AdminReturnController,
+    // TASK-469: the admin door onto a return, hung off the ORDER path rather than
+    // the returns queue — a return the shop opens is opened against an order.
+    AdminOrderReturnController,
+  ],
   // TASK-338: OrderController resolves the buyer's identity exactly as the cart
   // does — a JWT when there is one, the `cartToken` cookie otherwise — so a guest
   // converts the very cart they already own. CartIdentityInterceptor is listed
@@ -50,11 +67,17 @@ import { AdminReturnController } from './returns/admin-return.controller';
   // module boundary and the order it belongs to on the other.
   providers: [
     OrderRepository,
+    OrderLookupRepository,
     OrderService,
     ReturnRepository,
     ReturnService,
     CartIdentityInterceptor,
+    // TASK-485: alias, not a second instance — `useExisting` binds the token to
+    // the OrderService already provided above. `EmailVerificationService` pulls
+    // it out of the container by token, so nothing has to import this module and
+    // the AuthModule → OrderModule → UserModule → AuthModule cycle never forms.
+    { provide: GUEST_ORDER_CLAIM_PORT, useExisting: OrderService },
   ],
-  exports: [OrderService, ReturnService],
+  exports: [OrderService, ReturnService, GUEST_ORDER_CLAIM_PORT],
 })
 export class OrderModule {}

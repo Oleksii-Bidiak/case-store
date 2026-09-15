@@ -130,6 +130,18 @@ export interface NeedsAction {
    * number is 3.
    */
   ratingAbuse: number;
+  /**
+   * Open orders holding at least one line that can no longer be supplied
+   * (TASK-470): the product is deleted, unpublished or oversold, or the TTL
+   * worker released the order's reservation. The aggregate of the
+   * «Позиція недоступна» mark of owner decision B-1 §3.
+   *
+   * Counts ORDERS, not lines — the tile's job is to say how many customers may
+   * need a phone call, and an order missing three positions is still one call.
+   * CANCELLED and REFUNDED orders are excluded: their stock came back because
+   * they ended.
+   */
+  unavailableItems: number;
 }
 
 /**

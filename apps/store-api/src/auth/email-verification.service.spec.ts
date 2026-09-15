@@ -1,10 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { EmailVerificationService } from './email-verification.service';
 import { AuthRepository } from './auth.repository';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+import { GUEST_ORDER_CLAIM_PORT } from '../common/ports/guest-order-claim.port';
 
 const authRepositoryMock = {
   findById: jest.fn(),
@@ -30,6 +32,21 @@ const loggerMock = {
 const configMock = {
   get: (key: string, fallback: string) =>
     key === 'STORE_CLIENT_URL' ? 'http://localhost:3000' : fallback,
+};
+
+// TASK-485: the order side, reached by token instead of by import — see
+// `guest-order-claim.port.ts` for the module cycle that rules out injecting it.
+const claimPortMock = {
+  claimGuestOrders: jest.fn(),
+};
+
+const moduleRefMock = {
+  get: jest.fn((token: unknown) => {
+    if (token === GUEST_ORDER_CLAIM_PORT) {
+      return claimPortMock;
+    }
+    throw new Error('Nest could not find the requested provider');
+  }),
 };
 
 const activeUser = {
@@ -59,6 +76,13 @@ describe('EmailVerificationService (TASK-342)', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    claimPortMock.claimGuestOrders.mockResolvedValue(0);
+    moduleRefMock.get.mockImplementation((token: unknown) => {
+      if (token === GUEST_ORDER_CLAIM_PORT) {
+        return claimPortMock;
+      }
+      throw new Error('Nest could not find the requested provider');
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -67,6 +91,7 @@ describe('EmailVerificationService (TASK-342)', () => {
         { provide: MailOutboxService, useValue: mailOutboxMock },
         { provide: ConfigService, useValue: configMock },
         { provide: PinoLogger, useValue: loggerMock },
+        { provide: ModuleRef, useValue: moduleRefMock },
       ],
     }).compile();
 
@@ -125,7 +150,10 @@ describe('EmailVerificationService (TASK-342)', () => {
     it('verifies when the token names the account’s current address', async () => {
       authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
 
-      await expect(service.confirm('raw')).resolves.toEqual({ email: 'current@example.com' });
+      await expect(service.confirm('raw')).resolves.toEqual({
+        email: 'current@example.com',
+        claimedOrders: 0,
+      });
 
       expect(authRepositoryMock.markEmailVerified).toHaveBeenCalledWith('user-1', expect.any(Date));
       expect(authRepositoryMock.markEmailVerificationTokenUsed).toHaveBeenCalledWith('tok-1');
@@ -159,6 +187,96 @@ describe('EmailVerificationService (TASK-342)', () => {
 
       await expect(service.confirm('raw')).rejects.toThrow('Invalid or expired verification link');
       expect(authRepositoryMock.markEmailVerified).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── Claiming guest orders (TASK-485, closing the tail of TASK-338) ──────────
+  //
+  // The decision this block defends (B-5 §5): guest orders move onto an account
+  // when the address is PROVEN, not when it is merely typed. Signing in with an
+  // unverified address is not blocked, so claiming any earlier would hand a
+  // stranger's phone number, order totals and delivery address to whoever put
+  // that stranger's email in the signup form.
+
+  describe('confirm — claiming guest orders', () => {
+    it('claims the orders of the address the token proves, once it is verified', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
+      claimPortMock.claimGuestOrders.mockResolvedValue(3);
+
+      await expect(service.confirm('raw')).resolves.toEqual({
+        email: 'current@example.com',
+        claimedOrders: 3,
+      });
+
+      expect(claimPortMock.claimGuestOrders).toHaveBeenCalledWith('user-1', 'current@example.com');
+    });
+
+    it('claims the address ON THE TOKEN, not whatever the account says today', async () => {
+      // They are equal on the happy path by construction (a mismatch is refused
+      // above), so this pins WHICH of the two is read: the proven one.
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(
+        tokenRow({
+          email: 'proven@example.com',
+          user: { ...activeUser, email: 'proven@example.com' },
+        }),
+      );
+
+      await service.confirm('raw');
+
+      expect(claimPortMock.claimGuestOrders).toHaveBeenCalledWith('user-1', 'proven@example.com');
+    });
+
+    it.each([
+      ['not found', null],
+      ['already used', tokenRow({ usedAt: new Date() })],
+      ['expired', tokenRow({ expiresAt: new Date(Date.now() - 1000) })],
+      ['owned by a banned account', tokenRow({ user: { ...activeUser, isActive: false } })],
+      ['owned by a deleted account', tokenRow({ user: { ...activeUser, deletedAt: new Date() } })],
+      ['issued for an address the account left', tokenRow({ email: 'old@example.com' })],
+    ])('claims NOTHING when the token is %s', async (_label, row) => {
+      // THE test of this task. An unverified address must not move a single
+      // order: every one of these paths leaves the address unproven, and a claim
+      // on an unproven address is exactly the data leak the design avoids.
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(row);
+
+      await expect(service.confirm('raw')).rejects.toBeInstanceOf(BadRequestException);
+      expect(claimPortMock.claimGuestOrders).not.toHaveBeenCalled();
+    });
+
+    it('reaches the order side by token, never by importing the module', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
+
+      await service.confirm('raw');
+
+      // `strict: false` is what makes the lookup work without AuthModule
+      // importing OrderModule — the cycle the port exists to avoid.
+      expect(moduleRefMock.get).toHaveBeenCalledWith(GUEST_ORDER_CLAIM_PORT, { strict: false });
+    });
+
+    it('still reports the address as verified when claiming blows up', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
+      claimPortMock.claimGuestOrders.mockRejectedValue(new Error('db down'));
+
+      // The verification is committed and its token burned by this point.
+      // Throwing would tell somebody whose address IS verified that their link
+      // was invalid, and leave them nothing to retry.
+      await expect(service.confirm('raw')).resolves.toEqual({
+        email: 'current@example.com',
+        claimedOrders: 0,
+      });
+      expect(loggerMock.error).toHaveBeenCalled();
+    });
+
+    it('survives an order side that is not in the container at all', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(tokenRow());
+      moduleRefMock.get.mockImplementation(() => {
+        throw new Error('Nest could not find the requested provider');
+      });
+
+      await expect(service.confirm('raw')).resolves.toEqual({
+        email: 'current@example.com',
+        claimedOrders: 0,
+      });
     });
   });
 });

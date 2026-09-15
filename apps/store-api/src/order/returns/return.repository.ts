@@ -102,6 +102,10 @@ export class ReturnRepository {
       data: {
         orderId: params.orderId,
         reason: params.reason ?? null,
+        // TASK-469: written on BOTH doors. The customer's door has always known
+        // who it was serving and simply threw the fact away; the admin door has
+        // no other way to record it, since a guest order carries no user at all.
+        createdByUserId: params.createdByUserId ?? null,
         items: {
           create: params.items.map((item) => ({
             orderItemId: item.orderItemId,

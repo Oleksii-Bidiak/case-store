@@ -11,6 +11,7 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
 import { OrderRepository } from '../src/order/order.repository';
+import { OrderLookupRepository } from '../src/order/order-lookup.repository';
 // TASK-425: the export's row cap, asserted rather than restated as a literal.
 import { ORDER_EXPORT_MAX_ROWS } from '../src/order/order.service';
 import { DiscountRepository } from '../src/discount';
@@ -60,6 +61,13 @@ describe('OrderController (e2e)', () => {
     updateDetails: jest.fn(),
     // TASK-425: the CSV export reads a slim, unpaginated row set of its own.
     findAllForExport: jest.fn(),
+  };
+
+  // TASK-483: the public "check my order" form has its own narrow repository, so
+  // the wide order read can never leak into it. Mocked separately for the same
+  // reason it exists separately.
+  const orderLookupRepositoryMock = {
+    findByNumberAndPhone: jest.fn(),
   };
 
   // TASK-079: DiscountRepository is mocked so the order-with-discount path can
@@ -282,6 +290,8 @@ describe('OrderController (e2e)', () => {
       .useValue(cartRepositoryMock)
       .overrideProvider(OrderRepository)
       .useValue(orderRepositoryMock)
+      .overrideProvider(OrderLookupRepository)
+      .useValue(orderLookupRepositoryMock)
       .overrideProvider(DiscountRepository)
       .useValue(discountRepositoryMock)
       .overrideProvider(MailService)
@@ -1586,6 +1596,10 @@ describe('OrderController (e2e)', () => {
         'order-e2e-1',
         PaymentStatus.PAID,
         admin.id,
+        // Pinned to the status the transition was validated against, so two
+        // operators in the same second cannot compose two legal moves into one
+        // the table forbids (review of plan 180).
+        { expectedFrom: PaymentStatus.PENDING },
       );
     });
 
@@ -1631,6 +1645,267 @@ describe('OrderController (e2e)', () => {
         .patch('/api/admin/orders/order-e2e-1/payment-status')
         .send({ paymentStatus: PaymentStatus.PAID })
         .expect(401);
+    });
+
+    // ─── The payment state machine over HTTP (TASK-431) ──────────────────────
+
+    it('should return 409 with a code for a full REFUNDED on a DELIVERED order', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/payment-status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ paymentStatus: PaymentStatus.REFUNDED })
+        .expect(409);
+
+      // The CODE is the contract the admin panel keys its Ukrainian message off;
+      // the English message is for the log.
+      expect(response.body.error).toBe('ORDER_REFUND_REQUIRES_CLOSED_ORDER');
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('should return 409 with the transition code for a move the machine forbids', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/payment-status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ paymentStatus: PaymentStatus.PAID })
+        .expect(409);
+
+      expect(response.body.error).toBe('ORDER_PAYMENT_TRANSITION_INVALID');
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('should accept PARTIALLY_REFUNDED on a DELIVERED order (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/payment-status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ paymentStatus: PaymentStatus.PARTIALLY_REFUNDED })
+        .expect(200);
+
+      expect(response.body.data.paymentStatus).toBe(PaymentStatus.PARTIALLY_REFUNDED);
+    });
+  });
+
+  // ─── GET /api/admin/orders/:orderId/allowed-payment-transitions (TASK-431) ────
+
+  describe('GET /api/admin/orders/:orderId/allowed-payment-transitions', () => {
+    it('should return the legal targets and the lock token for an admin (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-payment-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.current).toBe(PaymentStatus.PENDING);
+      expect(response.body.data.allowed).toEqual([PaymentStatus.PAID, PaymentStatus.FAILED]);
+      expect(response.body.data.updatedAt).toBeDefined();
+    });
+
+    it('should not offer a full refund while the order is still live', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-payment-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      // Offering it and then refusing the PATCH is exactly what this endpoint
+      // exists to stop.
+      expect(response.body.data.allowed).toEqual([PaymentStatus.PARTIALLY_REFUNDED]);
+    });
+
+    it('should return 404 when the order does not exist', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/nonexistent-uuid/allowed-payment-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('should return 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-payment-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+    });
+
+    it('should return 401 without a JWT', async () => {
+      await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-payment-transitions')
+        .expect(401);
+    });
+  });
+
+  // ─── The refund cross-rule, from the ORDER side (review of plan 180) ──────────
+  //
+  // TASK-431 guards «live order + fully refunded money» on both payment doors.
+  // The identical pair was reachable by moving the ORDER instead: CANCELLED +
+  // REFUNDED is ordinary and legal, and CANCELLED → PROCESSING is a revive the
+  // table allows. Asserted over HTTP because that is where the admin panel meets
+  // it, and because the picker's option list is part of the same promise.
+
+  describe('PATCH /api/admin/orders/:orderId/status — reviving a refunded order', () => {
+    const refundedCancelled = () =>
+      makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.REFUNDED });
+
+    it('should return 409 with the revive code and write nothing', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(refundedCancelled());
+
+      const response = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.PROCESSING })
+        .expect(409);
+
+      expect(response.body.error).toBe('ORDER_REVIVE_REFUNDED_PAYMENT');
+      expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('should not offer the live statuses in the picker either', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(refundedCancelled());
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/allowed-transitions')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      // ORDER_TRANSITIONS[CANCELLED] is [PENDING, CONFIRMED, PROCESSING, REFUNDED];
+      // only the terminal correction survives the cross-rule.
+      expect(response.body.data.allowed).toEqual([OrderStatus.REFUNDED]);
+    });
+  });
+
+  // ─── POST /api/orders/lookup — the identical 404 (review of plan 180) ─────────
+  //
+  // The whole endpoint is designed around one property: a wrong number, a right
+  // number with the wrong phone, and a malformed number must be indistinguishable
+  // from outside. Until now that was asserted only by calling
+  // `service.lookupOrders()` directly — which bypasses the `ValidationPipe`, the
+  // exact layer that can turn a 404 into a 400.
+  //
+  // Why that gap matters: `OrderLookupDto` is deliberately thin, and "tightening"
+  // it with `@Matches(ORDER_NUMBER_PATTERN)` looks like an obvious improvement.
+  // Every unit test would stay green while production gained a working "does this
+  // order number exist?" oracle. These cases are what makes that change fail.
+
+  describe('POST /api/orders/lookup', () => {
+    const url = '/api/orders/lookup';
+    const validNumber = '94f5f971';
+    const phone = '+380501112233';
+
+    const post = (body: Record<string, unknown>) =>
+      request(app.getHttpServer()).post(url).send(body);
+
+    beforeEach(() => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([]);
+    });
+
+    it('answers the same 404 body for a malformed, an unknown and a wrong-phone lookup', async () => {
+      const malformed = await post({ number: '94f', phone });
+      const unknown = await post({ number: '00000000', phone });
+      const wrongPhone = await post({ number: validNumber, phone: '+380999999999' });
+
+      for (const response of [malformed, unknown, wrongPhone]) {
+        expect(response.status).toBe(404);
+        expect(response.body.message).toBe('Order not found');
+        expect(response.body.error).toBe('Not Found');
+      }
+
+      // Byte-identical apart from the timestamp — `path` is the same static route
+      // for every caller, so nothing in the envelope narrows the guess either.
+      const shapes = [malformed, unknown, wrongPhone].map((response) => {
+        const rest = { ...(response.body as Record<string, unknown>) };
+        delete rest.timestamp;
+        return JSON.stringify(rest);
+      });
+      expect(new Set(shapes).size).toBe(1);
+    });
+
+    it('never reaches the database for a number that is not 8 characters', async () => {
+      // The shape check lives in the SERVICE, not the DTO, precisely so a
+      // malformed number 404s like an unknown one instead of being 400'd by the
+      // pipe. This is the other half of that: it also costs no query.
+      await post({ number: 'ZZZ', phone }).expect(404);
+
+      expect(orderLookupRepositoryMock.findByNumberAndPhone).not.toHaveBeenCalled();
+    });
+
+    it('returns the public projection — and nothing a stranger could use', async () => {
+      orderLookupRepositoryMock.findByNumberAndPhone.mockResolvedValue([
+        {
+          id: '94f5f971-1111-2222-3333-444455556666',
+          status: OrderStatus.SHIPPED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: 'ONLINE',
+          createdAt: new Date('2026-09-01T10:00:00.000Z'),
+          subtotal: new Prisma.Decimal('1428.00'),
+          discount: new Prisma.Decimal('0.00'),
+          shippingCost: new Prisma.Decimal('70.00'),
+          addonsTotal: new Prisma.Decimal('0.00'),
+          total: new Prisma.Decimal('1498.00'),
+          trackingNumber: '20450000000000',
+          shippingAddress: {
+            firstName: 'Olena',
+            lastName: 'Shevchenko',
+            phone: '+380501112233',
+            address1: 'вул. Хрещатик 1, кв. 7',
+            city: 'Київ',
+            npWarehouseName: 'Відділення №12',
+            country: 'UA',
+          },
+          items: [],
+        },
+      ]);
+
+      const response = await post({ number: validNumber, phone }).expect(200);
+
+      // What a stranger with a phone number must not learn: who the buyer is,
+      // how to reach them, or where they live. The city and the branch ARE shown
+      // — the courier reads those aloud anyway (B-5 §3).
+      const body = JSON.stringify(response.body);
+      for (const secret of ['Olena', 'Shevchenko', '380501112233', 'Хрещатик']) {
+        expect(body).not.toContain(secret);
+      }
+      // And not the full id either — only the 8 characters the buyer already has.
+      expect(body).not.toContain('94f5f971-1111');
+      expect(response.body.data[0].number).toBe('94F5F971');
+      expect(response.body.data[0].delivery).toEqual({
+        city: 'Київ',
+        warehouse: 'Відділення №12',
+      });
     });
   });
 

@@ -215,6 +215,40 @@ export const MEDIA_PERMISSIONS = [
   'media:write',
 ] as const satisfies ReadonlyArray<Permission>;
 
+/**
+ * The second — and, as with media, deliberately narrow — backfill: the returns
+ * queue (TASK-370 / TASK-469, plan 180, owner's decision 2026-09-14).
+ *
+ * WHY THESE TWO KEYS NEEDED ONE AT ALL. `returns:read` and `returns:write` have
+ * been in this catalogue since TASK-334 and have never had a single
+ * `role_permissions` row. The screens behind them were built in TASK-340 and have
+ * worked ever since — a queue, a card, a decision form with an explicit restock —
+ * reachable by precisely one person in the shop. Nothing surfaced that, because
+ * until TASK-370 there was no menu entry to be missing from.
+ *
+ * WHY IT IS DEFENSIBLE. Same test the media backfill had to pass: the grant
+ * follows an existing grant one-for-one and adds no reach. A role holding
+ * `orders:write` can already move an order to REFUNDED — the money half of a
+ * return — and `orders:read` already shows it every line, price and address a
+ * return names. The queue adds the RECORD of that decision, not the power to make
+ * it. The source key is `orders:write` rather than `orders:read` on purpose:
+ * resolving a return moves stock and money, so it belongs with the roles trusted
+ * to write orders, not merely to read them.
+ *
+ * As with media, this is not a licence to backfill the next new key. Compare
+ * `reviews:write` a few lines above, where the opposite call was made and the key
+ * ships denied to everyone.
+ */
+export const RETURNS_BACKFILL_SOURCE_PERMISSIONS = [
+  'orders:write',
+] as const satisfies ReadonlyArray<Permission>;
+
+/** The keys that backfill grants. */
+export const RETURNS_PERMISSIONS = [
+  'returns:read',
+  'returns:write',
+] as const satisfies ReadonlyArray<Permission>;
+
 /** Fast membership test for validating rows read out of the database. */
 export const PERMISSION_KEYS: ReadonlySet<string> = new Set(PERMISSIONS.map((p) => p.key));
 

@@ -97,6 +97,28 @@ export class ReturnEntity {
   })
   refundedAmount!: string | null;
 
+  /**
+   * Who opened the request (TASK-469).
+   *
+   * Admin-only for the same reason `operatorNotes` is: on a return the shop filed
+   * for a customer this is a MEMBER OF STAFF, and an internal account id is not
+   * something a customer response should carry. The operator, on the other hand,
+   * needs it — "the customer asked" and "we opened it on their behalf" are
+   * different facts about the same row, and a queue that cannot tell them apart
+   * cannot be audited.
+   */
+  @ApiProperty({
+    description:
+      'Account that opened the request — the customer from their own page, an operator ' +
+      'when the shop filed it for them, null for rows predating the column. Present ONLY on ' +
+      'admin responses.',
+    type: String,
+    format: 'uuid',
+    required: false,
+    nullable: true,
+  })
+  createdByUserId?: string | null;
+
   @ApiProperty({ description: 'Lines coming back', type: [ReturnItemEntity] })
   items!: ReturnItemEntity[];
 
@@ -111,6 +133,7 @@ export class ReturnEntity {
     entity.reason = row.reason;
     if (options.includeInternal) {
       entity.operatorNotes = row.operatorNotes;
+      entity.createdByUserId = row.createdByUserId;
     }
     entity.requestedAt = row.requestedAt;
     entity.resolvedAt = row.resolvedAt;

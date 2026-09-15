@@ -14,6 +14,7 @@ import {
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import {
   Button,
+  CopyButton,
   Input,
   Label,
   Select,
@@ -70,6 +71,13 @@ export function OrderCreateForm() {
   // It lives HERE rather than inside the picker because the picker unmounts every
   // time the operator switches to the «за телефоном» tab.
   const [customer, setCustomer] = useState<PickedCustomer | null>(null);
+  // TASK-484: the created order plus its ONE-TIME buyer link. Local state, never
+  // cached: a one-shot secret that survived a navigation would not be one-shot.
+  const [created, setCreated] = useState<{
+    id: string;
+    accessUrl: string | null;
+    emailed: boolean;
+  } | null>(null);
 
   const form = useForm<CreateOrderFormValues>({
     resolver: zodResolver(createOrderSchema),
@@ -145,7 +153,16 @@ export function OrderCreateForm() {
             queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
           });
           toast.success(dict.orderCreate.success);
-          router.push(`/orders/${response.data.id}`);
+          // TASK-484: DO NOT navigate yet. `meta.accessUrl` is the buyer's link
+          // and this response is the only place it will ever exist — the server
+          // stored just its SHA-256. Pushing straight to the order card would
+          // throw it away, and the operator (still on the phone with the buyer)
+          // would have to issue a second link to replace one they never saw.
+          setCreated({
+            id: response.data.id,
+            accessUrl: response.meta.accessUrl,
+            emailed: values.contactEmail.trim() !== "",
+          });
         },
         onError: (error) => {
           const status = (error as { response?: { status?: number } })?.response
@@ -162,6 +179,65 @@ export function OrderCreateForm() {
       },
     );
   };
+
+  // TASK-484: the order exists; what is left is the one thing that cannot be
+  // done later — handing the buyer their link. The form is replaced rather than
+  // decorated, so there is no half-submitted form to re-submit by reflex.
+  if (created) {
+    const d = dict.orderCreate;
+    return (
+      <div className="flex max-w-3xl flex-col gap-4 rounded-md border border-border p-6">
+        <h3 className="text-base font-semibold text-foreground">
+          {d.createdHeading}
+        </h3>
+        <p className="font-mono text-sm text-muted-foreground">
+          {d.createdNumber(created.id.slice(0, 8).toUpperCase())}
+        </p>
+
+        {created.accessUrl ? (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-foreground">{d.createdLinkIntro}</p>
+            {/* Selectable text, not only a copy button: `navigator.clipboard`
+                refuses on an insecure origin, and an operator on a staging box
+                must still be able to select the URL by hand. */}
+            <p
+              aria-label={dict.orderAccess.linkAria}
+              className="rounded-md bg-muted px-2 py-1.5 font-mono text-xs break-all text-foreground select-all"
+            >
+              {created.accessUrl}
+            </p>
+            <CopyButton
+              value={created.accessUrl}
+              label={dict.orderAccess.copy}
+              copiedLabel={dict.orderAccess.copied}
+              failedLabel={dict.orderAccess.copyFailed}
+              ariaLabel={dict.orderAccess.copyAria}
+            />
+            <p className="text-xs font-medium text-warning">
+              {d.createdLinkOnce}
+            </p>
+            {created.emailed && (
+              <p className="text-xs text-muted-foreground">
+                {d.createdEmailSent}
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            {d.createdLinkUnavailable}
+          </p>
+        )}
+
+        <Button
+          type="button"
+          className="self-start"
+          onClick={() => router.push(`/orders/${created.id}`)}
+        >
+          {d.createdOpenOrder}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <form

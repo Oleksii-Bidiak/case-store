@@ -8,6 +8,8 @@ import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.dec
 import {
   MEDIA_BACKFILL_SOURCE_PERMISSIONS,
   MEDIA_PERMISSIONS,
+  RETURNS_BACKFILL_SOURCE_PERMISSIONS,
+  RETURNS_PERMISSIONS,
   PERMISSIONS,
   PERMISSION_KEYS,
   isKnownPermission,
@@ -368,6 +370,82 @@ describe('media permission backfill migration', () => {
     // `PermissionService.roleHasPermission` short-circuits on ADMIN, so an ADMIN
     // row is inert at best — and at worst it teaches the next reader that the
     // matrix governs the owner, which is the belief the whole design refuses.
+    expect(statement).not.toContain('ADMIN');
+  });
+});
+
+/**
+ * The returns-queue permission backfill (TASK-370 / TASK-469, plan 180).
+ *
+ * Same contract as the media suite above, for the same reason: the grant is
+ * written in SQL six directories away from the rule it obeys, and nothing in the
+ * build connects the two. What this one guards against is specifically the defect
+ * that shipped twice already — a key that gates a WORKING screen and has never
+ * had a `role_permissions` row, so the screen belongs to the owner alone and the
+ * menu entry announcing it is simply absent for everyone else. No error, no 403,
+ * nothing to notice.
+ */
+describe('returns permission backfill migration', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_backfill_returns_permissions'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_backfill_returns_permissions migration under ${MIGRATIONS_ROOT}. ` +
+          'Both returns permissions are denied by default without it, which ships the ' +
+          '«Повернення» menu entry to the owner and to nobody else.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  /** The statement only, with the explanatory comment block stripped off. */
+  const statement = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('grants keys that exist in the catalogue', () => {
+    for (const key of RETURNS_PERMISSIONS) {
+      expect(isKnownPermission(key)).toBe(true);
+    }
+  });
+
+  it('grants exactly the keys the catalogue calls the returns permissions', () => {
+    for (const key of RETURNS_PERMISSIONS) {
+      expect(statement).toContain(`'${key}'`);
+    }
+
+    const quoted = new Set(statement.match(/'[a-z]+:[a-z]+'/g) ?? []);
+    const allowed = new Set(
+      [...RETURNS_PERMISSIONS, ...RETURNS_BACKFILL_SOURCE_PERMISSIONS].map((key) => `'${key}'`),
+    );
+    expect([...quoted].filter((token) => !allowed.has(token))).toEqual([]);
+  });
+
+  it('reads exactly the source permissions the code declares', () => {
+    for (const key of RETURNS_BACKFILL_SOURCE_PERMISSIONS) {
+      expect(statement).toContain(`'${key}'`);
+    }
+    expect(RETURNS_BACKFILL_SOURCE_PERMISSIONS.every((key) => isKnownPermission(key))).toBe(true);
+  });
+
+  it('counts a row as a grant under the SAME predicate the runtime uses', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const repository = new PermissionRepository({
+      rolePermission: { findMany },
+    } as never);
+
+    await repository.findGrantedByRole(UserRole.MANAGER);
+
+    expect(findMany).toHaveBeenCalledWith({ where: { role: UserRole.MANAGER, allowed: true } });
+    expect(statement).toMatch(/"allowed"\s*=\s*true/);
+  });
+
+  it('never grants to ADMIN, who is not subject to the matrix at all', () => {
     expect(statement).not.toContain('ADMIN');
   });
 });

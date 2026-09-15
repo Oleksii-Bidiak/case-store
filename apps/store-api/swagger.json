@@ -347,11 +347,11 @@
         },
         "responses": {
           "200": {
-            "description": "Address verified",
+            "description": "Address verified; `claimedOrders` counts guest orders moved onto the account",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/MessageResponseEnvelope"
+                  "$ref": "#/components/schemas/EmailVerificationConfirmEnvelope"
                 }
               }
             }
@@ -10683,6 +10683,49 @@
         ]
       }
     },
+    "/api/orders/lookup": {
+      "post": {
+        "operationId": "lookupOrder",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderLookupDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Orders matching the number and phone — a list, because an 8-character number can collide and every match belongs to the same person",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicOrderLookupResponseEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No order matches (unknown number, wrong phone, malformed input or deleted order — deliberately indistinguishable)"
+          },
+          "429": {
+            "description": "Too many requests — rate limit exceeded"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Look up an order by number and phone",
+        "tags": [
+          "Orders"
+        ]
+      }
+    },
     "/api/orders/{orderId}": {
       "get": {
         "operationId": "getOrder",
@@ -10910,6 +10953,7 @@
                 "PENDING",
                 "PAID",
                 "FAILED",
+                "PARTIALLY_REFUNDED",
                 "REFUNDED"
               ]
             }
@@ -10934,6 +10978,46 @@
             "required": false,
             "in": "query",
             "description": "Filter to PENDING orders created more than 48 hours ago — the \"waiting too long\" queue (TASK-425). Deliberately a SERVER filter reusing the dashboard's PENDING_STALE_HOURS, so the list chip and the dashboard tile cannot drift apart.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "hasDebt",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders carrying a debt — status = DELIVERED AND paymentStatus NOT IN (PAID, REFUNDED). The «Борг N ₴» mark (TASK-470 / B-1): delivered goods nobody has paid for.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "awaitingPayment",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders still within their payment window — paymentMethod IN (ONLINE, INSTALLMENTS) AND paymentStatus = PENDING AND reservationExpiresAt in the future. The «Очікує оплати · N хв» mark (TASK-471). BNPL is included because it holds a timed reservation too and the auto-cancel worker acts on the same set.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "reservationExpired",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders whose payment window has closed — the same triple as `awaitingPayment` with `reservationExpiresAt` in the past. The «Резерв сплив» mark (TASK-471). Deliberately a separate flag, not a tri-state: the two are opposite answers to the same question and an operator acts differently on each.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "hasUnavailableItems",
+            "required": false,
+            "in": "query",
+            "description": "Filter to open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the order lost its reservation to the TTL worker (TASK-470). Deep-link target of the dashboard «Недоступні позиції» tile, and the same predicate it counts.",
             "schema": {
               "example": true,
               "type": "boolean"
@@ -10980,11 +11064,11 @@
         },
         "responses": {
           "201": {
-            "description": "Order created",
+            "description": "Order created; `meta.accessUrl` is the buyer link, returned once",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AdminOrderResponseEnvelope"
+                  "$ref": "#/components/schemas/AdminOrderCreatedResponseEnvelope"
                 }
               }
             }
@@ -11002,6 +11086,52 @@
           }
         ],
         "summary": "Create an order on behalf of a customer (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
+    "/api/admin/orders/{orderId}/access-link": {
+      "post": {
+        "operationId": "adminOrderControllerIssueAccessLink",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "A new link; the previous one stops working",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderAccessLinkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The storefront address is not configured"
+          },
+          "403": {
+            "description": "Forbidden — orders:write required"
+          },
+          "404": {
+            "description": "Order not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Issue a new buyer link for an order (admin)",
         "tags": [
           "Admin Orders"
         ]
@@ -11084,6 +11214,7 @@
                 "PENDING",
                 "PAID",
                 "FAILED",
+                "PARTIALLY_REFUNDED",
                 "REFUNDED"
               ]
             }
@@ -11108,6 +11239,46 @@
             "required": false,
             "in": "query",
             "description": "Filter to PENDING orders created more than 48 hours ago — the \"waiting too long\" queue (TASK-425). Deliberately a SERVER filter reusing the dashboard's PENDING_STALE_HOURS, so the list chip and the dashboard tile cannot drift apart.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "hasDebt",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders carrying a debt — status = DELIVERED AND paymentStatus NOT IN (PAID, REFUNDED). The «Борг N ₴» mark (TASK-470 / B-1): delivered goods nobody has paid for.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "awaitingPayment",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders still within their payment window — paymentMethod IN (ONLINE, INSTALLMENTS) AND paymentStatus = PENDING AND reservationExpiresAt in the future. The «Очікує оплати · N хв» mark (TASK-471). BNPL is included because it holds a timed reservation too and the auto-cancel worker acts on the same set.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "reservationExpired",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders whose payment window has closed — the same triple as `awaitingPayment` with `reservationExpiresAt` in the past. The «Резерв сплив» mark (TASK-471). Deliberately a separate flag, not a tri-state: the two are opposite answers to the same question and an operator acts differently on each.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "hasUnavailableItems",
+            "required": false,
+            "in": "query",
+            "description": "Filter to open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the order lost its reservation to the TTL worker (TASK-470). Deep-link target of the dashboard «Недоступні позиції» tile, and the same predicate it counts.",
             "schema": {
               "example": true,
               "type": "boolean"
@@ -11323,6 +11494,49 @@
         ]
       }
     },
+    "/api/admin/orders/{orderId}/allowed-payment-transitions": {
+      "get": {
+        "operationId": "adminOrderControllerGetAllowedPaymentTransitions",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current payment status, the legal targets, and the optimistic-lock token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderAllowedPaymentTransitionsResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Order not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List legal next payment statuses for an order (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
     "/api/admin/orders/{orderId}/status": {
       "patch": {
         "operationId": "adminOrderControllerUpdateStatus",
@@ -11365,7 +11579,7 @@
             "description": "Order not found"
           },
           "409": {
-            "description": "ORDER_TRANSITION_INVALID — the state machine forbids this move; or ORDER_STALE — another admin changed this order first"
+            "description": "ORDER_TRANSITION_INVALID — the state machine forbids this move; ORDER_STALE — another admin changed this order first; or ORDER_REVIVE_REFUNDED_PAYMENT — the order cannot return to a live status while its payment is recorded as fully refunded"
           }
         },
         "security": [
@@ -11419,6 +11633,9 @@
           },
           "404": {
             "description": "Order not found"
+          },
+          "409": {
+            "description": "ORDER_PAYMENT_TRANSITION_INVALID — the payment state machine forbids the move, or the starting status changed underneath the write; or ORDER_REFUND_REQUIRES_CLOSED_ORDER — a full refund was asked for on an order that is neither cancelled nor refunded"
           }
         },
         "security": [
@@ -11712,6 +11929,100 @@
           }
         ],
         "summary": "Resolve a return (admin)",
+        "tags": [
+          "Admin Returns"
+        ]
+      }
+    },
+    "/api/admin/orders/{orderId}/returns": {
+      "get": {
+        "operationId": "adminOrderReturnControllerFindForOrder",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Returns for the order",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReturnListResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — returns:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List the returns opened against one order (admin)",
+        "tags": [
+          "Admin Returns"
+        ]
+      },
+      "post": {
+        "operationId": "adminOrderReturnControllerCreate",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateReturnDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Return opened",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReturnResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Order has not shipped, unknown line, or more units than were bought"
+          },
+          "403": {
+            "description": "Forbidden — returns:write required"
+          },
+          "404": {
+            "description": "Order not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Open a return on the customer behalf (admin)",
         "tags": [
           "Admin Returns"
         ]
@@ -12922,6 +13233,35 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/EffectivePermissionsEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "EmailVerificationConfirmed": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Email address verified."
+          },
+          "claimedOrders": {
+            "type": "number",
+            "example": 2,
+            "description": "How many orders placed as a guest with this address were attached to the account. 0 for anyone who never ordered as a guest, and on a second confirm — claiming is idempotent."
+          }
+        },
+        "required": [
+          "message",
+          "claimedOrders"
+        ]
+      },
+      "EmailVerificationConfirmEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/EmailVerificationConfirmed"
           }
         },
         "required": [
@@ -17795,6 +18135,7 @@
               "PENDING",
               "PAID",
               "FAILED",
+              "PARTIALLY_REFUNDED",
               "REFUNDED"
             ],
             "example": "PAID"
@@ -22159,6 +22500,7 @@
               "PENDING",
               "PAID",
               "FAILED",
+              "PARTIALLY_REFUNDED",
               "REFUNDED"
             ],
             "example": "PENDING"
@@ -22178,6 +22520,13 @@
             "description": "When the payment settled; null while unpaid",
             "format": "date-time",
             "nullable": true
+          },
+          "reservationExpiresAt": {
+            "type": "string",
+            "description": "Deadline on an unpaid ONLINE order's stock reservation (TASK-330); null when the order holds no timed reservation. The «Очікує оплати · N хв» / «Резерв сплив» marks are derived from it (TASK-471).",
+            "format": "date-time",
+            "nullable": true,
+            "example": "2026-01-01T00:30:00.000Z"
           },
           "subtotal": {
             "type": "string",
@@ -22214,6 +22563,21 @@
             "type": "string",
             "description": "Grand total as string",
             "example": "149.97"
+          },
+          "refundedTotal": {
+            "type": "string",
+            "description": "Total refunded across this order's return requests, as a string (\"X\" of \"X of Y\", with Y = `total`). Derived at read time from Σ `Return.refundedAmount`; present on admin responses only.",
+            "example": "499.00"
+          },
+          "unavailableItemIds": {
+            "description": "Ids of the order lines whose product is no longer orderable — deleted, unpublished, oversold, or holding a reservation the TTL worker has released (TASK-470). Derived at read time; present on admin responses only, and absent (never empty) elsewhere.",
+            "example": [
+              "550e8400-e29b-41d4-a716-446655440002"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "shippingAddress": {
             "type": "object",
@@ -22288,6 +22652,7 @@
           "paymentStatus",
           "paymentMethod",
           "paidAt",
+          "reservationExpiresAt",
           "subtotal",
           "discount",
           "discountCode",
@@ -22364,6 +22729,197 @@
         "required": [
           "data",
           "meta"
+        ]
+      },
+      "PublicOrderItemEntity": {
+        "type": "object",
+        "properties": {
+          "productName": {
+            "type": "string",
+            "description": "Product name at the time of purchase",
+            "example": "Чохол MagSafe"
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity ordered",
+            "example": 2
+          },
+          "price": {
+            "type": "string",
+            "description": "Unit price as string",
+            "example": "299.00"
+          },
+          "lineTotal": {
+            "type": "string",
+            "description": "Line total as string (price × quantity)",
+            "example": "598.00"
+          },
+          "addons": {
+            "description": "Add-on services bought with this line — frozen name/price snapshots",
+            "example": [
+              "Страхування від пошкоджень"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "productName",
+          "quantity",
+          "price",
+          "lineTotal",
+          "addons"
+        ]
+      },
+      "PublicOrderDeliveryEntity": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "Destination city, or null when the order carries no address snapshot",
+            "nullable": true,
+            "example": "Київ"
+          },
+          "warehouse": {
+            "type": "string",
+            "description": "Nova Poshta branch, or null for a courier delivery (the street is NEVER shown)",
+            "nullable": true,
+            "example": "Відділення №12"
+          }
+        },
+        "required": [
+          "city",
+          "warehouse"
+        ]
+      },
+      "PublicOrderEntity": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "The 8-character order number printed on the confirmation email",
+            "example": "94F5F971"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When the order was placed",
+            "example": "2026-09-14T10:15:30.000Z"
+          },
+          "status": {
+            "type": "string",
+            "description": "Order status",
+            "enum": [
+              "PENDING",
+              "CONFIRMED",
+              "PROCESSING",
+              "SHIPPED",
+              "DELIVERED",
+              "CANCELLED",
+              "REFUNDED"
+            ],
+            "example": "SHIPPED"
+          },
+          "paymentStatus": {
+            "type": "string",
+            "description": "Payment status",
+            "enum": [
+              "PENDING",
+              "PAID",
+              "FAILED",
+              "PARTIALLY_REFUNDED",
+              "REFUNDED"
+            ],
+            "example": "PENDING"
+          },
+          "paymentMethod": {
+            "type": "string",
+            "description": "How the buyer chose to pay",
+            "enum": [
+              "ONLINE",
+              "ON_DELIVERY",
+              "INSTALLMENTS"
+            ],
+            "example": "ON_DELIVERY"
+          },
+          "items": {
+            "description": "Purchased lines",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicOrderItemEntity"
+            }
+          },
+          "subtotal": {
+            "type": "string",
+            "description": "Sum of the lines as string",
+            "example": "598.00"
+          },
+          "discount": {
+            "type": "string",
+            "description": "Discount applied as string",
+            "example": "0.00"
+          },
+          "shippingCost": {
+            "type": "string",
+            "description": "Shipping cost as string",
+            "example": "70.00"
+          },
+          "addonsTotal": {
+            "type": "string",
+            "description": "Sum of the add-on snapshots as string",
+            "example": "0.00"
+          },
+          "total": {
+            "type": "string",
+            "description": "Grand total as string",
+            "example": "668.00"
+          },
+          "delivery": {
+            "description": "Delivery destination",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PublicOrderDeliveryEntity"
+              }
+            ]
+          },
+          "trackingNumber": {
+            "type": "string",
+            "description": "Nova Poshta waybill (ТТН), or null while the parcel has not been handed over",
+            "nullable": true,
+            "example": "20450000000001"
+          }
+        },
+        "required": [
+          "number",
+          "createdAt",
+          "status",
+          "paymentStatus",
+          "paymentMethod",
+          "items",
+          "subtotal",
+          "discount",
+          "shippingCost",
+          "addonsTotal",
+          "total",
+          "delivery",
+          "trackingNumber"
+        ]
+      },
+      "PublicOrderLookupResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Matching orders, newest first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicOrderEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "GuestContactDto": {
@@ -22524,6 +23080,27 @@
           "shippingAddress"
         ]
       },
+      "OrderLookupDto": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Order number as printed on the confirmation email — the 8-character code, with or without a leading \"#\", spaces or letter case.",
+            "example": "#94F5F971",
+            "maxLength": 64
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number given when the order was placed, in any spelling — it is normalised to the same canonical form the order was stored in (TASK-466).",
+            "example": "+380 50 111 2233",
+            "maxLength": 32
+          }
+        },
+        "required": [
+          "number",
+          "phone"
+        ]
+      },
       "OrderStatusHistoryEntity": {
         "type": "object",
         "properties": {
@@ -22583,6 +23160,7 @@
               "PENDING",
               "PAID",
               "FAILED",
+              "PARTIALLY_REFUNDED",
               "REFUNDED"
             ],
             "nullable": true,
@@ -22595,6 +23173,7 @@
               "PENDING",
               "PAID",
               "FAILED",
+              "PARTIALLY_REFUNDED",
               "REFUNDED"
             ],
             "nullable": true,
@@ -22751,6 +23330,118 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/AdminOrderAllowedTransitions"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AdminOrderAllowedPaymentTransitions": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "string",
+            "description": "The order's current payment status",
+            "enum": [
+              "PENDING",
+              "PAID",
+              "FAILED",
+              "PARTIALLY_REFUNDED",
+              "REFUNDED"
+            ]
+          },
+          "allowed": {
+            "type": "array",
+            "description": "Payment statuses the order may legally move to right now. Already filtered by the cross-rule that a full REFUNDED needs the order cancelled or refunded first, so every value here is one the PATCH will accept.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PENDING",
+                "PAID",
+                "FAILED",
+                "PARTIALLY_REFUNDED",
+                "REFUNDED"
+              ]
+            }
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "The order's current `updatedAt` — the same optimistic-lock token the status transitions endpoint returns, so both pickers on the page read one version of the order.",
+            "example": "2026-07-28T10:15:30.000Z"
+          }
+        },
+        "required": [
+          "current",
+          "allowed",
+          "updatedAt"
+        ]
+      },
+      "AdminOrderAllowedPaymentTransitionsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AdminOrderAllowedPaymentTransitions"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AdminOrderCreatedMeta": {
+        "type": "object",
+        "properties": {
+          "accessUrl": {
+            "type": "string",
+            "description": "Absolute order-status link for the buyer, shown to the operator ONCE — the server keeps only its hash. Null when STORE_CLIENT_URL is unconfigured.",
+            "nullable": true,
+            "example": "https://shop.example.com/orders/guest/2f1a…"
+          }
+        },
+        "required": [
+          "accessUrl"
+        ]
+      },
+      "AdminOrderCreatedResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OrderEntity"
+          },
+          "meta": {
+            "$ref": "#/components/schemas/AdminOrderCreatedMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "AdminOrderAccessLink": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Absolute order-status link for the buyer — shown once, never retrievable again",
+            "example": "https://shop.example.com/orders/guest/2f1a…"
+          },
+          "issuedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "When this link was issued; its expiry window is counted from here",
+            "example": "2026-09-14T10:15:30.000Z"
+          }
+        },
+        "required": [
+          "url",
+          "issuedAt"
+        ]
+      },
+      "AdminOrderAccessLinkResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AdminOrderAccessLink"
           }
         },
         "required": [
@@ -22930,6 +23621,7 @@
               "PENDING",
               "PAID",
               "FAILED",
+              "PARTIALLY_REFUNDED",
               "REFUNDED"
             ]
           }
@@ -23033,6 +23725,12 @@
             "description": "What was actually refunded, as a string; null until money moves",
             "nullable": true,
             "example": "499.00"
+          },
+          "createdByUserId": {
+            "type": "string",
+            "description": "Account that opened the request — the customer from their own page, an operator when the shop filed it for them, null for rows predating the column. Present ONLY on admin responses.",
+            "format": "uuid",
+            "nullable": true
           },
           "items": {
             "description": "Lines coming back",
@@ -24289,6 +24987,11 @@
             "type": "number",
             "description": "Things that look like rating abuse: products with more than 10 ratings in the last hour, plus IP addresses behind 3 or more 1★ ratings in the last 24 hours",
             "example": 2
+          },
+          "unavailableItems": {
+            "type": "number",
+            "description": "Open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the reservation TTL released the order (TASK-470)",
+            "example": 3
           }
         },
         "required": [
@@ -24297,7 +25000,8 @@
           "unpaidInTransit",
           "failedMails",
           "pendingOver48h",
-          "ratingAbuse"
+          "ratingAbuse",
+          "unavailableItems"
         ]
       },
       "NeedsActionResponse": {

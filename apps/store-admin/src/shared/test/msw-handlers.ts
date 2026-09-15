@@ -48,6 +48,8 @@ export const handlers = [
         // NeedsActionWidget incidentally, so a counter missing here renders as
         // `undefined` in every one of them instead of failing in just this one.
         ratingAbuse: 0,
+        // TASK-470: the 7th counter, in the default payload for the same reason.
+        unavailableItems: 0,
       },
     }),
   ),
@@ -76,6 +78,20 @@ export const handlers = [
           "DELIVERED",
           "CANCELLED",
         ],
+        updatedAt: "2026-06-01T10:00:00.000Z",
+      },
+    }),
+  ),
+
+  // Legal next PAYMENT statuses (TASK-431). Same reasoning as the handler above:
+  // the payment picker is server-driven now, so every test that mounts
+  // OrderDetailView needs an answer here. The default is the real PENDING row of
+  // `PAYMENT_TRANSITIONS`.
+  http.get("*/api/admin/orders/:orderId/allowed-payment-transitions", () =>
+    HttpResponse.json({
+      data: {
+        current: "PENDING",
+        allowed: ["PAID", "FAILED"],
         updatedAt: "2026-06-01T10:00:00.000Z",
       },
     }),

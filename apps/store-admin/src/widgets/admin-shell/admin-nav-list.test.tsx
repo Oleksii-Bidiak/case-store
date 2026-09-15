@@ -229,6 +229,36 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
     ).not.toBeInTheDocument();
   });
 
+  // TASK-370. The queue itself has existed since TASK-340; what never existed was
+  // a way in. And the permission behind it had never been granted to anybody
+  // either, so the first version of this entry would have been visible to the
+  // owner alone — hence the backfill migration this pair of tests guards the
+  // visible half of.
+  it("shows «Повернення» to a manager holding returns:read", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderNav({ isOwner: false, permissions: ["returns:read"] });
+
+    expect(
+      await screen.findByRole("link", { name: dict.nav.returns }),
+    ).toHaveAttribute("href", "/returns");
+  });
+
+  it("hides «Повернення» from a manager without returns:read", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    // Holds orders, but not the returns key: the queue shows someone else's
+    // decisions about someone else's money, and it is a separate tick.
+    renderNav({ isOwner: false, permissions: ["orders:read", "orders:write"] });
+
+    expect(
+      await screen.findByRole("link", { name: dict.nav.orders }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.nav.returns }),
+    ).not.toBeInTheDocument();
+  });
+
   it("hides the owner-only sections from a manager, whatever they are granted", async () => {
     mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
 

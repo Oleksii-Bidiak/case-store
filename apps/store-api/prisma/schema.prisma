@@ -74,6 +74,13 @@ enum PaymentStatus {
   PENDING
   PAID
   FAILED
+  /// Part of the money went back, the rest did not (TASK-431, B-1 decision 5).
+  /// Added because the operator who refunded one line out of three had to lie
+  /// otherwise: keep PAID (while part of it is no longer ours) or set REFUNDED
+  /// (and be forced to kill a live order). Added WITHOUT a backfill — no existing
+  /// row is reinterpreted; the amount behind the label stays derived (Σ of
+  /// `Return.refundedAmount`), never a second column that drifts from the returns.
+  PARTIALLY_REFUNDED
   REFUNDED
 }
 
@@ -228,6 +235,10 @@ model User {
   notes                   UserNote[]
   /// Media-library assets this user uploaded (TASK-441).
   uploadedMedia           MediaAsset[]
+  /// Return requests this account OPENED (TASK-469) — their own from the account
+  /// page, or a customer's from the admin panel when the shop filed it for them.
+  /// Not "returns of this user's orders": that is reached through `Return.order`.
+  openedReturns           Return[]                 @relation("ReturnCreatedBy")
 
   @@index([deletedAt])
   @@map("users")
@@ -428,17 +439,17 @@ model ProductGroupAxis {
 }
 
 model ProductImage {
-  id          String   @id @default(uuid())
-  productId   String   @map("product_id")
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  url         String
-  alt         String?
+  id           String      @id @default(uuid())
+  productId    String      @map("product_id")
+  product      Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url          String
+  alt          String?
   // Tiny base64 WebP LQIP data-URI for the storefront next/image blur placeholder
   // (TASK-091). Nullable: legacy/seed rows and passthrough GIFs have none.
-  blurDataUrl String?  @map("blur_data_url")
-  sortOrder   Int      @default(0) @map("sort_order")
-  isPrimary   Boolean  @default(false) @map("is_primary")
-  createdAt   DateTime @default(now()) @map("created_at")
+  blurDataUrl  String?     @map("blur_data_url")
+  sortOrder    Int         @default(0) @map("sort_order")
+  isPrimary    Boolean     @default(false) @map("is_primary")
+  createdAt    DateTime    @default(now()) @map("created_at")
   /// PROVENANCE link to the media library (TASK-441): "this photo came from that
   /// asset". Nullable, and `SetNull` rather than `Cascade` — removing a library
   /// entry must never delete a product's photo row.
@@ -449,7 +460,7 @@ model ProductImage {
   /// the importer, the seed and every pre-TASK-441 upload leave it null, so a
   /// usage check reading it would report a photo-bearing asset as unused and
   /// happily delete the file underneath a live product page.
-  mediaAssetId String? @map("media_asset_id")
+  mediaAssetId String?     @map("media_asset_id")
   mediaAsset   MediaAsset? @relation(fields: [mediaAssetId], references: [id], onDelete: SetNull)
 
   @@index([productId, sortOrder])
@@ -590,6 +601,13 @@ model Order {
   /// cookie is gone or they switch device (edge case E-17). Unique so a lookup by
   /// token is a single indexed hit rather than a scan.
   accessTokenHash      String?       @unique @map("access_token_hash")
+  /// When `accessTokenHash` was last issued (TASK-484, B-5 decision 4). The guest
+  /// link's TTL is counted from HERE, not from `createdAt`: an operator who
+  /// re-issues the link a month after the order was taken would otherwise hand the
+  /// customer a URL that is already dead at birth. Null on orders created before
+  /// this column existed and on orders that never had a token — both are read as
+  /// "fall back to `createdAt`", which is exactly what the TTL used to mean.
+  accessTokenIssuedAt  DateTime?     @map("access_token_issued_at")
   status               OrderStatus   @default(PENDING)
   paymentStatus        PaymentStatus @default(PENDING) @map("payment_status")
   /// Defaults to ON_DELIVERY because that is what every pre-TASK-330 order
@@ -1892,24 +1910,37 @@ model TotpBackupCode {
 /// money move independently — and `restockedAt` mirrors Order.restockedAt so the
 /// same "already credited back" guard prevents a double restock here too.
 model Return {
-  id             String       @id @default(uuid())
-  orderId        String       @map("order_id")
-  order          Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  status         ReturnStatus @default(REQUESTED)
+  id              String       @id @default(uuid())
+  orderId         String       @map("order_id")
+  order           Order        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  status          ReturnStatus @default(REQUESTED)
   /// What the customer said, in their words.
-  reason         String?
+  reason          String?
   /// Operator-only, never shown to the customer (same split as Order.internalNotes).
-  operatorNotes  String?      @map("operator_notes")
-  requestedAt    DateTime     @default(now()) @map("requested_at")
-  resolvedAt     DateTime?    @map("resolved_at")
+  operatorNotes   String?      @map("operator_notes")
+  requestedAt     DateTime     @default(now()) @map("requested_at")
+  resolvedAt      DateTime?    @map("resolved_at")
   /// Non-null once these lines were credited back to sellable stock. Guards against
   /// restocking the same return twice.
-  restockedAt    DateTime?    @map("restocked_at")
+  restockedAt     DateTime?    @map("restocked_at")
   /// What was actually refunded — may be less than the line total (shipping is not
   /// always refundable, and partial returns are normal).
-  refundedAmount Decimal?     @map("refunded_amount") @db.Decimal(10, 2)
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  refundedAmount  Decimal?     @map("refunded_amount") @db.Decimal(10, 2)
+  /// Who opened this request (TASK-469). The customer's own id when they filed it
+  /// from their account; the OPERATOR's id when the shop filed it for them. Null
+  /// only for the rows that predate this column.
+  ///
+  /// It exists because a guest and a phone customer have no account at all — the
+  /// customer-facing POST takes `@CurrentUser('id')`, so until the admin door was
+  /// opened, half the orders in the shop physically could not be returned through
+  /// the system. Once two doors write the same table, "who said this" stops being
+  /// inferable and has to be recorded.
+  createdByUserId String?      @map("created_by_user_id")
+  /// SetNull, not Cascade: a deleted staff account must not take the returns they
+  /// filed with it — the return is the customer's money, not the operator's row.
+  createdBy       User?        @relation("ReturnCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
 
   items ReturnItem[]
 
