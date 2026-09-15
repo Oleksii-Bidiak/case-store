@@ -1847,7 +1847,8 @@ describe('OrderController (e2e)', () => {
       // Byte-identical apart from the timestamp — `path` is the same static route
       // for every caller, so nothing in the envelope narrows the guess either.
       const shapes = [malformed, unknown, wrongPhone].map((response) => {
-        const { timestamp: _timestamp, ...rest } = response.body as Record<string, unknown>;
+        const rest = { ...(response.body as Record<string, unknown>) };
+        delete rest.timestamp;
         return JSON.stringify(rest);
       });
       expect(new Set(shapes).size).toBe(1);
