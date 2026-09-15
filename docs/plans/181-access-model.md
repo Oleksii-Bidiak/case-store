@@ -75,8 +75,10 @@ apps/store-admin --runInBand`, `npm run test:e2e:pw` для admin-проєкту
 3. **`prisma migrate dev` у цьому середовищі не працює — міграції пишуться
    `migrate diff --script` + `migrate deploy`.** Команда падає неінтерактивною відмовою, і це
    не разовий збій, а властивість середовища. Робочий шлях: змінити `schema.prisma`, зняти
-   різницю `prisma migrate diff --from-migrations … --to-schema-datamodel … --script` у файл
-   міграції, застосувати `migrate deploy`. Бекфіли (`role_permissions` → `user_permissions`,
+   різницю `prisma migrate diff --from-migrations … --to-schema … --script` у файл
+   міграції, застосувати `migrate deploy`. Прапорець саме `--to-schema`: `--to-schema-datamodel`
+   у Prisma 7 знято, і CLI відповідає на нього відмовою — а це той рядок, який наступна людина
+   скопіює звідси дослівно. Бекфіли (`role_permissions` → `user_permissions`,
    `customers:card` тим, хто мав `customers:read`) дописані в ті самі файли руками — їх
    `diff` не згенерує ніколи, бо це дані, а не схема. Звідси ж правило, яке варто тримати:
    код і SQL бекфілу — дві половини одного контракту, і `permission.catalog.spec.ts`
