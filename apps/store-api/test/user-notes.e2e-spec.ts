@@ -57,6 +57,12 @@ describe('Customer notes (e2e)', () => {
 
   const userRepositoryMock = {
     findById: jest.fn(),
+    // The customer-scoped lookup. `UserNoteService` resolves its TARGET through
+    // this one and only the AUTHOR through `findById` (TASK-476), so the two are
+    // mocked apart: with one function answering both, the suite would pass even
+    // if the service went back to the unscoped lookup and re-opened the staff
+    // existence oracle under a grantable `customers:read`.
+    findCustomerById: jest.fn(),
     findByEmail: jest.fn(),
     findAll: jest.fn(),
     update: jest.fn(),
@@ -152,6 +158,15 @@ describe('Customer notes (e2e)', () => {
         originalEmail: null,
         role: id === CUSTOMER_ID ? 'CUSTOMER' : 'ADMIN',
       }),
+    );
+    // Scoped: it answers for the customer and for nobody else, which is what the
+    // real `findCustomerById` does with its unconditional `role: CUSTOMER`.
+    userRepositoryMock.findCustomerById.mockImplementation((id: string) =>
+      Promise.resolve(
+        id === CUSTOMER_ID
+          ? { id, email: `${id}@test.local`, originalEmail: null, role: 'CUSTOMER' }
+          : null,
+      ),
     );
     noteRepositoryMock.findByUserId.mockResolvedValue([]);
     noteRepositoryMock.countByUserId.mockResolvedValue(0);
@@ -314,12 +329,49 @@ describe('Customer notes (e2e)', () => {
   });
 
   it('404s for an unknown customer rather than answering with an empty journal', async () => {
-    userRepositoryMock.findById.mockResolvedValue(null);
+    userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
     await request(app.getHttpServer())
       .get('/api/admin/users/does-not-exist/notes')
       .set('Authorization', auth(OWNER_ID, 'ADMIN'))
       .expect(404);
+  });
+
+  it('gives a STAFF id the same 404 — no existence oracle under customers:read', async () => {
+    // `customers:read` and `customers:write` are GRANTABLE, so an operator hired
+    // to phone customers holds them. Before TASK-476's scoping reached this
+    // module the unscoped lookup answered 200 with an empty journal for the
+    // owner's id and 404 for an unknown one — enough to enumerate the people who
+    // run the shop — and `customers:write` let the same operator append a note to
+    // the owner's row, stamped with their own address.
+    //
+    // Asserted over HTTP rather than only in the unit spec, because the property
+    // is "these two requests are indistinguishable", and that is a statement
+    // about responses.
+    const asManager = auth(MANAGER_ID, 'MANAGER');
+
+    await request(app.getHttpServer())
+      .get(`/api/admin/users/${OWNER_ID}/notes`)
+      .set('Authorization', asManager)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .get('/api/admin/users/does-not-exist/notes')
+      .set('Authorization', asManager)
+      .expect(404);
+
+    // The write is checked as the ADMIN, who holds `customers:write` by level —
+    // this suite's MANAGER deliberately does not, so a 404 from them would be
+    // indistinguishable from the 403 they would get anyway. What is being proved
+    // here is the SCOPE, not the permission: even a caller who may write notes
+    // cannot attach one to a staff row.
+    await request(app.getHttpServer())
+      .post(`/api/admin/users/${OWNER_ID}/notes`)
+      .set('Authorization', auth(OWNER_ID, 'ADMIN'))
+      .send({ body: 'спроба причепити замітку до власника' })
+      .expect(404);
+
+    expect(noteRepositoryMock.create).not.toHaveBeenCalled();
   });
 
   // ─── The author outliving their account ───────────────────────────────────

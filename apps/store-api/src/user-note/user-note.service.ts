@@ -77,9 +77,22 @@ export class UserNoteService {
     return UserNoteEntity.fromPrisma(note);
   }
 
-  /** Shared 404 guard — the customer must exist and not be soft-deleted. */
+  /**
+   * Shared 404 guard — the target must exist, be a CUSTOMER, and not be
+   * soft-deleted.
+   *
+   * SCOPED THROUGH `findCustomerById`, NOT `findById` (TASK-476). Both routes here
+   * are gated by `customers:read` / `customers:write`, which are GRANTABLE — an
+   * operator hired to phone customers holds them. With the unscoped lookup this
+   * method answered 200 with an empty list for a staff or owner id and 404 for an
+   * unknown one, which is an existence oracle for the people who run the shop;
+   * with `customers:write` the same operator could append a note to the owner's
+   * row, stamped with their own address. `UserService` was re-scoped for exactly
+   * this reason and this module was missed: a staff id and a missing id must give
+   * the same answer.
+   */
   private async requireCustomer(userId: string): Promise<void> {
-    const user = await this.userRepository.findById(userId);
+    const user = await this.userRepository.findCustomerById(userId);
     if (!user) {
       throw new NotFoundException('User not found');
     }
