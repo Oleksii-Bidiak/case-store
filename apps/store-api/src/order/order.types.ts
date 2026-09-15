@@ -366,8 +366,20 @@ export interface PaymentApplyPlan {
    * that is still PAID would break it for every later reader. The rejected value
    * lives in the structured log, next to the provider status that asked for it,
    * which is where that question is actually diagnosed.
+   *
+   * `reason` says WHICH rule refused (review of plan 180). Without it the log is
+   * ambiguous in the one case that matters: a refund refused by the cross-rule on
+   * a PROCESSING order logs `current: PAID, rejected: REFUNDED` — a pair
+   * `PAYMENT_TRANSITIONS` explicitly ALLOWS — so whoever reads the line has to
+   * open the order to learn the refusal came from the order status, not the
+   * table. This door never raises, so this log is its only diagnostic.
    */
-  refusedPaymentStatusChange?: { current: PaymentStatus; rejected: PaymentStatus };
+  refusedPaymentStatusChange?: {
+    current: PaymentStatus;
+    rejected: PaymentStatus;
+    /** `table` — PAYMENT_TRANSITIONS; `crossRule` — B-1 §1, the order is live. */
+    reason: 'table' | 'crossRule';
+  };
   /** Set when money settled; null leaves the column untouched. */
   paidAt?: Date | null;
   /**

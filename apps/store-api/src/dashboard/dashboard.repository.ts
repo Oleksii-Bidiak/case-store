@@ -184,17 +184,30 @@ export class DashboardRepository {
   }
 
   /**
-   * The "active but unpaid" order predicate — `paymentStatus != PAID` AND
-   * `status NOT IN (CANCELLED, REFUNDED)`. Single source of truth for the
+   * The "active but unpaid" order predicate — money we still expect to receive —
+   * AND `status NOT IN (CANCELLED, REFUNDED)`. Single source of truth for the
    * receivable-pipeline filter, shared by `getUnrealizedRevenue`,
    * `getUnrealizedRevenueSince`, and the `unpaidInTransit` needs-action count
    * (TASK-248) so the three never drift apart. Private to this repository —
    * `OrderRepository.findAll()`'s own `unpaidInTransit` filter is written
    * independently (no cross-module `dashboard`→`order` dependency).
+   *
+   * `PARTIALLY_REFUNDED` is excluded alongside `PAID` and NOT written as
+   * `!= PAID` (review of plan 180). That status is only reachable FROM `PAID`, so on such
+   * an order the money did arrive in full and some of it went back — the shop is
+   * owed nothing. Counting it as `!= PAID` added the order's ENTIRE total to
+   * unrealized revenue and put it in the "unpaid in transit" queue, sending an
+   * operator to chase a customer who paid.
+   *
+   * Note this is a different question from the «Борг» mark, which deliberately
+   * casts a wider net (`∉ {PAID, REFUNDED}`, B-1 §1): the mark asks "is there an
+   * open money question on this order", this predicate asks "how much have we
+   * not been paid". A partially refunded order answers yes to the first and
+   * zero to the second.
    */
   private unrealizedOrderWhere(): Prisma.OrderWhereInput {
     return {
-      paymentStatus: { not: PaymentStatus.PAID },
+      paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
       status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
     };
   }

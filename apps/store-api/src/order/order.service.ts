@@ -30,6 +30,7 @@ import {
   invalidPaymentTransitionError,
   invalidTransitionError,
   refundRequiresClosedOrderError,
+  reviveRefundedPaymentError,
   staleOrderError,
 } from './order.errors';
 import { AddonApplicabilityResolver, toTwoDecimals } from '../addon-service';
@@ -889,6 +890,25 @@ export class OrderService {
       throw invalidTransitionError(existing.status, status);
     }
 
+    // The cross-rule of B-1 §1, asked from the ORDER side (review of plan 180).
+    // Without it the pair the payment door refuses — a live order whose money is
+    // recorded as fully returned — was reachable in one ordinary click, and then
+    // could not be repaired from either side.
+    if (!this.isOrderTargetReachable(existing.paymentStatus, status)) {
+      this.logger.warn(
+        {
+          event: 'order.revive_refunded_rejected',
+          orderId,
+          from: existing.status,
+          to: status,
+          paymentStatus: existing.paymentStatus,
+          changedBy,
+        },
+        'Rejected reviving an order whose payment is recorded as fully refunded',
+      );
+      throw reviveRefundedPaymentError(status);
+    }
+
     // TASK-228: reviving an order whose cancellation already credited its stock
     // back (restockedAt set) into a live status must re-reserve that stock, or
     // a later re-cancel would credit it a second time. Moving between the
@@ -1340,7 +1360,12 @@ export class OrderService {
 
     return {
       current: existing.status,
-      allowed: allowedTransitions(existing.status),
+      // Filtered by the cross-rule for the same reason the payment list is
+      // (review of plan 180): a target the PATCH would refuse has no business
+      // being in the list the picker renders.
+      allowed: allowedTransitions(existing.status).filter((to) =>
+        this.isOrderTargetReachable(existing.paymentStatus, to),
+      ),
       updatedAt: existing.updatedAt,
     };
   }
@@ -1402,6 +1427,27 @@ export class OrderService {
   private isPaymentTargetReachable(orderStatus: OrderStatus, to: PaymentStatus): boolean {
     if (to !== PaymentStatus.REFUNDED) return true;
     return orderStatus === OrderStatus.CANCELLED || orderStatus === OrderStatus.REFUNDED;
+  }
+
+  /**
+   * The same cross-rule, asked of the OTHER column (review of plan 180).
+   *
+   * {@link isPaymentTargetReachable} refuses «full refund on a live order» when
+   * the PAYMENT moves. The identical pair was reachable when the ORDER moved
+   * instead: CANCELLED + REFUNDED is legal and ordinary, and reviving such an
+   * order into PENDING/CONFIRMED/PROCESSING produced exactly the state the other
+   * door calls impossible — goods being picked for a customer who has the money.
+   *
+   * Deliberately asked of `REFUNDED` only, not of every unsettled status.
+   * PARTIALLY_REFUNDED must stay revivable: one line refunded out of three is
+   * the ordinary case B-1 §1 went out of its way to keep legal.
+   *
+   * The terminal statuses stay reachable — CANCELLED ⇄ REFUNDED is how an
+   * operator corrects a mislabelled ending, and both are stock-neutral.
+   */
+  private isOrderTargetReachable(paymentStatus: PaymentStatus, to: OrderStatus): boolean {
+    if (paymentStatus !== PaymentStatus.REFUNDED) return true;
+    return to === OrderStatus.CANCELLED || to === OrderStatus.REFUNDED;
   }
 
   /**
@@ -1483,7 +1529,31 @@ export class OrderService {
       throw refundRequiresClosedOrderError(existing.status);
     }
 
-    const order = await this.orderRepository.updatePaymentStatus(orderId, paymentStatus, changedBy);
+    // Conditional on the status both checks above were made against (review of
+    // plan 180). Without it two operators picking different LEGAL moves in the
+    // same second compose into one the table forbids — see the repository's
+    // docblock. `null` means the premise is gone; the honest answer is the same
+    // 409 this method would have raised had the newer value been read.
+    const order = await this.orderRepository.updatePaymentStatus(
+      orderId,
+      paymentStatus,
+      changedBy,
+      { expectedFrom: existing.paymentStatus },
+    );
+
+    if (!order) {
+      this.logger.warn(
+        {
+          event: 'order.payment_status_lost_update',
+          orderId,
+          expectedFrom: existing.paymentStatus,
+          to: paymentStatus,
+          changedBy,
+        },
+        'Refused a payment-status write whose starting status had changed underneath it',
+      );
+      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
+    }
 
     this.logger.info(
       { event: 'order.payment_status_updated', orderId, paymentStatus },
@@ -1589,6 +1659,12 @@ export class OrderService {
           providerStatus: event.providerStatus,
           current: plan.refusedPaymentStatusChange.current,
           rejected: plan.refusedPaymentStatusChange.rejected,
+          // Both added by the review of plan 180. `reason` names the rule that
+          // refused, and `status` is the column the cross-rule reads — without
+          // it a cross-rule refusal reads as `PAID → REFUNDED`, which the table
+          // ALLOWS, and the line contradicts itself.
+          reason: plan.refusedPaymentStatusChange.reason,
+          status: order.status,
         },
         'Payment event asked for an illegal payment-status move; recorded and ignored',
       );
@@ -1718,6 +1794,7 @@ export class OrderService {
             refusedPaymentStatusChange: {
               current: order.paymentStatus,
               rejected: PaymentStatus.PAID,
+              reason: 'table',
             },
           };
         }
@@ -1776,6 +1853,7 @@ export class OrderService {
             refusedPaymentStatusChange: {
               current: order.paymentStatus,
               rejected: PaymentStatus.REFUNDED,
+              reason: 'table',
             },
           };
         }
@@ -1801,6 +1879,10 @@ export class OrderService {
             refusedPaymentStatusChange: {
               current: order.paymentStatus,
               rejected: PaymentStatus.REFUNDED,
+              // NOT `table`: PAID → REFUNDED is a move the table allows. What
+              // refused it is the order's own status, and a log line that does
+              // not say so sends its reader to the wrong file.
+              reason: 'crossRule',
             },
           };
         }

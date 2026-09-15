@@ -760,12 +760,20 @@ export class OrderRepository {
     }
 
     // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same
-    // compound condition as DashboardRepository's unrealized-revenue figure
-    // (paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED)). Additive:
+    // compound condition as DashboardRepository's unrealized-revenue figure, so
+    // the tile's count and the rows behind the click are the same set. Additive:
     // composes with the userId/date-range conditions above; only applied when the
     // flag is explicitly true.
+    //
+    // `PARTIALLY_REFUNDED` sits with `PAID` rather than on the unpaid side
+    // (review of plan 180) — it is only reachable FROM `PAID`, so the money did
+    // arrive and the shop is owed nothing. See the twin's docblock in
+    // `DashboardRepository.unrealizedOrderWhere` for why this differs from the
+    // «Борг» mark below, which deliberately casts a wider net.
     if (query.unpaidInTransit) {
-      where.paymentStatus = { not: PaymentStatus.PAID };
+      where.paymentStatus = {
+        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      };
       where.status = { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] };
     }
 
@@ -1127,22 +1135,52 @@ export class OrderRepository {
    * TASK-251: converted from a bare update to a $transaction so the change and
    * its audit-log row commit atomically. A lightweight `select: { paymentStatus }`
    * read inside the tx captures the fromPaymentStatus for the history row.
+   *
+   * ── `expectedFrom`: the compare-and-set the table needs (review of plan 180) ─
+   * The service validates the move against a status it read in an EARLIER query,
+   * so between the read and this write another operator can land a different
+   * legal move. Both pass validation, the second overwrites the first, and the
+   * pair that actually occurred is one `PAYMENT_TRANSITIONS` forbids — two legal
+   * moves composing into an illegal one. It also leaves a timeline describing a
+   * sequence that never happened, since both history rows record the same `from`.
+   *
+   * So the write is conditional on the status the caller validated against, in
+   * the same spirit as `updateDetails`'s `expectedUpdatedAt` guard — but keyed on
+   * `paymentStatus` rather than `updatedAt`, because that is the column the rule
+   * is about: an unrelated edit to the order must not make a legal payment move
+   * fail. `count === 0` means the premise is gone, and the caller turns that into
+   * the same 409 it would have raised had it read the newer value.
+   *
+   * Optional so a caller that has not validated against a specific `from` (none
+   * today; the webhook has its own planning path) is not forced to invent one.
+   *
+   * @returns null when the row no longer matches `expectedFrom` — nothing written.
    */
   async updatePaymentStatus(
     orderId: string,
     paymentStatus: PaymentStatus,
     changedBy: string | null,
-  ): Promise<OrderWithItems> {
+    options: { expectedFrom?: PaymentStatus } = {},
+  ): Promise<OrderWithItems | null> {
     return (await this.prisma.$transaction(async (tx) => {
       const existing = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         select: { paymentStatus: true },
       });
-      const updated = await tx.order.update({
-        where: { id: orderId },
-        data: { paymentStatus },
-        include: ORDERS_INCLUDE,
-      });
+
+      if (options.expectedFrom !== undefined) {
+        const { count } = await tx.order.updateMany({
+          where: { id: orderId, paymentStatus: options.expectedFrom },
+          data: { paymentStatus },
+        });
+        // Someone else moved the payment between the service's read and this
+        // write. Nothing is written — not even the history row, because a change
+        // that did not take effect is not an event.
+        if (count === 0) return null;
+      } else {
+        await tx.order.update({ where: { id: orderId }, data: { paymentStatus } });
+      }
+
       await tx.orderStatusHistory.create({
         data: {
           orderId,
@@ -1152,8 +1190,12 @@ export class OrderRepository {
           changedBy,
         },
       });
-      return updated;
-    })) as OrderWithItems;
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ORDERS_INCLUDE,
+      });
+    })) as OrderWithItems | null;
   }
 
   /**

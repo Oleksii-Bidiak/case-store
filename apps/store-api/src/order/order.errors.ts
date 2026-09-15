@@ -35,6 +35,17 @@ export const OrderErrorCode = {
    * between "try something else" and "do this, then this".
    */
   REFUND_REQUIRES_CLOSED_ORDER: 'ORDER_REFUND_REQUIRES_CLOSED_ORDER',
+  /**
+   * The same cross-rule as {@link REFUND_REQUIRES_CLOSED_ORDER}, refused from the
+   * other side: the ORDER was asked to return to a live status while its payment
+   * is recorded as fully REFUNDED (review of plan 180).
+   *
+   * A separate code because the repair is a different one. There the operator
+   * closes the order and records the money; here there is nothing to record —
+   * the money is already back with the customer, and the honest move is a new
+   * order rather than reviving one the shop has settled.
+   */
+  REVIVE_REFUNDED_PAYMENT: 'ORDER_REVIVE_REFUNDED_PAYMENT',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -85,6 +96,30 @@ export function refundRequiresClosedOrderError(status: OrderStatus): ConflictExc
     message:
       `A full refund needs the order cancelled or refunded first; it is ${status}. ` +
       'Use PARTIALLY_REFUNDED to record a partial return of money.',
+  });
+}
+
+/**
+ * 409 for reviving an order whose money is already back with the customer
+ * (review of plan 180).
+ *
+ * {@link refundRequiresClosedOrderError} guards the pair «live order + fully
+ * refunded money» from the payment side. It was reachable from the other side
+ * anyway: CANCELLED + REFUNDED is an everyday, legal state, and
+ * `ORDER_TRANSITIONS[CANCELLED]` contains the pre-shipment statuses, so one
+ * ordinary revive produced a PROCESSING order that will be picked and shipped
+ * with every hryvnia recorded as returned.
+ *
+ * Worse, it was unrepairable: `PAYMENT_TRANSITIONS[REFUNDED]` is empty by
+ * design, so the operator could not correct the payment label afterwards. A rule
+ * enforced on one door is not a rule, so it is asked here too.
+ */
+export function reviveRefundedPaymentError(to: OrderStatus): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.REVIVE_REFUNDED_PAYMENT,
+    message:
+      `This order cannot become ${to}: its payment is recorded as fully REFUNDED. ` +
+      'The money is back with the customer — create a new order instead.',
   });
 }
 

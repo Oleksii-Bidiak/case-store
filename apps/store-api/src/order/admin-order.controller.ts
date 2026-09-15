@@ -546,8 +546,9 @@ export class AdminOrderController {
   @ApiResponse({
     status: 409,
     description:
-      'ORDER_TRANSITION_INVALID — the state machine forbids this move; or ORDER_STALE — ' +
-      'another admin changed this order first',
+      'ORDER_TRANSITION_INVALID — the state machine forbids this move; ORDER_STALE — ' +
+      'another admin changed this order first; or ORDER_REVIVE_REFUNDED_PAYMENT — the ' +
+      'order cannot return to a live status while its payment is recorded as fully refunded',
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async updateStatus(
@@ -657,6 +658,19 @@ export class AdminOrderController {
   })
   @ApiResponse({ status: 404, description: 'Order not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  // The 409s this route actually raises (review of plan 180), written as one
+  // response like the status route's. Without it the contract published to Orval
+  // said this endpoint cannot conflict, while the admin panel already decodes two
+  // distinct codes off it — and anyone else generating a client from the spec
+  // would write no handling at all.
+  @ApiResponse({
+    status: 409,
+    description:
+      'ORDER_PAYMENT_TRANSITION_INVALID — the payment state machine forbids the move, or ' +
+      'the starting status changed underneath the write; or ' +
+      'ORDER_REFUND_REQUIRES_CLOSED_ORDER — a full refund was asked for on an order that ' +
+      'is neither cancelled nor refunded',
+  })
   async updatePaymentStatus(
     @Param('orderId') orderId: string,
     @Body() dto: UpdateOrderPaymentStatusDto,

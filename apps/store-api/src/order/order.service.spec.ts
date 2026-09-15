@@ -1086,6 +1086,88 @@ describe('OrderService', () => {
     });
   });
 
+  // ─── The cross-rule, asked from the ORDER side (review of plan 180) ──────────
+  //
+  // TASK-431 forbids «full refund on a live order» when the PAYMENT moves. The
+  // identical pair was reachable when the ORDER moved instead, and reviving is
+  // not an exotic path: CANCELLED + REFUNDED is what every cancelled-and-repaid
+  // order looks like, and `ORDER_TRANSITIONS[CANCELLED]` contains the whole
+  // pre-shipment run. One click produced a PROCESSING order with every hryvnia
+  // recorded as returned — goods being picked for a customer who has the money.
+  //
+  // It was also a one-way door: `PAYMENT_TRANSITIONS[REFUNDED]` is empty by
+  // design, so afterwards the operator could not correct the payment label
+  // either. That is why this is refused rather than merely warned about — the
+  // usual B-1 answer of "make it visible" has nowhere to lead.
+
+  describe('updateStatus — reviving an order whose money is already back', () => {
+    const seedRefunded = (status: OrderStatus) =>
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+    it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
+      'refuses CANCELLED → %s with 409 ORDER_REVIVE_REFUNDED_PAYMENT',
+      async (to) => {
+        seedRefunded(OrderStatus.CANCELLED);
+
+        await expect(service.updateStatus('order-uuid-1', to, ADMIN_ID)).rejects.toMatchObject({
+          response: { error: 'ORDER_REVIVE_REFUNDED_PAYMENT' },
+        });
+      },
+    );
+
+    it('writes nothing when it refuses — no revive, no status write', async () => {
+      seedRefunded(OrderStatus.CANCELLED);
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.PROCESSING, ADMIN_ID),
+      ).rejects.toThrow(ConflictException);
+
+      expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    it('still allows the terminal pair to be corrected (CANCELLED → REFUNDED)', async () => {
+      seedRefunded(OrderStatus.CANCELLED);
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.REFUNDED, paymentStatus: PaymentStatus.REFUNDED }),
+      );
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.REFUNDED, ADMIN_ID),
+      ).resolves.toBeDefined();
+    });
+
+    it('leaves a PARTIALLY_REFUNDED order revivable — one line back is an ordinary day', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        }),
+      );
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.PROCESSING,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        }),
+      );
+
+      await expect(
+        service.updateStatus('order-uuid-1', OrderStatus.PROCESSING, ADMIN_ID),
+      ).resolves.toBeDefined();
+    });
+
+    it('drops the unreachable targets from the picker instead of offering them', async () => {
+      seedRefunded(OrderStatus.CANCELLED);
+
+      const result = await service.getAllowedTransitions('order-uuid-1');
+
+      // ORDER_TRANSITIONS[CANCELLED] is [PENDING, CONFIRMED, PROCESSING, REFUNDED].
+      expect(result.allowed).toEqual([OrderStatus.REFUNDED]);
+    });
+  });
+
   // ─── updateStatus — decoupled (no auto-derive) (TASK-151) ─────────────────────
   // TASK-151: coupling removed — paymentStatus is no longer auto-derived from the
   // target order status. Advancing the order status leaves the existing payment
@@ -1271,10 +1353,13 @@ describe('OrderService', () => {
         ADMIN_ID,
       );
 
+      // The write is pinned to the status the transition was validated against
+      // (review of plan 180) — see `adminUpdatePaymentStatus`.
       expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
         'order-uuid-1',
         PaymentStatus.PAID,
         ADMIN_ID,
+        { expectedFrom: PaymentStatus.PENDING },
       );
       expect(result).toBeInstanceOf(OrderEntity);
       expect(result.paymentStatus).toBe(PaymentStatus.PAID);
@@ -1298,9 +1383,26 @@ describe('OrderService', () => {
         'order-uuid-1',
         PaymentStatus.REFUNDED,
         ADMIN_ID,
+        { expectedFrom: PaymentStatus.PAID },
       );
       expect(result.status).toBe(OrderStatus.CANCELLED);
       expect(result.paymentStatus).toBe(PaymentStatus.REFUNDED);
+    });
+
+    it('answers 409 when another operator moved the payment underneath the write', async () => {
+      // Both operators read PAID. One lands REFUNDED, the other PARTIALLY_REFUNDED.
+      // Both passed validation against PAID, but the second would apply
+      // REFUNDED → PARTIALLY_REFUNDED, which `PAYMENT_TRANSITIONS` forbids.
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PAID }),
+      );
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(null);
+
+      await expect(
+        service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.REFUNDED, ADMIN_ID),
+      ).rejects.toMatchObject({
+        response: { error: 'ORDER_PAYMENT_TRANSITION_INVALID' },
+      });
     });
 
     it('throws NotFoundException when the order does not exist', async () => {
@@ -2965,6 +3067,11 @@ describe('OrderService', () => {
         expect(plan.refusedPaymentStatusChange).toEqual({
           current: PaymentStatus.PAID,
           rejected: PaymentStatus.REFUNDED,
+          // `crossRule`, not `table` — PAID → REFUNDED is a move the table
+          // allows; what refused it is the order still being live. Without the
+          // discriminator the log line contradicts the table it cites (review of
+          // plan 180).
+          reason: 'crossRule',
         });
       });
 
@@ -2979,6 +3086,7 @@ describe('OrderService', () => {
           expect(lastPlan().refusedPaymentStatusChange).toEqual({
             current: PaymentStatus.PAID,
             rejected: PaymentStatus.REFUNDED,
+            reason: 'crossRule',
           });
         },
       );
@@ -3083,6 +3191,7 @@ describe('OrderService', () => {
         expect(lastPlan().refusedPaymentStatusChange).toEqual({
           current: PaymentStatus.PARTIALLY_REFUNDED,
           rejected: PaymentStatus.PAID,
+          reason: 'table',
         });
       });
 
@@ -3099,6 +3208,9 @@ describe('OrderService', () => {
         expect(plan.refusedPaymentStatusChange).toEqual({
           current: PaymentStatus.PENDING,
           rejected: PaymentStatus.REFUNDED,
+          // This one IS the table: PENDING → REFUNDED is money coming back that
+          // never arrived.
+          reason: 'table',
         });
       });
 

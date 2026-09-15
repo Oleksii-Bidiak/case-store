@@ -11579,7 +11579,7 @@
             "description": "Order not found"
           },
           "409": {
-            "description": "ORDER_TRANSITION_INVALID — the state machine forbids this move; or ORDER_STALE — another admin changed this order first"
+            "description": "ORDER_TRANSITION_INVALID — the state machine forbids this move; ORDER_STALE — another admin changed this order first; or ORDER_REVIVE_REFUNDED_PAYMENT — the order cannot return to a live status while its payment is recorded as fully refunded"
           }
         },
         "security": [
@@ -11633,6 +11633,9 @@
           },
           "404": {
             "description": "Order not found"
+          },
+          "409": {
+            "description": "ORDER_PAYMENT_TRANSITION_INVALID — the payment state machine forbids the move, or the starting status changed underneath the write; or ORDER_REFUND_REQUIRES_CLOSED_ORDER — a full refund was asked for on an order that is neither cancelled nor refunded"
           }
         },
         "security": [

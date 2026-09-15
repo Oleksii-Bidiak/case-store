@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 import { DashboardRepository } from './dashboard.repository';
 import { PrismaService } from '../prisma';
 
@@ -223,5 +223,79 @@ describe('DashboardRepository — the «Недоступні позиції» ti
     const needsAction = await repo.getNeedsAction();
 
     expect(needsAction.unavailableItems).toBe(0);
+  });
+});
+
+/**
+ * The receivable predicate after `PARTIALLY_REFUNDED` (review of plan 180).
+ *
+ * `unrealizedOrderWhere` is the single source of truth behind three numbers —
+ * the unrealized-revenue figure, its 30-day twin, and the `unpaidInTransit`
+ * needs-action count. It used to read "active but `paymentStatus != PAID`",
+ * which was exhaustive while the enum had four values.
+ *
+ * Adding a fifth broke it silently and in the expensive direction: a
+ * PARTIALLY_REFUNDED order is one that was paid IN FULL and had part of the
+ * money sent back, so it is owed nothing — yet `!= PAID` added its ENTIRE total
+ * to the receivables figure and put it in the queue of customers to chase. No
+ * test failed, because none of the three numbers asserted the predicate.
+ *
+ * This is deliberately NOT the same rule as the «Борг» mark, which fires on
+ * `∉ {PAID, REFUNDED}` (B-1 §1): the mark asks "is there an open money question
+ * here", this asks "how much have we not been paid". A partially refunded order
+ * answers yes to the first and zero to the second.
+ */
+describe('DashboardRepository — what counts as money still owed (review of plan 180)', () => {
+  let repo: DashboardRepository;
+
+  const orderCount = jest.fn().mockResolvedValue(0);
+  const orderAggregate = jest.fn().mockResolvedValue({ _sum: { total: null } });
+
+  const prismaMock = {
+    order: { count: orderCount, aggregate: orderAggregate },
+    review: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
+    mailOutbox: { count: jest.fn().mockResolvedValue(0) },
+  };
+
+  /**
+   * The `where` of the receivable count — the one carrying both a compound
+   * `paymentStatus` and the terminal-status exclusion, and no `OR` (that one is
+   * the unavailable-items tile).
+   */
+  const receivableWhere = () =>
+    orderCount.mock.calls
+      .map((call) => call[0].where)
+      .find(
+        (where: Record<string, unknown>) =>
+          !Array.isArray(where.OR) &&
+          typeof where.paymentStatus === 'object' &&
+          where.paymentStatus !== null,
+      );
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    orderCount.mockResolvedValue(0);
+    orderAggregate.mockResolvedValue({ _sum: { total: null } });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [DashboardRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(DashboardRepository);
+  });
+
+  it('does not treat a partially refunded order as money still owed', async () => {
+    await repo.getNeedsAction();
+
+    expect(receivableWhere().paymentStatus).toEqual({
+      notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+    });
+  });
+
+  it('still excludes orders that have already ended', async () => {
+    await repo.getNeedsAction();
+
+    expect(receivableWhere().status).toEqual({
+      notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
+    });
   });
 });

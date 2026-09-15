@@ -796,8 +796,13 @@ describe('OrderRepository', () => {
   describe('updatePaymentStatus', () => {
     const seedTx = () => {
       const tx = makeTx();
-      tx.order.findUniqueOrThrow.mockResolvedValue({ paymentStatus: PaymentStatus.PENDING });
+      // First call reads the pre-update status for the history row; the last one
+      // re-reads the joined order to return.
+      tx.order.findUniqueOrThrow
+        .mockResolvedValueOnce({ paymentStatus: PaymentStatus.PENDING })
+        .mockResolvedValue({ id: 'order-1', items: [] });
       tx.order.update.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
       return tx;
     };
@@ -810,8 +815,45 @@ describe('OrderRepository', () => {
       expect(tx.order.update).toHaveBeenCalledWith({
         where: { id: 'order-1' },
         data: { paymentStatus: PaymentStatus.PAID },
-        include: expect.any(Object),
       });
+    });
+
+    // ── The compare-and-set (review of plan 180) ──────────────────────────────
+    // The service validates against a status read in an earlier query. Two
+    // operators picking DIFFERENT legal moves in the same second both pass that
+    // validation, and the second write lands on a row the first already moved —
+    // composing two legal moves into a transition the table forbids, and leaving
+    // two history rows that claim the same starting point.
+
+    it('pins the write to the status the caller validated against', async () => {
+      const tx = seedTx();
+
+      await repository.updatePaymentStatus('order-1', PaymentStatus.REFUNDED, 'admin-uuid-1', {
+        expectedFrom: PaymentStatus.PAID,
+      });
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', paymentStatus: PaymentStatus.PAID },
+        data: { paymentStatus: PaymentStatus.REFUNDED },
+      });
+      // The unconditional door stays shut when a premise was declared.
+      expect(tx.order.update).not.toHaveBeenCalled();
+    });
+
+    it('writes nothing — not even history — when the premise is gone', async () => {
+      const tx = seedTx();
+      tx.order.updateMany.mockResolvedValue({ count: 0 });
+
+      const result = await repository.updatePaymentStatus(
+        'order-1',
+        PaymentStatus.REFUNDED,
+        'admin-uuid-1',
+        { expectedFrom: PaymentStatus.PAID },
+      );
+
+      expect(result).toBeNull();
+      // A change that did not take effect is not an event.
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
     });
 
     it('writes a PAYMENT_STATUS history row (from pre-update → new) in the same transaction', async () => {
@@ -1124,13 +1166,26 @@ describe('OrderRepository', () => {
       await repository.findAll({ unpaidInTransit: true });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      // paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED).
-      expect(where.paymentStatus).toEqual({ not: PaymentStatus.PAID });
+      // "money we still expect" AND status NOT IN (CANCELLED, REFUNDED).
+      // PARTIALLY_REFUNDED sits with PAID: it is only reachable FROM PAID, so
+      // the money arrived and the shop is owed nothing.
+      expect(where.paymentStatus).toEqual({
+        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      });
       expect(where.status).toEqual({
         notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
       });
       // Still excludes soft-deleted orders.
       expect(where.deletedAt).toBeNull();
+    });
+
+    it('does not count a partially refunded order as unpaid', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ unpaidInTransit: true });
+
+      const where = prismaMock.order.count.mock.calls[0][0].where;
+      expect(where.paymentStatus.notIn).toContain(PaymentStatus.PARTIALLY_REFUNDED);
     });
 
     it('composes the unpaidInTransit filter with the created-at date range', async () => {
@@ -1139,7 +1194,9 @@ describe('OrderRepository', () => {
       await repository.findAll({ unpaidInTransit: true, dateFrom: '2026-01-01' });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      expect(where.paymentStatus).toEqual({ not: PaymentStatus.PAID });
+      expect(where.paymentStatus).toEqual({
+        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      });
       expect(where.status).toEqual({
         notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
       });
@@ -1319,7 +1376,9 @@ describe('OrderRepository', () => {
         paymentStatus: PaymentStatus.PENDING,
       });
 
-      expect(where.paymentStatus).toEqual({ not: PaymentStatus.PAID });
+      expect(where.paymentStatus).toEqual({
+        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      });
       expect(where.AND).toContainEqual({ paymentStatus: PaymentStatus.PENDING });
     });
 
