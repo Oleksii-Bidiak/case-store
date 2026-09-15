@@ -538,6 +538,61 @@ export class AuthService {
     currentPassword: string,
     newPassword: string,
   ): Promise<void> {
+    const user = await this.verifyOwnPassword(userId, currentPassword, {
+      event: 'user.passwordChangeRejected',
+      message: 'Password change rejected — current password did not match',
+    });
+
+    this.assertPasswordMeetsRolePolicy(user.role, newPassword);
+
+    await this.setPassword(userId, newPassword);
+
+    this.logger.info(
+      { event: 'user.passwordChanged', userId },
+      'Password changed by the account owner',
+    );
+  }
+
+  /**
+   * Re-authenticate somebody who is ALREADY signed in, by their own password.
+   *
+   * ── THE PATTERN THIS IS ──────────────────────────────────────────────────────
+   *
+   * A valid access token proves "this session was opened by the account holder at
+   * some point in the last fifteen minutes". For most actions that is the right
+   * bar. For the handful that are irreversible or that hand power away, it is not:
+   * a token lifted from an unlocked laptop or an XSS payload would otherwise be
+   * enough. Those actions re-ask for the password, and this is the one function
+   * that answers.
+   *
+   * Two call sites today, and they are the two acts you cannot undo by signing
+   * back in: {@link changePassword} (TASK-274) and
+   * `StaffService.transferOwnership` (TASK-478). It was extracted for the second
+   * precisely so the second could not be a slightly different implementation of
+   * the first — the one that eventually forgets the timing burn, or answers a
+   * Google-only account differently, or lets the exception carry the reason.
+   *
+   * ── WHAT EVERY CALLER GETS, WHETHER OR NOT THEY THOUGHT ABOUT IT ────────────
+   *
+   *   - ONE generic 401 for all three failure modes: no such account, an account
+   *     with no password at all (Google-only), and a wrong password. Distinct
+   *     messages would tell whoever holds the stolen token where to aim next.
+   *   - A FIXED argon2 cost on the branches that do no hashing, so "this account
+   *     has no password" does not answer measurably faster than "wrong password".
+   *   - The reason logged server-side, where an operator can see it and the caller
+   *     cannot.
+   *
+   * @returns the caller's live row, since every caller needs it next anyway
+   * @throws UnauthorizedException — always with the same generic message
+   */
+  async verifyOwnPassword(
+    userId: string,
+    password: string,
+    log: { event: string; message: string } = {
+      event: 'user.passwordChallengeRejected',
+      message: 'Password challenge rejected — the password did not match',
+    },
+  ): Promise<User> {
     const user = await this.authRepository.findById(userId);
 
     // A Google-only account genuinely has no password to prove. Routed to the
@@ -548,23 +603,13 @@ export class AuthService {
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
-    const isCurrentValid = await verifyPassword(user.passwordHash, currentPassword);
-    if (!isCurrentValid) {
-      this.logger.warn(
-        { event: 'user.passwordChangeRejected', userId },
-        'Password change rejected — current password did not match',
-      );
+    const matches = await verifyPassword(user.passwordHash, password);
+    if (!matches) {
+      this.logger.warn({ event: log.event, userId }, log.message);
       throw new UnauthorizedException(INVALID_CREDENTIALS_MESSAGE);
     }
 
-    this.assertPasswordMeetsRolePolicy(user.role, newPassword);
-
-    await this.setPassword(userId, newPassword);
-
-    this.logger.info(
-      { event: 'user.passwordChanged', userId },
-      'Password changed by the account owner',
-    );
+    return user;
   }
 
   /**
@@ -592,9 +637,9 @@ export class AuthService {
    *
    * The shared tail of "the password just changed", whatever proved the right to
    * change it: the owner's current password ({@link changePassword}), a
-   * single-use reset token ({@link confirmPasswordReset}), or the shop owner
-   * resetting an employee's ({@link UserService.setUserPassword}). Keeping the
-   * hash write and the revoke together is what stops a future path from doing
+   * single-use reset token ({@link confirmPasswordReset}), or an owner or deputy
+   * admin resetting an employee's (`StaffService.setPassword`, TASK-476). Keeping
+   * the hash write and the revoke together is what stops a future path from doing
    * one without the other.
    *
    * `clearFailedLogins` is included deliberately: an account that got locked out

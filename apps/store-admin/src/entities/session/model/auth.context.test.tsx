@@ -14,8 +14,16 @@ function makeToken(role: string): string {
 
 /** Surfaces the session state so tests can await the bootstrap settling. */
 function Probe() {
-  const { isInitializing, isStaff, isOwner, email, role, permissions, can } =
-    useAuth();
+  const {
+    isInitializing,
+    isStaff,
+    isOwner,
+    isAdmin,
+    email,
+    role,
+    permissions,
+    can,
+  } = useAuth();
   return (
     <>
       <span data-testid="probe">
@@ -27,6 +35,7 @@ function Probe() {
               : "staff"
             : "guest"}
       </span>
+      <span data-testid="is-admin">{isAdmin ? "yes" : "no"}</span>
       <span data-testid="email">{email ?? "no-email"}</span>
       <span data-testid="role">{role ?? "no-role"}</span>
       <span data-testid="permissions">
@@ -49,7 +58,12 @@ function renderProvider() {
 /** Restore a session for `role` and answer /auth/me/permissions with `effective`. */
 function stubSession(
   role: string,
-  effective: { role: string; isOwner: boolean; permissions: string[] },
+  effective: {
+    role: string;
+    isOwner: boolean;
+    isAdmin: boolean;
+    permissions: string[];
+  },
 ) {
   server.use(
     http.post("*/api/auth/refresh", () =>
@@ -123,6 +137,7 @@ describe("AuthProvider — staff sessions (TASK-334)", () => {
     stubSession("MANAGER", {
       role: "MANAGER",
       isOwner: false,
+      isAdmin: false,
       permissions: ["blog:write", "pages:write"],
     });
 
@@ -158,7 +173,12 @@ describe("AuthProvider — staff sessions (TASK-334)", () => {
   });
 
   it("treats the owner as holding every permission without listing any", async () => {
-    stubSession("ADMIN", { role: "ADMIN", isOwner: true, permissions: [] });
+    stubSession("ADMIN", {
+      role: "ADMIN",
+      isOwner: true,
+      isAdmin: true,
+      permissions: [],
+    });
 
     renderProvider();
 
@@ -168,6 +188,62 @@ describe("AuthProvider — staff sessions (TASK-334)", () => {
     expect(screen.getByTestId("permissions")).toHaveTextContent("none");
     expect(screen.getByTestId("can-orders")).toHaveTextContent("yes");
     expect(screen.getByTestId("can-blog")).toHaveTextContent("yes");
+  });
+
+  it("treats a DEPUTY admin as holding everything WITHOUT calling them the owner", async () => {
+    // The case the access model introduced (TASK-475). The provider used to fall
+    // back to `role === "ADMIN"` for `isOwner`, which said this session owned the
+    // shop — and would have offered it the owner's reserve: ownership transfer,
+    // appointing admins, acting on another admin's account. Every one of those
+    // buttons can only answer 403.
+    stubSession("ADMIN", {
+      role: "ADMIN",
+      isOwner: false,
+      isAdmin: true,
+      permissions: [],
+    });
+
+    renderProvider();
+
+    // Awaited on `is-admin`, not on `probe`: `isStaff` is true from the token
+    // alone, so the probe reads "staff" before the permissions answer lands and
+    // a bare assertion here would race it.
+    await waitFor(() =>
+      expect(screen.getByTestId("is-admin")).toHaveTextContent("yes"),
+    );
+    expect(screen.getByTestId("probe")).toHaveTextContent("staff");
+    expect(screen.getByTestId("probe")).not.toHaveTextContent("owner");
+    // …and they still see every operational control, which is the whole point of
+    // a deputy: the shop runs while the owner is away.
+    expect(screen.getByTestId("can-orders")).toHaveTextContent("yes");
+    expect(screen.getByTestId("can-blog")).toHaveTextContent("yes");
+  });
+
+  it("never infers ownership from the token's role while the server answer is missing", async () => {
+    // The fallback's other half: a valid ADMIN token whose `/me/permissions`
+    // call fails. Answering "owner" from the token alone is what the fallback
+    // did; the honest answer is "not yet", so no reserve is rendered.
+    let permissionCalls = 0;
+    server.use(
+      http.post("*/api/auth/refresh", () =>
+        HttpResponse.json({ data: { accessToken: makeToken("ADMIN") } }),
+      ),
+      http.get("*/api/auth/me/permissions", () => {
+        permissionCalls += 1;
+        return HttpResponse.json({ message: "boom" }, { status: 500 });
+      }),
+    );
+
+    renderProvider();
+
+    // Waited on the REQUEST, not on the render: asserting "not the owner" before
+    // the fetch has even been attempted would pass against any implementation.
+    await waitFor(() => expect(permissionCalls).toBeGreaterThan(0));
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("staff"),
+    );
+    expect(screen.getByTestId("probe")).not.toHaveTextContent("owner");
+    expect(screen.getByTestId("is-admin")).toHaveTextContent("no");
   });
 
   it("degrades to no permissions when the permissions fetch fails", async () => {

@@ -13,14 +13,17 @@ export {
   // Enriched admin customer card (TASK-252).
   useGetUserAdminCard,
   getGetUserAdminCardQueryKey,
-  // Staff management (TASK-317 / TASK-333) — all owner-only on the API.
-  // `useDeleteUser` had been generated for a long time and wired to nothing.
-  useCreateUser,
-  useSetUserPassword,
-  useUpdateUserRole,
+  // `useDeleteUser` targets `DELETE /api/users/:id`, which stayed owner-only AND
+  // customer-only when the staff doors widened in TASK-476 — deleting a shopper
+  // erases a person's record, and nothing in plan 181 asked for that to be
+  // delegated.
+  //
+  // The staff hooks that used to be re-exported here (`useCreateStaff`,
+  // `useSetStaffPassword`, `useUpdateStaffRole`, `getListStaffQueryKey`,
+  // `CreateStaffDtoRole`, `UpdateStaffRoleDtoRole`) moved to `@/entities/staff`
+  // in TASK-480, along with the rest of the register. They were parked here only
+  // until the `/staff` section existed to own them.
   useDeleteUser,
-  CreateUserDtoRole,
-  UpdateUserRoleDtoRole,
   // Role value object (used for filters and badge mapping).
   UserEntityRole,
   // Customer-notes journal (TASK-430) — staff-only, append-only. There is no
@@ -35,9 +38,6 @@ export type {
   UserListResponseEnvelope,
   UserResponseEnvelope,
   UserControllerFindAllParams,
-  CreateUserDto,
-  SetUserPasswordDto,
-  UpdateUserRoleDto,
   // Enriched admin customer card types (TASK-252).
   UserAdminCardEntity,
   UserAdminCardResponseEnvelope,

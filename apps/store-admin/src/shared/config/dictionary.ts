@@ -1,4 +1,37 @@
 /**
+ * The three Ukrainian forms of «особа», for the one string that needs them
+ * (TASK-480).
+ *
+ * THE FILE'S GENERAL RULE IS THE OPPOSITE — see `users.notesCharsLeft`: a
+ * count-free colon form («Вибрано: 3») is grammatical for every value and costs
+ * no table, and hand-rolled plural tables are what `shared/lib/format/
+ * formatDate.ts` refuses to have. This is the exception, and it is a product
+ * decision rather than a style one: «Повний доступ мають N осіб» is the sentence
+ * plan 181 decision 5 asks for by name — the count of people with full access is
+ * not capped, it is put in front of the owner in words they will read. Rendering
+ * it as «мають 2 осіб» on the screen whose whole job is to be noticed is not a
+ * trade worth making, and the colon form («Людей із повним доступом: 2») loses
+ * the phrasing the decision was written in.
+ *
+ * Ukrainian rule: 1 → особа, 2–4 → особи, everything else → осіб, with 11–14
+ * taking the last form despite ending in 1–4.
+ */
+function personForm(count: number): string {
+  const abs = Math.abs(count) % 100;
+  if (abs >= 11 && abs <= 14) return "осіб";
+  switch (abs % 10) {
+    case 1:
+      return "особа";
+    case 2:
+    case 3:
+    case 4:
+      return "особи";
+    default:
+      return "осіб";
+  }
+}
+
+/**
  * Ukrainian UI dictionary for the admin panel (store-admin). Mirrors the
  * store-client dictionary pattern: a single typed `dict` const so every label is
  * defined in one place. Grow this per area as screens are localized.
@@ -35,14 +68,16 @@ export const dict = {
     reviews: "Відгуки",
     messages: "Повідомлення",
     users: "Користувачі",
+    // TASK-480 — службові акаунти живуть окремо від клієнтів. Гейтиться
+    // `staff:read`, правом без гранту: його тримають лише власник і заступники.
+    staff: "Персонал",
     subscribers: "Підписники",
     contentMap: "Де що на сайті",
     siteContact: "Контакти",
     seoSettings: "SEO",
     searchIndex: "Пошук",
     faq: "FAQ",
-    // TASK-334 / TASK-318 — owner-only sections.
-    permissions: "Права доступу",
+    // TASK-318 — gated by `audit:read`, a key nobody can be granted (TASK-475).
     auditLog: "Журнал дій",
   },
 
@@ -529,8 +564,8 @@ export const dict = {
     // персональні дані покупців. Тож менеджер не бачить ані таблиці, ані
     // помилки — бачить цей рядок, який пояснює, чому її тут немає.
     historyOwnerOnly:
-      "Історію змін бачить лише власник магазину: журнал дій містить записи про " +
-      "роботу всіх працівників і персональні дані покупців.",
+      "Історію змін бачать лише власник і адміністратори: журнал дій містить записи " +
+      "про роботу всіх працівників і персональні дані покупців.",
     historyEmpty: "Записів про зміни цього товару ще немає.",
     historyLoadError: "Не вдалося завантажити історію змін.",
     historyColWhen: "Коли",
@@ -2831,27 +2866,26 @@ export const dict = {
   users: {
     metaTitle: "Користувачі — Адмін",
     metaTitleDetail: (id: string) => `Користувач ${id} — Адмін`,
-    heading: "Користувачі",
+    heading: "Клієнти",
+    // TASK-480. Заголовок і підпис більше не обіцяють «усіх користувачів»: із
+    // TASK-476 `GET /api/users` віддає лише CUSTOMER, а службові акаунти живуть
+    // у власному розділі. Підпис прямо каже, куди йти по співробітника, бо саме
+    // цього не знайшов власник на прогоні 2026-08-27.
+    intro:
+      "Тут лише покупці. Службові акаунти — адміністратори й менеджери — живуть у розділі «Персонал»: там же їх створюють і там же видають права.",
     searchPlaceholder: "Пошук за поштою або іменем…",
-    searchAria: "Пошук користувачів",
-    filterRoleAria: "Фільтр за роллю",
-    allRoles: "Усі ролі",
+    searchAria: "Пошук клієнтів",
     roleCustomer: "Клієнт",
     roleAdmin: "Адміністратор",
     filterStatusAria: "Фільтр за статусом",
     allStatuses: "Усі статуси",
-    loadError: "Не вдалося завантажити користувачів. Спробуйте ще раз.",
-    empty: "Немає користувачів за поточними фільтрами.",
-    // TASK-406: a role filter that matched nothing has an obvious next step —
-    // say it, instead of reporting the filter back to the operator.
-    emptyManagers: "Менеджерів ще немає — створіть службовий акаунт.",
-    emptyAdmins: "Інших адміністраторів ще немає — створіть службовий акаунт.",
+    loadError: "Не вдалося завантажити клієнтів. Спробуйте ще раз.",
+    empty: "Немає клієнтів за поточними фільтрами.",
     colEmail: "Електронна пошта",
     colName: "Ім'я",
-    colRole: "Роль",
     colStatus: "Статус",
     colJoined: "Дата реєстрації",
-    back: "← Назад до користувачів",
+    back: "← Назад до клієнтів",
     accountStatus: "Статус акаунта",
     accountActive: "Акаунт активний, користувач може входити.",
     accountInactive: "Акаунт деактивовано, користувач не може входити.",
@@ -2884,36 +2918,31 @@ export const dict = {
     cardMessages: "Звернення (за email)",
     cardNoMessages: "Звернень ще немає.",
     cardMessageNoTopic: "Без теми",
+    // TASK-479. Повна картка переїхала під окреме право `customers:card`, бо
+    // право «Картки клієнтів» купувало одразу дві різні речі: контакти, щоб
+    // передзвонити, і всю історію покупок із сумами, відгуками й текстами
+    // звернень. Без нового права екран НЕ робить запит — інакше 403 перетворився
+    // б на червоний банер «не вдалося завантажити», тобто «сторінка зламана»
+    // замість «цього вам не видавали». Це різні проблеми з різними рішеннями.
+    cardPermissionRequired:
+      "Історію покупок, відгуки та звернення цього клієнта показуємо лише з правом " +
+      "«Повна картка». Контакти для дзвінка — вище. За правом зверніться до власника магазину.",
 
-    // --- Staff management (TASK-317 / TASK-334) -------------------------------
+    // --- Account management, shared by /users and /staff (TASK-317 / TASK-480) -
+    //
+    // The «Новий співробітник» copy lived here until TASK-480 and now lives in
+    // `dict.staff` with the wizard that replaced the dialog. What stays is what
+    // BOTH screens still use: the role vocabulary (`roleLabel`), the role-change
+    // control (promoting a shopper happens on the customer card), the password
+    // rule and the delete dialog.
     roleManager: "Менеджер",
     roleUnknown: (role: string) => `Роль: ${role}`,
-    createHeading: "Новий співробітник",
-    create: "Створити співробітника",
-    // TASK-406: on the live run the owner looked for a way to "promote" an
-    // existing customer and concluded that creating a manager was impossible.
-    // The heading now says outright what the button does.
-    createHint:
-      "«Створити співробітника» заводить НОВИЙ службовий акаунт: пошта, пароль і роль (адміністратор або менеджер). Щоб змінити роль наявного користувача, відкрийте його картку.",
-    createDescription:
-      "Акаунт для працівника магазину. Клієнти реєструються самі на вітрині — тут створюються лише адміністратори та менеджери.",
-    createEmail: "Електронна пошта",
-    createPassword: "Початковий пароль",
-    createPasswordHint:
+    passwordHint:
       "Мінімум 8 символів, з великою літерою, малою літерою та цифрою. Передайте його працівнику особисто — він зможе змінити пароль у своєму профілі.",
-    createFirstName: "Ім'я",
-    createLastName: "Прізвище",
-    createRole: "Роль",
-    createSubmit: "Створити",
-    createToastDone: (email: string) => `Акаунт ${email} створено`,
-    createToastFailed: "Не вдалося створити акаунт",
-    createEmailTaken: "Такий email уже зареєстрований.",
-    createEmailInvalid: "Введіть коректну електронну пошту",
-    createPasswordWeak:
+    passwordWeak:
       "Пароль має містити щонайменше 8 символів, велику й малу літери та цифру",
 
     staffHeading: "Керування акаунтом",
-    staffOwnerOnlyHint: "Ці дії доступні лише власнику магазину.",
 
     roleChangeLabel: "Роль співробітника",
     roleChangeAria: "Змінити роль користувача",
@@ -2923,12 +2952,10 @@ export const dict = {
     roleChangeSelf: "Не можна змінити власну роль.",
     roleChangeHint:
       "Після зміни ролі всі активні сесії користувача завершуються — йому доведеться увійти знову.",
-    // TASK-406: the owner expected to tick permissions for one person here.
-    // Permissions belong to the ROLE — say so next to the role selector, and
-    // point at the screen where they are actually edited.
-    rolePermissionsHint:
-      "Права видаються ролі, а не конкретній людині: змінивши права «Менеджера», ви змінюєте їх усім менеджерам.",
-    rolePermissionsLink: "Права ролі →",
+    // `rolePermissionsHint` / `rolePermissionsLink` stood here until TASK-475.
+    // TASK-406 added them to explain that rights were attached to the role rather
+    // than the person, and to point at the screen that edited them. Neither
+    // statement is true any more, and that screen no longer exists.
 
     passwordResetHeading: "Скинути пароль",
     passwordResetDescription:
@@ -2946,10 +2973,10 @@ export const dict = {
     deleteToastFailed: "Не вдалося видалити акаунт",
     deleteSelf: "Не можна видалити власний акаунт.",
 
-    // The API refuses to strip, deactivate or delete the last working admin —
-    // surface that refusal verbatim instead of a generic failure toast.
-    lastAdminRefusal:
-      "Це останній адміністратор магазину — інакше увійти буде нікому. Спочатку створіть ще одного адміністратора.",
+    // `lastAdminRefusal` stood here until TASK-480, unreferenced since TASK-476:
+    // «останній адміністратор» stopped being the invariant the API defends. What
+    // it defends now is stronger and differently worded — the owner exists
+    // always, and the server's own refusal is surfaced verbatim.
 
     // --- Email confirmation (TASK-430 / AD-CRM-04) ----------------------------
     // `emailVerifiedAt` has been on the wire since TASK-342 and the panel showed
@@ -2998,44 +3025,231 @@ export const dict = {
       "API поки не віддає стан блокування (`lockedUntil`, `failedLoginAttempts`), тож показати, чому користувач не може увійти, неможливо. Якщо працівник скаржиться на вхід — скиньте йому пароль: це знімає тимчасове блокування після невдалих спроб.",
   },
 
-  // --- Permission matrix (TASK-334) -------------------------------------------
-  permissionsMatrix: {
-    metaTitle: "Права доступу — Адмін",
-    heading: "Права доступу",
+  // The `permissionsMatrix` block lived here until TASK-475. It was the copy for
+  // a screen that edited ROLE permissions, and both the screen and the API behind
+  // it are gone — rights belong to a person now. The new wording ships with
+  // /staff (TASK-480); a stale block would only be copied by whoever writes it.
+
+  // --- Персонал (TASK-480, план 181, рішення B-3 №3 і №5) ---------------------
+  //
+  // Один екран замість трьох кроків у різних місцях. На прогоні 2026-08-27
+  // власник не знайшов, як завести менеджера: акаунт створювався на `/users`,
+  // права видавалися на `/settings/permissions`, і видавалися вони РОЛІ. Тут
+  // найм, шаблон і галочки — один прохід, а рівень доступу підписаний словами,
+  // а не виводиться з ролі читачем.
+  staff: {
+    metaTitle: "Персонал — Адмін",
+    metaTitleDetail: (name: string) => `${name} — Персонал — Адмін`,
+    metaTitleTemplates: "Шаблони прав — Адмін",
+    heading: "Персонал",
     intro:
-      "Хто що може робити в панелі. Перелік прав живе в коді — новий розділ панелі з'являється тут автоматично. Кому їх видано — ваше рішення, і воно діє з наступного запиту працівника.",
-    loadError: "Не вдалося завантажити матрицю прав. Спробуйте ще раз.",
-    empty: "У каталозі немає жодного права.",
-    // TASK-406: this screen sets what a role MAY do; the account itself is
-    // created by the button beside the heading.
-    createStaffHint:
-      "Права тут стосуються ролі. Сам акаунт працівника створюється кнопкою «Створити співробітника» — праворуч, або на сторінці «Користувачі».",
-    roleColumn: (role: string) => `Роль: ${role}`,
-    roleManager: "Менеджер",
-    ownerNote:
-      "Адміністратор (власник) не входить у матрицю: він завжди має всі права. Інакше можна було б випадково замкнути себе поза власним магазином.",
+      "Службові акаунти магазину. Рівень визначає, ким людина може керувати: кожен керує лише тими, хто нижче за нього. Права менеджера — це рівно ті галочки, які йому поставили.",
+    back: "← Назад до персоналу",
+
+    searchPlaceholder: "Пошук за поштою або іменем…",
+    searchAria: "Пошук по персоналу",
+    filterLevelAria: "Фільтр за рівнем",
+    allLevels: "Усі рівні",
+    filterStatusAria: "Фільтр за статусом",
+    allStatuses: "Усі статуси",
+
+    loadError: "Не вдалося завантажити персонал. Спробуйте ще раз.",
+    loadOneError:
+      "Не вдалося завантажити картку співробітника. Спробуйте ще раз.",
+    empty: "Немає службових акаунтів за поточними фільтрами.",
+    emptyAll: "Службових акаунтів ще немає. Створіть першого співробітника.",
+
+    colPerson: "Співробітник",
+    colLevel: "Рівень",
+    colPermissions: "Права",
+    colLastSeen: "Останній сеанс",
+    colStatus: "Статус",
+    lastSeenNever: "ще не входив",
+
+    // Рівні — слова, а не числа. Число (`level`) рахує сервер, підпис читає
+    // людина; будь-яка спроба вивести рівень із ролі в браузері — це друга
+    // копія правила, яка колись розійдеться з першою.
+    levelOwner: "Власник",
+    levelAdmin: "Адміністратор",
+    levelManager: "Менеджер",
+    levelCustomer: "Клієнт",
+    levelUnknown: (level: number) => `Рівень ${level}`,
+
+    // Рішення 5: верхньої межі для адмінів немає — натомість їх видно завжди.
+    fullAccessHeading: (count: number) =>
+      `Повний доступ ${count === 1 ? "має" : "мають"} ${count} ${personForm(count)}`,
+    fullAccessNone:
+      "Повного доступу не має ніхто — це помилка стану, зверніться до розробника.",
+    fullAccessHint:
+      "Ці люди проходять будь-яку перевірку прав, читають журнал дій і повністю керують менеджерами. Кількість адміністраторів ми не обмежуємо — ми її показуємо.",
+    fullAccessOwnerBadge: "Власник",
+    fullAccessLoadError: "Не вдалося порахувати, хто має повний доступ.",
+
+    // --- Майстер «Новий співробітник» -----------------------------------------
+    create: "Новий співробітник",
+    createHeading: "Новий співробітник",
+    createDescription:
+      "Акаунт для працівника магазину. Клієнти реєструються самі на вітрині — тут створюються лише адміністратори та менеджери.",
+    stepAccountLabel: "1. Акаунт",
+    stepTemplateLabel: "2. Шаблон",
+    stepPermissionsLabel: "3. Права",
+    stepOf: (step: number, total: number) => `Крок ${step} з ${total}`,
+    fieldEmail: "Електронна пошта",
+    fieldPassword: "Початковий пароль",
+    fieldFirstName: "Ім'я",
+    fieldLastName: "Прізвище",
+    fieldLevel: "Рівень доступу",
+    levelManagerOption: "Менеджер — лише те, що йому видали",
+    levelAdminOption: "Адміністратор — повний доступ до всього",
+    // Заступника ADMIN не пропонуємо взагалі: `assertMayAssign` на сервері
+    // строго більший, тож вибір закінчився б 403 без жодного пояснення.
+    levelAdminOwnerOnly:
+      "Призначати адміністраторів може лише власник магазину.",
+    next: "Далі",
+    prev: "Назад",
+    createSubmit: "Створити співробітника",
+    createToastDone: (email: string) => `Акаунт ${email} створено`,
+    createToastFailed: "Не вдалося створити акаунт",
+    createPermissionsFailed:
+      "Акаунт створено, але права зберегти не вдалося. Відкрийте картку і поставте галочки ще раз.",
+    emailTaken: "Такий email уже зареєстрований.",
+    emailInvalid: "Введіть коректну електронну пошту",
+
+    // --- Шаблони --------------------------------------------------------------
+    templatesNav: "Шаблони прав",
+    templatesHeading: "Шаблони прав",
+    templatesIntro:
+      "Готові набори прав для типових ролей: «Оператор замовлень», «Контент-менеджер». Шаблон застосовується КОПІЄЮ.",
+    // Речення, яке тут головне. Модель «копія, а не лінк» ламається в голові
+    // саме на правці шаблону, тому напис стоїть у діалозі редагування, а не
+    // десь у довідці.
+    templatesCopyRule:
+      "Редагування шаблону НЕ змінює прав тих, хто вже працює: при застосуванні права копіюються людині. Щоб змінити доступ конкретній людині, відкрийте її картку.",
+    templatesEmpty:
+      "Шаблонів ще немає. Створіть перший — далі найм піде в один клік.",
+    templatesLoadError: "Не вдалося завантажити шаблони. Спробуйте ще раз.",
+    templateColName: "Назва",
+    templateColPermissions: "Прав у наборі",
+    templateColUpdated: "Оновлено",
+    templateCreate: "Створити шаблон",
+    templateCreateHeading: "Новий шаблон прав",
+    templateEditHeading: "Редагування шаблону",
+    templateName: "Назва",
+    templateDescription: "Для чого цей шаблон",
+    templateNameRequired: "Вкажіть назву шаблону",
+    templateToastCreated: (name: string) => `Шаблон «${name}» створено`,
+    templateToastSaved: (name: string) => `Шаблон «${name}» збережено`,
+    templateToastFailed: "Не вдалося зберегти шаблон",
+    templateDeleteHeading: "Видалити шаблон",
+    templateDeleteDescription: (name: string) =>
+      `Шаблон «${name}» буде видалено. Права людей, яким його вже застосовували, не зміняться — вони давно є копією.`,
+    templateDeleteConfirm: "Так, видалити шаблон",
+    templateToastDeleted: "Шаблон видалено",
+    templateToastDeleteFailed: "Не вдалося видалити шаблон",
+    templateNoneOption: "Без шаблону — поставлю галочки сам",
+    templateApplyLabel: "Застосувати шаблон",
+    templateApplyAria: "Оберіть шаблон прав",
+    templateApplySubmit: "Застосувати",
+    templateApplyHint:
+      "Застосування ЗАМІНИТЬ поточний набір прав цієї людини копією шаблону. Після цього галочки можна доналаштувати.",
+    templateApplyToastDone: (name: string) => `Застосовано шаблон «${name}»`,
+    templateApplyToastFailed: "Не вдалося застосувати шаблон",
+    templateMatch: (name: string) => `Набір збігається з шаблоном «${name}»`,
+
+    // --- Картка співробітника -------------------------------------------------
+    tabPermissions: "Права",
+    tabAccount: "Акаунт",
+    permissionsHeading: "Права цієї людини",
+    permissionsIntro:
+      "Права видаються людині, а не ролі. Знята галочка — це відкликання: воно діє з наступного ж запиту цієї людини.",
+    permissionsLoadError: "Не вдалося завантажити права. Спробуйте ще раз.",
+    // Порожня сітка в адміна не означає «нічого не може» — вона означає, що
+    // рядків йому не потрібно. Без цього напису екран бреше найгіршим чином.
+    holdsEverythingHeading: "Повний доступ за рівнем",
+    holdsEverythingHint:
+      "Ця людина проходить будь-яку перевірку прав за своїм рівнем, тому окремі галочки їй не видаються і порожній список нижче нічого не означає. Щоб обмежити доступ, знизьте рівень до менеджера.",
+    permissionsCount: (count: number) => `Прав видано: ${count}`,
+    permissionsFullAccess: "Повний доступ",
     zoneToggleAria: (zone: string) => `Видати всі права зони «${zone}»`,
-    zoneExpandAria: (zone: string) => `Показати окремі права зони «${zone}»`,
-    zoneCollapseAria: (zone: string) => `Згорнути права зони «${zone}»`,
-    zoneAll: "Уся зона",
+    zoneExpandAria: (zone: string) => `Розгорнути зону «${zone}»`,
+    zoneCollapseAria: (zone: string) => `Згорнути зону «${zone}»`,
+    zoneAll: "усі",
+    zoneNone: "немає",
     zonePartial: (granted: number, total: number) => `${granted} з ${total}`,
-    zoneNone: "Немає доступу",
-    badgeNew: "Нове",
-    badgeNewTitle:
-      "Це право ще нікому не видано. Нові розділи панелі не роздаються автоматично — рішення за вами.",
-    badgeNoRoute: "Не діє",
+    // Право є в каталозі, але жоден ендпоінт його не вимагає. Галочка, яка
+    // нічого не дає, гірша за відсутню: власник ставить «Повертати гроші»,
+    // вважає, що повернення делеговано, і через місяці дізнається, що менеджер
+    // увесь час отримував 403. Див. `permissions-without-routes.ts`.
+    badgeNoRoute: "не діє",
     badgeNoRouteTitle:
-      "У системі поки немає жодного ендпоінта, який вимагає це право. Позначка тут нічого не вмикає — це заготовка на майбутнє.",
-    newSummary: (n: number) =>
-      `${n} нових прав ще нікому не видано — перегляньте їх.`,
-    save: "Зберегти права",
-    saving: "Збереження…",
-    dirtyHint: "Є незбережені зміни.",
-    toastSaved: "Права оновлено",
-    toastFailed: "Не вдалося зберегти права",
-    toastLastAdmin:
-      "Не можна залишити магазин без жодного адміністратора. Спочатку створіть ще одного.",
-    reset: "Скасувати зміни",
+      "Це право поки нічого не відкриває: у панелі немає дії, яка його вимагає. Поставити галочку можна, але доступ від цього не з'явиться.",
+    permissionsSave: "Зберегти права",
+    permissionsSaving: "Збереження…",
+    permissionsReset: "Скасувати зміни",
+    permissionsDirtyHint: "Є незбережені зміни",
+    permissionsToastSaved: "Права збережено",
+    permissionsToastFailed: "Не вдалося зберегти права",
+    permissionsReadOnly:
+      "Змінювати права цієї людини ви не можете: керувати можна лише тими, хто нижче за вас.",
+
+    accountHeading: "Керування акаунтом",
+    accountReadOnly:
+      "Цей акаунт на вашому рівні або вище, тож змінювати його ви не можете. Так само відповість і сервер.",
+    accountSelf:
+      "Це ваш власний акаунт. Роль, статус і видалення власного акаунта недоступні — інакше вихід із панелі був би незворотним.",
+
+    statusHeading: "Доступ до панелі",
+    statusActive: "Акаунт активний, людина може входити в панель.",
+    statusInactive: "Акаунт вимкнено, вхід у панель заблоковано.",
+    statusDeactivate: "Вимкнути доступ",
+    statusActivate: "Увімкнути доступ",
+    statusToastActivated: "Доступ увімкнено",
+    statusToastDeactivated: "Доступ вимкнено",
+    statusToastFailed: "Не вдалося змінити статус",
+
+    passwordResetOpen: "Скинути пароль",
+
+    deleteHeading: "Видалити службовий акаунт",
+    deleteDescription: (email: string) =>
+      `Акаунт ${email} буде позначено як видалений: людина більше не зможе увійти, а її дії в журналі залишаться. Пошту після цього можна зареєструвати заново.`,
+    deleteConfirm: "Так, видалити акаунт",
+    deleteToastDone: "Акаунт видалено",
+    deleteToastFailed: "Не вдалося видалити акаунт",
+
+    // --- Діалог призначення адміністратора ------------------------------------
+    //
+    // Сьогодні підтвердження немає взагалі: select — і людина отримала все.
+    // Діалог перелічує саме те, що людина ОТРИМУЄ, і те, що зняти це може лише
+    // власник, — бо після призначення адміністратора заступник уже не дістане.
+    promoteHeading: "Призначити адміністратора?",
+    promoteWho: (name: string) => `Ви призначаєте адміністратором: ${name}.`,
+    promoteGain1:
+      "отримує всі права в панелі — без жодної галочки й назавжди, поки ви їх не знімете;",
+    promoteGain2: "читає журнал дій: хто, що і коли змінював у магазині;",
+    promoteGain3:
+      "повністю керує менеджерами — створює, вимикає, видаляє, видає й забирає права;",
+    promoteGain4: "бачить персональні дані клієнтів і фінансові показники.",
+    promoteUndo:
+      "Зняти адміністратора може лише власник магазину. Заступники одне одного не чіпають.",
+    promoteConfirm: "Так, призначити адміністратором",
+
+    // --- Передача власності ---------------------------------------------------
+    transferHeading: "Передати власність магазину",
+    transferIntro:
+      "Власник у магазині рівно один. Після передачі ви станете звичайним адміністратором: більше не зможете призначати адміністраторів і передавати власність.",
+    transferTargetHint:
+      "Передати можна лише чинному адміністратору з увімкненим доступом.",
+    transferTargetLabel: "Новий власник",
+    transferPasswordLabel: "Ваш поточний пароль",
+    transferPasswordHint:
+      "Це єдина дія, яку не можна скасувати повторним входом, тому вона перепитує пароль саме того, хто зараз за клавіатурою.",
+    transferSubmit: "Передати власність",
+    transferOpen: "Передати власність",
+    transferToastDone: (email: string) => `Власність передано: ${email}`,
+    transferToastFailed: "Не вдалося передати власність",
+    transferWrongPassword: "Пароль не підійшов. Спробуйте ще раз.",
+    transferSessionsHint:
+      "Після передачі сесії обох акаунтів завершаться — вам доведеться увійти знову.",
   },
 
   // --- Action log (TASK-318) --------------------------------------------------
@@ -3099,11 +3313,21 @@ export const dict = {
       // behind a permission, so its entries need a name here too.
       userNote: "Нотатки про клієнтів",
       payment: "Оплати",
+      // TASK-476 — службові акаунти переїхали з «Користувачі» у власний розділ
+      // «Персонал». Окрема мітка, а не фолд у `user`: у журналі «створено акаунт»
+      // для покупця і для адміністратора — різні події, і фільтр має вміти
+      // показати саме другі.
+      staff: "Персонал",
       faq: "Питання й відповіді",
+      // TASK-477 — набори прав, які КОПІЮЮТЬСЯ людині при застосуванні. Окрема
+      // мітка, а не фолд у `staff`: правка шаблону нікому нічого не змінює (це
+      // інваріант 5), і в журналі ці два види подій мають читатися по-різному —
+      // «Персонал — змінено права» стосується конкретної людини, «Шаблони прав —
+      // змінено» не стосується нікого.
+      permissionTemplate: "Шаблони прав",
       return: "Повернення",
       contact: "Повідомлення",
       search: "Пошуковий індекс",
-      permission: "Права доступу",
       device: "Пристрої",
       discount: "Промокоди",
       page: "Сторінки",
@@ -3191,6 +3415,11 @@ export const dict = {
       setProductDelta: "задано винятки для товару",
       setStatus: "змінено статус",
       setStatusMany: "змінено статус (масово)",
+      // TASK-478. Не «змінено власника» — передача власності магазину є єдиною
+      // дією, яку не можна делегувати нікому, і в журналі вона має читатися саме
+      // так, а не як ще одне редагування акаунта. Деталі — у полі «Зміни»:
+      // isOwner from → to, обидві сторони на ім'я.
+      transferOwnership: "передано власність магазину",
       unhideAuthor: "повернено відгуки автора",
       unpublish: "знято з публікації",
       update: "змінено",
@@ -3198,10 +3427,14 @@ export const dict = {
       updateCategory: "змінено категорію",
       updateDetails: "змінено дані",
       updateDeviceCompat: "змінено сумісність",
-      updateGrants: "змінено права",
       updateGroupDeviceCompat: "змінено сумісність групи",
       updateModel: "змінено модель",
       updatePaymentStatus: "змінено статус оплати",
+      // TASK-477. Рядок пише не `AuditInterceptor`, а сам маршрут (див.
+      // `records-own-audit.decorator.ts`) — бо цікава половина відповіді на «хто
+      // тихо видав менеджеру доступ до замовлень?» це стан ДО запису, якого в
+      // перехоплювача немає. Ключ дії той самий, тож мітка потрібна так само.
+      updatePermissions: "змінено права",
       updateRole: "змінено роль",
       updateSettings: "змінено налаштування",
       updateSpecs: "змінено характеристики",

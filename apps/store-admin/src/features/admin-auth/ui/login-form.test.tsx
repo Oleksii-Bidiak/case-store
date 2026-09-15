@@ -25,6 +25,7 @@ const guestAuth: AuthContextValue = {
   isAuthenticated: false,
   isStaff: false,
   isOwner: false,
+  isAdmin: false,
   isInitializing: false,
   permissions: [],
   arePermissionsLoading: false,

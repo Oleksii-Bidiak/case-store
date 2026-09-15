@@ -26,6 +26,11 @@
  *
  * Re-running for an existing email PROMOTES that account to ADMIN and resets its
  * password — which is also how you recover from "I forgot the admin password".
+ *
+ * It also CLAIMS ownership of the shop if nobody currently holds it (TASK-475):
+ * an ADMIN is only a deputy, and a shop with no `isOwner` row cannot appoint one
+ * through any route. It never moves ownership that already belongs to somebody —
+ * that is `POST /api/admin/staff/:id/transfer-ownership` and nothing else.
  */
 import { randomBytes } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
@@ -108,12 +113,46 @@ async function main() {
         role: 'ADMIN',
         isActive: true,
       },
-      select: { id: true, email: true, createdAt: true },
+      select: { id: true, email: true, createdAt: true, isOwner: true },
     });
+
+    // ── Ownership ────────────────────────────────────────────────────────────
+    // An ADMIN is a DEPUTY since TASK-475; the shop's authority lives on
+    // `User.isOwner`. Without this block the break-glass tool produced a level-2
+    // account and left the shop ownerless — a state nothing in the API can
+    // repair, because appointing an owner is the one act only an owner may
+    // perform (`@OwnerOnly` on transfer-ownership) and appointing a second admin
+    // needs a level strictly above ADMIN. So a lockout recovery would hand back
+    // an account that cannot hire, cannot touch another admin, and cannot pass
+    // the shop on.
+    //
+    // Claimed rather than assigned: if the shop already HAS an owner this must
+    // not move it — that is a deliberate act with its own door, dialog and audit
+    // row. So the flag is set only when nobody holds it, which also makes the
+    // repair idempotent. Two concurrent runs cannot produce two owners; the
+    // partial unique index `users_single_owner_key` rejects the second outright,
+    // and a loud failure here is the correct outcome.
+    const owner = await prisma.user.findFirst({
+      where: { isOwner: true },
+      select: { email: true },
+    });
+
+    let claimedOwnership = false;
+    if (!owner) {
+      await prisma.user.update({ where: { id: admin.id }, data: { isOwner: true } });
+      claimedOwnership = true;
+    }
 
     console.log('');
     console.log('  Admin account ready.');
     console.log(`    email: ${admin.email}`);
+    if (claimedOwnership) {
+      console.log('    level: OWNER (the shop had none — this account now owns it)');
+    } else if (admin.isOwner) {
+      console.log('    level: OWNER');
+    } else {
+      console.log(`    level: ADMIN (deputy) — the shop is owned by ${owner?.email ?? 'unknown'}`);
+    }
     if (generated) {
       console.log(`    password: ${password}`);
       console.log('');

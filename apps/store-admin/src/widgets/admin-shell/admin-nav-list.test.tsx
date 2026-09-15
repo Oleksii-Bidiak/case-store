@@ -43,12 +43,18 @@ function renderNav(
   options: {
     onNavigate?: () => void;
     isOwner?: boolean;
+    /** Defaults to `isOwner` — see the fixture's note on the deputy case. */
+    isAdmin?: boolean;
     permissions?: string[];
   } = {},
 ) {
-  const { onNavigate, isOwner = true, permissions = [] } = options;
+  const { onNavigate, isOwner = true, isAdmin, permissions = [] } = options;
   return renderWithProviders(
-    <WithAuth isOwner={isOwner} permissions={permissions}>
+    <WithAuth
+      isOwner={isOwner}
+      isAdmin={isAdmin ?? isOwner}
+      permissions={permissions}
+    >
       <AdminNavList onNavigate={onNavigate} />
     </WithAuth>,
   );
@@ -259,15 +265,20 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("hides the owner-only sections from a manager, whatever they are granted", async () => {
+  it("hides the action log from a manager, whatever they are granted", async () => {
     mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
 
-    // Every catalogue permission the nav references — the matrix and the action
-    // log must STILL be hidden, because neither is grantable at all.
+    // Every grantable permission the nav references, all at once. The log must
+    // STILL be hidden: `audit:read` exists but is never OFFERED on any granting
+    // screen (TASK-475), so no set of ticks can produce it.
     renderNav({
       isOwner: false,
       permissions: [
         "orders:read",
+        // TASK-370, added when plan 180 merged: the claim above is "every
+        // grantable permission the nav references", so a new nav key has to join
+        // the list or the test quietly stops meaning what it says.
+        "returns:read",
         "products:read",
         "customers:read",
         "analytics:read",
@@ -282,23 +293,60 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
 
     await screen.findByRole("link", { name: dict.nav.orders });
     expect(
-      screen.queryByRole("link", { name: dict.nav.permissions }),
-    ).not.toBeInTheDocument();
-    expect(
       screen.queryByRole("link", { name: dict.nav.auditLog }),
     ).not.toBeInTheDocument();
   });
 
-  it("shows the owner the matrix and the action log", async () => {
+  it("shows the owner the action log", async () => {
     mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
 
     renderNav();
 
     expect(
-      await screen.findByRole("link", { name: dict.nav.permissions }),
-    ).toHaveAttribute("href", "/settings/permissions");
+      await screen.findByRole("link", { name: dict.nav.auditLog }),
+    ).toHaveAttribute("href", "/audit-log");
+  });
+
+  // TASK-480 — «Персонал» sits behind `staff:read`, which like `audit:read` is
+  // never OFFERED on any granting screen. Gating it on `ownerOnly` instead would
+  // hide the staff register from a deputy, who is exactly the person meant to
+  // hire a replacement while the owner is away.
+  it("shows a DEPUTY admin «Персонал» — staff:read is held by level, not by grant", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderNav({ isOwner: false, isAdmin: true, permissions: [] });
+
     expect(
-      screen.getByRole("link", { name: dict.nav.auditLog }),
+      await screen.findByRole("link", { name: dict.nav.staff }),
+    ).toHaveAttribute("href", "/staff");
+  });
+
+  it("hides «Персонал» from a manager, whatever they are granted", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    // Including `customers:read`, which used to buy a view of every service
+    // account (and `customers:write`, which used to be able to switch one off).
+    renderNav({
+      isOwner: false,
+      permissions: ["customers:read", "customers:write", "orders:read"],
+    });
+
+    await screen.findByRole("link", { name: dict.nav.users });
+    expect(
+      screen.queryByRole("link", { name: dict.nav.staff }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a DEPUTY admin the action log too — they hold every permission", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    // The case the access model introduced (TASK-475): an ADMIN who does not own
+    // the shop. The log used to be `ownerOnly`, which would now hide it from
+    // exactly the person meant to read it while the owner is away.
+    renderNav({ isOwner: false, isAdmin: true, permissions: [] });
+
+    expect(
+      await screen.findByRole("link", { name: dict.nav.auditLog }),
     ).toHaveAttribute("href", "/audit-log");
   });
 

@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
-  getGetUserAdminCardQueryKey,
-  getUserControllerFindByIdQueryKey,
-  useSetUserPassword,
-} from "@/entities/user";
+  getGetStaffQueryKey,
+  getListStaffQueryKey,
+  useSetStaffPassword,
+} from "@/entities/staff";
 import {
   Button,
   Dialog,
@@ -31,7 +31,8 @@ interface UserPasswordResetDialogProps {
 }
 
 /**
- * Reset someone else's password (TASK-333, owner-only).
+ * Reset someone else's password (TASK-333; `POST /api/admin/staff/:id/password`
+ * since TASK-476, so a deputy admin can rescue a manager without the owner).
  *
  * The API routes this through the same `AuthService.setPassword` as a
  * self-service reset, so it revokes the target's sessions AND clears the
@@ -45,7 +46,7 @@ export function UserPasswordResetDialog({
   onOpenChange,
 }: UserPasswordResetDialogProps) {
   const queryClient = useQueryClient();
-  const setPassword = useSetUserPassword();
+  const setPassword = useSetStaffPassword();
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -61,7 +62,7 @@ export function UserPasswordResetDialog({
     event.preventDefault();
 
     if (!isStaffPassword(newPassword)) {
-      setError(d.createPasswordWeak);
+      setError(d.passwordWeak);
       return;
     }
     setError(null);
@@ -71,14 +72,19 @@ export function UserPasswordResetDialog({
       {
         onSuccess: () => {
           // TASK-406: this dialog invalidated nothing at all. The write bumps
-          // the user row's `updatedAt`, which the card renders as «Останнє
+          // the row's `updatedAt`, which the card renders as «Останнє
           // оновлення», so the screen kept showing a timestamp from before the
           // reset — the one visible confirmation the operator has.
+          //
+          // TASK-480 repointed the keys at the staff register: the customer keys
+          // this used to invalidate can no longer contain the target at all, so
+          // it was refetching one list the person is not in and leaving the one
+          // they ARE in stale.
           void queryClient.invalidateQueries({
-            queryKey: getUserControllerFindByIdQueryKey(userId),
+            queryKey: getGetStaffQueryKey(userId),
           });
           void queryClient.invalidateQueries({
-            queryKey: getGetUserAdminCardQueryKey(userId),
+            queryKey: getListStaffQueryKey(),
           });
           toast.success(d.passwordResetToastDone);
           close(false);
@@ -115,9 +121,7 @@ export function UserPasswordResetDialog({
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              {d.createPasswordHint}
-            </p>
+            <p className="text-xs text-muted-foreground">{d.passwordHint}</p>
           </div>
 
           {error && (

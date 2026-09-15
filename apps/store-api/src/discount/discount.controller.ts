@@ -4,7 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { DiscountService } from './discount.service';
 import { PreviewDiscountDto } from './dto';
 import { DiscountPreviewEntity } from './entities';
-import { JwtAuthGuard, RolesGuard, CurrentUser } from '../auth';
+import { JwtAuthGuard, CurrentUser } from '../auth';
 
 /**
  * Response envelope for a discount preview.
@@ -27,8 +27,13 @@ class DiscountPreviewResponseEnvelope {
  */
 @ApiTags('Discounts')
 @ApiBearerAuth('access-token')
+// `RolesGuard` stood here until TASK-475 and was doing nothing: with no `@Roles`
+// metadata it returned true for any authenticated caller. Authentication IS the
+// real requirement — the preview resolves the caller's own cart and their
+// per-user redemption cap — so `JwtAuthGuard` alone says exactly what this route
+// needs, and the set of callers it admits is unchanged.
 @Controller('cart/discount')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 export class DiscountController {
   constructor(private readonly discountService: DiscountService) {}
 

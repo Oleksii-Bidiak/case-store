@@ -3,6 +3,13 @@
 
 generator client {
   provider = "prisma-client-js"
+  // `partialIndexes` (TASK-474) lets `User.isOwner` declare its "at most one
+  // owner" index HERE rather than as hand-written SQL in a migration. The rule is
+  // the hinge of the whole access model, and a rule that lives only in a past
+  // migration is one a future `migrate dev` can quietly generate away — it would
+  // see no such index in the schema and drop it, with no test failing and no
+  // symptom until the day a second owner appears.
+  previewFeatures = ["partialIndexes"]
 }
 
 datasource db {
@@ -11,12 +18,13 @@ datasource db {
 
 // Enums
 
-/// CUSTOMER shops; ADMIN is the owner and is deliberately NOT subject to the
-/// permission matrix (a matrix that can revoke the owner's own access is a lockout
-/// waiting to happen). MANAGER (TASK-334) is the employee role: it can sign into
-/// the admin panel, and everything it may actually do comes from RolePermission
-/// rows the owner ticks. A MANAGER with no rows granted can log in and see nothing
-/// — that is the intended default, not a broken state.
+/// CUSTOMER shops. ADMIN holds every permission that exists without being granted
+/// one — the owner and their deputies; which of them actually OWNS the shop is
+/// `User.isOwner`, not this enum (TASK-474). MANAGER (TASK-334) is the employee
+/// role: it can sign into the admin panel, and everything it may actually do comes
+/// from that person's own UserPermission rows (TASK-475). A MANAGER with no rows
+/// granted can log in and see nothing — that is the intended default for a new
+/// hire, not a broken state.
 enum UserRole {
   CUSTOMER
   ADMIN
@@ -213,6 +221,22 @@ model User {
   /// second factor mandatory at login, so an abandoned enrolment cannot lock
   /// anyone out.
   totpEnabledAt       DateTime? @map("totp_enabled_at")
+  /// The shop has exactly one owner, and this flag is who (TASK-474, plan 181).
+  ///
+  /// A FLAG RATHER THAN A `UserRole.OWNER` VALUE. A new enum member would ripple
+  /// through `STAFF_ROLES`, `admin-shell-guard`, the header badge, `create-user.dto`
+  /// and `GRANTABLE_ROLES` — for a state that by design has exactly one holder.
+  /// A column plus one line in the guard says the same thing. ADMIN keeps meaning
+  /// "passes every permission check"; what the owner has on top is authority over
+  /// other admins, which is an different axis from what a role expresses.
+  ///
+  /// THE UNIQUENESS IS A PARTIAL INDEX, AND THAT IS THE POINT. Only rows with
+  /// `true` are constrained, so every other account is unaffected. Enforced in
+  /// application code the rule survives until the first concurrent write or the
+  /// first `UPDATE` run by hand; enforced here it cannot be broken at all — and
+  /// ownership transfer is the one operation where "two owners for 200ms" would
+  /// mean two people who can each lock the other out.
+  isOwner             Boolean   @default(false) @map("is_owner")
 
   cart                    Cart?
   wishlist                Wishlist?
@@ -235,11 +259,15 @@ model User {
   notes                   UserNote[]
   /// Media-library assets this user uploaded (TASK-441).
   uploadedMedia           MediaAsset[]
+  /// What this PERSON may do (TASK-474). Replaces the role→permission matrix as
+  /// the source of truth; see UserPermission.
+  permissions             UserPermission[]
   /// Return requests this account OPENED (TASK-469) — their own from the account
   /// page, or a customer's from the admin panel when the shop filed it for them.
   /// Not "returns of this user's orders": that is reached through `Return.order`.
   openedReturns           Return[]                 @relation("ReturnCreatedBy")
 
+  @@unique([isOwner], where: { isOwner: true }, map: "users_single_owner_key")
   @@index([deletedAt])
   @@map("users")
 }
@@ -1796,30 +1824,89 @@ model PaymentEvent {
 // RBAC and audit (TASK-334 / TASK-318, Етап 8)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Which permissions a role holds. The CATALOGUE of possible permissions lives in
-/// code (`permission.catalog.ts`), not here — a permission exists because an
-/// endpoint exists, so it is a property of the code and gets type-checking and diff
-/// review. This table only records the owner's decisions about who gets what, which
-/// is business data and must be changeable without a release.
+// `RolePermission` / `role_permissions` lived here until TASK-475 and is gone,
+// table and all. It held "which permissions a role holds", which the access model
+// no longer has a use for: rights belong to a PERSON (see UserPermission below),
+// an ADMIN holds everything by level, and a MANAGER holds their own rows. Leaving
+// the table behind would have left a second, unread source of truth that still
+// looked authoritative to anyone reading the schema — and the one thing worse
+// than rights in two places is rights in two places where only one is consulted.
+// The TASK-474 migration copied every live manager's role grants onto them
+// personally before the drop; see `20260914140000_access_model`.
+
+/// What one PERSON may do (TASK-474, plan 181) — the successor to the role→permission
+/// matrix, which TASK-475 removed once the guard read these rows instead.
 ///
-/// Absence means DENIED. A permission with no row is granted to nobody but the
-/// owner, so a newly shipped admin section is never silently handed to an existing
-/// MANAGER. `allowed` exists so a deliberate revocation reads differently from
-/// "never configured" in the UI.
-model RolePermission {
+/// WHY THE PERSON AND NOT THE ROLE. Two managers in a real shop are never the same
+/// job: one answers the phone and processes orders, the other writes the blog.
+/// With a role-wide matrix the only way to give the second one blog rights is to
+/// give them to the first one too, so the owner either over-grants or invents a
+/// role per employee. The owner hit this on the 2026-08-27 run: rights are edited
+/// on a screen that lists ROLES, while the person they are thinking about lives on
+/// another screen entirely.
+///
+/// Absence still means DENIED, exactly as before: a person with no rows can sign
+/// into the admin panel and see nothing, which is the intended default for a new
+/// hire rather than a broken state. There is deliberately no `allowed` column here
+/// — on a role, `allowed = false` distinguished "revoked" from "never configured"
+/// for a matrix screen that showed every possible key; a person's rights are shown
+/// as the set they hold, and deleting a row is how you take one away.
+///
+/// `permission` is text, not an enum, for the same reason the retired role matrix
+/// used text: the CATALOGUE lives in code (`permission.catalog.ts`), because a permission exists
+/// only because an endpoint exists, so adding one is a code change plus data — never
+/// a schema migration.
+model UserPermission {
   id         String   @id @default(uuid())
-  role       UserRole
-  /// Matches a key from the code catalogue, e.g. "orders:write". Text rather than an
-  /// enum so adding a permission is a code change plus a data row, never a schema
-  /// migration.
+  userId     String   @map("user_id")
+  /// Cascade: rights are meaningless without the person. A tombstoned account
+  /// (`deletedAt`) keeps its rows and is instead refused at the guard, which reads
+  /// the user row first — this cascade is about the hard delete, not the soft one.
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   permission String
-  allowed    Boolean  @default(true)
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  @@unique([role, permission])
-  @@index([role])
-  @@map("role_permissions")
+  @@unique([userId, permission])
+  @@index([userId])
+  @@map("user_permissions")
+}
+
+/// A named set of permissions the owner can apply to a person (TASK-474, plan 181):
+/// «Оператор замовлень», «Контент-менеджер», «Продавець».
+///
+/// APPLYING A TEMPLATE COPIES IT. There is deliberately no link from a person back
+/// to the template they were set up from (plan 178, decision 2). A live link would
+/// mean editing a template silently changes what somebody who is already working
+/// can do — a permission change nobody performed on anybody — and it would
+/// desynchronise the moment the owner ticks one extra box for one person. A copy
+/// has neither problem, and "what can this person do" is answerable by looking at
+/// exactly one place: their own rows.
+///
+/// That also makes templates safe to edit and delete at any time: nothing depends
+/// on them after the copy.
+model PermissionTemplate {
+  id          String                   @id @default(uuid())
+  name        String                   @unique
+  description String?
+  createdAt   DateTime                 @default(now()) @map("created_at")
+  updatedAt   DateTime                 @updatedAt @map("updated_at")
+  items       PermissionTemplateItem[]
+
+  @@map("permission_templates")
+}
+
+/// One permission inside a template. Rows are inserted and deleted, never edited —
+/// which is why there is no `updatedAt` here and there is one on UserPermission.
+model PermissionTemplateItem {
+  id         String             @id @default(uuid())
+  templateId String             @map("template_id")
+  template   PermissionTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  permission String
+  createdAt  DateTime           @default(now()) @map("created_at")
+
+  @@unique([templateId, permission])
+  @@map("permission_template_items")
 }
 
 /// Who did what, in the database rather than in ephemeral logs.

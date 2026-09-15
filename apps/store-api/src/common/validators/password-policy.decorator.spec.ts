@@ -1,7 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CreateUserDto } from '../../user/dto/create-user.dto';
-import { SetUserPasswordDto } from '../../user/dto/set-user-password.dto';
+import { CreateStaffDto } from '../../staff/dto/create-staff.dto';
+import { SetStaffPasswordDto } from '../../staff/dto/set-staff-password.dto';
 import { ChangePasswordDto } from '../../auth/dto/change-password.dto';
 import { ConfirmPasswordResetDto } from '../../auth/dto/confirm-password-reset.dto';
 import { CUSTOMER_PASSWORD_REGEX, STAFF_PASSWORD_REGEX } from './password-policy.decorator';
@@ -26,9 +26,9 @@ async function errorsFor(dto: object, property: string) {
 describe('staff DTOs keep the strict policy', () => {
   it.each([
     [
-      'POST /api/users',
+      'POST /api/admin/staff',
       () =>
-        plainToInstance(CreateUserDto, {
+        plainToInstance(CreateStaffDto, {
           email: 'manager@example.com',
           password: SHOPPER_ONLY,
           role: 'MANAGER',
@@ -36,8 +36,8 @@ describe('staff DTOs keep the strict policy', () => {
       'password',
     ],
     [
-      'POST /api/users/:id/password',
-      () => plainToInstance(SetUserPasswordDto, { newPassword: SHOPPER_ONLY }),
+      'POST /api/admin/staff/:id/password',
+      () => plainToInstance(SetStaffPasswordDto, { newPassword: SHOPPER_ONLY }),
       'newPassword',
     ],
   ])('%s rejects a password with no uppercase letter', async (_route, build, property) => {
@@ -50,9 +50,9 @@ describe('staff DTOs keep the strict policy', () => {
 
   it.each([
     [
-      'POST /api/users',
+      'POST /api/admin/staff',
       () =>
-        plainToInstance(CreateUserDto, {
+        plainToInstance(CreateStaffDto, {
           email: 'manager@example.com',
           password: STAFF_GRADE,
           role: 'MANAGER',
@@ -60,8 +60,8 @@ describe('staff DTOs keep the strict policy', () => {
       'password',
     ],
     [
-      'POST /api/users/:id/password',
-      () => plainToInstance(SetUserPasswordDto, { newPassword: STAFF_GRADE }),
+      'POST /api/admin/staff/:id/password',
+      () => plainToInstance(SetStaffPasswordDto, { newPassword: STAFF_GRADE }),
       'newPassword',
     ],
   ])('%s accepts a strict password', async (_route, build, property) => {

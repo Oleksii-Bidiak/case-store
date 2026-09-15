@@ -11,7 +11,7 @@ import { AuditService } from './audit.service';
 import { AuditLogQueryDto } from './dto';
 import { AuditLogEntity } from './entities';
 import { PermissionGuard } from '../auth/permissions/permission.guard';
-import { OwnerOnly } from '../auth/permissions/require-permission.decorator';
+import { RequirePermission } from '../auth/permissions/require-permission.decorator';
 
 class AuditLogPaginationMeta {
   @ApiProperty({ example: 240 }) total!: number;
@@ -28,17 +28,25 @@ class AuditLogListResponseEnvelope {
 /**
  * The action log viewer (TASK-318).
  *
- * `@OwnerOnly()`, not a grantable permission. The log denormalises actor emails
- * and carries diffs of customer-facing records, so it is both a PII surface and
- * the record of what staff did — a manager who could read it could check whether
- * their own actions had been noticed. There is deliberately no delete or edit
- * route: an append-only log that an actor can prune is not a log.
+ * `audit:read` — a real permission key that is NEVER OFFERED to anybody
+ * (`grantable: false` in the catalogue), so in practice only an owner and an
+ * admin hold it. It was `@OwnerOnly()` until TASK-475, and the change is not a
+ * relaxation: `@OwnerOnly` now means the single account that owns the shop, and
+ * a deputy admin who cannot read the log cannot stand in for the owner at all.
+ * What must not happen is the log becoming a tick on a granting screen — it
+ * denormalises actor emails, carries diffs of customer-facing records, and is
+ * the record of what staff did, so a manager who could read it could check
+ * whether their own actions had been noticed. Non-grantable says both things at
+ * once.
+ *
+ * There is deliberately no delete or edit route: an append-only log that an
+ * actor can prune is not a log.
  */
 @ApiTags('Audit')
 @ApiExtraModels(AuditLogEntity, AuditLogListResponseEnvelope)
 @Controller('admin/audit-log')
 @UseGuards(PermissionGuard)
-@OwnerOnly()
+@RequirePermission('audit:read')
 export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
@@ -50,13 +58,13 @@ export class AuditController {
    */
   @Get()
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Read the admin action log (owner-only)', operationId: 'getAuditLog' })
+  @ApiOperation({ summary: 'Read the admin action log', operationId: 'getAuditLog' })
   @ApiResponse({
     status: 200,
     description: 'Paginated log entries',
     type: AuditLogListResponseEnvelope,
   })
-  @ApiResponse({ status: 403, description: 'Forbidden — owner-only' })
+  @ApiResponse({ status: 403, description: 'Forbidden — requires audit:read' })
   async findAll(@Query() query: AuditLogQueryDto): Promise<{
     data: AuditLogEntity[];
     meta: AuditLogPaginationMeta;

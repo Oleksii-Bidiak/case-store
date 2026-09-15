@@ -5564,77 +5564,6 @@
         ]
       }
     },
-    "/api/admin/permissions": {
-      "get": {
-        "operationId": "PermissionController_getMatrix",
-        "parameters": [],
-        "responses": {
-          "200": {
-            "description": "Catalogue + grants",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PermissionMatrixResponseEnvelope"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden — owner-only"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Read the permission catalogue and the current matrix (owner-only)",
-        "tags": [
-          "Permissions"
-        ]
-      },
-      "put": {
-        "operationId": "PermissionController_updateGrants",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateRoleGrantsDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Grants replaced",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RoleGrantsResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Unknown permission key, or a role the matrix cannot express (ADMIN)"
-          },
-          "403": {
-            "description": "Forbidden — owner-only"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Replace one role’s permission grants (owner-only)",
-        "tags": [
-          "Permissions"
-        ]
-      }
-    },
     "/api/admin/audit-log": {
       "get": {
         "operationId": "getAuditLog",
@@ -5764,7 +5693,7 @@
             }
           },
           "403": {
-            "description": "Forbidden — owner-only"
+            "description": "Forbidden — requires audit:read"
           }
         },
         "security": [
@@ -5772,7 +5701,7 @@
             "access-token": []
           }
         ],
-        "summary": "Read the admin action log (owner-only)",
+        "summary": "Read the admin action log",
         "tags": [
           "Audit"
         ]
@@ -5960,162 +5889,6 @@
         "tags": [
           "Users"
         ]
-      },
-      "post": {
-        "operationId": "createUser",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateUserDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Staff account created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input (weak password / bad role)"
-          },
-          "403": {
-            "description": "Forbidden — owner-only"
-          },
-          "409": {
-            "description": "Email is already taken"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Create a staff account (owner-only)",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/users/{id}/password": {
-      "post": {
-        "operationId": "setUserPassword",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "User UUID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SetUserPasswordDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Password reset; target sessions revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid input (weak password)"
-          },
-          "403": {
-            "description": "Forbidden — owner-only"
-          },
-          "404": {
-            "description": "User not found"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Reset another user's password (owner-only)",
-        "tags": [
-          "Users"
-        ]
-      }
-    },
-    "/api/users/{id}/role": {
-      "patch": {
-        "operationId": "updateUserRole",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "description": "User UUID",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateUserRoleDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Role updated; target sessions revoked",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UserResponseEnvelope"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid role"
-          },
-          "403": {
-            "description": "Forbidden — owner-only, your own account, or the last active administrator"
-          },
-          "404": {
-            "description": "User not found"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Change a user's role (owner-only)",
-        "tags": [
-          "Users"
-        ]
       }
     },
     "/api/users/{id}": {
@@ -6175,13 +5948,13 @@
         ],
         "responses": {
           "204": {
-            "description": "User deleted"
+            "description": "Customer deleted"
           },
           "403": {
-            "description": "Forbidden — admin access required, or cannot delete your own account"
+            "description": "Forbidden — owner-only, or cannot delete your own account"
           },
           "404": {
-            "description": "User not found"
+            "description": "No customer with this id"
           }
         },
         "security": [
@@ -6189,7 +5962,7 @@
             "access-token": []
           }
         ],
-        "summary": "Delete user (admin, soft-delete)",
+        "summary": "Delete a customer (owner-only, soft-delete)",
         "tags": [
           "Users"
         ]
@@ -6221,7 +5994,7 @@
             }
           },
           "403": {
-            "description": "Forbidden — admin access required"
+            "description": "Forbidden — customers:card required"
           },
           "404": {
             "description": "User not found"
@@ -6254,7 +6027,7 @@
         ],
         "responses": {
           "200": {
-            "description": "User deactivated",
+            "description": "Customer deactivated",
             "content": {
               "application/json": {
                 "schema": {
@@ -6267,7 +6040,7 @@
             "description": "Forbidden — admin access required, or cannot deactivate your own account"
           },
           "404": {
-            "description": "User not found"
+            "description": "No customer with this id"
           }
         },
         "security": [
@@ -6275,7 +6048,7 @@
             "access-token": []
           }
         ],
-        "summary": "Deactivate user (admin)",
+        "summary": "Deactivate a customer",
         "tags": [
           "Users"
         ]
@@ -6297,7 +6070,7 @@
         ],
         "responses": {
           "200": {
-            "description": "User activated",
+            "description": "Customer activated",
             "content": {
               "application/json": {
                 "schema": {
@@ -6310,7 +6083,7 @@
             "description": "Forbidden — admin access required"
           },
           "404": {
-            "description": "User not found"
+            "description": "No customer with this id"
           }
         },
         "security": [
@@ -6318,7 +6091,7 @@
             "access-token": []
           }
         ],
-        "summary": "Activate user (admin)",
+        "summary": "Activate a customer",
         "tags": [
           "Users"
         ]
@@ -6883,6 +6656,821 @@
         "summary": "Reply to a review as the shop (admin)",
         "tags": [
           "Reviews"
+        ]
+      }
+    },
+    "/api/admin/staff": {
+      "get": {
+        "operationId": "listStaff",
+        "parameters": [
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Page number (1-based)",
+            "schema": {
+              "default": 1,
+              "example": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Number of items per page",
+            "schema": {
+              "default": 20,
+              "example": 20,
+              "type": "number"
+            }
+          },
+          {
+            "name": "role",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to one staff role (ADMIN or MANAGER)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "CUSTOMER",
+                "ADMIN",
+                "MANAGER"
+              ]
+            }
+          },
+          {
+            "name": "isActive",
+            "required": false,
+            "in": "query",
+            "description": "Filter by active status",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Search by email, first name, or last name",
+            "schema": {
+              "example": "olena",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortBy",
+            "required": false,
+            "in": "query",
+            "description": "Sort field (createdAt, email)",
+            "schema": {
+              "default": "createdAt",
+              "example": "createdAt",
+              "type": "string"
+            }
+          },
+          {
+            "name": "sortOrder",
+            "required": false,
+            "in": "query",
+            "description": "Sort order (asc or desc)",
+            "schema": {
+              "default": "desc",
+              "example": "desc",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated staff",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List staff accounts",
+        "tags": [
+          "Staff"
+        ]
+      },
+      "post": {
+        "operationId": "createStaff",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateStaffDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Staff account created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (weak password / bad role)"
+          },
+          "403": {
+            "description": "Forbidden — requires staff:write, or the level is at or above your own"
+          },
+          "409": {
+            "description": "Email is already taken"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create a staff account",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}": {
+      "get": {
+        "operationId": "getStaff",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Staff account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get a staff account",
+        "tags": [
+          "Staff"
+        ]
+      },
+      "delete": {
+        "operationId": "deleteStaff",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Staff account deleted"
+          },
+          "403": {
+            "description": "Forbidden — your own account, or a target at or above your level"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Delete a staff account (soft delete)",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}/role": {
+      "patch": {
+        "operationId": "updateStaffRole",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStaffRoleDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Role updated; target sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid role"
+          },
+          "403": {
+            "description": "Forbidden — your own account, a level at or above your own, or the shop owner"
+          },
+          "404": {
+            "description": "User not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Change an account's role",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}/password": {
+      "post": {
+        "operationId": "setStaffPassword",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetStaffPasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Password reset; target sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input (weak password)"
+          },
+          "403": {
+            "description": "Forbidden — the target is at or above your level"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Reset a staff member's password",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}/status": {
+      "patch": {
+        "operationId": "updateStaffStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStaffStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Status updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — your own account, or a target at or above your level"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Activate or deactivate a staff account",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}/permissions": {
+      "get": {
+        "operationId": "getStaffPermissions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Granted keys + catalogue",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffPermissionsResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read a staff member's permissions and the grantable catalogue",
+        "tags": [
+          "Staff"
+        ]
+      },
+      "put": {
+        "operationId": "updateStaffPermissions",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Account UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateStaffPermissionsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Permissions replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StaffPermissionsResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown permission key, or one that is never granted to a person"
+          },
+          "403": {
+            "description": "Forbidden — the target is at or above your level"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Replace a staff member's permissions",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/staff/{id}/transfer-ownership": {
+      "post": {
+        "operationId": "transferStaffOwnership",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "UUID of the administrator receiving the shop",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferOwnershipDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Ownership transferred; both parties’ sessions revoked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OwnershipTransferResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing password, yourself, a manager, or a deactivated account"
+          },
+          "401": {
+            "description": "The password did not match"
+          },
+          "403": {
+            "description": "Forbidden — only the shop owner may transfer"
+          },
+          "404": {
+            "description": "No staff account with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Transfer shop ownership to another administrator",
+        "tags": [
+          "Staff"
+        ]
+      }
+    },
+    "/api/admin/permission-templates": {
+      "get": {
+        "operationId": "listPermissionTemplates",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Templates, by name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionTemplateListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List permission templates",
+        "tags": [
+          "Permission templates"
+        ]
+      },
+      "post": {
+        "operationId": "createPermissionTemplate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePermissionTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Template created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionTemplateResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown permission key, or one that is never granted to a person"
+          },
+          "403": {
+            "description": "Forbidden — requires staff:write"
+          },
+          "409": {
+            "description": "A template with this name already exists"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create a permission template",
+        "tags": [
+          "Permission templates"
+        ]
+      }
+    },
+    "/api/admin/permission-templates/{id}": {
+      "get": {
+        "operationId": "getPermissionTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Template UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionTemplateResponseEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — requires staff:read"
+          },
+          "404": {
+            "description": "No template with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get one permission template",
+        "tags": [
+          "Permission templates"
+        ]
+      },
+      "patch": {
+        "operationId": "updatePermissionTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Template UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePermissionTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Template updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionTemplateResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown permission key, or one that is never granted to a person"
+          },
+          "403": {
+            "description": "Forbidden — requires staff:write"
+          },
+          "404": {
+            "description": "No template with this id"
+          },
+          "409": {
+            "description": "A template with this name already exists"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Edit a permission template (affects nobody already set up from it)",
+        "tags": [
+          "Permission templates"
+        ]
+      },
+      "delete": {
+        "operationId": "deletePermissionTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Template UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Template deleted"
+          },
+          "403": {
+            "description": "Forbidden — requires staff:write"
+          },
+          "404": {
+            "description": "No template with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Delete a permission template",
+        "tags": [
+          "Permission templates"
+        ]
+      }
+    },
+    "/api/admin/permission-templates/{id}/apply": {
+      "post": {
+        "operationId": "applyPermissionTemplate",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Template UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyPermissionTemplateDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Template copied onto the account",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppliedTemplateResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The template holds a key that cannot be granted"
+          },
+          "403": {
+            "description": "Forbidden — the target is at or above your level"
+          },
+          "404": {
+            "description": "No such template, or no such staff account"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Copy a template onto a person (replaces their permissions)",
+        "tags": [
+          "Permission templates"
         ]
       }
     },
@@ -13209,7 +13797,12 @@
           "isOwner": {
             "type": "boolean",
             "example": false,
-            "description": "True for ADMIN — the owner, who always holds every permission"
+            "description": "True for the ONE account that owns the shop. Gates the owner’s reserve in the UI — transferring ownership, appointing an admin, and any action on an admin’s account."
+          },
+          "isAdmin": {
+            "type": "boolean",
+            "example": false,
+            "description": "True for any ADMIN, owner or deputy: holds every permission in the catalogue without being granted one. Reported separately from isOwner (TASK-475) because a deputy sees every operational control and none of the owner’s reserve."
           },
           "permissions": {
             "example": [
@@ -13225,6 +13818,7 @@
         "required": [
           "role",
           "isOwner",
+          "isAdmin",
           "permissions"
         ]
       },
@@ -17701,162 +18295,6 @@
           "productId"
         ]
       },
-      "PermissionCatalogueEntry": {
-        "type": "object",
-        "properties": {
-          "key": {
-            "type": "string",
-            "example": "orders:read"
-          },
-          "zone": {
-            "type": "string",
-            "example": "orders"
-          },
-          "label": {
-            "type": "string",
-            "example": "Переглядати замовлення"
-          }
-        },
-        "required": [
-          "key",
-          "zone",
-          "label"
-        ]
-      },
-      "PermissionZoneEntry": {
-        "type": "object",
-        "properties": {
-          "zone": {
-            "type": "string",
-            "example": "orders"
-          },
-          "label": {
-            "type": "string",
-            "example": "Замовлення"
-          }
-        },
-        "required": [
-          "zone",
-          "label"
-        ]
-      },
-      "RoleGrantsEntry": {
-        "type": "object",
-        "properties": {
-          "role": {
-            "type": "string",
-            "enum": [
-              "CUSTOMER",
-              "ADMIN",
-              "MANAGER"
-            ],
-            "example": "MANAGER"
-          },
-          "permissions": {
-            "example": [
-              "orders:read"
-            ],
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "role",
-          "permissions"
-        ]
-      },
-      "PermissionMatrixEntity": {
-        "type": "object",
-        "properties": {
-          "catalogue": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PermissionCatalogueEntry"
-            }
-          },
-          "zones": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/PermissionZoneEntry"
-            }
-          },
-          "grantableRoles": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "CUSTOMER",
-                "ADMIN",
-                "MANAGER"
-              ]
-            }
-          },
-          "grants": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoleGrantsEntry"
-            }
-          }
-        },
-        "required": [
-          "catalogue",
-          "zones",
-          "grantableRoles",
-          "grants"
-        ]
-      },
-      "PermissionMatrixResponseEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/PermissionMatrixEntity"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "RoleGrantsResponseEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/RoleGrantsEntry"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "UpdateRoleGrantsDto": {
-        "type": "object",
-        "properties": {
-          "role": {
-            "type": "string",
-            "description": "The role whose grants are being replaced. ADMIN is rejected — the owner always holds everything.",
-            "enum": [
-              "MANAGER"
-            ],
-            "example": "MANAGER"
-          },
-          "permissions": {
-            "description": "The complete set of permission keys this role should hold. An empty array revokes everything.",
-            "example": [
-              "orders:read",
-              "products:write"
-            ],
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          }
-        },
-        "required": [
-          "role",
-          "permissions"
-        ]
-      },
       "AuditLogEntity": {
         "type": "object",
         "properties": {
@@ -18403,78 +18841,6 @@
           }
         }
       },
-      "CreateUserDto": {
-        "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "description": "Email address (also the login)",
-            "example": "manager@example.com"
-          },
-          "password": {
-            "type": "string",
-            "description": "Initial password (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
-            "example": "StrongP@ss123",
-            "minLength": 8
-          },
-          "role": {
-            "type": "string",
-            "description": "Staff role. CUSTOMER is rejected — use public registration for shoppers.",
-            "enum": [
-              "ADMIN",
-              "MANAGER"
-            ],
-            "example": "MANAGER"
-          },
-          "firstName": {
-            "type": "string",
-            "description": "First name",
-            "example": "Olena"
-          },
-          "lastName": {
-            "type": "string",
-            "description": "Last name",
-            "example": "Kovalenko"
-          }
-        },
-        "required": [
-          "email",
-          "password",
-          "role"
-        ]
-      },
-      "SetUserPasswordDto": {
-        "type": "object",
-        "properties": {
-          "newPassword": {
-            "type": "string",
-            "description": "New password for the target account (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
-            "example": "StrongP@ss123",
-            "minLength": 8
-          }
-        },
-        "required": [
-          "newPassword"
-        ]
-      },
-      "UpdateUserRoleDto": {
-        "type": "object",
-        "properties": {
-          "role": {
-            "type": "string",
-            "description": "New role for the account",
-            "enum": [
-              "CUSTOMER",
-              "ADMIN",
-              "MANAGER"
-            ],
-            "example": "MANAGER"
-          }
-        },
-        "required": [
-          "role"
-        ]
-      },
       "ReviewReplyEntity": {
         "type": "object",
         "properties": {
@@ -19005,6 +19371,636 @@
         },
         "required": [
           "body"
+        ]
+      },
+      "StaffUserEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Account id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address (also the login)",
+            "example": "manager@example.com"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name",
+            "nullable": true
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "description": "Account role",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "isOwner": {
+            "type": "boolean",
+            "description": "True for the ONE account that owns the shop. Nobody may act on it.",
+            "example": false
+          },
+          "level": {
+            "type": "number",
+            "description": "Access level: 3 owner, 2 admin, 1 manager, 0 customer. Manage only levels below your own.",
+            "example": 1
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the account may sign in",
+            "example": true
+          },
+          "permissionCount": {
+            "type": "number",
+            "description": "How many permissions are granted to this person personally",
+            "example": 7
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "description": "When this account last held a live session; null if never",
+            "format": "date-time",
+            "nullable": true
+          },
+          "emailVerifiedAt": {
+            "type": "string",
+            "description": "When the email address was verified; null if never",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lockedUntil": {
+            "type": "string",
+            "description": "Locked out until this instant; null when not locked",
+            "format": "date-time",
+            "nullable": true
+          },
+          "failedLoginAttempts": {
+            "type": "number",
+            "description": "Consecutive failed login attempts",
+            "example": 0
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Account creation timestamp"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last update timestamp"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "firstName",
+          "lastName",
+          "phone",
+          "role",
+          "isOwner",
+          "level",
+          "isActive",
+          "permissionCount",
+          "lastSeenAt",
+          "emailVerifiedAt",
+          "lockedUntil",
+          "failedLoginAttempts",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "StaffResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StaffUserEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "StaffPaginationMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "example": 4
+          },
+          "page": {
+            "type": "number",
+            "example": 1
+          },
+          "limit": {
+            "type": "number",
+            "example": 20
+          },
+          "totalPages": {
+            "type": "number",
+            "example": 1
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit",
+          "totalPages"
+        ]
+      },
+      "StaffListResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StaffUserEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/StaffPaginationMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "GrantablePermissionEntry": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "orders:read"
+          },
+          "zone": {
+            "type": "string",
+            "example": "orders"
+          },
+          "label": {
+            "type": "string",
+            "example": "Переглядати замовлення"
+          }
+        },
+        "required": [
+          "key",
+          "zone",
+          "label"
+        ]
+      },
+      "PermissionZoneEntry": {
+        "type": "object",
+        "properties": {
+          "zone": {
+            "type": "string",
+            "example": "orders"
+          },
+          "label": {
+            "type": "string",
+            "example": "Замовлення"
+          }
+        },
+        "required": [
+          "zone",
+          "label"
+        ]
+      },
+      "StaffPermissionsEntity": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "The account these permissions belong to"
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address, so the screen can title itself"
+          },
+          "role": {
+            "type": "string",
+            "description": "Account role",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "level": {
+            "type": "number",
+            "description": "Access level: 3 owner, 2 admin, 1 manager, 0 customer",
+            "example": 1
+          },
+          "holdsEverythingByLevel": {
+            "type": "boolean",
+            "description": "True for the owner and for deputy admins: they hold every permission by level, so the rows below are not what they can do.",
+            "example": false
+          },
+          "permissions": {
+            "description": "The keys granted to this person personally, sorted",
+            "example": [
+              "orders:read",
+              "orders:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "catalogue": {
+            "description": "Every permission that MAY be granted, with its zone and Ukrainian label",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/GrantablePermissionEntry"
+            }
+          },
+          "zones": {
+            "description": "Zone display order and headings",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionZoneEntry"
+            }
+          }
+        },
+        "required": [
+          "userId",
+          "email",
+          "role",
+          "level",
+          "holdsEverythingByLevel",
+          "permissions",
+          "catalogue",
+          "zones"
+        ]
+      },
+      "StaffPermissionsResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/StaffPermissionsEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "OwnershipTransferEntity": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "description": "The account that now owns the shop",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StaffUserEntity"
+              }
+            ]
+          },
+          "previousOwner": {
+            "description": "The account that owned it until this call; now an ordinary admin (level 2)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StaffUserEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "owner",
+          "previousOwner"
+        ]
+      },
+      "OwnershipTransferResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/OwnershipTransferEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CreateStaffDto": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address (also the login)",
+            "example": "manager@example.com"
+          },
+          "password": {
+            "type": "string",
+            "description": "Initial password (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
+            "example": "StrongP@ss123",
+            "minLength": 8
+          },
+          "role": {
+            "type": "string",
+            "description": "Staff role. CUSTOMER is rejected — use public registration for shoppers. ADMIN may only be chosen by the owner.",
+            "enum": [
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          },
+          "firstName": {
+            "type": "string",
+            "description": "First name",
+            "example": "Olena"
+          },
+          "lastName": {
+            "type": "string",
+            "description": "Last name",
+            "example": "Kovalenko"
+          }
+        },
+        "required": [
+          "email",
+          "password",
+          "role"
+        ]
+      },
+      "UpdateStaffRoleDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "type": "string",
+            "description": "New role for the account",
+            "enum": [
+              "CUSTOMER",
+              "ADMIN",
+              "MANAGER"
+            ],
+            "example": "MANAGER"
+          }
+        },
+        "required": [
+          "role"
+        ]
+      },
+      "SetStaffPasswordDto": {
+        "type": "object",
+        "properties": {
+          "newPassword": {
+            "type": "string",
+            "description": "New password for the target account (minimum 8 characters, at least one lowercase letter, one uppercase letter and one digit)",
+            "example": "StrongP@ss123",
+            "minLength": 8
+          }
+        },
+        "required": [
+          "newPassword"
+        ]
+      },
+      "UpdateStaffStatusDto": {
+        "type": "object",
+        "properties": {
+          "isActive": {
+            "type": "boolean",
+            "description": "true activates the account, false deactivates it",
+            "example": false
+          }
+        },
+        "required": [
+          "isActive"
+        ]
+      },
+      "UpdateStaffPermissionsDto": {
+        "type": "object",
+        "properties": {
+          "permissions": {
+            "description": "The complete set of permission keys this person should hold. An empty array revokes everything. Non-grantable keys (staff:read, staff:write, audit:read) are refused with 400.",
+            "example": [
+              "orders:read",
+              "orders:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "permissions"
+        ]
+      },
+      "TransferOwnershipDto": {
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": "string",
+            "description": "The CALLING owner's own current password, re-entered to confirm",
+            "example": "OwnerP@ssw0rd!"
+          }
+        },
+        "required": [
+          "password"
+        ]
+      },
+      "PermissionTemplateEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Template id"
+          },
+          "name": {
+            "type": "string",
+            "description": "Template name, unique",
+            "example": "Оператор замовлень"
+          },
+          "description": {
+            "type": "string",
+            "description": "What this template is for",
+            "nullable": true
+          },
+          "permissions": {
+            "description": "The permission keys this template carries, sorted",
+            "example": [
+              "orders:read",
+              "orders:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last update timestamp"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "permissions",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "AppliedTemplateEntity": {
+        "type": "object",
+        "properties": {
+          "template": {
+            "description": "The template that was copied",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PermissionTemplateEntity"
+              }
+            ]
+          },
+          "userId": {
+            "type": "string",
+            "description": "The account it was copied onto"
+          },
+          "before": {
+            "description": "What that person held before",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "after": {
+            "description": "What they hold now — a copy of the template",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "template",
+          "userId",
+          "before",
+          "after"
+        ]
+      },
+      "PermissionTemplateResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/PermissionTemplateEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "PermissionTemplateListResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionTemplateEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "AppliedTemplateResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AppliedTemplateEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "CreatePermissionTemplateDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Template name, unique",
+            "example": "Оператор замовлень"
+          },
+          "description": {
+            "type": "string",
+            "description": "What this template is for, shown next to the name",
+            "example": "Телефонує клієнтам, змінює статуси замовлень",
+            "nullable": true
+          },
+          "permissions": {
+            "description": "The permission keys this template carries. Non-grantable keys (staff:read, staff:write, audit:read) are refused with 400 — a template must not be a way round that.",
+            "example": [
+              "orders:read",
+              "orders:write"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "permissions"
+        ]
+      },
+      "UpdatePermissionTemplateDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "New name",
+            "example": "Оператор замовлень"
+          },
+          "description": {
+            "type": "string",
+            "description": "New description",
+            "nullable": true
+          },
+          "permissions": {
+            "description": "The COMPLETE new set of permission keys. Omit to leave the set untouched.",
+            "example": [
+              "orders:read",
+              "orders:write",
+              "payments:read"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ApplyPermissionTemplateDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "description": "The account to copy this template onto",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          }
+        },
+        "required": [
+          "userId"
         ]
       },
       "UserNoteEntity": {

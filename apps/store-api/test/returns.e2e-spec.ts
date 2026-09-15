@@ -10,7 +10,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { RETURN_SORT_FIELDS } from '../src/order/returns/dto';
 import { PrismaService } from '../src/prisma';
-import { PermissionRepository, PermissionService } from '../src/auth/permissions';
+import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
@@ -42,7 +42,6 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
 describe('Admin returns queue (e2e)', () => {
   let app: INestApplication;
   let jwtService: JwtService;
-  let permissionService: PermissionService;
 
   const authRepositoryMock = {
     findByEmail: jest.fn(),
@@ -78,7 +77,7 @@ describe('Admin returns queue (e2e)', () => {
   };
 
   // Named rather than inline so the RBAC block below can drive the MANAGER's
-  // grants through `replaceRoleGrants` and assert what the NEXT request sees.
+  // grants through `setGrants` and assert what the NEXT request sees.
   const permissionRepositoryMock = createPermissionRepositoryMock();
 
   const testAdmin = { id: 'admin-e2e-1', role: 'ADMIN' as const };
@@ -135,7 +134,6 @@ describe('Admin returns queue (e2e)', () => {
 
     app = moduleFixture.createNestApplication();
     jwtService = moduleFixture.get<JwtService>(JwtService);
-    permissionService = moduleFixture.get<PermissionService>(PermissionService);
 
     app.useGlobalPipes(
       new ValidationPipe({
@@ -332,24 +330,30 @@ describe('Admin returns queue (e2e)', () => {
     const managerToken = () => `Bearer ${generateAccessToken(testManager.id, 'MANAGER')}`;
 
     /**
-     * Set the MANAGER's grants through the SERVICE, not the repository double.
+     * Set the MANAGER's grants on the repository DOUBLE (TASK-475).
      *
-     * `PermissionService` caches a role's grant set for 60 seconds and evicts
-     * that cache inside `setRoleGrants`. Writing to the repository double
-     * directly leaves the previous set cached, so the next request is answered
-     * from a matrix nobody is looking at.
+     * This used to go through `PermissionService.setRoleGrants`, because the role
+     * matrix was cached in Redis for 60 seconds and that method was what evicted
+     * the cache — writing to the double directly left the stale set cached, so
+     * the next request was answered from a matrix nobody was looking at.
+     *
+     * Both halves of that reasoning are gone. There is no role matrix: rights
+     * live on the PERSON, and `findActor` returns them together with the actor,
+     * so there is nothing to cache and nothing to evict. A set changed here is
+     * live on the very next request — which is also invariant 8 of plan 181,
+     * asserted for real over in `rbac.e2e-spec.ts`.
      */
     const grantManager = (permissions: string[]) =>
-      permissionService.setRoleGrants(UserRole.MANAGER, permissions);
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, permissions);
 
-    beforeEach(async () => {
+    beforeEach(() => {
       prismaServiceMock.order.findFirst.mockResolvedValue(null);
-      await grantManager([]);
+      grantManager([]);
     });
 
-    afterAll(async () => {
-      // The matrix is stateful and shared with the rest of the process.
-      await grantManager([]);
+    afterAll(() => {
+      // The double is stateful and shared with the rest of this suite.
+      grantManager([]);
     });
 
     it('refuses the queue to a manager holding no returns key at all', async () => {
@@ -357,7 +361,7 @@ describe('Admin returns queue (e2e)', () => {
     });
 
     it('opens the queue once returns:read is granted', async () => {
-      await grantManager(['returns:read']);
+      grantManager(['returns:read']);
 
       await request(app.getHttpServer()).get(url).set('Authorization', managerToken()).expect(200);
     });
@@ -372,7 +376,7 @@ describe('Admin returns queue (e2e)', () => {
     it('refuses to OPEN a return for a manager who may only read them', async () => {
       // The whole point of two keys: seeing the queue is not permission to
       // decide that a customer is sending goods back.
-      await grantManager(['returns:read']);
+      grantManager(['returns:read']);
 
       await request(app.getHttpServer())
         .post(orderReturnsUrl)
@@ -383,7 +387,7 @@ describe('Admin returns queue (e2e)', () => {
     });
 
     it('lets the write through once returns:write is granted', async () => {
-      await grantManager(['returns:read', 'returns:write']);
+      grantManager(['returns:read', 'returns:write']);
 
       const response = await request(app.getHttpServer())
         .post(orderReturnsUrl)

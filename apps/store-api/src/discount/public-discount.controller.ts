@@ -21,7 +21,7 @@ export class PublicActiveDiscountsResponseEnvelope {
  *   GET /api/discounts/active — the promo page's live "Промокоди тижня" feed.
  *
  * Separate, guard-free controller (TASK-179): the existing {@link
- * DiscountController} is class-decorated with `JwtAuthGuard`/`RolesGuard` for the
+ * DiscountController} is class-decorated with `JwtAuthGuard` for the
  * per-user preview, and there is no `@Public()` decorator in this codebase, so a
  * dedicated ungated controller is the established public-vs-guarded idiom (cf.
  * `FaqController` vs `AdminFaqController`). Returns the public-safe entity subset

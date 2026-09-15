@@ -43,8 +43,14 @@ describe('UserNoteService (TASK-430)', () => {
     create: jest.fn(),
   };
 
+  // Two DIFFERENT lookups, and keeping them apart is the point (TASK-476):
+  // `findCustomerById` resolves the TARGET and is scoped to `role: CUSTOMER`,
+  // while `findById` resolves the AUTHOR, who is staff by definition. A mock that
+  // answered both from one function would pass even if the service went back to
+  // the unscoped lookup for the target.
   const userRepositoryMock = {
     findById: jest.fn(),
+    findCustomerById: jest.fn(),
   };
 
   beforeEach(async () => {
@@ -61,7 +67,7 @@ describe('UserNoteService (TASK-430)', () => {
 
   describe('findByUser', () => {
     it('returns the journal newest-first with the true total', async () => {
-      userRepositoryMock.findById.mockResolvedValue(customer);
+      userRepositoryMock.findCustomerById.mockResolvedValue(customer);
       noteRepositoryMock.findByUserId.mockResolvedValue([makeNote()]);
       noteRepositoryMock.countByUserId.mockResolvedValue(128);
 
@@ -79,18 +85,32 @@ describe('UserNoteService (TASK-430)', () => {
     it('404s for an unknown or soft-deleted customer instead of an empty list', async () => {
       // The distinction matters on a card reached by a pasted id: "this customer
       // has no notes" and "there is no such customer" must not look identical.
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await expect(service.findByUser('missing')).rejects.toThrow(NotFoundException);
+      expect(noteRepositoryMock.findByUserId).not.toHaveBeenCalled();
+    });
+
+    it('404s for a STAFF id exactly as for a missing one — no existence oracle', async () => {
+      // `customers:read` is GRANTABLE, so an operator hired to phone customers
+      // holds it. Before TASK-476's scoping reached this module the unscoped
+      // lookup answered 200 with an empty journal for the owner's id and 404 for
+      // an unknown one, which is enough to enumerate the people who run the shop.
+      // `findCustomerById` is what makes the two answers identical; asserting on
+      // the CALL is what stops a future edit reaching for `findById` again.
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
+
+      await expect(service.findByUser('owner-uuid-1')).rejects.toThrow(NotFoundException);
+      expect(userRepositoryMock.findCustomerById).toHaveBeenCalledWith('owner-uuid-1');
+      expect(userRepositoryMock.findById).not.toHaveBeenCalled();
       expect(noteRepositoryMock.findByUserId).not.toHaveBeenCalled();
     });
   });
 
   describe('create', () => {
     it('stamps the author id and a snapshot of their email', async () => {
-      userRepositoryMock.findById.mockImplementation((id: string) =>
-        Promise.resolve(id === CUSTOMER_ID ? customer : author),
-      );
+      userRepositoryMock.findCustomerById.mockResolvedValue(customer);
+      userRepositoryMock.findById.mockResolvedValue(author);
       noteRepositoryMock.create.mockResolvedValue(makeNote());
 
       const note = await service.create(CUSTOMER_ID, AUTHOR_ID, {
@@ -107,17 +127,12 @@ describe('UserNoteService (TASK-430)', () => {
     });
 
     it("prefers a soft-deleted author's originalEmail over the mangled address", async () => {
-      userRepositoryMock.findById.mockImplementation((id: string) =>
-        Promise.resolve(
-          id === CUSTOMER_ID
-            ? customer
-            : {
-                ...author,
-                email: `deleted:${AUTHOR_ID}:manager@example.com`,
-                originalEmail: 'manager@example.com',
-              },
-        ),
-      );
+      userRepositoryMock.findCustomerById.mockResolvedValue(customer);
+      userRepositoryMock.findById.mockResolvedValue({
+        ...author,
+        email: `deleted:${AUTHOR_ID}:manager@example.com`,
+        originalEmail: 'manager@example.com',
+      });
       noteRepositoryMock.create.mockResolvedValue(makeNote());
 
       await service.create(CUSTOMER_ID, AUTHOR_ID, { body: 'текст' });
@@ -130,9 +145,8 @@ describe('UserNoteService (TASK-430)', () => {
     it('still writes the note when the author cannot be resolved', async () => {
       // Losing the author's name is bad; losing the note the operator just typed
       // is worse. The id is kept either way, so the entry is still traceable.
-      userRepositoryMock.findById.mockImplementation((id: string) =>
-        Promise.resolve(id === CUSTOMER_ID ? customer : null),
-      );
+      userRepositoryMock.findCustomerById.mockResolvedValue(customer);
+      userRepositoryMock.findById.mockResolvedValue(null);
       noteRepositoryMock.create.mockResolvedValue(makeNote({ authorEmail: null }));
 
       const note = await service.create(CUSTOMER_ID, AUTHOR_ID, { body: 'текст' });
@@ -144,11 +158,24 @@ describe('UserNoteService (TASK-430)', () => {
     });
 
     it('404s before writing anything when the customer does not exist', async () => {
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await expect(service.create('missing', AUTHOR_ID, { body: 'текст' })).rejects.toThrow(
         NotFoundException,
       );
+      expect(noteRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses to attach a note to a STAFF row, the owner included', async () => {
+      // With `customers:write` — grantable — the unscoped lookup let an operator
+      // append a note to the owner's user row, stamped with their own address.
+      // Scoping the target makes the attempt indistinguishable from a typo.
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
+
+      await expect(service.create('owner-uuid-1', AUTHOR_ID, { body: 'текст' })).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(userRepositoryMock.findCustomerById).toHaveBeenCalledWith('owner-uuid-1');
       expect(noteRepositoryMock.create).not.toHaveBeenCalled();
     });
   });

@@ -7,17 +7,19 @@ import {
   ROLE_VALUES,
   roleLabel,
   useGetUserAdminCard,
+  useUserControllerFindById,
   type CustomerCardContactMessageEntity,
+  type UserAdminCardEntity,
 } from "@/entities/user";
 import { orderStatusBadgeVariant, orderStatusLabel } from "@/entities/order";
 import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
 import { UserBanToggle } from "@/features/user-ban-toggle";
 // Imported from the slice, not the `@/features` barrel: the barrel is one file
 // every parallel branch appends to, and this widget needs nothing else from it.
 import { UserNotesPanel } from "@/features/user-notes";
 import {
   DeleteUserDialog,
-  UserPasswordResetDialog,
   UserRoleChange,
 } from "@/features/user-account-actions";
 import {
@@ -91,13 +93,41 @@ function reviewBadgeVariant(
  * was ever confirmed (on the email field itself — see `EmailVerification`), and the
  * staff-notes journal (`UserNotesPanel`, a section rather than a tab — see the
  * comment at its call site).
+ *
+ * TWO READS SINCE TASK-479, AND WHICH ONE RUNS IS A PERMISSION QUESTION. The card
+ * endpoint moved behind `customers:card`; the list and the plain profile stayed
+ * under `customers:read`. So an order operator holding only the latter gets the
+ * profile read — name, email, phone, the notes journal, the ban control — and one
+ * line where the purchase history would be. The card request is not merely
+ * hidden, it is never SENT: a request that can only answer 403 arrives here as
+ * the red «Не вдалося завантажити користувача» banner, which tells the operator
+ * the screen is broken when the truth is that this part was never granted to
+ * them. Two different problems with two different fixes, and nothing on screen
+ * would distinguish them.
  */
 export function UserDetailView({ userId }: UserDetailViewProps) {
   const router = useRouter();
-  const { isOwner } = useAuth();
-  const { data, isLoading, isError, error } = useGetUserAdminCard(userId);
-  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
+  const { isOwner, can } = useAuth();
+  const canReadCard = can(PERM.customersCard);
+  // TASK-480: the panel used to be one `isOwner` block, which was narrower than
+  // the API on one half and exactly right on the other. Promoting a shopper is
+  // `PATCH /api/admin/staff/:id/role` — `staff:write`, so a deputy admin may hire
+  // — while `DELETE /api/users/:id` deliberately stayed `@OwnerOnly()`. Two
+  // gates, matching the two routes.
+  const canManageStaff = can(PERM.staffWrite);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // Exactly one of these is ever enabled, so the screen makes one request.
+  const cardQuery = useGetUserAdminCard(userId, {
+    query: { enabled: canReadCard },
+  });
+  const profileQuery = useUserControllerFindById(userId, {
+    query: { enabled: !canReadCard },
+  });
+
+  const { isLoading, isError, error } = canReadCard ? cardQuery : profileQuery;
+  const card = cardQuery.data?.data;
+  const user = card?.user ?? profileQuery.data?.data;
 
   const isNotFound = error?.response?.status === 404;
 
@@ -119,14 +149,9 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
     );
   }
 
-  const card = data?.data;
-  if (!card) {
+  if (!user) {
     return null;
   }
-
-  const { user, ltv, orderCount, recentOrders, reviews, redeemedCoupons } =
-    card;
-  const contactMessages = card.contactMessages;
 
   const name = [user.firstName, user.lastName].filter(Boolean).join(" ").trim();
   // Widened deliberately: the generated `UserEntity.role` union is still
@@ -227,186 +252,19 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
             <UserNotesPanel userId={user.id} />
           </section>
 
-          {/* Lifetime stats (TASK-252) */}
-          <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <StatCell label={dict.users.cardLtv} value={formatCurrency(ltv)} />
-            <StatCell
-              label={dict.users.cardOrderCount}
-              value={String(orderCount)}
-            />
-          </section>
-
-          {/* Recent orders (TASK-252) */}
-          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-foreground">
-                {dict.users.cardRecentOrders}
-              </h3>
-              <Link
-                href={`/orders?userId=${user.id}`}
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
-                {dict.users.cardViewAllOrders}
-              </Link>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{dict.orders.colOrder}</TableHead>
-                  <TableHead>{dict.orders.colStatus}</TableHead>
-                  <TableHead>{dict.orders.colTotal}</TableHead>
-                  <TableHead>{dict.orders.colCreated}</TableHead>
-                  <TableHead className="text-right">
-                    {dict.common.actions}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {recentOrders.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={5}
-                      className="py-6 text-center text-sm text-muted-foreground"
-                    >
-                      {dict.users.cardNoOrders}
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  recentOrders.map((order) => (
-                    <TableRow key={order.id}>
-                      <TableCell className="font-mono text-xs">
-                        {order.id.slice(0, 8)}…
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={orderStatusBadgeVariant(order.status)}>
-                          {orderStatusLabel(order.status)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{formatCurrency(order.total)}</TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {formatDateTime(order.createdAt)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/orders/${order.id}`}>
-                            {dict.common.view}
-                          </Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </section>
-
-          {/* Reviews (TASK-252) */}
-          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground">
-              {dict.users.cardReviews}
-            </h3>
-            {reviews.length === 0 ? (
+          {/* The history the card pays for (TASK-252), behind `customers:card`
+              since TASK-479. Rendered only when the fetch actually ran — see the
+              docblock above for why the request is skipped rather than allowed to
+              403 into an error banner. */}
+          {card ? (
+            <CustomerHistorySections card={card} />
+          ) : (
+            <section className="flex flex-col gap-3 rounded-md border border-border p-4">
               <p className="text-sm text-muted-foreground">
-                {dict.users.cardNoReviews}
+                {dict.users.cardPermissionRequired}
               </p>
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {reviews.map((review) => (
-                  <li
-                    key={review.id}
-                    className="flex flex-col gap-1 border-b border-border pb-3 last:border-b-0 last:pb-0"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-sm font-medium text-foreground">
-                        {review.productName}
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        {review.rating}/5
-                      </span>
-                      {/* TASK-446: three states, from `textStatus`. The badge
-                          used to read `isActive`, a field the backend dropped
-                          when REJECTED stopped meaning "deleted" — so it saw
-                          `undefined` and labelled every review «На модерації»,
-                          including the ones a moderator had already read and
-                          published, and the ones they had read and refused. */}
-                      <Badge variant={reviewBadgeVariant(review.textStatus)}>
-                        {reviewStatusLabel(review.textStatus)}
-                      </Badge>
-                    </div>
-                    {review.comment && (
-                      <p className="text-sm text-muted-foreground">
-                        {review.comment}
-                      </p>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {formatDateTime(review.createdAt)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {/* Redeemed coupons (TASK-252) */}
-          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground">
-              {dict.users.cardCoupons}
-            </h3>
-            {redeemedCoupons.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {dict.users.cardNoCoupons}
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {redeemedCoupons.map((coupon) => (
-                  <li
-                    key={coupon.id}
-                    className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3 last:border-b-0 last:pb-0"
-                  >
-                    <div className="flex flex-col gap-0.5">
-                      <span className="font-mono text-sm font-medium text-foreground">
-                        {coupon.code}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {coupon.type === "PERCENT"
-                          ? `${coupon.value}%`
-                          : formatCurrency(coupon.value)}
-                      </span>
-                    </div>
-                    <div className="flex flex-col items-end gap-0.5">
-                      <Link
-                        href={`/orders/${coupon.orderId}`}
-                        className="font-mono text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        {coupon.orderId.slice(0, 8)}…
-                      </Link>
-                      <span className="text-xs text-muted-foreground">
-                        {formatDateTime(coupon.redeemedAt)}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {/* Contact messages (TASK-252) */}
-          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground">
-              {dict.users.cardMessages}
-            </h3>
-            {contactMessages.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                {dict.users.cardNoMessages}
-              </p>
-            ) : (
-              <ul className="flex flex-col gap-3">
-                {contactMessages.map((message) => (
-                  <ContactMessageItem key={message.id} message={message} />
-                ))}
-              </ul>
-            )}
-          </section>
+            </section>
+          )}
         </div>
 
         {/* Sidebar column */}
@@ -425,30 +283,42 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
             </div>
           </section>
 
-          {/* Staff management (TASK-317). Every action here is `@OwnerOnly()` on
-              the API, so the whole panel is hidden for a manager — who would
-              otherwise be offered a role selector that answers 403. */}
-          {isOwner && (
+          {/* Staff management (TASK-317, re-gated in TASK-480). Hidden entirely
+              for a manager, who would otherwise be offered controls that answer
+              403; the two halves inside carry their own gate, because promoting
+              somebody and deleting them are no longer the same permission. */}
+          {(canManageStaff || isOwner) && (
             <section className="flex flex-col gap-4 rounded-md border border-border p-4">
               <h3 className="text-sm font-semibold text-foreground">
                 {dict.users.staffHeading}
               </h3>
 
-              <UserRoleChange userId={user.id} currentRole={role} />
+              {/* Promoting an existing shopper is how most managers are hired —
+                  which is why this control lives on the CUSTOMER card. Once the
+                  role changes the account leaves `/api/users` altogether, so the
+                  card being looked at would 404 on its next read: send the
+                  operator to the staff register instead of letting the screen
+                  appear to break. */}
+              {canManageStaff && (
+                <UserRoleChange
+                  userId={user.id}
+                  currentRole={role}
+                  targetName={name || user.email}
+                  onChanged={(nextRole) => {
+                    if (nextRole !== ROLE_VALUES.CUSTOMER) {
+                      router.push(`/staff/${user.id}`);
+                    }
+                  }}
+                />
+              )}
 
-              {/* TASK-406: the owner came here looking for per-person
-                  permission checkboxes. There are none — access is attached to
-                  the ROLE — so say that where the role is chosen, and link to
-                  the screen that does own it. */}
-              <p className="text-xs text-muted-foreground">
-                {dict.users.rolePermissionsHint}{" "}
-                <Link
-                  href="/settings/permissions"
-                  className="font-medium text-foreground underline underline-offset-2"
-                >
-                  {dict.users.rolePermissionsLink}
-                </Link>
-              </p>
+              {/* The «Права видаються ролі…» hint and its link to
+                  /settings/permissions stood here until TASK-475: rights belong
+                  to the PERSON now, and the screen they pointed at is gone with
+                  the role matrix. Per-person granting lives on `/staff/[id]`
+                  (TASK-480) — and it is not linked from here on purpose, because
+                  the person on this card is a shopper and has no permission grid
+                  until somebody promotes them with the control above. */}
 
               <Separator />
 
@@ -469,36 +339,39 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
 
               <Separator />
 
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setResetPasswordOpen(true)}
-                >
-                  {dict.users.passwordResetHeading}
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  {dict.users.deleteHeading}
-                </Button>
-              </div>
+              {/* «Скинути пароль» stood here until TASK-476 and is not a button
+                  any more, for the same reason the permissions link stopped being
+                  one: the route it called moved to `/api/admin/staff/:id/password`,
+                  which answers 404 for a CUSTOMER — and this screen only ever shows
+                  customers now. A control whose one outcome is «не знайдено» is
+                  worse than no control. The dialog component survives, repointed,
+                  and mounts on the staff card in TASK-480 where the target IS
+                  staff. A shopper who cannot sign in uses the self-service reset,
+                  which is the only path that proves they own the address.
 
-              <UserPasswordResetDialog
-                userId={user.id}
-                open={resetPasswordOpen}
-                onOpenChange={setResetPasswordOpen}
-              />
-              <DeleteUserDialog
-                userId={user.id}
-                email={user.email}
-                open={deleteOpen}
-                onOpenChange={setDeleteOpen}
-              />
+                  Deletion, by contrast, kept `@OwnerOnly()` through TASK-476 — so
+                  it is the one control here that a deputy admin does not get. */}
+              {isOwner && (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      {dict.users.deleteHeading}
+                    </Button>
+                  </div>
+
+                  <DeleteUserDialog
+                    userId={user.id}
+                    email={user.email}
+                    open={deleteOpen}
+                    onOpenChange={setDeleteOpen}
+                  />
+                </>
+              )}
             </section>
           )}
 
@@ -519,6 +392,206 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * Everything `customers:card` buys (TASK-252, gated in TASK-479): lifetime value,
+ * recent orders with their totals, review text, redeemed coupons and the text of
+ * every support message matched by email.
+ *
+ * A component rather than a block inside the page body, so the permission
+ * question is answered in ONE place — `{card ? <this /> : <one honest line />}` —
+ * instead of five `&&`s that a sixth section could quietly be added next to.
+ */
+function CustomerHistorySections({ card }: { card: UserAdminCardEntity }) {
+  const { user, ltv, orderCount, recentOrders, reviews, redeemedCoupons } =
+    card;
+  const contactMessages = card.contactMessages;
+
+  return (
+    <>
+      {/* Lifetime stats (TASK-252) */}
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <StatCell label={dict.users.cardLtv} value={formatCurrency(ltv)} />
+        <StatCell
+          label={dict.users.cardOrderCount}
+          value={String(orderCount)}
+        />
+      </section>
+
+      {/* Recent orders (TASK-252) */}
+      <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground">
+            {dict.users.cardRecentOrders}
+          </h3>
+          <Link
+            href={`/orders?userId=${user.id}`}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            {dict.users.cardViewAllOrders}
+          </Link>
+        </div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{dict.orders.colOrder}</TableHead>
+              <TableHead>{dict.orders.colStatus}</TableHead>
+              <TableHead>{dict.orders.colTotal}</TableHead>
+              <TableHead>{dict.orders.colCreated}</TableHead>
+              <TableHead className="text-right">
+                {dict.common.actions}
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {recentOrders.length === 0 ? (
+              <TableRow>
+                <TableCell
+                  colSpan={5}
+                  className="py-6 text-center text-sm text-muted-foreground"
+                >
+                  {dict.users.cardNoOrders}
+                </TableCell>
+              </TableRow>
+            ) : (
+              recentOrders.map((order) => (
+                <TableRow key={order.id}>
+                  <TableCell className="font-mono text-xs">
+                    {order.id.slice(0, 8)}…
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={orderStatusBadgeVariant(order.status)}>
+                      {orderStatusLabel(order.status)}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{formatCurrency(order.total)}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {formatDateTime(order.createdAt)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button asChild variant="outline" size="sm">
+                      <Link href={`/orders/${order.id}`}>
+                        {dict.common.view}
+                      </Link>
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </section>
+
+      {/* Reviews (TASK-252) */}
+      <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+        <h3 className="text-sm font-semibold text-foreground">
+          {dict.users.cardReviews}
+        </h3>
+        {reviews.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {dict.users.cardNoReviews}
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {reviews.map((review) => (
+              <li
+                key={review.id}
+                className="flex flex-col gap-1 border-b border-border pb-3 last:border-b-0 last:pb-0"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-foreground">
+                    {review.productName}
+                  </span>
+                  <span className="text-sm text-muted-foreground">
+                    {review.rating}/5
+                  </span>
+                  {/* TASK-446: three states, from `textStatus`. The badge
+                        used to read `isActive`, a field the backend dropped
+                        when REJECTED stopped meaning "deleted" — so it saw
+                        `undefined` and labelled every review «На модерації»,
+                        including the ones a moderator had already read and
+                        published, and the ones they had read and refused. */}
+                  <Badge variant={reviewBadgeVariant(review.textStatus)}>
+                    {reviewStatusLabel(review.textStatus)}
+                  </Badge>
+                </div>
+                {review.comment && (
+                  <p className="text-sm text-muted-foreground">
+                    {review.comment}
+                  </p>
+                )}
+                <span className="text-xs text-muted-foreground">
+                  {formatDateTime(review.createdAt)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Redeemed coupons (TASK-252) */}
+      <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+        <h3 className="text-sm font-semibold text-foreground">
+          {dict.users.cardCoupons}
+        </h3>
+        {redeemedCoupons.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {dict.users.cardNoCoupons}
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {redeemedCoupons.map((coupon) => (
+              <li
+                key={coupon.id}
+                className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3 last:border-b-0 last:pb-0"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <span className="font-mono text-sm font-medium text-foreground">
+                    {coupon.code}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {coupon.type === "PERCENT"
+                      ? `${coupon.value}%`
+                      : formatCurrency(coupon.value)}
+                  </span>
+                </div>
+                <div className="flex flex-col items-end gap-0.5">
+                  <Link
+                    href={`/orders/${coupon.orderId}`}
+                    className="font-mono text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    {coupon.orderId.slice(0, 8)}…
+                  </Link>
+                  <span className="text-xs text-muted-foreground">
+                    {formatDateTime(coupon.redeemedAt)}
+                  </span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Contact messages (TASK-252) */}
+      <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+        <h3 className="text-sm font-semibold text-foreground">
+          {dict.users.cardMessages}
+        </h3>
+        {contactMessages.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {dict.users.cardNoMessages}
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {contactMessages.map((message) => (
+              <ContactMessageItem key={message.id} message={message} />
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
   );
 }
 

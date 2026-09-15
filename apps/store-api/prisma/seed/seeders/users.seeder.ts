@@ -2,6 +2,58 @@ import { PrismaClient } from '@prisma/client';
 import argon2 from 'argon2';
 import type { SeededUser } from '../types';
 
+/**
+ * Upsert the seed admin AND make it the shop's owner.
+ *
+ * Extracted from `seedUsers` for one reason: the write can legitimately fail, and
+ * the bare failure is unreadable. `users_single_owner_key` is a PARTIAL unique
+ * index (`WHERE is_owner`), so if ownership has moved to somebody else — which is
+ * a normal, documented act, and the very thing manual check AD-STAFF-13 asks the
+ * owner to perform on the stand — re-seeding tries to create a second owner and
+ * Prisma answers `P2002` naming an index that did not exist before plan 181. This
+ * being the FIRST seeder, the whole seed dies there and nothing else runs, so the
+ * operator sees a wall of Prisma internals and no way forward.
+ *
+ * Failing is still the right behaviour: silently clearing somebody else's flag
+ * would make a seed script decide who runs the shop. What is added here is only
+ * the sentence that turns it into a two-minute fix. Mirrored in
+ * `docs/seed-guide.md`.
+ */
+async function upsertSeedOwner(prisma: PrismaClient, email: string, passwordHash: string) {
+  const fields = {
+    role: 'ADMIN',
+    isActive: true,
+    isOwner: true,
+    firstName: 'Олександр',
+    lastName: 'Коваленко',
+  } as const;
+
+  try {
+    return await prisma.user.upsert({
+      where: { email },
+      update: fields,
+      create: { email, passwordHash, ...fields },
+    });
+  } catch (error: unknown) {
+    const code = (error as { code?: string } | null)?.code;
+    if (code !== 'P2002') {
+      throw error;
+    }
+
+    const owner = await prisma.user.findFirst({
+      where: { isOwner: true },
+      select: { email: true },
+    });
+
+    throw new Error(
+      `Ownership of the shop is currently held by ${owner?.email ?? 'another account'}, ` +
+        `not by the seed admin (${email}). The seed will not take it away — that is what ` +
+        'POST /api/admin/staff/:id/transfer-ownership is for. Either transfer ownership back ' +
+        'to the seed admin, or reset the database (docs/seed-guide.md §5).',
+    );
+  }
+}
+
 export async function seedUsers(prisma: PrismaClient) {
   // The seed creates exactly ONE admin. Its credentials are configurable via env
   // (ADMIN_SEED_EMAIL / ADMIN_SEED_PASSWORD) and fall back to the dev defaults
@@ -10,23 +62,22 @@ export async function seedUsers(prisma: PrismaClient) {
   // The upsert is idempotent and re-asserts the ADMIN role + name on every run.
   // To grant a second admin, register the account normally and promote it:
   //   UPDATE users SET role='ADMIN' WHERE email='<email>';
+  //
+  // `isOwner` is set on BOTH halves of the upsert (TASK-474). The shop has
+  // exactly one owner, and owner-only actions — transferring ownership, making
+  // or unmaking an admin, touching another admin's account — are reachable by
+  // nobody else. Set it only on `create` and the first re-seed of an existing
+  // stand leaves a shop with no owner at all, which is not a visible failure:
+  // everything else keeps working until somebody needs one of those actions.
+  // On a stand where ownership has legitimately moved elsewhere this refuses
+  // rather than taking it back — see `upsertSeedOwner` for why, and for the
+  // message it raises instead of a bare P2002.
   const adminEmail = process.env.ADMIN_SEED_EMAIL ?? 'admin@store.com';
   const adminPassword = process.env.ADMIN_SEED_PASSWORD ?? 'Admin123!';
   const adminPasswordHash = await argon2.hash(adminPassword);
   const customerPasswordHash = await argon2.hash('Customer123!');
 
-  const admin = await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: { role: 'ADMIN', isActive: true, firstName: 'Олександр', lastName: 'Коваленко' },
-    create: {
-      email: adminEmail,
-      passwordHash: adminPasswordHash,
-      firstName: 'Олександр',
-      lastName: 'Коваленко',
-      role: 'ADMIN',
-      isActive: true,
-    },
-  });
+  const admin = await upsertSeedOwner(prisma, adminEmail, adminPasswordHash);
 
   // ── Customers ── customer@store.com is the long-standing demo login (kept as
   // John Doe for backwards-compat with existing fixtures); the rest carry UA

@@ -1,195 +1,139 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { PinoLogger } from 'nestjs-pino';
 import { UserRole } from '@prisma/client';
 import { PermissionService } from './permission.service';
-import { PermissionRepository } from './permission.repository';
-import { CacheService } from '../../cache';
+import { PermissionRepository, type PermissionActor } from './permission.repository';
 import { PERMISSIONS } from './permission.catalog';
+
+/**
+ * The resolution layer, per person (TASK-475, plan 181).
+ *
+ * The role→permission matrix is gone: there is nothing left to cache, nothing to
+ * invalidate and no role that carries rights of its own. What remains is three
+ * levels, and every test below pins one edge of the boundary between them:
+ *
+ *   - the OWNER (`isOwner`) passes everything, including the reserve;
+ *   - an ADMIN passes every permission without holding a single row, but the
+ *     reserve is not theirs (that half lives in the guard, where `@OwnerOnly`
+ *     is read);
+ *   - a MANAGER passes exactly the rows they personally hold, and nothing else.
+ */
 
 const repositoryMock = {
   findActor: jest.fn(),
-  findGrantedByRole: jest.fn(),
-  findAll: jest.fn(),
-  replaceRoleGrants: jest.fn(),
 };
 
-const cacheMock = {
-  get: jest.fn(),
-  set: jest.fn(),
-  del: jest.fn(),
-  delByPrefix: jest.fn(),
-};
-
-const loggerMock = {
-  setContext: jest.fn(),
-  info: jest.fn(),
-  warn: jest.fn(),
-  error: jest.fn(),
-  debug: jest.fn(),
-};
-
-function row(role: UserRole, permission: string) {
+function actor(overrides: Partial<PermissionActor> = {}): PermissionActor {
   return {
-    id: `${role}-${permission}`,
-    role,
-    permission,
-    allowed: true,
-    createdAt: new Date(0),
-    updatedAt: new Date(0),
+    id: 'u1',
+    email: 'staff@example.com',
+    role: UserRole.MANAGER,
+    isOwner: false,
+    permissions: new Set<string>(),
+    ...overrides,
   };
 }
 
-describe('PermissionService (TASK-334)', () => {
+describe('PermissionService (TASK-475)', () => {
   let service: PermissionService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    cacheMock.get.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        PermissionService,
-        { provide: PermissionRepository, useValue: repositoryMock },
-        { provide: CacheService, useValue: cacheMock },
-        { provide: ConfigService, useValue: { get: (_k: string, d: unknown) => d } },
-        { provide: PinoLogger, useValue: loggerMock },
-      ],
+      providers: [PermissionService, { provide: PermissionRepository, useValue: repositoryMock }],
     }).compile();
 
     service = module.get(PermissionService);
   });
 
-  describe('the two hard rules', () => {
-    it('grants ADMIN everything without consulting the matrix at all', async () => {
-      // Rule 2. If the owner's access could ever depend on a database row, a
-      // mis-edit of that row locks them out of their own shop, and the only way
-      // back is shell access to production.
-      await expect(service.roleHasPermission(UserRole.ADMIN, 'orders:read')).resolves.toBe(true);
-      await expect(service.roleHasPermission(UserRole.ADMIN, 'payments:refund')).resolves.toBe(
-        true,
-      );
+  describe('actorHasPermission — the three levels', () => {
+    it('grants the owner everything, whatever rows they hold', () => {
+      const owner = actor({ role: UserRole.ADMIN, isOwner: true });
 
-      expect(repositoryMock.findGrantedByRole).not.toHaveBeenCalled();
-      expect(cacheMock.get).not.toHaveBeenCalled();
+      expect(service.actorHasPermission(owner, 'orders:read')).toBe(true);
+      expect(service.actorHasPermission(owner, 'payments:refund')).toBe(true);
+      expect(service.actorHasPermission(owner, 'staff:write')).toBe(true);
     });
 
-    it('denies a permission that has no row — absence is denial, not "unknown"', async () => {
-      // Rule 1. This is what stops a newly shipped admin section being silently
-      // handed to every existing MANAGER on release day.
-      repositoryMock.findGrantedByRole.mockResolvedValue([row(UserRole.MANAGER, 'blog:write')]);
+    it('grants a deputy ADMIN every permission without a single row of their own', () => {
+      // The deputy exists so the shop runs while the owner is away. Making them
+      // assemble their own rights tick by tick would defeat that, and a row set
+      // that has to be kept in sync with the catalogue drifts the day a new
+      // permission ships.
+      const deputy = actor({ role: UserRole.ADMIN, isOwner: false });
 
-      await expect(service.roleHasPermission(UserRole.MANAGER, 'orders:read')).resolves.toBe(false);
-      await expect(service.roleHasPermission(UserRole.MANAGER, 'blog:write')).resolves.toBe(true);
+      expect(deputy.permissions.size).toBe(0);
+      expect(service.actorHasPermission(deputy, 'orders:read')).toBe(true);
+      expect(service.actorHasPermission(deputy, 'audit:read')).toBe(true);
     });
 
-    it('denies CUSTOMER without a database lookup', async () => {
-      await expect(service.roleHasPermission(UserRole.CUSTOMER, 'blog:write')).resolves.toBe(false);
-      expect(repositoryMock.findGrantedByRole).not.toHaveBeenCalled();
-    });
-  });
+    it('grants a MANAGER only the permissions they personally hold (invariant 4)', () => {
+      const manager = actor({ permissions: new Set(['blog:write']) });
 
-  describe('getRoleGrants', () => {
-    it('ignores rows naming a permission the code catalogue no longer declares', async () => {
-      // A renamed or deleted permission leaves stale rows behind. Honouring one
-      // would grant access to a capability nobody can see in the matrix.
-      repositoryMock.findGrantedByRole.mockResolvedValue([
-        row(UserRole.MANAGER, 'blog:write'),
-        row(UserRole.MANAGER, 'ghost:permission'),
-      ]);
-
-      await expect(service.getRoleGrants(UserRole.MANAGER)).resolves.toEqual(['blog:write']);
+      expect(service.actorHasPermission(manager, 'blog:write')).toBe(true);
+      expect(service.actorHasPermission(manager, 'orders:read')).toBe(false);
     });
 
-    it('serves a cached grant set without touching the database', async () => {
-      cacheMock.get.mockResolvedValue(['blog:write']);
+    it('denies a MANAGER with no rows at all — absence is denial, not "unknown"', () => {
+      // Invariant 4 of plan 181, and the reason a newly shipped admin section is
+      // never silently handed to everyone who is already working here.
+      const fresh = actor();
 
-      await expect(service.getRoleGrants(UserRole.MANAGER)).resolves.toEqual(['blog:write']);
-      expect(repositoryMock.findGrantedByRole).not.toHaveBeenCalled();
+      for (const permission of PERMISSIONS) {
+        expect(service.actorHasPermission(fresh, permission.key)).toBe(false);
+      }
     });
 
-    it('caches what it read, so the next request is a cache hit', async () => {
-      repositoryMock.findGrantedByRole.mockResolvedValue([row(UserRole.MANAGER, 'blog:write')]);
-
-      await service.getRoleGrants(UserRole.MANAGER);
-
-      expect(cacheMock.set).toHaveBeenCalledWith(
-        'rbac:role-grants:MANAGER',
-        ['blog:write'],
-        expect.any(Number),
-      );
-    });
-  });
-
-  describe('setRoleGrants', () => {
-    it('evicts the cache AFTER the write, so the next request sees the new set', async () => {
-      const order: string[] = [];
-      repositoryMock.replaceRoleGrants.mockImplementation(async () => {
-        order.push('write');
-      });
-      cacheMock.del.mockImplementation(async () => {
-        order.push('evict');
+    it('denies a CUSTOMER even when rows survive on their account', () => {
+      // Demotion does not delete rows, so this is the real case: a manager is
+      // moved down to CUSTOMER and their old grants are still sitting there. The
+      // role check is what makes the demotion mean something.
+      const demoted = actor({
+        role: UserRole.CUSTOMER,
+        permissions: new Set(['orders:read', 'products:write']),
       });
 
-      await service.setRoleGrants(UserRole.MANAGER, ['blog:write']);
-
-      // Evicting first would leave a window where a concurrent request
-      // repopulates the cache from the PRE-write rows and then serves them for
-      // the whole TTL — the exact failure the eviction exists to prevent.
-      expect(order).toEqual(['write', 'evict']);
-      expect(cacheMock.del).toHaveBeenCalledWith('rbac:role-grants:MANAGER');
-    });
-
-    it('refuses to write an ADMIN row', async () => {
-      await expect(service.setRoleGrants(UserRole.ADMIN, [])).rejects.toBeInstanceOf(
-        BadRequestException,
-      );
-      expect(repositoryMock.replaceRoleGrants).not.toHaveBeenCalled();
-    });
-
-    it('refuses a permission key that is not in the code catalogue', async () => {
-      await expect(
-        service.setRoleGrants(UserRole.MANAGER, ['blog:write', 'blog:writ']),
-      ).rejects.toBeInstanceOf(BadRequestException);
-      expect(repositoryMock.replaceRoleGrants).not.toHaveBeenCalled();
-    });
-
-    it('de-duplicates before writing', async () => {
-      await service.setRoleGrants(UserRole.MANAGER, ['blog:write', 'blog:write']);
-
-      expect(repositoryMock.replaceRoleGrants).toHaveBeenCalledWith(UserRole.MANAGER, [
-        'blog:write',
-      ]);
+      expect(service.actorHasPermission(demoted, 'orders:read')).toBe(false);
+      expect(service.actorHasPermission(demoted, 'products:write')).toBe(false);
     });
   });
 
   describe('getEffectivePermissions', () => {
-    it('reads the role from the database, not from the caller-supplied token', async () => {
-      repositoryMock.findActor.mockResolvedValue({
-        id: 'u1',
-        email: 'm@example.com',
-        role: UserRole.MANAGER,
-      });
-      repositoryMock.findGrantedByRole.mockResolvedValue([row(UserRole.MANAGER, 'blog:write')]);
+    it('reads the level from the database, not from the caller-supplied token', async () => {
+      repositoryMock.findActor.mockResolvedValue(
+        actor({ permissions: new Set(['blog:write', 'faq:write']) }),
+      );
 
       await expect(service.getEffectivePermissions('u1')).resolves.toEqual({
         role: UserRole.MANAGER,
         isOwner: false,
-        permissions: ['blog:write'],
+        isAdmin: false,
+        permissions: ['blog:write', 'faq:write'],
       });
     });
 
-    it('gives the owner the entire catalogue', async () => {
-      repositoryMock.findActor.mockResolvedValue({
-        id: 'u1',
-        email: 'a@example.com',
-        role: UserRole.ADMIN,
-      });
+    it('gives the owner the entire catalogue, flagged as owner', async () => {
+      repositoryMock.findActor.mockResolvedValue(
+        actor({ role: UserRole.ADMIN, isOwner: true, email: 'owner@example.com' }),
+      );
 
       const result = await service.getEffectivePermissions('u1');
 
       expect(result.isOwner).toBe(true);
+      expect(result.isAdmin).toBe(true);
+      expect(result.permissions).toHaveLength(PERMISSIONS.length);
+    });
+
+    it('gives a deputy ADMIN the entire catalogue but does NOT call them the owner', async () => {
+      // The frontend hides the owner's reserve behind `isOwner`. Reporting a
+      // deputy as the owner would offer them buttons whose only outcome is a 403
+      // — and would teach them the reserve is theirs.
+      repositoryMock.findActor.mockResolvedValue(actor({ role: UserRole.ADMIN, isOwner: false }));
+
+      const result = await service.getEffectivePermissions('u1');
+
+      expect(result.isOwner).toBe(false);
+      expect(result.isAdmin).toBe(true);
       expect(result.permissions).toHaveLength(PERMISSIONS.length);
     });
 
@@ -199,8 +143,38 @@ describe('PermissionService (TASK-334)', () => {
       await expect(service.getEffectivePermissions('gone')).resolves.toEqual({
         role: UserRole.CUSTOMER,
         isOwner: false,
+        isAdmin: false,
         permissions: [],
       });
+    });
+
+    it('reports nothing for a CUSTOMER, whatever rows survive on the account', async () => {
+      repositoryMock.findActor.mockResolvedValue(
+        actor({ role: UserRole.CUSTOMER, permissions: new Set(['orders:read']) }),
+      );
+
+      await expect(service.getEffectivePermissions('u1')).resolves.toEqual({
+        role: UserRole.CUSTOMER,
+        isOwner: false,
+        isAdmin: false,
+        permissions: [],
+      });
+    });
+  });
+
+  describe('what is no longer here', () => {
+    it('has no role-matrix surface left to keep in sync', () => {
+      // The matrix is not deprecated, it is gone: with rights on the person there
+      // is no role-wide set to read, write or cache, and therefore no cache to go
+      // stale (invariant 8). Asserted rather than assumed, because a re-added
+      // `getRoleGrants` would compile perfectly and quietly reintroduce a second
+      // source of truth.
+      const surface = service as unknown as Record<string, unknown>;
+
+      expect(surface.getRoleGrants).toBeUndefined();
+      expect(surface.setRoleGrants).toBeUndefined();
+      expect(surface.getMatrix).toBeUndefined();
+      expect(surface.roleHasPermission).toBeUndefined();
     });
   });
 });

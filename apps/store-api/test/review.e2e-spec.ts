@@ -4,7 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
@@ -17,7 +17,7 @@ import { createPermissionRepositoryMock } from './permission-repository.mock';
 /**
  * E2E tests for the Review module.
  *
- * Review endpoints sit behind JwtAuthGuard (submit) / AdminGuard (moderation),
+ * Review endpoints sit behind JwtAuthGuard (submit) / PermissionGuard (moderation),
  * so each protected request mints a JWT directly via JwtService (bypassing the
  * rate-limited auth endpoints). ReviewRepository — the clean-architecture
  * boundary — is mocked, so no real database is needed. AuthRepository,
@@ -741,9 +741,11 @@ describe('ReviewController (e2e)', () => {
   // `reviews:write` writes on its behalf, there is no author thread, and the
   // customer byline stays «Покупець».
   //
-  // Declared LAST in the suite on purpose: the permission tests below rewrite the
-  // MANAGER row through the real `PUT /api/admin/permissions`, and the mock is
-  // stateful, so nothing may run after them expecting the original matrix.
+  // Declared LAST in the suite on purpose: the permission test below replaces the
+  // manager's resolved actor with a wider grant set via `jest.spyOn`, and the
+  // suite's `afterEach` calls `resetAllMocks` (which strips implementations)
+  // rather than `restoreAllMocks` (which would put the original back). Anything
+  // declared after it would see a `findActor` that resolves to undefined.
 
   /**
    * One click that withdraws — or restores — an account's WHOLE contribution
@@ -944,14 +946,18 @@ describe('ReviewController (e2e)', () => {
     });
 
     it('is allowed to a manager once the owner ticks reviews:write', async () => {
-      // Granted through the REAL endpoint so the real cache eviction runs — the
-      // same technique as rbac.e2e-spec.ts. A grant that only the test's fixture
-      // knows about would prove nothing about the running system.
-      await request(app.getHttpServer())
-        .put('/api/admin/permissions')
-        .set('Authorization', `Bearer ${generateAccessToken(admin.id, admin.role)}`)
-        .send({ role: 'MANAGER', permissions: ['reviews:moderate', 'reviews:write'] })
-        .expect(200);
+      // Granted by handing the ACTOR the extra row, which is exactly where the
+      // guard now looks (TASK-475). It used to be done through the real
+      // `PUT /api/admin/permissions` so the real cache eviction ran; both the
+      // endpoint and the cache are gone — rights arrive on the same read as the
+      // person, so there is nothing left between the grant and the next request.
+      jest.spyOn(permissionRepositoryMock, 'findActor').mockResolvedValue({
+        id: manager.id,
+        email: `${manager.id}@test.local`,
+        role: UserRole.MANAGER,
+        isOwner: false,
+        permissions: new Set(['reviews:moderate', 'reviews:write']),
+      });
 
       reviewRepositoryMock.findById.mockResolvedValue(makeReview());
       reviewRepositoryMock.upsertReply.mockResolvedValue(makeReply({ authorUserId: manager.id }));

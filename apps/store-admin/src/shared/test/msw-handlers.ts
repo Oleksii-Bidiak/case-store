@@ -207,15 +207,16 @@ export const handlers = [
     }),
   ),
 
-  // Effective permissions (TASK-334) — AuthProvider fetches this whenever an
-  // access token appears, so every suite that renders the real provider to an
-  // authenticated state stays off onUnhandledRequest. Owner by default (it
-  // matches the admin@example.com profile above): `isOwner` short-circuits
-  // `can()`, so pre-existing suites keep seeing the full panel. Override
-  // per-test to simulate a MANAGER with a narrow grant set.
+  // Effective permissions (TASK-334, extended in TASK-475) — AuthProvider fetches
+  // this whenever an access token appears, so every suite that renders the real
+  // provider to an authenticated state stays off onUnhandledRequest. Owner by
+  // default (it matches the admin@example.com profile above), and `isAdmin` is
+  // what short-circuits `can()`, so pre-existing suites keep seeing the full
+  // panel. Override per-test to simulate a MANAGER with a narrow grant set — or a
+  // DEPUTY admin, which is `isOwner: false` with `isAdmin: true`.
   http.get("*/api/auth/me/permissions", () =>
     HttpResponse.json({
-      data: { role: "ADMIN", isOwner: true, permissions: [] },
+      data: { role: "ADMIN", isOwner: true, isAdmin: true, permissions: [] },
     }),
   ),
 

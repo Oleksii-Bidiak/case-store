@@ -94,9 +94,20 @@ class EffectivePermissionsEntity {
 
   @ApiProperty({
     example: false,
-    description: 'True for ADMIN — the owner, who always holds every permission',
+    description:
+      'True for the ONE account that owns the shop. Gates the owner’s reserve in the UI — ' +
+      'transferring ownership, appointing an admin, and any action on an admin’s account.',
   })
   isOwner!: boolean;
+
+  @ApiProperty({
+    example: false,
+    description:
+      'True for any ADMIN, owner or deputy: holds every permission in the catalogue without ' +
+      'being granted one. Reported separately from isOwner (TASK-475) because a deputy sees ' +
+      'every operational control and none of the owner’s reserve.',
+  })
+  isAdmin!: boolean;
 
   @ApiProperty({ type: [String], example: ['orders:read', 'products:write'] })
   permissions!: string[];

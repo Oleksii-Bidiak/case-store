@@ -46,10 +46,17 @@ describe('UserController (e2e)', () => {
     revokeAllUserTokens: jest.fn(),
   };
 
-  // Mock UserRepository — for user management endpoints
+  // Mock UserRepository — for the customer-management endpoints.
+  //
+  // Two lookups since TASK-476, and which one a route uses is the contract:
+  // `findById` serves `/api/users/me` (staff read their own profile there too),
+  // `findCustomerById` serves every ADMIN-facing route, so a service account
+  // simply does not resolve through this controller any more.
   const userRepositoryMock = {
     findById: jest.fn(),
+    findCustomerById: jest.fn(),
     findByEmail: jest.fn(),
+    softDelete: jest.fn(),
     findAll: jest.fn(),
     update: jest.fn(),
     deactivate: jest.fn(),
@@ -112,6 +119,12 @@ describe('UserController (e2e)', () => {
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   };
 
+  // Hoisted out of the `.overrideProvider(...)` call so the customer-card suite
+  // below can vary one caller's rights with `jest.spyOn` — the pattern the shared
+  // double documents, and the only way to say "this manager holds exactly these
+  // two keys" without standing up a second Nest application.
+  const permissionRepositoryMock = createPermissionRepositoryMock();
+
   /**
    * Generate a JWT access token for a given user ID and role.
    * Bypasses the rate-limited auth register endpoint.
@@ -140,7 +153,7 @@ describe('UserController (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
       .overrideProvider(PermissionRepository)
-      .useValue(createPermissionRepositoryMock())
+      .useValue(permissionRepositoryMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)
@@ -383,7 +396,7 @@ describe('UserController (e2e)', () => {
     it('should return 200 with user details for admin', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue({
+      userRepositoryMock.findCustomerById.mockResolvedValue({
         ...testUser,
         id: 'user-detail-id',
         email: 'detail@example.com',
@@ -403,7 +416,7 @@ describe('UserController (e2e)', () => {
     it('should return 404 for non-existent user', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .get('/api/users/nonexistent-id')
@@ -481,7 +494,7 @@ describe('UserController (e2e)', () => {
     it('should return 200 with a fully-shaped customer card for admin', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue({
+      userRepositoryMock.findCustomerById.mockResolvedValue({
         ...testUser,
         id: 'user-detail-id',
         email: 'detail@example.com',
@@ -518,12 +531,134 @@ describe('UserController (e2e)', () => {
     it('should return 404 when the user is not found', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .get('/api/users/nonexistent-id/admin-card')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  // ─── The customer-card split (TASK-479, plan 181, invariant 7) ──────────────
+
+  /**
+   * An order operator holds `customers:read` so they can find a customer and
+   * phone them back. Until this task that same key also opened the full card:
+   * lifetime value, every order with its total, the text of every review, every
+   * redeemed coupon and the full text of every support message. Those are two
+   * different jobs, and only one of them is "return a call".
+   *
+   * These cases are the HTTP half of the split — the unit spec beside the
+   * controller pins the decorators, this one proves the guard actually refuses,
+   * and that what the operator kept still answers 200.
+   */
+  describe('customers:read without customers:card', () => {
+    const MANAGER_ID = 'manager-e2e-card-1';
+
+    /** Give the next request's caller exactly `permissions` and nothing else. */
+    function managerHolding(...permissions: string[]): string {
+      jest.spyOn(permissionRepositoryMock, 'findActor').mockResolvedValue({
+        id: MANAGER_ID,
+        email: 'operator@test.local',
+        role: 'MANAGER' as never,
+        isOwner: false,
+        permissions: new Set(permissions),
+      });
+      return `Bearer ${generateAccessToken(MANAGER_ID, 'MANAGER')}`;
+    }
+
+    afterEach(() => {
+      // `jest.clearAllMocks()` clears CALLS, not implementations — a spy left
+      // standing would hand the next describe a manager instead of an admin.
+      jest.restoreAllMocks();
+    });
+
+    it('refuses the full card with 403, and reads nothing on the way out', async () => {
+      const auth = managerHolding('customers:read');
+
+      await request(app.getHttpServer())
+        .get('/api/users/user-detail-id/admin-card')
+        .set('Authorization', auth)
+        .expect(403);
+
+      // The guard refuses BEFORE the service, so not one of the six enrichment
+      // reads runs. A 403 assembled after the data was fetched would still be a
+      // 403 — and would still have put the whole card in a log line.
+      expect(userRepositoryMock.getLtv).not.toHaveBeenCalled();
+      expect(userRepositoryMock.getRecentOrders).not.toHaveBeenCalled();
+      expect(userRepositoryMock.getReviewsByUserId).not.toHaveBeenCalled();
+      expect(userRepositoryMock.getRedeemedCoupons).not.toHaveBeenCalled();
+      expect(userRepositoryMock.getContactMessagesByEmail).not.toHaveBeenCalled();
+    });
+
+    it('still lists customers and still reads their contact details', async () => {
+      // The half of `customers:read` that survives, and the reason the split is
+      // shippable at all: an operator who could phone a customer yesterday can
+      // still phone them today.
+      const auth = managerHolding('customers:read');
+
+      userRepositoryMock.findAll.mockResolvedValue({ users: [testUser], total: 1 });
+      userRepositoryMock.findCustomerById.mockResolvedValue(testUser);
+
+      const list = await request(app.getHttpServer())
+        .get('/api/users')
+        .set('Authorization', auth)
+        .expect(200);
+      expect(list.body.data).toHaveLength(1);
+
+      const one = await request(app.getHttpServer())
+        .get(`/api/users/${testUser.id}`)
+        .set('Authorization', auth)
+        .expect(200);
+      expect(one.body.data.phone).toBe(testUser.phone);
+      expect(one.body.data.email).toBe(testUser.email);
+    });
+
+    it('opens the card once customers:card is added', async () => {
+      const auth = managerHolding('customers:read', 'customers:card');
+
+      userRepositoryMock.findCustomerById.mockResolvedValue(testUser);
+      userRepositoryMock.getLtv.mockResolvedValue(1299.5);
+      userRepositoryMock.getOrderCount.mockResolvedValue(12);
+      userRepositoryMock.getRecentOrders.mockResolvedValue([]);
+      userRepositoryMock.getReviewsByUserId.mockResolvedValue([]);
+      userRepositoryMock.getRedeemedCoupons.mockResolvedValue([]);
+      userRepositoryMock.getContactMessagesByEmail.mockResolvedValue([]);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/users/${testUser.id}/admin-card`)
+        .set('Authorization', auth)
+        .expect(200);
+
+      expect(response.body.data.ltv).toBe(1299.5);
+    });
+
+    it('stands on its own: customers:card alone opens the card and still cannot enumerate', async () => {
+      // A deliberate decision, not an accident of using a single-key decorator.
+      // A permission whose enforcement silently depends on a SECOND tick is the
+      // failure the catalogue's `stock:write` note warns about: the owner ticks
+      // the box, nothing happens, and no screen says why. So the key is
+      // self-sufficient — and it is not a hole, because the card already
+      // contains the contact details `customers:read` would have bought. What it
+      // does NOT buy is enumeration: without `customers:read` there is no list
+      // to pick an id out of.
+      const auth = managerHolding('customers:card');
+
+      userRepositoryMock.findCustomerById.mockResolvedValue(testUser);
+      userRepositoryMock.getLtv.mockResolvedValue(0);
+      userRepositoryMock.getOrderCount.mockResolvedValue(0);
+      userRepositoryMock.getRecentOrders.mockResolvedValue([]);
+      userRepositoryMock.getReviewsByUserId.mockResolvedValue([]);
+      userRepositoryMock.getRedeemedCoupons.mockResolvedValue([]);
+      userRepositoryMock.getContactMessagesByEmail.mockResolvedValue([]);
+
+      await request(app.getHttpServer())
+        .get(`/api/users/${testUser.id}/admin-card`)
+        .set('Authorization', auth)
+        .expect(200);
+
+      await request(app.getHttpServer()).get('/api/users').set('Authorization', auth).expect(403);
     });
   });
 
@@ -546,7 +681,7 @@ describe('UserController (e2e)', () => {
     it('should deactivate user and return updated user for admin', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue({
+      userRepositoryMock.findCustomerById.mockResolvedValue({
         ...testUser,
         id: 'user-to-deactivate',
         isActive: true,
@@ -570,7 +705,7 @@ describe('UserController (e2e)', () => {
     it('should return 404 when deactivating non-existent user', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .patch('/api/users/nonexistent-id/deactivate')
@@ -611,7 +746,7 @@ describe('UserController (e2e)', () => {
     it('should activate user and return updated user for admin', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue({
+      userRepositoryMock.findCustomerById.mockResolvedValue({
         ...testUser,
         id: 'user-to-activate',
         isActive: false,
@@ -635,12 +770,66 @@ describe('UserController (e2e)', () => {
     it('should return 404 when activating non-existent user', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
-      userRepositoryMock.findById.mockResolvedValue(null);
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
 
       await request(app.getHttpServer())
         .patch('/api/users/nonexistent-id/activate')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  // ─── The customer scope of this controller (TASK-476) ───────────────────────
+
+  describe('what this controller is NOT any more', () => {
+    it('has no create / password / role routes left — they answer 404 from the router', async () => {
+      // Moved to `/api/admin/staff`. 404 rather than 403 is the honest signal: an
+      // old client is not "not allowed", it is calling something that is gone.
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .post('/api/users')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ email: 'x@example.com', password: 'StrongP@ss123', role: 'MANAGER' })
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .post('/api/users/some-id/password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ newPassword: 'StrongP@ss123' })
+        .expect(404);
+
+      await request(app.getHttpServer())
+        .patch('/api/users/some-id/role')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ role: 'MANAGER' })
+        .expect(404);
+    });
+
+    it('reads every admin-facing route through the CUSTOMER-scoped lookup', async () => {
+      // The property that lets this controller stay under `customers:read` /
+      // `customers:write`: `findById` (which would resolve a service account) is
+      // reserved for `/api/users/me`.
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      userRepositoryMock.findCustomerById.mockResolvedValue(null);
+
+      for (const [method, url] of [
+        ['get', '/api/users/staff-id'],
+        ['get', '/api/users/staff-id/admin-card'],
+        ['patch', '/api/users/staff-id/deactivate'],
+        ['patch', '/api/users/staff-id/activate'],
+      ] as const) {
+        await request(app.getHttpServer())
+          [method](url)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(404);
+      }
+
+      expect(userRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(userRepositoryMock.findCustomerById).toHaveBeenCalledTimes(4);
+      expect(userRepositoryMock.deactivate).not.toHaveBeenCalled();
+      expect(userRepositoryMock.activate).not.toHaveBeenCalled();
     });
   });
 });

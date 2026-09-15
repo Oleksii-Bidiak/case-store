@@ -12,6 +12,12 @@ export type { ErrorType, BodyType, RefreshOutcome } from "./instance";
 // NOTE: `generated/` is git-ignored — run `npm run generate:api` after checkout.
 export * from "./generated/auth/auth";
 export * from "./generated/users/users";
+// «Персонал» (TASK-476) — service accounts, separate from the customer list.
+export * from "./generated/staff/staff";
+// TASK-477 — permission templates: reusable sets that are COPIED onto a person.
+// Their own tag, and their own client, because a template is about nobody in
+// particular — see `permission-template.controller.ts`.
+export * from "./generated/permission-templates/permission-templates";
 export * from "./generated/products/products";
 export * from "./generated/product-groups/product-groups";
 export * from "./generated/categories/categories";
@@ -35,8 +41,9 @@ export * from "./generated/contact/contact";
 export * from "./generated/discounts/discounts";
 export * from "./generated/newsletter/newsletter";
 export * from "./generated/carousels/carousels";
-// TASK-334 / TASK-318 — the owner-only RBAC surfaces (permission matrix, log).
-export * from "./generated/permissions/permissions";
+// TASK-318 — the action log. The generated permission-matrix client went with
+// `/api/admin/permissions` itself in TASK-475; rights belong to a person now and
+// the per-person client arrives with /staff (TASK-480).
 export * from "./generated/audit/audit";
 // TASK-377 — search-index maintenance (reindex). Generated since the endpoint
 // existed, but exported by nothing, so the admin had no way to reach it.
