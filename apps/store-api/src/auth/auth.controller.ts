@@ -445,6 +445,12 @@ export class AuthController {
   @Post('email/verify/confirm')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // Fail CLOSED (review of plan 180). TASK-485 changed what this route does:
+  // it no longer flips a boolean, it moves another party's orders — with their
+  // phone, address and totals — onto the account holding the token. That is the
+  // decorator's stated criterion: an unauthenticated write whose only defence IS
+  // the limiter. Every sibling public write on this controller already has it.
+  @FailClosedThrottle()
   @ApiOperation({ summary: 'Confirm an email address with a single-use token' })
   @ApiResponse({
     status: 200,

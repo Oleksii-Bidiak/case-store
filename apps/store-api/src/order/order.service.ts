@@ -606,37 +606,30 @@ export class OrderService {
   }
 
   /**
-   * Attach a new account's earlier guest orders to it (TASK-338).
+   * Attach a shopper's earlier guest orders to their account (TASK-338, 485).
    *
-   * Called after a registration whose email matches orders placed as a guest, so
-   * the shopper's history is not split in two by the act of signing up. The guest
-   * columns are deliberately kept: they record what was actually typed at
-   * checkout, and the emailed status link goes on working.
+   * The guest columns are deliberately kept: they record what was actually typed
+   * at checkout, and the emailed status link goes on working. Idempotent — the
+   * repository matches only `userId: null` rows, so an order already claimed can
+   * never be re-pointed, and an address with nothing behind it claims zero.
    *
-   * Safe to call for any registration — an email with no guest orders behind it
-   * simply claims zero.
+   * ── ONE CALL SITE, AND IT MUST STAY THAT WAY ────────────────────────────────
+   * Wired to `EmailVerificationService.confirm`, through
+   * `GUEST_ORDER_CLAIM_PORT` (the port exists because injecting OrderService
+   * into AuthModule closes a module cycle).
    *
-   * ── STILL UNWIRED AFTER INTEGRATION, AND ON PURPOSE (plan 167, TASK-353) ────
-   * The obvious call site is the successful-registration path in
-   * `auth/auth.service.ts`. Injecting OrderService there does NOT work: the
-   * module graph already runs AuthModule → … and OrderModule → UserModule →
-   * AuthModule, so the import closes a cycle. `forwardRef` would compile and
-   * would be a poor trade — a boot-order hazard bolted on during a merge, in the
-   * one place where failure means the API does not start at all.
+   * **Do not call this from any path that has not PROVEN the address.** It moves
+   * another party's orders — with their phone, delivery address and totals —
+   * onto the calling account, so the only thing standing between an attacker and
+   * a stranger's data is the proof that they read the mail sent to that address.
+   * Registration is not that proof: an account can sign in with an unverified
+   * address. Neither is an authenticated read — `getOrders` does not look at
+   * `emailVerifiedAt`, so claiming from there would hand the orders to whoever
+   * typed the address.
    *
-   * Two designs survive review; neither should be chosen in a hurry:
-   *  (a) claim lazily from the ORDER side — `getOrders` claims before listing.
-   *      No new module edge at all (OrderService already injects UserRepository
-   *      for the ban check), idempotent, and it fires exactly when it matters:
-   *      the moment the shopper looks for their history. Cost: a write on a read
-   *      path.
-   *  (b) break the User → Auth edge so the honest dependency direction becomes
-   *      available. Correct, larger, and out of scope for this wave.
-   *
-   * Nothing is lost meanwhile: a guest who registers still reaches every order
-   * through the link emailed at checkout. The orders are simply not yet listed
-   * under the new account. The capability and its tests ship here so whichever
-   * design wins is a wiring change, not a rewrite.
+   * Earlier revisions of this docblock proposed exactly that ("claim lazily from
+   * the order side"); it was written before TASK-485 chose the port, and it is
+   * recorded here only so the idea is not re-proposed as new.
    */
   async claimGuestOrders(userId: string, email: string): Promise<number> {
     const claimed = await this.orderRepository.claimGuestOrders(userId, email.trim().toLowerCase());

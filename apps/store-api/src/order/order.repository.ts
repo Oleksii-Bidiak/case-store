@@ -390,6 +390,15 @@ export class OrderRepository {
                 guestPhone: params.guest.phone,
                 guestName: params.guest.name,
                 accessTokenHash: params.guest.accessTokenHash,
+                // Written in the same breath as the hash, exactly as
+                // `createManual` and `rotateAccessToken` do (review of plan 180).
+                // `rotateAccessToken`'s docblock states the invariant — a path
+                // that sets one without the other yields either an eternal link
+                // or a stillborn one — and this was that path. It survived only
+                // because `getGuestOrder` falls back to `createdAt`, which for a
+                // just-created order is the same instant; delete that fallback as
+                // dead code and every confirmation mail ships an expired link.
+                accessTokenIssuedAt: new Date(),
               }
             : {}),
           status: OrderStatus.PENDING,

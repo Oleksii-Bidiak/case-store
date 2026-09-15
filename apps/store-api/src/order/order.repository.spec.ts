@@ -163,6 +163,36 @@ describe('OrderRepository', () => {
       });
     });
 
+    // ── The guest link's two columns move together (review of plan 180) ───────
+    // `rotateAccessToken`'s docblock states the invariant: a path that writes the
+    // hash without the issue time produces either an eternal link or a stillborn
+    // one, because the TTL is counted from `accessTokenIssuedAt`. This path used
+    // to be that path, and survived only on `getGuestOrder`'s `?? createdAt`
+    // fallback — remove that as dead code and every confirmation mail would ship
+    // an already-expired link.
+
+    it('stamps the guest link with the moment it was issued, not just its hash', async () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+
+      await repository.createFromCart({
+        ...baseParams,
+        userId: null,
+        guest: {
+          email: 'guest@example.com',
+          phone: '+380501234567',
+          name: 'Olena',
+          accessTokenHash: 'sha256-of-the-raw-token',
+        },
+      } as CreateOrderParams);
+
+      const data = tx.order.create.mock.calls[0][0].data;
+      expect(data.accessTokenHash).toBe('sha256-of-the-raw-token');
+      expect(data.accessTokenIssuedAt).toBeInstanceOf(Date);
+    });
+
     it('throws ConflictException and aborts when no stock row is affected (oversell guard)', async () => {
       const tx = makeTx();
       tx.order.create.mockResolvedValue({ id: 'order-1', items: [] });
