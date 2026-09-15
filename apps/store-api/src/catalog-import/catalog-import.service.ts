@@ -319,6 +319,39 @@ export class CatalogImportService {
       );
     }
 
+    // ── Colour (TASK-487) ─────────────────────────────────────────────────────
+    // The file's «дизайн» column is not one of `attributeColumns`: it lands in
+    // `source.design` and used to reach the database ONLY as a variant-axis
+    // value in `attributes` JSON, which no facet query reads. So an imported
+    // catalogue had colours on every card and no colour filter anywhere.
+    //
+    // Resolved separately from `definitions` above because it must exist even
+    // for a category whose rows fill in no spec columns at all — those skip the
+    // loop entirely (`columns.size === 0`), and colour is precisely the facet
+    // such a category would otherwise be left with none of.
+    const colorsByCategory = new Map<string, Set<string>>();
+    for (const row of catalog.rows) {
+      const design = row.design?.trim();
+      if (!design) {
+        continue;
+      }
+      const bucket = colorsByCategory.get(row.categoryName) ?? new Set<string>();
+      bucket.add(design);
+      colorsByCategory.set(row.categoryName, bucket);
+    }
+
+    const colorDefinitions = new Map<string, string>();
+    for (const [categoryName, colors] of colorsByCategory) {
+      const categoryId = categories.get(categoryName);
+      if (!categoryId) {
+        continue;
+      }
+      colorDefinitions.set(
+        categoryName,
+        await this.repository.ensureColorDefinition(categoryId, [...colors]),
+      );
+    }
+
     // Variant groups: only names the file uses more than once.
     const groupNames = new Set(plan.groups.map((group) => group.name));
     const groupIdByName = new Map<string, string>();
@@ -335,7 +368,15 @@ export class CatalogImportService {
       }
     }
 
-    return { categories, brands, deviceBrands, deviceModels, definitions, groupBySku };
+    return {
+      categories,
+      brands,
+      deviceBrands,
+      deviceModels,
+      definitions,
+      colorDefinitions,
+      groupBySku,
+    };
   }
 
   /** Apply one planned row. */
@@ -443,22 +484,46 @@ export class CatalogImportService {
     return planned.productId;
   }
 
-  /** Replace the product's structured spec values from the file row. */
+  /**
+   * Replace the product's structured spec values from the file row.
+   *
+   * Since TASK-487 this also carries COLOUR. `source.design` is written twice on
+   * purpose — once as a variant-axis value in `attributes` JSON (see
+   * `createProduct` / `updateProduct`) and once here as a real spec value. The
+   * axis copy is what splits a group into positions and paints the colour dots;
+   * this copy is the only one `?specs=color:…` and `filterable-specs` can see.
+   * Dropping either half puts the swatches and the colour filter back into
+   * disagreement, which is the state this task was opened to end.
+   */
   private async writeSpecs(
     productId: string,
     source: ParsedProductRow,
     context: Awaited<ReturnType<CatalogImportService['resolveReferences']>>,
   ): Promise<void> {
     const definitions = context.definitions.get(source.categoryName);
-    if (!definitions) {
+    const values = definitions
+      ? Object.entries(source.attributes)
+          .map(([key, value]) => {
+            const definitionId = definitions.get(key);
+            return definitionId ? { definitionId, value } : null;
+          })
+          .filter((value): value is { definitionId: string; value: string } => value !== null)
+      : [];
+
+    const color = source.design?.trim();
+    const colorDefinitionId = context.colorDefinitions.get(source.categoryName);
+    if (color && colorDefinitionId) {
+      values.push({ definitionId: colorDefinitionId, value: color });
+    }
+
+    // `setSpecValues` is replace-all, so an empty list is a meaningful write: it
+    // clears a product whose spec columns were emptied in the file. Skipping it
+    // when there are no definitions (the old early return) left stale values
+    // behind — but only bail when there is nothing resolved at all, to keep that
+    // old behaviour for a category the file declares no columns for.
+    if (!definitions && values.length === 0) {
       return;
     }
-    const values = Object.entries(source.attributes)
-      .map(([key, value]) => {
-        const definitionId = definitions.get(key);
-        return definitionId ? { definitionId, value } : null;
-      })
-      .filter((value): value is { definitionId: string; value: string } => value !== null);
     await this.repository.setSpecValues(productId, values);
   }
 

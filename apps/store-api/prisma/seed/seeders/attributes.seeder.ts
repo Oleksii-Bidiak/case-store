@@ -1,5 +1,11 @@
 import { PrismaClient } from '@prisma/client';
-import { AXIS_BACKED_SPECS, definitionsByRootCategory } from '../data/attributes.data';
+import { COLOR_SPEC_KEY } from '../../../src/common/color-axis';
+import {
+  AXIS_BACKED_SPECS,
+  colorOfPosition,
+  colorOptionsByRoot,
+  definitionsByRootCategory,
+} from '../data/attributes.data';
 import { cataloguePositions } from '../data/catalogue';
 import { rootCategorySlug } from '../data/categories.data';
 
@@ -15,6 +21,11 @@ import { rootCategorySlug } from '../data/categories.data';
  * position's variant axis for the specs listed in {@link AXIS_BACKED_SPECS} —
  * otherwise every position of an iPhone group would report the same storage.
  *
+ * Since TASK-487 COLOUR is bridged the same way, but matched through the shared
+ * `src/common/color-axis.ts` vocabulary instead of one literal axis name. That
+ * bridge is the whole point of the task: colour used to live ONLY in the
+ * free-form `attributes` JSON, which no facet query reads.
+ *
  * Idempotent: definitions upsert on the `(categoryId, key)` unique; values are
  * deleted and recreated wholesale for the seeded positions, which also drops
  * rows whose spec was removed from the data.
@@ -28,6 +39,10 @@ export async function seedAttributeDefinitions(
   const definitionTypes = new Map<string, string>();
   let definitionCount = 0;
 
+  // Colour options are DERIVED from the catalogue rather than declared
+  // (TASK-487) — see `optionsFromColorAxis` in `attributes.data.ts`.
+  const colorOptions = colorOptionsByRoot();
+
   for (const [rootSlug, definitions] of Object.entries(definitionsByRootCategory)) {
     const category = categories[rootSlug];
     if (!category) {
@@ -35,11 +50,25 @@ export async function seedAttributeDefinitions(
     }
     for (let i = 0; i < definitions.length; i++) {
       const d = definitions[i];
+      let options = d.options;
+      if (d.optionsFromColorAxis) {
+        options = colorOptions.get(rootSlug);
+        // A SELECT with no options is a dropdown an operator cannot use, and a
+        // facet a shopper can open and find empty. If the declaration and the
+        // catalogue have drifted apart, say so here rather than seeding one.
+        if (!options || options.length === 0) {
+          throw new Error(
+            `Seed: root category "${rootSlug}" declares the colour facet, but no position in ` +
+              `data/catalogue/** carries a colour axis. Remove COLOR_DEFINITION from that root ` +
+              `or give its positions colours.`,
+          );
+        }
+      }
       const data = {
         label: d.label,
         type: d.type,
         unit: d.unit ?? null,
-        options: d.options ?? undefined,
+        options: options ?? undefined,
         isFilterable: d.isFilterable ?? false,
         sortOrder: i,
       };
@@ -86,6 +115,21 @@ export async function seedAttributeDefinitions(
       if (axisValue) specs[key] = axisValue;
     }
 
+    // ── The colour bridge (TASK-487) ──────────────────────────────────────────
+    // Colour is axis-backed like «Пам'ять», but it is matched by the shared
+    // colour vocabulary rather than one literal axis name (`color` / `colour` /
+    // «Колір» all occur in this repo). Writing it here is what makes
+    // `?specs=color:Чорний` and `filterable-specs` able to SEE a colour at all:
+    // until now it existed only in the free-form `attributes` JSON, which the
+    // facet machinery does not read.
+    //
+    // No `if (root declares color)` guard on purpose — the loop below throws on
+    // a spec the root does not declare, and for colour that throw is the point:
+    // a coloured position in an undeclared root is a catalogue that quietly lost
+    // its strongest facet, and the seed should refuse to produce it.
+    const color = colorOfPosition(position.variant.attributes);
+    if (color !== null) specs[COLOR_SPEC_KEY] = color;
+
     for (const [key, raw] of Object.entries(specs)) {
       const definitionId = definitionIds.get(`${rootSlug}:${key}`);
       if (!definitionId) {
@@ -119,8 +163,18 @@ export async function seedAttributeDefinitions(
     if (next >= 3) withThreePlus.add(row.productId);
   }
 
+  // Colour is reported separately because it is the one spec the seed DERIVES
+  // rather than reads (TASK-487): a zero here means the bridge silently stopped
+  // matching the axis, and every colour swatch in the catalogue is gone.
+  const colorDefinitionIds = new Set(
+    [...definitionIds.entries()]
+      .filter(([composite]) => composite.endsWith(`:${COLOR_SPEC_KEY}`))
+      .map(([, id]) => id),
+  );
+  const colorRows = rows.filter((row) => colorDefinitionIds.has(row.definitionId)).length;
+
   console.log(
     `  ✓ Attribute definitions: ${definitionCount} across ${Object.keys(definitionsByRootCategory).length} root categories, ` +
-      `${rows.length} values (${withThreePlus.size} positions with 3+ specs)`,
+      `${rows.length} values (${withThreePlus.size} positions with 3+ specs, ${colorRows} colour facet values)`,
   );
 }

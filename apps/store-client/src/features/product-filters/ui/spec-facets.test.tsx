@@ -227,4 +227,136 @@ describe("SpecFacets — multi-select (TASK-414)", () => {
       screen.queryByRole("checkbox", { name: "v6" }),
     ).not.toBeInTheDocument();
   });
+
+  // ── colour swatches (TASK-487 / owner decision B-10) ──────────────────────
+
+  describe("the colour facet", () => {
+    const colorFacet = facet("color", "Колір", [
+      "Чорний",
+      "Білий",
+      "Не існує такого кольору",
+    ]);
+
+    it("renders a swatch per colour, still as a real checkbox", async () => {
+      stubFacets([colorFacet]);
+
+      renderWithProviders(
+        <SpecFacets categoryId={CATEGORY_ID} onFilterChange={jest.fn()} />,
+      );
+
+      // The accessible name is the colour NAME, not a hex value: a shopper who
+      // cannot tell «Сірий» from «Графітовий» by the dot still reads the word,
+      // and keyboard/Space toggling comes free from the native input.
+      expect(
+        await screen.findByRole("checkbox", { name: "Чорний" }),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("checkbox", { name: "Білий" }),
+      ).toBeInTheDocument();
+    });
+
+    it("writes ?specs=color:<value> on selection, like any other facet", async () => {
+      stubFacets([colorFacet]);
+      const onFilterChange = jest.fn();
+
+      renderWithProviders(
+        <SpecFacets categoryId={CATEGORY_ID} onFilterChange={onFilterChange} />,
+      );
+
+      await userEvent.click(
+        await screen.findByRole("checkbox", { name: "Чорний" }),
+      );
+
+      expect(onFilterChange).toHaveBeenCalledWith({ specs: "color:Чорний" });
+    });
+
+    it("accumulates colours within the facet and un-ticks on a second click", async () => {
+      stubFacets([colorFacet]);
+      const onFilterChange = jest.fn();
+
+      const { rerender } = renderWithProviders(
+        <SpecFacets
+          categoryId={CATEGORY_ID}
+          specs="color:Чорний"
+          onFilterChange={onFilterChange}
+        />,
+      );
+
+      const black = await screen.findByRole("checkbox", { name: "Чорний" });
+      expect(black).toBeChecked();
+
+      await userEvent.click(screen.getByRole("checkbox", { name: "Білий" }));
+      expect(onFilterChange).toHaveBeenCalledWith({
+        specs: "color:Чорний,Білий",
+      });
+
+      rerender(
+        <SpecFacets
+          categoryId={CATEGORY_ID}
+          specs="color:Чорний"
+          onFilterChange={onFilterChange}
+        />,
+      );
+      await userEvent.click(screen.getByRole("checkbox", { name: "Чорний" }));
+      expect(onFilterChange).toHaveBeenLastCalledWith({ specs: undefined });
+    });
+
+    it("still renders a colour it cannot resolve to a CSS colour", async () => {
+      // `colorSwatch` falls back to a neutral gradient rather than guessing.
+      // Dropping the value would hide a filter that matches real products.
+      stubFacets([colorFacet]);
+
+      renderWithProviders(
+        <SpecFacets categoryId={CATEGORY_ID} onFilterChange={jest.fn()} />,
+      );
+
+      expect(
+        await screen.findByRole("checkbox", {
+          name: "Не існує такого кольору",
+        }),
+      ).toBeInTheDocument();
+    });
+
+    it("renders plain checkboxes for every OTHER facet", async () => {
+      stubFacets([colorFacet, materialFacet]);
+
+      renderWithProviders(
+        <SpecFacets categoryId={CATEGORY_ID} onFilterChange={jest.fn()} />,
+      );
+
+      // Both are checkboxes; what differs is the chrome around them, so this
+      // asserts the non-colour facet is untouched by the swatch branch.
+      expect(
+        await screen.findByRole("checkbox", { name: "Силікон" }),
+      ).toBeInTheDocument();
+      expect(screen.getByText("Матеріал")).toBeInTheDocument();
+      expect(screen.getByText("Колір")).toBeInTheDocument();
+    });
+  });
+
+  // TASK-487. Definitions are declared on a ROOT category and inherited by every
+  // descendant, so an inherited facet can legitimately have no values in the
+  // subcategory being browsed — «Колір» in a category of screen protectors, say.
+  it("renders nothing for a facet with no values", async () => {
+    stubFacets([facet("color", "Колір", []), materialFacet]);
+
+    renderWithProviders(
+      <SpecFacets categoryId={CATEGORY_ID} onFilterChange={jest.fn()} />,
+    );
+
+    expect(
+      await screen.findByRole("checkbox", { name: "Силікон" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Колір")).not.toBeInTheDocument();
+  });
+
+  it("renders nothing at all when EVERY facet is empty", async () => {
+    stubFacets([facet("color", "Колір", [])]);
+
+    const { container } = renderWithProviders(
+      <SpecFacets categoryId={CATEGORY_ID} onFilterChange={jest.fn()} />,
+    );
+
+    await waitFor(() => expect(container).toBeEmptyDOMElement());
+  });
 });

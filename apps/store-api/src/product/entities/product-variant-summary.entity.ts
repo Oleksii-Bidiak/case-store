@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { readColorAxis } from '../../common/color-axis';
 
 /**
  * Minimal sibling-position shape consumed by the variant-summary derivation.
@@ -14,38 +15,19 @@ export interface VariantSiblingInput {
 }
 
 /**
- * Axis keys (case-insensitive) that hold a position's colour value. Axis names
- * are free-text admin data, so the same axis is spelled differently depending on
- * who authored the group — hence a set rather than one literal.
+ * Colour axis vocabulary and reader — imported, never re-declared.
  *
- * Deliberately mirrors `COLOR_AXES` in the storefront's
- * `widgets/product-detail/ui/product-sibling-navigator.tsx`, which decides
- * whether to render swatches or text chips. The two must agree: the storefront
- * already accepted `колір`, so a Ukrainian-named axis rendered as swatches on the
- * PDP while this entity reported zero colours — colour dots silently vanished
- * from every card and quick-view. Keep both lists in sync (plan 170, TASK-364).
- */
-const COLOR_AXIS_KEYS = new Set(['color', 'colour', 'колір']);
-
-/**
- * Read the colour value from a position's `attributes` JSON. The axis is keyed
- * by name (case-insensitive, see {@link COLOR_AXIS_KEYS}); returns `null` when
- * there is no colour axis or the value is not a non-empty string.
+ * This file used to carry its OWN `COLOR_AXIS_KEYS` set plus a comment asking
+ * future editors to keep it in step with the storefront's copy. That is exactly
+ * how colour dots silently vanished from every card and quick-view once: the
+ * storefront already accepted `колір`, this copy did not, so a Ukrainian-named
+ * axis rendered as swatches on the PDP while this entity reported zero colours
+ * (plan 170, TASK-364). The server keeps ONE list now, in
+ * `common/color-axis.ts`, shared with the facet bridge that turns the same axis
+ * into a filterable structured spec (TASK-487).
  */
 function readColor(attributes: unknown): string | null {
-  if (attributes == null || typeof attributes !== 'object') {
-    return null;
-  }
-  for (const [key, value] of Object.entries(attributes as Record<string, unknown>)) {
-    if (
-      COLOR_AXIS_KEYS.has(key.trim().toLowerCase()) &&
-      typeof value === 'string' &&
-      value.trim() !== ''
-    ) {
-      return value;
-    }
-  }
-  return null;
+  return readColorAxis(attributes)?.value ?? null;
 }
 
 /**

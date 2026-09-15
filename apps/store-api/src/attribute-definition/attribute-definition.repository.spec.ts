@@ -21,6 +21,7 @@ describe('AttributeDefinitionRepository', () => {
   const defFindMany = jest.fn();
   const catFindMany = jest.fn();
   const findAncestorIds = jest.fn();
+  const findAncestorChainOrdered = jest.fn();
 
   /**
    * ONE attributeDefinition delegate shared by the singleton and the transaction client:
@@ -30,6 +31,7 @@ describe('AttributeDefinitionRepository', () => {
   const attributeDefinitionDelegate = {
     findMany: defFindMany,
     findUnique: jest.fn(),
+    upsert: jest.fn(),
     aggregate: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -69,7 +71,7 @@ describe('AttributeDefinitionRepository', () => {
       providers: [
         AttributeDefinitionRepository,
         { provide: PrismaService, useValue: prismaMock },
-        { provide: CategoryRepository, useValue: { findAncestorIds } },
+        { provide: CategoryRepository, useValue: { findAncestorIds, findAncestorChainOrdered } },
       ],
     }).compile();
     repo = module.get(AttributeDefinitionRepository);
@@ -228,6 +230,133 @@ describe('AttributeDefinitionRepository', () => {
       await expect(repo.reorder('cat', [a])).rejects.toBeInstanceOf(ReorderStaleError);
 
       expect(attributeDefinitionDelegate.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── the colour facet (TASK-487) ────────────────────────────────────────────
+
+  describe('ensureColorDefinitionForCategory', () => {
+    /** Wire `findEffectiveForCategory` to resolve to exactly `defs`. */
+    const effective = (defs: ReturnType<typeof makeDef>[]) => {
+      findAncestorIds.mockResolvedValue(['leaf', 'root']);
+      catFindMany.mockResolvedValue([
+        { id: 'leaf', parentId: 'root' },
+        { id: 'root', parentId: null },
+      ]);
+      defFindMany.mockResolvedValue(defs);
+    };
+
+    it('reuses an existing colour definition instead of creating a second one', async () => {
+      // Two definitions for one key would split a single facet's values across
+      // two rows — the shopper would see the same filter twice, each half full.
+      const existing = makeDef({ id: 'd-color', categoryId: 'root', key: 'color' });
+      effective([existing]);
+
+      const result = await repo.ensureColorDefinitionForCategory('leaf');
+
+      expect(result.id).toBe('d-color');
+      expect(attributeDefinitionDelegate.upsert).not.toHaveBeenCalled();
+    });
+
+    it('reuses a LEAF override too — whoever declared it meant it', async () => {
+      const override = makeDef({ id: 'd-leaf-color', categoryId: 'leaf', key: 'color' });
+      effective([override]);
+
+      expect((await repo.ensureColorDefinitionForCategory('leaf')).id).toBe('d-leaf-color');
+    });
+
+    it('creates it on the ROOT, not on the product own category', async () => {
+      // Definitions inherit DOWNWARD. One declared on a leaf is invisible while
+      // browsing the parent, so the facet would vanish the moment a shopper
+      // stepped up a level.
+      effective([makeDef({ key: 'material' })]);
+      findAncestorChainOrdered.mockResolvedValue(['leaf', 'mid', 'root']);
+      attributeDefinitionDelegate.upsert.mockResolvedValue(makeDef({ id: 'new', key: 'color' }));
+
+      await repo.ensureColorDefinitionForCategory('leaf');
+
+      expect(findAncestorChainOrdered).toHaveBeenCalledWith('leaf');
+      const [args] = attributeDefinitionDelegate.upsert.mock.calls[0];
+      expect(args.where).toEqual({ categoryId_key: { categoryId: 'root', key: 'color' } });
+    });
+
+    it('creates it as a FILTERABLE SELECT — a TEXT definition is never a facet', async () => {
+      effective([]);
+      findAncestorChainOrdered.mockResolvedValue(['root']);
+      attributeDefinitionDelegate.upsert.mockResolvedValue(makeDef({ id: 'new', key: 'color' }));
+
+      await repo.ensureColorDefinitionForCategory('root');
+
+      const [args] = attributeDefinitionDelegate.upsert.mock.calls[0];
+      expect(args.create).toMatchObject({
+        key: 'color',
+        label: 'Колір',
+        type: AttributeType.SELECT,
+        isFilterable: true,
+      });
+      // And it PROMOTES one that exists but was typed TEXT by the XLSX import.
+      expect(args.update).toEqual({ type: AttributeType.SELECT, isFilterable: true });
+    });
+
+    it('falls back to the category itself when the chain comes back empty', async () => {
+      effective([]);
+      findAncestorChainOrdered.mockResolvedValue([]);
+      attributeDefinitionDelegate.upsert.mockResolvedValue(makeDef({ id: 'new', key: 'color' }));
+
+      await repo.ensureColorDefinitionForCategory('orphan');
+
+      const [args] = attributeDefinitionDelegate.upsert.mock.calls[0];
+      expect(args.where.categoryId_key.categoryId).toBe('orphan');
+    });
+  });
+
+  describe('addOptions', () => {
+    it('unions the new value into the existing list, sorted', async () => {
+      attributeDefinitionDelegate.findUnique.mockResolvedValue({ options: ['Чорний', 'Білий'] });
+
+      await repo.addOptions('d-color', ['Синій']);
+
+      expect(attributeDefinitionDelegate.update).toHaveBeenCalledWith({
+        where: { id: 'd-color' },
+        data: { options: ['Білий', 'Синій', 'Чорний'] },
+      });
+    });
+
+    it('never REPLACES the list — dropping an option un-picks a colour in use', async () => {
+      attributeDefinitionDelegate.findUnique.mockResolvedValue({ options: ['Чорний'] });
+
+      await repo.addOptions('d-color', ['Синій']);
+
+      const [{ data }] = attributeDefinitionDelegate.update.mock.calls[0];
+      expect(data.options).toContain('Чорний');
+    });
+
+    it('writes nothing when every value is already listed', async () => {
+      attributeDefinitionDelegate.findUnique.mockResolvedValue({ options: ['Чорний'] });
+
+      await repo.addOptions('d-color', ['Чорний']);
+
+      expect(attributeDefinitionDelegate.update).not.toHaveBeenCalled();
+    });
+
+    it('starts a list from scratch when options is null or not an array', async () => {
+      attributeDefinitionDelegate.findUnique.mockResolvedValue({ options: null });
+
+      await repo.addOptions('d-color', ['Чорний']);
+
+      expect(attributeDefinitionDelegate.update).toHaveBeenCalledWith({
+        where: { id: 'd-color' },
+        data: { options: ['Чорний'] },
+      });
+    });
+
+    it('ignores blank values and a missing definition', async () => {
+      await repo.addOptions('d-color', ['  ']);
+      expect(attributeDefinitionDelegate.findUnique).not.toHaveBeenCalled();
+
+      attributeDefinitionDelegate.findUnique.mockResolvedValue(null);
+      await repo.addOptions('ghost', ['Чорний']);
+      expect(attributeDefinitionDelegate.update).not.toHaveBeenCalled();
     });
   });
 });

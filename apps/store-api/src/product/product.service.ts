@@ -771,6 +771,102 @@ export class ProductService {
   }
 
   /**
+   * Bulk set (or clear) the colour of the selected products — TASK-487,
+   * «Задати колір» on the product list's selection.
+   *
+   * ── Why this endpoint exists at all ─────────────────────────────────────────
+   * Colour is the strongest facet in accessories (owner decision B-10), and it
+   * is the one spec nobody fills in: it arrives as a variant axis, which the
+   * product form edits one position at a time, and the XLSX import's «дизайн»
+   * column, which only fires on import. An operator assembling a colour family
+   * of nine had no way to make those nine filterable short of nine visits to the
+   * spec editor.
+   *
+   * ── The two writes, and why neither is optional ─────────────────────────────
+   * Each product gets its colour in BOTH places: the `attributes` axis JSON (so
+   * the PDP navigator and the card's colour dots see it) and a
+   * `ProductAttributeValue` row on the category's `color` definition (so the
+   * FACET sees it). The repository does both in one transaction; this method's
+   * job is the part a repository may not do — resolving which definition each
+   * product's category tree declares, and creating it on the root when the tree
+   * declares none. See `ensureColorDefinitionForCategory`.
+   *
+   * ── Side effects ────────────────────────────────────────────────────────────
+   * The rule every bulk endpoint here follows: be indistinguishable from running
+   * the single-row action N times. List cache once, detail cache per product,
+   * one search re-sync per product. Plus the SIBLINGS' detail caches, exactly as
+   * {@link setGroupMany} evicts them and for the same reason — a cached detail
+   * carries its `variantSiblings` and their attributes, so recolouring one
+   * position changes what its untouched neighbours should say.
+   *
+   * @throws NotFoundException when an id is unknown or soft-deleted. Nothing is
+   *         written in that case.
+   */
+  async setColorMany(ids: string[], color: string | null): Promise<number> {
+    let rows;
+    try {
+      rows = await this.productRepository.findCategoriesForBulk(ids);
+    } catch (error) {
+      if (error instanceof ProductsNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+
+    // Resolve ONE definition per distinct category, not per product: a bulk edit
+    // over a colour family is N products in one or two categories, and
+    // `ensureColorDefinitionForCategory` walks the ancestor chain each time.
+    const definitionIdByProduct = new Map<string, string>();
+    const definitionIds = new Set<string>();
+    if (color !== null) {
+      const byCategory = new Map<string, string>();
+      for (const row of rows) {
+        let definitionId = byCategory.get(row.categoryId);
+        if (definitionId === undefined) {
+          const definition =
+            await this.attributeDefinitionRepository.ensureColorDefinitionForCategory(
+              row.categoryId,
+            );
+          definitionId = definition.id;
+          byCategory.set(row.categoryId, definitionId);
+        }
+        definitionIdByProduct.set(row.id, definitionId);
+        definitionIds.add(definitionId);
+      }
+    }
+
+    let result;
+    try {
+      result = await this.productRepository.setColorMany(ids, color, definitionIdByProduct);
+    } catch (error) {
+      if (error instanceof ProductsNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+
+    // Keep the SELECT's option list covering the value just written — the admin
+    // spec editor renders it as a closed dropdown, so a colour stored but not
+    // listed is one the panel cannot re-pick.
+    if (color !== null) {
+      for (const definitionId of definitionIds) {
+        await this.attributeDefinitionRepository.addOptions(definitionId, [color.trim()]);
+      }
+    }
+
+    await this.invalidateProductLists();
+    for (const product of result.updated) {
+      await this.evictProductDetail(product.id, product.slug);
+      await this.syncSearchIndex(product);
+    }
+    for (const sibling of result.siblings) {
+      await this.evictProductDetail(sibling.id, sibling.slug);
+    }
+
+    return result.updated.length;
+  }
+
+  /**
    * Soft-delete a product (admin-only, TASK-104). Stamps `deletedAt`, sets
    * `isActive = false`, and mangles the unique `slug`/`sku` (prefixing
    * `deleted:<id>:`) so those slots are freed for new products. The row is kept

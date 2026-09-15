@@ -3231,6 +3231,52 @@
         ]
       }
     },
+    "/api/products/color": {
+      "patch": {
+        "operationId": "productControllerSetColorMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkProductColorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of products recoloured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkProductColorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized, duplicated or non-UUID ids, or a blank colour"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown product id — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Bulk set or clear the colour of products (admin)",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
     "/api/products/{id}/deactivate": {
       "patch": {
         "operationId": "ProductController_deactivate",
@@ -16959,6 +17005,53 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/BulkProductGroupResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "BulkProductColorDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the products being recoloured.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "color": {
+            "type": "string",
+            "description": "Colour to write, or `null` to clear it. The field is REQUIRED: an absent `color` would be indistinguishable from \"remove the colour\", which is a destructive default for a request that omitted the field by mistake.",
+            "nullable": true,
+            "maxLength": 60,
+            "example": "Чорний"
+          }
+        },
+        "required": [
+          "ids",
+          "color"
+        ]
+      },
+      "BulkProductColorResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Products whose colour was written",
+            "example": 9
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkProductColorResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkProductColorResult"
           }
         },
         "required": [

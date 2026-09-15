@@ -6,6 +6,13 @@ import { rankProductIdsBySales } from './bestseller-rank.util';
 import type { SpecFacetFilter } from './dto/product-list-query.dto';
 import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
 import { COUNTS_TOWARD_RATING } from '../review/review.constants';
+import { COLOR_SPEC_KEY, isColorAxis, withColorAxis } from '../common/color-axis';
+
+/**
+ * Interactive-transaction budget for the bulk colour write (TASK-487). See the
+ * note at the end of {@link ProductRepository.setColorMany}.
+ */
+const TX_OPTIONS = { timeout: 30_000, maxWait: 10_000 } as const;
 
 /**
  * Slugs of a rename being persisted by this update — when present, the write
@@ -1384,6 +1391,175 @@ export class ProductRepository {
 
       return { updated, siblings };
     });
+  }
+
+  /**
+   * The category (and group) each of the named products sits in — the read the
+   * bulk colour edit needs BEFORE it can write anything (TASK-487).
+   *
+   * Colour has to be filed against the `AttributeDefinition` that the product's
+   * category tree declares, and resolving that is cross-repository work the
+   * SERVICE owns (`AttributeDefinitionRepository.ensureColorDefinitionForCategory`).
+   * So the write is a two-step: read the categories here, resolve the
+   * definitions there, then call {@link setColorMany} with the answer.
+   *
+   * All-or-nothing check lives here too: an unknown or soft-deleted id aborts
+   * before anything is resolved, let alone written.
+   *
+   * @throws ProductsNotFoundError when an id is unknown or soft-deleted.
+   */
+  async findCategoriesForBulk(
+    ids: string[],
+  ): Promise<Array<Pick<Product, 'id' | 'categoryId' | 'groupId'>>> {
+    const found = await this.prisma.product.findMany({
+      where: { id: { in: ids }, deletedAt: null },
+      select: { id: true, categoryId: true, groupId: true },
+    });
+
+    if (found.length !== ids.length) {
+      const known = new Set(found.map((row) => row.id));
+      throw new ProductsNotFoundError(ids.filter((id) => !known.has(id)));
+    }
+
+    return found;
+  }
+
+  /**
+   * Bulk set (or clear) the colour of exactly the named products — TASK-487,
+   * the admin panel's «Задати колір».
+   *
+   * ── Why BOTH writes are in one transaction ──────────────────────────────────
+   * Colour lives in two places, and this method is the only write path that has
+   * to keep them equal:
+   *
+   *   - `products.attributes` — the VARIANT AXIS value. It is what splits a
+   *     group into positions, what the PDP variant navigator reads, and what
+   *     paints the colour dots on a card.
+   *   - `product_attribute_values` — the structured spec bound to the `color`
+   *     `AttributeDefinition`. It is the ONLY one the facet machinery can see.
+   *
+   * Writing one without the other re-creates the exact defect TASK-487 exists to
+   * fix: a catalogue whose swatches and whose colour filter disagree. Two
+   * repository calls would make that a half-failure away, so the spec-value
+   * write is done here rather than through `ProductSpecRepository` — both tables
+   * belong to this module, and atomicity is the requirement.
+   *
+   * ── Why the axis NAME is resolved per product ───────────────────────────────
+   * The axis a colour is stored under is free text: the seed writes «Колір», the
+   * XLSX import writes `color`. A position already carrying one keeps it; one
+   * joining a group adopts the group's own colour axis name, so it goes on
+   * matching its siblings on the PDP. See `withColorAxis`.
+   *
+   * ── Why it returns the siblings ─────────────────────────────────────────────
+   * Same reason {@link setGroupMany} does: a cached product detail carries its
+   * `variantSiblings`, complete with their attributes, so recolouring X changes
+   * what X's untouched siblings should say. The service evicts them.
+   *
+   * `color: null` clears the colour: every colour-ish axis key is removed and
+   * EVERY `color`-keyed spec value is deleted — not just the one on the
+   * definition this category resolves to, because a product that changed
+   * category could be carrying a value on an older root's definition, and a
+   * half-cleared colour still shows up in the facet.
+   */
+  async setColorMany(
+    ids: string[],
+    color: string | null,
+    definitionIdByProduct: ReadonlyMap<string, string>,
+  ): Promise<{
+    updated: Array<Pick<Product, 'id' | 'slug' | 'isActive'>>;
+    siblings: Array<Pick<Product, 'id' | 'slug'>>;
+  }> {
+    return this.prisma.$transaction(async (tx) => {
+      const products = await tx.product.findMany({
+        where: { id: { in: ids }, deletedAt: null },
+        select: { id: true, slug: true, isActive: true, groupId: true, attributes: true },
+      });
+
+      if (products.length !== ids.length) {
+        const known = new Set(products.map((row) => row.id));
+        throw new ProductsNotFoundError(ids.filter((id) => !known.has(id)));
+      }
+
+      // The colour axis name each affected GROUP uses, so a bulk edit files the
+      // value under the spelling the group's other positions already use.
+      const groupIds = [
+        ...new Set(products.map((row) => row.groupId).filter((id): id is string => id !== null)),
+      ];
+      const axes =
+        groupIds.length === 0
+          ? []
+          : await tx.productGroupAxis.findMany({
+              where: { groupId: { in: groupIds } },
+              select: { groupId: true, name: true },
+            });
+      const colorAxisByGroup = new Map<string, string>();
+      for (const axis of axes) {
+        if (isColorAxis(axis.name) && !colorAxisByGroup.has(axis.groupId)) {
+          colorAxisByGroup.set(axis.groupId, axis.name);
+        }
+      }
+
+      const value = color === null ? null : color.trim();
+
+      // ── The axis half ────────────────────────────────────────────────────────
+      // One UPDATE per product, because each row's OTHER axes differ and the
+      // column is a whole JSON document. Rows whose JSON would not change are
+      // skipped: a bulk recolour of a family usually already has most of it
+      // right, and 500 no-op writes is 500 row locks for nothing.
+      const specRows: Array<{ productId: string; definitionId: string; value: string }> = [];
+      for (const product of products) {
+        const preferredAxis = product.groupId ? colorAxisByGroup.get(product.groupId) : undefined;
+        const next = withColorAxis(product.attributes, value, preferredAxis);
+        if (JSON.stringify(next) !== JSON.stringify(product.attributes ?? {})) {
+          await tx.product.update({
+            where: { id: product.id },
+            data: { attributes: next as Prisma.InputJsonValue },
+          });
+        }
+
+        if (value !== null) {
+          const definitionId = definitionIdByProduct.get(product.id);
+          if (!definitionId) {
+            // The service resolves one per product before calling; a gap means
+            // the two steps disagree, and writing the axis alone is the drift
+            // this method exists to prevent. Abort the whole batch.
+            throw new Error(`No colour definition resolved for product ${product.id}`);
+          }
+          specRows.push({ productId: product.id, definitionId, value });
+        }
+      }
+
+      // ── The spec half ────────────────────────────────────────────────────────
+      // Delete-then-insert rather than N upserts: two statements instead of two
+      // per product, and it is the only shape that also clears a STALE value on
+      // another root's colour definition — which a product that changed category
+      // since it was last coloured will be carrying, still answering the facet
+      // with the old colour.
+      await tx.productAttributeValue.deleteMany({
+        where: { productId: { in: ids }, definition: { key: COLOR_SPEC_KEY } },
+      });
+      if (specRows.length > 0) {
+        await tx.productAttributeValue.createMany({ data: specRows });
+      }
+
+      const siblings =
+        groupIds.length === 0
+          ? []
+          : await tx.product.findMany({
+              where: { groupId: { in: groupIds }, id: { notIn: ids }, deletedAt: null },
+              select: { id: true, slug: true },
+            });
+
+      return {
+        updated: products.map(({ id, slug, isActive }) => ({ id, slug, isActive })),
+        siblings,
+      };
+      // The DTO caps a batch at MAX_REORDER_IDS (500) and the axis half is one
+      // UPDATE per changed row, so the default 5 s interactive-transaction
+      // budget is not obviously enough on a loaded server — and a timeout here
+      // rolls back a write the operator was told nothing about. Raised
+      // deliberately rather than discovered in production.
+    }, TX_OPTIONS);
   }
 
   /**

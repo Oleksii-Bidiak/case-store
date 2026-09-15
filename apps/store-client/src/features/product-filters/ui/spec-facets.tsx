@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { useCategoryControllerGetFilterableSpecs } from "@/entities/category";
 import { dict } from "@/shared/config";
+import { COLOR_SPEC_KEY } from "@/shared/lib";
 import {
   parseSpecParam,
   selectedSpecValues,
   toggleSpecValue,
 } from "../model/spec-facet";
+import { ColorSwatchFilter } from "./color-swatch-filter";
 import { FilterCheckbox } from "./filter-checkbox";
 
 /**
@@ -74,7 +76,14 @@ export function SpecFacets({
   });
   const [showAll, setShowAll] = useState(false);
 
-  const facets = (query.data?.data ?? []).slice(0, MAX_FACETS);
+  // A facet with no values is dropped rather than rendered empty. The API drops
+  // them too since TASK-487 — definitions are declared on a ROOT category and
+  // inherited by every descendant, so «Колір» reaches a subcategory whose
+  // products have no colour at all. Belt and braces: a control a shopper can
+  // open and find nothing in reads as a broken page, not as "no such filter".
+  const facets = (query.data?.data ?? [])
+    .filter((facet) => facet.values.length > 0)
+    .slice(0, MAX_FACETS);
   const selected = parseSpecParam(specs);
 
   if (!categoryId || facets.length === 0) {
@@ -99,21 +108,38 @@ export function SpecFacets({
               <legend className="mb-1.5 text-[13px] text-muted-foreground">
                 {facet.definition.label}
               </legend>
-              <div className="flex max-h-56 flex-col overflow-y-auto overscroll-contain">
-                {facet.values.map((value) => (
-                  <FilterCheckbox
-                    key={value}
-                    id={`${groupId}-${value}`}
-                    label={value}
-                    checked={active.includes(value)}
-                    onCheckedChange={() =>
-                      onFilterChange({
-                        specs: toggleSpecValue(specs, key, value),
-                      })
-                    }
-                  />
-                ))}
-              </div>
+              {key === COLOR_SPEC_KEY ? (
+                // Colour is scanned, not read (TASK-487 / B-10): swatch chips
+                // instead of a column of checkbox rows. Same `<input>`
+                // semantics underneath, and the colour NAME stays visible —
+                // colour is never the only channel. See `ColorSwatchFilter`.
+                <ColorSwatchFilter
+                  idPrefix={groupId}
+                  values={facet.values}
+                  selected={active}
+                  onToggle={(value) =>
+                    onFilterChange({
+                      specs: toggleSpecValue(specs, key, value),
+                    })
+                  }
+                />
+              ) : (
+                <div className="flex max-h-56 flex-col overflow-y-auto overscroll-contain">
+                  {facet.values.map((value) => (
+                    <FilterCheckbox
+                      key={value}
+                      id={`${groupId}-${value}`}
+                      label={value}
+                      checked={active.includes(value)}
+                      onCheckedChange={() =>
+                        onFilterChange({
+                          specs: toggleSpecValue(specs, key, value),
+                        })
+                      }
+                    />
+                  ))}
+                </div>
+              )}
             </fieldset>
           );
         })}

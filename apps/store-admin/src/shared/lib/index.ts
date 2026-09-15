@@ -32,6 +32,15 @@ export {
   isValidUAPhone,
   isValidInternationalPhone,
 } from "./phone";
+// TASK-487. Pure logic, no "use client" — safe in this barrel. Reads the colour
+// out of a product's free-form variant-axis JSON so the bulk colour dialog can
+// offer the spellings already in use.
+export {
+  COLOR_AXIS_KEYS,
+  isColorAxis,
+  readColorAxis,
+  colorsInUse,
+} from "./color-axis";
 
 // NOTE: `use-debounced-callback` is intentionally NOT re-exported here. It is a
 // "use client" hook; adding a client module to this barrel (which server

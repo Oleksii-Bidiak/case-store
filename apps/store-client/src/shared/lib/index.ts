@@ -5,6 +5,10 @@ export * from "./format";
 export * from "./product-gradient";
 export * from "./product-pricing";
 export * from "./color-swatch";
+// Colour AXIS vocabulary (TASK-487) — distinct from `color-swatch`, which maps a
+// colour VALUE to a CSS colour. This one answers "is this axis/facet the colour
+// one?", and both the PDP variant navigator and the catalogue facet read it.
+export * from "./color-axis";
 // Vendor-agnostic analytics facade (TASK-261). Safe to re-export here — a plain
 // module with no "use client" and no React import, unlike the intentionally
 // excluded client-only `use-debounced-callback` noted below.

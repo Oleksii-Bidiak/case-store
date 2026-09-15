@@ -127,6 +127,37 @@ describe('AttributeDefinitionService', () => {
       expect(await service.getFilterableSpecs('cat')).toEqual([]);
       expect(categoryRepository.findSubtreeIds).not.toHaveBeenCalled();
     });
+
+    it('drops a filterable definition with NO values in this subtree (TASK-487)', async () => {
+      // Definitions are declared on the ROOT and inherited by every descendant,
+      // so «Колір» reaches a subcategory whose products have no colour at all.
+      // Surfacing it would render a facet a shopper can open and find empty.
+      const colorDef = { ...materialDef, id: 'd-color', key: 'color', label: 'Колір' };
+      repo.findEffectiveForCategory.mockResolvedValue([materialDef, colorDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      repo.findDistinctValuesByKey.mockResolvedValue(new Map([['material', ['Силікон']]]));
+
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(result.map((facet) => facet.definition.key)).toEqual(['material']);
+    });
+
+    it('surfaces the colour facet once its subtree has values', async () => {
+      const colorDef = { ...materialDef, id: 'd-color', key: 'color', label: 'Колір' };
+      repo.findEffectiveForCategory.mockResolvedValue([colorDef, materialDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      repo.findDistinctValuesByKey.mockResolvedValue(
+        new Map([
+          ['color', ['Білий', 'Чорний']],
+          ['material', ['Силікон']],
+        ]),
+      );
+
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(result.map((facet) => facet.definition.key)).toEqual(['color', 'material']);
+      expect(result[0].values).toEqual(['Білий', 'Чорний']);
+    });
   });
 
   describe('delete', () => {

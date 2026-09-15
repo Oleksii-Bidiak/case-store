@@ -52,6 +52,14 @@ export class AttributeDefinitionService {
    * definitions, each paired with the distinct values in use among products in
    * the category's subtree. Returns an empty list when the category declares no
    * filterable specs, so the storefront simply renders no facet controls.
+   *
+   * A definition with NO values in this subtree is dropped entirely (TASK-487).
+   * Definitions are declared on the ROOT and inherited by every descendant, so
+   * a facet the parent legitimately offers can be empty three levels down —
+   * colour made this visible (cables and screen protectors have none at all),
+   * but it was always true of every inherited spec. An empty facet renders as a
+   * filter control a shopper can open and find nothing in, which reads as a
+   * broken page rather than as "no such filter here".
    */
   async getFilterableSpecs(categoryId: string): Promise<FilterableSpecEntity[]> {
     const effective = await this.repository.findEffectiveForCategory(categoryId);
@@ -66,10 +74,12 @@ export class AttributeDefinitionService {
       subtreeIds,
     );
 
-    return filterable.map((def) => ({
-      definition: AttributeDefinitionEntity.fromPrisma(def),
-      values: valuesByKey.get(def.key) ?? [],
-    }));
+    return filterable
+      .map((def) => ({
+        definition: AttributeDefinitionEntity.fromPrisma(def),
+        values: valuesByKey.get(def.key) ?? [],
+      }))
+      .filter((facet) => facet.values.length > 0);
   }
 
   /** Create a template on a category (admin-only). */

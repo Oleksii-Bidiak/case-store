@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AttributeDefinition, AttributeType, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { CategoryRepository } from '../category';
+import { COLOR_SPEC_KEY, COLOR_SPEC_LABEL } from '../common/color-axis';
 import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
 
 /**
@@ -266,6 +267,95 @@ export class AttributeDefinitionRepository {
       byKey.set(row.definition.key, bucket);
     }
     return new Map([...byKey.entries()].map(([k, set]) => [k, [...set]]));
+  }
+
+  /**
+   * Resolve the `color` definition a product in this category should file its
+   * colour under, CREATING it on the category's root when nothing declares one
+   * (TASK-487).
+   *
+   * Why it has to create: colour reaches the database through three doors — the
+   * seed, the XLSX import and the admin's bulk edit — and only the first of them
+   * runs after a declaration it controls. An operator setting «Чорний» on twelve
+   * imported products in a category nobody declared colour on must still end up
+   * with a filterable facet, otherwise the value lands in `attributes` JSON and
+   * disappears from the catalogue exactly as it did before this task.
+   *
+   * Why the ROOT and not the product's own category: definitions are inherited
+   * DOWNWARD (see {@link findEffectiveForCategory}). One declared on a leaf is
+   * invisible while browsing the parent, so the facet would vanish the moment a
+   * shopper stepped up one level — the failure mode is a filter that exists on
+   * `/catalog?category=iphone-cases` and not on `/catalog?category=cases`.
+   *
+   * Prefers an EXISTING effective definition (leaf override included) over
+   * creating anything: whoever declared it meant it, and a second row for the
+   * same key would split one facet's values across two definitions.
+   */
+  async ensureColorDefinitionForCategory(categoryId: string): Promise<AttributeDefinition> {
+    const effective = await this.findEffectiveForCategory(categoryId);
+    const existing = effective.find((def) => def.key === COLOR_SPEC_KEY);
+    if (existing) {
+      return existing;
+    }
+
+    const chain = await this.categoryRepository.findAncestorChainOrdered(categoryId);
+    const rootId = chain[chain.length - 1] ?? categoryId;
+
+    return this.prisma.attributeDefinition.upsert({
+      where: { categoryId_key: { categoryId: rootId, key: COLOR_SPEC_KEY } },
+      // A SELECT with an empty option list, deliberately: the options are the
+      // colours in use, and `addOptions` widens the list as values are written.
+      // TEXT would be worse than useless — a TEXT definition is never offered as
+      // a facet at all, which is the bug this whole task exists to fix.
+      create: {
+        categoryId: rootId,
+        key: COLOR_SPEC_KEY,
+        label: COLOR_SPEC_LABEL,
+        type: AttributeType.SELECT,
+        options: [] as unknown as Prisma.InputJsonValue,
+        isFilterable: true,
+        sortOrder: 0,
+      },
+      update: { type: AttributeType.SELECT, isFilterable: true },
+    });
+  }
+
+  /**
+   * Widen a SELECT definition's option list to include `values` (TASK-487).
+   *
+   * The admin spec editor renders a SELECT as a CLOSED dropdown, so a value
+   * stored on a product but missing from `options` is a value an operator can
+   * see on the storefront and cannot pick in the panel. Union, never replace:
+   * removing an option silently un-picks a colour other products still use.
+   *
+   * No-op when every value is already present, so callers may call it freely.
+   */
+  async addOptions(definitionId: string, values: string[]): Promise<void> {
+    const wanted = values.map((value) => value.trim()).filter((value) => value !== '');
+    if (wanted.length === 0) {
+      return;
+    }
+
+    const definition = await this.prisma.attributeDefinition.findUnique({
+      where: { id: definitionId },
+      select: { options: true },
+    });
+    if (!definition) {
+      return;
+    }
+
+    const current = Array.isArray(definition.options)
+      ? (definition.options as unknown[]).filter((o): o is string => typeof o === 'string')
+      : [];
+    const merged = [...new Set([...current, ...wanted])];
+    if (merged.length === current.length) {
+      return;
+    }
+
+    await this.prisma.attributeDefinition.update({
+      where: { id: definitionId },
+      data: { options: merged.sort((a, b) => a.localeCompare(b, 'uk')) as Prisma.InputJsonValue },
+    });
   }
 
   /** Normalize an options array into the Prisma JSON column value (or DB null). */

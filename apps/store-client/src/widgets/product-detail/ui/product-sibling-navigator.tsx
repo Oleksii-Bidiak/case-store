@@ -8,13 +8,7 @@ import {
   type ProductGroupEntity,
   type ProductSiblingEntity,
 } from "@/entities/product";
-import { colorSwatch } from "@/shared/lib";
-
-/**
- * Axis names treated as the COLOUR axis (rendered as round swatches instead of
- * text chips). Attribute keys are free-form admin data — seed uses `color`.
- */
-const COLOR_AXES = new Set(["color", "colour", "колір"]);
+import { colorSwatch, isColorAxis } from "@/shared/lib";
 
 interface ProductSiblingNavigatorProps {
   group: ProductGroupEntity;
@@ -121,14 +115,14 @@ export function ProductSiblingNavigator({
           return null;
         }
 
-        const isColorAxis = COLOR_AXES.has(axis.trim().toLowerCase());
+        const isColor = isColorAxis(axis);
 
         return (
           <fieldset key={axis} className="flex flex-col gap-2">
             <legend className="mb-2 text-sm font-medium capitalize text-foreground">
               {axis}
               {/* Swatches hide the colour text, so surface the current one here. */}
-              {isColorAxis && currentValue && (
+              {isColor && currentValue && (
                 <span className="font-normal text-muted-foreground">
                   : {currentValue}
                 </span>
@@ -156,7 +150,7 @@ export function ProductSiblingNavigator({
                 // text axis; on the colour axis (TASK-215) the round face
                 // carries the real colour and the colour TEXT stays the
                 // accessible name + tooltip.
-                const swatch = isColorAxis ? colorSwatch(value) : null;
+                const swatch = isColor ? colorSwatch(value) : null;
                 const className = swatch
                   ? `block size-9 rounded-full border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-40 ${
                       swatch.isLight ? "border-border" : "border-black/10"

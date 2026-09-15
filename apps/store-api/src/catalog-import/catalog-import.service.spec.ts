@@ -193,6 +193,88 @@ describe('CatalogImportService', () => {
     });
   });
 
+  /**
+   * The colour half of a spec write (TASK-487).
+   *
+   * `source.design` — the file's «дизайн» column — used to reach the database
+   * ONLY as a variant-axis value in `attributes` JSON, which no facet query
+   * reads. So an imported catalogue had colours on every card and no colour
+   * filter anywhere. It is now written twice, deliberately, and these cases pin
+   * both halves plus the early-return that used to swallow the second one.
+   *
+   * Reached through the private `writeSpecs` on purpose: the public route into
+   * it is `applyChunk`, which first re-parses the stored workbook, and building
+   * a real .xlsx here would test the parser rather than this branch.
+   */
+  describe('writeSpecs — colour', () => {
+    type WriteSpecs = (
+      productId: string,
+      source: Record<string, unknown>,
+      context: Record<string, unknown>,
+    ) => Promise<void>;
+
+    const call = (source: Record<string, unknown>, context: Record<string, unknown>) =>
+      (service as unknown as { writeSpecs: WriteSpecs }).writeSpecs('p-1', source, context);
+
+    const sourceRow = (over: Record<string, unknown> = {}) => ({
+      categoryName: 'Чохли',
+      attributes: {},
+      ...over,
+    });
+
+    it('writes the colour as a real spec value beside the file columns', async () => {
+      await call(sourceRow({ design: 'Чорний', attributes: { material: 'Силікон' } }), {
+        definitions: new Map([['Чохли', new Map([['material', 'def-material']])]]),
+        colorDefinitions: new Map([['Чохли', 'def-color']]),
+      });
+
+      expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p-1', [
+        { definitionId: 'def-material', value: 'Силікон' },
+        { definitionId: 'def-color', value: 'Чорний' },
+      ]);
+    });
+
+    it('writes the colour even when the category declares no spec columns at all', async () => {
+      // The old early return bailed on a category with no `definitions` entry —
+      // and that is precisely the category whose only facet would be colour.
+      await call(sourceRow({ design: 'Білий' }), {
+        definitions: new Map(),
+        colorDefinitions: new Map([['Чохли', 'def-color']]),
+      });
+
+      expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p-1', [
+        { definitionId: 'def-color', value: 'Білий' },
+      ]);
+    });
+
+    it('trims the colour and ignores a blank «дизайн» cell', async () => {
+      await call(sourceRow({ design: '  Синій  ' }), {
+        definitions: new Map(),
+        colorDefinitions: new Map([['Чохли', 'def-color']]),
+      });
+      expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p-1', [
+        { definitionId: 'def-color', value: 'Синій' },
+      ]);
+
+      repositoryMock.setSpecValues.mockClear();
+      await call(sourceRow({ design: '   ' }), {
+        definitions: new Map(),
+        colorDefinitions: new Map([['Чохли', 'def-color']]),
+      });
+      expect(repositoryMock.setSpecValues).not.toHaveBeenCalled();
+    });
+
+    it('still clears the spec values of a row whose columns were emptied', async () => {
+      // `setSpecValues` is replace-all, so the empty list is a meaningful write.
+      await call(sourceRow(), {
+        definitions: new Map([['Чохли', new Map()]]),
+        colorDefinitions: new Map(),
+      });
+
+      expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p-1', []);
+    });
+  });
+
   describe('applyChunk', () => {
     // The plan is the source of truth for WHAT to do, so a run whose actionable
     // rows are exhausted must settle rather than spin.

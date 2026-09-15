@@ -78,6 +78,11 @@ const productRepositoryMock = {
   // real repository returns — the rows it wrote plus the untouched siblings whose
   // cached `variantSiblings` the write invalidated.
   setGroupMany: jest.fn(),
+  // TASK-487: bulk colour. The two-step shape the real repository needs — read
+  // the categories first so the service can resolve a definition per product,
+  // then write the axis JSON and the spec value together.
+  findCategoriesForBulk: jest.fn(),
+  setColorMany: jest.fn(),
   softDelete: jest.fn(),
   // TASK-254: derived reserved-qty aggregate. Defaults to an empty map (no
   // reservations); individual tests override to assert the enrichment.
@@ -138,6 +143,10 @@ const specRepositoryMock = {
 
 const attributeDefinitionRepositoryMock = {
   findEffectiveForCategory: jest.fn().mockResolvedValue([]),
+  // TASK-487: resolves (creating if needed) the colour definition a bulk colour
+  // edit files its value against, and widens that SELECT own option list.
+  ensureColorDefinitionForCategory: jest.fn().mockResolvedValue({ id: 'def-color' }),
+  addOptions: jest.fn().mockResolvedValue(undefined),
 };
 
 // ─── CacheService mock ────────────────────────────────────────────────────────
@@ -1357,6 +1366,166 @@ describe('ProductService', () => {
       productRepositoryMock.setGroupMany.mockRejectedValue(boom);
 
       await expect(service.setGroupMany(['product-uuid-1'], 'group-1')).rejects.toThrow(boom);
+    });
+  });
+
+  // ─── setColorMany (admin, TASK-487) ──────────────────────────────────────────
+
+  describe('setColorMany', () => {
+    const recoloured = [
+      { id: 'product-uuid-1', slug: 'iphone-15-pro-case-black', isActive: true },
+      { id: 'product-uuid-2', slug: 'iphone-15-pro-case-white', isActive: true },
+    ];
+
+    beforeEach(() => {
+      productRepositoryMock.findCategoriesForBulk.mockResolvedValue([
+        { id: 'product-uuid-1', categoryId: 'cat-cases', groupId: 'group-1' },
+        { id: 'product-uuid-2', categoryId: 'cat-cases', groupId: 'group-1' },
+      ]);
+      productRepositoryMock.setColorMany.mockResolvedValue({
+        updated: recoloured,
+        siblings: [],
+      });
+    });
+
+    it('resolves a colour definition per product and hands it to the write', async () => {
+      const count = await service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний');
+
+      expect(count).toBe(2);
+      expect(productRepositoryMock.setColorMany).toHaveBeenCalledWith(
+        ['product-uuid-1', 'product-uuid-2'],
+        'Чорний',
+        new Map([
+          ['product-uuid-1', 'def-color'],
+          ['product-uuid-2', 'def-color'],
+        ]),
+      );
+    });
+
+    it('resolves ONE definition per distinct category, not one per product', async () => {
+      // A colour family is N products in one category; walking the ancestor
+      // chain N times would be N recursive CTEs for one answer.
+      await service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний');
+
+      expect(
+        attributeDefinitionRepositoryMock.ensureColorDefinitionForCategory,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        attributeDefinitionRepositoryMock.ensureColorDefinitionForCategory,
+      ).toHaveBeenCalledWith('cat-cases');
+    });
+
+    it('widens the SELECT option list to cover the colour it just wrote', async () => {
+      // The admin spec editor renders a SELECT as a CLOSED dropdown: a colour
+      // stored but not listed is one the panel cannot re-pick.
+      await service.setColorMany(['product-uuid-1'], 'Синій титан');
+
+      expect(attributeDefinitionRepositoryMock.addOptions).toHaveBeenCalledWith('def-color', [
+        'Синій титан',
+      ]);
+    });
+
+    it('evicts each recoloured product by BOTH id and slug, and re-indexes it', async () => {
+      await service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний');
+
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(expect.stringContaining('product-uuid-1'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(
+        expect.stringContaining('iphone-15-pro-case-black'),
+      );
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-1');
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-2');
+    });
+
+    /**
+     * A cached product detail carries its `variantSiblings` AND their
+     * attributes, so recolouring one position changes what the untouched
+     * members of its group should say — the PDP would keep offering the old
+     * swatch until the TTL expired.
+     */
+    it('also evicts the untouched siblings of the affected groups', async () => {
+      productRepositoryMock.setColorMany.mockResolvedValue({
+        updated: recoloured,
+        siblings: [{ id: 'sibling-uuid', slug: 'iphone-15-pro-case-blue' }],
+      });
+
+      await service.setColorMany(['product-uuid-1'], 'Чорний');
+
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(expect.stringContaining('sibling-uuid'));
+      expect(productIndexerMock.index).not.toHaveBeenCalledWith('sibling-uuid');
+    });
+
+    it('evicts the list prefix once, not once per product', async () => {
+      await service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний');
+
+      const listEvictions = cacheServiceMock.delByPrefix.mock.calls.filter(
+        ([prefix]: [string]) => prefix === PRODUCT_LIST_PREFIX,
+      );
+      expect(listEvictions).toHaveLength(1);
+    });
+
+    it('removes an inactive recoloured product from the index rather than indexing it', async () => {
+      productRepositoryMock.setColorMany.mockResolvedValue({
+        updated: [{ ...recoloured[0], isActive: false }],
+        siblings: [],
+      });
+
+      await service.setColorMany(['product-uuid-1'], 'Чорний');
+
+      expect(productIndexerMock.remove).toHaveBeenCalledWith('product-uuid-1');
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    describe('clearing (color: null)', () => {
+      it('resolves no definition and creates none', async () => {
+        // Creating a colour definition for a category on the way to REMOVING a
+        // colour would be a facet conjured out of a deletion.
+        await service.setColorMany(['product-uuid-1'], null);
+
+        expect(
+          attributeDefinitionRepositoryMock.ensureColorDefinitionForCategory,
+        ).not.toHaveBeenCalled();
+        expect(attributeDefinitionRepositoryMock.addOptions).not.toHaveBeenCalled();
+        expect(productRepositoryMock.setColorMany).toHaveBeenCalledWith(
+          ['product-uuid-1'],
+          null,
+          new Map(),
+        );
+      });
+    });
+
+    it('maps an unknown product id to 404 and writes nothing', async () => {
+      productRepositoryMock.findCategoriesForBulk.mockRejectedValue(
+        new ProductsNotFoundError(['missing-uuid']),
+      );
+
+      await expect(service.setColorMany(['missing-uuid'], 'Чорний')).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(productRepositoryMock.setColorMany).not.toHaveBeenCalled();
+      expect(
+        attributeDefinitionRepositoryMock.ensureColorDefinitionForCategory,
+      ).not.toHaveBeenCalled();
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('maps a product that vanished between the read and the write to 404', async () => {
+      productRepositoryMock.setColorMany.mockRejectedValue(
+        new ProductsNotFoundError(['product-uuid-2']),
+      );
+
+      await expect(
+        service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('lets an unexpected repository failure through untouched', async () => {
+      const boom = new Error('connection reset');
+      productRepositoryMock.setColorMany.mockRejectedValue(boom);
+
+      await expect(service.setColorMany(['product-uuid-1'], 'Чорний')).rejects.toThrow(boom);
     });
   });
 

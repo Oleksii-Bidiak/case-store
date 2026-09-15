@@ -398,6 +398,31 @@ export const dict = {
       announceGroupSaving: (count: number) => `Переміщення ${count} тов.…`,
       announceGroupDone: (count: number) => `Переміщено товарів: ${count}`,
       announceGroupFailed: "Не вдалося перемістити товари",
+
+      // «Задати колір» (TASK-487) — колір є найсильнішим фасетом в аксесуарах,
+      // але заповнювати його по одному товару не брався ніхто: він приходить як
+      // вісь варіанта, а форма товару редагує одну позицію за раз. Пишеться
+      // одразу у два місця — у вісь (звідки кружечки кольорів на картці) і в
+      // характеристику «Колір» (звідки фільтр у каталозі).
+      setColor: (count: number) => `Задати колір (${count})`,
+      colorDialogTitle: "Колір обраних товарів",
+      colorDialogDescription: (count: number) =>
+        `Колір буде записано для ${count} тов. — і як вісь варіанта, і як ` +
+        `характеристику «Колір», за якою каталог фільтрує. Порожнє поле прибирає колір.`,
+      colorDialogLabel: "Колір",
+      colorDialogPlaceholder: "Напр. Чорний",
+      colorDialogHint:
+        "Пишіть так, як покупець побачить це на вітрині: «Чорний», «Темно-синій», «Прозорий».",
+      colorClear: "Прибрати колір",
+      colorSubmit: "Записати",
+      colorClearConfirm: (count: number) =>
+        `Прибрати колір у ${count} тов.? Вони зникнуть із фільтра за кольором.`,
+      announceColorSaving: (count: number) =>
+        `Запис кольору для ${count} тов.…`,
+      announceColorDone: (count: number) => `Змінено колір у товарах: ${count}`,
+      announceColorCleared: (count: number) =>
+        `Прибрано колір у товарах: ${count}`,
+      announceColorFailed: "Не вдалося змінити колір товарів",
     },
     back: "← Назад до товарів",
     createHeading: "Створення товару",
@@ -3409,6 +3434,7 @@ export const dict = {
       reply: "надано відповідь",
       resolve: "закрито",
       setCategoryTemplate: "налаштовано шаблон категорії",
+      setColorMany: "задано колір (масово)",
       setGroupMany: "призначено групу (масово)",
       setItems: "змінено склад",
       setPassword: "скинуто пароль",
