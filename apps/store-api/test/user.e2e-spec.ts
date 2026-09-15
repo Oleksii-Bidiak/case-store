@@ -119,6 +119,12 @@ describe('UserController (e2e)', () => {
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
   };
 
+  // Hoisted out of the `.overrideProvider(...)` call so the customer-card suite
+  // below can vary one caller's rights with `jest.spyOn` — the pattern the shared
+  // double documents, and the only way to say "this manager holds exactly these
+  // two keys" without standing up a second Nest application.
+  const permissionRepositoryMock = createPermissionRepositoryMock();
+
   /**
    * Generate a JWT access token for a given user ID and role.
    * Bypasses the rate-limited auth register endpoint.
@@ -147,7 +153,7 @@ describe('UserController (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
       .overrideProvider(PermissionRepository)
-      .useValue(createPermissionRepositoryMock())
+      .useValue(permissionRepositoryMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)
@@ -531,6 +537,128 @@ describe('UserController (e2e)', () => {
         .get('/api/users/nonexistent-id/admin-card')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  // ─── The customer-card split (TASK-479, plan 181, invariant 7) ──────────────
+
+  /**
+   * An order operator holds `customers:read` so they can find a customer and
+   * phone them back. Until this task that same key also opened the full card:
+   * lifetime value, every order with its total, the text of every review, every
+   * redeemed coupon and the full text of every support message. Those are two
+   * different jobs, and only one of them is "return a call".
+   *
+   * These cases are the HTTP half of the split — the unit spec beside the
+   * controller pins the decorators, this one proves the guard actually refuses,
+   * and that what the operator kept still answers 200.
+   */
+  describe('customers:read without customers:card', () => {
+    const MANAGER_ID = 'manager-e2e-card-1';
+
+    /** Give the next request's caller exactly `permissions` and nothing else. */
+    function managerHolding(...permissions: string[]): string {
+      jest.spyOn(permissionRepositoryMock, 'findActor').mockResolvedValue({
+        id: MANAGER_ID,
+        email: 'operator@test.local',
+        role: 'MANAGER' as never,
+        isOwner: false,
+        permissions: new Set(permissions),
+      });
+      return `Bearer ${generateAccessToken(MANAGER_ID, 'MANAGER')}`;
+    }
+
+    afterEach(() => {
+      // `jest.clearAllMocks()` clears CALLS, not implementations — a spy left
+      // standing would hand the next describe a manager instead of an admin.
+      jest.restoreAllMocks();
+    });
+
+    it('refuses the full card with 403, and reads nothing on the way out', async () => {
+      const auth = managerHolding('customers:read');
+
+      await request(app.getHttpServer())
+        .get('/api/users/user-detail-id/admin-card')
+        .set('Authorization', auth)
+        .expect(403);
+
+      // The guard refuses BEFORE the service, so not one of the six enrichment
+      // reads runs. A 403 assembled after the data was fetched would still be a
+      // 403 — and would still have put the whole card in a log line.
+      expect(userRepositoryMock.getLtv).not.toHaveBeenCalled();
+      expect(userRepositoryMock.getRecentOrders).not.toHaveBeenCalled();
+      expect(userRepositoryMock.getReviewsByUserId).not.toHaveBeenCalled();
+      expect(userRepositoryMock.getRedeemedCoupons).not.toHaveBeenCalled();
+      expect(userRepositoryMock.getContactMessagesByEmail).not.toHaveBeenCalled();
+    });
+
+    it('still lists customers and still reads their contact details', async () => {
+      // The half of `customers:read` that survives, and the reason the split is
+      // shippable at all: an operator who could phone a customer yesterday can
+      // still phone them today.
+      const auth = managerHolding('customers:read');
+
+      userRepositoryMock.findAll.mockResolvedValue({ users: [testUser], total: 1 });
+      userRepositoryMock.findCustomerById.mockResolvedValue(testUser);
+
+      const list = await request(app.getHttpServer())
+        .get('/api/users')
+        .set('Authorization', auth)
+        .expect(200);
+      expect(list.body.data).toHaveLength(1);
+
+      const one = await request(app.getHttpServer())
+        .get(`/api/users/${testUser.id}`)
+        .set('Authorization', auth)
+        .expect(200);
+      expect(one.body.data.phone).toBe(testUser.phone);
+      expect(one.body.data.email).toBe(testUser.email);
+    });
+
+    it('opens the card once customers:card is added', async () => {
+      const auth = managerHolding('customers:read', 'customers:card');
+
+      userRepositoryMock.findCustomerById.mockResolvedValue(testUser);
+      userRepositoryMock.getLtv.mockResolvedValue(1299.5);
+      userRepositoryMock.getOrderCount.mockResolvedValue(12);
+      userRepositoryMock.getRecentOrders.mockResolvedValue([]);
+      userRepositoryMock.getReviewsByUserId.mockResolvedValue([]);
+      userRepositoryMock.getRedeemedCoupons.mockResolvedValue([]);
+      userRepositoryMock.getContactMessagesByEmail.mockResolvedValue([]);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/users/${testUser.id}/admin-card`)
+        .set('Authorization', auth)
+        .expect(200);
+
+      expect(response.body.data.ltv).toBe(1299.5);
+    });
+
+    it('stands on its own: customers:card alone opens the card and still cannot enumerate', async () => {
+      // A deliberate decision, not an accident of using a single-key decorator.
+      // A permission whose enforcement silently depends on a SECOND tick is the
+      // failure the catalogue's `stock:write` note warns about: the owner ticks
+      // the box, nothing happens, and no screen says why. So the key is
+      // self-sufficient — and it is not a hole, because the card already
+      // contains the contact details `customers:read` would have bought. What it
+      // does NOT buy is enumeration: without `customers:read` there is no list
+      // to pick an id out of.
+      const auth = managerHolding('customers:card');
+
+      userRepositoryMock.findCustomerById.mockResolvedValue(testUser);
+      userRepositoryMock.getLtv.mockResolvedValue(0);
+      userRepositoryMock.getOrderCount.mockResolvedValue(0);
+      userRepositoryMock.getRecentOrders.mockResolvedValue([]);
+      userRepositoryMock.getReviewsByUserId.mockResolvedValue([]);
+      userRepositoryMock.getRedeemedCoupons.mockResolvedValue([]);
+      userRepositoryMock.getContactMessagesByEmail.mockResolvedValue([]);
+
+      await request(app.getHttpServer())
+        .get(`/api/users/${testUser.id}/admin-card`)
+        .set('Authorization', auth)
+        .expect(200);
+
+      await request(app.getHttpServer()).get('/api/users').set('Authorization', auth).expect(403);
     });
   });
 

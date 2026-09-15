@@ -71,6 +71,17 @@ export const PERM = {
   // lose the control, silently, while the API goes on accepting the request they
   // can no longer send.
   customersWrite: "customers:write",
+  // TASK-479 — the FULL customer card: lifetime value, every order with its
+  // total, review text, redeemed coupons and the text of every support message.
+  // Carved out of `customers:read`, which now buys only the list and the contact
+  // details an operator needs in order to phone somebody back.
+  //
+  // BACKFILLED, unlike `reviewsWrite` above: every current `customers:read`
+  // holder was granted this by migration, so nobody arrives at a screen that
+  // worked yesterday and finds it 403. See
+  // CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS in the API's
+  // `permission.catalog.ts` for why that is right here and was wrong there.
+  customersCard: "customers:card",
 
   messagesRead: "messages:read",
 

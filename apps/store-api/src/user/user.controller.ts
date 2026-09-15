@@ -234,11 +234,26 @@ export class UserController {
    *
    * Returns the enriched admin "customer card" (TASK-252): the user's profile
    * plus lifetime value, order count, recent orders, product reviews, redeemed
-   * coupons, and contact-inbox messages matched by email. Admin-only.
+   * coupons, and contact-inbox messages matched by email.
+   *
+   * `customers:card`, NOT `customers:read`, SINCE TASK-479. This one response is
+   * the richest personal-data surface in the system — what somebody bought, for
+   * how much, what they thought of it and what they wrote to us — and the key
+   * next door exists so an order operator can look somebody up and phone them
+   * back. Those are different jobs, so they are different ticks (plan 178,
+   * decision 4). Everyone holding `customers:read` at the time of the split was
+   * granted `customers:card` by migration, so nobody lost a screen they had; what
+   * changed is that the owner can now take it away from one person without taking
+   * away the phone number too.
+   *
+   * The key stands alone rather than requiring `customers:read` as well: a
+   * permission whose effect silently depends on a second tick is the failure mode
+   * the catalogue's `stock:write` note warns about. It buys this one record and
+   * no list — enumeration stays with `customers:read`.
    */
   @Get(':id/admin-card')
   @UseGuards(PermissionGuard)
-  @RequirePermission('customers:read')
+  @RequirePermission('customers:card')
   @ApiBearerAuth('access-token')
   @ApiOperation({
     summary: 'Get enriched customer card (LTV, orders, reviews, coupons, contact messages)',
@@ -251,7 +266,11 @@ export class UserController {
     type: UserAdminCardResponseEnvelope,
   })
   @ApiResponse({ status: 404, description: 'User not found' })
-  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  // Names the key rather than saying "admin access required", which stopped being
+  // true here in TASK-479: a manager can hold this one, and an admin holding
+  // `customers:read` alone cannot reach it — the description is what a caller
+  // reads when they get the 403.
+  @ApiResponse({ status: 403, description: 'Forbidden — customers:card required' })
   async getAdminCard(@Param('id') id: string): Promise<UserAdminCardResponse> {
     const card = await this.userService.getAdminCard(id);
 

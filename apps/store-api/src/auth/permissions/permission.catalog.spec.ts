@@ -5,6 +5,8 @@ import { PermissionGuard } from './permission.guard';
 import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
 import {
   GRANTABLE_PERMISSIONS,
+  CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS,
+  CUSTOMERS_CARD_PERMISSIONS,
   MANAGER_BACKFILL_TEMPLATE_NAME,
   MEDIA_BACKFILL_SOURCE_PERMISSIONS,
   MEDIA_PERMISSIONS,
@@ -573,5 +575,139 @@ describe('access model migration (TASK-474)', () => {
     // The SQL creates it; TASK-475 onwards looks it up. One literal spelled in
     // two places is a rename waiting to orphan the template.
     expect(managerGrants).toContain(`'${MANAGER_BACKFILL_TEMPLATE_NAME}'`);
+  });
+});
+
+/**
+ * The customer-card split (TASK-479, plan 181, invariant 7).
+ *
+ * `customers:read` used to buy two purchases at once: the list plus the contact
+ * details an operator needs in order to phone somebody, AND the full customer
+ * card — lifetime value, every order with its total, the text of every review,
+ * every redeemed coupon and the full text of every support message. The second
+ * is the richest personal-data surface in the system and an order operator does
+ * not need it to return a call, so it has a key of its own now.
+ *
+ * Rejected alternative, worth naming because it is the obvious one: masking the
+ * phone number behind `+380 ** *** 12 34` with a "reveal" button. It protects
+ * nothing while the same person opens the customer's order and reads the same
+ * number in the clear, and the reveal button only means something next to an
+ * audit of READS, which this system does not have — only mutations are audited
+ * (plan 178, decision 4).
+ */
+describe('customers:card — the split key (TASK-479)', () => {
+  const card = (PERMISSIONS as ReadonlyArray<{ key: string; zone: string; label: string }>).find(
+    (permission) => permission.key === 'customers:card',
+  );
+
+  it('exists, and says on the screen what it actually opens', () => {
+    expect(card).toBeDefined();
+    // Not a label like «Картка клієнта», which is what `customers:read` already
+    // sounds like it buys. The owner ticking this box is handing over purchase
+    // history and support correspondence, and the words have to say so.
+    expect(card?.label).toMatch(/замовлен/i);
+  });
+
+  it('is grantable, and sits with the other customer keys', () => {
+    expect(isGrantablePermission('customers:card')).toBe(true);
+    expect(card?.zone).toBe(PERMISSION_ZONES.CUSTOMERS);
+  });
+
+  it('is a separate key from customers:read rather than a rename of it', () => {
+    // The list and the contacts must survive the split untouched — an operator
+    // who could phone a customer yesterday can still phone them today.
+    expect(isKnownPermission('customers:read')).toBe(true);
+    expect(isKnownPermission('customers:card')).toBe(true);
+  });
+});
+
+/**
+ * The `customers:card` backfill migration (TASK-479).
+ *
+ * Pinned exactly like the media backfill above, and for the same reason: a
+ * backfill is the one place where "who holds what" stops being data the owner
+ * edits and becomes a sentence written in SQL, six directories from the rule it
+ * has to obey.
+ *
+ * ONE SHAPE CHANGED SINCE THE MEDIA BACKFILL, AND IT IS THE WHOLE DIFFERENCE.
+ * Grants live in `user_permissions(user_id, permission)` now — TASK-475 moved
+ * them off the role and TASK-476 dropped `role_permissions` entirely — so this
+ * one inserts per PERSON. There is no `allowed` column to reason about either:
+ * the row IS the grant, and a revocation is the row's absence.
+ */
+describe('customers:card permission backfill migration (TASK-479)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_backfill_customers_card_permission'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_backfill_customers_card_permission migration under ${MIGRATIONS_ROOT}. ` +
+          'Without it the split silently REMOVES the customer card from every operator ' +
+          'who can open it today — a 403 on a screen that worked yesterday.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  /** The statement only, with the explanatory comment block stripped off. */
+  const statement = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('grants keys that exist in the catalogue', () => {
+    for (const key of CUSTOMERS_CARD_PERMISSIONS) {
+      expect(isKnownPermission(key)).toBe(true);
+    }
+  });
+
+  it('grants exactly the key the catalogue calls the card permission', () => {
+    for (const key of CUSTOMERS_CARD_PERMISSIONS) {
+      expect(statement).toContain(`'${key}'`);
+    }
+
+    // And nothing else: every quoted `x:y` token in the statement is either the
+    // granted key or one of the declared sources.
+    const quoted = new Set(statement.match(/'[a-z]+:[a-z]+'/g) ?? []);
+    const allowed = new Set(
+      [...CUSTOMERS_CARD_PERMISSIONS, ...CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS].map(
+        (key) => `'${key}'`,
+      ),
+    );
+    expect([...quoted].filter((token) => !allowed.has(token))).toEqual([]);
+  });
+
+  it('reads exactly the source permissions the code declares', () => {
+    for (const key of CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS) {
+      expect(statement).toContain(`'${key}'`);
+    }
+    expect(CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS.every((key) => isKnownPermission(key))).toBe(
+      true,
+    );
+  });
+
+  it('grants to a PERSON, because that is where a grant lives now', () => {
+    // The media backfill above inserts into `role_permissions`, a table TASK-476
+    // dropped. Copying its statement into this file would have produced a
+    // migration that fails on a fresh database and is a no-op on an existing one
+    // — the kind of wrong that only shows up at deploy time.
+    expect(statement).toContain('"user_permissions"');
+    expect(statement).toContain('"user_id"');
+    expect(statement).not.toContain('role_permissions');
+  });
+
+  it('is idempotent, so a restore-then-migrate cannot double-grant or fail', () => {
+    expect(statement).toMatch(/ON CONFLICT[\s\S]*DO NOTHING/);
+  });
+
+  it('never names a role at all — an admin passes by level, not by row', () => {
+    // An ADMIN holds every catalogue key without a single row of their own
+    // (`PermissionService`), so a row for them would be inert at best and at
+    // worst would teach the next reader that rows govern the owner.
+    expect(statement).not.toContain('ADMIN');
+    expect(statement).not.toContain('MANAGER');
   });
 });

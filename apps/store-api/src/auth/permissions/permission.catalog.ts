@@ -173,6 +173,41 @@ export const PERMISSIONS = [
     zone: PERMISSION_ZONES.CUSTOMERS,
     label: 'Блокувати / розблоковувати, нотатки',
   },
+  // The full customer card, carved out of `customers:read` (TASK-479, plan 178
+  // decision 4). `customers:read` was buying two purchases at once: the list and
+  // the contact details an operator needs in order to phone somebody back, AND
+  // `GET /api/users/:id/admin-card` — lifetime value, every order with its total,
+  // the text of every product review, every redeemed coupon and the full text of
+  // every support message (`user-admin-card.entity.ts`). That second one is the
+  // richest pile of personal data in the system, and returning a call does not
+  // need it.
+  //
+  // WHY THIS ONE SHIPS WITH A BACKFILL WHILE `reviews:write` DELIBERATELY DID NOT
+  // (see its note above). The test is not "is the key important" — it is what the
+  // grant does to the person who already works here. `reviews:write` let somebody
+  // speak in public, under the shop's name, in an answer nobody reviews first:
+  // nobody could do that yesterday, so there was nothing to preserve and the
+  // first tick had to be the owner's own decision. This key is the opposite
+  // shape: it carves a capability OUT of a key people already hold, so the
+  // backfill hands every current `customers:read` holder exactly what they could
+  // already do and not one screen more. Default-deny would not be caution here —
+  // it would silently 403 an operator on a page that worked for them yesterday,
+  // and the owner would learn about it from a phone call rather than from a
+  // decision. See CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS below.
+  //
+  // MASKING WAS THE REJECTED ALTERNATIVE, and it is worth naming because it is
+  // the obvious one: show `+380 ** *** 12 34` and put a «показати» button next to
+  // it. It protects nothing while the same operator opens the same customer's
+  // order and reads the same number in the clear (`order.entity.ts`) — and orders
+  // are what they were hired for. The "mask + reveal" variant only means
+  // something alongside an audit of READS, which does not exist here: the
+  // interceptor records mutations only (`audit.interceptor.ts`). A smaller key is
+  // the version of that idea which is actually enforceable.
+  {
+    key: 'customers:card',
+    zone: PERMISSION_ZONES.CUSTOMERS,
+    label: 'Повна картка: сума покупок, замовлення, відгуки, звернення',
+  },
 
   // ── Звернення ─────────────────────────────────────────────────────────────
   { key: 'messages:read', zone: PERMISSION_ZONES.SUPPORT, label: 'Читати звернення' },
@@ -307,6 +342,52 @@ export const MEDIA_BACKFILL_SOURCE_PERMISSIONS = [
 export const MEDIA_PERMISSIONS = [
   'media:read',
   'media:write',
+] as const satisfies ReadonlyArray<Permission>;
+
+/**
+ * The permissions whose holders were granted `customers:card` by the TASK-479
+ * backfill migration (`…_backfill_customers_card_permission`).
+ *
+ * THE SECOND AND LAST BACKFILL IN THIS FILE, AND THE NARROWEST KIND. The card
+ * key is not a new admin section — it is a screen every one of these holders
+ * opens today, through the key named below. Splitting it off default-denied
+ * would 403 an operator on `/users/:id` on the morning after the deploy, on a
+ * page that worked for them the evening before, and neither they nor the owner
+ * would have been told. So the migration follows the existing grant one-for-one:
+ * everyone who holds the source key gets the card key, and nobody else does. It
+ * preserves exactly yesterday's reach and adds none.
+ *
+ * That is the same narrow argument MEDIA_BACKFILL_SOURCE_PERMISSIONS makes above,
+ * and it is deliberately NOT the argument `reviews:write` makes (see its note):
+ * that key let somebody do something nobody could do before, so there was nothing
+ * to preserve and the first tick belonged to the owner.
+ *
+ * WHAT CHANGED IN THE SHAPE. Grants are rows on the PERSON now
+ * (`user_permissions(user_id, permission)`); TASK-475 moved them off the role and
+ * TASK-476 dropped `role_permissions`. So this migration inserts per person, and
+ * there is no `allowed` column to reason about — the row IS the grant, and a
+ * revocation is its absence, which makes the predicate the media backfill had to
+ * spell out simply disappear.
+ *
+ * Deliberately NOT filtered to active, non-deleted accounts, which is the one
+ * place this differs from the TASK-474 backfill next door. That one CREATED rows
+ * from a role, for people who had none, so handing them to a switched-off account
+ * would have armed it for whoever re-enabled it later. This one only preserves
+ * the meaning of a row that already exists: if a deactivated operator holds
+ * `customers:read`, they hold the card today, and dropping the copy would quietly
+ * narrow them on re-activation rather than keep them where they were. A
+ * deactivated account is refused at the guard either way.
+ *
+ * This list is the code half of the contract; the SQL is the other half, and
+ * `permission.catalog.spec.ts` asserts the two say the same thing.
+ */
+export const CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS = [
+  'customers:read',
+] as const satisfies ReadonlyArray<Permission>;
+
+/** The key that backfill grants. */
+export const CUSTOMERS_CARD_PERMISSIONS = [
+  'customers:card',
 ] as const satisfies ReadonlyArray<Permission>;
 
 /**

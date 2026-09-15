@@ -8,6 +8,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { orderStatusLabel } from "@/entities/order";
+import { PERM } from "@/entities/permission";
 import { UserDetailView } from "./UserDetailView";
 
 // next/navigation is unavailable under jsdom — mock the router.
@@ -19,6 +20,25 @@ jest.mock("next/navigation", () => ({
 // The nested UserBanToggle reads the auth context — stub it so this suite can
 // render the widget without an <AuthProvider> (a different admin than the card's
 // user, so the real deactivate button renders rather than the self-ban guard).
+//
+// MUTABLE SINCE TASK-479, because the widget now asks a question whose answer
+// changes what it fetches: without `customers:card` there is no card request at
+// all. The default stays "the owner, who can do everything", which is what every
+// case written before the split assumes; `session.current` is reset in
+// `beforeEach` so one suite cannot leak its manager into the next.
+const OWNER_SESSION = {
+  isOwner: true,
+  permissions: [] as string[],
+  can: () => true,
+};
+const session: {
+  current: {
+    isOwner: boolean;
+    permissions: string[];
+    can: (p: string) => boolean;
+  };
+} = { current: { ...OWNER_SESSION } };
+
 jest.mock("@/entities/session", () => ({
   useAuth: () => ({
     userId: "admin-1",
@@ -28,16 +48,30 @@ jest.mock("@/entities/session", () => ({
     isAuthenticated: true,
     isStaff: true,
     // Owner, so the TASK-317 staff-management panel renders.
-    isOwner: true,
+    get isOwner() {
+      return session.current.isOwner;
+    },
     isInitializing: false,
-    permissions: [],
+    get permissions() {
+      return session.current.permissions;
+    },
     arePermissionsLoading: false,
-    can: () => true,
-    canAll: () => true,
+    can: (permission: string) => session.current.can(permission),
+    canAll: (required: readonly string[]) =>
+      required.every((permission) => session.current.can(permission)),
     setTokens: jest.fn(),
     clearTokens: jest.fn(),
   }),
 }));
+
+/** A manager holding exactly `permissions` and nothing else. */
+function managerHolding(...permissions: string[]) {
+  session.current = {
+    isOwner: false,
+    permissions,
+    can: (permission: string) => permissions.includes(permission),
+  };
+}
 
 const USER_ID = "user-detail-1";
 
@@ -161,6 +195,7 @@ function makeNote(overrides: Record<string, unknown> = {}) {
 describe("UserDetailView (customer card, TASK-252)", () => {
   beforeEach(() => {
     replaceMock.mockClear();
+    session.current = { ...OWNER_SESSION };
     mockNotes();
   });
 
@@ -536,6 +571,120 @@ describe("UserDetailView (customer card, TASK-252)", () => {
 
       expect(
         await screen.findByText(dict.users.notesEmpty),
+      ).toBeInTheDocument();
+    });
+  });
+
+  // ─── The customer-card split (TASK-479) ────────────────────────────────────
+
+  /**
+   * An order operator holds `customers:read` so they can look a customer up and
+   * phone them back. The full card — lifetime value, every order with its total,
+   * review text, redeemed coupons and the text of every support message — now
+   * costs `customers:card`, and `GET /api/users/:id/admin-card` answers 403
+   * without it.
+   *
+   * So this screen must not ASK for it. A request that can only 403 turns into
+   * the red «Не вдалося завантажити користувача» banner, which says the screen is
+   * broken when the truth is that the operator was never given this part — two
+   * different problems with two different fixes, and the operator cannot tell
+   * which one they are looking at.
+   */
+  describe("without customers:card", () => {
+    /** Counts card requests so "never asked" is asserted, not assumed. */
+    function trapCardRequests() {
+      const hits = { count: 0 };
+      server.use(
+        http.get("*/api/users/:id/admin-card", () => {
+          hits.count += 1;
+          return HttpResponse.json({ message: "Forbidden" }, { status: 403 });
+        }),
+      );
+      return hits;
+    }
+
+    /** The plain profile read, which stays under `customers:read`. */
+    function mockProfile(overrides: Record<string, unknown> = {}) {
+      server.use(
+        http.get("*/api/users/:id", () =>
+          HttpResponse.json({ data: { ...baseUser, ...overrides } }),
+        ),
+      );
+    }
+
+    it("never fires the card request", async () => {
+      managerHolding(PERM.customersRead);
+      const hits = trapCardRequests();
+      mockProfile();
+
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      expect(
+        await screen.findAllByText("customer@test.local"),
+      ).not.toHaveLength(0);
+      expect(hits.count).toBe(0);
+    });
+
+    it("still shows the contact details the operator was hired to use", async () => {
+      // The half of `customers:read` that survives the split. If this ever stops
+      // rendering, the split has taken away the phone number as well, and the
+      // screen is useless for the job it exists for.
+      managerHolding(PERM.customersRead);
+      trapCardRequests();
+      mockProfile();
+
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      expect(await screen.findByText(baseUser.phone)).toBeInTheDocument();
+      expect(screen.getAllByText("Olena Shevchenko")).not.toHaveLength(0);
+    });
+
+    it("hides every block the card paid for, and says why instead", async () => {
+      managerHolding(PERM.customersRead);
+      trapCardRequests();
+      mockProfile();
+
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      expect(
+        await screen.findByText(dict.users.cardPermissionRequired),
+      ).toBeInTheDocument();
+      for (const heading of [
+        dict.users.cardLtv,
+        dict.users.cardRecentOrders,
+        dict.users.cardReviews,
+        dict.users.cardCoupons,
+        dict.users.cardMessages,
+      ]) {
+        expect(screen.queryByText(heading)).not.toBeInTheDocument();
+      }
+    });
+
+    it("renders the whole card again once the key is granted", async () => {
+      managerHolding(PERM.customersRead, PERM.customersCard);
+      mockCard();
+
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      expect(await screen.findByText(dict.users.cardLtv)).toBeInTheDocument();
+      expect(screen.getByText("SUMMER20")).toBeInTheDocument();
+      expect(
+        screen.queryByText(dict.users.cardPermissionRequired),
+      ).not.toBeInTheDocument();
+    });
+
+    it("asks for exactly PERM.customersCard, not a hand-typed key", async () => {
+      // `can()` takes a plain `string`, so `customers:Card` compiles, runs, and
+      // is invisible to the owner — `can()` answers true for an admin whatever it
+      // is asked. Only a MANAGER would lose the card, silently.
+      managerHolding("customers:Card", "customers:cards", "customer:card");
+      trapCardRequests();
+      mockProfile();
+
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      expect(
+        await screen.findByText(dict.users.cardPermissionRequired),
       ).toBeInTheDocument();
     });
   });
