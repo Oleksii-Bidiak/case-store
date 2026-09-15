@@ -28,20 +28,25 @@ import {
   SheetTitle,
 } from "@/shared/ui";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { findCategoryNodeBySlug } from "../model/catalog-header";
 import { ProductList } from "./product-list";
 
 interface ProductListViewProps {
   /** Server-resolved initial params (from `await searchParams`). */
   initialParams: ProductControllerFindAllParams;
   /**
-   * Fix the category to a route-determined id (TASK-277 — `/categories/[slug]`
-   * landing pages). When set: the effective `categoryId` is always this value
+   * Fix the category to the one the route names (TASK-277 — `/categories/[slug]`
+   * landing pages). When set: the effective category is always this one
    * regardless of the URL query, the `CategoryChips` switcher row is not
    * rendered (the landing page has its own `SubcategoryChips` navigation), and
    * «скинути всі» clears every other filter but never un-locks the category.
    * When unset (`/products`), behavior is unchanged.
+   *
+   * Both halves are needed since TASK-420: the `slug` is what the listing query
+   * is filtered by, the `id` is what the id-addressed side endpoints (brands per
+   * category, filterable specs) take.
    */
-  lockedCategoryId?: string;
+  lockedCategory?: { id: string; slug: string };
 }
 
 const PAGE_SIZE = 20;
@@ -70,7 +75,7 @@ const ASIDE_SCROLL_BOX =
  */
 export function ProductListView({
   initialParams,
-  lockedCategoryId,
+  lockedCategory,
 }: ProductListViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -85,13 +90,14 @@ export function ProductListView({
   const pageRaw = searchParams.get("page");
 
   const params: ProductControllerFindAllParams = {
-    categoryId:
-      lockedCategoryId ??
-      searchParams.get("categoryId") ??
-      initialParams.categoryId,
-    brandId: searchParams.get("brandId") ?? initialParams.brandId,
-    deviceModelId:
-      searchParams.get("deviceModelId") ?? initialParams.deviceModelId,
+    // The three taxonomy axes ride the URL as SLUGS since TASK-420 —
+    // `?category=phone-cases&brand=apple&device=iphone-15`.
+    category:
+      lockedCategory?.slug ??
+      searchParams.get("category") ??
+      initialParams.category,
+    brand: searchParams.get("brand") ?? initialParams.brand,
+    device: searchParams.get("device") ?? initialParams.device,
     search: searchParams.get("search") ?? initialParams.search,
     sortBy: searchParams.get("sortBy") ?? initialParams.sortBy ?? "createdAt",
     sortOrder:
@@ -166,8 +172,8 @@ export function ProductListView({
   const clearFilters = useCallback(() => {
     // The category is fixed by the route on a landing page, not a clearable
     // filter — «скинути всі» drops everything else but never un-locks it.
-    applyFilters(clearFilterUpdates({ includeCategory: !lockedCategoryId }));
-  }, [applyFilters, lockedCategoryId]);
+    applyFilters(clearFilterUpdates({ includeCategory: !lockedCategory }));
+  }, [applyFilters, lockedCategory]);
 
   const buildPageHref = useCallback(
     (targetPage: number) => {
@@ -184,32 +190,40 @@ export function ProductListView({
   const { data: categoriesData } = useCategoryControllerGetCategoryTree();
   const categories = categoriesData?.data ?? [];
 
+  // Slug → id, once, for the id-addressed side endpoints (brands-per-category,
+  // filterable specs) that the TASK-420 URL migration did not touch. Resolved
+  // from the tree this widget already fetches, so it costs no extra request; on
+  // a landing page the route hands us the id directly and no lookup is needed.
+  const activeCategoryId =
+    lockedCategory?.id ??
+    (params.category
+      ? findCategoryNodeBySlug(categories, params.category)?.id
+      : undefined);
+
   // Active brands power both the sidebar «Виробник» select and the removable
-  // brand chip's label (id → name). One shared query, deduped by React Query.
+  // brand chip's label (slug → name). One shared query, deduped by React Query.
   // Same category scope the sidebar's BrandFilter uses (TASK-414) — one shared
   // query key, so the chip label resolves from the very slice the dropdown
   // offered rather than from a second, wider list.
   const { data: brandsData } = useBrandControllerFindAll(
-    params.categoryId ? { categoryId: params.categoryId } : undefined,
+    activeCategoryId ? { categoryId: activeCategoryId } : undefined,
   );
-  const activeBrandName = params.brandId
-    ? brandsData?.data.find((brand) => brand.id === params.brandId)?.name
+  const activeBrandName = params.brand
+    ? brandsData?.data.find((brand) => brand.slug === params.brand)?.name
     : undefined;
 
   return (
     <div>
-      {/* Category chips — horizontal, scrollable on mobile; drives ?categoryId=.
+      {/* Category chips — horizontal, scrollable on mobile; drives ?category=.
           Hidden when the category is locked by the route (/categories/[slug]):
           switching categories there is SubcategoryChips' navigation job. */}
-      {!lockedCategoryId && (
+      {!lockedCategory && (
         <CategoryChips
           categories={categories}
-          activeCategoryId={params.categoryId}
+          activeCategorySlug={params.category}
           // Changing (or clearing) the category also drops any spec facet — facet
           // options are category-scoped and meaningless without one (TASK-191).
-          onSelect={(categoryId) =>
-            applyFilters({ categoryId, specs: undefined })
-          }
+          onSelect={(category) => applyFilters({ category, specs: undefined })}
         />
       )}
 
@@ -253,6 +267,7 @@ export function ProductListView({
         >
           <ProductFilters
             currentParams={params}
+            categoryId={activeCategoryId}
             onFilterChange={applyFilters}
           />
         </aside>
@@ -285,6 +300,7 @@ export function ProductListView({
             <ProductFilters
               idPrefix="filter-m"
               currentParams={params}
+              categoryId={activeCategoryId}
               onFilterChange={applyFilters}
               collapsible
             />

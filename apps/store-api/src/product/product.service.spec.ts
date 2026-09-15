@@ -26,6 +26,11 @@ import {
 } from '../cache';
 import { ProductIndexer } from '../search/product-indexer';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
+import {
+  CatalogueFilterResolver,
+  UNRESOLVED_FILTER_ID,
+  UNRESOLVED_FILTER_KEY,
+} from '../catalog-filter/catalogue-filter.resolver';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -82,15 +87,28 @@ const productRepositoryMock = {
 // ─── CategoryRepository mock (TASK-236 subtree rollup) ────────────────────────
 // `findSubtreeIds` echoes back a single-element subtree by default; individual
 // tests override it to simulate a real parent → subcategory expansion.
+// `findById`/`findBySlug` back the REAL CatalogueFilterResolver (TASK-420) — the
+// service is wired to the genuine resolver here rather than a stub, so these
+// tests still exercise the slug → id step instead of asserting against a mock of
+// the very thing under test. Both echo the requested key back as a resolved row,
+// so an id filter passes through unchanged and the pre-TASK-420 expectations
+// hold; tests override them with `null` to exercise the unresolved path.
 const categoryRepositoryMock = {
   findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
+  findById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
+  findBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
 };
 
 // ─── BrandRepository mock (TASK-189 brand validation on create/update) ────────
 // `findById` resolves to a stub brand by default so create/update pass the
 // existence check; tests override it to null to simulate an unknown brand.
 const brandRepositoryMock = {
-  findById: jest.fn().mockResolvedValue({ id: 'brand-uuid-1', name: 'Spigen', slug: 'spigen' }),
+  findById: jest.fn((id: string) => Promise.resolve({ id, name: 'Spigen', slug: `slug-of-${id}` })),
+  // Backs the real CatalogueFilterResolver (TASK-420), same echo convention as
+  // the category mock above.
+  findBySlug: jest.fn((slug: string) =>
+    Promise.resolve({ id: `id-of-${slug}`, name: 'Spigen', slug }),
+  ),
 };
 
 // ─── Device compat mocks (TASK-190) ───────────────────────────────────────────
@@ -106,6 +124,10 @@ const deviceCompatRepositoryMock = {
 
 const deviceRepositoryMock = {
   findModelsByIds: jest.fn().mockResolvedValue([]),
+  // Backs the real CatalogueFilterResolver (TASK-420), same echo convention as
+  // the category mock above.
+  findModelById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
+  findModelBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
 };
 
 // ─── ProductSpecRepository / AttributeDefinitionRepository mocks (TASK-191) ────
@@ -169,11 +191,24 @@ describe('ProductService', () => {
     productIndexerMock.remove.mockResolvedValue(undefined);
     revalidationMock.revalidate.mockResolvedValue(undefined);
     categoryRepositoryMock.findSubtreeIds.mockImplementation((id: string) => Promise.resolve([id]));
-    brandRepositoryMock.findById.mockResolvedValue({
-      id: 'brand-uuid-1',
-      name: 'Spigen',
-      slug: 'spigen',
-    });
+    categoryRepositoryMock.findById.mockImplementation((id: string) =>
+      Promise.resolve({ id, slug: `slug-of-${id}` }),
+    );
+    categoryRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+      Promise.resolve({ id: `id-of-${slug}`, slug }),
+    );
+    brandRepositoryMock.findById.mockImplementation((id: string) =>
+      Promise.resolve({ id, name: 'Spigen', slug: `slug-of-${id}` }),
+    );
+    brandRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+      Promise.resolve({ id: `id-of-${slug}`, name: 'Spigen', slug }),
+    );
+    deviceRepositoryMock.findModelById.mockImplementation((id: string) =>
+      Promise.resolve({ id, slug: `slug-of-${id}` }),
+    );
+    deviceRepositoryMock.findModelBySlug.mockImplementation((slug: string) =>
+      Promise.resolve({ id: `id-of-${slug}`, slug }),
+    );
     deviceCompatRepositoryMock.getDeviceCompat.mockResolvedValue([]);
     deviceCompatRepositoryMock.getDeviceCompatByProductIds.mockResolvedValue(new Map());
     deviceCompatRepositoryMock.getDeviceModelIds.mockResolvedValue([]);
@@ -206,6 +241,10 @@ describe('ProductService', () => {
           useValue: attributeDefinitionRepositoryMock,
         },
         { provide: RevalidationNotifier, useValue: revalidationMock },
+        // The REAL resolver (TASK-420), wired to the repository mocks above —
+        // slug → id is part of what `findAll` promises, so stubbing it out would
+        // leave the promise untested.
+        CatalogueFilterResolver,
       ],
     }).compile();
 
@@ -343,6 +382,88 @@ describe('ProductService', () => {
           categoryIds: ['root-cat', 'child-cat', 'grandchild-cat'],
         }),
       );
+    });
+
+    // ─── TASK-420: slug-shaped catalogue filters ─────────────────────────────
+
+    it('resolves ?category/?brand/?device slugs to ids before touching the repository', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      categoryRepositoryMock.findBySlug.mockResolvedValue({
+        id: 'cat-uuid-7',
+        slug: 'phone-cases',
+      });
+      brandRepositoryMock.findBySlug.mockResolvedValue({
+        id: 'brand-uuid-7',
+        name: 'Apple',
+        slug: 'apple',
+      });
+      deviceRepositoryMock.findModelBySlug.mockResolvedValue({
+        id: 'model-uuid-7',
+        slug: 'iphone-15',
+      });
+
+      await service.findAll({
+        page: 1,
+        limit: 20,
+        category: 'phone-cases',
+        brand: 'apple',
+        device: 'iphone-15',
+      });
+
+      // A deactivated category must still be filterable — visibility is enforced
+      // by `categoryActiveOnly` downstream, not by hiding the id from the filter.
+      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('phone-cases', {
+        activeOnly: false,
+      });
+      expect(categoryRepositoryMock.findSubtreeIds).toHaveBeenCalledWith('cat-uuid-7');
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categoryIds: ['cat-uuid-7'],
+          brandId: 'brand-uuid-7',
+          deviceModelId: 'model-uuid-7',
+        }),
+      );
+    });
+
+    // The behaviour an unknown-but-well-formed `?categoryId=` has always had,
+    // extended to slugs: the filter is APPLIED and matches nothing. Never a 400
+    // (a dead link is not a client error), and never a silently WIDER listing —
+    // `/products?brand=typo` must not quietly render the whole catalogue.
+    it('applies an unknown slug as a filter that matches nothing, not as no filter', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      brandRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+
+      const result = await service.findAll({
+        page: 1,
+        limit: 20,
+        category: 'no-such-category',
+        brand: 'no-such-brand',
+      });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          brandId: UNRESOLVED_FILTER_ID,
+          categoryIds: [UNRESOLVED_FILTER_ID],
+        }),
+      );
+      expect(result.data).toEqual([]);
+    });
+
+    it('lets the slug win when a request carries both spellings of one axis', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      brandRepositoryMock.findBySlug.mockResolvedValue({
+        id: 'from-slug',
+        name: 'Apple',
+        slug: 'apple',
+      });
+
+      await service.findAll({ page: 1, limit: 20, brand: 'apple', brandId: 'from-uuid' });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ brandId: 'from-slug' }),
+      );
+      expect(brandRepositoryMock.findById).not.toHaveBeenCalled();
     });
 
     // TASK-230: the leak — a public caller asking for inactive products (or
@@ -1291,7 +1412,8 @@ describe('ProductService', () => {
       const expectedKey = buildProductListKey({
         page: 1,
         limit: 20,
-        categoryId: undefined,
+        // TASK-420: the taxonomy axes are keyed by SLUG now, absent here.
+        category: undefined,
         // TASK-230: public list keys always carry the forced active-only filter.
         isActive: true,
         minPrice: undefined,
@@ -1324,6 +1446,78 @@ describe('ProductService', () => {
 
       expect(filteredKey).toContain('inStock=true');
       expect(filteredKey).not.toBe(unfilteredKey);
+    });
+
+    // ─── TASK-420: slug filters, keyed on ONE canonical form ─────────────────
+
+    it('keys the taxonomy filters by SLUG, not by the id it resolved to', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({
+        page: 1,
+        limit: 20,
+        category: 'phone-cases',
+        brand: 'apple',
+        device: 'iphone-15',
+      });
+      const key = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(key).toContain('category=phone-cases');
+      expect(key).toContain('brand=apple');
+      expect(key).toContain('device=iphone-15');
+      // The resolved ids (`id-of-<slug>` from the echo mocks) must NOT leak in.
+      expect(key).not.toContain('id-of-');
+    });
+
+    // The whole point of "one canonical form": `?brand=apple` and the legacy
+    // `?brandId=<apple's uuid>` are the same listing. Two keys would mean two
+    // entries, each hit half as often — the TASK-541 class of bug, which is in
+    // the BACKLOG precisely because it is invisible from the outside.
+    it('maps the slug and the legacy uuid spelling of one filter onto ONE key', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      // One brand, addressed both ways: id `brand-uuid-9`, slug `slug-of-brand-uuid-9`.
+      brandRepositoryMock.findBySlug.mockResolvedValue({
+        id: 'brand-uuid-9',
+        name: 'Apple',
+        slug: 'slug-of-brand-uuid-9',
+      });
+
+      await service.findAll({ page: 1, limit: 20, brandId: 'brand-uuid-9' });
+      const byId = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      cacheServiceMock.get.mockClear();
+      await service.findAll({ page: 1, limit: 20, brand: 'slug-of-brand-uuid-9' });
+      const bySlug = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(bySlug).toBe(byId);
+      // …and both filter by the same id, so the shared entry is truthful.
+      expect(productRepositoryMock.findAll).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ brandId: 'brand-uuid-9' }),
+      );
+    });
+
+    it('collapses every unknown slug onto one key, distinct from the unfiltered list', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      brandRepositoryMock.findBySlug.mockResolvedValue(null);
+
+      await service.findAll({ page: 1, limit: 20, brand: 'no-such-brand' });
+      const firstMiss = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      cacheServiceMock.get.mockClear();
+      await service.findAll({ page: 1, limit: 20, brand: 'also-no-such-brand' });
+      const secondMiss = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      cacheServiceMock.get.mockClear();
+      await service.findAll({ page: 1, limit: 20 });
+      const unfiltered = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(secondMiss).toBe(firstMiss);
+      expect(firstMiss).toContain(`brand=${UNRESOLVED_FILTER_KEY}`);
+      expect(firstMiss).not.toBe(unfiltered);
     });
 
     it('keys the spec facets into the cache key', async () => {

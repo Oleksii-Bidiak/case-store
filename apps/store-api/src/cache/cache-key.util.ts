@@ -54,15 +54,31 @@ export function productDetailIdKey(id: string): string {
 /**
  * Subset of the product-list query parameters that influence the result set
  * and therefore the cache key. Declared locally so the cache layer stays
- * decoupled from `ProductRepository`; the structurally-identical
- * `FindAllParams` passes without an explicit import.
+ * decoupled from `ProductRepository`.
+ *
+ * The three taxonomy axes are keyed by SLUG, not by id (TASK-420). The API
+ * accepts both spellings — `?brand=apple` and the legacy `?brandId=<uuid>` —
+ * and they name the same result set, so they MUST map to one entry: keying on
+ * whichever the client happened to send would halve the hit rate of every
+ * filtered listing (the TASK-541 class of bug). `ProductService` therefore
+ * passes the canonical slug resolved by `CatalogueFilterResolver`, never the
+ * raw query value and never the id. An axis that resolved to nothing is keyed
+ * as `!unknown` — every dead value shares the one empty page's entry.
+ *
+ * `FindAllParams` is deliberately NOT structurally compatible any more: it
+ * carries `brandId`/`deviceModelId`, which these fields no longer accept, so a
+ * spread of it into this type is a compile error rather than a silently
+ * fragmented cache.
  */
 export interface ProductListKeyParams {
   page: number;
   limit: number;
-  categoryId?: string;
-  brandId?: string;
-  deviceModelId?: string;
+  /** Canonical category SLUG (not id) — see the note above. */
+  category?: string;
+  /** Canonical brand SLUG (not id). */
+  brand?: string;
+  /** Canonical device-model SLUG (not id). */
+  device?: string;
   isActive?: boolean;
   minPrice?: number;
   maxPrice?: number;
@@ -88,9 +104,9 @@ export interface ProductListKeyParams {
 const KEY_FIELDS: ReadonlyArray<keyof ProductListKeyParams> = [
   'page',
   'limit',
-  'categoryId',
-  'brandId',
-  'deviceModelId',
+  'category',
+  'brand',
+  'device',
   'isActive',
   'minPrice',
   'maxPrice',

@@ -47,6 +47,27 @@ export function findCategoryPathBySlug(
   return null;
 }
 
+/**
+ * Depth-first search of the category tree for a node by SLUG (TASK-420).
+ *
+ * The catalogue URL names its category by slug now, but the tree is also what
+ * resolves that slug to the id the id-addressed side endpoints still take
+ * (brands-per-category, filterable specs) — so this is the one lookup that
+ * bridges the two. Unlike {@link findCategoryPathBySlug} it returns just the
+ * node: callers that need the ancestor chain want the path version.
+ */
+export function findCategoryNodeBySlug(
+  nodes: CategoryTreeNodeEntity[],
+  slug: string,
+): CategoryTreeNodeEntity | null {
+  for (const node of nodes) {
+    if (node.slug === slug) return node;
+    const nested = findCategoryNodeBySlug(node.children ?? [], slug);
+    if (nested) return nested;
+  }
+  return null;
+}
+
 /** Depth-first search of the category tree for a node's display name by id. */
 export function findCategoryName(
   nodes: CategoryTreeNodeEntity[],
@@ -57,22 +78,23 @@ export function findCategoryName(
 
 /**
  * Build the catalog header (breadcrumb trail + title + subtitle) for the three
- * catalog modes: a specific category (`/products?categoryId=…` — the mid crumb
+ * catalog modes: a specific category (`/products?category=…` — the mid crumb
  * links to the categories hub, the last crumb is the category name), an
  * in-catalog keyword search (`/products?search=…`), or the unfiltered listing.
  */
 export function buildCatalogHeader({
-  categoryId,
+  categorySlug,
   categoryName,
   search,
 }: {
-  categoryId?: string;
+  /** The `?category=` slug (TASK-420), not an id. */
+  categorySlug?: string;
   categoryName: string | null;
   search?: string;
 }): CatalogHeader {
   const home: Crumb = { name: dict.catalog.breadcrumbHome, href: "/" };
 
-  if (categoryId) {
+  if (categorySlug) {
     const name = categoryName ?? dict.catalog.categoryFallback;
     return {
       trail: [
@@ -82,7 +104,7 @@ export function buildCatalogHeader({
       ],
       title: name,
       subtitle: dict.catalog.categorySubtitle(name),
-      currentPath: `/products?categoryId=${categoryId}`,
+      currentPath: `/products?category=${encodeURIComponent(categorySlug)}`,
     };
   }
 

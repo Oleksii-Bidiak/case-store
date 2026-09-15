@@ -11,15 +11,16 @@ interface CategoryChipsProps {
    * row of that root's direct children is revealed (TASK-236).
    */
   categories: CategoryTreeNodeEntity[];
-  /** Currently selected category id (from `?categoryId=`), if any. */
-  activeCategoryId?: string;
+  /** Currently selected category SLUG (from `?category=`), if any (TASK-420). */
+  activeCategorySlug?: string;
   /**
    * Select a category (`undefined` = all categories). The caller writes the
-   * choice to the `?categoryId=` URL param — the same catalog URL contract the
-   * old sidebar control used. A child id is written exactly like a root id, so
-   * the single-id URL contract (TASK-216) is unchanged.
+   * choice to the `?category=` URL param — a SLUG since TASK-420, so a shared
+   * catalogue link reads `?category=phone-cases` and the API resolves it. A
+   * child slug is written exactly like a root one, so the single-value URL
+   * contract (TASK-216) is unchanged.
    */
-  onSelect: (categoryId: string | undefined) => void;
+  onSelect: (categorySlug: string | undefined) => void;
 }
 
 const chipBase =
@@ -42,7 +43,7 @@ const chipIdle =
  */
 export function CategoryChips({
   categories,
-  activeCategoryId,
+  activeCategorySlug,
   onSelect,
 }: CategoryChipsProps) {
   if (categories.length === 0) {
@@ -51,11 +52,11 @@ export function CategoryChips({
 
   // The root whose subtree is currently in focus: either it is directly
   // selected, or one of its direct children is. Drives the second-row reveal.
-  const activeRoot = activeCategoryId
+  const activeRoot = activeCategorySlug
     ? categories.find(
         (root) =>
-          root.id === activeCategoryId ||
-          root.children.some((child) => child.id === activeCategoryId),
+          root.slug === activeCategorySlug ||
+          root.children.some((child) => child.slug === activeCategorySlug),
       )
     : undefined;
 
@@ -70,20 +71,20 @@ export function CategoryChips({
       >
         <button
           type="button"
-          aria-pressed={!activeCategoryId}
+          aria-pressed={!activeCategorySlug}
           onClick={() => onSelect(undefined)}
-          className={`${chipBase} ${!activeCategoryId ? chipActive : chipIdle}`}
+          className={`${chipBase} ${!activeCategorySlug ? chipActive : chipIdle}`}
         >
           {dict.filters.allCategories}
         </button>
         {categories.map((category) => {
-          const active = category.id === activeCategoryId;
+          const active = category.slug === activeCategorySlug;
           return (
             <button
               key={category.id}
               type="button"
               aria-pressed={active}
-              onClick={() => onSelect(active ? undefined : category.id)}
+              onClick={() => onSelect(active ? undefined : category.slug)}
               className={`${chipBase} ${active ? chipActive : chipIdle}`}
             >
               {category.name}
@@ -99,13 +100,13 @@ export function CategoryChips({
           className="flex items-center gap-2 overflow-x-auto pb-1 pl-1"
         >
           {subcategories.map((child) => {
-            const active = child.id === activeCategoryId;
+            const active = child.slug === activeCategorySlug;
             return (
               <button
                 key={child.id}
                 type="button"
                 aria-pressed={active}
-                onClick={() => onSelect(active ? undefined : child.id)}
+                onClick={() => onSelect(active ? undefined : child.slug)}
                 className={`${chipBase} ${active ? chipActive : chipIdle}`}
               >
                 {child.name}

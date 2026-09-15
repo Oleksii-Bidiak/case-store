@@ -11,9 +11,9 @@ import { clearFilterUpdates } from "../model/active-filters";
 interface ActiveFilterChipsProps {
   currentParams: ProductControllerFindAllParams;
   /**
-   * Display name for the active brand (`?brandId=`), resolved by the parent from
+   * Display name for the active brand (`?brand=`), resolved by the parent from
    * the brand list. When absent the brand chip is not rendered even if a
-   * `brandId` is set (e.g. the list is still loading).
+   * `brand` slug is set (e.g. the list is still loading).
    */
   brandName?: string;
   onFilterChange: (updates: Record<string, string | undefined>) => void;
@@ -34,11 +34,12 @@ export function ActiveFilterChips({
 }: ActiveFilterChipsProps) {
   // Resolve the selected device model's name for its chip label (TASK-190).
   // Only fires when a device filter is active.
-  const deviceModelId = currentParams.deviceModelId;
+  // Keyed by SLUG since TASK-420 — `?device=iphone-15`.
+  const deviceSlug = currentParams.device;
   const { data: modelsData } = useDeviceControllerFindModels(undefined, {
-    query: { enabled: Boolean(deviceModelId) },
+    query: { enabled: Boolean(deviceSlug) },
   });
-  const deviceModel = modelsData?.data.find((m) => m.id === deviceModelId);
+  const deviceModel = modelsData?.data.find((m) => m.slug === deviceSlug);
 
   const chips: {
     key: string;
@@ -56,11 +57,11 @@ export function ActiveFilterChips({
     });
   }
 
-  if (currentParams.brandId && brandName) {
+  if (currentParams.brand && brandName) {
     chips.push({
-      key: "brandId",
+      key: "brand",
       label: `${dict.filters.brandTitle}: ${brandName}`,
-      clear: () => onFilterChange({ brandId: undefined }),
+      clear: () => onFilterChange({ brand: undefined }),
     });
   }
 
@@ -80,11 +81,11 @@ export function ActiveFilterChips({
     });
   }
 
-  if (deviceModelId) {
+  if (deviceSlug) {
     chips.push({
-      key: "deviceModelId",
+      key: "device",
       label: `${dict.filters.deviceLabel}: ${deviceModel?.name ?? "…"}`,
-      clear: () => onFilterChange({ deviceModelId: undefined }),
+      clear: () => onFilterChange({ device: undefined }),
     });
   }
 
@@ -149,7 +150,7 @@ export function ActiveFilterChips({
       <button
         type="button"
         // The full set, from the one shared definition (TASK-414). On a locked
-        // category landing page `categoryId` is not in the URL query at all, so
+        // category landing page `category` is not in the URL query at all, so
         // clearing it there is a harmless no-op — the route keeps the category.
         onClick={() => onFilterChange(clearFilterUpdates())}
         className="text-[13.5px] font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"

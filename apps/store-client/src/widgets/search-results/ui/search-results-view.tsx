@@ -46,8 +46,10 @@ interface SearchResultsViewProps {
 
 /** The facets `/search` narrows by — the subset of the panel the API accepts. */
 interface SearchFacets {
-  brandId?: string;
-  deviceModelId?: string;
+  /** Brand SLUG — `?brand=apple` (TASK-420). */
+  brand?: string;
+  /** Device-model SLUG — `?device=iphone-15` (TASK-420). */
+  device?: string;
   inStock?: true;
   minPrice?: number;
   maxPrice?: number;
@@ -92,8 +94,8 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
   const minPriceRaw = searchParams.get("minPrice");
   const maxPriceRaw = searchParams.get("maxPrice");
   const facets: SearchFacets = {
-    brandId: searchParams.get("brandId") ?? undefined,
-    deviceModelId: searchParams.get("deviceModelId") ?? undefined,
+    brand: searchParams.get("brand") ?? undefined,
+    device: searchParams.get("device") ?? undefined,
     // Only the literal "true" turns availability on — "false" means "no filter",
     // which is also what the API's own boolean transform does with it.
     inStock: searchParams.get("inStock") === "true" ? true : undefined,
@@ -112,8 +114,8 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
   // editing it there edits `?q=` (see `applyFilters`).
   const panelParams: ProductControllerFindAllParams = {
     search: trimmed,
-    brandId: facets.brandId,
-    deviceModelId: facets.deviceModelId,
+    brand: facets.brand,
+    device: facets.device,
     minPrice: facets.minPrice,
     maxPrice: facets.maxPrice,
     inStock: facets.inStock,

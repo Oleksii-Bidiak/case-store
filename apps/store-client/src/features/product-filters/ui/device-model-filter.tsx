@@ -26,10 +26,10 @@ const t = dict.filters;
 const ANY_DEVICE = "__any_device__";
 
 interface DeviceModelFilterProps {
-  /** Currently-selected device model id (from the URL), or undefined. */
-  currentDeviceModelId?: string;
-  /** Write the chosen model id (or `undefined` to clear) back to the URL. */
-  onChange: (deviceModelId: string | undefined) => void;
+  /** Currently-selected device model SLUG (from `?device=`), or undefined. */
+  currentDeviceModelSlug?: string;
+  /** Write the chosen model SLUG (or `undefined` to clear) back to the URL. */
+  onChange: (deviceModelSlug: string | undefined) => void;
   /**
    * Prefix for the DOM ids of the two selects. The filter panel renders twice
    * (desktop aside + mobile drawer), so each instance needs a distinct prefix to
@@ -40,14 +40,17 @@ interface DeviceModelFilterProps {
 
 /**
  * DeviceModelFilter — the catalog "Сумісний пристрій" control (TASK-190): a
- * brand → model cascade, URL-synced via `?deviceModelId=`. Fetches every active
- * model once so it can (a) scope the model dropdown to the chosen brand and
- * (b) resolve the brand of a model already selected in the URL, without a second
- * request per brand switch. The selects are not focus-sensitive text inputs, so
- * the URL-derived selection can drive them directly.
+ * brand → model cascade, URL-synced via `?device=<slug>` (TASK-420). Fetches
+ * every active model once so it can (a) scope the model dropdown to the chosen
+ * brand and (b) resolve the brand of a model already selected in the URL,
+ * without a second request per brand switch. The selects are not focus-sensitive
+ * text inputs, so the URL-derived selection can drive them directly.
+ *
+ * Only the MODEL half is a URL param, so only it speaks slugs; the device-brand
+ * select is local cascade state and stays keyed by id.
  */
 export function DeviceModelFilter({
-  currentDeviceModelId,
+  currentDeviceModelSlug,
   onChange,
   idPrefix = "filter",
 }: DeviceModelFilterProps) {
@@ -58,7 +61,7 @@ export function DeviceModelFilter({
   const { data: modelsData } = useDeviceControllerFindModels();
   const models = modelsData?.data ?? [];
 
-  const selectedModel = models.find((m) => m.id === currentDeviceModelId);
+  const selectedModel = models.find((m) => m.slug === currentDeviceModelSlug);
 
   // Local brand override lets the user browse a brand before picking a model;
   // otherwise the brand is derived from the model selected in the URL.
@@ -82,8 +85,10 @@ export function DeviceModelFilter({
     }
   }
 
-  function handleModelChange(nextModelId: string) {
-    onChange(nextModelId === ANY_DEVICE ? undefined : nextModelId || undefined);
+  function handleModelChange(nextModelSlug: string) {
+    onChange(
+      nextModelSlug === ANY_DEVICE ? undefined : nextModelSlug || undefined,
+    );
   }
 
   return (
@@ -110,7 +115,7 @@ export function DeviceModelFilter({
       </Select>
 
       <Select
-        value={currentDeviceModelId ?? ANY_DEVICE}
+        value={currentDeviceModelSlug ?? ANY_DEVICE}
         onValueChange={handleModelChange}
         disabled={!brandId}
       >
@@ -124,7 +129,7 @@ export function DeviceModelFilter({
         <SelectContent>
           <SelectItem value={ANY_DEVICE}>{t.deviceAnyOption}</SelectItem>
           {brandModels.map((m) => (
-            <SelectItem key={m.id} value={m.id}>
+            <SelectItem key={m.id} value={m.slug}>
               {m.name}
             </SelectItem>
           ))}

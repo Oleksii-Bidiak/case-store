@@ -9,6 +9,13 @@ import { BlogRepository } from '../blog/blog.repository';
 // form a module cycle, and routing these through the barrels would make the emitted
 // design:paramtypes of SearchService's CategoryRepository resolve to `Object` at runtime.
 import { CategoryModule } from '../category/category.module';
+// Same rule as ProductRepository: BrandRepository and DeviceRepository are
+// stateless Prisma wrappers, so the slug → id resolver's two extra dependencies
+// are provided module-locally rather than by importing BrandModule/DeviceModule
+// — no new edge into the CategoryModule ↔ SearchModule forwardRef cycle.
+import { BrandRepository } from '../brand/brand.repository';
+import { DeviceRepository } from '../device/device.repository';
+import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import { SlugRedirectModule } from '../slug-redirect';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 import { MeiliClient } from './meili.client';
@@ -44,6 +51,9 @@ import { AdminSearchController } from './admin-search.controller';
     MeiliClient,
     SearchService,
     ProductRepository,
+    BrandRepository,
+    DeviceRepository,
+    CatalogueFilterResolver,
     BlogRepository,
     BlogSearchService,
     { provide: ProductIndexer, useClass: SearchProductIndexer },

@@ -187,7 +187,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
           <div className="flex flex-col gap-1.5">
             {product.brand && (
               <Link
-                href={`/products?brandId=${product.brand.id}`}
+                href={`/products?brand=${encodeURIComponent(product.brand.slug)}`}
                 className="text-sm font-semibold text-primary no-underline transition-colors hover:text-primary/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {product.brand.name}

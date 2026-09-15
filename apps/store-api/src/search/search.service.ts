@@ -5,8 +5,9 @@ import { CategoryRepository } from '../category/category.repository';
 import { PublicProductEntity } from '../product/entities';
 import { MeiliClient, ProductSearchDocument, IndexSettings } from './meili.client';
 import { UA_EN_SYNONYMS, extractSearchSynonymTerms } from './search-synonyms';
+import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import { SearchSuggestionEntity } from './entities';
-import type { SearchSort } from './dto';
+import type { SearchQueryDto, SearchSort } from './dto';
 
 /** Default page size for the `/search` results grid. */
 export const DEFAULT_SEARCH_LIMIT = 20;
@@ -141,8 +142,32 @@ export class SearchService implements OnModuleInit {
     private readonly productRepository: ProductRepository,
     private readonly categoryRepository: CategoryRepository,
     private readonly logger: PinoLogger,
+    private readonly catalogueFilters: CatalogueFilterResolver,
   ) {
     this.logger.setContext(SearchService.name);
+  }
+
+  /**
+   * The controller's entry point: run a results-page query straight from its
+   * validated DTO (TASK-420).
+   *
+   * The slug → id step lives here rather than in the controller because it IS
+   * business logic — it decides what an unknown `?brand=` means (an empty page,
+   * not a 400) — and because `/search` and the catalogue must answer that
+   * question identically. {@link search} itself keeps taking ids, so every
+   * internal caller and every existing test is unaffected.
+   */
+  async searchFromQuery(query: SearchQueryDto): Promise<SearchResults> {
+    const filters = await this.catalogueFilters.resolve(query);
+    return this.search(query.q ?? '', query.page ?? 1, query.limit ?? DEFAULT_SEARCH_LIMIT, {
+      categoryId: filters.categoryId,
+      brandId: filters.brandId,
+      deviceModelId: filters.deviceModelId,
+      inStock: query.inStock,
+      minPrice: query.minPrice,
+      maxPrice: query.maxPrice,
+      sort: query.sort,
+    });
   }
 
   /** Bootstrap: ensure the index + settings, then best-effort self-populate. */

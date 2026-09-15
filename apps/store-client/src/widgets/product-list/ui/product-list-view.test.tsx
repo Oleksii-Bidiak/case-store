@@ -109,9 +109,9 @@ beforeEach(() => {
 });
 
 describe("ProductListView — unlocked (/products, unchanged behavior)", () => {
-  it("renders the category chips row and follows ?categoryId= from the URL", async () => {
+  it("renders the category chips row and follows ?category= from the URL", async () => {
     const productRequests = installCatalogHandlers();
-    currentQuery = "categoryId=cat-other";
+    currentQuery = "category=chargers";
 
     renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
 
@@ -119,13 +119,15 @@ describe("ProductListView — unlocked (/products, unchanged behavior)", () => {
     expect(
       screen.getByRole("group", { name: dict.filters.categoryChipsAria }),
     ).toBeInTheDocument();
-    expect(productRequests.at(-1)?.searchParams.get("categoryId")).toBe(
-      "cat-other",
+    // TASK-420: the listing is filtered by the SLUG, and no uuid rides along.
+    expect(productRequests.at(-1)?.searchParams.get("category")).toBe(
+      "chargers",
     );
+    expect(productRequests.at(-1)?.searchParams.has("categoryId")).toBe(false);
   });
 });
 
-describe("ProductListView — lockedCategoryId (/categories/[slug], TASK-277)", () => {
+describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", () => {
   it("hides the category chips row and queries the locked category", async () => {
     const productRequests = installCatalogHandlers();
     currentPathname = "/categories/cases";
@@ -133,7 +135,7 @@ describe("ProductListView — lockedCategoryId (/categories/[slug], TASK-277)", 
     renderWithProviders(
       <ProductListView
         initialParams={{ page: 1 }}
-        lockedCategoryId="cat-locked"
+        lockedCategory={{ id: "cat-locked", slug: "cases" }}
       />,
     );
 
@@ -141,26 +143,24 @@ describe("ProductListView — lockedCategoryId (/categories/[slug], TASK-277)", 
     expect(
       screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
     ).not.toBeInTheDocument();
-    expect(productRequests.at(-1)?.searchParams.get("categoryId")).toBe(
-      "cat-locked",
-    );
+    expect(productRequests.at(-1)?.searchParams.get("category")).toBe("cases");
   });
 
-  it("keeps the locked category when other filters are present — even a stray ?categoryId= never overrides the lock", async () => {
+  it("keeps the locked category when other filters are present — even a stray ?category= never overrides the lock", async () => {
     const productRequests = installCatalogHandlers();
     currentPathname = "/categories/cases";
-    currentQuery = "categoryId=cat-other&minPrice=100";
+    currentQuery = "category=chargers&minPrice=100";
 
     renderWithProviders(
       <ProductListView
         initialParams={{ page: 1 }}
-        lockedCategoryId="cat-locked"
+        lockedCategory={{ id: "cat-locked", slug: "cases" }}
       />,
     );
 
     await screen.findByText("Alpha Case");
     const lastRequest = productRequests.at(-1)!;
-    expect(lastRequest.searchParams.get("categoryId")).toBe("cat-locked");
+    expect(lastRequest.searchParams.get("category")).toBe("cases");
     expect(lastRequest.searchParams.get("minPrice")).toBe("100");
   });
 
@@ -173,7 +173,7 @@ describe("ProductListView — lockedCategoryId (/categories/[slug], TASK-277)", 
     renderWithProviders(
       <ProductListView
         initialParams={{ page: 1 }}
-        lockedCategoryId="cat-locked"
+        lockedCategory={{ id: "cat-locked", slug: "cases" }}
       />,
     );
 
@@ -186,10 +186,10 @@ describe("ProductListView — lockedCategoryId (/categories/[slug], TASK-277)", 
     const [path, query] = target.split("?");
     const params = new URLSearchParams(query);
     // Stays on the landing page, drops the price filter, and — because the
-    // category lives in the route, not the URL query — writes no categoryId.
+    // category lives in the route, not the URL query — writes no category param.
     expect(path).toBe("/categories/cases");
     expect(params.get("minPrice")).toBeNull();
-    expect(params.has("categoryId")).toBe(false);
+    expect(params.has("category")).toBe(false);
   });
 });
 
@@ -227,7 +227,7 @@ describe("ProductListView — filters (TASK-414)", () => {
     const user = userEvent.setup();
     installCatalogHandlers({ empty: true });
     currentQuery =
-      "search=чохол&categoryId=cat-other&brandId=b1&deviceModelId=m1" +
+      "search=чохол&category=chargers&brand=apple&device=iphone-15" +
       "&minPrice=100&maxPrice=900&specs=material%3AСилікон&inStock=true";
 
     renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
@@ -250,9 +250,9 @@ describe("ProductListView — filters (TASK-414)", () => {
     const params = new URLSearchParams(target.split("?")[1]);
     for (const key of [
       "search",
-      "categoryId",
-      "brandId",
-      "deviceModelId",
+      "category",
+      "brand",
+      "device",
       "minPrice",
       "maxPrice",
       "specs",
@@ -277,7 +277,10 @@ describe("ProductListView — filters (TASK-414)", () => {
     );
   });
 
-  it("scopes the brand query to the active category", async () => {
+  // TASK-420: the URL names the category by SLUG, but `GET /brands` is still
+  // id-addressed — the widget resolves the one from the other through the
+  // category tree it already holds, so the scoping survives the migration.
+  it("scopes the brand query to the active category, resolving its id from the slug", async () => {
     const brandRequests: URL[] = [];
     installCatalogHandlers();
     server.use(
@@ -286,7 +289,7 @@ describe("ProductListView — filters (TASK-414)", () => {
         return HttpResponse.json({ data: [] });
       }),
     );
-    currentQuery = "categoryId=cat-other";
+    currentQuery = "category=chargers";
 
     renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
 

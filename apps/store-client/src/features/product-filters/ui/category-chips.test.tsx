@@ -4,16 +4,22 @@ import { dict } from "@/shared/config";
 import type { CategoryTreeNodeEntity } from "@/entities/category";
 import { CategoryChips } from "./category-chips";
 
-/** Build a tree node; leaf nodes have an empty `children` array. */
+/**
+ * Build a tree node; leaf nodes have an empty `children` array.
+ *
+ * The id is deliberately NOT the slug (TASK-420): the chips row is addressed by
+ * slug now, and a fixture where the two coincide would pass just as happily if
+ * the component went back to reading ids.
+ */
 function node(
-  id: string,
+  slug: string,
   name: string,
   children: CategoryTreeNodeEntity[] = [],
 ): CategoryTreeNodeEntity {
   return {
-    id,
+    id: `${slug}-uuid`,
     name,
-    slug: name.toLowerCase().replace(/\s+/g, "-"),
+    slug,
     description: null,
     image: null,
     isActive: true,
@@ -32,16 +38,16 @@ const TREE: CategoryTreeNodeEntity[] = [
 ];
 
 /**
- * Mirrors the real URL round-trip: the id CategoryChips emits via `onSelect` is
- * fed straight back as `activeCategoryId`, exactly as `router.replace` →
- * `?categoryId=` → `params.categoryId` does in production.
+ * Mirrors the real URL round-trip: the slug CategoryChips emits via `onSelect`
+ * is fed straight back as `activeCategorySlug`, exactly as `router.replace` →
+ * `?category=` → `params.category` does in production (TASK-420).
  */
 function Harness({ initial }: { initial?: string }) {
   const [active, setActive] = useState<string | undefined>(initial);
   return (
     <CategoryChips
       categories={TREE}
-      activeCategoryId={active}
+      activeCategorySlug={active}
       onSelect={setActive}
     />
   );
@@ -73,7 +79,7 @@ describe("CategoryChips — two-level disclosure (TASK-236)", () => {
     ).toBeInTheDocument();
   });
 
-  it("selecting a child marks it pressed and keeps the row open (child id in URL)", async () => {
+  it("selecting a child marks it pressed and keeps the row open (child slug in URL)", async () => {
     renderWithProviders(<Harness />);
 
     await userEvent.click(screen.getByRole("button", { name: "Чохли" }));

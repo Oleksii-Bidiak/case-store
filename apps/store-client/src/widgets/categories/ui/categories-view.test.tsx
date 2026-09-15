@@ -87,7 +87,8 @@ describe("CategoriesView", () => {
     expect(screen.getByText(dict.categories.brandsHeading)).toBeInTheDocument();
     expect(await screen.findByRole("link", { name: "Spigen" })).toHaveAttribute(
       "href",
-      "/products?brandId=b1",
+      // TASK-420 — the catalogue is addressed by slug.
+      "/products?brand=spigen",
     );
   });
 

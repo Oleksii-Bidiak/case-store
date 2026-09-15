@@ -277,7 +277,7 @@ describe("ProductFilters — availability + reset (TASK-414)", () => {
   it("hides the reset button when only the category (owned by the chips row) is set", () => {
     renderWithProviders(
       <ProductFilters
-        currentParams={{ categoryId: "cat-1" }}
+        currentParams={{ category: "phone-cases" }}
         onFilterChange={jest.fn()}
       />,
     );
@@ -294,10 +294,10 @@ describe("ProductFilters — availability + reset (TASK-414)", () => {
     renderWithProviders(
       <ProductFilters
         currentParams={{
-          categoryId: "cat-1",
+          category: "phone-cases",
           search: "чохол",
-          brandId: "brand-1",
-          deviceModelId: "model-1",
+          brand: "apple",
+          device: "iphone-15",
           minPrice: 100,
           maxPrice: 900,
           specs: "material:Силікон",
@@ -314,14 +314,14 @@ describe("ProductFilters — availability + reset (TASK-414)", () => {
     const updates = onFilterChange.mock.calls.at(-1)![0];
     expect(updates).toEqual({
       search: undefined,
-      brandId: undefined,
-      deviceModelId: undefined,
+      brand: undefined,
+      device: undefined,
       minPrice: undefined,
       maxPrice: undefined,
       specs: undefined,
       inStock: undefined,
     });
     // The category's control is the chips row / the route, not this panel.
-    expect("categoryId" in updates).toBe(false);
+    expect("category" in updates).toBe(false);
   });
 });

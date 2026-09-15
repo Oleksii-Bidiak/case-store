@@ -2053,10 +2053,40 @@
             }
           },
           {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to a category by SLUG (TASK-420). Rolls up the whole subtree (a parent also matches products filed in its subcategories), exactly like the catalogue listing. An unknown slug matches nothing rather than widening the results.",
+            "schema": {
+              "example": "phone-cases",
+              "type": "string"
+            }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to one manufacturer by SLUG (TASK-420).",
+            "schema": {
+              "example": "apple",
+              "type": "string"
+            }
+          },
+          {
+            "name": "device",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to products compatible with one device model, by SLUG (TASK-420).",
+            "schema": {
+              "example": "iphone-15",
+              "type": "string"
+            }
+          },
+          {
             "name": "categoryId",
             "required": false,
             "in": "query",
-            "description": "Narrow to a category. Rolls up the whole subtree (a parent id also matches products filed in its subcategories), exactly like the catalogue listing.",
+            "description": "Narrow to a category by id. LEGACY since TASK-420 (`?category=<slug>` is the canonical form and the results page 308-redirects this away); still accepted so live links keep working.",
             "schema": {
               "example": "c1a2b3c4-0000-4000-8000-000000000000",
               "type": "string"
@@ -2066,7 +2096,7 @@
             "name": "brandId",
             "required": false,
             "in": "query",
-            "description": "Narrow to one manufacturer (brand id).",
+            "description": "Narrow to one manufacturer (brand id). LEGACY — see `categoryId`.",
             "schema": {
               "type": "string"
             }
@@ -2075,7 +2105,7 @@
             "name": "deviceModelId",
             "required": false,
             "in": "query",
-            "description": "Narrow to products compatible with one device model.",
+            "description": "Narrow to products compatible with one device model. LEGACY — see `categoryId`.",
             "schema": {
               "type": "string"
             }
@@ -2238,10 +2268,40 @@
             }
           },
           {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "Filter by category SLUG — the canonical storefront form since TASK-420 (`?category=phone-cases` rather than a uuid). Resolved to an id in the service; a slug that names nothing applies the filter and matches nothing (an empty 200 page), it is never a 400 and never silently widens the list. Wins over the legacy `categoryId` if both are sent.",
+            "schema": {
+              "example": "phone-cases",
+              "type": "string"
+            }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Filter by brand (manufacturer) SLUG — `?brand=apple` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `brandId`.",
+            "schema": {
+              "example": "apple",
+              "type": "string"
+            }
+          },
+          {
+            "name": "device",
+            "required": false,
+            "in": "query",
+            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `deviceModelId`.",
+            "schema": {
+              "example": "iphone-15",
+              "type": "string"
+            }
+          },
+          {
             "name": "categoryId",
             "required": false,
             "in": "query",
-            "description": "Filter by category ID",
+            "description": "Filter by category ID. LEGACY since TASK-420 — the storefront sends `?category=<slug>` and 308-redirects these away. Still valid input: the admin panel binds this same DTO and addresses categories by id.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2251,7 +2311,7 @@
             "name": "brandId",
             "required": false,
             "in": "query",
-            "description": "Filter by brand (manufacturer) ID",
+            "description": "Filter by brand (manufacturer) ID. LEGACY since TASK-420 — see `categoryId`.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2261,7 +2321,7 @@
             "name": "deviceModelId",
             "required": false,
             "in": "query",
-            "description": "Filter by compatible device model ID (TASK-190)",
+            "description": "Filter by compatible device model ID (TASK-190). LEGACY since TASK-420 — see `categoryId`.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2466,10 +2526,40 @@
             }
           },
           {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "Filter by category SLUG — the canonical storefront form since TASK-420 (`?category=phone-cases` rather than a uuid). Resolved to an id in the service; a slug that names nothing applies the filter and matches nothing (an empty 200 page), it is never a 400 and never silently widens the list. Wins over the legacy `categoryId` if both are sent.",
+            "schema": {
+              "example": "phone-cases",
+              "type": "string"
+            }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Filter by brand (manufacturer) SLUG — `?brand=apple` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `brandId`.",
+            "schema": {
+              "example": "apple",
+              "type": "string"
+            }
+          },
+          {
+            "name": "device",
+            "required": false,
+            "in": "query",
+            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `deviceModelId`.",
+            "schema": {
+              "example": "iphone-15",
+              "type": "string"
+            }
+          },
+          {
             "name": "categoryId",
             "required": false,
             "in": "query",
-            "description": "Filter by category ID",
+            "description": "Filter by category ID. LEGACY since TASK-420 — the storefront sends `?category=<slug>` and 308-redirects these away. Still valid input: the admin panel binds this same DTO and addresses categories by id.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2479,7 +2569,7 @@
             "name": "brandId",
             "required": false,
             "in": "query",
-            "description": "Filter by brand (manufacturer) ID",
+            "description": "Filter by brand (manufacturer) ID. LEGACY since TASK-420 — see `categoryId`.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2489,7 +2579,7 @@
             "name": "deviceModelId",
             "required": false,
             "in": "query",
-            "description": "Filter by compatible device model ID (TASK-190)",
+            "description": "Filter by compatible device model ID (TASK-190). LEGACY since TASK-420 — see `categoryId`.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"

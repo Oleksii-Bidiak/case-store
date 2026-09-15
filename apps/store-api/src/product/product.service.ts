@@ -40,6 +40,10 @@ import {
 // Direct file import: the `../cache` barrel is outside this change's file scope,
 // so the brand-list prefix is taken from the module it is declared in.
 import { BRAND_LIST_PREFIX } from '../cache/cache-key.util';
+import {
+  CatalogueFilterResolver,
+  type ResolvedCatalogueFilters,
+} from '../catalog-filter/catalogue-filter.resolver';
 import { ProductIndexer } from '../search/product-indexer';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
@@ -121,6 +125,7 @@ export class ProductService {
     private readonly specRepository: ProductSpecRepository,
     private readonly attributeDefinitionRepository: AttributeDefinitionRepository,
     private readonly revalidation: RevalidationNotifier,
+    private readonly catalogueFilters: CatalogueFilterResolver,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -137,15 +142,29 @@ export class ProductService {
    * Cache-aside: a cache hit skips the database entirely.
    */
   async findAll(query: ProductListQueryDto): Promise<PaginatedProductsResponse> {
-    const listParams = this.toListParams(query);
+    // Slug → id, once, before anything else (TASK-420). At most three indexed
+    // point lookups, and none at all on the unfiltered listing — the hot path is
+    // unchanged. It cannot be deferred past the cache read: the key is keyed on
+    // the canonical SLUG of each axis, which is exactly what this produces.
+    const filters = await this.catalogueFilters.resolve(query);
+    const listParams = this.toListParams(query, filters);
 
-    // The cache key stays keyed on the SINGLE requested `categoryId` (not the
-    // expanded subtree list) so it is stable and computed before any DB work —
-    // a hit skips the subtree resolution entirely.
+    // The cache key stays keyed on the SINGLE requested category (not the
+    // expanded subtree list) so it is stable and cheap — a hit still skips the
+    // subtree resolution, the listing query and the hydration entirely.
     const cacheKey = buildProductListKey({
-      ...listParams,
-      categoryId: query.categoryId,
-      deviceModelId: query.deviceModelId,
+      page: listParams.page,
+      limit: listParams.limit,
+      // ONE canonical spelling per axis (TASK-420): the slug the resolver read
+      // back, never the raw query value. `?brand=apple` and the legacy
+      // `?brandId=<apple's uuid>` are the same listing and must share the one
+      // entry, or every filtered page is cached twice and hit half as often.
+      category: filters.categoryKey,
+      brand: filters.brandKey,
+      device: filters.deviceKey,
+      minPrice: listParams.minPrice,
+      maxPrice: listParams.maxPrice,
+      search: listParams.search,
       // Key on what was actually APPLIED, not on what was typed: re-serializing
       // the parsed facets drops malformed chunks and anything past the caps, so
       // an ignored value can never fragment the key from an equivalent request.
@@ -157,6 +176,8 @@ export class ProductService {
       // unlike `outOfStock` it cannot be forced off, and it must be in the key.
       onSale: listParams.onSale,
       inStock: listParams.inStock,
+      sortBy: listParams.sortBy,
+      sortOrder: listParams.sortOrder,
       isActive: true,
     });
     const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
@@ -188,7 +209,7 @@ export class ProductService {
       // about it — honouring `?deleted=true` publicly would serve a page of
       // withdrawn products from, and into, the unfiltered listing's cache entry.
       deleted: undefined,
-      categoryIds: await this.resolveSubtreeIds(query.categoryId),
+      categoryIds: await this.resolveSubtreeIds(filters.categoryId),
     };
     const response = await this.listFromDb(params);
 
@@ -215,9 +236,13 @@ export class ProductService {
    * INSTEAD of the live ones, never mixed in.
    */
   async adminFindAll(query: ProductListQueryDto): Promise<AdminPaginatedProductsResponse> {
+    // The admin table addresses categories/brands/devices by id, but it binds
+    // the SAME DTO, so it goes through the same resolver (TASK-420) — which
+    // accepts either spelling and leaves an id untouched when it resolves.
+    const filters = await this.catalogueFilters.resolve(query);
     const params: FindAllParams = {
-      ...this.toListParams(query),
-      categoryIds: await this.resolveSubtreeIds(query.categoryId),
+      ...this.toListParams(query, filters),
+      categoryIds: await this.resolveSubtreeIds(filters.categoryId),
       // AD-PROD-08 (TASK-406): the operator searches for a position by its
       // article number. Set HERE and nowhere else — `toListParams` is shared
       // with the public listing, and an SKU is an internal identifier that the
@@ -258,7 +283,10 @@ export class ProductService {
    * category rollup — callers add `categoryIds` via {@link resolveSubtreeIds}
    * so the async subtree expansion happens once, after the cache check.
    */
-  private toListParams(query: ProductListQueryDto): FindAllParams {
+  private toListParams(
+    query: ProductListQueryDto,
+    filters: ResolvedCatalogueFilters,
+  ): FindAllParams {
     // Collapse "asked for nothing" to `undefined` rather than an empty array:
     // every other optional filter here means "absent = unfiltered", and the
     // repository's facet branch is written against that convention.
@@ -267,8 +295,9 @@ export class ProductService {
     return {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
-      brandId: query.brandId,
-      deviceModelId: query.deviceModelId,
+      // Ids only — the repository layer never learns what a slug is (TASK-420).
+      brandId: filters.brandId,
+      deviceModelId: filters.deviceModelId,
       isActive: query.isActive,
       outOfStock: query.outOfStock,
       minPrice: query.minPrice,
@@ -288,6 +317,10 @@ export class ProductService {
    * under it (TASK-236). Returns `undefined` when no category filter is
    * requested (the repository then applies no category constraint). Shared by
    * the public {@link findAll} and admin {@link adminFindAll} paths.
+   *
+   * Takes the RESOLVED id (TASK-420), so an unknown `?category=` slug arrives as
+   * the nil-uuid sentinel and expands to a subtree of one row that matches no
+   * product — an empty page, not an unfiltered one.
    */
   private async resolveSubtreeIds(categoryId?: string): Promise<string[] | undefined> {
     if (!categoryId) {

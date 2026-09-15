@@ -36,9 +36,10 @@ describe("catalog active-filter helpers", () => {
       page: 1,
       limit: 20,
       search: "чохол",
-      categoryId: "cat-1",
-      brandId: "brand-1",
-      deviceModelId: "model-1",
+      // Slugs since TASK-420 — this list IS the URL contract.
+      category: "phone-cases",
+      brand: "apple",
+      device: "iphone-15",
       minPrice: 100,
       maxPrice: 900,
       specs: "material:Силікон,TPU;form:Накладка",
@@ -58,7 +59,12 @@ describe("catalog active-filter helpers", () => {
   });
 
   it("excludes the category when asked (its control is the chips row / the route)", () => {
-    const params = { page: 1, limit: 20, categoryId: "cat-1", search: "чохол" };
+    const params = {
+      page: 1,
+      limit: 20,
+      category: "phone-cases",
+      search: "чохол",
+    };
 
     expect(countActiveFilters(params)).toBe(2);
     expect(countActiveFilters(params, { includeCategory: false })).toBe(1);
@@ -81,9 +87,9 @@ describe("catalog active-filter helpers", () => {
     it("clears the FULL set, not only what is currently active", () => {
       expect(clearFilterUpdates()).toEqual({
         search: undefined,
-        categoryId: undefined,
-        brandId: undefined,
-        deviceModelId: undefined,
+        category: undefined,
+        brand: undefined,
+        device: undefined,
         minPrice: undefined,
         maxPrice: undefined,
         specs: undefined,
@@ -94,7 +100,7 @@ describe("catalog active-filter helpers", () => {
     it("keeps the category out of the updates when it is locked/owned elsewhere", () => {
       const updates = clearFilterUpdates({ includeCategory: false });
 
-      expect("categoryId" in updates).toBe(false);
+      expect("category" in updates).toBe(false);
       expect(updates.specs).toBeUndefined();
       expect("inStock" in updates).toBe(true);
     });

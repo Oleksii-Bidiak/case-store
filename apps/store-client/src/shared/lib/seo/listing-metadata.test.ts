@@ -72,20 +72,20 @@ describe("buildListingMetadata — filter params force noindex,follow (cases 6�
     ).toEqual(NOINDEX_FOLLOW);
   });
 
-  it("case 10: brandId filter → noindex,follow", () => {
+  it("case 10: brand filter → noindex,follow", () => {
     expect(
       buildListingMetadata({
         basePath: "/products",
-        filters: { brandId: "b1" },
+        filters: { brand: "apple" },
       }),
     ).toEqual(NOINDEX_FOLLOW);
   });
 
-  it("case 11: deviceModelId filter → noindex,follow", () => {
+  it("case 11: device filter → noindex,follow", () => {
     expect(
       buildListingMetadata({
         basePath: "/products",
-        filters: { deviceModelId: "m1" },
+        filters: { device: "iphone-15" },
       }),
     ).toEqual(NOINDEX_FOLLOW);
   });
@@ -212,6 +212,40 @@ describe("buildListingMetadata — categoryCanonicalPath redirect (cases 20–23
         categoryCanonicalPath: "/categories/apple-cases",
         filters: { minPrice: "100" },
         page: 3,
+      }),
+    ).toEqual(NOINDEX_FOLLOW);
+  });
+});
+
+describe("buildListingMetadata — slug-shaped filters (cases 25–26, TASK-420)", () => {
+  // The canonical a listing points at must be spelled the way the listing is
+  // addressed. When `?brandId=` became `?brand=`, a `ListingFilterParams` that
+  // still read `brandId` would have gone on compiling and silently stopped
+  // noindexing every brand-filtered page — a whole facet of the catalogue
+  // competing with the unfiltered listing in the index.
+  it("case 25: a category slug alone still canonicalizes onto the landing page", () => {
+    expect(
+      buildListingMetadata({
+        basePath: "/products",
+        categoryCanonicalPath: "/categories/apple-cases",
+        filters: { brand: undefined, device: undefined },
+      }),
+    ).toEqual({ canonicalPath: "/categories/apple-cases" });
+  });
+
+  it("case 26: brand or device beats the category redirect → noindex,follow", () => {
+    expect(
+      buildListingMetadata({
+        basePath: "/products",
+        categoryCanonicalPath: "/categories/apple-cases",
+        filters: { brand: "apple" },
+      }),
+    ).toEqual(NOINDEX_FOLLOW);
+    expect(
+      buildListingMetadata({
+        basePath: "/products",
+        categoryCanonicalPath: "/categories/apple-cases",
+        filters: { device: "iphone-15" },
       }),
     ).toEqual(NOINDEX_FOLLOW);
   });

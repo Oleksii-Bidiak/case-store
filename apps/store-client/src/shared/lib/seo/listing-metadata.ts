@@ -8,7 +8,7 @@
  *    canonical (noindex and canonical are mutually exclusive signals — house
  *    convention, same shape as `/search` and the `noindexSite` kill switch).
  * 3. Canonical target: `categoryCanonicalPath` when set and no filter is present
- *    (the `/products?categoryId=` → `/categories/[slug]` redirect), else
+ *    (the `/products?category=` → `/categories/[slug]` redirect), else
  *    `basePath`. Page > 1 appends `?page=N`; page ≤ 1 / invalid is omitted.
  * 4. Filter values are trusted, caller-normalized strings with two safety nets:
  *    `""` counts as absent, and `onSale` counts only when literally `"true"`.
@@ -26,8 +26,19 @@ export interface ListingFilterParams {
   minPrice?: string;
   maxPrice?: string;
   specs?: string;
-  brandId?: string;
-  deviceModelId?: string;
+  /**
+   * Brand SLUG — `?brand=apple` (TASK-420). Renamed from `brandId` together with
+   * the wire param: the canonical URL a listing points at must be spelled the
+   * way the listing is actually addressed, or the canonical names a URL the
+   * catalogue no longer serves.
+   *
+   * `category` is deliberately still NOT a member: a clean category view
+   * canonicalizes onto its `/categories/[slug]` landing page via
+   * `categoryCanonicalPath` rather than counting as a filter.
+   */
+  brand?: string;
+  /** Device-model SLUG — `?device=iphone-15` (TASK-420). */
+  device?: string;
   /** Wire-level string; only "true" counts as a present filter (Decision 4). */
   onSale?: string;
   /** Wire-level string; only "true" counts as a present filter (TASK-414). */
@@ -68,8 +79,8 @@ function hasAnyFilter(filters: ListingFilterParams): boolean {
     isPresent(filters.minPrice) ||
     isPresent(filters.maxPrice) ||
     isPresent(filters.specs) ||
-    isPresent(filters.brandId) ||
-    isPresent(filters.deviceModelId) ||
+    isPresent(filters.brand) ||
+    isPresent(filters.device) ||
     // Boolean-shaped on the wire: only the literal "true" is a filter —
     // `?onSale=false` is a no-op, not "filtering by not-on-sale".
     filters.onSale === "true" ||
@@ -96,7 +107,7 @@ export function buildListingMetadata(
     return { robots: { index: false, follow: true } };
   }
 
-  // Decision 3 — the category landing absorbs the `?categoryId=` view's
+  // Decision 3 — the category landing absorbs the `?category=` view's
   // canonical; otherwise the listing is its own home.
   const target = input.categoryCanonicalPath ?? input.basePath;
   const page = normalizePage(input.page);

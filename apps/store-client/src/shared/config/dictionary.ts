@@ -481,7 +481,7 @@ export const dict = {
     // Breadcrumb trail shown above the catalog title.
     breadcrumbHome: "Головна",
     breadcrumbProducts: "Товари",
-    // Category-scoped catalog (`/products?categoryId=…`): the mid crumb links to
+    // Category-scoped catalog (`/products?category=…`): the mid crumb links to
     // the categories hub, the last crumb is the selected category name.
     breadcrumbCategories: "Категорії",
     categoryFallback: "Категорія",

@@ -24,9 +24,13 @@ import type { ProductControllerFindAllParams } from "@/entities/product";
  */
 export const CATALOG_FILTER_KEYS = [
   "search",
-  "categoryId",
-  "brandId",
-  "deviceModelId",
+  // TASK-420: the three taxonomy axes moved from uuids to SLUGS on the wire
+  // (`?brand=apple&device=iphone-15`). This list IS the URL contract — the chips
+  // row, the sidebar, the drawer badge and «скинути всі» all read it — so the
+  // rename lands here once and the type errors lead to every reader.
+  "category",
+  "brand",
+  "device",
   "minPrice",
   "maxPrice",
   "specs",
@@ -66,7 +70,7 @@ export function activeFilterKeys(
   { includeCategory = true }: ActiveFilterOptions = {},
 ): CatalogFilterKey[] {
   return CATALOG_FILTER_KEYS.filter(
-    (key) => (includeCategory || key !== "categoryId") && isActive(params, key),
+    (key) => (includeCategory || key !== "category") && isActive(params, key),
   );
 }
 
@@ -96,7 +100,7 @@ export function clearFilterUpdates({
 }: ActiveFilterOptions = {}): Record<string, undefined> {
   const updates: Record<string, undefined> = {};
   for (const key of CATALOG_FILTER_KEYS) {
-    if (!includeCategory && key === "categoryId") continue;
+    if (!includeCategory && key === "category") continue;
     updates[key] = undefined;
   }
   return updates;

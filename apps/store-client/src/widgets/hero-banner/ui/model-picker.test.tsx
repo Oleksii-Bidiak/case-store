@@ -76,8 +76,8 @@ describe("ModelPicker (TASK-190)", () => {
       screen.getByRole("button", { name: dict.home.modelPicker.submit }),
     );
 
-    expect(mockPush).toHaveBeenCalledWith(
-      "/products?deviceModelId=model-15pro",
-    );
+    // TASK-420 — the catalogue is addressed by slug, resolved here from the
+    // model list the cascade already holds.
+    expect(mockPush).toHaveBeenCalledWith("/products?device=iphone-15-pro");
   });
 });

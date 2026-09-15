@@ -75,6 +75,38 @@ describe('Search (e2e)', () => {
     review: {
       groupBy: jest.fn(async () => [] as unknown[]),
     },
+    // TASK-420: `/search` narrows by SLUG now, resolved through the real
+    // Category/Brand/Device repositories (none of them is overridden here), so
+    // the slug → id step runs against these rows. Each echoes the requested key
+    // back, so a filter survives the round trip unchanged — and `findUnique`
+    // returning `null` is what a test flips to exercise the unknown-slug path.
+    category: {
+      findUnique: jest.fn(({ where }: { where: { id: string } }) =>
+        Promise.resolve({ id: where.id, slug: `slug-of-${where.id}` }),
+      ),
+      findFirst: jest.fn(({ where }: { where: { slug: string } }) =>
+        Promise.resolve({ id: `id-of-${where.slug}`, slug: where.slug }),
+      ),
+    },
+    brand: {
+      findUnique: jest.fn(({ where }: { where: { slug?: string; id?: string } }) =>
+        Promise.resolve(
+          where.slug
+            ? { id: `id-of-${where.slug}`, slug: where.slug }
+            : { id: where.id, slug: `slug-of-${where.id}` },
+        ),
+      ),
+    },
+    deviceModel: {
+      findUnique: jest.fn(({ where }: { where: { slug?: string; id?: string } }) =>
+        Promise.resolve(
+          where.slug
+            ? { id: `id-of-${where.slug}`, slug: where.slug }
+            : { id: where.id, slug: `slug-of-${where.id}` },
+        ),
+      ),
+    },
+    $queryRaw: jest.fn(async () => [] as unknown[]),
   };
 
   // Configured + healthy by default; individual tests flip `isConfigured` /
@@ -226,6 +258,57 @@ describe('Search (e2e)', () => {
             'price <= 50',
           ],
           sort: ['price:asc'],
+        }),
+      );
+    });
+
+    // TASK-420 — `/search` migrated to slugs together with the catalogue, so the
+    // filter panel the two pages share writes ONE param language. Before this
+    // the DTO validated all three axes as uuids, so `?brand=apple` was a 400.
+    it('accepts the slug-shaped filter params and resolves them to ids', async () => {
+      meiliClientMock.search.mockResolvedValue({
+        hits: [{ id: 'product-1' }],
+        estimatedTotalHits: 1,
+      });
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({
+          q: 'case',
+          category: 'phone-cases',
+          brand: 'apple',
+          device: 'iphone-15',
+        })
+        .expect(200);
+
+      expect(meiliClientMock.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({
+          filter: [
+            'isActive = true',
+            'categoryIds = "id-of-phone-cases"',
+            'brandId = "id-of-apple"',
+            'deviceModelIds = "id-of-iphone-15"',
+          ],
+        }),
+      );
+    });
+
+    // Never a 400, and never a WIDER result set: the filter stays applied and
+    // matches nothing, exactly as an unknown-but-well-formed uuid always did.
+    it('narrows to nothing rather than 400ing on an unknown slug', async () => {
+      prismaServiceMock.brand.findUnique.mockResolvedValueOnce(null);
+
+      await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'case', brand: 'no-such-brand' })
+        .expect(200);
+
+      expect(meiliClientMock.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({
+          filter: ['isActive = true', 'brandId = "00000000-0000-0000-0000-000000000000"'],
         }),
       );
     });
