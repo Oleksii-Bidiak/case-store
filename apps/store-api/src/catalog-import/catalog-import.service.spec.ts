@@ -3,6 +3,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { CatalogImportStatus } from '@prisma/client';
 import { CatalogImportService, IMPORT_CHUNK_SIZE } from './catalog-import.service';
 import { CatalogImportRepository } from './catalog-import.repository';
+import { PrismaService } from '../prisma/prisma.service';
 import { ProductService } from '../product/product.service';
 import { STORAGE_SERVICE } from '../storage';
 import type { CatalogImportPlan, PlannedRow } from './catalog-plan';
@@ -272,6 +273,78 @@ describe('CatalogImportService', () => {
       });
 
       expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p-1', []);
+    });
+  });
+
+  /**
+   * The map key that carries device compatibility from `ensureDeviceModels` to
+   * `writeCompat` (TASK-705).
+   *
+   * Written as a ROUND TRIP through the REAL repository rather than against a
+   * mocked map, because the defect it pins lived in neither side alone: the
+   * writer separated brand from model with a literal NUL byte and the reader
+   * with a space, so `get()` never matched, `writeCompat` always resolved an
+   * empty id list, and `setDeviceCompat` — which deletes before it writes —
+   * cleared the compatibility rows of every imported product. Mocking
+   * `ensureDeviceModels` to return an empty map, as the rest of this file does,
+   * is exactly what hid it for two months.
+   */
+  describe('device compatibility round trip (TASK-705)', () => {
+    type WriteCompat = (
+      productId: string,
+      source: Record<string, unknown>,
+      context: Record<string, unknown>,
+    ) => Promise<void>;
+
+    /** The real repository over a prisma that just hands back the ids given. */
+    const realRepository = async (ids: string[]) => {
+      const upsert = jest.fn();
+      for (const id of ids) {
+        upsert.mockResolvedValueOnce({ id });
+      }
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          CatalogImportRepository,
+          { provide: PrismaService, useValue: { deviceModel: { upsert } } },
+        ],
+      }).compile();
+      return module.get(CatalogImportRepository);
+    };
+
+    const writeCompat = (source: Record<string, unknown>, context: Record<string, unknown>) =>
+      (service as unknown as { writeCompat: WriteCompat }).writeCompat('p-1', source, context);
+
+    it('writes the models ensureDeviceModels filed, not an empty list', async () => {
+      const repository = await realRepository(['model-15', 'model-15-pro']);
+      const deviceModels = await repository.ensureDeviceModels([
+        { name: 'iPhone 15', slug: 'apple-iphone-15', deviceBrandId: 'brand-apple' },
+        { name: 'iPhone 15 Pro', slug: 'apple-iphone-15-pro', deviceBrandId: 'brand-apple' },
+      ]);
+
+      await writeCompat(
+        { deviceBrandName: 'Apple', deviceModelNames: ['iPhone 15', 'iPhone 15 Pro'] },
+        { deviceBrands: new Map([['Apple', 'brand-apple']]), deviceModels },
+      );
+
+      expect(repositoryMock.setDeviceCompat).toHaveBeenCalledWith('p-1', [
+        'model-15',
+        'model-15-pro',
+      ]);
+    });
+
+    it('keeps the same model name under two brands apart', async () => {
+      const repository = await realRepository(['samsung-a35', 'other-a35']);
+      const deviceModels = await repository.ensureDeviceModels([
+        { name: 'Galaxy A35', slug: 'samsung-galaxy-a35', deviceBrandId: 'brand-samsung' },
+        { name: 'Galaxy A35', slug: 'other-galaxy-a35', deviceBrandId: 'brand-other' },
+      ]);
+
+      await writeCompat(
+        { deviceBrandName: 'Samsung', deviceModelNames: ['Galaxy A35'] },
+        { deviceBrands: new Map([['Samsung', 'brand-samsung']]), deviceModels },
+      );
+
+      expect(repositoryMock.setDeviceCompat).toHaveBeenCalledWith('p-1', ['samsung-a35']);
     });
   });
 

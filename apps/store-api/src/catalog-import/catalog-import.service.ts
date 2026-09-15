@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { CatalogImportRun, CatalogImportStatus, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
-import { CatalogImportRepository } from './catalog-import.repository';
+import { CatalogImportRepository, deviceModelKey } from './catalog-import.repository';
 import { parseXlsxCatalog } from './xlsx-catalog.parser';
 import {
   buildImportPlan,
@@ -279,7 +279,7 @@ export class CatalogImportService {
         continue;
       }
       for (const modelName of row.deviceModelNames) {
-        const key = `${deviceBrandId} ${modelName}`;
+        const key = deviceModelKey(deviceBrandId, modelName);
         if (!modelEntries.has(key)) {
           modelEntries.set(key, {
             name: modelName,
@@ -540,7 +540,7 @@ export class CatalogImportService {
       return;
     }
     const ids = source.deviceModelNames
-      .map((name) => context.deviceModels.get(`${deviceBrandId} ${name}`))
+      .map((name) => context.deviceModels.get(deviceModelKey(deviceBrandId, name)))
       .filter((id): id is string => Boolean(id));
     await this.repository.setDeviceCompat(productId, ids);
   }

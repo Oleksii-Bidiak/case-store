@@ -4,6 +4,24 @@ import { PrismaService } from '../prisma/prisma.service';
 import { COLOR_SPEC_KEY, COLOR_SPEC_LABEL } from '../common/color-axis';
 import type { CurrentProductSnapshot, ImportedFingerprint, LedgerEntry } from './catalog-plan';
 
+/**
+ * The key under which a resolved device model is filed while an import runs
+ * (TASK-705).
+ *
+ * Brand id AND model name, because the same model name under two brands has to
+ * stay two rows. It is a function rather than a template literal spelled at
+ * each site precisely because the writer here and the reader in
+ * `CatalogImportService.writeCompat` had drifted: the writer's separator was a
+ * literal NUL byte, the reader's a space, so `get()` never matched, every
+ * product's compatibility list came out empty, and `setDeviceCompat` — which
+ * deletes before it writes — wiped the rows the catalogue already had. Git
+ * rendered the file as binary because of those bytes, which is why no diff ever
+ * showed it.
+ */
+export function deviceModelKey(deviceBrandId: string, modelName: string): string {
+  return `${deviceBrandId} ${modelName}`;
+}
+
 /** De-duplicated, Ukrainian-collated option list for a SELECT definition. */
 function sortedUnique(values: string[]): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b, 'uk'));
@@ -233,8 +251,14 @@ export class CatalogImportRepository {
 
   /**
    * Resolve device-model names to ids under their brand, creating as needed.
-   * Keyed by `<brand> <model>` so the same model name under two brands
+   * Keyed by {@link deviceModelKey} so the same model name under two brands
    * stays two rows.
+   *
+   * The key is built by that ONE function and read back by it too
+   * (`CatalogImportService.writeCompat`) — never by a second copy of the
+   * template. Writing and reading a map key with two different literals is
+   * exactly how this silently wrote an empty compatibility list for every
+   * imported product (TASK-705).
    */
   async ensureDeviceModels(
     entries: Array<{ name: string; slug: string; deviceBrandId: string }>,
@@ -252,7 +276,7 @@ export class CatalogImportRepository {
         update: {},
         select: { id: true },
       });
-      byKey.set(`${entry.deviceBrandId} ${entry.name}`, model.id);
+      byKey.set(deviceModelKey(entry.deviceBrandId, entry.name), model.id);
     }
     return byKey;
   }

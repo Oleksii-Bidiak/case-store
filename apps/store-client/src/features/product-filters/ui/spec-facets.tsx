@@ -18,8 +18,14 @@ import { FilterCheckbox } from "./filter-checkbox";
 /**
  * Hard ceiling on the facets offered at once — the «стеля 6 фасетів у
  * сайдбарі» of owner decision B-10, and the same number as the API's own
- * `MAX_SPEC_FACETS`: each extra facet is another EXISTS subquery server-side,
- * and anything past this is silently dropped there anyway.
+ * `MAX_SPEC_FACETS`, because each extra facet a shopper ticks is another EXISTS
+ * subquery server-side and a seventh could never be APPLIED anyway.
+ *
+ * The ceiling is OURS, though: `getFilterableSpecs` returns every filterable
+ * facet a category declares, without a limit of its own, so a seventh would
+ * arrive here and be cut by the `slice` below — silently, and only from this
+ * sidebar: an already-active one would still show as a chip that can clear it.
+ * Nothing stops an operator declaring that seventh today, which is TASK-707.
  *
  * Verified against the widened facet set in TASK-488: «Зарядки» reaches exactly
  * six and every other root stays below, so nothing a category declares is

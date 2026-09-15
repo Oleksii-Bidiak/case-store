@@ -276,8 +276,10 @@ export class AttributeDefinitionRepository {
    * share one query, because for them "everything else" IS the full filter set.
    *
    * Cost is therefore `1 + 1 + (selected facets)` queries per catalogue page,
-   * capped by `MAX_SPEC_FACETS` at eight; at this catalogue's volume that is the
-   * sizing the owner signed off on.
+   * capped by `MAX_SPEC_FACETS` at SIX — that constant bounds how many facets a
+   * request may have SELECTED, which is what this count is per. At this
+   * catalogue's volume that is the sizing the owner signed off on. Nothing here
+   * is cached yet (TASK-708).
    *
    * @param params the SAME narrowing params the listing runs (subtree ids,
    * brand, device, price, search, inStock, onSale, visibility), built by the
