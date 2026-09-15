@@ -15,6 +15,7 @@ import { StaffPermissionsEntity, StaffUserEntity } from './entities';
 import { CreateStaffDto, StaffListQueryDto } from './dto';
 import { hashPassword } from '../common/security';
 import {
+  AccessLevel,
   PermissionGrantRepository,
   assertGrantablePermissions,
   assertMayAssign,
@@ -225,6 +226,28 @@ export class StaffService {
 
     const updated = await this.staffRepository.updateRole(id, role);
 
+    // ── Leaving the staff clears the grants ──────────────────────────────────
+    // Demoting to CUSTOMER is the documented off-boarding path (see this route's
+    // DTO), and it used to leave the person's `UserPermission` rows in place
+    // forever. Nothing was immediately wrong — `PermissionService` short-circuits
+    // CUSTOMER to false, so the rows were inert — and that is exactly what made
+    // it dangerous: the set became invisible too, because `findStaffById` filters
+    // `role IN (ADMIN, MANAGER)`, so both permission routes answered 404 for it.
+    //
+    // The failure is on the way back. Re-hire the same account months later and
+    // promotion to MANAGER restores every key it held before: nobody granted
+    // them, `assertGrantablePermissions` never ran, and the audit log has a role
+    // change that says nothing about permissions. Rights must be granted by
+    // somebody, once, on the record — so leaving the staff drops them, and
+    // re-hiring starts from an empty grid like any other hire.
+    //
+    // Deactivation is deliberately NOT this: `setStatus(false)` keeps the rows,
+    // because `isActive` is a reversible toggle and the account stays in staff
+    // scope, where the set remains visible and editable the whole time.
+    if (levelOfRole(role) < AccessLevel.MANAGER) {
+      await this.permissionGrants.replaceForUser(id, []);
+    }
+
     // A demoted employee must not keep a working session. PermissionGuard already
     // re-reads the role on every admin request, so the stale token buys nothing
     // there — revoking is what stops them silently refreshing into a new one.
@@ -241,12 +264,27 @@ export class StaffService {
    * parameters, same session revocation, same lockout clearing. A second
    * implementation here would be the one that eventually forgets to revoke the old
    * sessions — and "the account may be compromised" is exactly when that matters.
+   *
+   * @throws ForbiddenException on self-targeting, or on a target at or above the
+   *         caller's own level
    */
   async setPassword(
     id: string,
     newPassword: string,
     actor: PermissionActor,
   ): Promise<StaffUserEntity> {
+    // Its own message, like the other three doors. `assertMayManage` already
+    // refuses this case (equal levels are not below), but it refuses it with
+    // «the shop owner cannot be changed, deactivated or deleted by anyone», which
+    // reads as a bug when all you asked for was your own password. Self-service
+    // is `POST /auth/password` and it asks for the current one, which is the
+    // point: this route sets a password WITHOUT knowing the old one.
+    if (id === actor.id) {
+      throw new ForbiddenException(
+        'Cannot set your own password here — use the self-service password change',
+      );
+    }
+
     const account = await this.requireStaff(id);
     assertMayManage(actor, account.user);
 

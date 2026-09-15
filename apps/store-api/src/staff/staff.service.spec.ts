@@ -240,6 +240,25 @@ describe('StaffService', () => {
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(managerRow.id);
     });
 
+    it('CLEARS the grants when demoting off the staff — no dormant set to revive', async () => {
+      // Demotion to CUSTOMER is the documented off-boarding path, and the rows it
+      // used to leave behind were both inert (PermissionService short-circuits
+      // CUSTOMER) and invisible (the staff-scoped lookup filters the role out).
+      // The damage came on the way back: re-promoting the same account restored
+      // every key it once held, with nobody having granted anything and no audit
+      // row naming permissions. The clear is what makes a re-hire start empty.
+      userRepositoryMock.findById.mockResolvedValue(managerRow);
+      staffRepositoryMock.updateRole.mockResolvedValue({
+        ...managerRow,
+        role: UserRole.CUSTOMER,
+      });
+      staffRepositoryMock.findStaffById.mockResolvedValue(null);
+
+      await service.updateRole(managerRow.id, UserRole.CUSTOMER, deputyActor);
+
+      expect(permissionGrantRepositoryMock.replaceForUser).toHaveBeenCalledWith(managerRow.id, []);
+    });
+
     it('PROMOTES an existing customer — the flow the review called out (§5)', async () => {
       userRepositoryMock.findById.mockResolvedValue(customerRow);
       staffRepositoryMock.updateRole.mockResolvedValue({
@@ -251,6 +270,23 @@ describe('StaffService', () => {
       const staff = await service.updateRole(customerRow.id, UserRole.MANAGER, deputyActor);
 
       expect(staff.role).toBe(UserRole.MANAGER);
+      // A promotion must not touch the grid: the hire's own set is the next
+      // screen, and clearing here would wipe a set somebody had just prepared.
+      expect(permissionGrantRepositoryMock.replaceForUser).not.toHaveBeenCalled();
+    });
+
+    it('does NOT clear the grants when moving between staff levels', async () => {
+      // ADMIN ⇄ MANAGER stays inside the staff, so the person keeps their rows —
+      // inert while they are a deputy (admins hold everything by level) and live
+      // again the moment they are put back to manager, which is the same set the
+      // owner can see and edit on the card the whole time.
+      userRepositoryMock.findById.mockResolvedValue(managerRow);
+      staffRepositoryMock.updateRole.mockResolvedValue({ ...managerRow, role: UserRole.ADMIN });
+      staffRepositoryMock.findStaffById.mockResolvedValue(null);
+
+      await service.updateRole(managerRow.id, UserRole.ADMIN, ownerActor);
+
+      expect(permissionGrantRepositoryMock.replaceForUser).not.toHaveBeenCalled();
     });
 
     it('refuses an admin changing ANOTHER ADMIN’s role', async () => {
@@ -343,6 +379,22 @@ describe('StaffService', () => {
         );
       }
       expect(authServiceMock.setPassword).not.toHaveBeenCalled();
+    });
+
+    it('refuses the caller their own account, and SAYS SO', async () => {
+      // The level rule already refused this — equal is not below — but it refused
+      // it with «the shop owner cannot be changed, deactivated or deleted by
+      // anyone», which reads as a bug when you asked to change your own password.
+      // Asserted on the message rather than just the type, because the type was
+      // never the defect. Holds for the owner too: OWNER is not below OWNER.
+      for (const actor of [deputyActor, ownerActor]) {
+        await expect(service.setPassword(actor.id, 'StrongP@ss123', actor)).rejects.toThrow(
+          'Cannot set your own password here',
+        );
+      }
+      expect(authServiceMock.setPassword).not.toHaveBeenCalled();
+      // Refused before the lookup: a self-target is wrong regardless of the row.
+      expect(staffRepositoryMock.findStaffById).not.toHaveBeenCalled();
     });
 
     it('is 404 for a customer id', async () => {

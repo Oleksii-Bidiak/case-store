@@ -11,7 +11,7 @@ import { AuthService } from '../src/auth/auth.service';
 import { UserRepository } from '../src/user/user.repository';
 import { StaffRepository } from '../src/staff/staff.repository';
 import { PrismaService } from '../src/prisma';
-import { PermissionRepository } from '../src/auth/permissions';
+import { PermissionGrantRepository, PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
@@ -127,6 +127,17 @@ describe('Staff (e2e)', () => {
   };
   const reviewRepositoryStub = { updateMany: jest.fn().mockResolvedValue({ count: 0 }) };
 
+  /**
+   * The one writer of `user_permissions`. Overridden here rather than driven
+   * through the Prisma mock because this suite is about the DOORS: what matters
+   * is that demoting somebody off the staff calls the clear, not how the rows are
+   * deleted. `staff-permissions.e2e-spec.ts` owns the store-backed version.
+   */
+  const permissionGrantRepositoryMock = {
+    findByUserId: jest.fn().mockResolvedValue([]),
+    replaceForUser: jest.fn().mockResolvedValue([]),
+  };
+
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
@@ -166,6 +177,8 @@ describe('Staff (e2e)', () => {
       .useValue(prismaServiceMock)
       .overrideProvider(PermissionRepository)
       .useValue(permissionRepositoryMock)
+      .overrideProvider(PermissionGrantRepository)
+      .useValue(permissionGrantRepositoryMock)
       .overrideProvider(StaffRepository)
       .useValue(staffRepositoryMock)
       .overrideProvider(UserRepository)
@@ -284,6 +297,14 @@ describe('Staff (e2e)', () => {
 
       expect(response.body.data.role).toBe('CUSTOMER');
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('target-manager');
+      // Leaving the staff drops the grants. They used to survive, inert but
+      // invisible (the staff-scoped lookup filters CUSTOMER out), and came back
+      // whole the day the account was re-promoted — a grant nobody performed,
+      // absent from the audit log, and never checked against the grantable list.
+      expect(permissionGrantRepositoryMock.replaceForUser).toHaveBeenCalledWith(
+        'target-manager',
+        [],
+      );
     });
 
     it('promotes an existing CUSTOMER — the flow the review called out', async () => {
