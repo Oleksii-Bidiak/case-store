@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-651**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-660**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -680,7 +680,7 @@
 | Task ID | Description | Status | Plan |
 | --- | --- | --- | --- |
 | TASK-443 | B-1 Життєвий цикл замовлення: матриця статусів, джерело заявки на повернення, товар недоступний у замовленні — рішення 2026-09-11, реалізація в TASK-431/468…473 | ✅ | [178](docs/plans/178-brainstorms.md) |
-| TASK-444 | B-2 Видалення товару і категорії | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-444 | B-2 Видалення товару і категорії: soft-delete категорії каскадом по піддереву з обов'язковим перенесенням товарів (товари не видаляються ніколи), ціль можна створити в тому ж діалозі однією транзакцією, право `categories:delete` без бекфілу, відновлення тільки для товару, кнопка «Прибрати недоступні» в кошику — рішення 2026-09-15, реалізація в TASK-651…659 | ✅ | [178](docs/plans/178-brainstorms.md) |
 | TASK-445 | B-3 Ролі й доступи: два рівні через `isOwner` (власник + заступники), права на людину замість ролі + шаблони, окремий розділ «Персонал», `customers:card` — рішення 2026-09-11, реалізація в TASK-474…482 | ✅ | [178](docs/plans/178-brainstorms.md) |
 | TASK-446 | B-4 Відгуки (рішення 2026-09-10, п. 1–7): оцінки рахуються одразу, у списку лише схвалені **з текстом**, пагінація по 10, дописати текст до оцінки, захист від зловживань оцінками — плюс два відкриті питання, закриті 2026-09-14: відповідає **лише магазин** (одна відповідь, без треду автора, право `reviews:write`), підпис автора лишається «Покупець». Реалізація в TASK-588…592 | ✅ | [183](docs/plans/183-reviews-moderation-split.md) |
 | TASK-447 | B-5 Видимість замовлення для гостя й телефонного покупця: номер лишається 8 символами UUID, публічна форма «номер + телефон» без адреси, токен і лист для операторських замовлень, приєднання при підтвердженні пошти — рішення 2026-09-11, реалізація в TASK-483…486 | ✅ | [178](docs/plans/178-brainstorms.md) |
@@ -842,6 +842,26 @@
 | TASK-649 | Доки й ручні перевірки: `SF-*`/`AD-*` у `docs/qa-recheck.md` + ids у Appendix А, розділ «Доставка» в `docs/admin-guide.md`, кроки персон у `docs/user-stories.md` | ⬜ | [184](docs/plans/184-delivery-methods.md) |
 | TASK-650 | [побічна, знайдена в B-6] Вітрина не надсилає `paymentMethod` (`use-checkout.ts:77-107`), і платіжний хендофф його не проставляє — тому **кожне** онлайн-замовлення зі storefront лягає як `ON_DELIVERY` і не отримує `reservationExpiresAt`, тобто 30-хв звільнення стоку не працює жодного разу; заразом застарів коментар у `payment-methods.ts` | ⬜ | [184](docs/plans/184-delivery-methods.md) |
 
+### План 185 — Видалення товару і категорії (B-2 / TASK-444)
+
+> Рішення — план 178, «Рішення 2026-09-15 (B-2)». **Товари не видаляються ніколи:** видалення
+> категорії каскадне по піддереву, але з обов'язковим перенесенням товарів у ціль поза піддеревом
+> (її можна створити тут же, однією транзакцією). Нове право `categories:delete` **без бекфілу**;
+> відновлення — тільки для товару. TASK-651 блокує решту; **TASK-653 йде в тій самій гілці, що й
+> 652.** Деталі — [185](docs/plans/185-deletion.md).
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-651 | Схема: `Category.deletedAt` + `@@index`, коментар за конвенцією `prisma-migration` (тумбстоун без відновлення, тому slug калічиться); міграція без бекфілу через `migrate diff --script` | ⬜ | [185](docs/plans/185-deletion.md) |
+| TASK-652 | Бекенд: `CategoryService.deleteWithMove` однією `$transaction` — валідації (ціль існує, не видалена, **поза піддеревом**), опційне створення цілі, `product.updateMany` без жодної деактивації, перемикання каруселей піддерева, тумбстоуни + `slug = deleted:<id>:<slug>`; `DeleteCategoryDto` (`moveToId` XOR `moveToNew`); числа для прев'ю — у наявний `findById` (`category.repository.ts:725-737`), без нового ендпоінта | ⬜ | [185](docs/plans/185-deletion.md) |
+| TASK-653 | Усі читання категорій фільтрують `deletedAt: null` — дерево, `findBySlug`/`findById`/`findAncestorIds`, **`findDescendantIds` (raw SQL, тут уже був баг → TASK-238)**, підрахунки, фасети, хлібні крихти, `hub-routes`, sitemap, SEO, `catalog-import`, каруселі, шаблони; видалена категорія на вітрині → 404. Гейт — інтеграційний тест на справжньому Postgres | ⬜ | [185](docs/plans/185-deletion.md) |
+| TASK-654 | Право `categories:delete` у каталозі (зона `CATALOG`) **з коментарем, чому бекфілу немає** — ключ додає досяжності, ADMIN тримає його автоматично; контролер `DELETE /api/admin/categories/:id` під `PermissionGuard`, режим «створити нову» додатково вимагає `categories:write` (перевірка в сервісі); Swagger → Orval | ⬜ | [185](docs/plans/185-deletion.md) |
+| TASK-655 | Адмінка: `features/category-delete/` — перемикач «в існуючу / створити нову» (назва + батько, slug авто), селект без категорій піддерева, числа наслідків до натискання (N підкатегорій, M товарів, K каруселей), попередження про шаблони характеристик і додаткових послуг, гейт прав в UI, інвалідація дерева й списку товарів; форма за `docs/conventions/forms.md` | ⬜ | [185](docs/plans/185-deletion.md) |
+| TASK-656 | Відновлення товару: `POST /api/products/:id/restore` під `products:delete` — `deletedAt = null`, `isActive = false`, повернення рідних `slug`/`sku`, 409 з назвою зайнятого поля замість мовчазного суфікса; кнопка «Відновити» у перегляді `?deleted=only` + діалог нової адреси; оновити `dict.products.deletedNotice` | ⬜ | [185](docs/plans/185-deletion.md) |
+| TASK-657 | Вітрина: кнопка «Прибрати недоступні» в підсумку кошика (`cart-summary.tsx:91`) і в `cart-sheet.tsx` — наявна мутація по кожному рядку з `isActive === false`, доступне ім'я з кількістю, фокус не втрачається; нової серверної ручки немає | ⬜ | [185](docs/plans/185-deletion.md) |
+| TASK-658 | Доки й ручні перевірки: `AD-*`/`SF-*` у `docs/qa-recheck.md` + ids у Appendix А, розділ «Видалення» в `docs/admin-guide.md` (чим «Деактивувати» відрізняється від «Видалити», чому питають «куди перенести», як повернути товар), кроки персон у `docs/user-stories.md` | ⬜ | [185](docs/plans/185-deletion.md) |
+| TASK-659 | [побічна, знайдена в B-2] Звірити з кодом і закрити застарілі рядки BACKLOG: **TASK-427** (хвиля 175 — кнопка видалення, фільтр «Лише видалені», read-only картка) і **TASK-403** (хвиля 173 — позначка недоступного рядка в кошику); недороблене відрізати в окремий рядок — `/next` читає саме BACKLOG | ⬜ | [185](docs/plans/185-deletion.md) |
+
 ### План 179 — Якість: безпека, доки, моніторинг, пайплайн, ревʼю, повторний прогін
 
 > **S0 — першими, до будь-якого мержу:** TASK-460…467 і TASK-491…495 у таблиці нижче — 460/461/495
@@ -891,6 +911,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-651**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-660**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
