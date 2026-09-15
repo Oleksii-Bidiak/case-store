@@ -3,19 +3,38 @@
 import { Search, X } from "lucide-react";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { useDeviceControllerFindModels } from "@/entities/device";
+import { useCategoryControllerGetFilterableSpecs } from "@/entities/category";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { parseSpecParam, removeSpecValue } from "../model/spec-facet";
+import {
+  formatFacetChipLabel,
+  parseSpecParam,
+  removeSpecValue,
+} from "../model/spec-facet";
 import { clearFilterUpdates } from "../model/active-filters";
+import { toFacetQueryParams } from "../model/facet-query";
 
 interface ActiveFilterChipsProps {
   currentParams: ProductControllerFindAllParams;
   /**
-   * Display name for the active brand (`?brandId=`), resolved by the parent from
+   * Display name for the active brand (`?brand=`), resolved by the parent from
    * the brand list. When absent the brand chip is not rendered even if a
-   * `brandId` is set (e.g. the list is still loading).
+   * `brand` slug is set (e.g. the list is still loading).
    */
   brandName?: string;
+  /**
+   * Active category id, used ONLY to resolve spec-facet labels (TASK-488). The
+   * URL carries `?specs=magsafe:true`, which without the category's facet list
+   * would render a chip labelled «true».
+   */
+  categoryId?: string;
+  /**
+   * The compatible device is fixed by the route — `/catalog/[category]/[device]`
+   * (TASK-490). No device chip is rendered (removing it would contradict the
+   * URL, the H1 and the canonical), and «скинути всі» leaves it in place, the
+   * same way it already leaves a locked category's.
+   */
+  lockedDevice?: boolean;
   onFilterChange: (updates: Record<string, string | undefined>) => void;
 }
 
@@ -30,15 +49,39 @@ interface ActiveFilterChipsProps {
 export function ActiveFilterChips({
   currentParams,
   brandName,
+  categoryId,
+  lockedDevice = false,
   onFilterChange,
 }: ActiveFilterChipsProps) {
+  // The facet list of the active category, for chip labels only (TASK-488).
+  // Deduped by React Query with the sidebar's own call, and not fired at all
+  // until there is both a category and something selected to label.
+  const { data: facetsData } = useCategoryControllerGetFilterableSpecs(
+    categoryId ?? "",
+    // The SAME params the sidebar sends (TASK-489) — the labels come free off
+    // the request it already makes, and a different param set here would be a
+    // second request fetching the same definitions.
+    toFacetQueryParams(currentParams),
+    {
+      query: { enabled: Boolean(categoryId) && Boolean(currentParams.specs) },
+    },
+  );
+  const definitionByKey = new Map(
+    (facetsData?.data ?? []).map((facet) => [
+      facet.definition.key,
+      facet.definition,
+    ]),
+  );
+
   // Resolve the selected device model's name for its chip label (TASK-190).
-  // Only fires when a device filter is active.
-  const deviceModelId = currentParams.deviceModelId;
+  // Only fires when a device filter is active AND removable — on a compat
+  // landing page the device is the route, so there is no chip and no lookup.
+  // Keyed by SLUG since TASK-420 — `?device=iphone-15`.
+  const deviceSlug = lockedDevice ? undefined : currentParams.device;
   const { data: modelsData } = useDeviceControllerFindModels(undefined, {
-    query: { enabled: Boolean(deviceModelId) },
+    query: { enabled: Boolean(deviceSlug) },
   });
-  const deviceModel = modelsData?.data.find((m) => m.id === deviceModelId);
+  const deviceModel = modelsData?.data.find((m) => m.slug === deviceSlug);
 
   const chips: {
     key: string;
@@ -56,11 +99,11 @@ export function ActiveFilterChips({
     });
   }
 
-  if (currentParams.brandId && brandName) {
+  if (currentParams.brand && brandName) {
     chips.push({
-      key: "brandId",
+      key: "brand",
       label: `${dict.filters.brandTitle}: ${brandName}`,
-      clear: () => onFilterChange({ brandId: undefined }),
+      clear: () => onFilterChange({ brand: undefined }),
     });
   }
 
@@ -80,11 +123,11 @@ export function ActiveFilterChips({
     });
   }
 
-  if (deviceModelId) {
+  if (deviceSlug) {
     chips.push({
-      key: "deviceModelId",
+      key: "device",
       label: `${dict.filters.deviceLabel}: ${deviceModel?.name ?? "…"}`,
-      clear: () => onFilterChange({ deviceModelId: undefined }),
+      clear: () => onFilterChange({ device: undefined }),
     });
   }
 
@@ -105,7 +148,7 @@ export function ActiveFilterChips({
     for (const value of facet.values) {
       chips.push({
         key: `specs:${facet.key}:${value}`,
-        label: value,
+        label: formatFacetChipLabel(value, definitionByKey.get(facet.key)),
         clear: () =>
           onFilterChange({
             specs: removeSpecValue(currentParams.specs, facet.key, value),
@@ -149,9 +192,17 @@ export function ActiveFilterChips({
       <button
         type="button"
         // The full set, from the one shared definition (TASK-414). On a locked
-        // category landing page `categoryId` is not in the URL query at all, so
+        // category landing page `category` is not in the URL query at all, so
         // clearing it there is a harmless no-op — the route keeps the category.
-        onClick={() => onFilterChange(clearFilterUpdates())}
+        // A locked DEVICE is excluded for the same reason and with the same
+        // usual no-op: the compat page's clean URL carries no `?device=` either
+        // (the route segment supplies it). The exclusion earns its keep on the
+        // one URL where it is NOT a no-op — a hand-edited
+        // `/catalog/chohly/iphone-15-pro?device=…`, where a blanket clear would
+        // rewrite the query out from under a heading that still says otherwise.
+        onClick={() =>
+          onFilterChange(clearFilterUpdates({ includeDevice: !lockedDevice }))
+        }
         className="text-[13.5px] font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         {dict.filters.clearAll}

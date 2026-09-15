@@ -72,4 +72,85 @@ describe("AttributeDefinitionForm (TASK-191)", () => {
       label: "Матеріал",
     });
   });
+
+  /**
+   * The facet type rule (TASK-488 / owner decision B-10): a catalogue filter is
+   * «Так/Ні» or «Вибір зі списку». The API returns a 400 for anything else; the
+   * form stops the operator before they get there and says why.
+   */
+  describe("the «використовувати як фільтр» checkbox", () => {
+    async function chooseType(name: string) {
+      await userEvent.click(screen.getByRole("combobox"));
+      await userEvent.click(await screen.findByRole("option", { name }));
+    }
+
+    it("is unavailable for a TEXT definition, with the rule spelled out", () => {
+      renderWithProviders(
+        <AttributeDefinitionForm
+          onSubmit={jest.fn()}
+          onCancel={jest.fn()}
+          isPending={false}
+          submitLabel={d.submitCreate}
+        />,
+      );
+
+      // TEXT is the default type.
+      expect(screen.getByLabelText(d.isFilterable)).toBeDisabled();
+      expect(screen.getByText(d.isFilterableHint)).toBeInTheDocument();
+    });
+
+    it("is available for BOOLEAN and for SELECT", async () => {
+      renderWithProviders(
+        <AttributeDefinitionForm
+          onSubmit={jest.fn()}
+          onCancel={jest.fn()}
+          isPending={false}
+          submitLabel={d.submitCreate}
+        />,
+      );
+
+      await chooseType(d.typeBoolean);
+      await waitFor(() =>
+        expect(screen.getByLabelText(d.isFilterable)).toBeEnabled(),
+      );
+
+      await chooseType(d.typeSelect);
+      await waitFor(() =>
+        expect(screen.getByLabelText(d.isFilterable)).toBeEnabled(),
+      );
+    });
+
+    it("unticks itself when the type changes to one that cannot be a facet", async () => {
+      const onSubmit = jest.fn();
+      renderWithProviders(
+        <AttributeDefinitionForm
+          defaultValues={{
+            key: "magsafe",
+            label: "MagSafe",
+            type: "BOOLEAN",
+            isFilterable: true,
+          }}
+          onSubmit={onSubmit}
+          onCancel={jest.fn()}
+          isPending={false}
+          submitLabel={d.submitCreate}
+        />,
+      );
+
+      expect(screen.getByLabelText(d.isFilterable)).toBeChecked();
+
+      await chooseType(d.typeNumber);
+
+      // Not left as a hidden `true` for the submit to fail on: the form clears
+      // it, so «зберегти» succeeds and the definition simply stops being a facet.
+      await waitFor(() =>
+        expect(screen.getByLabelText(d.isFilterable)).not.toBeChecked(),
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: d.submitCreate }),
+      );
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect(onSubmit.mock.calls[0][0]).toMatchObject({ isFilterable: false });
+    });
+  });
 });

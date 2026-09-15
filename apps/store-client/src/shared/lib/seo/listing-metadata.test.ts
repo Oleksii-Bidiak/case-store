@@ -72,20 +72,20 @@ describe("buildListingMetadata — filter params force noindex,follow (cases 6�
     ).toEqual(NOINDEX_FOLLOW);
   });
 
-  it("case 10: brandId filter → noindex,follow", () => {
+  it("case 10: brand filter → noindex,follow", () => {
     expect(
       buildListingMetadata({
         basePath: "/products",
-        filters: { brandId: "b1" },
+        filters: { brand: "apple" },
       }),
     ).toEqual(NOINDEX_FOLLOW);
   });
 
-  it("case 11: deviceModelId filter → noindex,follow", () => {
+  it("case 11: device filter → noindex,follow", () => {
     expect(
       buildListingMetadata({
         basePath: "/products",
-        filters: { deviceModelId: "m1" },
+        filters: { device: "iphone-15" },
       }),
     ).toEqual(NOINDEX_FOLLOW);
   });
@@ -217,6 +217,40 @@ describe("buildListingMetadata — categoryCanonicalPath redirect (cases 20–23
   });
 });
 
+describe("buildListingMetadata — slug-shaped filters (cases 25–26, TASK-420)", () => {
+  // The canonical a listing points at must be spelled the way the listing is
+  // addressed. When `?brandId=` became `?brand=`, a `ListingFilterParams` that
+  // still read `brandId` would have gone on compiling and silently stopped
+  // noindexing every brand-filtered page — a whole facet of the catalogue
+  // competing with the unfiltered listing in the index.
+  it("case 25: a category slug alone still canonicalizes onto the landing page", () => {
+    expect(
+      buildListingMetadata({
+        basePath: "/products",
+        categoryCanonicalPath: "/categories/apple-cases",
+        filters: { brand: undefined, device: undefined },
+      }),
+    ).toEqual({ canonicalPath: "/categories/apple-cases" });
+  });
+
+  it("case 26: brand or device beats the category redirect → noindex,follow", () => {
+    expect(
+      buildListingMetadata({
+        basePath: "/products",
+        categoryCanonicalPath: "/categories/apple-cases",
+        filters: { brand: "apple" },
+      }),
+    ).toEqual(NOINDEX_FOLLOW);
+    expect(
+      buildListingMetadata({
+        basePath: "/products",
+        categoryCanonicalPath: "/categories/apple-cases",
+        filters: { device: "iphone-15" },
+      }),
+    ).toEqual(NOINDEX_FOLLOW);
+  });
+});
+
 describe("buildListingMetadata — empty filters object (case 24)", () => {
   it("case 24: empty filters object with no category ≠ any filter present → self-canonical", () => {
     expect(
@@ -226,5 +260,81 @@ describe("buildListingMetadata — empty filters object (case 24)", () => {
         filters: {},
       }),
     ).toEqual({ canonicalPath: "/products" });
+  });
+});
+
+describe("buildListingMetadata — compatibility landing pages (cases 27–31, TASK-490)", () => {
+  const COMPAT = "/catalog/chohly/iphone-15-pro";
+  const CATEGORY = "/categories/chohly";
+
+  it("case 27: the UNFILTERED compat page is self-canonical and indexable", () => {
+    // Not the category: `/catalog/<категорія>/<модель>` is the ONE facet
+    // combination with an address of its own (owner decision B-10 §5), so it
+    // competes for the index rather than handing its equity to the category.
+    expect(
+      buildListingMetadata({
+        basePath: COMPAT,
+        filteredCanonicalPath: CATEGORY,
+      }),
+    ).toEqual({ canonicalPath: COMPAT });
+  });
+
+  it("case 28: page 2 of an unfiltered compat page keeps ?page=2 on itself", () => {
+    expect(
+      buildListingMetadata({
+        basePath: COMPAT,
+        filteredCanonicalPath: CATEGORY,
+        page: 2,
+      }),
+    ).toEqual({ canonicalPath: `${COMPAT}?page=2` });
+  });
+
+  it("case 29: ?specs= on a compat page → noindex,follow AND canonical to the category", () => {
+    // The acceptance criterion of plan 182 item 490, and the ONE place the
+    // house rule "never a canonical together with noindex" is relaxed: the
+    // consolidation target is a different PATH, which no amount of
+    // param-stripping would reach on its own.
+    expect(
+      buildListingMetadata({
+        basePath: COMPAT,
+        filteredCanonicalPath: CATEGORY,
+        filters: { specs: "material:Силікон" },
+      }),
+    ).toEqual({ ...NOINDEX_FOLLOW, canonicalPath: CATEGORY });
+  });
+
+  it("case 30: any other facet does the same, and the page number is dropped", () => {
+    // A filtered view consolidates onto ONE url, never a paginated one —
+    // `?page=3` of a filtered slice has no counterpart on the category.
+    for (const filters of [
+      { brand: "apple" },
+      { minPrice: "100" },
+      { inStock: "true" },
+      { onSale: "true" },
+      { search: "чохол" },
+      // A second, contradicting device in the QUERY — the segment already names
+      // one, so this can only be a stale or hand-edited URL.
+      { device: "galaxy-s24" },
+    ]) {
+      expect(
+        buildListingMetadata({
+          basePath: COMPAT,
+          filteredCanonicalPath: CATEGORY,
+          filters,
+          page: 3,
+        }),
+      ).toEqual({ ...NOINDEX_FOLLOW, canonicalPath: CATEGORY });
+    }
+  });
+
+  it("case 31: without the opt-in, a filtered listing still gets NO canonical", () => {
+    // The exception is confined to the route that asks for it: `/products` and
+    // `/categories/[slug]` keep emitting the bare noindex.
+    expect(
+      buildListingMetadata({
+        basePath: "/categories/chohly",
+        filters: { specs: "material:Силікон" },
+      }),
+    ).toEqual(NOINDEX_FOLLOW);
   });
 });

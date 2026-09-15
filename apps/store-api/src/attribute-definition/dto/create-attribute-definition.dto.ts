@@ -69,7 +69,8 @@ export class CreateAttributeDefinitionDto {
   options?: string[];
 
   @ApiProperty({
-    description: 'Whether this spec is surfaced as a catalog facet + PDP highlight',
+    description:
+      'Whether this spec is surfaced as a catalog facet + PDP highlight. Only SELECT and BOOLEAN characteristics may be facets',
     example: false,
     required: false,
     default: false,

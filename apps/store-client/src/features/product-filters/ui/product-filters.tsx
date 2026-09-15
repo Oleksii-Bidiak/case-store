@@ -22,6 +22,7 @@ import {
   clearFilterUpdates,
   hasActiveFilters as computeHasActiveFilters,
 } from "../model/active-filters";
+import { toFacetQueryParams } from "../model/facet-query";
 import { SearchInput } from "./search-input";
 import { BrandFilter } from "./brand-filter";
 import { DeviceModelFilter } from "./device-model-filter";
@@ -31,6 +32,18 @@ import { FilterCheckbox } from "./filter-checkbox";
 interface ProductFiltersProps {
   /** Currently-active filter params (derived from the URL). */
   currentParams: ProductControllerFindAllParams;
+  /**
+   * The active category's ID, resolved by the parent from the category tree
+   * (TASK-420).
+   *
+   * The URL now carries a category SLUG (`currentParams.category`), but the two
+   * things this panel needs a category for — `GET /brands?categoryId=` and
+   * `GET /categories/:id/filterable-specs` — are id-addressed endpoints that
+   * were not part of that migration. The parent already holds the tree, so it
+   * resolves once and passes the id down rather than every control re-deriving
+   * it.
+   */
+  categoryId?: string;
   /**
    * Apply one or more filter changes at once. Passing several keys keeps the
    * update atomic. An `undefined` value removes that param.
@@ -50,6 +63,15 @@ interface ProductFiltersProps {
    * returning user sees what's applied without scrolling five full cards.
    */
   collapsible?: boolean;
+  /**
+   * The compatible device is fixed by the route — `/catalog/[category]/[device]`
+   * (TASK-490). The «Сумісний пристрій» control is not rendered at all, and
+   * «скинути всі» leaves the device alone, for the same reason the category
+   * chips row disappears on a category landing page: a control that rewrites
+   * half of the current URL's meaning while the address bar keeps the old
+   * spelling is a bug, not a filter.
+   */
+  lockedDevice?: boolean;
 }
 
 const cardClass =
@@ -66,9 +88,11 @@ const cardTitleClass =
  */
 export function ProductFilters({
   currentParams,
+  categoryId,
   onFilterChange,
   idPrefix = "filter",
   collapsible = false,
+  lockedDevice = false,
 }: ProductFiltersProps) {
   // Committed price bounds from the URL, clamped into the slider domain.
   const committedMin = clampPrice(currentParams.minPrice ?? 0);
@@ -144,7 +168,14 @@ export function ProductFilters({
   // `includeCategory: false` — the category's control is the chips row above the
   // grid (TASK-216) and, on a category landing page, the route itself; clearing
   // it from in here would navigate the shopper somewhere they did not ask to go.
-  const panelFilterScope = { includeCategory: false } as const;
+  //
+  // `includeDevice` follows the same rule one segment down: on
+  // `/catalog/[category]/[device]` the device IS the route (TASK-490), so the
+  // panel neither offers it nor clears it.
+  const panelFilterScope = {
+    includeCategory: false,
+    includeDevice: !lockedDevice,
+  } as const;
   const hasActiveFilters = computeHasActiveFilters(
     currentParams,
     panelFilterScope,
@@ -160,18 +191,19 @@ export function ProductFilters({
     // Same category scope BrandFilter itself uses (TASK-414), so the drawer's
     // presence gate and the control agree — otherwise the disclosure could open
     // onto a control that self-hides.
-    currentParams.categoryId
-      ? { categoryId: currentParams.categoryId }
-      : undefined,
+    categoryId ? { categoryId } : undefined,
     { query: { enabled: collapsible } },
   );
   const hasBrands = (brandsData?.data.length ?? 0) > 0;
   const { data: specsData } = useCategoryControllerGetFilterableSpecs(
-    currentParams.categoryId ?? "",
-    { query: { enabled: collapsible && Boolean(currentParams.categoryId) } },
+    categoryId ?? "",
+    // The SAME params `SpecFacets` sends (TASK-489), or this gate would fetch a
+    // second, differently-keyed copy of the facet list — and could then open a
+    // disclosure onto a control that self-hides because its own list is narrower.
+    toFacetQueryParams(currentParams),
+    { query: { enabled: collapsible && Boolean(categoryId) } },
   );
-  const hasSpecs =
-    Boolean(currentParams.categoryId) && (specsData?.data.length ?? 0) > 0;
+  const hasSpecs = Boolean(categoryId) && (specsData?.data.length ?? 0) > 0;
 
   /**
    * Render one filter section's chrome. In `collapsible` mode it is a native
@@ -250,34 +282,36 @@ export function ProductFilters({
         renderSection(
           dict.filters.brandTitle,
           <BrandFilter
-            activeBrandId={currentParams.brandId}
-            categoryId={currentParams.categoryId}
-            onSelect={(brandId) => onFilterChange({ brandId })}
+            activeBrandSlug={currentParams.brand}
+            categoryId={categoryId}
+            onSelect={(brand) => onFilterChange({ brand })}
             cardClassName=""
             titleClassName="sr-only"
           />,
-          Boolean(currentParams.brandId),
+          Boolean(currentParams.brand),
         )
       ) : (
         <BrandFilter
-          activeBrandId={currentParams.brandId}
-          categoryId={currentParams.categoryId}
-          onSelect={(brandId) => onFilterChange({ brandId })}
+          activeBrandSlug={currentParams.brand}
+          categoryId={categoryId}
+          onSelect={(brand) => onFilterChange({ brand })}
           cardClassName={cardClass}
           titleClassName={`${cardTitleClass} mb-4`}
         />
       )}
 
-      {/* Device compatibility (TASK-190) — brand → model cascade */}
-      {renderSection(
-        dict.filters.deviceTitle,
-        <DeviceModelFilter
-          idPrefix={idPrefix}
-          currentDeviceModelId={currentParams.deviceModelId}
-          onChange={(deviceModelId) => onFilterChange({ deviceModelId })}
-        />,
-        Boolean(currentParams.deviceModelId),
-      )}
+      {/* Device compatibility (TASK-190) — brand → model cascade. Absent when
+          the route already names the device (TASK-490). */}
+      {!lockedDevice &&
+        renderSection(
+          dict.filters.deviceTitle,
+          <DeviceModelFilter
+            idPrefix={idPrefix}
+            currentDeviceModelSlug={currentParams.device}
+            onChange={(device) => onFilterChange({ device })}
+          />,
+          Boolean(currentParams.device),
+        )}
 
       {/* Price range */}
       {renderSection(
@@ -351,8 +385,8 @@ export function ProductFilters({
         renderSection(
           dict.filters.specsTitle,
           <SpecFacets
-            categoryId={currentParams.categoryId}
-            specs={currentParams.specs}
+            categoryId={categoryId}
+            currentParams={currentParams}
             onFilterChange={onFilterChange}
             idPrefix={idPrefix}
             cardClassName=""
@@ -362,8 +396,8 @@ export function ProductFilters({
         )
       ) : (
         <SpecFacets
-          categoryId={currentParams.categoryId}
-          specs={currentParams.specs}
+          categoryId={categoryId}
+          currentParams={currentParams}
           onFilterChange={onFilterChange}
           idPrefix={idPrefix}
         />

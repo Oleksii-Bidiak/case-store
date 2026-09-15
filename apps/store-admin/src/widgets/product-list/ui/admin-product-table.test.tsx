@@ -488,6 +488,200 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
 });
 
 /**
+ * Bulk «Задати колір» (TASK-487 / owner decision B-10).
+ *
+ * The assertions are on the REQUEST BODY, for the reason the group block above
+ * gives: a dialog that looks right while sending the wrong value renders
+ * identically. The one extra thing pinned here is that `null` (clear) and a
+ * blank string are NOT the same thing — the API treats `null` as "remove the
+ * colour", and a dialog that fell through to it from an empty box would make
+ * pressing «Записати» on a half-typed field quietly destructive.
+ */
+describe("AdminProductTable — bulk set colour (TASK-487)", () => {
+  let confirmSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    mockReplace.mockClear();
+    confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+  });
+  afterEach(() => confirmSpy.mockRestore());
+
+  /** Stub the bulk colour endpoint; hand back the recorded bodies. */
+  function stubColorBulk() {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch("*/api/products/color", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ data: { updatedCount: 1 } });
+      }),
+    );
+    return bodies;
+  }
+
+  async function selectTheRow() {
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
+      }),
+    );
+  }
+
+  async function openDialog() {
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.setColor(1) }),
+    );
+    return screen.findByLabelText(dict.products.bulk.colorDialogLabel);
+  }
+
+  it("offers the action only while rows are selected", async () => {
+    stubEndpoints();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(
+      screen.queryByRole("button", { name: dict.products.bulk.setColor(1) }),
+    ).not.toBeInTheDocument();
+
+    await selectTheRow();
+
+    expect(
+      screen.getByRole("button", { name: dict.products.bulk.setColor(1) }),
+    ).toBeInTheDocument();
+  });
+
+  it("sends the selected ids and the typed colour, trimmed", async () => {
+    stubEndpoints();
+    const bodies = stubColorBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    const input = await openDialog();
+    await userEvent.type(input, "  Чорний  ");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ ids: ["product-1"], color: "Чорний" });
+  });
+
+  it("sends color: null — not an empty string — for «Прибрати колір»", async () => {
+    stubEndpoints();
+    const bodies = stubColorBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await openDialog();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.colorClear }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ ids: ["product-1"], color: null });
+    // Removing a colour takes the products out of the colour filter — the one
+    // direction of this action that is worth asking about.
+    expect(confirmSpy).toHaveBeenCalled();
+  });
+
+  it("writes nothing when the clear prompt is declined", async () => {
+    confirmSpy.mockReturnValue(false);
+    stubEndpoints();
+    const bodies = stubColorBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await openDialog();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.colorClear }),
+    );
+
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("refuses to submit an empty colour rather than treating it as a clear", async () => {
+    stubEndpoints();
+    const bodies = stubColorBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await openDialog();
+    const submit = screen.getByRole("button", {
+      name: dict.products.bulk.colorSubmit,
+    });
+
+    expect(submit).toBeDisabled();
+    await userEvent.click(submit);
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("does NOT ask for confirmation when setting a colour", async () => {
+    // Nothing leaves the storefront and a typo is fixed by running it again —
+    // a prompt would be noise on the action an operator repeats most.
+    stubEndpoints();
+    stubColorBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    const input = await openDialog();
+    await userEvent.type(input, "Білий");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
+    );
+
+    await waitFor(() => expect(confirmSpy).not.toHaveBeenCalled());
+  });
+
+  it("clears the selection once the server confirms", async () => {
+    stubEndpoints();
+    stubColorBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    const input = await openDialog();
+    await userEvent.type(input, "Чорний");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: dict.products.bulk.setColor(1) }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("forgets the previous colour when the dialog is reopened", async () => {
+    // A dialog that remembers last time's value is a dialog that writes the
+    // wrong colour to the next selection.
+    stubEndpoints();
+    stubColorBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    const input = await openDialog();
+    await userEvent.type(input, "Чорний");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.cancel }),
+    );
+
+    await selectTheRow();
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
+      }),
+    );
+    expect(await openDialog()).toHaveValue("");
+  });
+});
+
+/**
  * TASK-427 — deleting from the row.
  *
  * `DELETE /api/products/:id` had existed since TASK-140, with a permission and a

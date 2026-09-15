@@ -27,6 +27,10 @@ import {
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import {
+  resolveLegacyCatalogParams,
+  withQuery,
+} from "@/shared/lib/legacy-catalog-params";
 import { SITE_URL, dict } from "@/shared/config";
 
 interface CategoryLandingPageProps {
@@ -57,6 +61,25 @@ async function resolveCategoryPath(
 }
 
 /**
+ * Serve the 308 from a pre-TASK-420 uuid query to its slug form, if this is one.
+ *
+ * `?categoryId=` is DROPPED rather than rewritten here: the category is the
+ * route segment, so a second one in the query could only ever agree redundantly
+ * or contradict — and `ProductListView` ignores it on a locked page anyway.
+ */
+async function redirectLegacyParams(
+  slug: string,
+  resolvedParams: { [key: string]: string | string[] | undefined },
+): Promise<void> {
+  const query = await resolveLegacyCatalogParams(resolvedParams, {
+    dropCategory: true,
+  });
+  if (query !== null) {
+    permanentRedirect(withQuery(`/categories/${slug}`, query));
+  }
+}
+
+/**
  * Category landing metadata (TASK-277): the shared precedence chain — the
  * category's own metaTitle/metaDescription (tier 1, admin override) → category
  * name/description (tier 2) → SeoSettings defaults (tier 3, order inverted by
@@ -70,6 +93,10 @@ export async function generateMetadata({
   searchParams,
 }: CategoryLandingPageProps): Promise<Metadata> {
   const [{ slug }, resolvedParams] = await Promise.all([params, searchParams]);
+  // A uuid-param URL never gets metadata, it gets a 308 (TASK-420). Mirrored in
+  // the page body below — unlike /products this route has no `loading.tsx`, so
+  // either hook can own the status; both land on the same URL.
+  await redirectLegacyParams(slug, resolvedParams);
 
   const [path, seo] = await Promise.all([
     resolveCategoryPath(slug),
@@ -99,8 +126,9 @@ export async function generateMetadata({
     minPrice: first(resolvedParams.minPrice),
     maxPrice: first(resolvedParams.maxPrice),
     specs: first(resolvedParams.specs),
-    brandId: first(resolvedParams.brandId),
-    deviceModelId: first(resolvedParams.deviceModelId),
+    // Slugs since TASK-420 — `?brand=apple&device=iphone-15`.
+    brand: first(resolvedParams.brand),
+    device: first(resolvedParams.device),
     onSale: first(resolvedParams.onSale),
     inStock: first(resolvedParams.inStock),
   };
@@ -156,6 +184,7 @@ export default async function CategoryLandingPage({
   searchParams,
 }: CategoryLandingPageProps) {
   const [{ slug }, resolved] = await Promise.all([params, searchParams]);
+  await redirectLegacyParams(slug, resolved);
 
   const path = await resolveCategoryPath(slug);
   if (!path) {
@@ -189,7 +218,10 @@ export default async function CategoryLandingPage({
   const page = first(resolved.page);
 
   const initialParams: ProductControllerFindAllParams = {
-    categoryId: node.id,
+    // The route's own slug IS the category filter (TASK-420) — no id round-trip.
+    category: node.slug,
+    brand: first(resolved.brand),
+    device: first(resolved.device),
     search: first(resolved.search)?.trim() || undefined,
     sortBy: first(resolved.sortBy) ?? "createdAt",
     sortOrder: first(resolved.sortOrder) ?? "desc",
@@ -272,7 +304,9 @@ export default async function CategoryLandingPage({
       <Suspense fallback={<ProductListSkeleton />}>
         <ProductListView
           initialParams={initialParams}
-          lockedCategoryId={node.id}
+          // Slug for the listing filter, id for the id-addressed side endpoints
+          // (brands-per-category, filterable specs) — TASK-420.
+          lockedCategory={{ id: node.id, slug: node.slug }}
         />
       </Suspense>
     </div>
@@ -312,7 +346,7 @@ async function buildCategoryPageSchemas(
   let itemList: Record<string, unknown> | null = null;
   try {
     const { data: products } = await productControllerFindAll({
-      categoryId: node.id,
+      category: node.slug,
       isActive: true,
       page: 1,
       limit: 20,

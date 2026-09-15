@@ -80,8 +80,14 @@ describe('ProductController (e2e)', () => {
   // Mock CategoryRepository — ProductService depends on it for the TASK-236
   // subtree rollup. `findSubtreeIds` echoes the requested id as a single-element
   // subtree so the (mocked) ProductRepository receives a well-formed id list.
+  //
+  // `findById`/`findBySlug` back the TASK-420 slug → id resolver (the real one
+  // runs here, over these mocks). Both echo the requested key back as a resolved
+  // row, so either spelling of a filter reaches the repository unchanged.
   const categoryRepositoryMock = {
     findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
+    findById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
+    findBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
   };
 
   // Mock PrismaService — prevents database connection errors
@@ -103,6 +109,28 @@ describe('ProductController (e2e)', () => {
     // path resolves cleanly with an empty `compatibleDeviceModels`.
     productDeviceCompat: {
       findMany: jest.fn().mockResolvedValue([]),
+    },
+    // TASK-420: `?brand=`/`?device=` are resolved by the REAL BrandRepository /
+    // DeviceRepository (neither is overridden here), which read through this
+    // mock. Echoing the requested slug back as a row keeps the filter intact all
+    // the way to the (mocked) product repository.
+    brand: {
+      findUnique: jest.fn(({ where }: { where: { slug?: string; id?: string } }) =>
+        Promise.resolve(
+          where.slug
+            ? { id: `id-of-${where.slug}`, slug: where.slug }
+            : { id: where.id, slug: `slug-of-${where.id}` },
+        ),
+      ),
+    },
+    deviceModel: {
+      findUnique: jest.fn(({ where }: { where: { slug?: string; id?: string } }) =>
+        Promise.resolve(
+          where.slug
+            ? { id: `id-of-${where.slug}`, slug: where.slug }
+            : { id: where.id, slug: `slug-of-${where.id}` },
+        ),
+      ),
     },
   };
 
@@ -271,6 +299,50 @@ describe('ProductController (e2e)', () => {
           search: 'iphone',
           page: 1,
           limit: 10,
+        }),
+      );
+    });
+
+    // TASK-420: the catalogue's public URL contract. A slug must reach the
+    // repository as the id it names — and a slug that is not a uuid must not be
+    // rejected by validation on the way, which is exactly what happened before
+    // (`@IsUUID` on all three axes made `?brand=apple` a 400).
+    it('accepts the slug-shaped filter params', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get(
+          `/api/products?category=phone-cases&brand=apple&device=iphone-15&search=task420-slugs-${Date.now()}`,
+        )
+        .expect(200);
+
+      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('phone-cases', {
+        activeOnly: false,
+      });
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categoryIds: ['id-of-phone-cases'],
+          brandId: 'id-of-apple',
+          deviceModelId: 'id-of-iphone-15',
+        }),
+      );
+    });
+
+    // Degrade, don't refuse: a dead catalogue link is not a client error. It is
+    // also not permission to show the whole catalogue — the filter stays applied
+    // and matches nothing.
+    it('answers an unknown slug with an empty page, not a 400', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      categoryRepositoryMock.findBySlug.mockResolvedValueOnce(null);
+
+      const response = await request(app.getHttpServer())
+        .get(`/api/products?category=no-such-category&search=task420-miss-${Date.now()}`)
+        .expect(200);
+
+      expect(response.body.data).toEqual([]);
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categoryIds: ['00000000-0000-0000-0000-000000000000'],
         }),
       );
     });

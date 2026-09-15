@@ -4,6 +4,7 @@ import { SITE_URL, pageRouteFor } from "@/shared/config";
 import {
   fetchAllActiveCategories,
   fetchAllActiveProducts,
+  fetchAllCompatLandingPages,
   fetchAllPublishedPages,
 } from "@/shared/lib/schema";
 import { fetchPublishedPosts } from "@/shared/api/blog-server";
@@ -69,12 +70,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
   // Products, categories, published static pages, and blog posts are fetched
   // independently so a failure of one source never drops the others.
-  const [productRoutes, categoryRoutes, pageRoutes, blogRoutes] =
+  const [productRoutes, categoryRoutes, pageRoutes, blogRoutes, compatRoutes] =
     await Promise.all([
       fetchProductRoutes(),
       fetchCategoryRoutes(),
       fetchPageRoutes(),
       fetchBlogRoutes(now),
+      fetchCompatRoutes(now),
     ]);
 
   return [
@@ -83,6 +85,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...categoryRoutes,
     ...pageRoutes,
     ...blogRoutes,
+    ...compatRoutes,
   ];
 }
 
@@ -124,6 +127,36 @@ async function fetchCategoryRoutes(): Promise<MetadataRoute.Sitemap> {
     }));
   } catch (err) {
     reportSourceFailure("categories", err);
+    return [];
+  }
+}
+
+/**
+ * One entry per compatibility landing page — `/catalog/<категорія>/<модель>`,
+ * «Чохли для iPhone 15 Pro» (TASK-490, owner decision B-10 §5).
+ *
+ * The API returns exactly the pairs that have at least one visible product, so
+ * this branch never lists a URL that 404s and never omits one that answers 200.
+ * These are the ONLY facet combinations with an indexable address of their own;
+ * every other facet stays a query param that is `noindex` and canonicalises back
+ * onto the category, which is why there is nothing else to emit here.
+ *
+ * `lastModified: now` because a pair owns no timestamp (it is a cross, not a
+ * row) — same honest stand-in the blog branch uses for a post without a
+ * `publishedAt`. `priority` sits below the category's 0.7: a compat page is a
+ * narrower slice of a category that is itself already in this sitemap.
+ */
+async function fetchCompatRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
+  try {
+    const pages = await fetchAllCompatLandingPages();
+    return pages.map((page) => ({
+      url: `${SITE_URL}/catalog/${page.categorySlug}/${page.deviceSlug}`,
+      lastModified: now,
+      changeFrequency: "weekly",
+      priority: 0.6,
+    }));
+  } catch (err) {
+    reportSourceFailure("compat landing pages", err);
     return [];
   }
 }

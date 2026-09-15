@@ -16,18 +16,24 @@ import {
 const ALL_BRANDS = "__all_brands__";
 
 interface BrandFilterProps {
-  /** Currently selected brand id (from `?brandId=`), if any. */
-  activeBrandId?: string;
+  /** Currently selected brand SLUG (from `?brand=`), if any (TASK-420). */
+  activeBrandSlug?: string;
   /**
    * Narrow the offered brands to those stocking something in this category
    * subtree (TASK-414). Omit on an unscoped catalogue to offer every brand.
+   *
+   * Still an ID, deliberately: `GET /brands?categoryId=` is a different endpoint
+   * from the catalogue listing and was not part of the TASK-420 URL migration —
+   * this value never reaches the address bar, and the parent already knows the
+   * id because it holds the category tree.
    */
   categoryId?: string;
   /**
    * Select a brand (`undefined` = all brands). The caller writes the choice to
-   * the `?brandId=` URL param, combinable with the category/price/search filters.
+   * the `?brand=` URL param (a SLUG since TASK-420), combinable with the
+   * category/price/search filters.
    */
-  onSelect: (brandId: string | undefined) => void;
+  onSelect: (brandSlug: string | undefined) => void;
   /** Class applied to the outer card wrapper (matches the sibling filter cards). */
   cardClassName?: string;
   /** Class applied to the card title. */
@@ -44,11 +50,11 @@ interface BrandFilterProps {
  * every brand in the shop regardless of where the shopper was standing, so
  * inside a category stocking two makes it offered a dozen — and picking one of
  * the others produced a guaranteed-empty grid. The API does the narrowing
- * (`?categoryId=`) against the same subtree rollup the product list uses, so the
+ * (`GET /brands?categoryId=`) against the same subtree rollup the product list uses, so the
  * dropdown and the grid can never disagree.
  */
 export function BrandFilter({
-  activeBrandId,
+  activeBrandSlug,
   categoryId,
   onSelect,
   cardClassName,
@@ -66,8 +72,8 @@ export function BrandFilter({
   // request never clears a valid selection.
   const missingFromSlice =
     isSuccess &&
-    Boolean(activeBrandId) &&
-    !brands.some((brand) => brand.id === activeBrandId);
+    Boolean(activeBrandSlug) &&
+    !brands.some((brand) => brand.slug === activeBrandSlug);
 
   useEffect(() => {
     if (missingFromSlice) {
@@ -87,7 +93,9 @@ export function BrandFilter({
     <div className={cardClassName}>
       <h3 className={titleClassName}>{dict.filters.brandTitle}</h3>
       <Select
-        value={activeBrandId && !missingFromSlice ? activeBrandId : ALL_BRANDS}
+        value={
+          activeBrandSlug && !missingFromSlice ? activeBrandSlug : ALL_BRANDS
+        }
         onValueChange={(value) =>
           onSelect(value === ALL_BRANDS ? undefined : value)
         }
@@ -105,7 +113,7 @@ export function BrandFilter({
         <SelectContent className="rounded-xl">
           <SelectItem value={ALL_BRANDS}>{dict.filters.allBrands}</SelectItem>
           {brands.map((brand) => (
-            <SelectItem key={brand.id} value={brand.id}>
+            <SelectItem key={brand.id} value={brand.slug}>
               {brand.name}
             </SelectItem>
           ))}

@@ -257,7 +257,7 @@ describe("SearchResultsView", () => {
 
     it("forwards every URL facet to the search request", async () => {
       currentQuery =
-        "q=%D0%B0%D0%B9%D1%84%D0%BE%D0%BD&brandId=brand-1&deviceModelId=dm-1&inStock=true&minPrice=100&maxPrice=500&sort=price_asc&page=2";
+        "q=%D0%B0%D0%B9%D1%84%D0%BE%D0%BD&brand=apple&device=iphone-15&inStock=true&minPrice=100&maxPrice=500&sort=price_asc&page=2";
       const requests = installSearch();
 
       renderWithProviders(<SearchResultsView query="айфон" page={1} />);
@@ -265,8 +265,10 @@ describe("SearchResultsView", () => {
 
       const url = requests[0];
       expect(url.searchParams.get("q")).toBe("айфон");
-      expect(url.searchParams.get("brandId")).toBe("brand-1");
-      expect(url.searchParams.get("deviceModelId")).toBe("dm-1");
+      // TASK-420 — `/search` migrated to slugs together with the catalogue, so
+      // the shared filter panel writes one param language on both pages.
+      expect(url.searchParams.get("brand")).toBe("apple");
+      expect(url.searchParams.get("device")).toBe("iphone-15");
       expect(url.searchParams.get("inStock")).toBe("true");
       expect(url.searchParams.get("minPrice")).toBe("100");
       expect(url.searchParams.get("maxPrice")).toBe("500");
@@ -286,7 +288,7 @@ describe("SearchResultsView", () => {
     });
 
     it("renders the shared numbered pagination, preserving the filters in every href", async () => {
-      currentQuery = "q=case&brandId=brand-1&page=2";
+      currentQuery = "q=case&brand=apple&page=2";
       installSearch(60);
 
       renderWithProviders(<SearchResultsView query="case" page={2} />);
@@ -296,7 +298,7 @@ describe("SearchResultsView", () => {
       expect(third).toHaveAttribute("href", expect.stringContaining("page=3"));
       expect(third).toHaveAttribute(
         "href",
-        expect.stringContaining("brandId=brand-1"),
+        expect.stringContaining("brand=apple"),
       );
       expect(screen.getByRole("link", { name: "2" })).toHaveAttribute(
         "aria-current",
@@ -328,13 +330,13 @@ describe("SearchResultsView", () => {
     it("keeps the query when the panel's «скинути фільтри» clears the filters", async () => {
       // The keyword is the SUBJECT of /search, not one of its filters: a reset
       // must not drop the shopper back onto the blank "start searching" prompt.
-      currentQuery = "q=case&brandId=brand-1&inStock=true";
+      currentQuery = "q=case&brand=apple&inStock=true";
       installSearch();
 
       renderWithProviders(<SearchResultsView query="case" page={1} />);
       await screen.findByText("iPhone 15 Case");
 
-      // The panel self-corrects a brand id it cannot offer (BrandFilter, empty
+      // The panel self-corrects a brand slug it cannot offer (BrandFilter, empty
       // list here), so only the write the click itself causes is interesting.
       mockReplace.mockClear();
       await userEvent.click(
@@ -347,7 +349,7 @@ describe("SearchResultsView", () => {
         "http://localhost",
       );
       expect(target.searchParams.get("q")).toBe("case");
-      expect(target.searchParams.get("brandId")).toBeNull();
+      expect(target.searchParams.get("brand")).toBeNull();
       expect(target.searchParams.get("inStock")).toBeNull();
     });
 

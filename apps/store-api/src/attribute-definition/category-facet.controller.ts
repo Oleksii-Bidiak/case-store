@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -8,7 +8,8 @@ import {
   ApiProperty,
 } from '@nestjs/swagger';
 import { AttributeDefinitionService } from './attribute-definition.service';
-import { AttributeDefinitionEntity, FilterableSpecEntity } from './entities';
+import { AttributeDefinitionEntity, FacetValueCountEntity, FilterableSpecEntity } from './entities';
+import { FilterableSpecsQueryDto } from './dto';
 
 /** Response envelope for a category's filterable-spec facets. */
 class FilterableSpecsResponse {
@@ -24,7 +25,12 @@ class FilterableSpecsResponse {
  * resolution live — to avoid a Category ↔ AttributeDefinition module cycle.
  */
 @ApiTags('Categories')
-@ApiExtraModels(AttributeDefinitionEntity, FilterableSpecEntity, FilterableSpecsResponse)
+@ApiExtraModels(
+  AttributeDefinitionEntity,
+  FacetValueCountEntity,
+  FilterableSpecEntity,
+  FilterableSpecsResponse,
+)
 @Controller('categories')
 export class CategoryFacetController {
   constructor(private readonly service: AttributeDefinitionService) {}
@@ -32,18 +38,27 @@ export class CategoryFacetController {
   /**
    * GET /api/categories/:id/filterable-specs
    *
-   * Returns the category's effective `isFilterable` definitions plus the
-   * distinct values in use across its subtree — enough for the storefront to
-   * render facet select controls without a second "distinct values" query.
+   * Returns the category's effective `isFilterable` definitions plus the values
+   * in use across its subtree WITH the number of products behind each one —
+   * enough for the storefront to render «Силікон (12)» without a second query
+   * per value (TASK-489).
+   *
+   * The query string carries the shopper's OTHER active filters (brand, device,
+   * price, search, availability, the other facets) because the counts are
+   * relative to them: a facet endpoint that ignored them would publish numbers
+   * the listing immediately contradicts.
    */
   @Get(':id/filterable-specs')
   @ApiOperation({
-    summary: "List a category's filterable spec facets",
+    summary: "List a category's filterable spec facets with product counts",
     operationId: 'categoryControllerGetFilterableSpecs',
   })
   @ApiParam({ name: 'id', description: 'Category UUID' })
   @ApiResponse({ status: 200, type: FilterableSpecsResponse })
-  async getFilterableSpecs(@Param('id') id: string): Promise<FilterableSpecsResponse> {
-    return { data: await this.service.getFilterableSpecs(id) };
+  async getFilterableSpecs(
+    @Param('id') id: string,
+    @Query() query: FilterableSpecsQueryDto,
+  ): Promise<FilterableSpecsResponse> {
+    return { data: await this.service.getFilterableSpecs(id, query) };
   }
 }

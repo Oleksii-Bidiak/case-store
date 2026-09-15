@@ -1,6 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
+import { dict } from "@/shared/config";
 
 interface FilterCheckboxProps {
   id?: string;
@@ -8,8 +9,16 @@ interface FilterCheckboxProps {
   onCheckedChange: (checked: boolean) => void;
   /** Visible label text. */
   label: string;
-  /** Optional trailing hint (a count, a unit) rendered muted. */
+  /** Optional trailing hint (a unit, a note) rendered muted. */
   hint?: string;
+  /**
+   * Products behind this value, rendered as «(12)» right after the label
+   * (TASK-489). Rendered INSIDE the `<label>`, so it joins the checkbox's
+   * accessible name rather than decorating the row visually — a shopper using a
+   * screen reader hears «Силікон, 12 товарів» and can weigh the choice the same
+   * way a sighted one does.
+   */
+  count?: number;
 }
 
 /**
@@ -30,6 +39,7 @@ export function FilterCheckbox({
   onCheckedChange,
   label,
   hint,
+  count,
 }: FilterCheckboxProps) {
   return (
     <label
@@ -58,6 +68,20 @@ export function FilterCheckbox({
       >
         {label}
       </span>
+      {count !== undefined && (
+        <>
+          {/* The digits are for the eye; the sentence next to them is for the
+              screen reader, so the number is announced as a quantity and not as
+              a stray numeral appended to the value's name. */}
+          <span
+            aria-hidden="true"
+            className="shrink-0 font-mono text-xs text-muted-foreground"
+          >
+            {dict.filters.facetCount(count)}
+          </span>
+          <span className="sr-only">{dict.filters.facetCountAria(count)}</span>
+        </>
+      )}
       {hint && (
         <span className="shrink-0 font-mono text-xs text-muted-foreground">
           {hint}

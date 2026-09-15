@@ -238,6 +238,26 @@ export class CategoryRepository {
   }
 
   /**
+   * Resolve a set of category ids to their rows in ONE read (TASK-490).
+   *
+   * Backs the compatibility-landing rollup, which walks every pair's ancestor
+   * chain and then needs each link's slug, name and visibility to decide whether
+   * that link is a page at all. Doing it per id would be an N+1 over a chain
+   * that is at most a handful deep but repeats for every distinct category in
+   * the catalogue.
+   *
+   * Unfiltered by `isActive` on purpose: the caller has to be able to tell a
+   * DEACTIVATED ancestor (skip the page, keep walking up — the grandparent's
+   * listing still rolls those products up) from a MISSING one.
+   */
+  findByIds(ids: string[]): Promise<Category[]> {
+    if (ids.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.prisma.category.findMany({ where: { id: { in: ids } } });
+  }
+
+  /**
    * Find a category by slug.
    *
    * @param options.activeOnly - when `true` (the DEFAULT), a deactivated category

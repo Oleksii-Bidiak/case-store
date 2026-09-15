@@ -1,6 +1,12 @@
 import { PinoLogger } from 'nestjs-pino';
 import { ProductRepository } from '../product/product.repository';
 import { CategoryRepository } from '../category';
+import { BrandRepository } from '../brand';
+import { DeviceRepository } from '../device';
+import {
+  CatalogueFilterResolver,
+  UNRESOLVED_FILTER_ID,
+} from '../catalog-filter/catalogue-filter.resolver';
 import { PublicProductEntity } from '../product/entities';
 import { MeiliClient } from './meili.client';
 import {
@@ -95,7 +101,13 @@ describe('SearchService', () => {
       'findAll' | 'findByIdsForCards' | 'findOneForIndex' | 'findManyForIndex' | 'findBySku'
     >
   >;
-  let categoryRepo: jest.Mocked<Pick<CategoryRepository, 'findAncestorIds' | 'findSubtreeIds'>>;
+  let categoryRepo: jest.Mocked<Pick<CategoryRepository, 'findAncestorIds' | 'findSubtreeIds'>> & {
+    findBySlug?: jest.Mock;
+    findById?: jest.Mock;
+  };
+  // TASK-420 — the two repositories the slug → id resolver adds.
+  let brandRepo: { findBySlug: jest.Mock; findById: jest.Mock };
+  let deviceRepo: { findModelBySlug: jest.Mock; findModelById: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -128,11 +140,32 @@ describe('SearchService', () => {
       findAncestorIds: jest.fn((id: string) => Promise.resolve([id])),
       findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
     };
+    // TASK-420: `/search` narrows by the same slug-shaped axes as the catalogue.
+    // The REAL resolver over stub repositories, so `searchFromQuery` is tested
+    // against the actual slug → id step rather than a mock of it.
+    brandRepo = {
+      findBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
+      findById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
+    };
+    deviceRepo = {
+      findModelBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
+      findModelById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
+    };
+    categoryRepo.findBySlug = jest.fn((slug: string) =>
+      Promise.resolve({ id: `id-of-${slug}`, slug }),
+    );
+    categoryRepo.findById = jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` }));
+
     service = new SearchService(
       meili as unknown as MeiliClient,
       repo as unknown as ProductRepository,
       categoryRepo as unknown as CategoryRepository,
       loggerMock,
+      new CatalogueFilterResolver(
+        categoryRepo as unknown as CategoryRepository,
+        brandRepo as unknown as BrandRepository,
+        deviceRepo as unknown as DeviceRepository,
+      ),
     );
   });
 
@@ -564,6 +597,65 @@ describe('SearchService', () => {
           inStock: undefined,
           sortBy: 'createdAt',
           sortOrder: 'desc',
+        }),
+      );
+    });
+  });
+
+  // ─── searchFromQuery: slug facets (TASK-420) ────────────────────────────────
+  // `/search` migrated together with the catalogue, so the results page speaks
+  // one param language with the filter panel it shares. The resolution happens
+  // in the service, not the controller, and the slug never reaches the
+  // Meilisearch filter EXPRESSION — only the id read back out of the database.
+
+  describe('searchFromQuery (slug facets)', () => {
+    beforeEach(() => {
+      meili.search.mockResolvedValue({
+        hits: [{ id: 'product-1' }] as never,
+        estimatedTotalHits: 1,
+      });
+      repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
+    });
+
+    it('resolves slug facets to ids before building the engine filter', async () => {
+      await service.searchFromQuery({
+        q: 'case',
+        category: 'phone-cases',
+        brand: 'apple',
+        device: 'iphone-15',
+      });
+
+      expect(meili.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({
+          filter: [
+            'isActive = true',
+            'categoryIds = "id-of-phone-cases"',
+            'brandId = "id-of-apple"',
+            'deviceModelIds = "id-of-iphone-15"',
+          ],
+        }),
+      );
+    });
+
+    it('still accepts the legacy uuid spelling', async () => {
+      await service.searchFromQuery({ q: 'case', brandId: 'brand-uuid-1' });
+
+      expect(meili.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({ filter: ['isActive = true', 'brandId = "brand-uuid-1"'] }),
+      );
+    });
+
+    it('narrows to nothing — never widens — when a slug names nothing', async () => {
+      brandRepo.findBySlug.mockResolvedValue(null);
+
+      await service.searchFromQuery({ q: 'case', brand: 'no-such-brand' });
+
+      expect(meili.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({
+          filter: ['isActive = true', `brandId = "${UNRESOLVED_FILTER_ID}"`],
         }),
       );
     });

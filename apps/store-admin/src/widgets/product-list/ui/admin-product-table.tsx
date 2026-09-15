@@ -36,10 +36,12 @@ import {
   type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency, formatDate } from "@/shared/lib";
+import { colorsInUse, formatCurrency, formatDate } from "@/shared/lib";
+import { useProductBulkColor } from "../model/use-product-bulk-color";
 import { useProductBulkGroup } from "../model/use-product-bulk-group";
 import { AdminProductTableSkeleton } from "./admin-product-table-skeleton";
 import { MoveToGroupDialog } from "./move-to-group-dialog";
+import { SetColorDialog } from "./set-color-dialog";
 
 /**
  * Paginated, searchable, sortable product table for the admin panel.
@@ -209,8 +211,22 @@ function AdminProductTableView() {
     },
   });
 
+  // ── bulk «Задати колір» (TASK-487 / owner decision B-10) ──────────────────
+  // Colour is the strongest facet in accessories and the one nobody filled in:
+  // it arrives as a variant axis, and the product form edits one position at a
+  // time. The endpoint writes both halves — the axis JSON and the `Колір`
+  // characteristic the catalogue filters on.
+  const [isColorDialogOpen, setColorDialogOpen] = useState(false);
+  const bulkColor = useProductBulkColor({
+    onSuccess: () => {
+      selection.clear();
+      setColorDialogOpen(false);
+    },
+  });
+
   const selectedIds = [...selection.selectedIds];
-  const isMutating = bulk.isPending || bulkGroup.isPending;
+  const isMutating =
+    bulk.isPending || bulkGroup.isPending || bulkColor.isPending;
 
   return (
     <div className="flex flex-col gap-4">
@@ -279,6 +295,14 @@ function AdminProductTableView() {
             label: dict.products.bulk.moveToGroup(selection.selectedCount),
             onClick: () => setGroupDialogOpen(true),
           },
+          // TASK-487. Sits beside «Перемістити до групи» on purpose: assembling
+          // a colour family and giving its positions their colours is one job,
+          // and doing the second half one product at a time is why the colour
+          // facet was empty everywhere before this.
+          {
+            label: dict.products.bulk.setColor(selection.selectedCount),
+            onClick: () => setColorDialogOpen(true),
+          },
         ]}
       />
 
@@ -290,6 +314,18 @@ function AdminProductTableView() {
         isLoadingGroups={groupsQuery.isLoading}
         isPending={bulkGroup.isPending}
         onConfirm={(groupId) => bulkGroup.setGroup(selectedIds, groupId)}
+      />
+
+      <SetColorDialog
+        open={isColorDialogOpen}
+        onOpenChange={setColorDialogOpen}
+        selectedCount={selection.selectedCount}
+        // Suggestions come from the rows already on screen — no second
+        // round-trip, and the page the operator is looking at is exactly the
+        // neighbourhood whose spelling they should match.
+        suggestions={colorsInUse(products)}
+        isPending={bulkColor.isPending}
+        onConfirm={(color) => bulkColor.setColor(selectedIds, color)}
       />
 
       {isLoading ? (

@@ -36,9 +36,10 @@ describe("catalog active-filter helpers", () => {
       page: 1,
       limit: 20,
       search: "чохол",
-      categoryId: "cat-1",
-      brandId: "brand-1",
-      deviceModelId: "model-1",
+      // Slugs since TASK-420 — this list IS the URL contract.
+      category: "phone-cases",
+      brand: "apple",
+      device: "iphone-15",
       minPrice: 100,
       maxPrice: 900,
       specs: "material:Силікон,TPU;form:Накладка",
@@ -58,10 +59,36 @@ describe("catalog active-filter helpers", () => {
   });
 
   it("excludes the category when asked (its control is the chips row / the route)", () => {
-    const params = { page: 1, limit: 20, categoryId: "cat-1", search: "чохол" };
+    const params = {
+      page: 1,
+      limit: 20,
+      category: "phone-cases",
+      search: "чохол",
+    };
 
     expect(countActiveFilters(params)).toBe(2);
     expect(countActiveFilters(params, { includeCategory: false })).toBe(1);
+  });
+
+  // TASK-490 — on a compat landing page the device is the second URL SEGMENT,
+  // not a filter the drawer can change; badging it would promise a control the
+  // panel does not render.
+  it("excludes the device when the route owns it", () => {
+    const params = {
+      page: 1,
+      limit: 20,
+      category: "chohly",
+      device: "iphone-15-pro",
+      brand: "apple",
+    };
+
+    expect(countActiveFilters(params)).toBe(3);
+    expect(
+      countActiveFilters(params, {
+        includeCategory: false,
+        includeDevice: false,
+      }),
+    ).toBe(1);
   });
 
   it("treats an empty string as no filter", () => {
@@ -81,9 +108,9 @@ describe("catalog active-filter helpers", () => {
     it("clears the FULL set, not only what is currently active", () => {
       expect(clearFilterUpdates()).toEqual({
         search: undefined,
-        categoryId: undefined,
-        brandId: undefined,
-        deviceModelId: undefined,
+        category: undefined,
+        brand: undefined,
+        device: undefined,
         minPrice: undefined,
         maxPrice: undefined,
         specs: undefined,
@@ -94,9 +121,24 @@ describe("catalog active-filter helpers", () => {
     it("keeps the category out of the updates when it is locked/owned elsewhere", () => {
       const updates = clearFilterUpdates({ includeCategory: false });
 
-      expect("categoryId" in updates).toBe(false);
+      expect("category" in updates).toBe(false);
       expect(updates.specs).toBeUndefined();
       expect("inStock" in updates).toBe(true);
+    });
+
+    // TASK-490 — `/catalog/[category]/[device]` locks BOTH taxonomy segments.
+    // A reset that dropped the device would leave the page listing the whole
+    // category under an «… для iPhone 15 Pro» heading.
+    it("keeps the device out of the updates when the route owns it", () => {
+      const updates = clearFilterUpdates({
+        includeCategory: false,
+        includeDevice: false,
+      });
+
+      expect("device" in updates).toBe(false);
+      expect("category" in updates).toBe(false);
+      expect("brand" in updates).toBe(true);
+      expect("specs" in updates).toBe(true);
     });
 
     // A reset that does not clear everything the panel can set is the exact

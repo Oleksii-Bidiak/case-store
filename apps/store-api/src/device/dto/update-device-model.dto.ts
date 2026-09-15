@@ -80,4 +80,49 @@ export class UpdateDeviceModelDto {
   @IsOptional()
   @IsBoolean({ message: 'isActive must be true or false' })
   isActive?: boolean;
+
+  // ─── Compatibility-landing copy (TASK-490) ─────────────────────────────────
+  // All three accept an explicit `null` to CLEAR the override and fall back to
+  // the generated template — same `ValidateIf` shape `series`/`releaseYear` use
+  // above, and the same reason: with `undefined` Prisma reads "no change", so
+  // an admin could set an override once and never take it off again.
+
+  @ApiProperty({
+    description: 'Admin override for the compatibility landing page <title>',
+    example: 'Чохли для iPhone 15 Pro — купити в MobileStore',
+    required: false,
+    nullable: true,
+    type: String,
+  })
+  @IsOptional()
+  @ValidateIf((o: UpdateDeviceModelDto) => o.metaTitle !== null)
+  @IsString()
+  @MaxLength(255, { message: 'Meta title must be at most 255 characters' })
+  metaTitle?: string | null;
+
+  @ApiProperty({
+    description: 'Admin override for the compatibility landing page meta description',
+    example: 'Понад 40 чохлів для iPhone 15 Pro: силікон, шкіра, MagSafe.',
+    required: false,
+    nullable: true,
+    type: String,
+  })
+  @IsOptional()
+  @ValidateIf((o: UpdateDeviceModelDto) => o.metaDescription !== null)
+  @IsString()
+  @MaxLength(500, { message: 'Meta description must be at most 500 characters' })
+  metaDescription?: string | null;
+
+  @ApiProperty({
+    description: 'Admin override for the landing page lead paragraph under the H1',
+    example: 'Усі чохли, що точно сідають на iPhone 15 Pro.',
+    required: false,
+    nullable: true,
+    type: String,
+  })
+  @IsOptional()
+  @ValidateIf((o: UpdateDeviceModelDto) => o.description !== null)
+  @IsString()
+  @MaxLength(2000, { message: 'Description must be at most 2000 characters' })
+  description?: string | null;
 }

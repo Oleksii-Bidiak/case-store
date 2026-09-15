@@ -196,7 +196,7 @@ export function CategoriesView() {
               {brands.map((brand) => (
                 <Link
                   key={brand.id}
-                  href={`/products?brandId=${brand.id}`}
+                  href={`/products?brand=${encodeURIComponent(brand.slug)}`}
                   className="inline-flex h-14 min-w-[118px] items-center justify-center rounded-xl border border-border bg-card px-[22px] font-display text-base font-bold text-foreground no-underline shadow-card transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {brand.name}

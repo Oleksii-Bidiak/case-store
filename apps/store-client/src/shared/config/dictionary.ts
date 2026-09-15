@@ -481,12 +481,28 @@ export const dict = {
     // Breadcrumb trail shown above the catalog title.
     breadcrumbHome: "Головна",
     breadcrumbProducts: "Товари",
-    // Category-scoped catalog (`/products?categoryId=…`): the mid crumb links to
+    // Category-scoped catalog (`/products?category=…`): the mid crumb links to
     // the categories hub, the last crumb is the selected category name.
     breadcrumbCategories: "Категорії",
     categoryFallback: "Категорія",
     categorySubtitle: (name: string) =>
       `Товари з категорії «${name}» — фільтруйте за ціною та сортуйте зручним способом.`,
+    // Compatibility landing pages `/catalog/<категорія>/<модель>` (TASK-490,
+    // owner decision B-10 §5). Templates, not fixed strings: the page has no
+    // copy of its own, it is generated per (категорія × модель) pair. Whatever
+    // an admin types into the device model's own SEO fields WINS over these —
+    // the template is the floor, not the ceiling.
+    //
+    // «Чохли» + «iPhone 15 Pro» → «Чохли для iPhone 15 Pro»: the category name
+    // is already the nominative plural the shop lists it under, which is the
+    // form this phrase needs, so no declension is attempted.
+    compatHeading: (categoryName: string, deviceName: string) =>
+      `${categoryName} для ${deviceName}`,
+    compatSubtitle: (categoryName: string, deviceName: string) =>
+      `Усі товари категорії «${categoryName}», сумісні з ${deviceName}. Фільтруйте за ціною, брендом і характеристиками.`,
+    // Last crumb of the compat page's breadcrumb trail — the device alone, since
+    // the category is the crumb right before it.
+    compatBreadcrumb: (deviceName: string) => deviceName,
     // In-catalog keyword search (`/products?search=…`, distinct from /search).
     searchTitle: (q: string) => `Пошук: «${q}»`,
     searchSubtitle: (q: string) => `Результати каталогу за запитом «${q}».`,
@@ -836,6 +852,23 @@ export const dict = {
     // TASK-414 — facets beyond the first few fold behind this toggle.
     moreFacets: (n: number) => `Ще фільтри (${n})`,
     fewerFacets: "Згорнути фільтри",
+    // TASK-489 / B-10 §4 — «Силікон (12)». The number is the products behind
+    // that value WITH the rest of the selection applied, so it is also what the
+    // drawer's «Показати N товарів» will read after ticking it.
+    facetCount: (n: number) => `(${n})`,
+    // Spoken form of the same number. The digits alone would be announced as a
+    // bare "12" glued onto the value's name; this makes the checkbox's
+    // accessible name read «Силікон, 12 товарів». Same mod10/mod100 rule as
+    // `mobileApply` above.
+    facetCountAria: (n: number) => {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      let word = "товарів";
+      if (mod10 === 1 && mod100 !== 11) word = "товар";
+      else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20))
+        word = "товари";
+      return `${n} ${word}`;
+    },
   },
 
   product: {
@@ -1757,6 +1790,17 @@ export const dict = {
     categoriesTitle: "Категорії",
     categoriesDescription:
       "Усі категорії товарів магазину — оберіть розділ і перейдіть до потрібних товарів.",
+    // Compatibility landing pages (TASK-490). The <title>/description twin of
+    // `catalog.compatHeading`/`compatSubtitle`: same pair, phrased for a SERP
+    // snippet rather than for the top of the page. Both are overridden field by
+    // field by the device model's admin `metaTitle`/`metaDescription`.
+    compatTitle: (categoryName: string, deviceName: string) =>
+      `${categoryName} для ${deviceName}`,
+    compatDescription: (categoryName: string, deviceName: string) =>
+      `${categoryName} для ${deviceName} у MobileStore — перевірена сумісність, оригінальні аксесуари та швидка доставка по Україні.`,
+    // Shown only for the split second before notFound() owns the response: a
+    // 404 still needs *a* metadata object (same shape as the category landing).
+    compatFallbackTitle: "Сумісні аксесуари",
     productFallbackTitle: "Товар",
     productFallbackDescription: "Переглянути деталі товару.",
     pageFallbackTitle: "Сторінка",

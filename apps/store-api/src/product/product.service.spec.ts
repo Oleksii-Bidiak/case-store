@@ -26,6 +26,11 @@ import {
 } from '../cache';
 import { ProductIndexer } from '../search/product-indexer';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
+import {
+  CatalogueFilterResolver,
+  UNRESOLVED_FILTER_ID,
+  UNRESOLVED_FILTER_KEY,
+} from '../catalog-filter/catalogue-filter.resolver';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -73,6 +78,11 @@ const productRepositoryMock = {
   // real repository returns — the rows it wrote plus the untouched siblings whose
   // cached `variantSiblings` the write invalidated.
   setGroupMany: jest.fn(),
+  // TASK-487: bulk colour. The two-step shape the real repository needs — read
+  // the categories first so the service can resolve a definition per product,
+  // then write the axis JSON and the spec value together.
+  findCategoriesForBulk: jest.fn(),
+  setColorMany: jest.fn(),
   softDelete: jest.fn(),
   // TASK-254: derived reserved-qty aggregate. Defaults to an empty map (no
   // reservations); individual tests override to assert the enrichment.
@@ -82,15 +92,28 @@ const productRepositoryMock = {
 // ─── CategoryRepository mock (TASK-236 subtree rollup) ────────────────────────
 // `findSubtreeIds` echoes back a single-element subtree by default; individual
 // tests override it to simulate a real parent → subcategory expansion.
+// `findById`/`findBySlug` back the REAL CatalogueFilterResolver (TASK-420) — the
+// service is wired to the genuine resolver here rather than a stub, so these
+// tests still exercise the slug → id step instead of asserting against a mock of
+// the very thing under test. Both echo the requested key back as a resolved row,
+// so an id filter passes through unchanged and the pre-TASK-420 expectations
+// hold; tests override them with `null` to exercise the unresolved path.
 const categoryRepositoryMock = {
   findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
+  findById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
+  findBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
 };
 
 // ─── BrandRepository mock (TASK-189 brand validation on create/update) ────────
 // `findById` resolves to a stub brand by default so create/update pass the
 // existence check; tests override it to null to simulate an unknown brand.
 const brandRepositoryMock = {
-  findById: jest.fn().mockResolvedValue({ id: 'brand-uuid-1', name: 'Spigen', slug: 'spigen' }),
+  findById: jest.fn((id: string) => Promise.resolve({ id, name: 'Spigen', slug: `slug-of-${id}` })),
+  // Backs the real CatalogueFilterResolver (TASK-420), same echo convention as
+  // the category mock above.
+  findBySlug: jest.fn((slug: string) =>
+    Promise.resolve({ id: `id-of-${slug}`, name: 'Spigen', slug }),
+  ),
 };
 
 // ─── Device compat mocks (TASK-190) ───────────────────────────────────────────
@@ -106,6 +129,10 @@ const deviceCompatRepositoryMock = {
 
 const deviceRepositoryMock = {
   findModelsByIds: jest.fn().mockResolvedValue([]),
+  // Backs the real CatalogueFilterResolver (TASK-420), same echo convention as
+  // the category mock above.
+  findModelById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
+  findModelBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
 };
 
 // ─── ProductSpecRepository / AttributeDefinitionRepository mocks (TASK-191) ────
@@ -116,6 +143,10 @@ const specRepositoryMock = {
 
 const attributeDefinitionRepositoryMock = {
   findEffectiveForCategory: jest.fn().mockResolvedValue([]),
+  // TASK-487: resolves (creating if needed) the colour definition a bulk colour
+  // edit files its value against, and widens that SELECT own option list.
+  ensureColorDefinitionForCategory: jest.fn().mockResolvedValue({ id: 'def-color' }),
+  addOptions: jest.fn().mockResolvedValue(undefined),
 };
 
 // ─── CacheService mock ────────────────────────────────────────────────────────
@@ -169,11 +200,24 @@ describe('ProductService', () => {
     productIndexerMock.remove.mockResolvedValue(undefined);
     revalidationMock.revalidate.mockResolvedValue(undefined);
     categoryRepositoryMock.findSubtreeIds.mockImplementation((id: string) => Promise.resolve([id]));
-    brandRepositoryMock.findById.mockResolvedValue({
-      id: 'brand-uuid-1',
-      name: 'Spigen',
-      slug: 'spigen',
-    });
+    categoryRepositoryMock.findById.mockImplementation((id: string) =>
+      Promise.resolve({ id, slug: `slug-of-${id}` }),
+    );
+    categoryRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+      Promise.resolve({ id: `id-of-${slug}`, slug }),
+    );
+    brandRepositoryMock.findById.mockImplementation((id: string) =>
+      Promise.resolve({ id, name: 'Spigen', slug: `slug-of-${id}` }),
+    );
+    brandRepositoryMock.findBySlug.mockImplementation((slug: string) =>
+      Promise.resolve({ id: `id-of-${slug}`, name: 'Spigen', slug }),
+    );
+    deviceRepositoryMock.findModelById.mockImplementation((id: string) =>
+      Promise.resolve({ id, slug: `slug-of-${id}` }),
+    );
+    deviceRepositoryMock.findModelBySlug.mockImplementation((slug: string) =>
+      Promise.resolve({ id: `id-of-${slug}`, slug }),
+    );
     deviceCompatRepositoryMock.getDeviceCompat.mockResolvedValue([]);
     deviceCompatRepositoryMock.getDeviceCompatByProductIds.mockResolvedValue(new Map());
     deviceCompatRepositoryMock.getDeviceModelIds.mockResolvedValue([]);
@@ -206,6 +250,10 @@ describe('ProductService', () => {
           useValue: attributeDefinitionRepositoryMock,
         },
         { provide: RevalidationNotifier, useValue: revalidationMock },
+        // The REAL resolver (TASK-420), wired to the repository mocks above —
+        // slug → id is part of what `findAll` promises, so stubbing it out would
+        // leave the promise untested.
+        CatalogueFilterResolver,
       ],
     }).compile();
 
@@ -343,6 +391,88 @@ describe('ProductService', () => {
           categoryIds: ['root-cat', 'child-cat', 'grandchild-cat'],
         }),
       );
+    });
+
+    // ─── TASK-420: slug-shaped catalogue filters ─────────────────────────────
+
+    it('resolves ?category/?brand/?device slugs to ids before touching the repository', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      categoryRepositoryMock.findBySlug.mockResolvedValue({
+        id: 'cat-uuid-7',
+        slug: 'phone-cases',
+      });
+      brandRepositoryMock.findBySlug.mockResolvedValue({
+        id: 'brand-uuid-7',
+        name: 'Apple',
+        slug: 'apple',
+      });
+      deviceRepositoryMock.findModelBySlug.mockResolvedValue({
+        id: 'model-uuid-7',
+        slug: 'iphone-15',
+      });
+
+      await service.findAll({
+        page: 1,
+        limit: 20,
+        category: 'phone-cases',
+        brand: 'apple',
+        device: 'iphone-15',
+      });
+
+      // A deactivated category must still be filterable — visibility is enforced
+      // by `categoryActiveOnly` downstream, not by hiding the id from the filter.
+      expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('phone-cases', {
+        activeOnly: false,
+      });
+      expect(categoryRepositoryMock.findSubtreeIds).toHaveBeenCalledWith('cat-uuid-7');
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          categoryIds: ['cat-uuid-7'],
+          brandId: 'brand-uuid-7',
+          deviceModelId: 'model-uuid-7',
+        }),
+      );
+    });
+
+    // The behaviour an unknown-but-well-formed `?categoryId=` has always had,
+    // extended to slugs: the filter is APPLIED and matches nothing. Never a 400
+    // (a dead link is not a client error), and never a silently WIDER listing —
+    // `/products?brand=typo` must not quietly render the whole catalogue.
+    it('applies an unknown slug as a filter that matches nothing, not as no filter', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      brandRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+
+      const result = await service.findAll({
+        page: 1,
+        limit: 20,
+        category: 'no-such-category',
+        brand: 'no-such-brand',
+      });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({
+          brandId: UNRESOLVED_FILTER_ID,
+          categoryIds: [UNRESOLVED_FILTER_ID],
+        }),
+      );
+      expect(result.data).toEqual([]);
+    });
+
+    it('lets the slug win when a request carries both spellings of one axis', async () => {
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      brandRepositoryMock.findBySlug.mockResolvedValue({
+        id: 'from-slug',
+        name: 'Apple',
+        slug: 'apple',
+      });
+
+      await service.findAll({ page: 1, limit: 20, brand: 'apple', brandId: 'from-uuid' });
+
+      expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ brandId: 'from-slug' }),
+      );
+      expect(brandRepositoryMock.findById).not.toHaveBeenCalled();
     });
 
     // TASK-230: the leak — a public caller asking for inactive products (or
@@ -1239,6 +1369,166 @@ describe('ProductService', () => {
     });
   });
 
+  // ─── setColorMany (admin, TASK-487) ──────────────────────────────────────────
+
+  describe('setColorMany', () => {
+    const recoloured = [
+      { id: 'product-uuid-1', slug: 'iphone-15-pro-case-black', isActive: true },
+      { id: 'product-uuid-2', slug: 'iphone-15-pro-case-white', isActive: true },
+    ];
+
+    beforeEach(() => {
+      productRepositoryMock.findCategoriesForBulk.mockResolvedValue([
+        { id: 'product-uuid-1', categoryId: 'cat-cases', groupId: 'group-1' },
+        { id: 'product-uuid-2', categoryId: 'cat-cases', groupId: 'group-1' },
+      ]);
+      productRepositoryMock.setColorMany.mockResolvedValue({
+        updated: recoloured,
+        siblings: [],
+      });
+    });
+
+    it('resolves a colour definition per product and hands it to the write', async () => {
+      const count = await service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний');
+
+      expect(count).toBe(2);
+      expect(productRepositoryMock.setColorMany).toHaveBeenCalledWith(
+        ['product-uuid-1', 'product-uuid-2'],
+        'Чорний',
+        new Map([
+          ['product-uuid-1', 'def-color'],
+          ['product-uuid-2', 'def-color'],
+        ]),
+      );
+    });
+
+    it('resolves ONE definition per distinct category, not one per product', async () => {
+      // A colour family is N products in one category; walking the ancestor
+      // chain N times would be N recursive CTEs for one answer.
+      await service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний');
+
+      expect(
+        attributeDefinitionRepositoryMock.ensureColorDefinitionForCategory,
+      ).toHaveBeenCalledTimes(1);
+      expect(
+        attributeDefinitionRepositoryMock.ensureColorDefinitionForCategory,
+      ).toHaveBeenCalledWith('cat-cases');
+    });
+
+    it('widens the SELECT option list to cover the colour it just wrote', async () => {
+      // The admin spec editor renders a SELECT as a CLOSED dropdown: a colour
+      // stored but not listed is one the panel cannot re-pick.
+      await service.setColorMany(['product-uuid-1'], 'Синій титан');
+
+      expect(attributeDefinitionRepositoryMock.addOptions).toHaveBeenCalledWith('def-color', [
+        'Синій титан',
+      ]);
+    });
+
+    it('evicts each recoloured product by BOTH id and slug, and re-indexes it', async () => {
+      await service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний');
+
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(expect.stringContaining('product-uuid-1'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(
+        expect.stringContaining('iphone-15-pro-case-black'),
+      );
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-1');
+      expect(productIndexerMock.index).toHaveBeenCalledWith('product-uuid-2');
+    });
+
+    /**
+     * A cached product detail carries its `variantSiblings` AND their
+     * attributes, so recolouring one position changes what the untouched
+     * members of its group should say — the PDP would keep offering the old
+     * swatch until the TTL expired.
+     */
+    it('also evicts the untouched siblings of the affected groups', async () => {
+      productRepositoryMock.setColorMany.mockResolvedValue({
+        updated: recoloured,
+        siblings: [{ id: 'sibling-uuid', slug: 'iphone-15-pro-case-blue' }],
+      });
+
+      await service.setColorMany(['product-uuid-1'], 'Чорний');
+
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(expect.stringContaining('sibling-uuid'));
+      expect(productIndexerMock.index).not.toHaveBeenCalledWith('sibling-uuid');
+    });
+
+    it('evicts the list prefix once, not once per product', async () => {
+      await service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний');
+
+      const listEvictions = cacheServiceMock.delByPrefix.mock.calls.filter(
+        ([prefix]: [string]) => prefix === PRODUCT_LIST_PREFIX,
+      );
+      expect(listEvictions).toHaveLength(1);
+    });
+
+    it('removes an inactive recoloured product from the index rather than indexing it', async () => {
+      productRepositoryMock.setColorMany.mockResolvedValue({
+        updated: [{ ...recoloured[0], isActive: false }],
+        siblings: [],
+      });
+
+      await service.setColorMany(['product-uuid-1'], 'Чорний');
+
+      expect(productIndexerMock.remove).toHaveBeenCalledWith('product-uuid-1');
+      expect(productIndexerMock.index).not.toHaveBeenCalled();
+    });
+
+    describe('clearing (color: null)', () => {
+      it('resolves no definition and creates none', async () => {
+        // Creating a colour definition for a category on the way to REMOVING a
+        // colour would be a facet conjured out of a deletion.
+        await service.setColorMany(['product-uuid-1'], null);
+
+        expect(
+          attributeDefinitionRepositoryMock.ensureColorDefinitionForCategory,
+        ).not.toHaveBeenCalled();
+        expect(attributeDefinitionRepositoryMock.addOptions).not.toHaveBeenCalled();
+        expect(productRepositoryMock.setColorMany).toHaveBeenCalledWith(
+          ['product-uuid-1'],
+          null,
+          new Map(),
+        );
+      });
+    });
+
+    it('maps an unknown product id to 404 and writes nothing', async () => {
+      productRepositoryMock.findCategoriesForBulk.mockRejectedValue(
+        new ProductsNotFoundError(['missing-uuid']),
+      );
+
+      await expect(service.setColorMany(['missing-uuid'], 'Чорний')).rejects.toThrow(
+        NotFoundException,
+      );
+
+      expect(productRepositoryMock.setColorMany).not.toHaveBeenCalled();
+      expect(
+        attributeDefinitionRepositoryMock.ensureColorDefinitionForCategory,
+      ).not.toHaveBeenCalled();
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('maps a product that vanished between the read and the write to 404', async () => {
+      productRepositoryMock.setColorMany.mockRejectedValue(
+        new ProductsNotFoundError(['product-uuid-2']),
+      );
+
+      await expect(
+        service.setColorMany(['product-uuid-1', 'product-uuid-2'], 'Чорний'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(cacheServiceMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('lets an unexpected repository failure through untouched', async () => {
+      const boom = new Error('connection reset');
+      productRepositoryMock.setColorMany.mockRejectedValue(boom);
+
+      await expect(service.setColorMany(['product-uuid-1'], 'Чорний')).rejects.toThrow(boom);
+    });
+  });
+
   // ─── activate (admin) ────────────────────────────────────────────────────────
 
   describe('activate', () => {
@@ -1291,7 +1581,8 @@ describe('ProductService', () => {
       const expectedKey = buildProductListKey({
         page: 1,
         limit: 20,
-        categoryId: undefined,
+        // TASK-420: the taxonomy axes are keyed by SLUG now, absent here.
+        category: undefined,
         // TASK-230: public list keys always carry the forced active-only filter.
         isActive: true,
         minPrice: undefined,
@@ -1324,6 +1615,78 @@ describe('ProductService', () => {
 
       expect(filteredKey).toContain('inStock=true');
       expect(filteredKey).not.toBe(unfilteredKey);
+    });
+
+    // ─── TASK-420: slug filters, keyed on ONE canonical form ─────────────────
+
+    it('keys the taxonomy filters by SLUG, not by the id it resolved to', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+
+      await service.findAll({
+        page: 1,
+        limit: 20,
+        category: 'phone-cases',
+        brand: 'apple',
+        device: 'iphone-15',
+      });
+      const key = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(key).toContain('category=phone-cases');
+      expect(key).toContain('brand=apple');
+      expect(key).toContain('device=iphone-15');
+      // The resolved ids (`id-of-<slug>` from the echo mocks) must NOT leak in.
+      expect(key).not.toContain('id-of-');
+    });
+
+    // The whole point of "one canonical form": `?brand=apple` and the legacy
+    // `?brandId=<apple's uuid>` are the same listing. Two keys would mean two
+    // entries, each hit half as often — the TASK-541 class of bug, which is in
+    // the BACKLOG precisely because it is invisible from the outside.
+    it('maps the slug and the legacy uuid spelling of one filter onto ONE key', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      // One brand, addressed both ways: id `brand-uuid-9`, slug `slug-of-brand-uuid-9`.
+      brandRepositoryMock.findBySlug.mockResolvedValue({
+        id: 'brand-uuid-9',
+        name: 'Apple',
+        slug: 'slug-of-brand-uuid-9',
+      });
+
+      await service.findAll({ page: 1, limit: 20, brandId: 'brand-uuid-9' });
+      const byId = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      cacheServiceMock.get.mockClear();
+      await service.findAll({ page: 1, limit: 20, brand: 'slug-of-brand-uuid-9' });
+      const bySlug = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(bySlug).toBe(byId);
+      // …and both filter by the same id, so the shared entry is truthful.
+      expect(productRepositoryMock.findAll).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ brandId: 'brand-uuid-9' }),
+      );
+    });
+
+    it('collapses every unknown slug onto one key, distinct from the unfiltered list', async () => {
+      cacheServiceMock.get.mockResolvedValue(null);
+      productRepositoryMock.findAll.mockResolvedValue({ products: [], total: 0 });
+      brandRepositoryMock.findBySlug.mockResolvedValue(null);
+
+      await service.findAll({ page: 1, limit: 20, brand: 'no-such-brand' });
+      const firstMiss = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      cacheServiceMock.get.mockClear();
+      await service.findAll({ page: 1, limit: 20, brand: 'also-no-such-brand' });
+      const secondMiss = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      cacheServiceMock.get.mockClear();
+      await service.findAll({ page: 1, limit: 20 });
+      const unfiltered = cacheServiceMock.get.mock.calls.at(-1)![0] as string;
+
+      expect(secondMiss).toBe(firstMiss);
+      expect(firstMiss).toContain(`brand=${UNRESOLVED_FILTER_KEY}`);
+      expect(firstMiss).not.toBe(unfiltered);
     });
 
     it('keys the spec facets into the cache key', async () => {

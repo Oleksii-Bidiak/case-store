@@ -3,6 +3,7 @@ jest.mock("@/shared/lib/schema", () => ({
   fetchAllActiveProducts: jest.fn(),
   fetchAllActiveCategories: jest.fn(),
   fetchAllPublishedPages: jest.fn(),
+  fetchAllCompatLandingPages: jest.fn(),
 }));
 jest.mock("@/shared/api/blog-server", () => ({
   fetchPublishedPosts: jest.fn(),
@@ -12,6 +13,7 @@ import * as Sentry from "@sentry/nextjs";
 import {
   fetchAllActiveProducts,
   fetchAllActiveCategories,
+  fetchAllCompatLandingPages,
   fetchAllPublishedPages,
 } from "@/shared/lib/schema";
 import { fetchPublishedPosts } from "@/shared/api/blog-server";
@@ -23,6 +25,7 @@ const products = fetchAllActiveProducts as jest.Mock;
 const categories = fetchAllActiveCategories as jest.Mock;
 const pages = fetchAllPublishedPages as jest.Mock;
 const posts = fetchPublishedPosts as jest.Mock;
+const compat = fetchAllCompatLandingPages as jest.Mock;
 
 const STATIC_ROUTE_COUNT = 8;
 
@@ -36,6 +39,7 @@ describe("sitemap", () => {
     categories.mockResolvedValue([]);
     pages.mockResolvedValue([]);
     posts.mockResolvedValue({ posts: [] });
+    compat.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -151,15 +155,59 @@ describe("sitemap", () => {
     });
   });
 
+  // TASK-490 — the compatibility landing pages `/catalog/<категорія>/<модель>`.
+  describe("compatibility landing pages", () => {
+    it("emits one entry per existing pair", async () => {
+      compat.mockResolvedValue([
+        { categorySlug: "chohly", deviceSlug: "iphone-15-pro" },
+        { categorySlug: "chohly", deviceSlug: "galaxy-s24" },
+      ]);
+
+      const routes = await sitemap();
+
+      expect(routes).toHaveLength(STATIC_ROUTE_COUNT + 2);
+      expect(routes.map((route) => route.url)).toEqual(
+        expect.arrayContaining([
+          `${SITE_URL}/catalog/chohly/iphone-15-pro`,
+          `${SITE_URL}/catalog/chohly/galaxy-s24`,
+        ]),
+      );
+      expect(captureException).not.toHaveBeenCalled();
+    });
+
+    it("keeps the other sources when the pair source dies", async () => {
+      compat.mockRejectedValue(new Error("API down"));
+      categories.mockResolvedValue([
+        { slug: "chohly", updatedAt: "2026-06-01T00:00:00.000Z" },
+      ]);
+
+      const routes = await sitemap();
+
+      expect(routes.map((route) => route.url)).toContain(
+        `${SITE_URL}/categories/chohly`,
+      );
+      expect(routes.some((route) => route.url.includes("/catalog/"))).toBe(
+        false,
+      );
+      expect(captureException).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({
+          tags: { route: "sitemap", source: "compat landing pages" },
+        }),
+      );
+    });
+  });
+
   it("reports every failing source (and still returns the static routes)", async () => {
     products.mockRejectedValue(new Error("boom"));
     categories.mockRejectedValue(new Error("boom"));
     pages.mockRejectedValue(new Error("boom"));
     posts.mockRejectedValue(new Error("boom"));
+    compat.mockRejectedValue(new Error("boom"));
 
     const routes = await sitemap();
 
     expect(routes).toHaveLength(STATIC_ROUTE_COUNT);
-    expect(captureException).toHaveBeenCalledTimes(4);
+    expect(captureException).toHaveBeenCalledTimes(5);
   });
 });

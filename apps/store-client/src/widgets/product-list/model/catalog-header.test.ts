@@ -75,7 +75,7 @@ describe("findCategoryPathBySlug", () => {
 describe("buildCatalogHeader", () => {
   it("builds a category-scoped trail linking the categories hub", () => {
     const header = buildCatalogHeader({
-      categoryId: "cat-phones",
+      categorySlug: "smartfony",
       categoryName: "Смартфони",
       search: undefined,
     });
@@ -89,12 +89,13 @@ describe("buildCatalogHeader", () => {
     // The mid crumb points at the categories hub; the last crumb is current.
     expect(header.trail[1].href).toBe("/categories");
     expect(header.trail[2].href).toBeUndefined();
-    expect(header.currentPath).toBe("/products?categoryId=cat-phones");
+    // TASK-420: the catalogue names its category by slug.
+    expect(header.currentPath).toBe("/products?category=smartfony");
   });
 
   it("falls back to a generic label when the category name is unresolved", () => {
     const header = buildCatalogHeader({
-      categoryId: "cat-x",
+      categorySlug: "cat-x",
       categoryName: null,
       search: undefined,
     });

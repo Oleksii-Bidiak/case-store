@@ -3,6 +3,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { CatalogImportStatus } from '@prisma/client';
 import { CatalogImportService, IMPORT_CHUNK_SIZE } from './catalog-import.service';
 import { CatalogImportRepository } from './catalog-import.repository';
+import { PrismaService } from '../prisma/prisma.service';
 import { ProductService } from '../product/product.service';
 import { STORAGE_SERVICE } from '../storage';
 import type { CatalogImportPlan, PlannedRow } from './catalog-plan';
@@ -190,6 +191,160 @@ describe('CatalogImportService', () => {
     it('refuses to cancel a run that has already been applied', async () => {
       repositoryMock.findRun.mockResolvedValue(run({ status: CatalogImportStatus.APPLIED }));
       await expect(service.cancel('run-1')).rejects.toThrow(ConflictException);
+    });
+  });
+
+  /**
+   * The colour half of a spec write (TASK-487).
+   *
+   * `source.design` — the file's «дизайн» column — used to reach the database
+   * ONLY as a variant-axis value in `attributes` JSON, which no facet query
+   * reads. So an imported catalogue had colours on every card and no colour
+   * filter anywhere. It is now written twice, deliberately, and these cases pin
+   * both halves plus the early-return that used to swallow the second one.
+   *
+   * Reached through the private `writeSpecs` on purpose: the public route into
+   * it is `applyChunk`, which first re-parses the stored workbook, and building
+   * a real .xlsx here would test the parser rather than this branch.
+   */
+  describe('writeSpecs — colour', () => {
+    type WriteSpecs = (
+      productId: string,
+      source: Record<string, unknown>,
+      context: Record<string, unknown>,
+    ) => Promise<void>;
+
+    const call = (source: Record<string, unknown>, context: Record<string, unknown>) =>
+      (service as unknown as { writeSpecs: WriteSpecs }).writeSpecs('p-1', source, context);
+
+    const sourceRow = (over: Record<string, unknown> = {}) => ({
+      categoryName: 'Чохли',
+      attributes: {},
+      ...over,
+    });
+
+    it('writes the colour as a real spec value beside the file columns', async () => {
+      await call(sourceRow({ design: 'Чорний', attributes: { material: 'Силікон' } }), {
+        definitions: new Map([['Чохли', new Map([['material', 'def-material']])]]),
+        colorDefinitions: new Map([['Чохли', 'def-color']]),
+      });
+
+      expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p-1', [
+        { definitionId: 'def-material', value: 'Силікон' },
+        { definitionId: 'def-color', value: 'Чорний' },
+      ]);
+    });
+
+    it('writes the colour even when the category declares no spec columns at all', async () => {
+      // The old early return bailed on a category with no `definitions` entry —
+      // and that is precisely the category whose only facet would be colour.
+      await call(sourceRow({ design: 'Білий' }), {
+        definitions: new Map(),
+        colorDefinitions: new Map([['Чохли', 'def-color']]),
+      });
+
+      expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p-1', [
+        { definitionId: 'def-color', value: 'Білий' },
+      ]);
+    });
+
+    it('trims the colour and ignores a blank «дизайн» cell', async () => {
+      await call(sourceRow({ design: '  Синій  ' }), {
+        definitions: new Map(),
+        colorDefinitions: new Map([['Чохли', 'def-color']]),
+      });
+      expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p-1', [
+        { definitionId: 'def-color', value: 'Синій' },
+      ]);
+
+      repositoryMock.setSpecValues.mockClear();
+      await call(sourceRow({ design: '   ' }), {
+        definitions: new Map(),
+        colorDefinitions: new Map([['Чохли', 'def-color']]),
+      });
+      expect(repositoryMock.setSpecValues).not.toHaveBeenCalled();
+    });
+
+    it('still clears the spec values of a row whose columns were emptied', async () => {
+      // `setSpecValues` is replace-all, so the empty list is a meaningful write.
+      await call(sourceRow(), {
+        definitions: new Map([['Чохли', new Map()]]),
+        colorDefinitions: new Map(),
+      });
+
+      expect(repositoryMock.setSpecValues).toHaveBeenCalledWith('p-1', []);
+    });
+  });
+
+  /**
+   * The map key that carries device compatibility from `ensureDeviceModels` to
+   * `writeCompat` (TASK-705).
+   *
+   * Written as a ROUND TRIP through the REAL repository rather than against a
+   * mocked map, because the defect it pins lived in neither side alone: the
+   * writer separated brand from model with a literal NUL byte and the reader
+   * with a space, so `get()` never matched, `writeCompat` always resolved an
+   * empty id list, and `setDeviceCompat` — which deletes before it writes —
+   * cleared the compatibility rows of every imported product. Mocking
+   * `ensureDeviceModels` to return an empty map, as the rest of this file does,
+   * is exactly what hid it for two months.
+   */
+  describe('device compatibility round trip (TASK-705)', () => {
+    type WriteCompat = (
+      productId: string,
+      source: Record<string, unknown>,
+      context: Record<string, unknown>,
+    ) => Promise<void>;
+
+    /** The real repository over a prisma that just hands back the ids given. */
+    const realRepository = async (ids: string[]) => {
+      const upsert = jest.fn();
+      for (const id of ids) {
+        upsert.mockResolvedValueOnce({ id });
+      }
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          CatalogImportRepository,
+          { provide: PrismaService, useValue: { deviceModel: { upsert } } },
+        ],
+      }).compile();
+      return module.get(CatalogImportRepository);
+    };
+
+    const writeCompat = (source: Record<string, unknown>, context: Record<string, unknown>) =>
+      (service as unknown as { writeCompat: WriteCompat }).writeCompat('p-1', source, context);
+
+    it('writes the models ensureDeviceModels filed, not an empty list', async () => {
+      const repository = await realRepository(['model-15', 'model-15-pro']);
+      const deviceModels = await repository.ensureDeviceModels([
+        { name: 'iPhone 15', slug: 'apple-iphone-15', deviceBrandId: 'brand-apple' },
+        { name: 'iPhone 15 Pro', slug: 'apple-iphone-15-pro', deviceBrandId: 'brand-apple' },
+      ]);
+
+      await writeCompat(
+        { deviceBrandName: 'Apple', deviceModelNames: ['iPhone 15', 'iPhone 15 Pro'] },
+        { deviceBrands: new Map([['Apple', 'brand-apple']]), deviceModels },
+      );
+
+      expect(repositoryMock.setDeviceCompat).toHaveBeenCalledWith('p-1', [
+        'model-15',
+        'model-15-pro',
+      ]);
+    });
+
+    it('keeps the same model name under two brands apart', async () => {
+      const repository = await realRepository(['samsung-a35', 'other-a35']);
+      const deviceModels = await repository.ensureDeviceModels([
+        { name: 'Galaxy A35', slug: 'samsung-galaxy-a35', deviceBrandId: 'brand-samsung' },
+        { name: 'Galaxy A35', slug: 'other-galaxy-a35', deviceBrandId: 'brand-other' },
+      ]);
+
+      await writeCompat(
+        { deviceBrandName: 'Samsung', deviceModelNames: ['Galaxy A35'] },
+        { deviceBrands: new Map([['Samsung', 'brand-samsung']]), deviceModels },
+      );
+
+      expect(repositoryMock.setDeviceCompat).toHaveBeenCalledWith('p-1', ['samsung-a35']);
     });
   });
 

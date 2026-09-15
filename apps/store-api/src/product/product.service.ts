@@ -40,6 +40,10 @@ import {
 // Direct file import: the `../cache` barrel is outside this change's file scope,
 // so the brand-list prefix is taken from the module it is declared in.
 import { BRAND_LIST_PREFIX } from '../cache/cache-key.util';
+import {
+  CatalogueFilterResolver,
+  type ResolvedCatalogueFilters,
+} from '../catalog-filter/catalogue-filter.resolver';
 import { ProductIndexer } from '../search/product-indexer';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 
@@ -121,6 +125,7 @@ export class ProductService {
     private readonly specRepository: ProductSpecRepository,
     private readonly attributeDefinitionRepository: AttributeDefinitionRepository,
     private readonly revalidation: RevalidationNotifier,
+    private readonly catalogueFilters: CatalogueFilterResolver,
   ) {
     this.cacheTtlSeconds =
       this.config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -137,15 +142,29 @@ export class ProductService {
    * Cache-aside: a cache hit skips the database entirely.
    */
   async findAll(query: ProductListQueryDto): Promise<PaginatedProductsResponse> {
-    const listParams = this.toListParams(query);
+    // Slug → id, once, before anything else (TASK-420). At most three indexed
+    // point lookups, and none at all on the unfiltered listing — the hot path is
+    // unchanged. It cannot be deferred past the cache read: the key is keyed on
+    // the canonical SLUG of each axis, which is exactly what this produces.
+    const filters = await this.catalogueFilters.resolve(query);
+    const listParams = this.toListParams(query, filters);
 
-    // The cache key stays keyed on the SINGLE requested `categoryId` (not the
-    // expanded subtree list) so it is stable and computed before any DB work —
-    // a hit skips the subtree resolution entirely.
+    // The cache key stays keyed on the SINGLE requested category (not the
+    // expanded subtree list) so it is stable and cheap — a hit still skips the
+    // subtree resolution, the listing query and the hydration entirely.
     const cacheKey = buildProductListKey({
-      ...listParams,
-      categoryId: query.categoryId,
-      deviceModelId: query.deviceModelId,
+      page: listParams.page,
+      limit: listParams.limit,
+      // ONE canonical spelling per axis (TASK-420): the slug the resolver read
+      // back, never the raw query value. `?brand=apple` and the legacy
+      // `?brandId=<apple's uuid>` are the same listing and must share the one
+      // entry, or every filtered page is cached twice and hit half as often.
+      category: filters.categoryKey,
+      brand: filters.brandKey,
+      device: filters.deviceKey,
+      minPrice: listParams.minPrice,
+      maxPrice: listParams.maxPrice,
+      search: listParams.search,
       // Key on what was actually APPLIED, not on what was typed: re-serializing
       // the parsed facets drops malformed chunks and anything past the caps, so
       // an ignored value can never fragment the key from an equivalent request.
@@ -157,6 +176,8 @@ export class ProductService {
       // unlike `outOfStock` it cannot be forced off, and it must be in the key.
       onSale: listParams.onSale,
       inStock: listParams.inStock,
+      sortBy: listParams.sortBy,
+      sortOrder: listParams.sortOrder,
       isActive: true,
     });
     const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
@@ -188,7 +209,7 @@ export class ProductService {
       // about it — honouring `?deleted=true` publicly would serve a page of
       // withdrawn products from, and into, the unfiltered listing's cache entry.
       deleted: undefined,
-      categoryIds: await this.resolveSubtreeIds(query.categoryId),
+      categoryIds: await this.resolveSubtreeIds(filters.categoryId),
     };
     const response = await this.listFromDb(params);
 
@@ -215,9 +236,13 @@ export class ProductService {
    * INSTEAD of the live ones, never mixed in.
    */
   async adminFindAll(query: ProductListQueryDto): Promise<AdminPaginatedProductsResponse> {
+    // The admin table addresses categories/brands/devices by id, but it binds
+    // the SAME DTO, so it goes through the same resolver (TASK-420) — which
+    // accepts either spelling and leaves an id untouched when it resolves.
+    const filters = await this.catalogueFilters.resolve(query);
     const params: FindAllParams = {
-      ...this.toListParams(query),
-      categoryIds: await this.resolveSubtreeIds(query.categoryId),
+      ...this.toListParams(query, filters),
+      categoryIds: await this.resolveSubtreeIds(filters.categoryId),
       // AD-PROD-08 (TASK-406): the operator searches for a position by its
       // article number. Set HERE and nowhere else — `toListParams` is shared
       // with the public listing, and an SKU is an internal identifier that the
@@ -258,7 +283,10 @@ export class ProductService {
    * category rollup — callers add `categoryIds` via {@link resolveSubtreeIds}
    * so the async subtree expansion happens once, after the cache check.
    */
-  private toListParams(query: ProductListQueryDto): FindAllParams {
+  private toListParams(
+    query: ProductListQueryDto,
+    filters: ResolvedCatalogueFilters,
+  ): FindAllParams {
     // Collapse "asked for nothing" to `undefined` rather than an empty array:
     // every other optional filter here means "absent = unfiltered", and the
     // repository's facet branch is written against that convention.
@@ -267,8 +295,9 @@ export class ProductService {
     return {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
-      brandId: query.brandId,
-      deviceModelId: query.deviceModelId,
+      // Ids only — the repository layer never learns what a slug is (TASK-420).
+      brandId: filters.brandId,
+      deviceModelId: filters.deviceModelId,
       isActive: query.isActive,
       outOfStock: query.outOfStock,
       minPrice: query.minPrice,
@@ -288,6 +317,10 @@ export class ProductService {
    * under it (TASK-236). Returns `undefined` when no category filter is
    * requested (the repository then applies no category constraint). Shared by
    * the public {@link findAll} and admin {@link adminFindAll} paths.
+   *
+   * Takes the RESOLVED id (TASK-420), so an unknown `?category=` slug arrives as
+   * the nil-uuid sentinel and expands to a subtree of one row that matches no
+   * product — an empty page, not an unfiltered one.
    */
   private async resolveSubtreeIds(categoryId?: string): Promise<string[] | undefined> {
     if (!categoryId) {
@@ -723,6 +756,102 @@ export class ProductService {
         throw new NotFoundException(error.message);
       }
       throw error;
+    }
+
+    await this.invalidateProductLists();
+    for (const product of result.updated) {
+      await this.evictProductDetail(product.id, product.slug);
+      await this.syncSearchIndex(product);
+    }
+    for (const sibling of result.siblings) {
+      await this.evictProductDetail(sibling.id, sibling.slug);
+    }
+
+    return result.updated.length;
+  }
+
+  /**
+   * Bulk set (or clear) the colour of the selected products — TASK-487,
+   * «Задати колір» on the product list's selection.
+   *
+   * ── Why this endpoint exists at all ─────────────────────────────────────────
+   * Colour is the strongest facet in accessories (owner decision B-10), and it
+   * is the one spec nobody fills in: it arrives as a variant axis, which the
+   * product form edits one position at a time, and the XLSX import's «дизайн»
+   * column, which only fires on import. An operator assembling a colour family
+   * of nine had no way to make those nine filterable short of nine visits to the
+   * spec editor.
+   *
+   * ── The two writes, and why neither is optional ─────────────────────────────
+   * Each product gets its colour in BOTH places: the `attributes` axis JSON (so
+   * the PDP navigator and the card's colour dots see it) and a
+   * `ProductAttributeValue` row on the category's `color` definition (so the
+   * FACET sees it). The repository does both in one transaction; this method's
+   * job is the part a repository may not do — resolving which definition each
+   * product's category tree declares, and creating it on the root when the tree
+   * declares none. See `ensureColorDefinitionForCategory`.
+   *
+   * ── Side effects ────────────────────────────────────────────────────────────
+   * The rule every bulk endpoint here follows: be indistinguishable from running
+   * the single-row action N times. List cache once, detail cache per product,
+   * one search re-sync per product. Plus the SIBLINGS' detail caches, exactly as
+   * {@link setGroupMany} evicts them and for the same reason — a cached detail
+   * carries its `variantSiblings` and their attributes, so recolouring one
+   * position changes what its untouched neighbours should say.
+   *
+   * @throws NotFoundException when an id is unknown or soft-deleted. Nothing is
+   *         written in that case.
+   */
+  async setColorMany(ids: string[], color: string | null): Promise<number> {
+    let rows;
+    try {
+      rows = await this.productRepository.findCategoriesForBulk(ids);
+    } catch (error) {
+      if (error instanceof ProductsNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+
+    // Resolve ONE definition per distinct category, not per product: a bulk edit
+    // over a colour family is N products in one or two categories, and
+    // `ensureColorDefinitionForCategory` walks the ancestor chain each time.
+    const definitionIdByProduct = new Map<string, string>();
+    const definitionIds = new Set<string>();
+    if (color !== null) {
+      const byCategory = new Map<string, string>();
+      for (const row of rows) {
+        let definitionId = byCategory.get(row.categoryId);
+        if (definitionId === undefined) {
+          const definition =
+            await this.attributeDefinitionRepository.ensureColorDefinitionForCategory(
+              row.categoryId,
+            );
+          definitionId = definition.id;
+          byCategory.set(row.categoryId, definitionId);
+        }
+        definitionIdByProduct.set(row.id, definitionId);
+        definitionIds.add(definitionId);
+      }
+    }
+
+    let result;
+    try {
+      result = await this.productRepository.setColorMany(ids, color, definitionIdByProduct);
+    } catch (error) {
+      if (error instanceof ProductsNotFoundError) {
+        throw new NotFoundException(error.message);
+      }
+      throw error;
+    }
+
+    // Keep the SELECT's option list covering the value just written — the admin
+    // spec editor renders it as a closed dropdown, so a colour stored but not
+    // listed is one the panel cannot re-pick.
+    if (color !== null) {
+      for (const definitionId of definitionIds) {
+        await this.attributeDefinitionRepository.addOptions(definitionId, [color.trim()]);
+      }
     }
 
     await this.invalidateProductLists();

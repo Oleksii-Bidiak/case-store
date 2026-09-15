@@ -7,6 +7,10 @@ import { ProductImageRepository } from './product-image.repository';
 import { ProductImageService } from './product-image.service';
 import { ProductImageController } from './product-image.controller';
 import { ProductSpecRepository } from './product-spec.repository';
+// Slug → id for `?category=&brand=&device=` (TASK-420). Provided, not imported
+// as a module: it is stateless, and a module edge here would add another arm to
+// the CategoryModule ↔ SearchModule forwardRef cycle for no benefit.
+import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import { StorageModule } from '../storage';
 import { UploadsModule } from '../uploads';
 import { SearchModule } from '../search';
@@ -45,6 +49,7 @@ import { MediaModule } from '../media';
     ProductImageRepository,
     ProductImageService,
     ProductSpecRepository,
+    CatalogueFilterResolver,
   ],
   // ProductRepository is exported (mirroring CategoryModule) so AddonServiceModule
   // can look up a product's `categoryId` when resolving its applicable add-ons

@@ -18,7 +18,7 @@ const chip =
 /**
  * SubcategoryChips (TASK-277) — a horizontal row of navigation links to the
  * direct subcategories of a `/categories/[slug]` landing page. Unlike
- * `CategoryChips` (a `?categoryId=` filter toggle on the catalog), these are
+ * `CategoryChips` (a `?category=` filter toggle on the catalog), these are
  * plain `<Link>` pills: clicking one navigates to that child's own landing
  * page. Renders nothing when the category has no children.
  */

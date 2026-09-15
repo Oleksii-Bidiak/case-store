@@ -17,7 +17,7 @@ describe('cache-key.util', () => {
       const a: ProductListKeyParams = {
         page: 2,
         limit: 10,
-        categoryId: 'cat-1',
+        category: 'phone-cases',
         search: 'iphone',
         sortBy: 'price',
         sortOrder: 'asc',
@@ -27,7 +27,7 @@ describe('cache-key.util', () => {
         sortOrder: 'asc',
         sortBy: 'price',
         search: 'iphone',
-        categoryId: 'cat-1',
+        category: 'phone-cases',
         limit: 10,
         page: 2,
       };
@@ -39,7 +39,9 @@ describe('cache-key.util', () => {
       const key = buildProductListKey({
         page: 2,
         limit: 10,
-        categoryId: 'cat-1',
+        category: 'phone-cases',
+        brand: 'apple',
+        device: 'iphone-15',
         isActive: true,
         minPrice: 10,
         maxPrice: 100,
@@ -50,7 +52,7 @@ describe('cache-key.util', () => {
       });
 
       expect(key).toBe(
-        'product:list:page=2|limit=10|categoryId=cat-1|isActive=true|minPrice=10|maxPrice=100|search=case|onSale=true|sortBy=price|sortOrder=asc',
+        'product:list:page=2|limit=10|category=phone-cases|brand=apple|device=iphone-15|isActive=true|minPrice=10|maxPrice=100|search=case|onSale=true|sortBy=price|sortOrder=asc',
       );
     });
 
@@ -119,6 +121,75 @@ describe('cache-key.util', () => {
       const literal = buildProductListKey({ page: 1, limit: 20, search: 'a%7Cb' });
 
       expect(escaped).not.toBe(literal);
+    });
+
+    // ─── TASK-420: the taxonomy axes are keyed by SLUG, and by ONE spelling ───
+    // The API accepts both `?brand=apple` and the legacy `?brandId=<uuid>` and
+    // they describe the same listing. If each spelling got its own key the
+    // entries would multiply while the hit rate halved — the TASK-541 class of
+    // bug. `ProductService` is what enforces it (it passes the RESOLVED slug),
+    // so what this file can promise is the other half: the key has no uuid-named
+    // field left to pass one into, and the three axes never bleed into one
+    // another.
+
+    it('names the taxonomy axes by slug, with no uuid-named fields left', () => {
+      const key = buildProductListKey({
+        page: 1,
+        limit: 20,
+        category: 'phone-cases',
+        brand: 'apple',
+        device: 'iphone-15',
+      });
+
+      expect(key).toContain('category=phone-cases');
+      expect(key).toContain('brand=apple');
+      expect(key).toContain('device=iphone-15');
+      expect(key).not.toContain('categoryId');
+      expect(key).not.toContain('brandId');
+      expect(key).not.toContain('deviceModelId');
+    });
+
+    it('keeps the three axes distinct — the same slug on two of them is two filters', () => {
+      const asBrand = buildProductListKey({ page: 1, limit: 20, brand: 'apple' });
+      const asDevice = buildProductListKey({ page: 1, limit: 20, device: 'apple' });
+      const asCategory = buildProductListKey({ page: 1, limit: 20, category: 'apple' });
+      const both = buildProductListKey({ page: 1, limit: 20, brand: 'apple', device: 'apple' });
+
+      expect(new Set([asBrand, asDevice, asCategory, both]).size).toBe(4);
+    });
+
+    it('keys a present axis distinctly from an absent one (no silent collision)', () => {
+      const filtered = buildProductListKey({ page: 1, limit: 20, category: 'phone-cases' });
+      const unfiltered = buildProductListKey({ page: 1, limit: 20 });
+
+      expect(filtered).not.toBe(unfiltered);
+    });
+
+    it('cannot forge a later segment through a pipe in a slug', () => {
+      // Belt-and-braces: slugs reach the builder only after a database
+      // round-trip, so they are `[a-z0-9-]` by construction — but the escape
+      // must not depend on that, because the day one caller passes the raw
+      // query value through is the day the catalogue cache can be written to
+      // from a query string.
+      const forged = buildProductListKey({ page: 1, limit: 20, brand: 'apple|inStock=true' });
+      const real = buildProductListKey({ page: 1, limit: 20, brand: 'apple', inStock: true });
+
+      expect(forged).not.toBe(real);
+      expect(forged).not.toContain('|inStock=true');
+    });
+
+    it('collapses every unresolvable value onto one key per axis', () => {
+      // `!unknown` is what `CatalogueFilterResolver` hands over for a slug that
+      // named nothing. Every one of them returns the SAME empty page, so they
+      // share one entry — otherwise a crawler walking dead links mints an
+      // unbounded number of cache entries for identical empty responses.
+      const a = buildProductListKey({ page: 1, limit: 20, brand: '!unknown' });
+      const b = buildProductListKey({ page: 1, limit: 20, brand: '!unknown' });
+      const real = buildProductListKey({ page: 1, limit: 20, brand: 'apple' });
+
+      expect(a).toBe(b);
+      expect(a).not.toBe(real);
+      expect(a).not.toBe(buildProductListKey({ page: 1, limit: 20 }));
     });
 
     it('leaves an ordinary Cyrillic search readable in the key', () => {

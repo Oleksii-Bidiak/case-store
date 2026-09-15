@@ -76,7 +76,7 @@ describe('Attribute-definition reorder (e2e)', () => {
     findById: jest.fn(),
     findByCategoryAndKey: jest.fn(),
     findEffectiveForCategory: jest.fn(),
-    findDistinctValuesByKey: jest.fn(),
+    findValueCountsByKey: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),

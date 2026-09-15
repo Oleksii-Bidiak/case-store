@@ -2053,10 +2053,40 @@
             }
           },
           {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to a category by SLUG (TASK-420). Rolls up the whole subtree (a parent also matches products filed in its subcategories), exactly like the catalogue listing. An unknown slug matches nothing rather than widening the results.",
+            "schema": {
+              "example": "phone-cases",
+              "type": "string"
+            }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to one manufacturer by SLUG (TASK-420).",
+            "schema": {
+              "example": "apple",
+              "type": "string"
+            }
+          },
+          {
+            "name": "device",
+            "required": false,
+            "in": "query",
+            "description": "Narrow to products compatible with one device model, by SLUG (TASK-420).",
+            "schema": {
+              "example": "iphone-15",
+              "type": "string"
+            }
+          },
+          {
             "name": "categoryId",
             "required": false,
             "in": "query",
-            "description": "Narrow to a category. Rolls up the whole subtree (a parent id also matches products filed in its subcategories), exactly like the catalogue listing.",
+            "description": "Narrow to a category by id. LEGACY since TASK-420 (`?category=<slug>` is the canonical form and the results page 308-redirects this away); still accepted so live links keep working.",
             "schema": {
               "example": "c1a2b3c4-0000-4000-8000-000000000000",
               "type": "string"
@@ -2066,7 +2096,7 @@
             "name": "brandId",
             "required": false,
             "in": "query",
-            "description": "Narrow to one manufacturer (brand id).",
+            "description": "Narrow to one manufacturer (brand id). LEGACY — see `categoryId`.",
             "schema": {
               "type": "string"
             }
@@ -2075,7 +2105,7 @@
             "name": "deviceModelId",
             "required": false,
             "in": "query",
-            "description": "Narrow to products compatible with one device model.",
+            "description": "Narrow to products compatible with one device model. LEGACY — see `categoryId`.",
             "schema": {
               "type": "string"
             }
@@ -2238,10 +2268,40 @@
             }
           },
           {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "Filter by category SLUG — the canonical storefront form since TASK-420 (`?category=phone-cases` rather than a uuid). Resolved to an id in the service; a slug that names nothing applies the filter and matches nothing (an empty 200 page), it is never a 400 and never silently widens the list. Wins over the legacy `categoryId` if both are sent.",
+            "schema": {
+              "example": "phone-cases",
+              "type": "string"
+            }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Filter by brand (manufacturer) SLUG — `?brand=apple` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `brandId`.",
+            "schema": {
+              "example": "apple",
+              "type": "string"
+            }
+          },
+          {
+            "name": "device",
+            "required": false,
+            "in": "query",
+            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `deviceModelId`.",
+            "schema": {
+              "example": "iphone-15",
+              "type": "string"
+            }
+          },
+          {
             "name": "categoryId",
             "required": false,
             "in": "query",
-            "description": "Filter by category ID",
+            "description": "Filter by category ID. LEGACY since TASK-420 — the storefront sends `?category=<slug>` and 308-redirects these away. Still valid input: the admin panel binds this same DTO and addresses categories by id.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2251,7 +2311,7 @@
             "name": "brandId",
             "required": false,
             "in": "query",
-            "description": "Filter by brand (manufacturer) ID",
+            "description": "Filter by brand (manufacturer) ID. LEGACY since TASK-420 — see `categoryId`.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2261,7 +2321,7 @@
             "name": "deviceModelId",
             "required": false,
             "in": "query",
-            "description": "Filter by compatible device model ID (TASK-190)",
+            "description": "Filter by compatible device model ID (TASK-190). LEGACY since TASK-420 — see `categoryId`.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2466,10 +2526,40 @@
             }
           },
           {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "description": "Filter by category SLUG — the canonical storefront form since TASK-420 (`?category=phone-cases` rather than a uuid). Resolved to an id in the service; a slug that names nothing applies the filter and matches nothing (an empty 200 page), it is never a 400 and never silently widens the list. Wins over the legacy `categoryId` if both are sent.",
+            "schema": {
+              "example": "phone-cases",
+              "type": "string"
+            }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Filter by brand (manufacturer) SLUG — `?brand=apple` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `brandId`.",
+            "schema": {
+              "example": "apple",
+              "type": "string"
+            }
+          },
+          {
+            "name": "device",
+            "required": false,
+            "in": "query",
+            "description": "Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). Same unknown-value behaviour as `category`. Wins over the legacy `deviceModelId`.",
+            "schema": {
+              "example": "iphone-15",
+              "type": "string"
+            }
+          },
+          {
             "name": "categoryId",
             "required": false,
             "in": "query",
-            "description": "Filter by category ID",
+            "description": "Filter by category ID. LEGACY since TASK-420 — the storefront sends `?category=<slug>` and 308-redirects these away. Still valid input: the admin panel binds this same DTO and addresses categories by id.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2479,7 +2569,7 @@
             "name": "brandId",
             "required": false,
             "in": "query",
-            "description": "Filter by brand (manufacturer) ID",
+            "description": "Filter by brand (manufacturer) ID. LEGACY since TASK-420 — see `categoryId`.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -2489,7 +2579,7 @@
             "name": "deviceModelId",
             "required": false,
             "in": "query",
-            "description": "Filter by compatible device model ID (TASK-190)",
+            "description": "Filter by compatible device model ID (TASK-190). LEGACY since TASK-420 — see `categoryId`.",
             "schema": {
               "example": "550e8400-e29b-41d4-a716-446655440000",
               "type": "string"
@@ -3136,6 +3226,52 @@
           }
         ],
         "summary": "Bulk reassign products to a variant group (admin)",
+        "tags": [
+          "Products"
+        ]
+      }
+    },
+    "/api/products/color": {
+      "patch": {
+        "operationId": "productControllerSetColorMany",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkProductColorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Number of products recoloured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkProductColorResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error — empty, oversized, duplicated or non-UUID ids, or a blank colour"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Unknown product id — nothing was written"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Bulk set or clear the colour of products (admin)",
         "tags": [
           "Products"
         ]
@@ -5072,6 +5208,86 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "brand",
+            "required": false,
+            "in": "query",
+            "description": "Active brand (manufacturer) SLUG — `?brand=apple` (TASK-420).",
+            "schema": {
+              "example": "apple",
+              "type": "string"
+            }
+          },
+          {
+            "name": "device",
+            "required": false,
+            "in": "query",
+            "description": "Active compatible device-model SLUG — `?device=iphone-15` (TASK-420).",
+            "schema": {
+              "example": "iphone-15",
+              "type": "string"
+            }
+          },
+          {
+            "name": "minPrice",
+            "required": false,
+            "in": "query",
+            "description": "Active minimum price filter",
+            "schema": {
+              "example": "10.00",
+              "type": "number"
+            }
+          },
+          {
+            "name": "maxPrice",
+            "required": false,
+            "in": "query",
+            "description": "Active maximum price filter",
+            "schema": {
+              "example": "100.00",
+              "type": "number"
+            }
+          },
+          {
+            "name": "search",
+            "required": false,
+            "in": "query",
+            "description": "Active keyword search",
+            "schema": {
+              "example": "чохол",
+              "type": "string"
+            }
+          },
+          {
+            "name": "specs",
+            "required": false,
+            "in": "query",
+            "description": "Active structured-spec selection — `key:v1,v2;key2:v3`, the same grammar as the listing's `specs`. Each facet is counted with its OWN selection removed, so ticking a second value in a facet a shopper is already filtering by stays possible.",
+            "schema": {
+              "example": "material:Силікон,TPU;case-type:Накладка",
+              "type": "string"
+            }
+          },
+          {
+            "name": "inStock",
+            "required": false,
+            "in": "query",
+            "description": "Active «В наявності» filter — `stock > 0` (TASK-414).",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "onSale",
+            "required": false,
+            "in": "query",
+            "description": "Active on-sale filter (compareAtPrice > price), TASK-179.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5086,7 +5302,7 @@
             }
           }
         },
-        "summary": "List a category's filterable spec facets",
+        "summary": "List a category's filterable spec facets with product counts",
         "tags": [
           "Categories"
         ]
@@ -7979,6 +8195,74 @@
         "summary": "Update a product group (admin)",
         "tags": [
           "Product Groups"
+        ]
+      }
+    },
+    "/api/catalog/compat-pages": {
+      "get": {
+        "operationId": "catalogLandingControllerFindCompatPages",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Compatibility landing pages, sorted by (category slug, device slug)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompatLandingListResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List every existing category × device-model landing page",
+        "tags": [
+          "Catalog"
+        ]
+      }
+    },
+    "/api/catalog/compat-pages/{categorySlug}/{deviceSlug}": {
+      "get": {
+        "operationId": "catalogLandingControllerFindCompatPage",
+        "parameters": [
+          {
+            "name": "categorySlug",
+            "required": true,
+            "in": "path",
+            "description": "Category slug",
+            "schema": {
+              "example": "chohly",
+              "type": "string"
+            }
+          },
+          {
+            "name": "deviceSlug",
+            "required": true,
+            "in": "path",
+            "description": "Device model slug",
+            "schema": {
+              "example": "iphone-15-pro",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The landing page — its existence is the 200 itself",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompatLandingDetailResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No such pair, or the pair has no visible products"
+          }
+        },
+        "summary": "Get one category × device-model landing page",
+        "tags": [
+          "Catalog"
         ]
       }
     },
@@ -16875,6 +17159,53 @@
           "data"
         ]
       },
+      "BulkProductColorDto": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "description": "Ids of the products being recoloured.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "color": {
+            "type": "string",
+            "description": "Colour to write, or `null` to clear it. The field is REQUIRED: an absent `color` would be indistinguishable from \"remove the colour\", which is a destructive default for a request that omitted the field by mistake.",
+            "nullable": true,
+            "maxLength": 60,
+            "example": "Чорний"
+          }
+        },
+        "required": [
+          "ids",
+          "color"
+        ]
+      },
+      "BulkProductColorResult": {
+        "type": "object",
+        "properties": {
+          "updatedCount": {
+            "type": "number",
+            "description": "Products whose colour was written",
+            "example": 9
+          }
+        },
+        "required": [
+          "updatedCount"
+        ]
+      },
+      "BulkProductColorResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BulkProductColorResult"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ProductImageListEnvelope": {
         "type": "object",
         "properties": {
@@ -17262,6 +17593,24 @@
             "description": "Whether the model is active and publicly visible",
             "example": true
           },
+          "metaTitle": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page <title> (null = generated)",
+            "example": "Чохли для iPhone 15 Pro — купити в MobileStore",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Admin override for the landing page meta description (null = generated)",
+            "example": "Понад 40 чохлів для iPhone 15 Pro: силікон, шкіра, MagSafe.",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "Admin override for the landing page lead paragraph under the H1",
+            "example": "Усі чохли, що точно сідають на iPhone 15 Pro.",
+            "nullable": true
+          },
           "brandName": {
             "type": "string",
             "description": "Owning device brand name (when the brand relation is loaded)",
@@ -17519,6 +17868,21 @@
             "description": "Whether the model is active and publicly visible",
             "example": true,
             "default": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page <title>",
+            "example": "Чохли для iPhone 15 Pro — купити в MobileStore"
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page meta description",
+            "example": "Понад 40 чохлів для iPhone 15 Pro: силікон, шкіра, MagSafe."
+          },
+          "description": {
+            "type": "string",
+            "description": "Admin override for the landing page lead paragraph under the H1",
+            "example": "Усі чохли, що точно сідають на iPhone 15 Pro."
           }
         },
         "required": [
@@ -17560,6 +17924,24 @@
             "type": "boolean",
             "description": "Whether the model is active and publicly visible",
             "example": true
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page <title>",
+            "example": "Чохли для iPhone 15 Pro — купити в MobileStore",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "Admin override for the compatibility landing page meta description",
+            "example": "Понад 40 чохлів для iPhone 15 Pro: силікон, шкіра, MagSafe.",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "Admin override for the landing page lead paragraph under the H1",
+            "example": "Усі чохли, що точно сідають на iPhone 15 Pro.",
+            "nullable": true
           }
         }
       },
@@ -17616,7 +17998,7 @@
           },
           "isFilterable": {
             "type": "boolean",
-            "description": "Whether this spec is surfaced as a catalog facet + PDP highlight",
+            "description": "Whether this spec is surfaced as a catalog facet + PDP highlight. Only SELECT and BOOLEAN characteristics may be facets",
             "example": true
           },
           "sortOrder": {
@@ -17719,7 +18101,7 @@
           },
           "isFilterable": {
             "type": "boolean",
-            "description": "Whether this spec is surfaced as a catalog facet + PDP highlight",
+            "description": "Whether this spec is surfaced as a catalog facet + PDP highlight. Only SELECT and BOOLEAN characteristics may be facets",
             "example": false,
             "default": false
           },
@@ -17793,7 +18175,7 @@
           },
           "isFilterable": {
             "type": "boolean",
-            "description": "Whether this spec is surfaced as a catalog facet + PDP highlight",
+            "description": "Whether this spec is surfaced as a catalog facet + PDP highlight. Only SELECT and BOOLEAN characteristics may be facets",
             "example": false,
             "default": false
           },
@@ -17804,6 +18186,25 @@
           }
         }
       },
+      "FacetValueCountEntity": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The stored spec value, as it appears in `?specs=`",
+            "example": "TPU"
+          },
+          "count": {
+            "type": "number",
+            "description": "Products in the current slice carrying this value (never 0)",
+            "example": 12
+          }
+        },
+        "required": [
+          "value",
+          "count"
+        ]
+      },
       "FilterableSpecEntity": {
         "type": "object",
         "properties": {
@@ -17811,14 +18212,10 @@
             "$ref": "#/components/schemas/AttributeDefinitionEntity"
           },
           "values": {
-            "description": "Distinct values in use for this spec within the category subtree",
-            "example": [
-              "Силікон",
-              "Шкіра"
-            ],
+            "description": "Values in use for this spec within the current catalogue slice, each with the number of products behind it. Ascending by value; never empty and never a zero count.",
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/FacetValueCountEntity"
             }
           }
         },
@@ -20463,6 +20860,138 @@
             "example": true
           }
         }
+      },
+      "CompatLandingPageEntity": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Category identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "categorySlug": {
+            "type": "string",
+            "description": "Category slug — the first URL segment",
+            "example": "chohly"
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category display name",
+            "example": "Чохли"
+          },
+          "deviceModelId": {
+            "type": "string",
+            "description": "Device model identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "deviceSlug": {
+            "type": "string",
+            "description": "Device model slug — the second URL segment",
+            "example": "iphone-15-pro"
+          },
+          "deviceName": {
+            "type": "string",
+            "description": "Device model display name",
+            "example": "iPhone 15 Pro"
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Visible products behind this pair (category subtree × model). Always ≥ 1.",
+            "example": 24
+          }
+        },
+        "required": [
+          "categoryId",
+          "categorySlug",
+          "categoryName",
+          "deviceModelId",
+          "deviceSlug",
+          "deviceName",
+          "productCount"
+        ]
+      },
+      "CompatLandingDetailEntity": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Category identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "categorySlug": {
+            "type": "string",
+            "description": "Category slug",
+            "example": "chohly"
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category display name",
+            "example": "Чохли"
+          },
+          "deviceModel": {
+            "description": "The compatible device model, including its admin copy overrides",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeviceModelEntity"
+              }
+            ]
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Visible products on this page. Always ≥ 1.",
+            "example": 24
+          }
+        },
+        "required": [
+          "categoryId",
+          "categorySlug",
+          "categoryName",
+          "deviceModel",
+          "productCount"
+        ]
+      },
+      "CompatLandingListMeta": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "Number of existing compatibility landing pages",
+            "example": 312
+          }
+        },
+        "required": [
+          "total"
+        ]
+      },
+      "CompatLandingListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Every (category × device model) pair with at least one visible product",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CompatLandingPageEntity"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/CompatLandingListMeta"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "CompatLandingDetailResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CompatLandingDetailEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
       },
       "PageEntity": {
         "type": "object",

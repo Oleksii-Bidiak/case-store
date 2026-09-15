@@ -23,7 +23,7 @@ const t = dict.home.modelPicker;
  * (TASK-190). Brand → model cascade backed by the device-taxonomy API: the
  * model select is disabled until a brand is chosen and its options are scoped to
  * that brand. Submitting navigates to the catalog filtered by the chosen device
- * model (`/products?deviceModelId=…`).
+ * model (`/products?device=<slug>` since TASK-420).
  */
 export function ModelPicker() {
   const router = useRouter();
@@ -50,7 +50,14 @@ export function ModelPicker() {
   function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     if (!modelId) return;
-    router.push(`/products?deviceModelId=${encodeURIComponent(modelId)}`);
+    // The catalogue is addressed by slug since TASK-420. The selects stay keyed
+    // by id (they are local cascade state, never a URL), so the slug is looked
+    // up here from the list already in hand — no extra request. A model that
+    // somehow has no slug simply does not navigate, rather than sending a uuid
+    // the catalogue would 308 straight back.
+    const slug = models.find((m) => m.id === modelId)?.slug;
+    if (!slug) return;
+    router.push(`/products?device=${encodeURIComponent(slug)}`);
   }
 
   const modelPlaceholder = !brandId

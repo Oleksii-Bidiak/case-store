@@ -16,3 +16,4 @@ export { SetDeviceCompatDto } from './set-device-compat.dto';
 export { UpdateProductSpecsDto, ProductSpecValueDto } from './update-product-specs.dto';
 export { BulkProductStatusDto } from './bulk-product-status.dto';
 export { BulkProductGroupDto } from './bulk-product-group.dto';
+export { BulkProductColorDto, MAX_COLOR_LENGTH } from './bulk-product-color.dto';

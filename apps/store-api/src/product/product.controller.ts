@@ -31,6 +31,7 @@ import {
   UpdateProductSpecsDto,
   BulkProductStatusDto,
   BulkProductGroupDto,
+  BulkProductColorDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 import {
@@ -124,6 +125,20 @@ class BulkProductGroupResult {
 class BulkProductGroupResponse {
   @ApiProperty({ type: BulkProductGroupResult })
   data!: BulkProductGroupResult;
+}
+
+/**
+ * What a bulk colour edit reports back (TASK-487) — the rows actually written,
+ * for the same reason {@link BulkProductStatusResult} does.
+ */
+class BulkProductColorResult {
+  @ApiProperty({ description: 'Products whose colour was written', example: 9 })
+  updatedCount!: number;
+}
+
+class BulkProductColorResponse {
+  @ApiProperty({ type: BulkProductColorResult })
+  data!: BulkProductColorResult;
 }
 
 /**
@@ -623,6 +638,54 @@ export class ProductController {
   })
   async setGroupMany(@Body() dto: BulkProductGroupDto): Promise<BulkProductGroupResponse> {
     const updatedCount = await this.productService.setGroupMany(dto.ids, dto.groupId);
+
+    return { data: { updatedCount } };
+  }
+
+  /**
+   * PATCH /api/products/color
+   *
+   * Bulk set — or with `color: null` clear — the colour of the named products
+   * (TASK-487, owner decision B-10).
+   *
+   * Colour is the strongest facet in accessories and the one nobody ever fills
+   * in, because it arrives as a VARIANT AXIS (edited one position at a time on
+   * the product form) and never reached the structured spec the catalogue filter
+   * actually reads. This endpoint writes both, atomically — see
+   * `ProductService.setColorMany` for why writing only one is the bug this task
+   * exists to fix.
+   *
+   * DECLARED BEFORE the `:id` routes below, alongside `status` and `group`, for
+   * the reason the category controller declares its literal routes first:
+   * nothing shadows `color` today, but adding a single-segment `@Patch(':id')`
+   * later would silently capture it, and the failure would read as a malformed
+   * UUID rather than as a routing mistake.
+   *
+   * Returns the number of rows written rather than the products: the panel
+   * refetches its page anyway.
+   */
+  @Patch('color')
+  @UseGuards(PermissionGuard)
+  @RequirePermission('products:write')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Bulk set or clear the colour of products (admin)',
+    operationId: 'productControllerSetColorMany',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Number of products recoloured',
+    type: BulkProductColorResponse,
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation error — empty, oversized, duplicated or non-UUID ids, or a blank colour',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'Unknown product id — nothing was written' })
+  async setColorMany(@Body() dto: BulkProductColorDto): Promise<BulkProductColorResponse> {
+    const updatedCount = await this.productService.setColorMany(dto.ids, dto.color);
 
     return { data: { updatedCount } };
   }

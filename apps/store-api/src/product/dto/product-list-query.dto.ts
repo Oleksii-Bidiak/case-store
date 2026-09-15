@@ -12,6 +12,10 @@ import {
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+// Direct file import rather than the '../../catalog-filter' barrel: a DTO must
+// not drag the resolver (and with it three repositories) into every module that
+// only wanted to validate a query string.
+import { SLUG_MAX_LENGTH, blankToUndefined } from '../../catalog-filter/slug-filter.dto-util';
 
 /**
  * DTO for querying the product list (public endpoint).
@@ -47,7 +51,53 @@ export class ProductListQueryDto {
   limit?: number = 20;
 
   @ApiProperty({
-    description: 'Filter by category ID',
+    description:
+      'Filter by category SLUG — the canonical storefront form since TASK-420 ' +
+      '(`?category=phone-cases` rather than a uuid). Resolved to an id in the ' +
+      'service; a slug that names nothing applies the filter and matches nothing ' +
+      '(an empty 200 page), it is never a 400 and never silently widens the list. ' +
+      'Wins over the legacy `categoryId` if both are sent.',
+    example: 'phone-cases',
+    required: false,
+  })
+  @IsOptional()
+  @Transform(blankToUndefined)
+  @IsString()
+  @MaxLength(SLUG_MAX_LENGTH, { message: 'category must be at most 120 characters' })
+  category?: string;
+
+  @ApiProperty({
+    description:
+      'Filter by brand (manufacturer) SLUG — `?brand=apple` (TASK-420). Same ' +
+      'unknown-value behaviour as `category`. Wins over the legacy `brandId`.',
+    example: 'apple',
+    required: false,
+  })
+  @IsOptional()
+  @Transform(blankToUndefined)
+  @IsString()
+  @MaxLength(SLUG_MAX_LENGTH, { message: 'brand must be at most 120 characters' })
+  brand?: string;
+
+  @ApiProperty({
+    description:
+      'Filter by compatible device-model SLUG — `?device=iphone-15` (TASK-420). ' +
+      'Same unknown-value behaviour as `category`. Wins over the legacy ' +
+      '`deviceModelId`.',
+    example: 'iphone-15',
+    required: false,
+  })
+  @IsOptional()
+  @Transform(blankToUndefined)
+  @IsString()
+  @MaxLength(SLUG_MAX_LENGTH, { message: 'device must be at most 120 characters' })
+  device?: string;
+
+  @ApiProperty({
+    description:
+      'Filter by category ID. LEGACY since TASK-420 — the storefront sends ' +
+      '`?category=<slug>` and 308-redirects these away. Still valid input: the ' +
+      'admin panel binds this same DTO and addresses categories by id.',
     example: '550e8400-e29b-41d4-a716-446655440000',
     required: false,
   })
@@ -56,7 +106,7 @@ export class ProductListQueryDto {
   categoryId?: string;
 
   @ApiProperty({
-    description: 'Filter by brand (manufacturer) ID',
+    description: 'Filter by brand (manufacturer) ID. LEGACY since TASK-420 — see `categoryId`.',
     example: '550e8400-e29b-41d4-a716-446655440000',
     required: false,
   })
@@ -65,7 +115,9 @@ export class ProductListQueryDto {
   brandId?: string;
 
   @ApiProperty({
-    description: 'Filter by compatible device model ID (TASK-190)',
+    description:
+      'Filter by compatible device model ID (TASK-190). LEGACY since TASK-420 — ' +
+      'see `categoryId`.',
     example: '550e8400-e29b-41d4-a716-446655440000',
     required: false,
   })

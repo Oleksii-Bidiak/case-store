@@ -16,3 +16,6 @@ export {
   clearFilterUpdates,
   type CatalogFilterKey,
 } from "./model/active-filters";
+// Listing params → facet-request params (TASK-489): one mapping, so every
+// caller of the facet endpoint shares one React Query key and one request.
+export { toFacetQueryParams } from "./model/facet-query";

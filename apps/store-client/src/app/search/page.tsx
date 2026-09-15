@@ -1,5 +1,10 @@
 import type { Metadata } from "next";
+import { permanentRedirect } from "next/navigation";
 import { SearchResultsView } from "@/widgets";
+import {
+  resolveLegacyCatalogParams,
+  withQuery,
+} from "@/shared/lib/legacy-catalog-params";
 import { dict } from "@/shared/config";
 
 /** Take the first value when a query param appears more than once. */
@@ -11,10 +16,24 @@ type SearchPageProps = {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 };
 
+/**
+ * Serve the 308 from a pre-TASK-420 uuid facet query to its slug form. `/search`
+ * migrated together with the catalogue — it carries the same filter panel, so a
+ * "slug here, uuid there" split would show up as a panel that writes params the
+ * other page cannot read.
+ */
+async function redirectLegacyParams(resolved: {
+  [key: string]: string | string[] | undefined;
+}): Promise<void> {
+  const query = await resolveLegacyCatalogParams(resolved);
+  if (query !== null) permanentRedirect(withQuery("/search", query));
+}
+
 export async function generateMetadata({
   searchParams,
 }: SearchPageProps): Promise<Metadata> {
   const resolved = await searchParams;
+  await redirectLegacyParams(resolved);
   const q = first(resolved.q)?.trim();
   return {
     title: q ? dict.search.resultsTitle(q) : dict.search.resultsTitleEmpty,
@@ -34,6 +53,7 @@ export async function generateMetadata({
  */
 export default async function SearchPage({ searchParams }: SearchPageProps) {
   const resolved = await searchParams;
+  await redirectLegacyParams(resolved);
   const q = first(resolved.q) ?? "";
   const pageRaw = first(resolved.page);
   const page = pageRaw && Number(pageRaw) > 0 ? Number(pageRaw) : 1;

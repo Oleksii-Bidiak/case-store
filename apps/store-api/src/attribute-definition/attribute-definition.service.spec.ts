@@ -4,6 +4,7 @@ import { AttributeType } from '@prisma/client';
 import { AttributeDefinitionService } from './attribute-definition.service';
 import { AttributeDefinitionRepository } from './attribute-definition.repository';
 import { CategoryRepository } from '../category';
+import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import {
   ReorderDuplicateIdError,
   ReorderNotFoundError,
@@ -17,22 +18,25 @@ describe('AttributeDefinitionService', () => {
     findById: jest.fn(),
     findByCategoryAndKey: jest.fn(),
     findEffectiveForCategory: jest.fn(),
-    findDistinctValuesByKey: jest.fn(),
+    findValueCountsByKey: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
     reorder: jest.fn(),
   };
   const categoryRepository = { findById: jest.fn(), findSubtreeIds: jest.fn() };
+  const catalogueFilters = { resolve: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     categoryRepository.findById.mockResolvedValue({ id: 'cat' });
+    catalogueFilters.resolve.mockResolvedValue({});
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AttributeDefinitionService,
         { provide: AttributeDefinitionRepository, useValue: repo },
         { provide: CategoryRepository, useValue: categoryRepository },
+        { provide: CatalogueFilterResolver, useValue: catalogueFilters },
       ],
     }).compile();
     service = module.get(AttributeDefinitionService);
@@ -92,6 +96,120 @@ describe('AttributeDefinitionService', () => {
         service.create('ghost', { key: 'material', label: 'Матеріал' }),
       ).rejects.toBeInstanceOf(NotFoundException);
     });
+
+    it.each([AttributeType.TEXT, AttributeType.NUMBER])(
+      'refuses to make a %s definition a catalogue facet (TASK-488)',
+      async (type) => {
+        repo.findByCategoryAndKey.mockResolvedValue(null);
+
+        await expect(
+          service.create('cat', {
+            key: 'protection',
+            label: 'Захист',
+            type,
+            isFilterable: true,
+          }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(repo.create).not.toHaveBeenCalled();
+      },
+    );
+
+    it('allows a BOOLEAN facet', async () => {
+      repo.findByCategoryAndKey.mockResolvedValue(null);
+      repo.create.mockResolvedValue({
+        id: 'd1',
+        categoryId: 'cat',
+        key: 'magsafe',
+        label: 'Підтримка MagSafe',
+        type: AttributeType.BOOLEAN,
+        unit: null,
+        options: null,
+        isFilterable: true,
+        sortOrder: 0,
+      });
+
+      const result = await service.create('cat', {
+        key: 'magsafe',
+        label: 'Підтримка MagSafe',
+        type: AttributeType.BOOLEAN,
+        isFilterable: true,
+      });
+
+      expect(result.isFilterable).toBe(true);
+    });
+
+    it('still allows a TEXT definition that is not a facet', async () => {
+      repo.findByCategoryAndKey.mockResolvedValue(null);
+      repo.create.mockResolvedValue({
+        id: 'd1',
+        categoryId: 'cat',
+        key: 'protection',
+        label: 'Захист',
+        type: AttributeType.TEXT,
+        unit: null,
+        options: null,
+        isFilterable: false,
+        sortOrder: 0,
+      });
+
+      await expect(
+        service.create('cat', { key: 'protection', label: 'Захист', type: AttributeType.TEXT }),
+      ).resolves.toMatchObject({ isFilterable: false });
+    });
+  });
+
+  describe('update — the facet type rule (TASK-488)', () => {
+    const selectFacet = {
+      id: 'd1',
+      categoryId: 'cat',
+      key: 'hardness',
+      label: 'Твердість',
+      type: AttributeType.SELECT,
+      unit: null,
+      options: ['9H', '10H'],
+      isFilterable: true,
+      sortOrder: 0,
+    };
+
+    it('refuses to retype an existing facet into TEXT', async () => {
+      // Checked on the RESULTING pair, not on the payload: the operator did not
+      // send `isFilterable`, but the row is already a facet, and TEXT + facet is
+      // the state B-10 forbids.
+      repo.findById.mockResolvedValue(selectFacet);
+
+      await expect(service.update('d1', { type: AttributeType.TEXT })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(repo.update).not.toHaveBeenCalled();
+    });
+
+    it('allows the retype when the facet flag is dropped in the same call', async () => {
+      repo.findById.mockResolvedValue(selectFacet);
+      repo.update.mockResolvedValue({
+        ...selectFacet,
+        type: AttributeType.TEXT,
+        options: [],
+        isFilterable: false,
+      });
+
+      await expect(
+        service.update('d1', { type: AttributeType.TEXT, isFilterable: false }),
+      ).resolves.toMatchObject({ isFilterable: false });
+    });
+
+    it('refuses to tick the facet box on an existing TEXT definition', async () => {
+      repo.findById.mockResolvedValue({
+        ...selectFacet,
+        type: AttributeType.TEXT,
+        options: [],
+        isFilterable: false,
+      });
+
+      await expect(service.update('d1', { isFilterable: true })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(repo.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('getFilterableSpecs', () => {
@@ -108,17 +226,79 @@ describe('AttributeDefinitionService', () => {
     };
     const internalDef = { ...materialDef, id: 'd-int', key: 'internal', isFilterable: false };
 
-    it('returns only isFilterable definitions paired with distinct subtree values', async () => {
+    /** The public-visibility half of the params every call below must carry. */
+    const publicScope = {
+      isActive: true,
+      categoryActiveOnly: true,
+      deleted: false,
+    };
+
+    it('returns only isFilterable definitions paired with counted subtree values', async () => {
       repo.findEffectiveForCategory.mockResolvedValue([materialDef, internalDef]);
       categoryRepository.findSubtreeIds.mockResolvedValue(['cat', 'child']);
-      repo.findDistinctValuesByKey.mockResolvedValue(new Map([['material', ['Силікон', 'Шкіра']]]));
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([
+          [
+            'material',
+            [
+              { value: 'Силікон', count: 12 },
+              { value: 'Шкіра', count: 3 },
+            ],
+          ],
+        ]),
+      );
 
       const result = await service.getFilterableSpecs('cat');
 
       expect(result).toHaveLength(1);
       expect(result[0].definition.key).toBe('material');
-      expect(result[0].values).toEqual(['Силікон', 'Шкіра']);
-      expect(repo.findDistinctValuesByKey).toHaveBeenCalledWith(['material'], ['cat', 'child']);
+      expect(result[0].values).toEqual([
+        { value: 'Силікон', count: 12 },
+        { value: 'Шкіра', count: 3 },
+      ]);
+      expect(repo.findValueCountsByKey).toHaveBeenCalledWith(
+        ['material'],
+        expect.objectContaining({ categoryIds: ['cat', 'child'], ...publicScope }),
+      );
+    });
+
+    it('forwards the ACTIVE filters so the counts describe the same slice (TASK-489)', async () => {
+      // The substance of the task: a count that ignored the brand/price/stock
+      // filters would advertise «Силікон (12)» on a page that then shows eight.
+      repo.findEffectiveForCategory.mockResolvedValue([materialDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      catalogueFilters.resolve.mockResolvedValue({ brandId: 'brand-1', deviceModelId: 'dev-1' });
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([['material', [{ value: 'Силікон', count: 2 }]]]),
+      );
+
+      await service.getFilterableSpecs('cat', {
+        brand: 'apple',
+        device: 'iphone-15',
+        minPrice: 100,
+        maxPrice: 900,
+        search: 'чохол',
+        specs: 'form:Накладка',
+        inStock: true,
+        onSale: true,
+      });
+
+      expect(catalogueFilters.resolve).toHaveBeenCalledWith({
+        brand: 'apple',
+        device: 'iphone-15',
+      });
+      expect(repo.findValueCountsByKey).toHaveBeenCalledWith(['material'], {
+        categoryIds: ['cat'],
+        brandId: 'brand-1',
+        deviceModelId: 'dev-1',
+        minPrice: 100,
+        maxPrice: 900,
+        search: 'чохол',
+        specFilters: [{ key: 'form', values: ['Накладка'] }],
+        inStock: true,
+        onSale: true,
+        ...publicScope,
+      });
     });
 
     it('returns an empty list (no subtree query) when no filterable specs exist', async () => {
@@ -126,6 +306,132 @@ describe('AttributeDefinitionService', () => {
 
       expect(await service.getFilterableSpecs('cat')).toEqual([]);
       expect(categoryRepository.findSubtreeIds).not.toHaveBeenCalled();
+    });
+
+    it('drops a filterable definition with NO values in this subtree (TASK-487)', async () => {
+      // Definitions are declared on the ROOT and inherited by every descendant,
+      // so «Колір» reaches a subcategory whose products have no colour at all.
+      // Surfacing it would render a facet a shopper can open and find empty.
+      const colorDef = { ...materialDef, id: 'd-color', key: 'color', label: 'Колір' };
+      repo.findEffectiveForCategory.mockResolvedValue([materialDef, colorDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([['material', [{ value: 'Силікон', count: 1 }]]]),
+      );
+
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(result.map((facet) => facet.definition.key)).toEqual(['material']);
+    });
+
+    it('drops a filterable TEXT definition — TEXT is never a facet (TASK-488)', async () => {
+      // The row the XLSX import writes: every column it meets is typed TEXT.
+      // One such row flagged filterable publishes a sidebar control holding one
+      // value per product. The write path refuses the pair now, but rows older
+      // than the rule still exist, so the READ path drops them too.
+      const protectionDef = {
+        ...materialDef,
+        id: 'd-protection',
+        key: 'protection',
+        label: 'Захист',
+        type: AttributeType.TEXT,
+        options: [],
+      };
+      repo.findEffectiveForCategory.mockResolvedValue([materialDef, protectionDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([
+          ['material', [{ value: 'Силікон', count: 4 }]],
+          [
+            'protection',
+            [
+              { value: 'Посилені кути', count: 2 },
+              { value: 'Бортик над екраном', count: 1 },
+            ],
+          ],
+        ]),
+      );
+
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(result.map((facet) => facet.definition.key)).toEqual(['material']);
+      // Not even queried for: the TEXT definition never reaches the value scan.
+      expect(repo.findValueCountsByKey).toHaveBeenCalledWith(['material'], expect.anything());
+    });
+
+    it('drops a filterable NUMBER definition for the same reason', async () => {
+      const batteryDef = {
+        ...materialDef,
+        id: 'd-battery',
+        key: 'battery',
+        label: 'Акумулятор',
+        type: AttributeType.NUMBER,
+        options: [],
+      };
+      repo.findEffectiveForCategory.mockResolvedValue([batteryDef]);
+
+      expect(await service.getFilterableSpecs('cat')).toEqual([]);
+      expect(categoryRepository.findSubtreeIds).not.toHaveBeenCalled();
+    });
+
+    it('keeps a BOOLEAN facet — «Так»/«Ні» is a closed value set', async () => {
+      const magsafeDef = {
+        ...materialDef,
+        id: 'd-magsafe',
+        key: 'magsafe',
+        label: 'Підтримка MagSafe',
+        type: AttributeType.BOOLEAN,
+        options: [],
+        sortOrder: 1,
+      };
+      repo.findEffectiveForCategory.mockResolvedValue([materialDef, magsafeDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([
+          ['material', [{ value: 'Силікон', count: 5 }]],
+          [
+            'magsafe',
+            [
+              { value: 'false', count: 3 },
+              { value: 'true', count: 2 },
+            ],
+          ],
+        ]),
+      );
+
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(result.map((facet) => facet.definition.key)).toEqual(['material', 'magsafe']);
+      expect(result[1].values).toEqual([
+        { value: 'false', count: 3 },
+        { value: 'true', count: 2 },
+      ]);
+    });
+
+    it('surfaces the colour facet once its subtree has values', async () => {
+      const colorDef = { ...materialDef, id: 'd-color', key: 'color', label: 'Колір' };
+      repo.findEffectiveForCategory.mockResolvedValue([colorDef, materialDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([
+          [
+            'color',
+            [
+              { value: 'Білий', count: 2 },
+              { value: 'Чорний', count: 7 },
+            ],
+          ],
+          ['material', [{ value: 'Силікон', count: 9 }]],
+        ]),
+      );
+
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(result.map((facet) => facet.definition.key)).toEqual(['color', 'material']);
+      expect(result[0].values).toEqual([
+        { value: 'Білий', count: 2 },
+        { value: 'Чорний', count: 7 },
+      ]);
     });
   });
 
