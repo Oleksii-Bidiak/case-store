@@ -293,13 +293,30 @@ export class ReturnService {
     // send back one now and another next week — so the cap is over the SUM of
     // live returns plus this request, not over this request alone. Without it a
     // buyer could return the same unit repeatedly and be credited each time.
-    const alreadyClaimed = await this.countClaimedUnits(order.id);
+    //
+    // The request's OWN lines are summed first (review of plan 180). The cap used
+    // to be evaluated per array element, and nothing forbids repeating an
+    // `orderItemId`, so `[{item-1, 2}, {item-1, 2}]` against a 3-unit line passed
+    // twice at 0+2 ≤ 3 and produced a return holding 4 of 3. That is not a
+    // paperwork error: resolving it as RECEIVED with `restock` loops the return's
+    // items and credits stock for each, so the shop invents a unit it never got
+    // back and then oversells it. Reachable from the customer door and from the
+    // operator one, since both call this helper.
+    const requestedByLineId = new Map<string, number>();
     for (const line of dto.items) {
-      const ordered = orderedByLineId.get(line.orderItemId) as number;
-      const claimed = alreadyClaimed.get(line.orderItemId) ?? 0;
-      if (claimed + line.quantity > ordered) {
+      requestedByLineId.set(
+        line.orderItemId,
+        (requestedByLineId.get(line.orderItemId) ?? 0) + line.quantity,
+      );
+    }
+
+    const alreadyClaimed = await this.countClaimedUnits(order.id);
+    for (const [orderItemId, requested] of requestedByLineId) {
+      const ordered = orderedByLineId.get(orderItemId) as number;
+      const claimed = alreadyClaimed.get(orderItemId) ?? 0;
+      if (claimed + requested > ordered) {
         throw new BadRequestException(
-          `Cannot return ${line.quantity} of that item — ${ordered - claimed} remain returnable`,
+          `Cannot return ${requested} of that item — ${ordered - claimed} remain returnable`,
         );
       }
     }

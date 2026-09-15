@@ -329,6 +329,41 @@ describe('ReturnService (TASK-340)', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    // ── The cap is over the request's OWN sum, not per element ────────────────
+    // A repeated `orderItemId` used to be checked twice against the same
+    // "already claimed" number, so two lines of 2 both passed 0+2 ≤ 3 and the
+    // return held 4 units of a 3-unit line. Resolving that as RECEIVED with
+    // `restock` loops the return's items and credits stock per row: the shop
+    // invents a unit it never got back, then sells it. Guarded here rather than
+    // in the DTO so both doors inherit it from one place (review of plan 180).
+
+    it('sums a repeated line instead of checking each entry on its own', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await expect(
+        service.adminCreateReturn(OPERATOR_ID, ORDER_ID, {
+          items: [
+            { orderItemId: LINE_ID, quantity: 2 },
+            { orderItemId: LINE_ID, quantity: 2 },
+          ],
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(returnRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('still accepts a repeated line whose SUM fits inside what was bought', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await expect(
+        service.adminCreateReturn(OPERATOR_ID, ORDER_ID, {
+          items: [
+            { orderItemId: LINE_ID, quantity: 2 },
+            { orderItemId: LINE_ID, quantity: 1 },
+          ],
+        }),
+      ).resolves.toBeInstanceOf(ReturnEntity);
+    });
+
     it('answers with the internal fields — this response is read by an operator', async () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder());
       returnRepositoryMock.create.mockResolvedValue(

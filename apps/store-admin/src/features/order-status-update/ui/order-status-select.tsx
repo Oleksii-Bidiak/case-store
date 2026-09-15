@@ -63,6 +63,19 @@ const UNCONFIRMED_PAYMENT: readonly string[] = [
 ];
 
 /**
+ * Statuses the server will accept a return on — mirrors
+ * `RETURNABLE_ORDER_STATUSES` in `return.service.ts` (review of plan 180).
+ *
+ * The goods have to have travelled before there is anything to send back. A
+ * cancelled order fails this, and offering «Створити заявку» there produced a
+ * 400 the operator could do nothing with.
+ */
+const RETURNABLE_STATUSES: readonly string[] = [
+  OrderEntityStatus.SHIPPED,
+  OrderEntityStatus.DELIVERED,
+];
+
+/**
  * Status control for the order detail page (TASK-332).
  *
  * Offers exactly the moves the server says are legal, and hands back the lock
@@ -140,9 +153,19 @@ export function OrderStatusSelect({ orderId }: OrderStatusSelectProps) {
     // actually loaded: `returnsData` undefined means "not known yet", and
     // treating that as "there are none" would pop the dialog on orders that
     // already have a return.
+    //
+    // And only from a status the server would actually accept a return on
+    // (review of plan 180). `ORDER_TRANSITIONS[CANCELLED]` contains REFUNDED,
+    // but `RETURNABLE_ORDER_STATUSES` is {SHIPPED, DELIVERED} — so on a cancelled
+    // order the dialog's primary button could only ever produce a 400 and a
+    // generic toast, with nothing on screen saying that the secondary button is
+    // the one that works. Refunding a cancelled order is the ordinary case, not
+    // an exotic one, so it must not be the one that dead-ends.
     if (
       value === OrderEntityStatus.REFUNDED &&
       canOpenReturns &&
+      order.status !== undefined &&
+      RETURNABLE_STATUSES.includes(order.status) &&
       returnsData?.data?.length === 0
     ) {
       return "refundNoReturn";

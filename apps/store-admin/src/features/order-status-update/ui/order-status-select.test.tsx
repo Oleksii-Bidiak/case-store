@@ -27,6 +27,7 @@ const ORDER_ID = "order-uuid-12345678";
  */
 function stubOrder(
   overrides: Partial<{
+    status: string;
     paymentMethod: string;
     paymentStatus: string;
     total: string;
@@ -37,7 +38,7 @@ function stubOrder(
       HttpResponse.json({
         data: {
           id: ORDER_ID,
-          status: "SHIPPED",
+          status: overrides.status ?? "SHIPPED",
           paymentStatus: overrides.paymentStatus ?? "PAID",
           paymentMethod: overrides.paymentMethod ?? "ON_DELIVERY",
           total: overrides.total ?? "1498.00",
@@ -520,6 +521,44 @@ describe("OrderStatusSelect — refunding with no return on file (TASK-469)", ()
     await waitFor(() => expect(patch.bodies).toHaveLength(1));
     expect(patch.bodies[0]).toMatchObject({ status: "REFUNDED" });
     expect(post.bodies).toHaveLength(0);
+  });
+
+  it("asks nothing on a CANCELLED order, where the server would refuse the return", async () => {
+    // `ORDER_TRANSITIONS[CANCELLED]` contains REFUNDED — refunding a cancelled
+    // order is the ordinary path, not an exotic one. But
+    // `RETURNABLE_ORDER_STATUSES` is {SHIPPED, DELIVERED}, so «Створити заявку»
+    // could only ever answer 400 and leave the operator in an open dialog with
+    // no hint that the secondary button is the working one (review of plan 180).
+    stubOrder({ status: "CANCELLED" });
+    stubTransitions(["REFUNDED"]);
+    stubOrderReturns(0);
+    const patch = stubStatusPatch(() =>
+      HttpResponse.json({ data: { id: ORDER_ID } }),
+    );
+
+    renderSelect();
+    await pickRefunded();
+
+    // Straight through: the status moves and no dialog appears.
+    await waitFor(() => expect(patch.bodies).toHaveLength(1));
+    expect(patch.bodies[0]).toMatchObject({ status: "REFUNDED" });
+    expect(
+      screen.queryByText(dict.returns.createDialogTitle),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still asks on a DELIVERED order — the case the dialog was built for", async () => {
+    stubOrder({ status: "DELIVERED" });
+    stubTransitions(["REFUNDED"]);
+    stubOrderReturns(0);
+    stubStatusPatch(() => HttpResponse.json({ data: { id: ORDER_ID } }));
+
+    renderSelect();
+    await pickRefunded();
+
+    expect(
+      await screen.findByText(dict.returns.createDialogTitle),
+    ).toBeInTheDocument();
   });
 
   it("asks nothing when the order already carries a return", async () => {
