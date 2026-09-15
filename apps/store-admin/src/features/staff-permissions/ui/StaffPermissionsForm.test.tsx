@@ -150,7 +150,7 @@ describe("StaffPermissionsForm — a manager's grid", () => {
     expect(sent[0]).toEqual(["orders:read", "orders:write"]);
   });
 
-  it("names the template when the set is exactly one, and stops naming it after an edit", async () => {
+  it("names the template when the SAVED set matches exactly one", async () => {
     stubPermissions({ permissions: ["orders:read", "orders:write"] });
     stubTemplates([
       {
@@ -163,6 +163,39 @@ describe("StaffPermissionsForm — a manager's grid", () => {
 
     expect(
       await screen.findByText(dict.staff.templateMatch("Оператор замовлень")),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps naming it while an edit is UNSAVED — the badge describes rights, not a draft", async () => {
+    // `matchingTemplate` reads the SERVER set on purpose, not the tick state. The
+    // badge answers «що ця людина може», and until Save that is still the
+    // template's set — a badge that flickered off on every tick would report a
+    // permission change that has not happened. The name of this test used to
+    // promise the opposite, which is worth pinning rather than leaving to the
+    // next reader to re-derive from the `useMemo` dependencies.
+    stubPermissions({ permissions: ["orders:read", "orders:write"] });
+    stubTemplates([
+      {
+        id: "t1",
+        name: "Оператор замовлень",
+        permissions: ["orders:read", "orders:write"],
+      },
+    ]);
+    render();
+
+    await screen.findByText(dict.staff.templateMatch("Оператор замовлень"));
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.staff.zoneExpandAria("Замовлення"),
+      }),
+    );
+    await userEvent.click(
+      await screen.findByLabelText("Змінювати статуси та ТТН"),
+    );
+
+    expect(
+      screen.getByText(dict.staff.templateMatch("Оператор замовлень")),
     ).toBeInTheDocument();
   });
 

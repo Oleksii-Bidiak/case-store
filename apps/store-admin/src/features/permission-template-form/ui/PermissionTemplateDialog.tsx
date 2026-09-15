@@ -61,9 +61,10 @@ interface PermissionTemplateDialogProps {
  *
  * `name`, `description` and the tick set are seeded from an async-loaded template
  * and follow `docs/conventions/forms.md` rule 1a — a render-time resync keyed on
- * the template id and its `updatedAt`, so reopening the dialog on a different row
- * (or after somebody else saved) repaints rather than showing the previous one.
- * Not `key`-remounting: the name field is focus-sensitive.
+ * the open/closed state, the template id and its `updatedAt`, so reopening the
+ * dialog on a different row, after somebody else saved, or after an abandoned
+ * draft repaints rather than showing the previous one. Not `key`-remounting: the
+ * name field is focus-sensitive.
  */
 export function PermissionTemplateDialog({
   template,
@@ -82,9 +83,25 @@ export function PermissionTemplateDialog({
 
   // forms.md Rule 1a. The signature covers the identity AND the version, so a
   // refetch that changed the set repaints while an unchanged one does not.
-  const signature = template
-    ? `${template.id}::${template.updatedAt}`
-    : "new-template";
+  //
+  // `open` IS PART OF THE SIGNATURE, and it is not decoration. This component is
+  // mounted for the whole life of the page (Radix unmounts only `DialogContent`),
+  // so without it the signature for the create case was the constant
+  // "new-template" and the state from the previous visit survived every close.
+  // Two ways that bit:
+  //   - create «Продавець» with nine ticks, save, reopen «Створити шаблон» — the
+  //     form still held «Продавець» and its nine ticks, so renaming and saving
+  //     produced a template carrying a set nobody chose for that job, which is
+  //     then COPIED onto the next hire;
+  //   - open an existing template, untick five boxes, Cancel, reopen it — no
+  //     server change means a byte-identical `updatedAt`, so the abandoned draft
+  //     rendered as the template's current contents.
+  // Closing now changes the signature, which resyncs from the prop on the way
+  // back in. The field stays focus-safe: this is still a render-time resync, not
+  // a `key` remount.
+  const signature = `${open ? "open" : "closed"}::${
+    template ? `${template.id}::${template.updatedAt}` : "new-template"
+  }`;
   const [syncedSignature, setSyncedSignature] = useState(signature);
   const [name, setName] = useState(template?.name ?? "");
   const [description, setDescription] = useState(template?.description ?? "");

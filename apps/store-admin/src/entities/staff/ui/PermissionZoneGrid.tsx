@@ -128,6 +128,12 @@ export function PermissionZoneGrid({
                 size="sm"
                 className="ml-auto gap-1"
                 aria-expanded={expanded}
+                // Without `aria-controls` a screen reader announces "expanded"
+                // and nothing else: the state is reported, the thing it belongs
+                // to is not. The id is prefixed the same way the checkbox ids
+                // are, so two grids on one page (the wizard mounts one per step)
+                // do not collide.
+                aria-controls={`${idPrefix}-zone-${group.zone}`}
                 aria-label={
                   expanded
                     ? d.zoneCollapseAria(group.label)
@@ -146,7 +152,11 @@ export function PermissionZoneGrid({
             {expanded && (
               <>
                 <Separator className="my-3" />
-                <ul className="flex flex-col gap-2 pl-7">
+                <ul
+                  id={`${idPrefix}-zone-${group.zone}`}
+                  aria-label={group.label}
+                  className="flex flex-col gap-2 pl-7"
+                >
                   {group.permissions.map((permission) => (
                     <li
                       key={permission.key}
