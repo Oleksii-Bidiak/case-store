@@ -687,7 +687,7 @@
 | TASK-448 | B-6 Доставка не лише НП: чотири методи (`NOVA_POSHTA`/`PICKUP`/`COURIER`/`OTHER`), `PickupPoint` як сутність, фіксована ціна кур'єра + поріг безкоштовності, матриця доставка × оплата на бекенді, екран `/settings/delivery` — рішення 2026-09-15, реалізація в TASK-642…650 | ✅ | [178](docs/plans/178-brainstorms.md) |
 | TASK-449 | B-7 Сповіщення: Telegram-бот власнику (S), outbox із каналами, SMS-коди | ⬜ | [178](docs/plans/178-brainstorms.md) |
 | TASK-450 | B-8 Детальна статистика: перші звіти, Umami API | ⬜ | [178](docs/plans/178-brainstorms.md) |
-| TASK-451 | B-9 Головна як контент; перегляд vs редагування в адмінці; прев'ю як на вітрині | ⬜ | [178](docs/plans/178-brainstorms.md) |
+| TASK-451 | B-9 Головна як контент: `HomeBlock` = реєстр + адресні блоки (порядок і видимість — дані, вміст лишається в «Каруселях»/«Банерах»), блок ставиться явно (карусель сама на головній не з'являється), секцій із табами скільки завгодно → `Carousel.placement` видаляється; «перегляд vs редагування» — через нові `:read`-ключі з бекфілом + read-only режим тієї самої сторінки, без нових маршрутів; прев'ю підписане на самій вітрині (24 год, посиланням можна поділитись, відкликається) для головної/товару/сторінок/блогу — рішення 2026-09-15, реалізація в TASK-660…671 | ✅ | [178](docs/plans/178-brainstorms.md) |
 | TASK-458 | B-10 Фасети каталогу: мультивибір, наявність і колір, розширений набір фасетів, лічильники, SEO-сторінки сумісності — рішення 2026-09-11 (з порівнянням із Rozetka/Allo), реалізація в TASK-487…490 + уточнення TASK-414 | ✅ | [178](docs/plans/178-brainstorms.md) |
 
 ### План 183 — Відгуки: оцінка окремо від тексту (реалізація B-4 / TASK-446)
@@ -862,6 +862,30 @@
 | TASK-658 | Доки й ручні перевірки: `AD-*`/`SF-*` у `docs/qa-recheck.md` + ids у Appendix А, розділ «Видалення» в `docs/admin-guide.md` (чим «Деактивувати» відрізняється від «Видалити», чому питають «куди перенести», як повернути товар), кроки персон у `docs/user-stories.md` | ⬜ | [185](docs/plans/185-deletion.md) |
 | TASK-659 | [побічна, знайдена в B-2] Звірити з кодом і закрити застарілі рядки BACKLOG: **TASK-427** (хвиля 175 — кнопка видалення, фільтр «Лише видалені», read-only картка) і **TASK-403** (хвиля 173 — позначка недоступного рядка в кошику); недороблене відрізати в окремий рядок — `/next` читає саме BACKLOG | ⬜ | [185](docs/plans/185-deletion.md) |
 
+### План 186 — Головна як блоки, перегляд без редагування, прев'ю (B-9 / TASK-451)
+
+> Рішення — план 178, «Рішення 2026-09-15 (B-9)». **Порядок і видимість секцій — дані, вміст
+> лишається там, де й був:** другого редактора банерів/каруселей не заводимо. Карусель на головній
+> **не з'являється сама** — її ставлять блоком, і це єдиний шлях запису в порядок; тому
+> `Carousel.placement` видаляється повністю. TASK-660 блокує решту A; **TASK-665 і TASK-666 — в
+> одній гілці**, це дві міграції прав, і розводити їх не можна. C — після TASK-663. Деталі —
+> [186](docs/plans/186-home-blocks-and-preview.md).
+
+| Task ID | Description | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-660 | Схема: `HomeBlock` (тип, порядок, видимість, publish-цикл, `carouselId?`) + `HomeBlockTab`, enum `HomeBlockType`; міграція через `migrate diff --script` із бекфілом у три кроки в одній транзакції — вісім рядків у нинішньому порядку `page.tsx`, `HOME_TABS`-каруселі в єдиний блок `TABS`, і лише потім `DROP COLUMN placement` + `DROP TYPE CarouselPlacement`; гейт — int-тест «перелік і порядок секцій після міграції той самий» | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-661 | Бекенд `home-block` (controller→service→repository): публічний `GET /api/home-blocks` із резолвом каруселей і табів однією відповіддю (без N+1), адмінський CRUD + `reorder` під адвізорним локом за зразком `BannersRepository.create()`/`nextSortOrder()` (**не** `update()` — там саме ця вада, TASK-580), publish-цикл через наявний `PublishablePort` | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-662 | Адмінський екран `/home`: drag-reorder блоків (dnd-kit, **без локального фільтра над перетягуванням** — ця пара вже дала дефект у хвилі 175), вмикання/вимикання, додавання блоку `CAROUSEL` (вибір каруселі) і `TABS` (заголовок + впорядковані таби), видалення; кнопка «Подивитись на сайті»; права `home:write` | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-663 | Вітрина: `page.tsx` рендерить блоки з `GET /api/home-blocks`, мапа `type → компонент` лишається в коді (компоненти — код, порядок — дані); резерв на недоступний API = нинішній зашитий порядок, головна мусить рендеритись завжди; ISR-тег `home-blocks` + ревалідація | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-664 | Каруселі: прибрати селект «Плейсмент» із `carousel-form.tsx`, додати колонку «На головній» (ні / назва блока) і кнопку «Додати на головну» — це і є закриття пастки «створив, опублікував, не видно»; завести зону головної-як-блоків у `content-map-zones.ts` (сьогодні каруселей на схемі немає взагалі) | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-665 | Право `home:write` (зона `CONTENT`) **з бекфілом** усім, хто має `carousels:write` або `banners:write` — керування головною було саме цими ключами; зразок — `MEDIA_BACKFILL_SOURCE_PERMISSIONS` (TASK-441). Окремий рядок і власний тест, бо умовний бекфіл прав у цьому репо вже один раз не видав нічого (хвиля 180) | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-666 | `:read`-ключі для контентних і довідкових розділів (`categories`, `brands`, `devices`, `attributes`, `addons`, `discounts`, `pages`, `blog`, `banners`, `carousels`, `faq`, `home`) **з бекфілом кожного** власникам відповідного `:write`; навігація гейтиться `:read` замість `:write` (`admin-nav-list.tsx`), адмінські GET-маршрути приймають `:read`, мутації лишаються на `:write`; тест «роль із самим `:read` бачить розділ і має 403 на будь-який запис» | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-667 | Read-only шаблон сторінки в `shared/ui` адмінки: та сама `[id]/edit` без `:write` рендериться переглядом — **значення текстом, не заблоковані інпути** — з кнопкою «Редагувати» за наявності права; застосувати до 11 розділів + `/home`. Жодного нового маршруту; наявні картки (`products/[id]`, `orders/[id]`, `returns/[id]`, `staff/[id]`, `users/[id]`) лишаються як є | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-668 | Бекенд прев'ю: `POST /api/admin/preview-tokens` — підписаний токен на 24 год з областю (`home` / `product:<id>` / `page:<id>` / `post:<id>`), видача під тим правом, що дає бачити сутність; `DELETE` = «Відкликати всі прев'ю» через bump секрета, не перебір рядків; публічні read-маршрути віддають чернетку **тільки** за валідним токеном своєї області, без токена поведінка не змінюється | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-669 | Вітрина: preview-режим на `/`, `/products/[slug]`, `/info\|legal/[slug]`, `/blog/[slug]` — приймає токен, передає у серверний запит, `no-store` без ISR-тегів, `robots: noindex`, смужка «Це прев'ю — вийти». **Секрета вітрина не тримає і токен не перевіряє.** Тест: та сама сторінка без токена лишається кешованою й індексованою | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-670 | Адмінка: «Подивитись на сайті» на формах товару/сторінки/статті та на `/home`, копіювання посилання, «Відкликати всі прев'ю» в налаштуваннях; інспектор `/products/preview/[slug]` лишається (показує залишки, SEO-перевизначення, історію), у dict розвести назви, щоб було видно, що з них що | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+| TASK-671 | Доки й ручні перевірки: `AD-*`/`SF-*` у `docs/qa-recheck.md` + ids під цією задачею в Appendix А, розділ «Головна» в `docs/admin-guide.md` (що таке блок, чому карусель сама не з'являється, як подивитись чернетку, кому давати «переглядати» замість «редагувати»), кроки content-manager у `docs/user-stories.md` | ⬜ | [186](docs/plans/186-home-blocks-and-preview.md) |
+
 ### План 179 — Якість: безпека, доки, моніторинг, пайплайн, ревʼю, повторний прогін
 
 > **S0 — першими, до будь-якого мержу:** TASK-460…467 і TASK-491…495 у таблиці нижче — 460/461/495
@@ -911,6 +935,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-660**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-672**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
