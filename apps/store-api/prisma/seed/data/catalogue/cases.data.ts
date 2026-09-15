@@ -23,6 +23,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Накладка',
       magsafe: false,
       protection: 'Посилені кути Air Cushion, бортик над екраном 1.2 мм',
+      bundle: 'Лише чохол',
     },
     variants: [
       {
@@ -69,6 +70,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Накладка',
       magsafe: true,
       protection: "М'який мікрофібровий підклад, захист кнопок",
+      bundle: 'Лише чохол',
     },
     views: ['загальний вигляд', 'вигляд ззаду', 'магнітне кільце'],
     variants: [
@@ -120,6 +122,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Прозорий',
       magsafe: false,
       protection: 'Бортик навколо камер, товщина 0.6 мм',
+      bundle: 'Лише чохол',
     },
     variants: [
       {
@@ -155,6 +158,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'З підставкою',
       magsafe: true,
       protection: 'Військовий стандарт MIL-STD-810G, падіння до 2 м',
+      bundle: 'Лише чохол',
     },
     views: ['загальний вигляд', 'вигляд ззаду', 'підставка розкладена'],
     variants: [
@@ -198,6 +202,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Книжка',
       magsafe: false,
       protection: 'Повне закриття екрана, два відділення для карток',
+      bundle: 'Лише чохол',
     },
     variants: [
       {
@@ -240,6 +245,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Прозорий',
       magsafe: false,
       protection: 'Акрилова спинка, посилена рамка',
+      bundle: 'Лише чохол',
     },
     variants: [
       {
@@ -283,6 +289,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Накладка',
       magsafe: false,
       protection: 'Бортик навколо камери, товщина 1.8 мм',
+      bundle: 'Лише чохол',
     },
     variants: [
       {
@@ -325,6 +332,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Броньований',
       magsafe: false,
       protection: 'Посилені кути, шорстка спинка',
+      bundle: 'Лише чохол',
     },
     variants: [
       {
@@ -359,6 +367,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Прозорий',
       magsafe: false,
       protection: 'Антижовтневе покриття, бортик навколо камери',
+      bundle: 'Лише чохол',
     },
     variants: [
       { name: 'Прозорий чохол Baseus для Galaxy S23', price: 349, stock: 44, attributes: {} },
@@ -378,6 +387,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Накладка',
       magsafe: false,
       protection: 'Матове покриття, бортик навколо камери',
+      bundle: 'Лише чохол',
     },
     variants: [
       {
@@ -421,6 +431,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Накладка',
       magsafe: false,
       protection: 'Високий бортик навколо камери, мікрофібра всередині',
+      bundle: 'Лише чохол',
     },
     variants: [
       {
@@ -455,6 +466,7 @@ export const cases: CatalogueEntry[] = [
       'case-type': 'Прозорий',
       magsafe: false,
       protection: 'Потовщені кути, антиприлипальний рельєф',
+      bundle: 'Лише чохол',
     },
     variants: [
       {

@@ -5,6 +5,7 @@ import { useCategoryControllerGetFilterableSpecs } from "@/entities/category";
 import { dict } from "@/shared/config";
 import { COLOR_SPEC_KEY } from "@/shared/lib";
 import {
+  formatFacetValue,
   parseSpecParam,
   selectedSpecValues,
   toggleSpecValue,
@@ -13,13 +14,19 @@ import { ColorSwatchFilter } from "./color-swatch-filter";
 import { FilterCheckbox } from "./filter-checkbox";
 
 /**
- * Hard ceiling on the facets offered at once, matching the API's own
+ * Hard ceiling on the facets offered at once — the «стеля 6 фасетів у
+ * сайдбарі» of owner decision B-10, and the same number as the API's own
  * `MAX_SPEC_FACETS`: each extra facet is another EXISTS subquery server-side,
  * and anything past this is silently dropped there anyway.
+ *
+ * Verified against the widened facet set in TASK-488: «Зарядки» reaches exactly
+ * six and every other root stays below, so nothing a category declares is
+ * currently cut off here. Which six, and in which order, is the OPERATOR's
+ * call — the list arrives sorted by `sortOrder`, which the admin panel edits.
  */
 const MAX_FACETS = 6;
 
-/** Facets shown before the "Ще фільтри" disclosure. */
+/** Facets shown before the "Ще фільтри" disclosure (B-10: «решта під «Ще фільтри»»). */
 const INITIAL_FACETS = 3;
 
 const cardClass =
@@ -129,7 +136,9 @@ export function SpecFacets({
                     <FilterCheckbox
                       key={value}
                       id={`${groupId}-${value}`}
-                      label={value}
+                      // Not the raw value: a BOOLEAN facet stores "true" and a
+                      // SELECT with a unit stores a bare numeral (TASK-488).
+                      label={formatFacetValue(value, facet.definition)}
                       checked={active.includes(value)}
                       onCheckedChange={() =>
                         onFilterChange({

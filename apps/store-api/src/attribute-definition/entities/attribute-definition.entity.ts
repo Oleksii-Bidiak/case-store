@@ -55,7 +55,8 @@ export class AttributeDefinitionEntity {
   options!: string[];
 
   @ApiProperty({
-    description: 'Whether this spec is surfaced as a catalog facet + PDP highlight',
+    description:
+      'Whether this spec is surfaced as a catalog facet + PDP highlight. Only SELECT and BOOLEAN characteristics may be facets',
     example: true,
   })
   isFilterable!: boolean;

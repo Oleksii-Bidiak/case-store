@@ -359,4 +359,81 @@ describe("SpecFacets — multi-select (TASK-414)", () => {
 
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
+
+  // ── the widened facet set (TASK-488 / owner decision B-10) ────────────────
+  // B-10 let a facet be a BOOLEAN as well as a SELECT, and promoted a spec that
+  // carries a unit. Both store values that are unreadable raw.
+  describe("facets that are not plain SELECTs", () => {
+    function typedFacet(
+      key: string,
+      label: string,
+      values: string[],
+      type: string,
+      unit: string | null = null,
+    ) {
+      const base = facet(key, label, values);
+      return { ...base, definition: { ...base.definition, type, unit } };
+    }
+
+    it("labels a BOOLEAN facet «Так» / «Ні», not true / false", async () => {
+      stubFacets([
+        typedFacet(
+          "magsafe",
+          "Підтримка MagSafe",
+          ["false", "true"],
+          "BOOLEAN",
+        ),
+      ]);
+      const onFilterChange = jest.fn();
+
+      renderWithProviders(
+        <SpecFacets categoryId={CATEGORY_ID} onFilterChange={onFilterChange} />,
+      );
+
+      expect(
+        await screen.findByRole("checkbox", { name: "Так" }),
+      ).toBeInTheDocument();
+      expect(screen.getByRole("checkbox", { name: "Ні" })).toBeInTheDocument();
+      expect(
+        screen.queryByRole("checkbox", { name: "true" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("keeps the STORED value in the URL while showing «Так»", async () => {
+      // The label is for the shopper; the param is the API contract.
+      stubFacets([
+        typedFacet(
+          "magsafe",
+          "Підтримка MagSafe",
+          ["false", "true"],
+          "BOOLEAN",
+        ),
+      ]);
+      const onFilterChange = jest.fn();
+
+      renderWithProviders(
+        <SpecFacets categoryId={CATEGORY_ID} onFilterChange={onFilterChange} />,
+      );
+
+      await userEvent.click(
+        await screen.findByRole("checkbox", { name: "Так" }),
+      );
+
+      expect(onFilterChange).toHaveBeenCalledWith({ specs: "magsafe:true" });
+    });
+
+    it("appends the unit of a facet that has one", async () => {
+      stubFacets([
+        typedFacet("ports", "Кількість портів", ["1", "2"], "SELECT", "шт"),
+      ]);
+
+      renderWithProviders(
+        <SpecFacets categoryId={CATEGORY_ID} onFilterChange={jest.fn()} />,
+      );
+
+      expect(
+        await screen.findByRole("checkbox", { name: "2 шт" }),
+      ).toBeInTheDocument();
+    });
+  });
 });

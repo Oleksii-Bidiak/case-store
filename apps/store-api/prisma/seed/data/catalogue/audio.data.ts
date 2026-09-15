@@ -21,6 +21,7 @@ export const headphones: CatalogueEntry[] = [
       connection: 'Bluetooth',
       playtime: 30,
       anc: true,
+      microphone: 'Вбудований',
     },
     views: ['загальний вигляд', 'кейс для заряджання'],
     variants: [{ name: 'Навушники Apple AirPods Pro 2', price: 9999, stock: 15, attributes: {} }],
@@ -39,6 +40,7 @@ export const headphones: CatalogueEntry[] = [
       connection: 'Bluetooth',
       playtime: 30,
       anc: false,
+      microphone: 'Вбудований',
     },
     variants: [{ name: 'Навушники Apple AirPods 4', price: 6999, stock: 20, attributes: {} }],
   },
@@ -57,6 +59,7 @@ export const headphones: CatalogueEntry[] = [
       connection: 'Bluetooth',
       playtime: 24,
       anc: true,
+      microphone: 'Вбудований',
     },
     variants: [
       {
@@ -91,6 +94,7 @@ export const headphones: CatalogueEntry[] = [
       connection: 'Bluetooth',
       playtime: 38,
       anc: true,
+      microphone: 'Вбудований',
     },
     variants: [
       {
@@ -125,6 +129,7 @@ export const headphones: CatalogueEntry[] = [
       connection: 'Bluetooth',
       playtime: 18,
       anc: false,
+      microphone: 'Вбудований',
     },
     variants: [
       {
@@ -163,6 +168,8 @@ export const headphones: CatalogueEntry[] = [
       connection: 'Bluetooth',
       playtime: 30,
       anc: true,
+      // «вісім мікрофонів прибирають гул літака» — stated in the description.
+      microphone: 'Вбудований',
     },
     views: ['загальний вигляд', 'складені навушники', 'амбушури зблизька'],
     variants: [
@@ -198,6 +205,7 @@ export const headphones: CatalogueEntry[] = [
       connection: 'Bluetooth',
       playtime: 76,
       anc: false,
+      microphone: 'Вбудований',
     },
     variants: [
       {
@@ -231,6 +239,8 @@ export const headphones: CatalogueEntry[] = [
       'headphone-type': 'Внутрішньоканальні дротові',
       connection: 'USB-C',
       anc: false,
+      // «Пульт на дроті … відповідає на виклики» — the mic is on the cable.
+      microphone: 'На кабелі',
     },
     variants: [
       { name: 'Дротові навушники Apple EarPods з USB-C', price: 999, stock: 34, attributes: {} },
@@ -249,6 +259,8 @@ export const headphones: CatalogueEntry[] = [
       'headphone-type': 'Внутрішньоканальні дротові',
       connection: '3.5 мм',
       anc: false,
+      // «мікрофон достатньо чутливий для робочих дзвінків», on a flat cable.
+      microphone: 'На кабелі',
     },
     variants: [
       {

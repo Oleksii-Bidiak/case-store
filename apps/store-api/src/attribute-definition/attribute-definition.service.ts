@@ -9,6 +9,7 @@ import {
   AttributeDefinitionRepository,
   CreateAttributeDefinitionInput,
 } from './attribute-definition.repository';
+import { FACETABLE_TYPES, isFacetableType } from './attribute-definition.constants';
 import { CategoryRepository } from '../category';
 import { reorderErrorToHttp } from '../common/reorder';
 import { AttributeDefinitionEntity, FilterableSpecEntity } from './entities';
@@ -53,6 +54,14 @@ export class AttributeDefinitionService {
    * the category's subtree. Returns an empty list when the category declares no
    * filterable specs, so the storefront simply renders no facet controls.
    *
+   * A definition whose type cannot be a facet is dropped too (TASK-488): a
+   * facet is a SELECT or a BOOLEAN and never a TEXT — see {@link FACETABLE_TYPES}.
+   * The write path already refuses that pair, so this filter is about the rows
+   * that predate the rule: an imported catalogue types every column it meets as
+   * TEXT (`CatalogImportRepository.ensureAttributeDefinitions`), and one
+   * filterable TEXT definition is enough to publish a sidebar control with one
+   * value per product in it.
+   *
    * A definition with NO values in this subtree is dropped entirely (TASK-487).
    * Definitions are declared on the ROOT and inherited by every descendant, so
    * a facet the parent legitimately offers can be empty three levels down —
@@ -63,7 +72,7 @@ export class AttributeDefinitionService {
    */
   async getFilterableSpecs(categoryId: string): Promise<FilterableSpecEntity[]> {
     const effective = await this.repository.findEffectiveForCategory(categoryId);
-    const filterable = effective.filter((def) => def.isFilterable);
+    const filterable = effective.filter((def) => def.isFilterable && isFacetableType(def.type));
     if (filterable.length === 0) {
       return [];
     }
@@ -91,6 +100,7 @@ export class AttributeDefinitionService {
 
     const type = dto.type ?? AttributeType.TEXT;
     this.validateOptions(type, dto.options);
+    this.validateFacetType(type, dto.isFilterable ?? false);
 
     const existing = await this.repository.findByCategoryAndKey(categoryId, dto.key);
     if (existing) {
@@ -128,6 +138,7 @@ export class AttributeDefinitionService {
           : undefined);
       this.validateOptions(nextType, nextOptions);
     }
+    this.validateFacetType(nextType, dto.isFilterable ?? existing.isFilterable);
 
     // If the key changes, re-check the (categoryId, key) uniqueness.
     if (dto.key !== undefined && dto.key !== existing.key) {
@@ -183,6 +194,25 @@ export class AttributeDefinitionService {
     }
 
     return defs.map((def) => AttributeDefinitionEntity.fromPrisma(def));
+  }
+
+  /**
+   * A facet is a SELECT or a BOOLEAN, never a TEXT and never a NUMBER
+   * (TASK-488 / B-10). Checked on the RESULTING pair, so switching a filterable
+   * SELECT to TEXT fails as loudly as ticking the box on a TEXT definition
+   * does — otherwise the panel could reach the forbidden state in two steps.
+   *
+   * Deliberately NOT a silent unticking of `isFilterable`: a facet quietly
+   * disappearing from the storefront is the kind of change an operator finds
+   * out about from a customer.
+   */
+  private validateFacetType(type: AttributeType, isFilterable: boolean): void {
+    if (isFilterable && !isFacetableType(type)) {
+      throw new BadRequestException(
+        `Only ${FACETABLE_TYPES.join(' / ')} characteristics can be used as a catalogue filter ` +
+          `— free-text and numeric values give one filter value per product`,
+      );
+    }
   }
 
   /** SELECT definitions must ship a non-empty options list. */

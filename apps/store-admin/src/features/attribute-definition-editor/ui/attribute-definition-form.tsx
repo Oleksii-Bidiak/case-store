@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -20,6 +21,7 @@ import { AttributeDefinitionEntityType } from "@/entities/attribute-definition";
 import {
   attributeDefinitionSchema,
   EMPTY_ATTRIBUTE_DEFINITION,
+  isFacetableType,
   type AttributeDefinitionFormValues,
 } from "../model/attribute-definition-schema";
 
@@ -56,6 +58,7 @@ export function AttributeDefinitionForm({
     register,
     control,
     handleSubmit,
+    setValue,
     formState: { errors },
   } = useForm<AttributeDefinitionFormValues>({
     resolver: zodResolver(attributeDefinitionSchema),
@@ -64,6 +67,15 @@ export function AttributeDefinitionForm({
 
   const type = useWatch({ control, name: "type" });
   const isSelect = type === AttributeDefinitionEntityType.SELECT;
+  const canBeFacet = isFacetableType(type);
+
+  // Switching to a type that cannot be a facet unticks the box rather than
+  // leaving a hidden `true` behind for the submit to fail on (TASK-488).
+  useEffect(() => {
+    if (!canBeFacet) {
+      setValue("isFilterable", false);
+    }
+  }, [canBeFacet, setValue]);
 
   return (
     <form
@@ -156,19 +168,34 @@ export function AttributeDefinitionForm({
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        <Controller
-          control={control}
-          name="isFilterable"
-          render={({ field }) => (
-            <Checkbox
-              id="attr-filterable"
-              checked={field.value}
-              onCheckedChange={(checked) => field.onChange(checked === true)}
-            />
-          )}
-        />
-        <Label htmlFor="attr-filterable">{d.isFilterable}</Label>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-2">
+          <Controller
+            control={control}
+            name="isFilterable"
+            render={({ field }) => (
+              <Checkbox
+                id="attr-filterable"
+                checked={field.value}
+                disabled={!canBeFacet}
+                aria-describedby="attr-filterable-hint"
+                onCheckedChange={(checked) => field.onChange(checked === true)}
+              />
+            )}
+          />
+          <Label htmlFor="attr-filterable">{d.isFilterable}</Label>
+        </div>
+        {/* The rule, not an error: a facet is «Так/Ні» or «Вибір зі списку»
+            (TASK-488 / B-10). Shown always so the operator learns WHY the box
+            is unavailable, instead of discovering it by clicking. */}
+        <p id="attr-filterable-hint" className="text-xs text-muted-foreground">
+          {d.isFilterableHint}
+        </p>
+        {errors.isFilterable && (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.isFilterable.message}
+          </p>
+        )}
       </div>
 
       <FormActionsBar className="flex justify-end gap-2">

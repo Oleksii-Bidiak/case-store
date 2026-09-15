@@ -12,4 +12,9 @@ export {
   UpdateAttributeDefinitionDto,
   ReorderAttributeDefinitionsDto,
 } from './dto';
-export { ATTRIBUTE_KEY_PATTERN, MAX_HIGHLIGHTS } from './attribute-definition.constants';
+export {
+  ATTRIBUTE_KEY_PATTERN,
+  MAX_HIGHLIGHTS,
+  FACETABLE_TYPES,
+  isFacetableType,
+} from './attribute-definition.constants';

@@ -180,4 +180,79 @@ describe('seedAttributeDefinitions — the colour bridge (TASK-487)', () => {
     const memory = created.filter((row) => row.definitionId.endsWith(':memory'));
     expect(memory.length).toBeGreaterThan(0);
   });
+
+  /**
+   * The widened facet set, asserted on what the seeder actually WRITES rather
+   * than on what the data file declares (TASK-488). `facets.data.spec.ts`
+   * checks the declaration; this checks that the declaration survives the trip
+   * through the seeder for all 178 positions — the two have drifted before.
+   */
+  describe('the widened facet set (TASK-488 / B-10)', () => {
+    /** Every definition the seeder created, flattened out of the upserts. */
+    const definitions = () =>
+      upserts.map((args) => ({
+        categoryId: args.where.categoryId_key.categoryId,
+        key: args.where.categoryId_key.key,
+        type: args.create.type as string,
+        isFilterable: args.create.isFilterable as boolean,
+        options: (args.create.options as string[] | undefined) ?? [],
+        id: `def:${args.where.categoryId_key.categoryId}:${args.where.categoryId_key.key}`,
+      }));
+
+    it('never writes a filterable TEXT or NUMBER definition', () => {
+      // The rule, enforced at the source of the data rather than only at the
+      // API: `getFilterableSpecs` would drop such a row, so the symptom of
+      // getting this wrong is a facet the owner asked for and never sees.
+      const offenders = definitions()
+        .filter((def) => def.isFilterable && def.type !== 'SELECT' && def.type !== 'BOOLEAN')
+        .map((def) => `${def.categoryId}.${def.key}:${def.type}`);
+      expect(offenders).toEqual([]);
+    });
+
+    it('gives every filterable SELECT a non-empty option list', () => {
+      const empty = definitions()
+        .filter((def) => def.isFilterable && def.type === 'SELECT' && def.options.length === 0)
+        .map((def) => `${def.categoryId}.${def.key}`);
+      expect(empty).toEqual([]);
+    });
+
+    it('writes at least one VALUE for every facet it declares', () => {
+      // An empty facet is a control a shopper can open and find nothing in.
+      const filled = new Set(created.map((row) => row.definitionId));
+      const starved = definitions()
+        .filter((def) => def.isFilterable && !filled.has(def.id))
+        .map((def) => `${def.categoryId}.${def.key}`);
+      expect(starved).toEqual([]);
+    });
+
+    it('fills the three facets B-10 added outright', () => {
+      const valuesOf = (categoryId: string, key: string) =>
+        created.filter((row) => row.definitionId === `def:${categoryId}:${key}`);
+
+      expect(valuesOf('cat:chargers', 'charger-output').length).toBeGreaterThan(0);
+      expect(valuesOf('cat:headphones', 'microphone').length).toBeGreaterThan(0);
+      expect(valuesOf('cat:cases', 'bundle').length).toBeGreaterThan(0);
+      // The microphone facet exists to SPLIT the catalogue, not to label it: a
+      // facet whose every product answers the same thing narrows nothing.
+      expect(
+        new Set(valuesOf('cat:headphones', 'microphone').map((row) => row.value)).size,
+      ).toBeGreaterThan(1);
+      expect(
+        new Set(valuesOf('cat:chargers', 'charger-output').map((row) => row.value)).size,
+      ).toBeGreaterThan(1);
+    });
+
+    it('keeps «Твердість» a bare class now that «Особливості» carries the rest', () => {
+      const hardness = created.filter(
+        (row) => row.definitionId === 'def:cat:screen-protectors:hardness',
+      );
+      const features = created.filter(
+        (row) => row.definitionId === 'def:cat:screen-protectors:protector-features',
+      );
+      expect(hardness.length).toBeGreaterThan(0);
+      expect(new Set(hardness.map((row) => row.value))).toEqual(new Set(['9H']));
+      // The thickness and the coating text did not vanish with the retype.
+      expect(features.length).toBeGreaterThanOrEqual(hardness.length);
+    });
+  });
 });

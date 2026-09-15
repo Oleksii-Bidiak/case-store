@@ -256,6 +256,7 @@ export function ProductListView({
       <ActiveFilterChips
         currentParams={params}
         brandName={activeBrandName}
+        categoryId={activeCategoryId}
         onFilterChange={applyFilters}
       />
 

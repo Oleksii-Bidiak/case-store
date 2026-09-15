@@ -26,7 +26,8 @@ export const protection: CatalogueEntry[] = [
     specs: {
       'protector-type': 'Гартоване скло',
       coverage: 'Увесь екран (Full Glue)',
-      hardness: '9H, товщина 0.33 мм',
+      hardness: '9H',
+      'protector-features': 'Товщина 0.33 мм',
     },
     views: ['загальний вигляд', 'рамка для наклеювання'],
     variants: [
@@ -63,7 +64,8 @@ export const protection: CatalogueEntry[] = [
     specs: {
       'protector-type': 'Гартоване скло',
       coverage: 'Увесь екран (Full Glue)',
-      hardness: '9H, товщина 0.3 мм',
+      hardness: '9H',
+      'protector-features': 'Товщина 0.3 мм',
     },
     variants: [
       {
@@ -96,7 +98,8 @@ export const protection: CatalogueEntry[] = [
     specs: {
       'protector-type': 'Гартоване скло',
       coverage: 'Увесь екран (Full Glue)',
-      hardness: '9H, товщина 0.33 мм',
+      hardness: '9H',
+      'protector-features': 'Товщина 0.33 мм',
       'pack-size': 2,
     },
     variants: [
@@ -115,7 +118,8 @@ export const protection: CatalogueEntry[] = [
     specs: {
       'protector-type': 'Гартоване скло',
       coverage: 'Увесь екран (Full Glue)',
-      hardness: '9H, товщина 0.3 мм',
+      hardness: '9H',
+      'protector-features': 'Товщина 0.3 мм',
     },
     variants: [
       {
@@ -156,7 +160,7 @@ export const protection: CatalogueEntry[] = [
     specs: {
       'protector-type': 'Гідрогелева плівка',
       coverage: 'Увесь екран (Full Glue)',
-      hardness: 'Самовідновлення подряпин, товщина 0.15 мм',
+      'protector-features': 'Самовідновлення подряпин, товщина 0.15 мм',
     },
     variants: [
       {
@@ -189,7 +193,7 @@ export const protection: CatalogueEntry[] = [
     specs: {
       'protector-type': 'Гідрогелева плівка',
       coverage: 'Увесь екран (Full Glue)',
-      hardness: 'Матове антивідблискове покриття',
+      'protector-features': 'Матове антивідблискове покриття',
       'pack-size': 1,
     },
     variants: [
@@ -208,7 +212,8 @@ export const protection: CatalogueEntry[] = [
     specs: {
       'protector-type': 'Скло на камеру',
       coverage: 'Модуль камери',
-      hardness: "9H, окремі кільця на кожен об'єктив",
+      hardness: '9H',
+      'protector-features': "Окремі кільця на кожен об'єктив",
     },
     variants: [
       {
@@ -241,7 +246,8 @@ export const protection: CatalogueEntry[] = [
     specs: {
       'protector-type': 'Скло на камеру',
       coverage: 'Модуль камери',
-      hardness: '9H, суцільна пластина',
+      hardness: '9H',
+      'protector-features': 'Суцільна пластина',
       'pack-size': 2,
     },
     variants: [{ name: 'Захисне скло на камеру Galaxy S24', price: 179, stock: 0, attributes: {} }],

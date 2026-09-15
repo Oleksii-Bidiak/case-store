@@ -8,6 +8,9 @@ export type {
   // Structured-spec facets (TASK-191)
   FilterableSpecEntity,
   FilterableSpecsResponse,
+  // The facet's definition: its label, its `type` (BOOLEAN facets store
+  // "true"/"false" and render «Так»/«Ні») and its `unit` — TASK-488.
+  AttributeDefinitionEntity,
 } from "@/shared/api/generated/models";
 
 export {

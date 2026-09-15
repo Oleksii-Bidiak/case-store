@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { AttributeType } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
@@ -152,11 +153,18 @@ describe('Colour as a catalogue facet: backfill + bridge (integration)', () => {
 
     // A pre-existing, unrelated facet: the colour definition must be ADDED
     // beside it, not instead of it, and must sort ahead of it.
+    //
+    // A SELECT, explicitly. The column defaults to TEXT, and since TASK-488 a
+    // TEXT definition is never offered as a facet however it is flagged — so a
+    // fixture relying on that default would silently stop being a facet here
+    // and take three unrelated assertions with it.
     const material = await prisma.attributeDefinition.create({
       data: {
         categoryId: rootId,
         key: 'material',
         label: 'Матеріал',
+        type: AttributeType.SELECT,
+        options: ['Силікон', 'TPU', 'Скло'],
         isFilterable: true,
         sortOrder: 0,
       },

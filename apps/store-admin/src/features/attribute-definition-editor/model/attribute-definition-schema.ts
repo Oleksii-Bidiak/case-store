@@ -21,6 +21,26 @@ const TYPES = [
 ] as const;
 
 /**
+ * The only types a catalogue facet may have — the same rule the API enforces in
+ * `AttributeDefinitionService.validateFacetType` (TASK-488 / owner decision
+ * B-10: «Фасет — це SELECT або BOOLEAN»).
+ *
+ * Free text gives one filter value per product («Захист: Посилені кути Air
+ * Cushion, бортик над екраном 1.2 мм»), and a numeric facet reads as a bare
+ * numeral in the sidebar. Mirrored here so the operator is stopped by the form
+ * instead of by a 400 from the server.
+ */
+export const FACETABLE_TYPES: readonly AttributeDefinitionEntityType[] = [
+  AttributeDefinitionEntityType.SELECT,
+  AttributeDefinitionEntityType.BOOLEAN,
+];
+
+/** Whether a definition of this type may be ticked as a catalogue filter. */
+export function isFacetableType(type: AttributeDefinitionEntityType): boolean {
+  return FACETABLE_TYPES.includes(type);
+}
+
+/**
  * Form schema for a single structured-spec template. `options` is edited as a
  * newline-separated string and split into an array on submit; it is required
  * (non-empty) when the type is SELECT — mirroring the backend rule.
@@ -48,6 +68,13 @@ export const attributeDefinitionSchema = z
           message: t.optionsRequired,
         });
       }
+    }
+    if (values.isFilterable && !isFacetableType(values.type)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["isFilterable"],
+        message: t.filterableType,
+      });
     }
   });
 

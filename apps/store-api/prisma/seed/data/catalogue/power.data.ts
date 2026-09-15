@@ -22,6 +22,8 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Мережева',
       ports: 1,
       technology: 'Power Delivery',
+      // Named in the product title itself.
+      'charger-output': 'USB-C',
     },
     variants: [
       {
@@ -60,6 +62,8 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Мережева',
       ports: 3,
       technology: 'GaN',
+      // «Два USB-C і один USB-A» — the description spells both out.
+      'charger-output': 'USB-C + USB-A',
     },
     views: ['загальний вигляд', 'порти зблизька'],
     variants: [
@@ -95,6 +99,9 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Мережева',
       ports: 4,
       technology: 'GaN',
+      // Conservative: «ноутбук отримає 65 Вт» is only possible over USB-C PD.
+      // The entry names no second port type, so none is claimed here.
+      'charger-output': 'USB-C',
     },
     variants: [
       {
@@ -119,6 +126,8 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Мережева',
       ports: 2,
       technology: 'Quick Charge',
+      // Power Delivery AND Quick Charge on two ports — PD is USB-C, QC is USB-A.
+      'charger-output': 'USB-C + USB-A',
     },
     variants: [
       { name: 'Мережевий зарядний пристрій Hoco 30 Вт', price: 399, stock: 64, attributes: {} },
@@ -138,6 +147,7 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Автомобільна',
       ports: 2,
       technology: 'Power Delivery',
+      'charger-output': 'USB-C',
     },
     variants: [
       {
@@ -172,6 +182,8 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Автомобільна',
       ports: 2,
       technology: 'Power Delivery',
+      // The bundled cable named in the title is USB-C.
+      'charger-output': 'USB-C',
     },
     variants: [
       {
@@ -197,6 +209,9 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Бездротова',
       ports: 1,
       technology: 'MagSafe',
+      // Derived from the type, not guessed: a wireless charger has no output
+      // socket at all, and that is a real answer to «яким роз'ємом заряджає».
+      'charger-output': 'Бездротовий',
     },
     variants: [
       {
@@ -231,6 +246,7 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Бездротова',
       ports: 3,
       technology: 'Qi2',
+      'charger-output': 'Бездротовий',
     },
     variants: [
       { name: 'Бездротова зарядна станція Baseus 3-в-1', price: 1499, stock: 0, attributes: {} },

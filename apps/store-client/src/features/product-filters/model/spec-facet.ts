@@ -21,6 +21,75 @@
  * there is no escape form (see the BACKLOG follow-up).
  */
 
+import type { AttributeDefinitionEntity } from "@/entities/category";
+import { dict } from "@/shared/config";
+
+/**
+ * The generated `AttributeDefinitionEntityType` member, spelled through the
+ * type so a rename in the API contract fails the build here.
+ *
+ * A `const` rather than an import of the generated enum OBJECT on purpose: this
+ * module is covered by the `unit` Jest project, which runs in a node
+ * environment with no jsdom, and the `@/entities/category` barrel pulls the
+ * whole generated query client (axios + React Query) in with it. Every other
+ * model file in this feature imports from entities with `import type` for the
+ * same reason.
+ */
+const BOOLEAN_TYPE: FacetDefinition["type"] = "BOOLEAN";
+
+/** The part of a facet's definition that display needs. */
+export type FacetDefinition = Pick<
+  AttributeDefinitionEntity,
+  "key" | "label" | "type" | "unit"
+>;
+
+/**
+ * Render ONE facet value the way a person would read it (TASK-488).
+ *
+ * Two cases the raw value gets wrong, both introduced by B-10 widening the
+ * facet set beyond plain SELECTs:
+ *   - a BOOLEAN facet stores the literal `"true"` / `"false"` (that is what the
+ *     PDP's `formatSpecValue` compares against too), so «Підтримка MagSafe»
+ *     would offer a checkbox labelled `true`;
+ *   - a SELECT with a `unit` stores the bare numeral, so «Кількість портів»
+ *     would offer `2` instead of «2 шт».
+ *
+ * The URL keeps the stored value either way — only the label changes.
+ */
+export function formatFacetValue(
+  value: string,
+  definition?: Pick<FacetDefinition, "type" | "unit">,
+): string {
+  if (definition?.type === BOOLEAN_TYPE) {
+    return value === "true"
+      ? dict.product.specBooleanYes
+      : dict.product.specBooleanNo;
+  }
+  return definition?.unit ? `${value} ${definition.unit}` : value;
+}
+
+/**
+ * The label for a removable chip above the grid.
+ *
+ * A chip reading «Так» on its own says nothing about WHICH facet it came from,
+ * and with two boolean facets selected there would be two identical chips. So
+ * a boolean value is prefixed with its facet's name («MagSafe: Так»), while a
+ * SELECT value stands alone as it always has («Силікон»).
+ *
+ * `definition` is optional because the chips row can render before (or without)
+ * the facet list — an unknown facet falls back to the raw value rather than
+ * disappearing.
+ */
+export function formatFacetChipLabel(
+  value: string,
+  definition?: FacetDefinition,
+): string {
+  const formatted = formatFacetValue(value, definition);
+  return definition?.type === BOOLEAN_TYPE
+    ? `${definition.label}: ${formatted}`
+    : formatted;
+}
+
 export interface SpecFacetSelection {
   key: string;
   /** Values OR-ed within this facet. Never empty — an empty facet is dropped. */
