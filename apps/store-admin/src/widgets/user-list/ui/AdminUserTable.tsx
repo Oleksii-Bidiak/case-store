@@ -6,14 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { formatDate } from "@/shared/lib";
-import {
-  ROLE_VALUES,
-  UserEntityRole,
-  roleLabel,
-  useUserControllerFindAll,
-  type UserEntity,
-} from "@/entities/user";
-import { CreateStaffButton } from "@/features/user-create";
+import { useUserControllerFindAll, type UserEntity } from "@/entities/user";
 import {
   Badge,
   Button,
@@ -41,45 +34,10 @@ function fullName(user: UserEntity): string {
 }
 
 /**
- * Widen the generated role union.
+ * Paginated, searchable, filterable CUSTOMER table for the admin panel.
  *
- * `UserEntity.role` is still typed `CUSTOMER | ADMIN` because the API's
- * `@ApiProperty` predates MANAGER, yet MANAGER rows arrive over the wire today.
- * Comparing the narrow union against "MANAGER" is a compile error — and the
- * previous binary check rendered every manager as «Клієнт», which on a screen
- * about who holds which powers is the worst possible wrong answer. See
- * docs/manual-qa-pending.md §TASK-334.
- */
-function roleOf(user: UserEntity): string {
-  return user.role;
-}
-
-/**
- * Empty-state copy (TASK-406).
- *
- * "Nobody holds this role yet" and "your filters matched nothing" are different
- * answers, and only the first one has an obvious next step. The role-specific
- * line is used ONLY when the role filter is the sole narrowing in play — with a
- * search term or a status filter on top, «Менеджерів ще немає» would be a claim
- * the query cannot support.
- */
-function emptyCopy(
-  roleParam: string,
-  searchParam: string,
-  isActiveParam: string,
-): string {
-  if (searchParam || isActiveParam) return dict.users.empty;
-  if (roleParam === ROLE_VALUES.MANAGER) return dict.users.emptyManagers;
-  if (roleParam === ROLE_VALUES.ADMIN) return dict.users.emptyAdmins;
-  return dict.users.empty;
-}
-
-/**
- * Paginated, searchable, filterable user table for the admin panel.
- *
- * Search, role, status, page and page size all live in the URL (`?search=`,
- * `?role=`, `?isActive=`, `?page=`, `?limit=`) so the view is shareable and
- * refresh-safe.
+ * Search, status, page and page size all live in the URL (`?search=`,
+ * `?isActive=`, `?page=`, `?limit=`) so the view is shareable and refresh-safe.
  *
  * TASK-423 replaced this table's own copies of the controls with the shared ones
  * (`TableSearch`, `TableFilters`, `TablePagination`). The behaviour here barely
@@ -92,17 +50,26 @@ function emptyCopy(
  * purpose: the account list is not a queue two people work at once, so the
  * panel-wide five minutes plus the explicit button is the right trade.
  *
- * Deliberately no checkbox column. Every bulk action one could offer on users —
- * deactivate, delete, change role — is exactly the action that can lock the
- * owner out of their own store, and the API guards those one id at a time (it
- * refuses to strip the last working admin). A multi-select would invite the one
- * mistake there is no undo for.
+ * ## Shoppers only, since TASK-480
+ *
+ * `GET /api/users` has scoped itself to `role: CUSTOMER` since TASK-476, so the
+ * three things this table grew for staff had become misleading rather than
+ * merely redundant: the ROLE filter could offer «Менеджер» and return nobody on
+ * a shop with twenty of them; the role COLUMN could only ever read «Клієнт»; and
+ * the empty state offered «Створити співробітника» from a list the new account
+ * would never appear in. All three moved to `/staff`, where the register they
+ * describe actually lives.
+ *
+ * Deliberately no checkbox column. Every bulk action one could offer on accounts
+ * — deactivate, delete, change role — is exactly the action that can lock the
+ * owner out of their own store, and the API guards those one id at a time. A
+ * multi-select would invite the one mistake there is no undo for. (`StaffTable`
+ * repeats the omission for a sharper version of the same reason.)
  */
 export function AdminUserTable() {
   const searchParams = useSearchParams();
 
   const searchParam = searchParams.get("search") ?? "";
-  const roleParam = searchParams.get("role") ?? "";
   const isActiveParam = searchParams.get("isActive") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
@@ -119,9 +86,6 @@ export function AdminUserTable() {
       page,
       limit: pageSize,
       search: searchParam || undefined,
-      role: roleParam
-        ? (roleParam as (typeof UserEntityRole)[keyof typeof UserEntityRole])
-        : undefined,
       isActive: isActiveParam ? isActiveParam === "true" : undefined,
       sortBy,
       sortOrder,
@@ -132,22 +96,8 @@ export function AdminUserTable() {
 
   // TASK-423: the same filter idiom every admin table uses. Declaring them as
   // DATA rather than markup is what makes the chips, the clear-all and the page
-  // reset identical here and on eleven other screens — the two hand-rolled
-  // `Select`s this replaces had each of those behaviours only by accident.
+  // reset identical here and on eleven other screens.
   const filters: TableFilterDef[] = [
-    {
-      param: "role",
-      label: dict.users.filterRoleAria,
-      allLabel: dict.users.allRoles,
-      options: [
-        { value: ROLE_VALUES.CUSTOMER, label: dict.users.roleCustomer },
-        // TASK-334: MANAGER is a real role the API returns and filters on, even
-        // though the generated `UserEntityRole` union still predates it. Without
-        // this option the owner could not list their own managers.
-        { value: ROLE_VALUES.MANAGER, label: dict.users.roleManager },
-        { value: ROLE_VALUES.ADMIN, label: dict.users.roleAdmin },
-      ],
-    },
     {
       param: "isActive",
       label: dict.users.filterStatusAria,
@@ -176,7 +126,7 @@ export function AdminUserTable() {
           filters={
             <TableFilters
               filters={filters}
-              values={{ role: roleParam, isActive: isActiveParam }}
+              values={{ isActive: isActiveParam }}
             />
           }
         />
@@ -188,16 +138,11 @@ export function AdminUserTable() {
             {dict.users.loadError}
           </p>
         ) : users.length === 0 ? (
-          // TASK-406: filtering to «Менеджер» on a shop that has none used to
-          // answer «Немає користувачів за поточними фільтрами» — true, and
-          // exactly the moment the owner needed to be told that the way to get
-          // one is to create a staff account, and where.
           <div className="flex flex-col items-center gap-3 rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-            <p>{emptyCopy(roleParam, searchParam, isActiveParam)}</p>
-            <CreateStaffButton size="sm" />
+            <p>{dict.users.empty}</p>
           </div>
         ) : (
-          <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
+          <div className="relative overflow-hidden rounded-lg border border-border shadow-card">
             {isFetching && !isLoading && (
               <div
                 aria-hidden="true"
@@ -218,7 +163,6 @@ export function AdminUserTable() {
                     onSort={onSort}
                   />
                   <TableHead hideOnMobile>{dict.users.colName}</TableHead>
-                  <TableHead>{dict.users.colRole}</TableHead>
                   <TableHead>{dict.users.colStatus}</TableHead>
                   <SortableColumnHeader
                     field="createdAt"
@@ -243,19 +187,6 @@ export function AdminUserTable() {
                     </TableCell>
                     <TableCell className="font-medium">{user.email}</TableCell>
                     <TableCell hideOnMobile>{fullName(user)}</TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={
-                          roleOf(user) === ROLE_VALUES.ADMIN
-                            ? "default"
-                            : roleOf(user) === ROLE_VALUES.MANAGER
-                              ? "warning"
-                              : "secondary"
-                        }
-                      >
-                        {roleLabel(roleOf(user))}
-                      </Badge>
-                    </TableCell>
                     <TableCell>
                       <Badge
                         variant={user.isActive ? "default" : "destructive"}

@@ -109,6 +109,12 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
   const router = useRouter();
   const { isOwner, can } = useAuth();
   const canReadCard = can(PERM.customersCard);
+  // TASK-480: the panel used to be one `isOwner` block, which was narrower than
+  // the API on one half and exactly right on the other. Promoting a shopper is
+  // `PATCH /api/admin/staff/:id/role` — `staff:write`, so a deputy admin may hire
+  // — while `DELETE /api/users/:id` deliberately stayed `@OwnerOnly()`. Two
+  // gates, matching the two routes.
+  const canManageStaff = can(PERM.staffWrite);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Exactly one of these is ever enabled, so the screen makes one request.
@@ -277,25 +283,42 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
             </div>
           </section>
 
-          {/* Staff management (TASK-317). Every action here is `@OwnerOnly()` on
-              the API, so the whole panel is hidden for a manager — who would
-              otherwise be offered a role selector that answers 403. */}
-          {isOwner && (
+          {/* Staff management (TASK-317, re-gated in TASK-480). Hidden entirely
+              for a manager, who would otherwise be offered controls that answer
+              403; the two halves inside carry their own gate, because promoting
+              somebody and deleting them are no longer the same permission. */}
+          {(canManageStaff || isOwner) && (
             <section className="flex flex-col gap-4 rounded-md border border-border p-4">
               <h3 className="text-sm font-semibold text-foreground">
                 {dict.users.staffHeading}
               </h3>
 
-              <UserRoleChange userId={user.id} currentRole={role} />
+              {/* Promoting an existing shopper is how most managers are hired —
+                  which is why this control lives on the CUSTOMER card. Once the
+                  role changes the account leaves `/api/users` altogether, so the
+                  card being looked at would 404 on its next read: send the
+                  operator to the staff register instead of letting the screen
+                  appear to break. */}
+              {canManageStaff && (
+                <UserRoleChange
+                  userId={user.id}
+                  currentRole={role}
+                  targetName={name || user.email}
+                  onChanged={(nextRole) => {
+                    if (nextRole !== ROLE_VALUES.CUSTOMER) {
+                      router.push(`/staff/${user.id}`);
+                    }
+                  }}
+                />
+              )}
 
               {/* The «Права видаються ролі…» hint and its link to
-                  /settings/permissions stood here until TASK-475. Both were
-                  answers to a question that no longer has this shape: rights now
-                  belong to the PERSON, and the screen they pointed at is gone
-                  with the role matrix. The per-person «Права» tab arrives with
-                  /staff (TASK-480); leaving the old copy in the meantime would
-                  send the owner to a 404 to do something that is no longer true.
-                  See TASK-476/480 for the rest of this panel. */}
+                  /settings/permissions stood here until TASK-475: rights belong
+                  to the PERSON now, and the screen they pointed at is gone with
+                  the role matrix. Per-person granting lives on `/staff/[id]`
+                  (TASK-480) — and it is not linked from here on purpose, because
+                  the person on this card is a shopper and has no permission grid
+                  until somebody promotes them with the control above. */}
 
               <Separator />
 
@@ -324,24 +347,31 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                   worse than no control. The dialog component survives, repointed,
                   and mounts on the staff card in TASK-480 where the target IS
                   staff. A shopper who cannot sign in uses the self-service reset,
-                  which is the only path that proves they own the address. */}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  {dict.users.deleteHeading}
-                </Button>
-              </div>
+                  which is the only path that proves they own the address.
 
-              <DeleteUserDialog
-                userId={user.id}
-                email={user.email}
-                open={deleteOpen}
-                onOpenChange={setDeleteOpen}
-              />
+                  Deletion, by contrast, kept `@OwnerOnly()` through TASK-476 — so
+                  it is the one control here that a deputy admin does not get. */}
+              {isOwner && (
+                <>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      {dict.users.deleteHeading}
+                    </Button>
+                  </div>
+
+                  <DeleteUserDialog
+                    userId={user.id}
+                    email={user.email}
+                    open={deleteOpen}
+                    onOpenChange={setDeleteOpen}
+                  />
+                </>
+              )}
             </section>
           )}
 

@@ -273,6 +273,36 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
     ).toHaveAttribute("href", "/audit-log");
   });
 
+  // TASK-480 — «Персонал» sits behind `staff:read`, which like `audit:read` is
+  // never OFFERED on any granting screen. Gating it on `ownerOnly` instead would
+  // hide the staff register from a deputy, who is exactly the person meant to
+  // hire a replacement while the owner is away.
+  it("shows a DEPUTY admin «Персонал» — staff:read is held by level, not by grant", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    renderNav({ isOwner: false, isAdmin: true, permissions: [] });
+
+    expect(
+      await screen.findByRole("link", { name: dict.nav.staff }),
+    ).toHaveAttribute("href", "/staff");
+  });
+
+  it("hides «Персонал» from a manager, whatever they are granted", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
+
+    // Including `customers:read`, which used to buy a view of every service
+    // account (and `customers:write`, which used to be able to switch one off).
+    renderNav({
+      isOwner: false,
+      permissions: ["customers:read", "customers:write", "orders:read"],
+    });
+
+    await screen.findByRole("link", { name: dict.nav.users });
+    expect(
+      screen.queryByRole("link", { name: dict.nav.staff }),
+    ).not.toBeInTheDocument();
+  });
+
   it("shows a DEPUTY admin the action log too — they hold every permission", async () => {
     mockCounters({ newOrders: 0, pendingReviews: 0, unread: 0 });
 

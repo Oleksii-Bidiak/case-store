@@ -11,12 +11,17 @@ jest.mock("@/widgets", () => ({
 }));
 
 /**
- * TASK-406 — the create-staff CTA is the primary action of this screen. It used
- * to live inside the table toolbar, and on the 2026-08-27 live run the owner
- * concluded a manager could not be created at all.
+ * TASK-480 — this screen is the CUSTOMER list now.
+ *
+ * TASK-406 had put «Створити співробітника» beside this heading, because on the
+ * 2026-08-27 run the owner concluded a manager could not be created at all. The
+ * button worked; the problem is that since TASK-476 `GET /api/users` returns
+ * only shoppers, so the account it created never appeared in the list below it.
+ * Hiring moved to `/staff`, and what stays here is a line saying where it went —
+ * for the same owner, at the same moment, with a destination this time.
  */
 describe("UsersPage heading", () => {
-  it("puts «Створити співробітника» beside the heading for the owner", () => {
+  it("names the screen «Клієнти» and points at «Персонал» for staff", () => {
     renderWithProviders(
       <WithAuth isOwner>
         <UsersPage />
@@ -24,30 +29,18 @@ describe("UsersPage heading", () => {
     );
 
     expect(screen.getByText(dict.users.heading)).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: dict.users.create }),
-    ).toBeInTheDocument();
+    expect(screen.getByText(dict.users.intro)).toBeInTheDocument();
   });
 
-  it("states that the button creates a new staff account rather than promoting a customer", () => {
+  it("offers no hiring CTA here — not even to the owner", () => {
     renderWithProviders(
       <WithAuth isOwner>
         <UsersPage />
       </WithAuth>,
     );
 
-    expect(screen.getByText(dict.users.createHint)).toBeInTheDocument();
-  });
-
-  it("shows no CTA to a manager", () => {
-    renderWithProviders(
-      <WithAuth isOwner={false}>
-        <UsersPage />
-      </WithAuth>,
-    );
-
     expect(
-      screen.queryByRole("button", { name: dict.users.create }),
+      screen.queryByRole("button", { name: dict.staff.create }),
     ).not.toBeInTheDocument();
   });
 });

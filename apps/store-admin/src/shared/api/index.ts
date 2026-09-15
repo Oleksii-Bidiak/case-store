@@ -14,6 +14,10 @@ export * from "./generated/auth/auth";
 export * from "./generated/users/users";
 // «Персонал» (TASK-476) — service accounts, separate from the customer list.
 export * from "./generated/staff/staff";
+// TASK-477 — permission templates: reusable sets that are COPIED onto a person.
+// Their own tag, and their own client, because a template is about nobody in
+// particular — see `permission-template.controller.ts`.
+export * from "./generated/permission-templates/permission-templates";
 export * from "./generated/products/products";
 export * from "./generated/product-groups/product-groups";
 export * from "./generated/categories/categories";

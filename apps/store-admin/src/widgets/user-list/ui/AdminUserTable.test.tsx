@@ -167,87 +167,53 @@ describe("AdminUserTable — status filter (TASK-150 B5)", () => {
 });
 
 /**
- * TASK-317 / TASK-334 — the list is readable by anyone holding `customers:read`,
- * but creating staff is `@OwnerOnly()` on the API. Hiding the button for a
- * manager keeps the panel honest; the 403 is what actually stops them.
+ * TASK-480 — this list is CUSTOMERS, and the screen no longer pretends otherwise.
+ *
+ * `GET /api/users` has been scoped to `role: CUSTOMER` since TASK-476, which made
+ * three of this table's controls actively misleading rather than merely
+ * redundant: a role filter offering «Менеджер» returned nobody on a shop with
+ * twenty of them, a role column could only ever read «Клієнт», and the empty
+ * state offered a hiring button whose result would never appear in this list.
+ * All three moved to `/staff`.
  */
-describe("AdminUserTable — staff management affordances", () => {
+describe("AdminUserTable — customers only", () => {
   beforeEach(() => {
     mockReplace.mockClear();
     mockSearchParamsRef.current = new URLSearchParams("");
   });
 
-  // TASK-406: the CTA moved OUT of the toolbar into the page heading, where the
-  // owner looks for it. A populated table therefore offers no create button at
-  // all — the one on screen belongs to `UsersPage`.
-  it("no longer buries the create button between the search box and the filters", async () => {
+  it("offers no role filter — every row here is a shopper", async () => {
     stubUsers();
     renderTable();
     await screen.findByText("buyer@example.com");
 
     expect(
-      screen.queryByRole("button", { name: dict.users.create }),
+      screen.queryByRole("combobox", { name: dict.staff.filterLevelAria }),
     ).not.toBeInTheDocument();
-  });
-
-  it("offers «Створити співробітника» from the empty state, with role-specific copy", async () => {
-    // Filtering to «Менеджер» on a shop that has none is exactly the moment the
-    // owner asked "so how do I make one?" and got «Немає користувачів за
-    // поточними фільтрами» back.
-    mockSearchParamsRef.current = new URLSearchParams("role=MANAGER");
-    stubNoUsers();
-    renderTable();
-
+    // The status filter is still this table's own control and must survive.
     expect(
-      await screen.findByText(dict.users.emptyManagers),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: dict.users.create }),
+      screen.getByRole("combobox", { name: dict.users.filterStatusAria }),
     ).toBeInTheDocument();
   });
 
-  it("keeps the neutral empty copy when a search is what matched nothing", async () => {
-    // «Менеджерів ще немає» would be a claim this query cannot support.
-    mockSearchParamsRef.current = new URLSearchParams(
-      "role=MANAGER&search=zzz",
-    );
+  it("offers no hiring CTA, populated or empty", async () => {
     stubNoUsers();
     renderTable();
 
     expect(await screen.findByText(dict.users.empty)).toBeInTheDocument();
     expect(
-      screen.queryByText(dict.users.emptyManagers),
+      screen.queryByRole("button", { name: dict.staff.create }),
     ).not.toBeInTheDocument();
   });
 
-  it("hides the empty-state create button from a manager", async () => {
-    mockSearchParamsRef.current = new URLSearchParams("role=MANAGER");
-    stubNoUsers();
-    renderTable({ isOwner: false });
-
-    await screen.findByText(dict.users.emptyManagers);
-    expect(
-      screen.queryByRole("button", { name: dict.users.create }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("labels a MANAGER row «Менеджер», not «Клієнт»", async () => {
-    // The generated `UserEntity.role` union still predates MANAGER, so the old
-    // binary ADMIN/else check rendered every manager as a customer — the worst
-    // possible wrong answer on a screen about who holds which powers.
-    server.use(
-      http.get("*/api/users", () =>
-        HttpResponse.json({
-          data: [{ ...makeUserRow(), role: "MANAGER" }],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-    );
-
+  it("does not render a role column that could only say «Клієнт»", async () => {
+    stubUsers();
     renderTable();
     await screen.findByText("buyer@example.com");
 
-    expect(screen.getByText(dict.users.roleManager)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: dict.staff.colLevel }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText(dict.users.roleCustomer)).not.toBeInTheDocument();
   });
 });

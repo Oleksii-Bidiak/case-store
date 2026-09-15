@@ -19,6 +19,7 @@ import {
   Star,
   MessageSquare,
   Users,
+  ShieldUser,
   Mail,
   Phone,
   Search,
@@ -180,6 +181,17 @@ const navItems: readonly NavItem[] = [
     href: "/users",
     icon: Users,
     permission: PERM.customersRead,
+  },
+  // TASK-480 — «Персонал». Gated on `staff:read`, which like `audit:read` is a
+  // real, enforced key that is never OFFERED on any granting screen, so only the
+  // owner and their deputies hold it. NOT `ownerOnly`: that would now mean the
+  // single owner account and would hide the staff register from a deputy, who is
+  // exactly the person meant to hire a replacement while the owner is away.
+  {
+    label: dict.nav.staff,
+    href: "/staff",
+    icon: ShieldUser,
+    permission: PERM.staffRead,
   },
   {
     label: dict.nav.subscribers,

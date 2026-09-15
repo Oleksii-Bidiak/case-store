@@ -77,9 +77,15 @@ export {
   AdminSubscriberTableSkeleton,
 } from "./subscriber-list";
 export { UserDetailView, UserDetailSkeleton } from "./user-detail";
-// TASK-318 / TASK-317 — RBAC surfaces. The role-matrix screen was deleted in
-// TASK-475 along with the API behind it; the per-person replacement is /staff
-// (TASK-480).
+// TASK-318 / TASK-317 / TASK-480 — RBAC surfaces. The role-matrix screen was
+// deleted in TASK-475 along with the API behind it; the per-person replacement
+// is the «Персонал» section below.
+export { StaffTable, StaffTableSkeleton, FullAccessPanel } from "./staff-list";
+export { StaffDetailView, StaffDetailSkeleton } from "./staff-detail";
+export {
+  PermissionTemplatesView,
+  PermissionTemplatesSkeleton,
+} from "./permission-template-list";
 export { AuditLogView, AuditLogSkeleton } from "./audit-log";
 export { AdminProfileView } from "./admin-profile";
 export {

@@ -9,7 +9,7 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 5;
-const COLUMN_COUNT = 7;
+const COLUMN_COUNT = 6;
 
 /**
  * Loading placeholder matching the AdminUserTable column structure.
@@ -23,7 +23,6 @@ export function AdminUserTableSkeleton() {
             <TableHead className="w-12" />
             <TableHead>{dict.users.colEmail}</TableHead>
             <TableHead>{dict.users.colName}</TableHead>
-            <TableHead>{dict.users.colRole}</TableHead>
             <TableHead>{dict.users.colStatus}</TableHead>
             <TableHead>{dict.users.colJoined}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>

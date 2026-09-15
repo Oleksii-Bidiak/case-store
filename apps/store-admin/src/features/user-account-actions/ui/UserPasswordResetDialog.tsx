@@ -4,10 +4,10 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
-  getGetUserAdminCardQueryKey,
-  getUserControllerFindByIdQueryKey,
+  getGetStaffQueryKey,
+  getListStaffQueryKey,
   useSetStaffPassword,
-} from "@/entities/user";
+} from "@/entities/staff";
 import {
   Button,
   Dialog,
@@ -62,7 +62,7 @@ export function UserPasswordResetDialog({
     event.preventDefault();
 
     if (!isStaffPassword(newPassword)) {
-      setError(d.createPasswordWeak);
+      setError(d.passwordWeak);
       return;
     }
     setError(null);
@@ -72,14 +72,19 @@ export function UserPasswordResetDialog({
       {
         onSuccess: () => {
           // TASK-406: this dialog invalidated nothing at all. The write bumps
-          // the user row's `updatedAt`, which the card renders as «Останнє
+          // the row's `updatedAt`, which the card renders as «Останнє
           // оновлення», so the screen kept showing a timestamp from before the
           // reset — the one visible confirmation the operator has.
+          //
+          // TASK-480 repointed the keys at the staff register: the customer keys
+          // this used to invalidate can no longer contain the target at all, so
+          // it was refetching one list the person is not in and leaving the one
+          // they ARE in stale.
           void queryClient.invalidateQueries({
-            queryKey: getUserControllerFindByIdQueryKey(userId),
+            queryKey: getGetStaffQueryKey(userId),
           });
           void queryClient.invalidateQueries({
-            queryKey: getGetUserAdminCardQueryKey(userId),
+            queryKey: getListStaffQueryKey(),
           });
           toast.success(d.passwordResetToastDone);
           close(false);
@@ -116,9 +121,7 @@ export function UserPasswordResetDialog({
               value={newPassword}
               onChange={(event) => setNewPassword(event.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              {d.createPasswordHint}
-            </p>
+            <p className="text-xs text-muted-foreground">{d.passwordHint}</p>
           </div>
 
           {error && (
