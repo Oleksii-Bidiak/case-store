@@ -1,4 +1,4 @@
-import { OrderStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus } from '@prisma/client';
 
 /**
  * The order state machine (TASK-332, plan 163).
@@ -126,4 +126,97 @@ export function allowedTransitions(from: OrderStatus): OrderStatus[] {
 /** Whether the status is one an order is expected to rest in (CANCELLED/REFUNDED). */
 export function isTerminalStatus(status: OrderStatus): boolean {
   return TERMINAL_STATUSES.has(status);
+}
+
+/**
+ * The PAYMENT state machine (TASK-431, plan 180; owner decision B-1 §1).
+ *
+ * ── Why a second table, and why so small ────────────────────────────────────
+ * `paymentStatus` had no rules at all: `PATCH …/payment-status` wrote whatever
+ * it was handed, and the admin select offered every value except the current
+ * one. That is the same hole {@link ORDER_TRANSITIONS} was opened to close, and
+ * it is worse here, because this column is about money and because a payment
+ * provider — not only an operator — writes it. An out-of-order LiqPay callback
+ * could un-refund a refunded order and nothing would disagree.
+ *
+ * The principle the owner chose for this whole wave is what keeps the table
+ * short: **forbid only the physically impossible; make everything else visible.**
+ * An operator who is refused a move they believe in does not give up — they
+ * record a lie that fits (marking an unpaid delivery "PAID"), and then the
+ * database no longer knows where the money is. So the soft cases are NOT here:
+ * DELIVERED without PAID is legal and wears a "Борг N ₴" chip; ONLINE + SHIPPED
+ * without PAID is legal behind a confirmation dialog. Only the moves that assert
+ * something that cannot have happened are refused.
+ *
+ * ── The shape of the graph ──────────────────────────────────────────────────
+ *
+ *   PENDING ⇄ FAILED ─→ PAID ─→ PARTIALLY_REFUNDED ─→ REFUNDED
+ *      └────────────────→ ┘ └──────────────────────────→ ┘
+ *
+ * Four rules produce it:
+ *
+ *  1. **Money can only come back after it arrived.** REFUNDED and
+ *     PARTIALLY_REFUNDED are reachable from PAID alone. Refunding an order that
+ *     was never paid is not a refund, it is a bookkeeping invention; the honest
+ *     action on an unpaid order is to cancel it.
+ *  2. **A failed attempt is not a dead end.** FAILED → PENDING (the customer is
+ *     going to try again) and FAILED → PAID (the retry succeeded, or the money
+ *     arrived by another route) are both everyday events. A card declined once
+ *     must never strand an order.
+ *  3. **Partial precedes full, never the reverse.** PARTIALLY_REFUNDED →
+ *     REFUNDED is the second half of the same refund. REFUNDED →
+ *     PARTIALLY_REFUNDED would claim part of the money came back *after* all of
+ *     it did.
+ *  4. **REFUNDED is terminal.** Everything is back with the customer; any
+ *     onward move would describe money the shop does not hold. A genuine new
+ *     purchase is a new order.
+ *
+ * Same discipline as the order table above: pure — no NestJS, no Prisma client,
+ * no clock — and a status is never its own successor, so a re-asserted status
+ * never appends a second history row.
+ *
+ * ── One cross-rule lives NOT here, on purpose ───────────────────────────────
+ * "A full REFUNDED is allowed only while the order itself is CANCELLED or
+ * REFUNDED" reads two columns at once, so it is not expressible in a
+ * `from → to` table. It is enforced beside this table, in the service
+ * (`assertPaymentTransition`), and named there so the two halves of the rule are
+ * found together.
+ */
+export const PAYMENT_TRANSITIONS: Readonly<Record<PaymentStatus, readonly PaymentStatus[]>> =
+  Object.freeze({
+    [PaymentStatus.PENDING]: Object.freeze([PaymentStatus.PAID, PaymentStatus.FAILED]),
+    // Rule 2: a decline is a fact about one attempt, not about the order.
+    [PaymentStatus.FAILED]: Object.freeze([PaymentStatus.PENDING, PaymentStatus.PAID]),
+    [PaymentStatus.PAID]: Object.freeze([PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED]),
+    // Rule 3: the rest of the same refund, and nothing else. Notably NOT back to
+    // PAID — money already returned cannot un-return.
+    [PaymentStatus.PARTIALLY_REFUNDED]: Object.freeze([PaymentStatus.REFUNDED]),
+    // Rule 4: terminal.
+    [PaymentStatus.REFUNDED]: Object.freeze([]),
+  });
+
+/**
+ * Whether an order's payment may move from `from` to `to`.
+ *
+ * The single question every payment writer asks — the admin endpoint, the LiqPay
+ * webhook and the reconcile worker alike. What differs between them is the
+ * REACTION to a `false`, never the answer: the admin door raises a 409 the
+ * operator can read, while the callback door ignores the move and records that
+ * it did, because a 409 to a provider is an infinite retry loop.
+ *
+ * `false` for a same-status "transition" — see the table's docblock.
+ */
+export function canTransitionPayment(from: PaymentStatus, to: PaymentStatus): boolean {
+  return PAYMENT_TRANSITIONS[from].includes(to);
+}
+
+/**
+ * Every payment status reachable from `from`, as a fresh (caller-owned) array.
+ *
+ * Backs `GET /api/admin/orders/:orderId/allowed-payment-transitions`, so the
+ * admin panel offers exactly the legal targets instead of "everything except the
+ * current value" and letting the operator discover the truth from a 409.
+ */
+export function allowedPaymentTransitions(from: PaymentStatus): PaymentStatus[] {
+  return [...PAYMENT_TRANSITIONS[from]];
 }

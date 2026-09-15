@@ -28,8 +28,20 @@ import {
 import { Throttle } from '@nestjs/throttler';
 import { FailClosedThrottle } from '../throttler';
 import { OrderService, PaginationMeta } from './order.service';
-import { OrderEntity, OrderItemEntity, OrderGuestData } from './entities';
-import { CreateOrderDto, OrderListQueryDto } from './dto';
+import {
+  OrderEntity,
+  OrderItemEntity,
+  OrderGuestData,
+  PublicOrderEntity,
+  PublicOrderItemEntity,
+  PublicOrderDeliveryEntity,
+} from './entities';
+import { CreateOrderDto, OrderListQueryDto, OrderLookupDto } from './dto';
+// `RolesGuard` is gone (TASK-475): it carried no `@Roles` metadata at any of its
+// call sites, so it returned true for every authenticated caller. The real
+// requirement on these routes is authentication plus the ownership check the
+// service performs, which `JwtAuthGuard` alone already states. The set of callers
+// admitted is unchanged.
 import { JwtAuthGuard, CurrentUser } from '../auth';
 import { OptionalJwtAuthGuard } from '../cart/guards';
 import { CartIdentityInterceptor } from '../cart/interceptors';
@@ -108,6 +120,18 @@ class OrderListResponseEnvelope {
 }
 
 /**
+ * Response envelope for the public order lookup (TASK-483).
+ *
+ * A LIST even though a hit is almost always one order: an 8-character UUID
+ * prefix can collide, and a collision that also matched the phone belongs to the
+ * same person. Returning "the first one" would silently show the wrong order.
+ */
+class PublicOrderLookupResponseEnvelope {
+  @ApiProperty({ type: [PublicOrderEntity], description: 'Matching orders, newest first' })
+  data!: PublicOrderEntity[];
+}
+
+/**
  * Per-request order-creation limit (TASK-338).
  *
  * `@nestjs/throttler` resolves `limit` per request, which is what lets ONE route
@@ -136,6 +160,10 @@ function orderCreationLimit(context: ExecutionContext): number {
   StorefrontPaginationMeta,
   OrderResponseEnvelope,
   OrderListResponseEnvelope,
+  PublicOrderEntity,
+  PublicOrderItemEntity,
+  PublicOrderDeliveryEntity,
+  PublicOrderLookupResponseEnvelope,
 )
 @Controller('orders')
 export class OrderController {
@@ -227,6 +255,54 @@ export class OrderController {
   async getGuestOrder(@Param('token') token: string): Promise<{ data: OrderEntity }> {
     const order = await this.orderService.getGuestOrder(token);
     return { data: order };
+  }
+
+  /**
+   * POST /api/orders/lookup
+   *
+   * The public "check my order" form: order number + phone (TASK-483).
+   *
+   * ── Why POST ──────────────────────────────────────────────────────────────
+   * The phone number is half the credential, and a GET would put it in the URL —
+   * which means the access log, the browser history, the `Referer` header of
+   * every asset the result page loads, and any proxy along the way. A body
+   * reaches none of those (B-5 §2).
+   *
+   * ── Why the throttle is fail-CLOSED ───────────────────────────────────────
+   * Unauthenticated and, unlike the contact form, it answers a question about
+   * somebody else's data. `@Throttle` alone caps it while Redis is up; when
+   * Redis is down `@FailClosedThrottle` refuses the request instead of removing
+   * the cap. That ordering — a form that stops working rather than one that
+   * becomes unlimited — is the lesson TASK-464 paid for.
+   *
+   * Every failure answers 404, produced in one place — see
+   * `OrderService.lookupOrders`.
+   */
+  @Post('lookup')
+  @HttpCode(HttpStatus.OK)
+  // Same budget as the contact form and the auth routes: five a minute is far
+  // more than a customer checking their parcel needs, and far less than a script
+  // walking through order numbers can use.
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @FailClosedThrottle()
+  @ApiOperation({ summary: 'Look up an order by number and phone', operationId: 'lookupOrder' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Orders matching the number and phone — a list, because an 8-character number can ' +
+      'collide and every match belongs to the same person',
+    type: PublicOrderLookupResponseEnvelope,
+  })
+  @ApiResponse({
+    status: 404,
+    description:
+      'No order matches (unknown number, wrong phone, malformed input or deleted order — ' +
+      'deliberately indistinguishable)',
+  })
+  @ApiResponse({ status: 429, description: 'Too many requests — rate limit exceeded' })
+  async lookupOrder(@Body() dto: OrderLookupDto): Promise<{ data: PublicOrderEntity[] }> {
+    const orders = await this.orderService.lookupOrders(dto);
+    return { data: orders };
   }
 
   /**

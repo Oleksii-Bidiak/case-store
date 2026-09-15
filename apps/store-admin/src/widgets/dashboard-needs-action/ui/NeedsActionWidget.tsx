@@ -86,7 +86,13 @@ export function NeedsActionWidget() {
     // of both worlds: the widget shows a non-zero number AND tells the owner
     // there is nothing to do — about the one signal they would never have
     // thought to go looking for.
-    counts.ratingAbuse === 0;
+    counts.ratingAbuse === 0 &&
+    // TASK-470. The same rule, and it matters more here than anywhere else on
+    // this widget: nothing ELSE in the system reacts to an unavailable position.
+    // The owner's decision (B-1 §3) is that the buyer hears it from a person, so
+    // an «Все під контролем» printed over a non-zero count here would be the
+    // only notification there is, denying itself.
+    counts.unavailableItems === 0;
 
   return (
     <section aria-label={dict.dashboard.needsActionHeading}>
@@ -101,10 +107,11 @@ export function NeedsActionWidget() {
         ) : null}
       </div>
 
-      {/* Six cards since TASK-446. `lg:grid-cols-5` left the sixth alone on a
-          second row, reading as an afterthought rather than as a peer of the
-          other five; 3 divides 6 at both breakpoints, so every row is full. */}
-      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-3">
+      {/* Seven cards since TASK-470. The column count moved 3 → 4 with it: at
+          three columns the seventh card sat alone on a third row, which is the
+          same "reads as an afterthought" problem `lg:grid-cols-5` caused at six.
+          Four gives 4 + 3, so no card stands by itself on a wide screen. */}
+      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
         <NeedsActionCard
           label={dict.dashboard.needsActionNewOrders}
           count={counts.newOrders}
@@ -136,6 +143,16 @@ export function NeedsActionWidget() {
           label={dict.dashboard.needsActionRatingAbuse}
           count={counts.ratingAbuse}
           href="/reviews"
+        />
+        {/* TASK-470: orders holding a line that can no longer be supplied. The
+            deep link carries the SAME predicate the tile counts
+            (`hasUnavailableItems`), not an approximation of it — the mistake
+            `pendingOver48h` still makes, where the tile counts one thing and the
+            click opens another (see the report). */}
+        <NeedsActionCard
+          label={dict.dashboard.needsActionUnavailableItems}
+          count={counts.unavailableItems}
+          href="/orders?hasUnavailableItems=true"
         />
         <NeedsActionCard
           label={dict.dashboard.needsActionFailedMails}

@@ -203,6 +203,96 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
   })
   @IsBoolean({ message: 'pendingOverdue must be true or false' })
   pendingOverdue?: boolean;
+
+  /**
+   * ── The derived-mark filters (TASK-470 / 471) ──────────────────────────────
+   *
+   * Four booleans rather than one `?mark=` enum, because they are independent
+   * predicates and an operator legitimately asks for two at once ("delivered,
+   * unpaid AND missing a position"). Each is the EXACT condition of the mark it
+   * names in the B-1 catalogue, evaluated server-side — a client-side filter
+   * over the current page would silently answer "how many on this page", which
+   * is the wrong number every time the list is longer than one page.
+   *
+   * All four carry the same `obj`-reading `@Transform` as `unpaidInTransit`:
+   * `enableImplicitConversion` coerces the raw string first and
+   * `Boolean('false')` is `true`, so turning a chip OFF would turn it on.
+   */
+
+  @ApiProperty({
+    description:
+      'Filter to orders carrying a debt — status = DELIVERED AND paymentStatus NOT IN ' +
+      '(PAID, REFUNDED). The «Борг N ₴» mark (TASK-470 / B-1): delivered goods nobody has ' +
+      'paid for.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'hasDebt must be true or false' })
+  hasDebt?: boolean;
+
+  @ApiProperty({
+    description:
+      'Filter to orders still within their payment window — paymentMethod IN (ONLINE, ' +
+      'INSTALLMENTS) AND paymentStatus = PENDING AND reservationExpiresAt in the future. ' +
+      'The «Очікує оплати · N хв» mark (TASK-471). BNPL is included because it holds a ' +
+      'timed reservation too and the auto-cancel worker acts on the same set.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'awaitingPayment must be true or false' })
+  awaitingPayment?: boolean;
+
+  @ApiProperty({
+    description:
+      'Filter to orders whose payment window has closed — the same triple as ' +
+      '`awaitingPayment` with `reservationExpiresAt` in the past. The «Резерв сплив» mark ' +
+      '(TASK-471). Deliberately a separate flag, not a tri-state: the two are opposite ' +
+      'answers to the same question and an operator acts differently on each.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'reservationExpired must be true or false' })
+  reservationExpired?: boolean;
+
+  @ApiProperty({
+    description:
+      'Filter to open orders holding at least one line that can no longer be supplied — the ' +
+      'product is deleted, unpublished or oversold, or the order lost its reservation to the ' +
+      'TTL worker (TASK-470). Deep-link target of the dashboard «Недоступні позиції» tile, ' +
+      'and the same predicate it counts.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'hasUnavailableItems must be true or false' })
+  hasUnavailableItems?: boolean;
 }
 
 /**

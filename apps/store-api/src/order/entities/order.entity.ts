@@ -1,8 +1,76 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import { OrderItemEntity } from './order-item.entity';
-import { toTwoDecimals } from '../../addon-service';
+import { centsToString, toCents, toTwoDecimals } from '../../addon-service';
 import type { OrderWithItems, ShippingAddressData } from '../order.types';
+
+/**
+ * Σ of a set of return `refundedAmount`s, as a two-decimal string (TASK-472).
+ *
+ * Summed in integer cents, like every other money total in this codebase: three
+ * partial refunds of 33.33 must add up to 99.99 and not to 99.99000000000001.
+ * A null amount is a return that has not paid anything out yet, and contributes
+ * nothing rather than counting as an unknown.
+ */
+function sumRefundedAmounts(
+  returns: ReadonlyArray<{ refundedAmount: { toString(): string } | null }>,
+): string {
+  const cents = returns.reduce(
+    (sum, row) => sum + (row.refundedAmount === null ? 0 : toCents(row.refundedAmount)),
+    0,
+  );
+
+  return centsToString(cents);
+}
+
+/**
+ * Order-line ids whose product can no longer be supplied (TASK-470) — the
+ * "Позиція недоступна" mark of owner decision B-1 §3.
+ *
+ * DERIVED at read time, like the other four marks of the catalogue: there is no
+ * column, and deliberately so. Four conditions, any one of which is enough:
+ *
+ * 1. the catalogue row is a tombstone (`deletedAt != null`);
+ * 2. it is unpublished (`isActive = false`);
+ * 3. it is oversold (`stock < 0`) after an inventory correction;
+ * 4. this order's reservation was lifted by the TTL worker — `restockedAt` is
+ *    set while the order still expects to be fulfilled. Stock is taken at
+ *    creation, so "someone else took it" cannot happen on its own; it can only
+ *    happen after the hold was released, which is exactly this case. Orders that
+ *    are CANCELLED or REFUNDED are excluded: their stock came back BECAUSE they
+ *    ended, and flagging them would bury the actionable ones under every
+ *    cancelled order in the shop.
+ *
+ * Returns `undefined` — not `[]` — when this read did not join the availability
+ * columns (every customer-facing path). Absent means "not measured"; an empty
+ * array would claim "measured, all fine", and the two must not look the same.
+ *
+ * Nothing here blocks anything: the mark is a signal for the operator, who
+ * phones the customer and offers a choice (B-1 §3). No transition is refused and
+ * no mail is sent.
+ */
+function findUnavailableItemIds(order: OrderWithItems): string[] | undefined {
+  // `isActive` is a non-nullable column, so `undefined` can only mean the select
+  // did not ask for it — the honest test for "was this measured".
+  if (!order.items.some((item) => item.product.isActive !== undefined)) {
+    return undefined;
+  }
+
+  const reservationLifted =
+    order.restockedAt !== null &&
+    order.status !== OrderStatus.CANCELLED &&
+    order.status !== OrderStatus.REFUNDED;
+
+  return order.items
+    .filter(
+      (item) =>
+        reservationLifted ||
+        item.product.deletedAt != null ||
+        item.product.isActive === false ||
+        (item.product.stock ?? 0) < 0,
+    )
+    .map((item) => item.id);
+}
 
 /**
  * Customer account data attached to an order on admin responses only.
@@ -133,6 +201,34 @@ export class OrderEntity {
   })
   paidAt!: string | null;
 
+  /**
+   * Deadline on an unpaid ONLINE order's stock reservation (TASK-330), or null
+   * when the order never held one.
+   *
+   * Surfaced by TASK-471 because two of the five derived marks of B-1 are
+   * unreadable without it: «Очікує оплати · N хв» is `ONLINE` + `PENDING` +
+   * this deadline still in the future, and «Резерв сплив» is the same triple
+   * once it has passed. The column has existed since TASK-330; it simply never
+   * left the database, so both frontends could show that an order was unpaid
+   * but not whether its stock was still being held — which is the whole
+   * difference between "ring them now" and "it is gone".
+   *
+   * Still zero migrations and zero new state: the marks are computed from this
+   * plus `paymentMethod` and `paymentStatus`, exactly as the owner decided
+   * (B-1 §4 — no new `OrderStatus` member).
+   */
+  @ApiProperty({
+    description:
+      "Deadline on an unpaid ONLINE order's stock reservation (TASK-330); null when the " +
+      'order holds no timed reservation. The «Очікує оплати · N хв» / «Резерв сплив» marks ' +
+      'are derived from it (TASK-471).',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: '2026-01-01T00:30:00.000Z',
+  })
+  reservationExpiresAt!: string | null;
+
   @ApiProperty({ description: 'Sum of all line totals as string', example: '149.97' })
   subtotal!: string;
 
@@ -162,6 +258,54 @@ export class OrderEntity {
 
   @ApiProperty({ description: 'Grand total as string', example: '149.97' })
   total!: string;
+
+  /**
+   * How much of this order's money has gone back (TASK-472) — the X of the
+   * "Повернуто X з Y" label, where Y is {@link total}.
+   *
+   * DERIVED, never stored: Σ of the `refundedAmount` of this order's return
+   * requests, summed in integer cents at read time. There is no column behind it
+   * on purpose (owner decision B-1, closing paragraph) — a stored copy would have
+   * to be kept in step by every path that touches a return, and the first one
+   * that forgets leaves the order asserting a refund no return supports.
+   *
+   * Absent — not `'0.00'` — on reads that did not join the returns (every
+   * customer-facing path). Absent means "not measured here"; a zero would mean
+   * "measured, nothing came back", and those must not look the same.
+   */
+  @ApiProperty({
+    description:
+      'Total refunded across this order\'s return requests, as a string ("X" of "X of Y", ' +
+      'with Y = `total`). Derived at read time from Σ `Return.refundedAmount`; present on ' +
+      'admin responses only.',
+    type: String,
+    required: false,
+    example: '499.00',
+  })
+  refundedTotal?: string;
+
+  /**
+   * Which of this order's lines can no longer be supplied (TASK-470) — see
+   * {@link findUnavailableItemIds} for the four conditions and why the answer is
+   * computed rather than stored.
+   *
+   * An array of `OrderItem.id`, not of product ids: the same product can sit on
+   * an order twice through different lines, and the mark belongs to the line the
+   * operator is looking at.
+   *
+   * Absent — not `[]` — on reads that did not join the catalogue's availability
+   * columns (every customer-facing path).
+   */
+  @ApiProperty({
+    description:
+      'Ids of the order lines whose product is no longer orderable — deleted, unpublished, ' +
+      'oversold, or holding a reservation the TTL worker has released (TASK-470). Derived at ' +
+      'read time; present on admin responses only, and absent (never empty) elsewhere.',
+    type: [String],
+    required: false,
+    example: ['550e8400-e29b-41d4-a716-446655440002'],
+  })
+  unavailableItemIds?: string[];
 
   @ApiProperty({
     description: 'Shipping address snapshot',
@@ -259,6 +403,12 @@ export class OrderEntity {
     // reads as what it actually was, rather than as undefined.
     entity.paymentMethod = order.paymentMethod ?? PaymentMethod.ON_DELIVERY;
     entity.paidAt = order.paidAt ? order.paidAt.toISOString() : null;
+    // TASK-471: `?? null` because the column is optional on `OrderWithItems` —
+    // fixtures predating TASK-330 simply do not carry it, and "no reservation"
+    // is the correct reading of both null and absent.
+    entity.reservationExpiresAt = order.reservationExpiresAt
+      ? order.reservationExpiresAt.toISOString()
+      : null;
     entity.subtotal = order.subtotal.toString();
     entity.discount = order.discount.toString();
     entity.discountCode = order.discountCode ?? null;
@@ -308,6 +458,17 @@ export class OrderEntity {
         phone: order.guestPhone ?? '',
         name: order.guestName ?? '',
       };
+    }
+    // TASK-472: only when this read actually joined the returns — see the
+    // field's docblock for why an unmeasured order must not report a zero.
+    if (order.returns) {
+      entity.refundedTotal = sumRefundedAmounts(order.returns);
+    }
+    // TASK-470: undefined when this read did not join the availability columns —
+    // see the helper for why an empty array would be a different claim.
+    const unavailableItemIds = findUnavailableItemIds(order);
+    if (unavailableItemIds) {
+      entity.unavailableItemIds = unavailableItemIds;
     }
     entity.restockedAt = order.restockedAt;
     entity.trackingNumber = order.trackingNumber ?? null;

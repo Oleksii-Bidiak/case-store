@@ -11,6 +11,8 @@ import {
   MEDIA_BACKFILL_SOURCE_PERMISSIONS,
   MEDIA_PERMISSIONS,
   NON_GRANTABLE_PERMISSIONS,
+  RETURNS_BACKFILL_SOURCE_PERMISSIONS,
+  RETURNS_PERMISSIONS,
   PERMISSIONS,
   PERMISSION_KEYS,
   PERMISSION_ZONES,
@@ -751,6 +753,111 @@ describe('customers:card permission backfill migration (TASK-479)', () => {
     // An ADMIN holds every catalogue key without a single row of their own
     // (`PermissionService`), so a row for them would be inert at best and at
     // worst would teach the next reader that rows govern the owner.
+    expect(statement).not.toContain('ADMIN');
+    expect(statement).not.toContain('MANAGER');
+  });
+});
+
+/**
+ * The returns-queue permission backfill (TASK-370 / TASK-469, plan 180), as this
+ * wave has to ship it: per PERSON.
+ *
+ * Same contract as the suites above, for the same reason — the grant is written
+ * in SQL six directories away from the rule it obeys, and nothing in the build
+ * connects the two. What it guards against is the defect that shipped twice
+ * already: a key that gates a WORKING screen and has never been granted to
+ * anybody, so the screen belongs to the owner alone and the menu entry
+ * announcing it is simply absent for everyone else. No error, no 403, nothing to
+ * notice.
+ *
+ * WHY THERE ARE TWO MIGRATIONS FOR ONE GRANT, AND WHY THIS SUITE READS THE
+ * SECOND. Plan 180 wrote it into `role_permissions` at `20260914183500`. Plan
+ * 181 drops that table at `20260914160000`, which sorts EARLIER, so on a develop
+ * carrying both waves the deploy replays them in that order and plan 180's
+ * statement meets a table that is gone. It skips rather than fails — it guards
+ * itself with `to_regclass` — which is what keeps the deploy alive in either
+ * merge order and is exactly right. But skipping is not granting, and the
+ * ordering is this wave's, so the per-person half is this wave's too. That file
+ * is what this suite pins; plan 180's is left alone, inert and harmless.
+ */
+describe('returns permission backfill migration, per person (plan 180 × 181)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_backfill_returns_permissions_per_user'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_backfill_returns_permissions_per_user migration under ${MIGRATIONS_ROOT}. ` +
+          "Without it plan 180's returns backfill is a no-op on every database — it " +
+          'writes to a table plan 181 drops one migration earlier — so the «Повернення» ' +
+          'menu entry ships to the owner and to nobody else.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  /** The statements only, with the explanatory comment block stripped off. */
+  const statement = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('grants keys that exist in the catalogue', () => {
+    for (const key of RETURNS_PERMISSIONS) {
+      expect(isKnownPermission(key)).toBe(true);
+    }
+  });
+
+  it('grants exactly the keys the catalogue calls the returns permissions', () => {
+    for (const key of RETURNS_PERMISSIONS) {
+      expect(statement).toContain(`'${key}'`);
+    }
+
+    // And nothing else: every quoted `x:y` token is either a granted key or one
+    // of the declared sources.
+    const quoted = new Set(statement.match(/'[a-z]+:[a-z]+'/g) ?? []);
+    const allowed = new Set(
+      [...RETURNS_PERMISSIONS, ...RETURNS_BACKFILL_SOURCE_PERMISSIONS].map((key) => `'${key}'`),
+    );
+    expect([...quoted].filter((token) => !allowed.has(token))).toEqual([]);
+  });
+
+  it('reads exactly the source permissions the code declares', () => {
+    for (const key of RETURNS_BACKFILL_SOURCE_PERMISSIONS) {
+      expect(statement).toContain(`'${key}'`);
+    }
+    expect(RETURNS_BACKFILL_SOURCE_PERMISSIONS.every((key) => isKnownPermission(key))).toBe(true);
+  });
+
+  it('grants to a PERSON, because that is where a grant lives now', () => {
+    // The whole reason this file exists. Writing to `role_permissions` here — as
+    // plan 180's version does, correctly for the world it was written in — would
+    // produce a migration that fails on a fresh database and is a no-op on an
+    // existing one.
+    expect(statement).toContain('"user_permissions"');
+    expect(statement).toContain('"user_id"');
+    expect(statement).not.toContain('role_permissions');
+    // …and no `allowed` predicate to get wrong in either direction: the row IS
+    // the grant now, and a revocation is its absence.
+    expect(statement).not.toContain('"allowed"');
+  });
+
+  it('carries the grant into TEMPLATES as well as people', () => {
+    // Same argument as the customer-card split above: a template is what the
+    // next hire is set up from, so a shop whose «Менеджер (як було)» offers
+    // `orders:write` must offer the returns queue with it, or everybody hired
+    // after the deploy comes out narrower than the colleague beside them.
+    expect(statement).toContain('"permission_template_items"');
+    expect(statement).toContain('"template_id"');
+  });
+
+  it('is idempotent in BOTH halves, so a restore-then-migrate cannot fail', () => {
+    expect(statement.match(/ON CONFLICT[\s\S]*?DO NOTHING/g) ?? []).toHaveLength(2);
+  });
+
+  it('never names a role at all — an admin passes by level, not by row', () => {
     expect(statement).not.toContain('ADMIN');
     expect(statement).not.toContain('MANAGER');
   });

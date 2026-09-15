@@ -61,6 +61,32 @@ class MessageResponseEnvelope {
   data!: { message: string };
 }
 
+/**
+ * What `POST /auth/email/verify/confirm` answers (TASK-485).
+ *
+ * Its own class rather than a field bolted onto the shared
+ * {@link MessageResponseEnvelope}: that envelope is the return type of six other
+ * routes, and widening it would put a meaningless `claimedOrders` on the
+ * generated client type of every one of them.
+ */
+class EmailVerificationConfirmed {
+  @ApiProperty({ example: 'Email address verified.' })
+  message!: string;
+
+  @ApiProperty({
+    example: 2,
+    description:
+      'How many orders placed as a guest with this address were attached to the account. ' +
+      '0 for anyone who never ordered as a guest, and on a second confirm — claiming is idempotent.',
+  })
+  claimedOrders!: number;
+}
+
+class EmailVerificationConfirmEnvelope {
+  @ApiProperty({ type: EmailVerificationConfirmed })
+  data!: EmailVerificationConfirmed;
+}
+
 /** Effective-permission payload for `GET /auth/me/permissions` (TASK-334). */
 class EffectivePermissionsEntity {
   @ApiProperty({ enum: UserRole, example: UserRole.MANAGER })
@@ -105,6 +131,10 @@ type MessageResponse = { message: string };
   MessageResponseEnvelope,
   EffectivePermissionsEntity,
   PermissionsResponseEnvelope,
+  // TASK-485: the confirm route's own envelope — it reports the guest orders it
+  // attached, which no other message route has to say anything about.
+  EmailVerificationConfirmed,
+  EmailVerificationConfirmEnvelope,
 )
 @Controller('auth')
 export class AuthController {
@@ -426,16 +456,29 @@ export class AuthController {
   @Post('email/verify/confirm')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // Fail CLOSED (review of plan 180). TASK-485 changed what this route does:
+  // it no longer flips a boolean, it moves another party's orders — with their
+  // phone, address and totals — onto the account holding the token. That is the
+  // decorator's stated criterion: an unauthenticated write whose only defence IS
+  // the limiter. Every sibling public write on this controller already has it.
+  @FailClosedThrottle()
   @ApiOperation({ summary: 'Confirm an email address with a single-use token' })
-  @ApiResponse({ status: 200, description: 'Address verified', type: MessageResponseEnvelope })
+  @ApiResponse({
+    status: 200,
+    description: 'Address verified; `claimedOrders` counts guest orders moved onto the account',
+    type: EmailVerificationConfirmEnvelope,
+  })
   @ApiResponse({ status: 400, description: 'Invalid, used, expired or superseded token' })
   async confirmEmailVerification(
     @Body() dto: ConfirmEmailVerificationDto,
-  ): Promise<{ data: MessageResponse }> {
-    await this.emailVerificationService.confirm(dto.token);
+  ): Promise<{ data: EmailVerificationConfirmed }> {
+    // TASK-485: proving the address is what makes earlier guest orders provably
+    // this person's, so they are attached here. The count is reported so the
+    // storefront can say what happened instead of silently growing the list.
+    const { claimedOrders } = await this.emailVerificationService.confirm(dto.token);
 
     return {
-      data: { message: 'Email address verified.' },
+      data: { message: 'Email address verified.', claimedOrders },
     };
   }
 

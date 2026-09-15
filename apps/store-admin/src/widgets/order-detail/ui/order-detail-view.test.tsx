@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { formatCurrency } from "@/shared/lib";
 import { OrderDetailView } from "./order-detail-view";
 
 // next/navigation is unavailable under jsdom — mock the router.
@@ -428,6 +429,183 @@ describe("OrderDetailView — guest orders have a customer too (TASK-425)", () =
     ).toBeInTheDocument();
     expect(
       screen.queryByText(dict.orders.customerTypeGuest),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// ── "Повернуто X з Y" (TASK-472) ──────────────────────────────────────────────
+// The fifth derived mark of B-1. It is a fraction, so it is only meaningful in
+// the one payment status that means "some of it": the tests below pin both
+// halves — that it appears at PARTIALLY_REFUNDED and that it appears nowhere
+// else — because a mark that shows up on a fully refunded order is worse than
+// no mark at all.
+describe("OrderDetailView — partial-refund sum (TASK-472)", () => {
+  function servePartialRefund(
+    overrides: { paymentStatus?: string; refundedTotal?: string } = {},
+  ) {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: {
+            ...makeOrder(null),
+            paymentStatus: overrides.paymentStatus ?? "PARTIALLY_REFUNDED",
+            ...(overrides.refundedTotal === undefined
+              ? { refundedTotal: "10.00" }
+              : { refundedTotal: overrides.refundedTotal }),
+          },
+        }),
+      ),
+    );
+  }
+
+  it("shows the refunded sum against the order total", async () => {
+    servePartialRefund();
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByText(dict.orders.refundedLabel),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        dict.orders.refundedOfTotal(
+          formatCurrency("10.00"),
+          formatCurrency("29.99"),
+        ),
+        // `formatCurrency` puts a non-breaking space before the ₴, and the
+        // default normalizer turns that into a plain space in the DOM text while
+        // leaving it intact in the expected string — so the two never match.
+        // Trim only.
+        { normalizer: (text) => text.trim() },
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("stays hidden on a fully refunded order", async () => {
+    servePartialRefund({ paymentStatus: "REFUNDED", refundedTotal: "29.99" });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    // Anchored on the payment card's heading, not on its "Сума" row: that word
+    // is also a column header in the items table below.
+    expect(
+      await screen.findByText(dict.orders.paymentHeading),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orders.refundedLabel),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stays hidden when the response carried no sum at all", async () => {
+    // `refundedTotal` is absent — not "0.00" — whenever the returns were not
+    // joined. Rendering "Повернуто 0,00 ₴ з 29,99 ₴" there would be an invented
+    // fact, so the row is simply not drawn.
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: { ...makeOrder(null), paymentStatus: "PARTIALLY_REFUNDED" },
+        }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    // Anchored on the payment card's heading, not on its "Сума" row: that word
+    // is also a column header in the items table below.
+    expect(
+      await screen.findByText(dict.orders.paymentHeading),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orders.refundedLabel),
+    ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * The derived marks on the order card (TASK-470 / 471 / 472).
+ *
+ * The card and the list compute them with the same function, so the conditions
+ * themselves are pinned in `order-marks.test.ts`. What is pinned HERE is that
+ * they reach the two places on this page where an operator actually looks: the
+ * header, beside the status, and the line of the item that has gone.
+ *
+ * «Позиція недоступна» is the one mark the client cannot derive — only the
+ * server can see whether the catalogue row was deleted, unpublished or oversold
+ * — so it arrives as `unavailableItemIds`, and its ABSENCE has to mean "not
+ * measured" rather than "all fine".
+ */
+describe("OrderDetailView — the derived marks of B-1 (TASK-470/471/472)", () => {
+  const stub = (order: Record<string, unknown>) =>
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: { ...makeOrder(null), ...order } }),
+      ),
+    );
+
+  it("shows «Борг» in the header of a delivered, unpaid order", async () => {
+    stub({ status: "DELIVERED", paymentStatus: "PENDING", total: "1200.00" });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(await screen.findByText(/Борг\s/)).toHaveTextContent(/1\s?200/);
+  });
+
+  it("counts down the payment window of a card order", async () => {
+    stub({
+      paymentMethod: "ONLINE",
+      paymentStatus: "PENDING",
+      reservationExpiresAt: new Date(Date.now() + 17 * 60_000).toISOString(),
+    });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByText(/Очікує оплати · \d+ хв/),
+    ).toBeInTheDocument();
+  });
+
+  it("marks the line the server says can no longer be supplied", async () => {
+    stub({ unavailableItemIds: ["item-1"] });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByText(dict.orders.markItemUnavailable),
+    ).toBeInTheDocument();
+  });
+
+  it("leaves a line unmarked when the server measured it and found it fine", async () => {
+    stub({ unavailableItemIds: [] });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    await screen.findByText("iPhone 15 Pro Case");
+    expect(
+      screen.queryByText(dict.orders.markItemUnavailable),
+    ).not.toBeInTheDocument();
+  });
+
+  it("leaves a line unmarked when the response never measured availability", async () => {
+    // `unavailableItemIds` absent, not empty. The card must not invent an answer
+    // — and must not blank out either.
+    stub({});
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    await screen.findByText("iPhone 15 Pro Case");
+    expect(
+      screen.queryByText(dict.orders.markItemUnavailable),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not mark a line the order does not name", async () => {
+    stub({ unavailableItemIds: ["some-other-line"] });
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    await screen.findByText("iPhone 15 Pro Case");
+    expect(
+      screen.queryByText(dict.orders.markItemUnavailable),
     ).not.toBeInTheDocument();
   });
 });

@@ -62,6 +62,9 @@ export const dict = {
     // TASK-334/406.
     media: "Медіатека",
     orders: "Замовлення",
+    // TASK-370 — екран повернень існує з TASK-340, але потрапити на нього можна
+    // було лише вручну набравши /returns. Гейтиться правом `returns:read`.
+    returns: "Повернення",
     reviews: "Відгуки",
     messages: "Повідомлення",
     users: "Користувачі",
@@ -170,6 +173,15 @@ export const dict = {
     // operator reading it as "N reviews to moderate" would go looking for N rows
     // that do not exist, and would not go looking for the burst that does.
     needsActionRatingAbuse: "Сигнали накрутки оцінок",
+    // TASK-470: 7th card. Рахує ЗАМОВЛЕННЯ, а не позиції — плитка відповідає на
+    // питання «скільком покупцям, можливо, треба подзвонити», а замовлення з
+    // трьома зниклими позиціями — це один дзвінок. Скасовані й повернуті сюди не
+    // потрапляють: їхній залишок повернувся тому, що вони закінчились.
+    //
+    // Це єдиний у системі сигнал, на який більше ніщо не реагує: покупцю
+    // автоматично нічого не надсилається (рішення власника B-1 п.3), тож плитка
+    // і є всім сповіщенням.
+    needsActionUnavailableItems: "Недоступні позиції",
     // Sidebar count-badge aria labels (mirror messages.unreadBadgeAria).
     newOrdersBadgeAria: (n: number) => `${n} нових замовлень`,
     pendingReviewsBadgeAria: (n: number) => `${n} відгуків на модерації`,
@@ -2161,6 +2173,14 @@ export const dict = {
     // --- Payment card (TASK-330-C, partial — see the widget's note) -----------
     paymentHeading: "Оплата",
     paymentAmountLabel: "Сума",
+    // --- "Повернуто X з Y" (TASK-472) -----------------------------------------
+    // Shown only while the payment status is PARTIALLY_REFUNDED: on a full refund
+    // the badge already says everything, and on a PAID order there is nothing to
+    // say. X is Σ Return.refundedAmount, Y is the order total — both computed at
+    // read time, neither stored.
+    refundedLabel: "Повернуто",
+    refundedOfTotal: (refunded: string, total: string) =>
+      `${refunded} з ${total}`,
     // An honest blank. The method, the per-attempt history and the refund button
     // need `Order.paymentMethod` on the order entity plus the admin payments
     // endpoints, and the merged backend exposes neither — so the card says it
@@ -2223,6 +2243,46 @@ export const dict = {
     overdueChip: "Чекають занадто довго",
     overdueChipAria:
       "Показати лише замовлення, які надто довго чекають підтвердження",
+
+    // --- Похідні мітки (TASK-470 / 471 / 472, рішення власника B-1) -----------
+    // П'ять міток, жодної нової колонки: кожна — речення про поля, які вже є.
+    // Мітка, яку доводиться підтримувати окремим записом, рано чи пізно
+    // розійдеться з фактом — тому всі обчислюються на читанні.
+    //
+    // Жодна з них нічого не блокує: це сигнал оператору, а не заборона.
+    markDebt: (amount: string) => `Борг ${amount}`,
+    // Хвилини, а не час: оператор питає «скільки ще чекати», а не «коли спливе».
+    // Число живе рівно стільки, скільки живе відрендерений рядок.
+    markAwaitingPayment: (minutes: number) => `Очікує оплати · ${minutes} хв`,
+    markReservationExpired: "Резерв сплив",
+    markPartiallyRefunded: (refunded: string, total: string) =>
+      `Частково повернуто ${refunded} з ${total}`,
+    // На РЯДКУ позиції, не на замовленні: недоступна конкретна позиція, і саме
+    // про неї оператор телефонує покупцеві. Автоматичного листа немає навмисно
+    // (B-1 п.3) — вибір «замінити / повернути гроші / зачекати» робить людина.
+    markItemUnavailable: "Позиція недоступна",
+    markItemUnavailableHint:
+      "Товару цієї позиції більше немає в продажу — знято з публікації, видалено, перепродано або замовлення втратило резерв. Зв'яжіться з покупцем і запропонуйте заміну, повернення коштів або очікування постачання.",
+
+    // Фільтри-перемикачі під ті самі мітки. Перемикачі, а не пункти списку:
+    // жодна з цих умов не є значенням однієї колонки — це предикати сервера, і
+    // оператор законно вмикає два одразу.
+    debtChip: "Борг",
+    debtChipAria:
+      "Показати лише доставлені замовлення, за які не розрахувалися",
+    // НЕ «Очікує оплати»: рівно так підписаний бейдж статусу оплати PENDING, а
+    // він стоїть на кожному неоплаченому замовленні, включно з післяплатою.
+    // Однаково названий фільтр читався б як «показати всі неоплачені» — тобто
+    // як зовсім інша вибірка.
+    awaitingPaymentChip: "Вікно оплати",
+    awaitingPaymentChipAria:
+      "Показати лише карткові замовлення, у яких ще триває час на оплату",
+    reservationExpiredChip: "Резерв сплив",
+    reservationExpiredChipAria:
+      "Показати лише карткові замовлення, у яких час на оплату вичерпано",
+    unavailableItemsChip: "Недоступні позиції",
+    unavailableItemsChipAria:
+      "Показати лише замовлення, у яких є позиція, якої більше немає в продажу",
 
     // --- CSV export (TASK-425) ------------------------------------------------
     exportCsv: "Експорт CSV",
@@ -2442,6 +2502,29 @@ export const dict = {
     paymentToastFailed: "Не вдалося оновити статус оплати",
     paymentUpdateAria: "Оновити статус оплати",
 
+    // --- Payment status names (TASK-431) --------------------------------------
+    // The single place each payment status is worded. `status-label.ts` reads
+    // them; nothing spells them twice.
+    paymentLabels: {
+      PENDING: "Очікує оплати",
+      PAID: "Оплачено",
+      FAILED: "Помилка оплати",
+      // "Частково" first, because that is the word that distinguishes it from
+      // the full refund at a glance in a list of badges.
+      PARTIALLY_REFUNDED: "Частково повернуто",
+      REFUNDED: "Кошти повернено",
+    },
+
+    // --- Server-driven payment transitions (TASK-431) -------------------------
+    paymentTransitionsLoading: "Завантаження доступних статусів оплати…",
+    paymentTransitionsLoadError:
+      "Не вдалося отримати список статусів оплати. Оновіть сторінку.",
+    noPaymentTransitions: "Статус оплати змінити неможливо",
+    // Says the quiet part out loud: a full refund is missing from the list on
+    // purpose while the order is live, and the operator's next step is named.
+    paymentTransitionsHint:
+      "Доступні лише переходи, дозволені для поточного статусу оплати. Повне повернення коштів можливе після скасування замовлення.",
+
     // --- Server-driven transitions (TASK-332) ---------------------------------
     transitionsLoading: "Завантаження доступних статусів…",
     transitionsLoadError:
@@ -2450,6 +2533,21 @@ export const dict = {
     // that fact — an operator who expected "Скасовано" to be there needs to know
     // it is missing on purpose, not by accident.
     transitionsHint: "Доступні лише переходи, дозволені для поточного статусу.",
+
+    // --- Мʼяке попередження при відправці без оплати (TASK-468) ---------------
+    // Рішення B-1: жорстко забороняємо лише фізично неможливе. Онлайн-замовлення
+    // без підтвердженої оплати відправити МОЖНА — але свідомо, і з записом в
+    // історії, щоб «чому ми це відправили» мало відповідь через місяць.
+    unpaidShipTitle: "Оплату не підтверджено — відправляти?",
+    unpaidShipDescription:
+      "Замовлення оплачується онлайн, але оплата ще не підтверджена. " +
+      "Ви можете відправити його — рішення буде записано в історію замовлення.",
+    unpaidShipAmount: "До сплати",
+    unpaidShipConfirm: "Все одно відправити",
+    unpaidShipCancel: "Не відправляти",
+    // Рядок, що лягає в OrderStatusHistory як примітка оператора.
+    unpaidShipHistoryNote:
+      "Відправлено без підтвердженої онлайн-оплати — підтверджено оператором.",
 
     // One string per stable 409 code from `order.errors.ts`. The client never
     // echoes a raw backend message: these codes are the contract, the wording is
@@ -2461,10 +2559,56 @@ export const dict = {
         "Хтось інший щойно змінив це замовлення, оновіть сторінку. Ваша зміна не збережена.",
       ORDER_TRANSITION_INVALID:
         "Такий перехід статусу неможливий — замовлення вже змінилося. Список статусів оновлено.",
+      // TASK-431 — the two payment codes. Separate wording from the status one
+      // above because the operator's next action differs: here the fix is either
+      // "pick another payment status" or "cancel the order first".
+      ORDER_PAYMENT_TRANSITION_INVALID:
+        "Такий перехід статусу оплати неможливий — статус уже змінився. Список оновлено.",
+      ORDER_REFUND_REQUIRES_CLOSED_ORDER:
+        "Повне повернення коштів можливе лише для скасованого замовлення. Спочатку скасуйте замовлення — або позначте часткове повернення.",
+      // Те саме правило з іншого боку (ревʼю плану 180): оживити замовлення, за
+      // яким гроші вже повернуті, не можна. Формулювання називає єдину дію, що
+      // працює, бо статус оплати REFUNDED не має жодного дозволеного переходу —
+      // «виправте статус оплати» було б порадою в нікуди.
+      ORDER_REVIVE_REFUNDED_PAYMENT:
+        "Гроші за цим замовленням уже повернуті покупцеві, тож повернути його в роботу не можна. Створіть нове замовлення.",
     },
     conflictUnknown:
       "Замовлення змінилося, і зміну не збережено. Оновіть сторінку й спробуйте ще раз.",
     reloadCta: "Оновити",
+  },
+
+  // --- Посилання для покупця (TASK-484) ---------------------------------------
+  // Телефонне замовлення отримує той самий токен, що й гостьовий чекаут. Сирий
+  // токен існує рівно мить створення — у базі лежить тільки SHA-256, — тому вся
+  // ця гілка текстів написана навколо одного факту: показати посилання ще раз
+  // неможливо, можна лише видати нове, і старе після цього перестає працювати.
+  orderAccess: {
+    heading: "Посилання для покупця",
+    description:
+      "Покупець відкриє своє замовлення за цим посиланням — без реєстрації та входу. " +
+      "Надішліть його у Viber, Telegram або SMS.",
+    // Написано так, щоб оператор розумів ціну кнопки ДО натискання.
+    rotateHint:
+      "Показати попереднє посилання неможливо: ми зберігаємо лише його відбиток. " +
+      "Можна видати нове — тоді старе перестане відкривати замовлення.",
+    issue: "Видати нове посилання",
+    issuing: "Створюємо посилання…",
+    issuedHeading: "Нове посилання створено",
+    // Показуємо рівно один раз — і кажемо про це, поки воно ще на екрані.
+    issuedOnceWarning:
+      "Скопіюйте посилання зараз — після оновлення сторінки воно більше не відобразиться.",
+    issuedAt: (date: string) => `Видано ${date}`,
+    copy: "Скопіювати",
+    copied: "Скопійовано",
+    copyFailed: "Не вдалося скопіювати",
+    copyAria: "Скопіювати посилання на замовлення",
+    linkAria: "Посилання на замовлення для покупця",
+    failed: "Не вдалося створити посилання. Спробуйте ще раз.",
+    // 400 з ендпоінта: STORE_CLIENT_URL не налаштовано. Це дефект розгортання, а
+    // не помилка оператора, тому текст каже, кого кликати.
+    failedNotConfigured:
+      "Адресу вітрини не налаштовано, тому посилання створити неможливо. Зверніться до розробника.",
   },
 
   // --- Returns / RMA (TASK-340) -----------------------------------------------
@@ -2554,6 +2698,30 @@ export const dict = {
     searchPlaceholder: "Номер повернення, замовлення, пошта або телефон…",
     searchAria: "Пошук повернень",
     emptyMatch: (q: string) => `Немає повернень за запитом «${q}».`,
+
+    // --- Доступ до розділу (TASK-370) -----------------------------------------
+    // Сторінки прикривав лише AdminShellGuard по isStaff, тож будь-який
+    // співробітник відкривав чужі повернення, набравши адресу руками.
+    forbidden: "У вас немає доступу до розділу повернень.",
+    forbiddenHint:
+      "Попросіть власника додати право «Переглядати повернення» у розділі «Права доступу».",
+
+    // --- Заявка від оператора (TASK-469) --------------------------------------
+    // Гість і телефонний покупець акаунта не мають, тож покупецька форма для них
+    // фізично не відкривається — заявку заводить оператор.
+    createDialogTitle: "Створити заявку на повернення?",
+    createDialogDescription: (id: string) =>
+      `По замовленню #${id} немає жодної заявки. Створити її на все замовлення — ` +
+      "чи просто змінити статус?",
+    createDialogItemsHeading: "Позиції заявки",
+    createDialogReason: "Причина (зі слів клієнта)",
+    createDialogReasonPlaceholder: "Наприклад: не підійшов розмір",
+    createDialogSubmit: "Створити заявку",
+    // «Не блокує»: оператор має право відмовитись і просто поставити статус.
+    createDialogSkip: "Лише змінити статус",
+    createSuccess: "Заявку на повернення створено.",
+    createFailed: "Не вдалося створити заявку. Спробуйте ще раз.",
+    createdByOperator: "Заявку створив оператор",
   },
 
   // --- Operator-created (phone) orders (TASK-341) ------------------------------
@@ -2620,6 +2788,23 @@ export const dict = {
     // unavailable" and "stock is short" — all things the operator can fix.
     failedBadRequest:
       "Замовлення не створено: перевірте клієнта, товари та наявність на складі.",
+
+    // --- Посилання для покупця одразу після створення (TASK-484) --------------
+    // Замовлення створене, і перше, що потрібно операторові, який ще на лінії, —
+    // кинути покупцеві посилання. Тому після успіху ми НЕ переходимо одразу на
+    // картку: сирий токен існує лише в цій відповіді, і перехід його втратив би.
+    createdHeading: "Замовлення створено",
+    createdNumber: (number: string) => `Номер замовлення: #${number}`,
+    createdLinkIntro:
+      "Надішліть покупцеві це посилання — він побачить своє замовлення без реєстрації.",
+    createdLinkOnce:
+      "Посилання показується один раз. Скопіюйте його зараз — відновити цей самий лінк неможливо, лише видати нове з картки замовлення.",
+    createdEmailSent:
+      "Лист із цим посиланням також надіслано на вказану пошту.",
+    // STORE_CLIENT_URL не налаштовано — токен видано, але URL зібрати нема з чого.
+    createdLinkUnavailable:
+      "Адресу вітрини не налаштовано, тому посилання не створено. Видати його можна з картки замовлення після налаштування.",
+    createdOpenOrder: "Відкрити замовлення",
 
     // --- Customer picker (TASK-426) --------------------------------------------
     // Nobody knows a customer's UUID. The field used to ask for one outright, and
@@ -3202,6 +3387,12 @@ export const dict = {
       // `review.hideAuthor` the moment it exists — and without a verb here the
       // owner's audit log prints the raw key.
       hideAuthor: "приховано відгуки автора",
+      // TASK-484. `POST /admin/orders/:orderId/access-link` derives
+      // `order.issueAccessLink`. Worth its own verb rather than a generic
+      // «створено»: this row is the record that somebody retired the link a
+      // customer was holding, and when support asks "чому в клієнта перестало
+      // відкриватись посилання", this line is the answer.
+      issueAccessLink: "видано нове посилання для покупця",
       moderateMany: "промодеровано (масово)",
       publish: "опубліковано",
       refund: "повернено кошти",

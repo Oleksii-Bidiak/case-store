@@ -17,6 +17,12 @@ export const PERM = {
   ordersRead: "orders:read",
   ordersWrite: "orders:write",
   returnsRead: "returns:read",
+  // TASK-469: opening a return FOR a customer. Deliberately the write key and not
+  // `returnsRead` — the read gates looking at the queue, this one creates a claim
+  // on stock and on money. Both are backfilled onto the roles that already hold
+  // `orders:write` by the migration that ships with plan 180; see
+  // RETURNS_BACKFILL_SOURCE_PERMISSIONS in the API's `permission.catalog.ts`.
+  returnsWrite: "returns:write",
 
   productsRead: "products:read",
   productsWrite: "products:write",

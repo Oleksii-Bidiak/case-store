@@ -38,6 +38,20 @@ describe("orderConflictMessage (TASK-332)", () => {
     expect(requiresReload(error)).toBe(false);
   });
 
+  it("names the settled money for ORDER_REVIVE_REFUNDED_PAYMENT and does not demand a reload", () => {
+    const error = rejection(409, ORDER_CONFLICT_CODE.REVIVE_REFUNDED_PAYMENT);
+
+    expect(orderConflictMessage(error)).toBe(
+      dict.orderStatus.conflict.ORDER_REVIVE_REFUNDED_PAYMENT,
+    );
+    // Nothing is out of date here: the refusal is about what the order IS, so a
+    // reload would show the same order and the same refusal (review of plan 180).
+    expect(requiresReload(error)).toBe(false);
+    // And it must name the only move that works, not a payment status the
+    // operator cannot reach — PAYMENT_TRANSITIONS[REFUNDED] is empty.
+    expect(orderConflictMessage(error)).toContain("нове замовлення");
+  });
+
   it("still produces a conflict sentence for a 409 whose body carries no code", () => {
     const error = rejection(409);
 

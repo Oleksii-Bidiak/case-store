@@ -114,13 +114,37 @@ export class AuditInterceptor implements NestInterceptor {
 }
 
 /**
+ * Class names that must NOT derive their own entity type, because a second
+ * controller was split off purely to carry a different route prefix — not
+ * because a second entity appeared.
+ *
+ * `AdminOrderReturnController` (TASK-469) is the case that forced this: an
+ * operator opens a return at `POST /admin/orders/:orderId/returns`, while every
+ * other return route lives under `/admin/returns` on `AdminReturnController`.
+ * Nest needs two classes for two prefixes, but the audit log does not need two
+ * entities — and would be actively worse for having them, since the «Повернення»
+ * filter would then answer with resolutions while silently hiding creations.
+ *
+ * Keep this map tiny. It exists for name collisions, not for taste: if a
+ * controller really does own its own entity, let the derivation name it.
+ */
+const ENTITY_TYPE_BY_CONTROLLER: Readonly<Record<string, string>> = Object.freeze({
+  AdminOrderReturnController: 'return',
+});
+
+/**
  * `AdminBannersController` → `banners`, `UserController` → `user`.
  *
  * Derived from the class name rather than declared per route: a hand-written
  * `@AuditEntity('Banner')` on 43 routes is 43 chances to paste the wrong one,
  * and the value would then be wrong in exactly the rows someone is searching.
+ * The exception above is per CLASS, not per route, so it keeps that property.
  */
 export function entityTypeFromController(className: string): string {
+  const override = ENTITY_TYPE_BY_CONTROLLER[className];
+  if (override !== undefined) {
+    return override;
+  }
   const stripped = className.replace(/Controller$/, '').replace(/^Admin/, '');
   return stripped.length > 0 ? stripped[0].toLowerCase() + stripped.slice(1) : className;
 }

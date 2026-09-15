@@ -52,6 +52,15 @@ export class NeedsActionDto {
     example: 2,
   })
   ratingAbuse!: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Open orders holding at least one line that can no longer be supplied — the product is ' +
+      'deleted, unpublished or oversold, or the reservation TTL released the order (TASK-470)',
+    example: 3,
+  })
+  unavailableItems!: number;
 }
 
 export class NeedsActionResponse {

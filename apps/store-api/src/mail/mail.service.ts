@@ -39,6 +39,14 @@ export interface SendOrderConfirmationParams {
    * place that ever holds the raw token.
    */
   orderStatusUrl?: string;
+  /**
+   * Absolute link to the public "check my order" form (TASK-483).
+   *
+   * Present on EVERY confirmation, guest or account. Unlike `orderStatusUrl` it
+   * carries no token and identifies no order — it is the page that asks for the
+   * number and the phone, i.e. the route back that outlives this letter.
+   */
+  orderLookupUrl?: string;
 }
 
 /**
@@ -101,6 +109,8 @@ export class MailService {
       customerName: payload.customerName,
       // TASK-338: the guest's order-status link. Absent on account orders.
       orderStatusUrl: payload.orderStatusUrl,
+      // TASK-483: the letter-independent route back. Present on every order.
+      orderLookupUrl: payload.orderLookupUrl,
       // `createdAt` is stored as an ISO string in the outbox payload; the pure
       // template builder expects a `Date`, so rehydrate it here.
       order: { ...payload.order, createdAt: new Date(payload.order.createdAt) },
@@ -224,6 +234,7 @@ export class MailService {
       to: params.to,
       ...(params.customerName !== undefined ? { customerName: params.customerName } : {}),
       ...(params.orderStatusUrl !== undefined ? { orderStatusUrl: params.orderStatusUrl } : {}),
+      ...(params.orderLookupUrl !== undefined ? { orderLookupUrl: params.orderLookupUrl } : {}),
       order: {
         id: order.id,
         createdAt: order.createdAt.toISOString(),

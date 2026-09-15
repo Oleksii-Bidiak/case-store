@@ -64,37 +64,12 @@ export class ReturnService {
       throw new NotFoundException('Order not found');
     }
 
-    if (!RETURNABLE_ORDER_STATUSES.has(order.status)) {
-      throw new BadRequestException(
-        'Only shipped or delivered orders can be returned — cancel the order instead',
-      );
-    }
-
-    const orderedByLineId = new Map(order.items.map((item) => [item.id, item.quantity]));
-    for (const line of dto.items) {
-      if (!orderedByLineId.has(line.orderItemId)) {
-        throw new BadRequestException('That item is not part of this order');
-      }
-    }
-
-    // A line may appear in more than one return — a customer who bought three may
-    // send back one now and another next week — so the cap is over the SUM of
-    // live returns plus this request, not over this request alone. Without it a
-    // buyer could return the same unit repeatedly and be credited each time.
-    const alreadyClaimed = await this.countClaimedUnits(orderId);
-    for (const line of dto.items) {
-      const ordered = orderedByLineId.get(line.orderItemId) as number;
-      const claimed = alreadyClaimed.get(line.orderItemId) ?? 0;
-      if (claimed + line.quantity > ordered) {
-        throw new BadRequestException(
-          `Cannot return ${line.quantity} of that item — ${ordered - claimed} remain returnable`,
-        );
-      }
-    }
+    await this.assertLinesAreReturnable(order, dto);
 
     const created = await this.returnRepository.create({
       orderId,
       ...(dto.reason ? { reason: dto.reason } : {}),
+      createdByUserId: userId,
       items: dto.items.map((item) => ({
         orderItemId: item.orderItemId,
         quantity: item.quantity,
@@ -107,6 +82,78 @@ export class ReturnService {
     );
 
     return ReturnEntity.fromPrisma(created);
+  }
+
+  /**
+   * Admin — open a return on a customer's behalf (TASK-469).
+   *
+   * WHY A SECOND DOOR AND NOT A FLAG ON THE FIRST. The customer door is scoped by
+   * `order.userId !== userId`, and that scoping is the whole of its security. A
+   * guest order has `userId === null` and a phone order taken by an operator
+   * (TASK-341) has it too, so for those the customer door can never open — not
+   * "is awkward", cannot. Roughly half the orders in the shop were therefore
+   * unreturnable through the system, and the operator's only recourse was to set
+   * `OrderStatus.REFUNDED` by hand: a label with no lines, no quantities and no
+   * stock behind it, which is exactly the hole `Return` was created to close
+   * (edge case E-12).
+   *
+   * Everything else is deliberately IDENTICAL to the customer path — the order
+   * must have shipped, every line must belong to it, and the sum of live claims
+   * must not exceed what was bought. An operator is trusted to act for a
+   * customer, not to return four of three.
+   *
+   * `createdByUserId` records the operator, which is the one fact the two doors
+   * do not share.
+   */
+  async adminCreateReturn(
+    actorUserId: string,
+    orderId: string,
+    dto: CreateReturnDto,
+  ): Promise<ReturnEntity> {
+    const order = await this.orderRepository.findById(orderId);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    await this.assertLinesAreReturnable(order, dto);
+
+    const created = await this.returnRepository.create({
+      orderId,
+      ...(dto.reason ? { reason: dto.reason } : {}),
+      createdByUserId: actorUserId,
+      items: dto.items.map((item) => ({
+        orderItemId: item.orderItemId,
+        quantity: item.quantity,
+      })),
+    });
+
+    this.logger.info(
+      {
+        event: 'return.requested',
+        returnId: created.id,
+        orderId,
+        actorUserId,
+        onBehalfOf: order.userId ?? null,
+        source: 'admin',
+      },
+      "Return opened by an operator on the customer's behalf",
+    );
+
+    return ReturnEntity.fromPrisma(created, { includeInternal: true });
+  }
+
+  /**
+   * Admin — the returns already opened against one order (TASK-469).
+   *
+   * Exists so the status control can ask "is there one?" before offering to
+   * create it. The customer-facing twin cannot answer that question for an
+   * operator: it is scoped to the caller's own orders and a guest order has no
+   * caller at all.
+   */
+  async adminGetOrderReturns(orderId: string): Promise<ReturnEntity[]> {
+    const returns = await this.returnRepository.findByOrderId(orderId);
+    return returns.map((row) => ReturnEntity.fromPrisma(row, { includeInternal: true }));
   }
 
   /** A customer's view of the returns they have opened against one of their orders. */
@@ -211,6 +258,68 @@ export class ReturnService {
     );
 
     return ReturnEntity.fromPrisma(resolved, { includeInternal: true });
+  }
+
+  /**
+   * The three rules a return has to satisfy whichever door it came through
+   * (TASK-469): the goods must have travelled, every line must belong to this
+   * order, and the units asked for plus those already claimed must not exceed
+   * what was bought.
+   *
+   * Shared rather than duplicated because a divergence here is invisible: the
+   * admin path would keep accepting returns the customer path refuses, and the
+   * first sign of it would be stock credited back for goods nobody bought.
+   *
+   * @throws BadRequestException on any of the three.
+   */
+  private async assertLinesAreReturnable(
+    order: { id: string; status: OrderStatus; items: Array<{ id: string; quantity: number }> },
+    dto: CreateReturnDto,
+  ): Promise<void> {
+    if (!RETURNABLE_ORDER_STATUSES.has(order.status)) {
+      throw new BadRequestException(
+        'Only shipped or delivered orders can be returned — cancel the order instead',
+      );
+    }
+
+    const orderedByLineId = new Map(order.items.map((item) => [item.id, item.quantity]));
+    for (const line of dto.items) {
+      if (!orderedByLineId.has(line.orderItemId)) {
+        throw new BadRequestException('That item is not part of this order');
+      }
+    }
+
+    // A line may appear in more than one return — a customer who bought three may
+    // send back one now and another next week — so the cap is over the SUM of
+    // live returns plus this request, not over this request alone. Without it a
+    // buyer could return the same unit repeatedly and be credited each time.
+    //
+    // The request's OWN lines are summed first (review of plan 180). The cap used
+    // to be evaluated per array element, and nothing forbids repeating an
+    // `orderItemId`, so `[{item-1, 2}, {item-1, 2}]` against a 3-unit line passed
+    // twice at 0+2 ≤ 3 and produced a return holding 4 of 3. That is not a
+    // paperwork error: resolving it as RECEIVED with `restock` loops the return's
+    // items and credits stock for each, so the shop invents a unit it never got
+    // back and then oversells it. Reachable from the customer door and from the
+    // operator one, since both call this helper.
+    const requestedByLineId = new Map<string, number>();
+    for (const line of dto.items) {
+      requestedByLineId.set(
+        line.orderItemId,
+        (requestedByLineId.get(line.orderItemId) ?? 0) + line.quantity,
+      );
+    }
+
+    const alreadyClaimed = await this.countClaimedUnits(order.id);
+    for (const [orderItemId, requested] of requestedByLineId) {
+      const ordered = orderedByLineId.get(orderItemId) as number;
+      const claimed = alreadyClaimed.get(orderItemId) ?? 0;
+      if (claimed + requested > ordered) {
+        throw new BadRequestException(
+          `Cannot return ${requested} of that item — ${ordered - claimed} remain returnable`,
+        );
+      }
+    }
   }
 
   /**

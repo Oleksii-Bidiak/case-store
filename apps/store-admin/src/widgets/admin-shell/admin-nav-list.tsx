@@ -16,6 +16,7 @@ import {
   Images,
   GalleryHorizontal,
   ShoppingCart,
+  Undo2,
   Star,
   MessageSquare,
   Users,
@@ -163,6 +164,17 @@ const navItems: readonly NavItem[] = [
     href: "/orders",
     icon: ShoppingCart,
     permission: PERM.ordersRead,
+  },
+  // TASK-370 — the returns queue has been built and working since TASK-340 and
+  // had no way in: no menu entry, so the only route to it was typing /returns.
+  // Gated on the READ key alone, matching the pattern of every other section —
+  // `returns:write` is what the decision form asks for, and demanding it here
+  // would hide the queue from a manager who is allowed to read it.
+  {
+    label: dict.nav.returns,
+    href: "/returns",
+    icon: Undo2,
+    permission: PERM.returnsRead,
   },
   {
     label: dict.nav.reviews,

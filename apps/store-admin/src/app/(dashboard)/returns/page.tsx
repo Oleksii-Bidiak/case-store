@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { AdminReturnTable, AdminReturnTableSkeleton } from "@/widgets";
 import { dict } from "@/shared/config";
+import { ReturnsPermissionGate } from "./returns-permission-gate";
 
 /**
  * TASK-405: this table keeps its view state (`?status=`, `?page=`, `?search=`,
@@ -24,9 +25,14 @@ export default function ReturnsPage() {
         {dict.returns.heading}
       </h2>
 
-      <Suspense fallback={<AdminReturnTableSkeleton />}>
-        <AdminReturnTable />
-      </Suspense>
+      {/* TASK-370: `returns:read`, not merely `isStaff`. The heading stays
+          outside the gate so a manager without the permission still sees which
+          section refused them rather than an unlabelled box. */}
+      <ReturnsPermissionGate>
+        <Suspense fallback={<AdminReturnTableSkeleton />}>
+          <AdminReturnTable />
+        </Suspense>
+      </ReturnsPermissionGate>
     </div>
   );
 }

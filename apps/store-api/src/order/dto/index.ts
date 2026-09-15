@@ -5,5 +5,11 @@ export { UpdateOrderStatusDto } from './update-order-status.dto';
 export { UpdateOrderDetailsDto } from './update-order-details.dto';
 export { CreateManualOrderDto, ManualOrderItemDto } from './create-manual-order.dto';
 export { UpdateOrderPaymentStatusDto } from './update-order-payment-status.dto';
+export {
+  OrderLookupDto,
+  ORDER_NUMBER_LENGTH,
+  ORDER_NUMBER_PATTERN,
+  normalizeOrderNumber,
+} from './order-lookup.dto';
 export { OrderListQueryDto } from './order-list-query.dto';
 export { AdminOrderListQueryDto } from './admin-order-list-query.dto';

@@ -19,6 +19,11 @@ export const ORDER_CONFLICT_CODE = {
   STALE: "ORDER_STALE",
   /** The state machine forbids this move. */
   TRANSITION_INVALID: "ORDER_TRANSITION_INVALID",
+  /**
+   * The order cannot go back to a live status while its money is recorded as
+   * fully returned (review of plan 180).
+   */
+  REVIVE_REFUNDED_PAYMENT: "ORDER_REVIVE_REFUNDED_PAYMENT",
 } as const;
 
 export type OrderConflictCode =
@@ -84,6 +89,9 @@ export function orderConflictMessage(
   if (code === ORDER_CONFLICT_CODE.TRANSITION_INVALID) {
     return dict.orderStatus.conflict.ORDER_TRANSITION_INVALID;
   }
+  if (code === ORDER_CONFLICT_CODE.REVIVE_REFUNDED_PAYMENT) {
+    return dict.orderStatus.conflict.ORDER_REVIVE_REFUNDED_PAYMENT;
+  }
   return dict.orderStatus.conflictUnknown;
 }
 
@@ -95,12 +103,23 @@ export function orderConflictMessage(
  * TRANSITION_INVALID: that one is repaired by refetching the option list, which
  * the picker does automatically, so telling the operator to reload the page
  * would be busywork.
+ *
+ * FALSE for REVIVE_REFUNDED_PAYMENT too, and for a stronger reason: nothing is
+ * out of date there. The refusal is about what the order IS, not about what the
+ * screen knows, and reloading would show the operator the same order and the
+ * same refusal (review of plan 180).
  */
+const NO_RELOAD_CODES: readonly string[] = [
+  ORDER_CONFLICT_CODE.TRANSITION_INVALID,
+  ORDER_CONFLICT_CODE.REVIVE_REFUNDED_PAYMENT,
+];
+
 export function requiresReload(
   error: ApiErrorLike | null | undefined,
 ): boolean {
   if (!isOrderConflict(error)) {
     return false;
   }
-  return codeOf(error) !== ORDER_CONFLICT_CODE.TRANSITION_INVALID;
+  const code = codeOf(error);
+  return code === undefined || !NO_RELOAD_CODES.includes(code);
 }

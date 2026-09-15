@@ -64,7 +64,29 @@ export interface OrderItemRow {
   quantity: number;
   price: { toString(): string }; // Prisma Decimal
   createdAt: Date;
-  product: { id: string; name: string; slug: string; images: Array<{ url: string }> };
+  product: {
+    id: string;
+    name: string;
+    slug: string;
+    images: Array<{ url: string }>;
+    /**
+     * ── Availability columns (TASK-470) ────────────────────────────────────
+     * Joined by `ADMIN_ORDERS_INCLUDE` only, so they are OPTIONAL: a
+     * customer-facing read never asks for them, and `undefined` there means
+     * "not measured", never "available". `OrderEntity.fromPrisma` reads that
+     * distinction directly — it omits `unavailableItemIds` entirely rather
+     * than reporting an empty array it did not measure.
+     *
+     * `deletedAt != null` = the catalogue row is a tombstone; `isActive =
+     * false` = unpublished; `stock < 0` = oversold after an inventory
+     * correction. The three conditions of owner decision B-1 §3 that live on
+     * the PRODUCT; the fourth (the reservation lifted by TTL) lives on the
+     * order itself.
+     */
+    deletedAt?: Date | null;
+    isActive?: boolean;
+    stock?: number;
+  };
   /**
    * Frozen add-on snapshots bought with this line (TASK-174). `name`/`price` are
    * copied at order-creation time, exactly like `OrderItem.price` snapshots
@@ -162,6 +184,16 @@ export interface OrderWithItems {
    * response.
    */
   internalNotes?: string | null;
+  /**
+   * When the order-access token currently on this row was issued (TASK-484).
+   *
+   * The TTL of a guest's status link is counted from HERE, not from `createdAt`:
+   * an operator can re-issue the link at any point in the order's life (B-5 §4),
+   * and a clock started at checkout would hand out a link that was already dead
+   * the moment it was pasted into a chat. Null on every order minted before the
+   * column existed, which is why every reader falls back to `createdAt`.
+   */
+  accessTokenIssuedAt?: Date | null;
   items: OrderItemRow[];
   /**
    * Owning user account, selected only by the admin read paths
@@ -174,6 +206,20 @@ export interface OrderWithItems {
     firstName: string | null;
     lastName: string | null;
   };
+  /**
+   * Refunded amounts of this order's return requests (TASK-472), selected only by
+   * the admin read paths via `ADMIN_ORDERS_INCLUDE`.
+   *
+   * Optional and deliberately thin: the entity needs a SUM, not the returns. An
+   * absent array means "this read did not ask", which is why
+   * {@link OrderEntity.fromPrisma} omits `refundedTotal` rather than reporting a
+   * zero it did not measure — a zero would read as "nothing was refunded" on
+   * every customer-facing response.
+   *
+   * `refundedAmount` is null until a return is actually paid out, so nulls are
+   * skipped rather than counted.
+   */
+  returns?: Array<{ refundedAmount: { toString(): string } | null }>;
 }
 
 /**
@@ -306,6 +352,34 @@ export interface PaymentApplyPlan {
    * (e.g. a late failure for a superseded attempt on an already-paid order).
    */
   paymentStatusChange?: { from: PaymentStatus; to: PaymentStatus };
+  /**
+   * An order payment-status move the state machine refused (TASK-431).
+   *
+   * Mutually exclusive with {@link paymentStatusChange}: exactly one of the two
+   * can be set, because either the move happened or it did not. When this is set
+   * the order's columns are left untouched and the repository writes ONE
+   * `OrderStatusHistory` row recording that the payment status stayed where it
+   * was (`current → current`) at the moment the event arrived.
+   *
+   * The row deliberately does not claim the rejected target as a `to`: a chain of
+   * history rows is read as a chain, and a row saying "PAID → FAILED" on an order
+   * that is still PAID would break it for every later reader. The rejected value
+   * lives in the structured log, next to the provider status that asked for it,
+   * which is where that question is actually diagnosed.
+   *
+   * `reason` says WHICH rule refused (review of plan 180). Without it the log is
+   * ambiguous in the one case that matters: a refund refused by the cross-rule on
+   * a PROCESSING order logs `current: PAID, rejected: REFUNDED` — a pair
+   * `PAYMENT_TRANSITIONS` explicitly ALLOWS — so whoever reads the line has to
+   * open the order to learn the refusal came from the order status, not the
+   * table. This door never raises, so this log is its only diagnostic.
+   */
+  refusedPaymentStatusChange?: {
+    current: PaymentStatus;
+    rejected: PaymentStatus;
+    /** `table` — PAYMENT_TRANSITIONS; `crossRule` — B-1 §1, the order is live. */
+    reason: 'table' | 'crossRule';
+  };
   /** Set when money settled; null leaves the column untouched. */
   paidAt?: Date | null;
   /**
@@ -366,6 +440,17 @@ export interface ManualOrderParams {
   userId?: string | null;
   /** Contact details when there is no account behind the order. */
   guest?: GuestContact;
+  /**
+   * SHA-256 of the order-access token minted for this phone order (TASK-484).
+   *
+   * A SEPARATE field rather than part of {@link guest}, because the two do not
+   * travel together here: an operator-created order can belong to an ACCOUNT and
+   * still need a link — the customer dictated the order over the phone and may
+   * never have signed in on the device they will open it on. The raw value never
+   * reaches this layer; the service hashes it first, exactly as guest checkout
+   * does (see `CreateOrderParams.guest.accessTokenHash`).
+   */
+  accessTokenHash?: string;
   items: Array<{
     productId: string;
     quantity: number;

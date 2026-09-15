@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   isPreShipmentStatus,
+  OrderEntityPaymentStatus,
+  orderDerivedMarks,
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
@@ -14,6 +16,9 @@ import {
 import { OrderStatusSelect } from "@/features/order-status-update";
 import { PaymentStatusSelect } from "@/features/order-payment-update";
 import { OrderDetailsForm } from "@/features/order-details-form";
+// TASK-484: "give the buyer a link to their own order" — a mutation with its own
+// one-shot state, so it lives in features, not here.
+import { OrderAccessLinkCard } from "@/features/order-access-link";
 import { OrderAddressForm } from "@/features/order-address-edit";
 import {
   Badge,
@@ -56,7 +61,7 @@ interface AddressFields {
  */
 export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   const router = useRouter();
-  const { data, isLoading, isError, error } =
+  const { data, dataUpdatedAt, isLoading, isError, error } =
     useAdminOrderControllerFindById(orderId);
 
   const isNotFound = error?.response?.status === 404;
@@ -138,6 +143,21 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                   {dict.orders.restockedAt(formatTime(order.restockedAt))}
                 </Badge>
               ) : null}
+              {/* TASK-470 / 471 / 472: the derived marks of B-1, computed by the
+                  same function the order LIST uses — so a row flagged there is
+                  flagged here, and an operator can trust a card without a chip.
+                  None of them is stored and none of them refuses a transition:
+                  the owner's rule is that only the physically impossible is
+                  blocked, and everything else is made visible.
+
+                  `dataUpdatedAt` rather than the real clock: reading it during
+                  render is impure, and the minute count is a statement about
+                  the order as it was fetched. */}
+              {orderDerivedMarks(order, dataUpdatedAt).map((mark) => (
+                <Badge key={mark.kind} variant={mark.variant}>
+                  {mark.label}
+                </Badge>
+              ))}
             </div>
             <p className="text-sm text-muted-foreground">
               {dict.orders.timeline(
@@ -169,6 +189,23 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               label={dict.orders.paymentAmountLabel}
               value={formatCurrency(order.total)}
             />
+            {/* TASK-472: "Повернуто X з Y", the fifth derived mark of B-1. Rendered
+                only at PARTIALLY_REFUNDED — a full refund needs no fraction and a
+                paid order has nothing to report — and only when the response
+                actually carried the sum, since `refundedTotal` is absent (not
+                "0.00") whenever the returns were not joined. Nothing here is
+                stored: X is Σ Return.refundedAmount, computed on read. */}
+            {order.paymentStatus ===
+              OrderEntityPaymentStatus.PARTIALLY_REFUNDED &&
+            order.refundedTotal != null ? (
+              <SummaryRow
+                label={dict.orders.refundedLabel}
+                value={dict.orders.refundedOfTotal(
+                  formatCurrency(order.refundedTotal),
+                  formatCurrency(order.total),
+                )}
+              />
+            ) : null}
             <Separator />
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium text-foreground">
@@ -219,15 +256,35 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                     <Fragment key={item.id}>
                       <TableRow>
                         <TableCell>
-                          <Link
-                            href={`/products/${item.productId}/edit`}
-                            aria-label={dict.orders.viewProductAria(
-                              item.productName,
-                            )}
-                            className="font-medium text-primary hover:underline"
-                          >
-                            {item.productName}
-                          </Link>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Link
+                              href={`/products/${item.productId}/edit`}
+                              aria-label={dict.orders.viewProductAria(
+                                item.productName,
+                              )}
+                              className="font-medium text-primary hover:underline"
+                            >
+                              {item.productName}
+                            </Link>
+                            {/* TASK-470: «Позиція недоступна». A LINE mark, not
+                                an order one — the server says which lines
+                                (`unavailableItemIds`), because only it can see
+                                whether the catalogue row was deleted,
+                                unpublished or oversold. Absent (never empty) on
+                                a response that did not measure it, so `?.`
+                                renders nothing rather than claiming "all fine".
+                                Nothing is sent to the buyer automatically: the
+                                choice between a replacement, a refund and
+                                waiting is made by a person (B-1 §3). */}
+                            {order.unavailableItemIds?.includes(item.id) ? (
+                              <Badge
+                                variant="destructive"
+                                title={dict.orders.markItemUnavailableHint}
+                              >
+                                {dict.orders.markItemUnavailable}
+                              </Badge>
+                            ) : null}
+                          </div>
                         </TableCell>
                         <TableCell className="text-right">
                           {formatCurrency(item.price)}
@@ -334,6 +391,13 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               </div>
             </section>
           ) : null}
+
+          {/* TASK-484: directly under "who is this", because it answers the next
+              question in the same conversation — "and how does he see it?".
+              Shown for EVERY order, account ones included: an operator takes a
+              phone order for a registered customer too, and that customer may
+              never have signed in on the phone they are holding. */}
+          <OrderAccessLinkCard orderId={orderId} />
 
           {/* Above the money block since TASK-425: this is what the operator
               reads out while the courier waits on the line. */}

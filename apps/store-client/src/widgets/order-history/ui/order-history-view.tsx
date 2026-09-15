@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/entities/session";
 import { useGetOrders } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
+import { ReturnRequestButton } from "@/features/return-request";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
@@ -78,7 +79,7 @@ export function OrderHistoryView() {
       ) : (
         <ul className="flex flex-col gap-3">
           {orders.map((order) => (
-            <li key={order.id} className="flex items-center gap-3">
+            <li key={order.id} className="flex flex-wrap items-center gap-3">
               <Link
                 href={`/orders/${order.id}/confirmation`}
                 className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4 shadow-card transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
@@ -113,6 +114,20 @@ export function OrderHistoryView() {
 
               {order.status === "PENDING" && (
                 <CancelOrderButton orderId={order.id} />
+              )}
+
+              {/* TASK-373. DELIVERED only, and not SHIPPED, even though the API
+                  accepts both: a parcel still in transit is not something to
+                  file a return about, and offering it there invites a claim on
+                  goods the customer has not seen yet. The one legitimate case —
+                  a refusal at the counter — comes back to us as an undelivered
+                  parcel, which is an operator's job, not a form's. */}
+              {order.status === "DELIVERED" && (
+                <ReturnRequestButton
+                  orderId={order.id}
+                  orderNumber={`#${order.id.slice(0, 8).toUpperCase()}`}
+                  items={order.items}
+                />
               )}
             </li>
           ))}

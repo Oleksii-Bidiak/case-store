@@ -59,6 +59,15 @@ export function VerifyEmailConfirm() {
   }
 
   if (confirm.isSuccess) {
+    // TASK-485: confirming the address also moved this person's earlier guest
+    // orders onto their account, and THIS RESPONSE is the only place that count
+    // exists — it describes an event, not a property of the account, so nothing
+    // can be asked for it afterwards. Carrying it on the link hands it to the
+    // cabinet's banner and lets it expire with the navigation.
+    const claimed = confirm.data?.data?.claimedOrders ?? 0;
+    const accountHref =
+      claimed > 0 ? `/account?claimed=${claimed}` : "/account";
+
     return (
       <div className="flex flex-col gap-4">
         <h2 className="text-lg font-semibold text-foreground">
@@ -67,7 +76,7 @@ export function VerifyEmailConfirm() {
         <p className="text-sm text-muted-foreground">{d.successBody}</p>
         <p>
           <Link
-            href="/account"
+            href={accountHref}
             className="font-medium text-primary hover:underline"
           >
             {d.toAccount}

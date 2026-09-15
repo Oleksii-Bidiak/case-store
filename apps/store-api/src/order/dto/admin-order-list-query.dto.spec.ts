@@ -158,6 +158,56 @@ describe('AdminOrderListQueryDto — payment + overdue filters (TASK-425)', () =
   });
 });
 
+/**
+ * The four derived-mark filters (TASK-470 / 471).
+ *
+ * Each repeats the `Boolean('false') === true` guard the rest of this DTO lives
+ * by, and each is tested for it individually rather than in a loop: a
+ * copy-pasted transform that quietly reads `value` instead of `obj` looks
+ * identical to its neighbours and fails only in the one direction nobody clicks
+ * on purpose — turning the chip OFF turns it on.
+ */
+describe.each([
+  ['hasDebt'],
+  ['awaitingPayment'],
+  ['reservationExpired'],
+  ['hasUnavailableItems'],
+] as const)('AdminOrderListQueryDto — %s boolean transform (TASK-470/471)', (param) => {
+  it(`resolves ?${param}=true to boolean true`, () => {
+    expect(toDto({ [param]: 'true' })[param]).toBe(true);
+  });
+
+  it(`resolves ?${param}=false to boolean false (not true)`, () => {
+    expect(toDto({ [param]: 'false' })[param]).toBe(false);
+  });
+
+  it('leaves it undefined when the param is absent', () => {
+    expect(toDto({})[param]).toBeUndefined();
+  });
+
+  it('passes an already-boolean value through unchanged', () => {
+    expect(toDto({ [param]: true })[param]).toBe(true);
+    expect(toDto({ [param]: false })[param]).toBe(false);
+  });
+
+  it('validates clean when set', async () => {
+    expect(await validate(toDto({ [param]: 'true' }))).toHaveLength(0);
+  });
+});
+
+describe('AdminOrderListQueryDto — the marks compose (TASK-470/471)', () => {
+  it('accepts two mark filters at once', async () => {
+    // Independent booleans rather than one `?mark=` enum precisely so this is
+    // expressible: "delivered, unpaid AND missing a position" is one question an
+    // operator asks, not two.
+    const dto = toDto({ hasDebt: 'true', hasUnavailableItems: 'true' });
+
+    expect(await validate(dto)).toHaveLength(0);
+    expect(dto.hasDebt).toBe(true);
+    expect(dto.hasUnavailableItems).toBe(true);
+  });
+});
+
 describe('AdminOrderExportQueryDto (TASK-425)', () => {
   const toExportDto = (query: Record<string, unknown>): AdminOrderExportQueryDto =>
     plainToInstance(AdminOrderExportQueryDto, query, { enableImplicitConversion: true });
@@ -172,9 +222,20 @@ describe('AdminOrderExportQueryDto (TASK-425)', () => {
       paymentMethod: PaymentMethod.ON_DELIVERY,
       pendingOverdue: 'true',
       unpaidInTransit: 'true',
+      // TASK-470 / 471: the export's promise is "the rows you are looking at",
+      // so a mark filter that narrowed the screen and not the file would hand the
+      // operator a spreadsheet that silently disagrees with it.
+      hasDebt: 'true',
+      awaitingPayment: 'true',
+      reservationExpired: 'true',
+      hasUnavailableItems: 'true',
     });
 
     expect(await validate(dto)).toHaveLength(0);
+    expect(dto.hasDebt).toBe(true);
+    expect(dto.awaitingPayment).toBe(true);
+    expect(dto.reservationExpired).toBe(true);
+    expect(dto.hasUnavailableItems).toBe(true);
     expect(dto.status).toEqual(['CONFIRMED', 'PROCESSING']);
     expect(dto.search).toBe('ABC12345');
     expect(dto.paymentStatus).toBe(PaymentStatus.PAID);

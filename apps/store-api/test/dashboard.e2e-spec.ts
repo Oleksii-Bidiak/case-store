@@ -97,6 +97,8 @@ describe('Admin Dashboard (e2e)', () => {
     // is what the admin widget reads, and a counter the repository computes but
     // the response drops is a tile that is permanently, silently empty.
     ratingAbuse: 2,
+    // TASK-470: the «Недоступні позиції» aggregate, for the same reason again.
+    unavailableItems: 3,
   };
 
   const dashboardRepositoryMock = {
@@ -321,6 +323,7 @@ describe('Admin Dashboard (e2e)', () => {
           failedMails: 1,
           pendingOver48h: 1,
           ratingAbuse: 2,
+          unavailableItems: 3,
         },
       });
       for (const counter of Object.keys(needsActionFixture)) {
@@ -336,6 +339,7 @@ describe('Admin Dashboard (e2e)', () => {
         failedMails: 0,
         pendingOver48h: 0,
         ratingAbuse: 0,
+        unavailableItems: 0,
       };
       dashboardRepositoryMock.getNeedsAction.mockResolvedValueOnce(quiet);
 

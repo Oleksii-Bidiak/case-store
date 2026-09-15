@@ -348,7 +348,7 @@ export const MEDIA_PERMISSIONS = [
  * The permissions whose holders were granted `customers:card` by the TASK-479
  * backfill migration (`…_backfill_customers_card_permission`).
  *
- * THE SECOND AND LAST BACKFILL IN THIS FILE, AND THE NARROWEST KIND. The card
+ * THE NARROWEST KIND OF BACKFILL THIS FILE CARRIES. The card
  * key is not a new admin section — it is a screen every one of these holders
  * opens today, through the key named below. Splitting it off default-denied
  * would 403 an operator on `/users/:id` on the morning after the deploy, on a
@@ -369,14 +369,20 @@ export const MEDIA_PERMISSIONS = [
  * revocation is its absence, which makes the predicate the media backfill had to
  * spell out simply disappear.
  *
- * Deliberately NOT filtered to active, non-deleted accounts, which is the one
- * place this differs from the TASK-474 backfill next door. That one CREATED rows
- * from a role, for people who had none, so handing them to a switched-off account
- * would have armed it for whoever re-enabled it later. This one only preserves
- * the meaning of a row that already exists: if a deactivated operator holds
+ * Deliberately NOT filtered to active accounts: if a deactivated operator holds
  * `customers:read`, they hold the card today, and dropping the copy would quietly
  * narrow them on re-activation rather than keep them where they were. A
  * deactivated account is refused at the guard either way.
+ *
+ * This was originally written as the one place this migration differed from the
+ * TASK-474 backfill next door, which did filter on `is_active = true`. The
+ * 2026-09-15 review pointed out that two migrations in one wave answering the
+ * same question opposite ways is a defect in whichever one is wrong, and it was
+ * that one — `StaffService.setStatus(false)` deletes nobody's rows, so "switched
+ * off" always keeps its permissions. Both now use `deleted_at IS NULL` as the
+ * only liveness test, which is what the two flags mean: the tombstone is
+ * permanent, the toggle is not. Rights are dropped when somebody LEAVES the
+ * staff, explicitly, in `StaffService.updateRole`.
  *
  * This list is the code half of the contract; the SQL is the other half, and
  * `permission.catalog.spec.ts` asserts the two say the same thing.
@@ -412,6 +418,53 @@ export const CUSTOMERS_CARD_PERMISSIONS = [
  * asserts the migration uses exactly this literal.
  */
 export const MANAGER_BACKFILL_TEMPLATE_NAME = 'Менеджер (як було)';
+
+/**
+ * The returns queue, and, as with media, a deliberately narrow backfill
+ * (TASK-370 / TASK-469, plan 180, owner's decision 2026-09-14).
+ *
+ * WHY THESE TWO KEYS NEEDED ONE AT ALL. `returns:read` and `returns:write` have
+ * been in this catalogue since TASK-334 and have never had a single
+ * `role_permissions` row. The screens behind them were built in TASK-340 and have
+ * worked ever since — a queue, a card, a decision form with an explicit restock —
+ * reachable by precisely one person in the shop. Nothing surfaced that, because
+ * until TASK-370 there was no menu entry to be missing from.
+ *
+ * WHY IT IS DEFENSIBLE. Same test the media backfill had to pass: the grant
+ * follows an existing grant one-for-one and adds no reach. A role holding
+ * `orders:write` can already move an order to REFUNDED — the money half of a
+ * return — and `orders:read` already shows it every line, price and address a
+ * return names. The queue adds the RECORD of that decision, not the power to make
+ * it. The source key is `orders:write` rather than `orders:read` on purpose:
+ * resolving a return moves stock and money, so it belongs with the roles trusted
+ * to write orders, not merely to read them.
+ *
+ * As with media, this is not a licence to backfill the next new key. Compare
+ * `reviews:write` a few lines above, where the opposite call was made and the key
+ * ships denied to everyone.
+ *
+ * PER PERSON, AND IN A MIGRATION THIS WAVE HAD TO ADD. Plan 180 shipped the
+ * grant as an INSERT into `role_permissions`, stamped `20260914183500`. Plan 181
+ * drops that table at `20260914160000` — which sorts EARLIER — so on a develop
+ * carrying both waves the deploy replays them in that order and plan 180's
+ * statement finds no table. It does not fail: it guards itself with
+ * `to_regclass(...) IS NULL` and skips, which was the right call and is why the
+ * deploy survives the merge. But skipping is still not granting, so on a shop
+ * whose matrix actually held `MANAGER / orders:write` the operators come out
+ * holding orders and never holding returns — the exact defect plan 180 wrote
+ * that migration to prevent, re-created by the merge order rather than by either
+ * wave. `…_backfill_returns_permissions_per_user` is the other half: same
+ * source key, same eligibility, read and written on the person.
+ */
+export const RETURNS_BACKFILL_SOURCE_PERMISSIONS = [
+  'orders:write',
+] as const satisfies ReadonlyArray<Permission>;
+
+/** The keys that backfill grants. */
+export const RETURNS_PERMISSIONS = [
+  'returns:read',
+  'returns:write',
+] as const satisfies ReadonlyArray<Permission>;
 
 /** Fast membership test for validating rows read out of the database. */
 export const PERMISSION_KEYS: ReadonlySet<string> = new Set(PERMISSIONS.map((p) => p.key));

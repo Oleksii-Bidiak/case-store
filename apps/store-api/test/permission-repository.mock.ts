@@ -77,6 +77,23 @@ export interface PermissionRepositoryMockOptions {
 
 export interface PermissionRepositoryMock {
   findActor(userId: string): Promise<PermissionActor | null>;
+  /**
+   * Change what a role's people hold, mid-suite.
+   *
+   * For the suites that walk a caller UP a ladder of permissions in one describe
+   * — "refused with nothing, allowed once `returns:read` is granted, still
+   * refused the write, allowed once `returns:write` is" — which is the only way
+   * to prove a key is enforced rather than merely declared.
+   *
+   * Before TASK-475 those suites reached for `PermissionService.setRoleGrants`,
+   * because the role matrix was cached in Redis for 60 seconds and writing to the
+   * repository double left the stale set cached, so the next request was answered
+   * from a matrix nobody was looking at. Both halves of that are gone: there is no
+   * matrix and no cache, `findActor` returns the person's rights with the person,
+   * and a set changed here is live on the very next request. So the mutator
+   * belongs on the double, where the state actually lives.
+   */
+  setGrants(role: UserRole, permissions: readonly string[]): void;
 }
 
 export function createPermissionRepositoryMock(
@@ -103,6 +120,10 @@ export function createPermissionRepositoryMock(
         isOwner: isOwnerFor(userId, role),
         permissions: new Set(grants.get(role) ?? []),
       });
+    },
+
+    setGrants(role: UserRole, permissions: readonly string[]): void {
+      grants.set(role, [...permissions]);
     },
   };
 }

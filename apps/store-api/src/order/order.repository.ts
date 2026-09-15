@@ -88,10 +88,87 @@ const ORDERS_INCLUDE = {
  */
 const ADMIN_ORDERS_INCLUDE = {
   ...ORDERS_INCLUDE,
+  /**
+   * The same lines as {@link ORDERS_INCLUDE}, plus the three catalogue columns
+   * that decide whether a line is still orderable (TASK-470): `deletedAt`,
+   * `isActive`, `stock`.
+   *
+   * Spread from the shared include rather than restated, so a column added to an
+   * order line is carried here by construction. Admin-only on purpose: "this
+   * position is no longer available" is a message for the operator who has to
+   * ring the customer and offer a choice, and the owner's decision (B-1 §3) is
+   * explicitly that NOTHING is sent to the buyer automatically. A customer-facing
+   * read therefore never joins these, and the entity reports nothing rather than
+   * reporting "all fine".
+   */
+  items: {
+    ...ORDERS_INCLUDE.items,
+    select: {
+      ...ORDERS_INCLUDE.items.select,
+      product: {
+        select: {
+          ...ORDERS_INCLUDE.items.select.product.select,
+          deletedAt: true,
+          isActive: true,
+          stock: true,
+        },
+      },
+    },
+  },
   user: {
     select: { id: true, email: true, firstName: true, lastName: true },
   },
+  /**
+   * Just the refunded amounts (TASK-472) — never the return rows themselves.
+   *
+   * The "Повернуто X з Y" label needs one number per order, Σ `refundedAmount`,
+   * and it is computed ON READ rather than stored: a column holding the same sum
+   * would have to be maintained by every path that touches a return, and the
+   * first one that forgets leaves the order claiming an amount that no return
+   * supports (owner decision B-1, closing paragraph: all five labels are
+   * derived).
+   *
+   * Admin include only. The label belongs to the admin list and order card; the
+   * storefront reads returns through the returns endpoints, so a customer-facing
+   * order read should not pay for this join.
+   */
+  returns: { select: { refundedAmount: true } },
 } satisfies Prisma.OrderInclude;
+
+/**
+ * Orders holding at least one line that can no longer be supplied (TASK-470).
+ *
+ * The WHERE behind the `hasUnavailableItems` list filter, and the exact
+ * predicate `DashboardRepository`'s «Недоступні позиції» tile counts — written
+ * independently there rather than imported, for the same reason
+ * `unpaidInTransit` is: the dashboard must not depend on the order module. The
+ * two are kept in step by both restating the owner's four conditions (B-1 §3),
+ * which is also what `OrderEntity.findUnavailableItemIds` evaluates per line.
+ *
+ * CANCELLED and REFUNDED orders are excluded here exactly as they are in the
+ * entity: their stock came back because they ENDED, and counting them would bury
+ * the handful of orders an operator must actually ring about under every
+ * cancelled order the shop ever had.
+ */
+function unavailableItemsWhere(): Prisma.OrderWhereInput {
+  return {
+    status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+    OR: [
+      {
+        items: {
+          some: {
+            product: {
+              OR: [{ deletedAt: { not: null } }, { isActive: false }, { stock: { lt: 0 } }],
+            },
+          },
+        },
+      },
+      // The fourth condition: the TTL worker released this order's hold while the
+      // order itself is still expected to be fulfilled.
+      { restockedAt: { not: null } },
+    ],
+  };
+}
 
 /**
  * Column set for the admin CSV export (TASK-425).
@@ -173,6 +250,24 @@ const DEFAULT_LIMIT = 10;
  * enough that a one- or two-digit stray inside a name search does nothing.
  */
 const SEARCH_PHONE_MIN_DIGITS = 3;
+
+/**
+ * The payment methods whose stock reservation runs on a clock (review of plan
+ * 180).
+ *
+ * Kept as one list so the two mark filters below, `resolveReservationDeadline`
+ * (which gives a deadline to everything but ON_DELIVERY) and
+ * `PaymentRepository.findExpiredReservations` (which cancels on this exact set)
+ * cannot drift. They did: the filters were written as `= ONLINE` while the
+ * worker already cancelled INSTALLMENTS too, so a BNPL order was auto-cancelled
+ * without ever having shown «Очікує оплати» or «Резерв сплив» to anyone.
+ */
+// Mutable on purpose: Prisma's generated `in` filter takes `PaymentMethod[]`
+// and refuses a `readonly` array. Copied at each use site below.
+const TIMED_RESERVATION_METHODS: PaymentMethod[] = [
+  PaymentMethod.ONLINE,
+  PaymentMethod.INSTALLMENTS,
+];
 
 @Injectable()
 export class OrderRepository {
@@ -295,6 +390,15 @@ export class OrderRepository {
                 guestPhone: params.guest.phone,
                 guestName: params.guest.name,
                 accessTokenHash: params.guest.accessTokenHash,
+                // Written in the same breath as the hash, exactly as
+                // `createManual` and `rotateAccessToken` do (review of plan 180).
+                // `rotateAccessToken`'s docblock states the invariant — a path
+                // that sets one without the other yields either an eternal link
+                // or a stillborn one — and this was that path. It survived only
+                // because `getGuestOrder` falls back to `createdAt`, which for a
+                // just-created order is the same instant; delete that fallback as
+                // dead code and every confirmation mail ships an expired link.
+                accessTokenIssuedAt: new Date(),
               }
             : {}),
           status: OrderStatus.PENDING,
@@ -447,6 +551,17 @@ export class OrderRepository {
                 guestEmail: params.guest.email,
                 guestPhone: params.guest.phone,
                 guestName: params.guest.name,
+              }
+            : {}),
+          // TASK-484: the buyer's key to their own order, on a phone order too.
+          // `accessTokenIssuedAt` is written in the same breath and is not
+          // decoration: the link's TTL is counted from it, so an order whose
+          // token is re-issued months later hands out a link that is alive, not
+          // one that was dead before it was pasted into a chat (B-5 §4).
+          ...(params.accessTokenHash
+            ? {
+                accessTokenHash: params.accessTokenHash,
+                accessTokenIssuedAt: new Date(),
               }
             : {}),
           status: OrderStatus.PENDING,
@@ -672,12 +787,20 @@ export class OrderRepository {
     }
 
     // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same
-    // compound condition as DashboardRepository's unrealized-revenue figure
-    // (paymentStatus != PAID AND status NOT IN (CANCELLED, REFUNDED)). Additive:
+    // compound condition as DashboardRepository's unrealized-revenue figure, so
+    // the tile's count and the rows behind the click are the same set. Additive:
     // composes with the userId/date-range conditions above; only applied when the
     // flag is explicitly true.
+    //
+    // `PARTIALLY_REFUNDED` sits with `PAID` rather than on the unpaid side
+    // (review of plan 180) — it is only reachable FROM `PAID`, so the money did
+    // arrive and the shop is owed nothing. See the twin's docblock in
+    // `DashboardRepository.unrealizedOrderWhere` for why this differs from the
+    // «Борг» mark below, which deliberately casts a wider net.
     if (query.unpaidInTransit) {
-      where.paymentStatus = { not: PaymentStatus.PAID };
+      where.paymentStatus = {
+        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      };
       where.status = { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] };
     }
 
@@ -702,6 +825,48 @@ export class OrderRepository {
         createdAt: { lt: new Date(Date.now() - PENDING_STALE_HOURS * 60 * 60 * 1000) },
       });
     }
+    // TASK-470 / 471: the derived-mark filters. Same `AND` array and the same
+    // reason as TASK-425's — `unpaidInTransit` above owns `where.status` and
+    // `where.paymentStatus` outright, and a filter the operator can see on screen
+    // but that never reached the query is the worst possible outcome.
+    //
+    // Each condition is written here EXACTLY as the B-1 catalogue states it, and
+    // `orderDerivedLabels()` in the admin panel states it again for the row it
+    // renders. The two are kept identical by the marks being derived on both
+    // sides from the same columns, never stored: there is no third copy that can
+    // go stale between them.
+    if (query.hasDebt) {
+      and.push({
+        status: OrderStatus.DELIVERED,
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
+      });
+    }
+    // `gt` / `lte` against a single `now` taken here, so the two flags partition
+    // the same set at the same instant rather than at two instants a query apart.
+    // Rows with a NULL deadline match neither comparison — correct: an order with
+    // no timed reservation is in neither state.
+    const now = new Date();
+    // The method test is a SET, not `= ONLINE` (review of plan 180): BNPL orders
+    // carry a deadline as well (`resolveReservationDeadline` excludes only
+    // ON_DELIVERY) and `findExpiredReservations` cancels them on
+    // `IN (ONLINE, INSTALLMENTS)`. An ONLINE-only filter hid exactly the orders
+    // the worker was about to cancel.
+    if (query.awaitingPayment) {
+      and.push({
+        paymentMethod: { in: [...TIMED_RESERVATION_METHODS] },
+        paymentStatus: PaymentStatus.PENDING,
+        reservationExpiresAt: { gt: now },
+      });
+    }
+    if (query.reservationExpired) {
+      and.push({
+        paymentMethod: { in: [...TIMED_RESERVATION_METHODS] },
+        paymentStatus: PaymentStatus.PENDING,
+        reservationExpiresAt: { lte: now },
+      });
+    }
+    if (query.hasUnavailableItems) and.push(unavailableItemsWhere());
+
     if (and.length > 0) where.AND = and;
 
     return where;
@@ -1002,22 +1167,52 @@ export class OrderRepository {
    * TASK-251: converted from a bare update to a $transaction so the change and
    * its audit-log row commit atomically. A lightweight `select: { paymentStatus }`
    * read inside the tx captures the fromPaymentStatus for the history row.
+   *
+   * ── `expectedFrom`: the compare-and-set the table needs (review of plan 180) ─
+   * The service validates the move against a status it read in an EARLIER query,
+   * so between the read and this write another operator can land a different
+   * legal move. Both pass validation, the second overwrites the first, and the
+   * pair that actually occurred is one `PAYMENT_TRANSITIONS` forbids — two legal
+   * moves composing into an illegal one. It also leaves a timeline describing a
+   * sequence that never happened, since both history rows record the same `from`.
+   *
+   * So the write is conditional on the status the caller validated against, in
+   * the same spirit as `updateDetails`'s `expectedUpdatedAt` guard — but keyed on
+   * `paymentStatus` rather than `updatedAt`, because that is the column the rule
+   * is about: an unrelated edit to the order must not make a legal payment move
+   * fail. `count === 0` means the premise is gone, and the caller turns that into
+   * the same 409 it would have raised had it read the newer value.
+   *
+   * Optional so a caller that has not validated against a specific `from` (none
+   * today; the webhook has its own planning path) is not forced to invent one.
+   *
+   * @returns null when the row no longer matches `expectedFrom` — nothing written.
    */
   async updatePaymentStatus(
     orderId: string,
     paymentStatus: PaymentStatus,
     changedBy: string | null,
-  ): Promise<OrderWithItems> {
+    options: { expectedFrom?: PaymentStatus } = {},
+  ): Promise<OrderWithItems | null> {
     return (await this.prisma.$transaction(async (tx) => {
       const existing = await tx.order.findUniqueOrThrow({
         where: { id: orderId },
         select: { paymentStatus: true },
       });
-      const updated = await tx.order.update({
-        where: { id: orderId },
-        data: { paymentStatus },
-        include: ORDERS_INCLUDE,
-      });
+
+      if (options.expectedFrom !== undefined) {
+        const { count } = await tx.order.updateMany({
+          where: { id: orderId, paymentStatus: options.expectedFrom },
+          data: { paymentStatus },
+        });
+        // Someone else moved the payment between the service's read and this
+        // write. Nothing is written — not even the history row, because a change
+        // that did not take effect is not an event.
+        if (count === 0) return null;
+      } else {
+        await tx.order.update({ where: { id: orderId }, data: { paymentStatus } });
+      }
+
       await tx.orderStatusHistory.create({
         data: {
           orderId,
@@ -1027,8 +1222,12 @@ export class OrderRepository {
           changedBy,
         },
       });
-      return updated;
-    })) as OrderWithItems;
+
+      return tx.order.findUniqueOrThrow({
+        where: { id: orderId },
+        include: ORDERS_INCLUDE,
+      });
+    })) as OrderWithItems | null;
   }
 
   /**
@@ -1140,6 +1339,29 @@ export class OrderRepository {
   }
 
   /**
+   * Replace an order's access token, invalidating whatever was there before
+   * (TASK-484).
+   *
+   * One `UPDATE` writing both columns, which is the whole safety property: the
+   * hash is the only copy of the credential and `accessTokenIssuedAt` is what
+   * its expiry is measured from, so a path that could set one without the other
+   * would produce either an eternal link or a stillborn one. The old hash is
+   * overwritten rather than kept anywhere — after this returns, the link the
+   * customer had stops opening the order, which is the point of "issue a new
+   * link".
+   *
+   * The caller hashes; the raw token never reaches this layer.
+   */
+  async rotateAccessToken(orderId: string, accessTokenHash: string): Promise<Date> {
+    const issuedAt = new Date();
+    await this.prisma.order.update({
+      where: { id: orderId },
+      data: { accessTokenHash, accessTokenIssuedAt: issuedAt },
+    });
+    return issuedAt;
+  }
+
+  /**
    * Attach previously-placed guest orders to a freshly-registered account
    * (TASK-338).
    *
@@ -1243,6 +1465,24 @@ export class OrderRepository {
             changeType: OrderHistoryChangeType.PAYMENT_STATUS,
             fromPaymentStatus: plan.paymentStatusChange.from,
             toPaymentStatus: plan.paymentStatusChange.to,
+            changedBy: null,
+          },
+        });
+      }
+
+      // TASK-431: the event asked for a move the payment state machine forbids.
+      // Nothing on the order moved — this row exists so the timeline shows that
+      // the provider said something at this moment and the shop did not act on
+      // it. `current → current` is the literal truth: the payment status is where
+      // it was. (What was asked for is in the warning log; see the field's
+      // docblock for why it is not written as a `to`.)
+      if (plan.refusedPaymentStatusChange) {
+        await tx.orderStatusHistory.create({
+          data: {
+            orderId: plan.orderId,
+            changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+            fromPaymentStatus: plan.refusedPaymentStatusChange.current,
+            toPaymentStatus: plan.refusedPaymentStatusChange.current,
             changedBy: null,
           },
         });

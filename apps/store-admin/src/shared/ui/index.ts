@@ -3,6 +3,9 @@
 
 export { Button, buttonVariants } from "./button";
 export { Checkbox } from "./checkbox";
+// TASK-484: the project's only `navigator.clipboard` caller — one place that
+// knows the API can refuse, so no call site has to remember.
+export { CopyButton, type CopyButtonProps } from "./copy-button";
 export { Switch } from "./switch";
 export {
   Dialog,

@@ -10,26 +10,46 @@ import { PinoLogger } from 'nestjs-pino';
 import { createHash, randomBytes } from 'crypto';
 import { OrderStatus, PaymentStatus, PaymentAttemptStatus, PaymentMethod } from '@prisma/client';
 import { OrderRepository, type AdminOrderExportRow } from './order.repository';
+// TASK-483: the public lookup has its own repository — see its docblock for why
+// the narrow projection gets a narrow query rather than a filtered wide one.
+import { OrderLookupRepository } from './order-lookup.repository';
 import { CartRepository, type CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
 import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
-import { OrderEntity, OrderStatusHistoryEntity } from './entities';
+import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
-import { allowedTransitions, canTransition } from './order-state-machine';
-import { invalidTransitionError, staleOrderError } from './order.errors';
+import {
+  allowedPaymentTransitions,
+  allowedTransitions,
+  canTransition,
+  canTransitionPayment,
+} from './order-state-machine';
+import {
+  invalidPaymentTransitionError,
+  invalidTransitionError,
+  refundRequiresClosedOrderError,
+  reviveRefundedPaymentError,
+  staleOrderError,
+} from './order.errors';
 import { AddonApplicabilityResolver, toTwoDecimals } from '../addon-service';
 // Shared with the newsletter export: one formula-injection guard, so a fix
 // cannot land in one export and miss the other (see the helper's docblock).
 import { escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
+// TASK-483/466: one canonical phone spelling on both sides of the comparison.
+import { normalizeUaPhone } from '../common/validators';
 import type {
   CreateOrderDto,
   CreateManualOrderDto,
   OrderListQueryDto,
   AdminOrderListQueryDto,
   AddressDto,
+  OrderLookupDto,
 } from './dto';
+// TASK-483: value imports (the normaliser and the shape it must satisfy), so
+// they cannot be in the `import type` block above.
+import { ORDER_NUMBER_PATTERN, normalizeOrderNumber } from './dto';
 // Declared beside the list query it narrows; deliberately not in the DTO barrel.
 import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto';
 import type {
@@ -166,6 +186,23 @@ export interface PaginationMeta {
 }
 
 /**
+ * What an operator gets back after taking an order over the phone (TASK-484).
+ *
+ * Two values rather than one because the second cannot be fetched again: the
+ * raw access link exists for this response and nowhere else — the database
+ * keeps only its SHA-256. If the operator does not copy it now, the way to get
+ * one is to ISSUE A NEW one from the order card, which retires this one.
+ *
+ * `accessUrl` is null only when `STORE_CLIENT_URL` is unset — a dev box. The
+ * token is still minted and stored in that case, so a correctly-configured
+ * environment can issue a working link for the same order later.
+ */
+export interface ManualOrderResult {
+  order: OrderEntity;
+  accessUrl: string | null;
+}
+
+/**
  * OrderService — business logic for placing and managing orders.
  *
  * An order is created from the authenticated user's current cart: prices are
@@ -178,6 +215,8 @@ export interface PaginationMeta {
 export class OrderService {
   constructor(
     private readonly orderRepository: OrderRepository,
+    // TASK-483: the public lookup's own narrow query.
+    private readonly orderLookupRepository: OrderLookupRepository,
     private readonly cartRepository: CartRepository,
     private readonly userRepository: UserRepository,
     private readonly mailOutbox: MailOutboxService,
@@ -333,6 +372,9 @@ export class OrderService {
     // the cart cookie is gone or they switch device — edge case E-17.
     const guestToken = actor.type === 'guest' ? generateGuestToken() : null;
     const guestStatusUrl = guestToken ? this.buildGuestStatusUrl(guestToken) : null;
+    // TASK-483: order-independent and token-free, so it is built for account
+    // orders too.
+    const orderLookupUrl = this.buildOrderLookupUrl();
 
     // Where the confirmation letter goes. For a guest there is no user row, so it
     // comes from what they typed at checkout — which is also why the email is the
@@ -391,6 +433,9 @@ export class OrderService {
             order: OrderEntity.fromPrisma(created),
             customerName: recipient.name,
             ...(guestStatusUrl ? { orderStatusUrl: guestStatusUrl } : {}),
+            // TASK-483: goes to every buyer — the token link above is the fast
+            // path, this is the one that survives losing the letter.
+            ...(orderLookupUrl ? { orderLookupUrl } : {}),
           },
           tx,
         );
@@ -439,6 +484,21 @@ export class OrderService {
   }
 
   /**
+   * The storefront page that asks for an order number and a phone (TASK-483).
+   *
+   * Put in every confirmation letter, guest or account, because it is the one
+   * route back that the letter itself is not required for. `STORE_CLIENT_URL` is
+   * read without a fallback for the same reason {@link buildGuestStatusUrl}
+   * does: a `localhost` default is a link that works in dev and points real
+   * customers at their own laptop. No value → no line in the letter, which is
+   * honest.
+   */
+  private buildOrderLookupUrl(): string | null {
+    const storeUrl = this.configService.get<string>('STORE_CLIENT_URL');
+    return storeUrl ? `${storeUrl.replace(/\/+$/, '')}/orders/status` : null;
+  }
+
+  /**
    * Read a guest's own order using the token from their confirmation email
    * (TASK-338).
    *
@@ -446,10 +506,17 @@ export class OrderService {
    * switch device (edge case E-17). The raw token is hashed before the lookup, so
    * a database leak does not hand out order access.
    *
-   * The link expires `GUEST_ORDER_TOKEN_TTL_DAYS` after the order was placed.
-   * There is no expiry COLUMN — `createdAt` plus the configured window is the
-   * same information, and inventing a column that must be kept in step with a
-   * setting is how the two drift apart.
+   * The link expires `GUEST_ORDER_TOKEN_TTL_DAYS` after it was ISSUED. There is
+   * still no expiry COLUMN — the issue timestamp plus the configured window is
+   * the same information, and inventing a column that must be kept in step with
+   * a setting is how the two drift apart.
+   *
+   * TASK-484: the clock starts at `accessTokenIssuedAt`, falling back to
+   * `createdAt` for every order minted before that column existed. Counting from
+   * `createdAt` alone was correct only while a token could be issued exactly
+   * once, at checkout. Now that an operator can re-issue one (B-5 §4), a
+   * rotation performed two months into an order's life would have handed the
+   * buyer a link that was already dead when it was pasted into the chat.
    *
    * Every failure — unknown token, expired token, soft-deleted order — answers
    * the same 404. A token that is merely expired must not be distinguishable
@@ -467,7 +534,8 @@ export class OrderService {
       'GUEST_ORDER_TOKEN_TTL_DAYS',
       DEFAULT_GUEST_TOKEN_TTL_DAYS,
     );
-    const expiresAt = order.createdAt.getTime() + ttlDays * MS_PER_DAY;
+    const issuedAt = order.accessTokenIssuedAt ?? order.createdAt;
+    const expiresAt = issuedAt.getTime() + ttlDays * MS_PER_DAY;
     if (Date.now() > expiresAt) {
       this.logger.info(
         { event: 'order.guest_token_expired', orderId: order.id },
@@ -480,37 +548,88 @@ export class OrderService {
   }
 
   /**
-   * Attach a new account's earlier guest orders to it (TASK-338).
+   * Find an order from the public form: order number + phone (TASK-483).
    *
-   * Called after a registration whose email matches orders placed as a guest, so
-   * the shopper's history is not split in two by the act of signing up. The guest
-   * columns are deliberately kept: they record what was actually typed at
-   * checkout, and the emailed status link goes on working.
+   * ── Why this exists next to the emailed link ──────────────────────────────
+   * Before it, an order could be seen exactly one way — the link in the
+   * confirmation letter — and that is the single easiest thing in the flow to
+   * lose: a deleted mail, a mistyped address, a spam folder, or an order an
+   * operator took over the phone, which had no letter at all. "Seeing your order
+   * must be possible in more than one way" is the principle B-5 was decided on.
    *
-   * Safe to call for any registration — an email with no guest orders behind it
-   * simply claims zero.
+   * ── One 404 for every kind of failure ─────────────────────────────────────
+   * A number that is not eight hex characters, a number nobody has, the right
+   * number with the wrong phone, a soft-deleted order — all of them answer the
+   * same `404`, produced by the same line of code. Anything else turns this into
+   * an oracle: a distinguishable "well-formed but unknown" would tell someone
+   * walking through numbers that they are getting warmer, and a distinguishable
+   * "right number, wrong phone" would confirm an order exists to anyone who
+   * merely read the number off a parcel label.
    *
-   * ── STILL UNWIRED AFTER INTEGRATION, AND ON PURPOSE (plan 167, TASK-353) ────
-   * The obvious call site is the successful-registration path in
-   * `auth/auth.service.ts`. Injecting OrderService there does NOT work: the
-   * module graph already runs AuthModule → … and OrderModule → UserModule →
-   * AuthModule, so the import closes a cycle. `forwardRef` would compile and
-   * would be a poor trade — a boot-order hazard bolted on during a merge, in the
-   * one place where failure means the API does not start at all.
+   * ── What the caller gets back ─────────────────────────────────────────────
+   * A LIST, not a single order. An eight-character prefix of a UUID can collide,
+   * and when it does, every match also had to match the phone — so they all
+   * belong to the same person and showing them is not a leak (B-5 §1).
    *
-   * Two designs survive review; neither should be chosen in a hurry:
-   *  (a) claim lazily from the ORDER side — `getOrders` claims before listing.
-   *      No new module edge at all (OrderService already injects UserRepository
-   *      for the ban check), idempotent, and it fires exactly when it matters:
-   *      the moment the shopper looks for their history. Cost: a write on a read
-   *      path.
-   *  (b) break the User → Auth edge so the honest dependency direction becomes
-   *      available. Correct, larger, and out of scope for this wave.
+   * @throws NotFoundException — always, for every failure mode.
+   */
+  async lookupOrders(dto: OrderLookupDto): Promise<PublicOrderEntity[]> {
+    // Normalised again here rather than trusted from the DTO: the transform is a
+    // convenience for the HTTP boundary, and this method is also reachable from
+    // tests and future callers that never went through a validation pipe.
+    const number = normalizeOrderNumber(dto.number);
+    const phone = normalizeUaPhone(dto.phone);
+
+    // The one place a short or malformed input is rejected — and it is rejected
+    // as "not found", not as a validation error. Searching on a 3-character
+    // prefix would return other people's orders; see the repository docblock.
+    if (!ORDER_NUMBER_PATTERN.test(number) || phone.length === 0) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const rows = await this.orderLookupRepository.findByNumberAndPhone(number, phone);
+
+    if (rows.length === 0) {
+      // Logged without the number and without the phone: this endpoint is
+      // unauthenticated, so its failures are exactly the data an attacker would
+      // like written down for them. The count is enough to alarm on.
+      this.logger.info({ event: 'order.lookup_miss' }, 'Public order lookup found nothing');
+      throw new NotFoundException('Order not found');
+    }
+
+    this.logger.info(
+      { event: 'order.lookup_hit', matches: rows.length },
+      'Public order lookup matched',
+    );
+
+    return rows.map((row) => PublicOrderEntity.fromRow(row));
+  }
+
+  /**
+   * Attach a shopper's earlier guest orders to their account (TASK-338, 485).
    *
-   * Nothing is lost meanwhile: a guest who registers still reaches every order
-   * through the link emailed at checkout. The orders are simply not yet listed
-   * under the new account. The capability and its tests ship here so whichever
-   * design wins is a wiring change, not a rewrite.
+   * The guest columns are deliberately kept: they record what was actually typed
+   * at checkout, and the emailed status link goes on working. Idempotent — the
+   * repository matches only `userId: null` rows, so an order already claimed can
+   * never be re-pointed, and an address with nothing behind it claims zero.
+   *
+   * ── ONE CALL SITE, AND IT MUST STAY THAT WAY ────────────────────────────────
+   * Wired to `EmailVerificationService.confirm`, through
+   * `GUEST_ORDER_CLAIM_PORT` (the port exists because injecting OrderService
+   * into AuthModule closes a module cycle).
+   *
+   * **Do not call this from any path that has not PROVEN the address.** It moves
+   * another party's orders — with their phone, delivery address and totals —
+   * onto the calling account, so the only thing standing between an attacker and
+   * a stranger's data is the proof that they read the mail sent to that address.
+   * Registration is not that proof: an account can sign in with an unverified
+   * address. Neither is an authenticated read — `getOrders` does not look at
+   * `emailVerifiedAt`, so claiming from there would hand the orders to whoever
+   * typed the address.
+   *
+   * Earlier revisions of this docblock proposed exactly that ("claim lazily from
+   * the order side"); it was written before TASK-485 chose the port, and it is
+   * recorded here only so the idea is not re-proposed as new.
    */
   async claimGuestOrders(userId: string, email: string): Promise<number> {
     const claimed = await this.orderRepository.claimGuestOrders(userId, email.trim().toLowerCase());
@@ -764,6 +883,25 @@ export class OrderService {
       throw invalidTransitionError(existing.status, status);
     }
 
+    // The cross-rule of B-1 §1, asked from the ORDER side (review of plan 180).
+    // Without it the pair the payment door refuses — a live order whose money is
+    // recorded as fully returned — was reachable in one ordinary click, and then
+    // could not be repaired from either side.
+    if (!this.isOrderTargetReachable(existing.paymentStatus, status)) {
+      this.logger.warn(
+        {
+          event: 'order.revive_refunded_rejected',
+          orderId,
+          from: existing.status,
+          to: status,
+          paymentStatus: existing.paymentStatus,
+          changedBy,
+        },
+        'Rejected reviving an order whose payment is recorded as fully refunded',
+      );
+      throw reviveRefundedPaymentError(status);
+    }
+
     // TASK-228: reviving an order whose cancellation already credited its stock
     // back (restockedAt set) into a live status must re-reserve that stock, or
     // a later re-cancel would credit it a second time. Moving between the
@@ -914,11 +1052,26 @@ export class OrderService {
    * the product must still be on sale, its category must still be on sale, and
    * there must be stock. An operator is not a reason to oversell.
    *
+   * ── TASK-484: the buyer gets a way to see it ──────────────────────────────
+   * A phone order used to be the one kind of order its own buyer could not look
+   * at: no account to sign into, no token, no confirmation letter. It now gets
+   * exactly the same access token guest checkout mints — same generator, same
+   * SHA-256 at rest — and, when the customer dictated an email, the same
+   * confirmation letter.
+   *
+   * The RAW token exists only inside this call, so it is returned alongside the
+   * order rather than stored: the operator either copies the link into the chat
+   * they are already in, or re-issues one later from the order card. Nothing
+   * anywhere can hand the same string out a second time.
+   *
    * @throws BadRequestException when neither an account nor contact details were
    *   given, a product is unknown or withdrawn, or stock is short.
    * @throws ForbiddenException when the named account is deactivated.
    */
-  async adminCreateOrder(dto: CreateManualOrderDto, adminUserId: string): Promise<OrderEntity> {
+  async adminCreateOrder(
+    dto: CreateManualOrderDto,
+    adminUserId: string,
+  ): Promise<ManualOrderResult> {
     if (!dto.userId && !dto.contact) {
       throw new BadRequestException(
         'Either an existing customer or contact details are required — an order nobody can be reached about is not a sale',
@@ -962,10 +1115,18 @@ export class OrderService {
       };
     });
 
+    // TASK-484: minted here, hashed on the way to the database, returned raw to
+    // the caller exactly once. Same two helpers guest checkout uses — "nothing
+    // new invented" is the decision (B-5 §4), and a second token scheme would be
+    // a second thing to get wrong.
+    const accessToken = generateGuestToken();
+    const accessUrl = this.buildGuestStatusUrl(accessToken);
+
     const order = await this.orderRepository.createManual(
       {
         userId: dto.userId ?? null,
         ...(dto.contact ? { guest: dto.contact } : {}),
+        accessTokenHash: hashGuestToken(accessToken),
         items,
         shippingAddress: dto.shippingAddress,
         ...(dto.notes ? { notes: dto.notes } : {}),
@@ -991,7 +1152,82 @@ export class OrderService {
       'Operator created an order on the customer’s behalf',
     );
 
-    return OrderEntity.fromPrisma(order, { includeInternal: true });
+    const entity = OrderEntity.fromPrisma(order, { includeInternal: true });
+
+    // TASK-484: if the customer dictated an address, the same confirmation
+    // letter a self-service checkout sends — with the same status link in it.
+    // Enqueued AFTER the order committed rather than inside its transaction,
+    // unlike `createOrder`: `createManual` does not accept a post-commit hook,
+    // and for an operator who is on the phone with the buyer, an order that
+    // exists with no letter is a recoverable inconvenience ("I'll re-send it")
+    // while an order that failed to be created is not.
+    const recipientEmail = dto.contact?.email;
+    if (recipientEmail) {
+      const lookupUrl = this.buildOrderLookupUrl();
+      await this.mailOutbox.enqueueOrderConfirmation({
+        to: recipientEmail,
+        order: entity,
+        ...(dto.contact?.name ? { customerName: dto.contact.name } : {}),
+        ...(accessUrl ? { orderStatusUrl: accessUrl } : {}),
+        ...(lookupUrl ? { orderLookupUrl: lookupUrl } : {}),
+      });
+    }
+
+    return { order: entity, accessUrl };
+  }
+
+  /**
+   * Admin — issue a fresh order-access link for a buyer, invalidating the old
+   * one (TASK-484).
+   *
+   * ── Why this action exists at all ─────────────────────────────────────────
+   * The raw token lives for the duration of one request; the database holds only
+   * its SHA-256. So there is no "show me the link again" — there is only "make a
+   * new one". That is a deliberate consequence of hashing at rest, not a gap: a
+   * system that could re-display the link would be a system storing it.
+   *
+   * ── What rotating costs, and why it is still right ────────────────────────
+   * The previous link stops working the moment this returns. That is the point
+   * when a buyer says "I forwarded it to the wrong person", and the price when
+   * they simply lost it — so the UI says so before the operator presses it.
+   *
+   * No audit call here: every mutating route under `@RequirePermission` is
+   * recorded by `AuditInterceptor`, and the response it inspects carries only
+   * the order id, never the token.
+   *
+   * @throws NotFoundException when no such order exists (or it is soft-deleted).
+   */
+  async issueOrderAccessLink(orderId: string): Promise<{ url: string; issuedAt: Date }> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const rawToken = generateGuestToken();
+    const url = this.buildGuestStatusUrl(rawToken);
+
+    if (!url) {
+      // STORE_CLIENT_URL is missing, so any link we minted would point nowhere.
+      // Refuse BEFORE writing: rotating the hash here would kill the buyer's
+      // working link and hand the operator nothing in exchange.
+      throw new BadRequestException(
+        'The storefront address is not configured, so an order link cannot be issued',
+      );
+    }
+
+    const issuedAt = await this.orderRepository.rotateAccessToken(
+      orderId,
+      hashGuestToken(rawToken),
+    );
+
+    // Never the token, and never the URL that contains it.
+    this.logger.info(
+      { event: 'order.access_link_issued', orderId },
+      'A fresh order-access link was issued; the previous one no longer works',
+    );
+
+    return { url, issuedAt };
   }
 
   /**
@@ -1117,9 +1353,94 @@ export class OrderService {
 
     return {
       current: existing.status,
-      allowed: allowedTransitions(existing.status),
+      // Filtered by the cross-rule for the same reason the payment list is
+      // (review of plan 180): a target the PATCH would refuse has no business
+      // being in the list the picker renders.
+      allowed: allowedTransitions(existing.status).filter((to) =>
+        this.isOrderTargetReachable(existing.paymentStatus, to),
+      ),
       updatedAt: existing.updatedAt,
     };
+  }
+
+  /**
+   * Admin — which PAYMENT statuses this order may move to right now (TASK-431).
+   *
+   * Mirrors {@link getAllowedTransitions} down to the `updatedAt` token, and for
+   * the same reason: the payment picker used to offer "every value except the
+   * current one", so an operator could pick REFUNDED on a delivered order and
+   * only then learn it was never possible.
+   *
+   * The cross-rule is applied HERE too, not only on the write. A target the PATCH
+   * would refuse has no business being in the list the picker renders — offering
+   * it and then rejecting it is precisely the behaviour this endpoint exists to
+   * end.
+   *
+   * @throws NotFoundException when the order does not exist or is soft-deleted.
+   */
+  async getAllowedPaymentTransitions(
+    orderId: string,
+  ): Promise<{ current: PaymentStatus; allowed: PaymentStatus[]; updatedAt: Date }> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return {
+      current: existing.paymentStatus,
+      allowed: allowedPaymentTransitions(existing.paymentStatus).filter((to) =>
+        this.isPaymentTargetReachable(existing.status, to),
+      ),
+      updatedAt: existing.updatedAt,
+    };
+  }
+
+  /**
+   * The cross-rule the payment table cannot hold, because it reads two columns
+   * at once (TASK-431, owner decision B-1 §1).
+   *
+   * A FULL refund is allowed only while the order itself is CANCELLED or
+   * REFUNDED. Anything else would assert that the shop returned all of the money
+   * for an order it still considers live — the customer has the goods AND the
+   * cash. The operator's path is the honest one: cancel (or refund) the order,
+   * then record the money.
+   *
+   * PARTIALLY_REFUNDED is deliberately NOT constrained: refunding one line out of
+   * three on a DELIVERED order is an ordinary day, and it is exactly the case
+   * that used to force the operator to choose between two lies.
+   *
+   * Asked on BOTH doors, like the table itself — the admin write answers a
+   * violation with 409, {@link planPaymentApplication} with a refusal row — and
+   * on the webhook door it is asked of the status the plan will LEAVE the order
+   * in, since a refund that closes the order in the same transaction lands
+   * consistent. Keeping it in one place is the point: a cross-rule enforced on
+   * one door only is not a rule, it is a preference of that door.
+   */
+  private isPaymentTargetReachable(orderStatus: OrderStatus, to: PaymentStatus): boolean {
+    if (to !== PaymentStatus.REFUNDED) return true;
+    return orderStatus === OrderStatus.CANCELLED || orderStatus === OrderStatus.REFUNDED;
+  }
+
+  /**
+   * The same cross-rule, asked of the OTHER column (review of plan 180).
+   *
+   * {@link isPaymentTargetReachable} refuses «full refund on a live order» when
+   * the PAYMENT moves. The identical pair was reachable when the ORDER moved
+   * instead: CANCELLED + REFUNDED is legal and ordinary, and reviving such an
+   * order into PENDING/CONFIRMED/PROCESSING produced exactly the state the other
+   * door calls impossible — goods being picked for a customer who has the money.
+   *
+   * Deliberately asked of `REFUNDED` only, not of every unsettled status.
+   * PARTIALLY_REFUNDED must stay revivable: one line refunded out of three is
+   * the ordinary case B-1 §1 went out of its way to keep legal.
+   *
+   * The terminal statuses stay reachable — CANCELLED ⇄ REFUNDED is how an
+   * operator corrects a mislabelled ending, and both are stock-neutral.
+   */
+  private isOrderTargetReachable(paymentStatus: PaymentStatus, to: OrderStatus): boolean {
+    if (paymentStatus !== PaymentStatus.REFUNDED) return true;
+    return to === OrderStatus.CANCELLED || to === OrderStatus.REFUNDED;
   }
 
   /**
@@ -1144,11 +1465,20 @@ export class OrderService {
 
   /**
    * Admin — set an order's payment status directly, independently of its order
-   * status (TASK-151). This is the manual stand-in for the Stripe payment
-   * webhook (TASK-034) and the supported way to mark an order paid/unpaid/
-   * refunded. Authorization (ADMIN role) is enforced at the controller.
+   * status (TASK-151). This is the manual stand-in for the payment webhook and
+   * the supported way to mark an order paid/unpaid/refunded. Authorization
+   * (ADMIN role) is enforced at the controller.
+   *
+   * ── The FIRST of the two doors onto `paymentStatus` (TASK-431) ──────────────
+   * This one is human, synchronous and has a screen in front of it, so an illegal
+   * move is answered with a 409 the operator can read and act on. The other door
+   * — {@link planPaymentApplication}, serving the LiqPay webhook and the
+   * reconcile worker — must NOT raise: a 409 to a payment provider is an
+   * infinite retry, not a refusal. Same table, two reactions, on purpose.
    *
    * @throws NotFoundException when the order does not exist.
+   * @throws ConflictException when the payment state machine forbids the move, or
+   *   when a full refund is asked for on an order that is still live.
    */
   async adminUpdatePaymentStatus(
     orderId: string,
@@ -1161,7 +1491,62 @@ export class OrderService {
       throw new NotFoundException('Order not found');
     }
 
-    const order = await this.orderRepository.updatePaymentStatus(orderId, paymentStatus, changedBy);
+    if (!canTransitionPayment(existing.paymentStatus, paymentStatus)) {
+      this.logger.warn(
+        {
+          event: 'order.payment_status_transition_refused',
+          orderId,
+          from: existing.paymentStatus,
+          to: paymentStatus,
+          changedBy,
+        },
+        'Refused an illegal payment-status transition',
+      );
+      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
+    }
+
+    // The cross-rule, checked AFTER the table so the operator gets the more
+    // specific of the two messages: "cancel the order first" tells them what to
+    // do, "that move is impossible" only tells them what not to.
+    if (!this.isPaymentTargetReachable(existing.status, paymentStatus)) {
+      this.logger.warn(
+        {
+          event: 'order.payment_refund_refused_open_order',
+          orderId,
+          status: existing.status,
+          from: existing.paymentStatus,
+          changedBy,
+        },
+        'Refused a full refund on an order that is neither cancelled nor refunded',
+      );
+      throw refundRequiresClosedOrderError(existing.status);
+    }
+
+    // Conditional on the status both checks above were made against (review of
+    // plan 180). Without it two operators picking different LEGAL moves in the
+    // same second compose into one the table forbids — see the repository's
+    // docblock. `null` means the premise is gone; the honest answer is the same
+    // 409 this method would have raised had the newer value been read.
+    const order = await this.orderRepository.updatePaymentStatus(
+      orderId,
+      paymentStatus,
+      changedBy,
+      { expectedFrom: existing.paymentStatus },
+    );
+
+    if (!order) {
+      this.logger.warn(
+        {
+          event: 'order.payment_status_lost_update',
+          orderId,
+          expectedFrom: existing.paymentStatus,
+          to: paymentStatus,
+          changedBy,
+        },
+        'Refused a payment-status write whose starting status had changed underneath it',
+      );
+      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
+    }
 
     this.logger.info(
       { event: 'order.payment_status_updated', orderId, paymentStatus },
@@ -1253,6 +1638,31 @@ export class OrderService {
       return { applied: false, orderId: order.id };
     }
 
+    if (plan.refusedPaymentStatusChange) {
+      // WARN, not ERROR: nothing is broken and nothing needs retrying — the event
+      // simply disagrees with what we hold, and we kept what we hold. It is a
+      // warning rather than info because a provider contradicting our records is
+      // how a lost callback or a double refund first becomes visible.
+      this.logger.warn(
+        {
+          event: 'order.payment_event_transition_refused',
+          orderId: order.id,
+          paymentId: payment.id,
+          outcome: event.outcome,
+          providerStatus: event.providerStatus,
+          current: plan.refusedPaymentStatusChange.current,
+          rejected: plan.refusedPaymentStatusChange.rejected,
+          // Both added by the review of plan 180. `reason` names the rule that
+          // refused, and `status` is the column the cross-rule reads — without
+          // it a cross-rule refusal reads as `PAID → REFUNDED`, which the table
+          // ALLOWS, and the line contradicts itself.
+          reason: plan.refusedPaymentStatusChange.reason,
+          status: order.status,
+        },
+        'Payment event asked for an illegal payment-status move; recorded and ignored',
+      );
+    }
+
     await this.orderRepository.applyPaymentOutcome(plan);
 
     this.logger.info(
@@ -1320,11 +1730,32 @@ export class OrderService {
    *   attempt must never un-pay a paid order. The order itself is NOT cancelled —
    *   the customer may retry, and the reservation worker owns the deadline.
    * - **REFUNDED** moves the order's payment to REFUNDED and, where the state
-   *   machine permits, the order to REFUNDED. Stock is deliberately NOT credited
-   *   back: the goods have to physically return first (TASK-124's rule, unchanged).
+   *   machine permits, the order to REFUNDED — and only where it does: on an
+   *   order that can reach neither (PENDING/CONFIRMED/PROCESSING) the event is
+   *   refused rather than written, because a full refund on a live order is the
+   *   one payment combination the cross-rule forbids outright (see the branch).
+   *   Stock is deliberately NOT credited back: the goods have to physically
+   *   return first (TASK-124's rule, unchanged).
    * - **IGNORED** — "still processing" — changes nothing. There is no PENDING
    *   outcome for exactly this reason: treating "not finished yet" as an event to
    *   act on is how an order flips to paid before the money exists.
+   *
+   * ── The SECOND door onto `paymentStatus`, and why it never throws (TASK-431) ─
+   * Since TASK-431 the payment status has a state machine of its own, and this
+   * method asks it exactly like {@link adminUpdatePaymentStatus} does. What it
+   * must NOT do is react the same way. The callers here are a LiqPay webhook and
+   * the reconcile worker; both retry on anything that is not a 2xx, so a 409
+   * would not refuse the event, it would schedule it again every few minutes
+   * until someone noticed. So an illegal move is IGNORED: the order's columns are
+   * left exactly as they are, the attempt row is still written (the provider's
+   * statement about the ATTEMPT is a fact regardless), a warning goes to the log
+   * and `refusedPaymentStatusChange` puts a row in `OrderStatusHistory` so the
+   * operator can see that something was said and not acted on.
+   *
+   * Idempotency is untouched by any of this: a repeat SUCCEEDED on an order that
+   * is already PAID still returns `null` at the top of its branch, before the
+   * machine is ever consulted — so it is neither an error nor a duplicate history
+   * row, exactly as before.
    */
   private planPaymentApplication(
     payment: PaymentWithOrderRow,
@@ -1341,6 +1772,25 @@ export class OrderService {
     switch (event.outcome) {
       case PaymentOutcome.SUCCEEDED: {
         if (order.paymentStatus === PaymentStatus.PAID) return null;
+        // Refused sources here are PARTIALLY_REFUNDED and REFUNDED: the provider
+        // is reporting a success on money we have already sent back. Record the
+        // attempt and the contradiction; touch nothing on the order — not the
+        // payment status, not `paidAt`, and certainly not the reservation, whose
+        // deadline is meaningless on an order that reached a refund.
+        if (!canTransitionPayment(order.paymentStatus, PaymentStatus.PAID)) {
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+            settledAt: now,
+            failureCode: null,
+            failureMessage: null,
+            refusedPaymentStatusChange: {
+              current: order.paymentStatus,
+              rejected: PaymentStatus.PAID,
+              reason: 'table',
+            },
+          };
+        }
         return {
           ...base,
           attemptStatus: PaymentAttemptStatus.SUCCEEDED,
@@ -1360,31 +1810,82 @@ export class OrderService {
         // An attempt that failed is worth recording even on a paid order (the
         // customer's second card may have been declined before the third worked),
         // but it must not touch the order's payment status.
-        const alreadySettled =
-          order.paymentStatus === PaymentStatus.PAID ||
-          order.paymentStatus === PaymentStatus.REFUNDED;
-        if (payment.status === PaymentAttemptStatus.FAILED && alreadySettled) return null;
+        //
+        // TASK-431: "must not touch it" is now the state machine's answer rather
+        // than a hand-written list of settled statuses — which also closes the
+        // case the list missed, a repeat FAILED on an order already marked FAILED
+        // appending a second identical history row. A blocked move is NOT
+        // recorded as a refusal here: for this outcome a non-move is the designed
+        // behaviour (a superseded attempt), not a contradiction worth flagging.
+        const canFail = canTransitionPayment(order.paymentStatus, PaymentStatus.FAILED);
+        if (payment.status === PaymentAttemptStatus.FAILED && !canFail) return null;
         return {
           ...base,
           attemptStatus: PaymentAttemptStatus.FAILED,
           ...(event.failureCode !== undefined ? { failureCode: event.failureCode } : {}),
           ...(event.failureMessage !== undefined ? { failureMessage: event.failureMessage } : {}),
-          ...(alreadySettled
-            ? {}
-            : {
+          ...(canFail
+            ? {
                 paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.FAILED },
-              }),
+              }
+            : {}),
         };
       }
 
       case PaymentOutcome.REFUNDED: {
         if (order.paymentStatus === PaymentStatus.REFUNDED) return null;
+        // Refused sources here are PENDING and FAILED: money we never recorded as
+        // received is coming back. That is a genuine contradiction — most likely
+        // a success callback we lost — so it is logged and left in the order's
+        // history for a human, rather than written as a refund of nothing.
+        if (!canTransitionPayment(order.paymentStatus, PaymentStatus.REFUNDED)) {
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.REFUNDED,
+            settledAt: now,
+            refusedPaymentStatusChange: {
+              current: order.paymentStatus,
+              rejected: PaymentStatus.REFUNDED,
+              reason: 'table',
+            },
+          };
+        }
+        // The cross-rule, on this door too (TASK-431). `isPaymentTargetReachable`
+        // is asked of the status the order will HAVE once this plan lands, not
+        // the one it has now: a DELIVERED order whose refund moves it to REFUNDED
+        // in the same transaction ends up consistent, so it passes. What does not
+        // pass is PENDING/CONFIRMED/PROCESSING — none of them may become REFUNDED
+        // (rule 3 of ORDER_TRANSITIONS: there is nothing to refund yet), so the
+        // money would land on an order the shop still considers live. That is the
+        // exact combination the admin door answers with 409; here it becomes the
+        // same refusal this door uses everywhere else — attempt written, columns
+        // untouched, a history row and a warning for the operator, who cancels
+        // the order and then records the money by hand.
+        const movesOrderToRefunded = canTransition(order.status, OrderStatus.REFUNDED);
+        const statusAfterPlan = movesOrderToRefunded ? OrderStatus.REFUNDED : order.status;
+
+        if (!this.isPaymentTargetReachable(statusAfterPlan, PaymentStatus.REFUNDED)) {
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.REFUNDED,
+            settledAt: now,
+            refusedPaymentStatusChange: {
+              current: order.paymentStatus,
+              rejected: PaymentStatus.REFUNDED,
+              // NOT `table`: PAID → REFUNDED is a move the table allows. What
+              // refused it is the order's own status, and a log line that does
+              // not say so sends its reader to the wrong file.
+              reason: 'crossRule',
+            },
+          };
+        }
+
         return {
           ...base,
           attemptStatus: PaymentAttemptStatus.REFUNDED,
           settledAt: now,
           paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.REFUNDED },
-          ...(canTransition(order.status, OrderStatus.REFUNDED)
+          ...(movesOrderToRefunded
             ? { statusChange: { from: order.status, to: OrderStatus.REFUNDED } }
             : {}),
         };
