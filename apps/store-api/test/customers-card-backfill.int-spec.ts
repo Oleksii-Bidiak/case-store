@@ -22,10 +22,11 @@ import { PrismaService } from '../src/prisma';
  *   - can it run twice? A restore-then-migrate replays every migration, and a
  *     second run that threw on the unique index would abort the deploy.
  *
- * Unlike the TASK-474 backfill next door — whose replay cases died with the
- * `role_permissions` table they read — this statement reads and writes
- * `user_permissions`, which is the live shape. So the replay stays honest: it is
- * the shipped file, executed, not a fixture that resembles it.
+ * This migration reads and writes `user_permissions`, the live shape, so the
+ * replay needs no scaffolding at all: it is the shipped file, executed. The
+ * TASK-474 backfill next door needs its source table recreated as a TEMP table
+ * first, because TASK-475 dropped `role_permissions` — see that file for why the
+ * replay is still worth having on those terms.
  *
  * Requires an isolated `*_test` database (setup-int.ts forces DATABASE_URL).
  */
@@ -41,8 +42,21 @@ describe('customers:card backfill (TASK-479) — integration', () => {
   const NOTHING = email('nothing');
   const FIXTURE_EMAILS = [READER, WRITER_ONLY, NOTHING];
 
-  /** The shipped migration, read off disk — not a copy of it. */
-  const statement = (() => {
+  const TEMPLATE_WITH_READ = `t479-tpl-read-${suffix}`;
+  const TEMPLATE_WITHOUT = `t479-tpl-plain-${suffix}`;
+  const FIXTURE_TEMPLATES = [TEMPLATE_WITH_READ, TEMPLATE_WITHOUT];
+
+  /**
+   * The shipped migration, read off disk — not a copy of it — split into its
+   * individual statements.
+   *
+   * Split rather than fed in whole because the migration carries TWO statements
+   * since the template carve-out was added, and `$executeRawUnsafe` goes through
+   * the extended protocol, which refuses more than one command per call. Comments
+   * are stripped for the same reason a trailing empty fragment is dropped: what
+   * is executed has to be exactly what Postgres would run, one command at a time.
+   */
+  const statements = (() => {
     const root = resolve(__dirname, '../prisma/migrations');
     const dir = readdirSync(root).find((entry) =>
       entry.endsWith('_backfill_customers_card_permission'),
@@ -50,8 +64,21 @@ describe('customers:card backfill (TASK-479) — integration', () => {
     if (!dir) {
       throw new Error(`No *_backfill_customers_card_permission migration under ${root}`);
     }
-    return readFileSync(join(root, dir, 'migration.sql'), 'utf8');
+    return readFileSync(join(root, dir, 'migration.sql'), 'utf8')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n')
+      .split(';')
+      .map((fragment) => fragment.trim())
+      .filter((fragment) => fragment.length > 0);
   })();
+
+  /** Replay the whole migration, in order. */
+  async function runMigration(): Promise<void> {
+    for (const statement of statements) {
+      await prisma.$executeRawUnsafe(statement);
+    }
+  }
 
   async function idsByEmail(): Promise<Record<string, string>> {
     const users = await prisma.user.findMany({
@@ -59,6 +86,14 @@ describe('customers:card backfill (TASK-479) — integration', () => {
       select: { id: true, email: true },
     });
     return Object.fromEntries(users.map((user) => [user.email, user.id]));
+  }
+
+  async function templateItems(name: string): Promise<string[]> {
+    const template = await prisma.permissionTemplate.findUniqueOrThrow({
+      where: { name },
+      select: { items: { select: { permission: true } } },
+    });
+    return template.items.map((item) => item.permission).sort();
   }
 
   async function permissionsOf(userId: string): Promise<string[]> {
@@ -109,11 +144,25 @@ describe('customers:card backfill (TASK-479) — integration', () => {
       data: { email: NOTHING, passwordHash: 'x', role: UserRole.MANAGER },
     });
 
-    await prisma.$executeRawUnsafe(statement);
+    // Two templates, standing in for what a shop already has when this migration
+    // arrives: one that offered the customer card back when `customers:read` WAS
+    // the card, and one that never did.
+    await prisma.permissionTemplate.create({
+      data: {
+        name: TEMPLATE_WITH_READ,
+        items: { create: [{ permission: 'customers:read' }, { permission: 'orders:read' }] },
+      },
+    });
+    await prisma.permissionTemplate.create({
+      data: { name: TEMPLATE_WITHOUT, items: { create: [{ permission: 'orders:read' }] } },
+    });
+
+    await runMigration();
   });
 
   afterAll(async () => {
     await prisma.user.deleteMany({ where: { email: { in: FIXTURE_EMAILS } } });
+    await prisma.permissionTemplate.deleteMany({ where: { name: { in: FIXTURE_TEMPLATES } } });
     await prisma.$disconnect();
   });
 
@@ -141,11 +190,32 @@ describe('customers:card backfill (TASK-479) — integration', () => {
     expect(await permissionsOf(ids[NOTHING])).toEqual([]);
   });
 
+  it('follows `customers:read` into the TEMPLATES that offered it', async () => {
+    // The people half of this migration is not enough on its own. A template is
+    // what the next hire is set up from, so a key carved out of `customers:read`
+    // has to follow it there too — otherwise the split reaches everybody who
+    // already works here and misses everybody hired afterwards, and the two
+    // groups end up with different access from the same tick.
+    //
+    // «Менеджер (як було)» is the case that makes this concrete: the TASK-474
+    // migration created it one migration before this key existed, and the admin
+    // guide promises it holds exactly what the MANAGER role used to.
+    expect(await templateItems(TEMPLATE_WITH_READ)).toEqual([
+      'customers:card',
+      'customers:read',
+      'orders:read',
+    ]);
+  });
+
+  it('leaves a template that never offered the card alone', async () => {
+    expect(await templateItems(TEMPLATE_WITHOUT)).toEqual(['orders:read']);
+  });
+
   it('runs twice with no second effect', async () => {
     const ids = await idsByEmail();
 
-    await prisma.$executeRawUnsafe(statement);
-    await prisma.$executeRawUnsafe(statement);
+    await runMigration();
+    await runMigration();
 
     // Not just "still exactly one row" — the unique index guarantees that much.
     // The property being proved is that the statement does not THROW on a replay,
@@ -156,6 +226,14 @@ describe('customers:card backfill (TASK-479) — integration', () => {
       'orders:read',
     ]);
     expect(await permissionsOf(ids[WRITER_ONLY])).toEqual(['customers:write']);
+    // The template half is idempotent too: `permission_template_items` has its
+    // own unique index and its own ON CONFLICT, and only the first statement was
+    // ever replayed before the second one existed.
+    expect(await templateItems(TEMPLATE_WITH_READ)).toEqual([
+      'customers:card',
+      'customers:read',
+      'orders:read',
+    ]);
   });
 
   it('grants nothing to a person hired after it ran', async () => {

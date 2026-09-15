@@ -536,13 +536,28 @@ describe('access model migration (TASK-474)', () => {
     );
   });
 
-  it('hands the owner flag to the oldest live admin, and only when nobody holds it', () => {
+  it('hands the owner flag to the oldest admin, and only when nobody holds it', () => {
     expect(ownerFlag).toMatch(/"role"\s*=\s*'ADMIN'/);
-    expect(ownerFlag).toMatch(/ORDER BY[\s\S]*"created_at"\s+ASC/);
     expect(ownerFlag).toMatch(/LIMIT\s+1/);
     // Idempotence and the invariant in one clause: a second run cannot create a
     // second owner, so re-running the backfill cannot trip the index.
     expect(ownerFlag).toMatch(/NOT EXISTS/);
+  });
+
+  it('prefers an ACTIVE admin but does not require one — a shop must not end ownerless', () => {
+    // `is_active` belongs in the ORDER BY, never in the WHERE. As a FILTER it
+    // produced `WHERE "id" = NULL` on a database whose only admin was switched
+    // off: nothing matched, the migration COMMITTED, `migrate deploy` exited 0,
+    // and `_prisma_migrations` recorded it as applied so it could never run
+    // again. The shop then had no owner and no way to acquire one, because the
+    // only `isOwner` write in the API is the transfer and that is `@OwnerOnly`.
+    // An owner somebody must re-activate first is strictly better: re-activation
+    // is a route that exists, appointing an owner is not.
+    expect(ownerFlag).toMatch(/ORDER BY[\s\S]*"is_active"\s+DESC[\s\S]*"created_at"\s+ASC/);
+    expect(ownerFlag).not.toMatch(/"is_active"\s*=\s*true/);
+    // The tombstone stays a hard exclusion: it is set once, never cleared, and
+    // the account's email is mangled, so it can never sign in again.
+    expect(ownerFlag).toMatch(/"deleted_at"\s+IS NULL/);
   });
 
   it('copies only grants that were deliberately allowed', () => {
@@ -555,11 +570,23 @@ describe('access model migration (TASK-474)', () => {
     expect(managerGrants).toMatch(/"allowed"\s*=\s*true/);
   });
 
-  it('copies grants only to managers who are still working here', () => {
-    // A deactivated or tombstoned account must come out of the migration with
-    // nothing. Otherwise the rows sit there waiting, and the day somebody
-    // re-enables the account to "check something" it comes back fully armed.
-    expect(managerGrants).toMatch(/"is_active"\s*=\s*true/);
+  it('excludes tombstones and ONLY tombstones — a manager on leave keeps their set', () => {
+    // The tombstone is permanent; `is_active` is a reversible toggle the owner
+    // flips for somebody on leave. This copy filtered on `is_active = true` at
+    // first, reasoning that rows on a switched-off account would sit there until
+    // somebody re-enabled it and found it fully armed. That reasoning does not
+    // survive the code this wave ships: `StaffService.setStatus(false)` deletes
+    // nobody's rows, so "switched off" always keeps its permissions — and the
+    // sibling migration (`…_backfill_customers_card_permission`) argues the other
+    // way explicitly. One wave answering the same question two ways is a defect
+    // in whichever half is wrong, and it was this one.
+    //
+    // The loss was also unrecoverable: `role_permissions` is dropped by the very
+    // next migration, so a manager skipped here has no source left to restore
+    // from. They come back to an empty menu. Rights are dropped when somebody
+    // LEAVES the staff — `StaffService.updateRole` clears them explicitly — and
+    // being on leave is not leaving.
+    expect(managerGrants).not.toMatch(/"is_active"/);
     expect(managerGrants).toMatch(/"deleted_at"\s+IS NULL/);
   });
 
@@ -701,6 +728,23 @@ describe('customers:card permission backfill migration (TASK-479)', () => {
 
   it('is idempotent, so a restore-then-migrate cannot double-grant or fail', () => {
     expect(statement).toMatch(/ON CONFLICT[\s\S]*DO NOTHING/);
+  });
+
+  it('carries the carve-out into TEMPLATES as well as people', () => {
+    // A template is what the next hire is set up from, so a key split out of
+    // `customers:read` has to follow it there too. Without this the split reaches
+    // everybody who already works here and misses everybody hired afterwards —
+    // two groups with different access from the same tick.
+    //
+    // «Менеджер (як було)» is the concrete case: the TASK-474 migration created
+    // it one migration before this key existed, and `docs/admin-guide.md` tells
+    // the owner it holds exactly what the MANAGER role used to. Without the
+    // second statement that sentence is false in the same release that created
+    // the template.
+    expect(statement).toContain('"permission_template_items"');
+    expect(statement).toContain('"template_id"');
+    // Both halves idempotent, not just the first.
+    expect(statement.match(/ON CONFLICT/g) ?? []).toHaveLength(2);
   });
 
   it('never names a role at all — an admin passes by level, not by row', () => {

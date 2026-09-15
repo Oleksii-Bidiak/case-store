@@ -74,17 +74,39 @@ ALTER TABLE "permission_template_items" ADD CONSTRAINT "permission_template_item
 -- silent: looser, and a key the owner explicitly took away comes back; stricter,
 -- and an operator loses access mid-shift. `permission.catalog.spec.ts` pins this
 -- statement against that repository method, and
--- `test/access-model-backfill.int-spec.ts` executes the block below against a
--- real Postgres and asserts the resulting set row for row.
+-- `test/access-model-backfill.int-spec.ts` SLICES the block below out of this file
+-- by its `-- backfill:*` markers and executes it against a real Postgres, with
+-- `role_permissions` recreated as a TEMP table to stand in for the shop's old
+-- data. Only the source table is a fixture; every predicate — the role, the
+-- `allowed = true`, the liveness flag — is the one that ships here. The markers
+-- are therefore load-bearing: renaming one does not break the build, it removes
+-- the only executable proof of invariant 6.
 --
--- WHY THE OWNER IS THE OLDEST LIVE ADMIN. There is no column that records who
--- founded the shop, so the migration has to choose, and every choice here is a
--- guess. The oldest surviving ADMIN account is the least wrong one available: the
--- shop's first admin is the one that existed before anybody was hired. Deactivated
--- and tombstoned accounts are excluded because handing ownership to an account
--- nobody can sign into produces a shop whose owner-only actions are unreachable.
--- The owner can be transferred afterwards (TASK-478); it cannot be left unset,
--- which is why this runs now rather than being left to a human to remember.
+-- WHY THE OWNER IS THE OLDEST ADMIN, AND WHY A DEACTIVATED ONE STILL COUNTS.
+-- There is no column that records who founded the shop, so the migration has to
+-- choose, and every choice here is a guess. The oldest surviving ADMIN account is
+-- the least wrong one available: the shop's first admin is the one that existed
+-- before anybody was hired.
+--
+-- An ACTIVE admin is preferred — that is what the `ORDER BY is_active DESC` is
+-- for — but a deactivated one is still eligible, and that is the whole point of
+-- the ordering rather than a filter. Requiring `is_active = true` here meant that
+-- a database whose only admin was switched off got `WHERE "id" = NULL`, matched
+-- nothing, and COMMITTED: `migrate deploy` exits 0, `_prisma_migrations` records
+-- the migration as applied, and it never runs again. The shop then has no owner
+-- and no way to acquire one, because the only `isOwner` write in the entire API
+-- is the ownership transfer and that is `@OwnerOnly`. Handing the flag to an
+-- account somebody must re-activate first is strictly better: re-activation is a
+-- route that EXISTS, and appointing an owner is not.
+--
+-- Tombstones (`deleted_at IS NOT NULL`) stay excluded. A soft-deleted account has
+-- a mangled email, cannot sign in, and is never coming back by design — that is
+-- the difference between the reversible toggle and the audit tombstone.
+--
+-- A shop with no ADMIN row at all still ends up with no owner, and that is
+-- correct: there is nobody to promote. `prisma/seed/seeders/users.seeder.ts` and
+-- `src/scripts/create-admin.ts` both claim ownership when nobody holds it, which
+-- is what covers a fresh install and a break-glass recovery respectively.
 --
 -- IDEMPOTENT THROUGHOUT. Every statement can run twice with no second effect —
 -- `NOT EXISTS` on the owner, `ON CONFLICT DO NOTHING` on each insert. That is not
@@ -101,9 +123,10 @@ WHERE "id" = (
     SELECT candidate."id"
     FROM "users" candidate
     WHERE candidate."role" = 'ADMIN'
-      AND candidate."is_active" = true
       AND candidate."deleted_at" IS NULL
-    ORDER BY candidate."created_at" ASC
+    -- Active first, then oldest. A PREFERENCE, not a filter: see the note above
+    -- on why a deactivated admin must still be eligible.
+    ORDER BY candidate."is_active" DESC, candidate."created_at" ASC
     LIMIT 1
   )
   -- Both the re-run guard and the invariant itself: with an owner already in
@@ -112,10 +135,34 @@ WHERE "id" = (
 -- backfill:owner:end
 
 -- backfill:manager-permissions:start
--- Only LIVE staff. A deactivated or tombstoned account must come out of this
--- holding nothing: rows granted to a switched-off account are invisible until
--- somebody switches it back on to "check something", at which point it is fully
--- armed and nobody decided that.
+-- EVERY MANAGER THAT IS NOT A TOMBSTONE, deactivated ones included.
+--
+-- `deleted_at IS NULL` is the only liveness test here, and the asymmetry with
+-- `is_active` is deliberate. The two flags mean different things in this schema:
+-- `deleted_at` is an audit tombstone that is set once and never cleared, while
+-- `is_active` is a reversible visibility toggle the owner flips for somebody on
+-- leave and flips back when they return.
+--
+-- This filtered on `is_active = true` at first, reasoning that rows granted to a
+-- switched-off account would be invisible until somebody re-enabled it, at which
+-- point it would come back fully armed with nobody having decided that. That
+-- reasoning does not survive contact with the code this same wave ships:
+-- `StaffService.setStatus(false)` does NOT delete anybody's rows, so from this
+-- release onward "switched off" ALWAYS keeps its permissions and always comes
+-- back with them. A migration that made the opposite choice was not being
+-- careful, it was being inconsistent with the only behaviour the shop actually
+-- has — and the sibling migration in this very wave
+-- (`20260915120000_backfill_customers_card_permission`) argues the other way
+-- explicitly, because skipping a copy quietly NARROWS somebody on re-activation.
+--
+-- And the loss was unrecoverable rather than merely wrong. `role_permissions` is
+-- dropped by the very next migration, so a manager skipped here has no source
+-- left to restore from: they come back to an empty menu, with the shape of their
+-- old job surviving only in a template somebody has to know to re-apply.
+--
+-- Demotion is where rights are dropped, and it drops them explicitly — see the
+-- clear in `StaffService.updateRole`. Leaving the staff is a decision; being on
+-- leave is not.
 INSERT INTO "user_permissions" ("id", "user_id", "permission", "created_at", "updated_at")
 SELECT
   gen_random_uuid()::text,
@@ -126,7 +173,6 @@ SELECT
 FROM "users" staff
 CROSS JOIN "role_permissions" granted
 WHERE staff."role" = 'MANAGER'
-  AND staff."is_active" = true
   AND staff."deleted_at" IS NULL
   AND granted."role" = 'MANAGER'
   AND granted."allowed" = true
