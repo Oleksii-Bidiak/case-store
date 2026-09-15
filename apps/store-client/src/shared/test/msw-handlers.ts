@@ -123,6 +123,12 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       // so relying on the overrides spread widens them to | undefined.
       paymentMethod: "ON_DELIVERY",
       paidAt: null,
+      // Required-but-nullable on OrderEntity since TASK-471, which exposed the
+      // reservation deadline so the derived «Очікує оплати · N хв» / «Резерв
+      // сплив» marks have something to count from. Same reason as the two above:
+      // left to the overrides spread it widens to | undefined and the factory
+      // stops satisfying its own return type.
+      reservationExpiresAt: null,
       shippingCost: "0.00",
       tax: "0.00",
       total: "998.00",
