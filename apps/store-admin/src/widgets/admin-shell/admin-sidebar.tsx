@@ -13,9 +13,9 @@ import { AdminNavList } from "./admin-nav-list";
  */
 export function AdminSidebar() {
   return (
-    <aside className="hidden h-screen w-64 flex-col border-r border-border bg-card shadow-card lg:flex">
+    <aside className="hidden h-screen w-64 flex-col border-r border-border bg-card shadow-card lg:flex overflow-auto">
       {/* Brand */}
-      <div className="flex h-16 items-center gap-2 px-4">
+      <div className="flex h-32 items-center gap-2 p-4">
         <AdminBrandMark />
       </div>
 
