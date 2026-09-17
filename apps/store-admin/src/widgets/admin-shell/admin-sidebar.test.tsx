@@ -56,7 +56,7 @@ describe("AdminSidebar", () => {
   it("renders the brand and reaches the nav through AdminNavList", async () => {
     renderSidebar();
 
-    expect(screen.getByText("MobileStore")).toBeInTheDocument();
+    expect(screen.getByText("CaseStore")).toBeInTheDocument();
     expect(
       await screen.findByRole("link", { name: dict.nav.dashboard }),
     ).toBeInTheDocument();

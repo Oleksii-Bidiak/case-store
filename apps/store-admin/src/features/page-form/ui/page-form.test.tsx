@@ -55,7 +55,7 @@ describe("PageForm — SERP snippet preview (TASK-268)", () => {
 
     await waitFor(() =>
       expect(previewTitle()).toHaveTextContent(
-        "Доставка та оплата | MobileStore",
+        "Доставка та оплата | CaseStore",
       ),
     );
     expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintDerived);
@@ -75,7 +75,7 @@ describe("PageForm — SERP snippet preview (TASK-268)", () => {
 
     await waitFor(() => expect(previewTitle()).toHaveTextContent("Доставка"));
     // Own title used verbatim (no brand suffix) → tier "own".
-    expect(previewTitle()).not.toHaveTextContent("| MobileStore");
+    expect(previewTitle()).not.toHaveTextContent("| CaseStore");
     expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintOwn);
     expect(titleCounter()).toHaveTextContent("8/60");
   });

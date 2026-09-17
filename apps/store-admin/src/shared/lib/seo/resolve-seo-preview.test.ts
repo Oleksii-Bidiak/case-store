@@ -13,8 +13,8 @@ import {
 // preview stays in behavioral parity with production `<head>` rendering. A
 // manual edit that drifts one side from the other fails here immediately.
 
-const BRAND = "MobileStore";
-const template = resolveEffectiveTitleTemplate(null, BRAND); // "%s | MobileStore"
+const BRAND = "CaseStore";
+const template = resolveEffectiveTitleTemplate(null, BRAND); // "%s | CaseStore"
 
 describe("resolve-seo-preview constants", () => {
   it("pins the storefront limits (60 / 155)", () => {
@@ -44,7 +44,7 @@ describe("resolveSeoPreviewTitle — precedence", () => {
       titleTemplate: template,
     });
     expect(r).toEqual({
-      text: "iPhone 15 Case | MobileStore",
+      text: "iPhone 15 Case | CaseStore",
       tier: "derived",
     });
   });
@@ -65,7 +65,7 @@ describe("resolveSeoPreviewTitle — precedence", () => {
       titleTemplate: template,
     });
     expect(r).toEqual({
-      text: "iPhone 15 Case | MobileStore",
+      text: "iPhone 15 Case | CaseStore",
       tier: "derived",
     });
   });
@@ -73,12 +73,9 @@ describe("resolveSeoPreviewTitle — precedence", () => {
   it("tier 2: applies a custom template to the derived name", () => {
     const r = resolveSeoPreviewTitle({
       contentName: "Чохли",
-      titleTemplate: resolveEffectiveTitleTemplate(
-        "%s — MobileStore UA",
-        BRAND,
-      ),
+      titleTemplate: resolveEffectiveTitleTemplate("%s — CaseStore UA", BRAND),
     });
-    expect(r).toEqual({ text: "Чохли — MobileStore UA", tier: "derived" });
+    expect(r).toEqual({ text: "Чохли — CaseStore UA", tier: "derived" });
   });
 
   it("empty: all three tiers blank → empty text/tier", () => {
@@ -222,18 +219,16 @@ describe("resolveEffectiveTitleTemplate / applyTitleTemplate", () => {
   });
 
   it("falls back to `%s | brand` when missing, blank, or without a %s token", () => {
-    expect(resolveEffectiveTitleTemplate(null, BRAND)).toBe("%s | MobileStore");
-    expect(resolveEffectiveTitleTemplate("   ", BRAND)).toBe(
-      "%s | MobileStore",
-    );
+    expect(resolveEffectiveTitleTemplate(null, BRAND)).toBe("%s | CaseStore");
+    expect(resolveEffectiveTitleTemplate("   ", BRAND)).toBe("%s | CaseStore");
     expect(resolveEffectiveTitleTemplate("No token", BRAND)).toBe(
-      "%s | MobileStore",
+      "%s | CaseStore",
     );
   });
 
   it("falls back when the template has more than one %s token", () => {
     expect(resolveEffectiveTitleTemplate("%s %s", BRAND)).toBe(
-      "%s | MobileStore",
+      "%s | CaseStore",
     );
   });
 

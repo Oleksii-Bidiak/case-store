@@ -1,6 +1,6 @@
 // Static content for the "Інформація та підтримка" hub (/info, Info.dc.html).
 // Curated marketing/support copy mirroring the mockup 1:1 (brand "volta"
-// localized to MobileStore).
+// localized to CaseStore).
 //
 // Migrating to the CMS, section by section. Already admin-managed: Contacts
 // (SiteContactSettings, TASK-154), FAQ (TASK-187), and "Про нас" — the `about`

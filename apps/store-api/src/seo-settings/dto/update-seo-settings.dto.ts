@@ -45,7 +45,7 @@ export class UpdateSeoSettingsDto {
   @ApiPropertyOptional({
     description:
       "Human-readable store name — the single source for the storefront's title template, `openGraph.siteName`, Organization/WebSite JSON-LD, llms.txt, the web manifest and the Merchant feed. Blank/absent → the storefront's built-in SITE_NAME constant (TASK-433).",
-    example: 'MobileStore',
+    example: 'CaseStore',
     maxLength: 120,
   })
   @IsOptional()
@@ -58,7 +58,7 @@ export class UpdateSeoSettingsDto {
 
   @ApiPropertyOptional({
     description: 'Default meta title used when a page has no own title',
-    example: 'MobileStore — аксесуари для смартфонів',
+    example: 'CaseStore — аксесуари для смартфонів',
   })
   @IsOptional()
   @IsString()
@@ -76,8 +76,8 @@ export class UpdateSeoSettingsDto {
 
   @ApiPropertyOptional({
     description:
-      'Page title template — must contain exactly one `%s` token (replaced by the page name), e.g. "%s | MobileStore"',
-    example: '%s | MobileStore',
+      'Page title template — must contain exactly one `%s` token (replaced by the page name), e.g. "%s | CaseStore"',
+    example: '%s | CaseStore',
   })
   @IsOptional()
   @IsString()
@@ -89,7 +89,7 @@ export class UpdateSeoSettingsDto {
 
   @ApiPropertyOptional({
     description: 'Default Open Graph / social-preview image URL',
-    example: 'https://mobilestore.ua/og-default.jpg',
+    example: 'https://casestore.ua/og-default.jpg',
   })
   @IsOptional()
   @IsUrl({ protocols: ['http', 'https'] }, { message: 'defaultOgImage must be a valid URL' })
@@ -138,7 +138,7 @@ export class UpdateSeoSettingsDto {
   @ApiPropertyOptional({
     description:
       'Additional brand-authority profile URLs merged into the Organization `sameAs` schema',
-    example: ['https://facebook.com/mobilestore', 'https://youtube.com/@mobilestore'],
+    example: ['https://facebook.com/casestore', 'https://youtube.com/@casestore'],
     type: [String],
   })
   @IsOptional()

@@ -16,7 +16,7 @@ export const STOREFRONT_URL =
  * {@link STOREFRONT_URL}, for the green breadcrumb line of the SERP-snippet
  * preview shown under every metaTitle/metaDescription pair (TASK-433).
  *
- * Before TASK-433 that line was the hardcoded string `mobilestore.ua` in
+ * Before TASK-433 that line was the hardcoded string `casestore.ua` in
  * `dictionary.ts` — somebody else's domain in the owner's own Google preview.
  * The store's domain is not chosen yet, so the environment is the only honest
  * source: the same `NEXT_PUBLIC_SITE_URL` the storefront already canonicalizes

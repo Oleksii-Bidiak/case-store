@@ -10,13 +10,13 @@ function seoSettingsResponse() {
   return {
     data: {
       id: SINGLETON_ID,
-      defaultMetaTitle: "MobileStore — аксесуари",
+      defaultMetaTitle: "CaseStore — аксесуари",
       defaultMetaDescription: "Магазин аксесуарів та Apple-техніки.",
-      titleTemplate: "%s | MobileStore",
+      titleTemplate: "%s | CaseStore",
       defaultOgImage: null,
       noindexSite: false,
       llmsTxtSummary: null,
-      additionalSameAsLinks: ["https://facebook.com/mobilestore"],
+      additionalSameAsLinks: ["https://facebook.com/casestore"],
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:00.000Z",
     },
@@ -34,12 +34,12 @@ describe("SeoSettingsView (TASK-239)", () => {
     renderWithProviders(<SeoSettingsView />);
 
     expect(
-      await screen.findByDisplayValue("MobileStore — аксесуари"),
+      await screen.findByDisplayValue("CaseStore — аксесуари"),
     ).toBeInTheDocument();
-    expect(screen.getByDisplayValue("%s | MobileStore")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("%s | CaseStore")).toBeInTheDocument();
     // The newline-joined sameAs textarea shows the single seeded link.
     expect(
-      screen.getByDisplayValue("https://facebook.com/mobilestore"),
+      screen.getByDisplayValue("https://facebook.com/casestore"),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: dict.seoSettingsForm.submit }),

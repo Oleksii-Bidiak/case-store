@@ -77,7 +77,7 @@ export function TableToolbar({
     <div
       data-slot="table-toolbar"
       className={cn(
-        "mb-4 flex flex-wrap items-center gap-2 md:flex-nowrap",
+        "mb-4 flex flex-wrap items-center gap-2 md:flex-nowrap flex-col",
         className,
       )}
     >

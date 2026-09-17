@@ -169,7 +169,7 @@ export function resolveSeo(input: ResolveSeoInput): ResolvedSeo {
     titleAbsolute = true;
   } else if (derivedTitle) {
     // Tier 2 — derived from the entity's own content; a plain string so the root
-    // template brands it (`Чохли для iPhone | MobileStore`).
+    // template brands it (`Чохли для iPhone | CaseStore`).
     title = derivedTitle;
     titleAbsolute = false;
   } else if (defaultTitle) {

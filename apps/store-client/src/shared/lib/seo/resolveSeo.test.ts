@@ -257,7 +257,7 @@ describe("resolveTitleTemplate / applyTitleTemplate", () => {
 });
 
 describe("toMetadataTitle", () => {
-  const opts = { siteName: "MobileStore", fallback: "Товари" };
+  const opts = { siteName: "CaseStore", fallback: "Товари" };
 
   it("brands a derived (non-absolute) title with the default template", () => {
     expect(
@@ -265,16 +265,16 @@ describe("toMetadataTitle", () => {
         { title: "Головна", titleAbsolute: false },
         { ...opts, settings: null },
       ),
-    ).toEqual({ absolute: "Головна | MobileStore" });
+    ).toEqual({ absolute: "Головна | CaseStore" });
   });
 
   it("brands a derived title with the admin's custom template when set", () => {
     expect(
       toMetadataTitle(
         { title: "Чохли", titleAbsolute: false },
-        { ...opts, settings: { titleTemplate: "%s — MobileStore UA" } },
+        { ...opts, settings: { titleTemplate: "%s — CaseStore UA" } },
       ),
-    ).toEqual({ absolute: "Чохли — MobileStore UA" });
+    ).toEqual({ absolute: "Чохли — CaseStore UA" });
   });
 
   it("uses an explicit admin override (absolute) verbatim, unbranded", () => {
@@ -292,7 +292,7 @@ describe("toMetadataTitle", () => {
         { title: "", titleAbsolute: false },
         { ...opts, settings: null },
       ),
-    ).toEqual({ absolute: "Товари | MobileStore" });
+    ).toEqual({ absolute: "Товари | CaseStore" });
   });
 });
 
@@ -314,7 +314,7 @@ describe("resolveSeo — category /products call-site (TASK-247)", () => {
     defaultOgImage: null,
     titleTemplate: null,
   };
-  const opts = { settings: seo, siteName: "MobileStore", fallback: "Товари" };
+  const opts = { settings: seo, siteName: "CaseStore", fallback: "Товари" };
 
   /** Replicates the page's category-branch title/description composition. */
   function categoryMetadata(node: {
@@ -339,12 +339,12 @@ describe("resolveSeo — category /products call-site (TASK-247)", () => {
     const meta = categoryMetadata({
       name: "Чохли для iPhone",
       description: "Похідний опис категорії",
-      metaTitle: "Чохли для iPhone — офіційний магазин | MobileStore",
+      metaTitle: "Чохли для iPhone — офіційний магазин | CaseStore",
       metaDescription: "Адмінський опис для пошуку.",
     });
 
     expect(meta.title).toEqual({
-      absolute: "Чохли для iPhone — офіційний магазин | MobileStore",
+      absolute: "Чохли для iPhone — офіційний магазин | CaseStore",
     });
     expect(meta.description).toBe("Адмінський опис для пошуку.");
   });
@@ -358,7 +358,7 @@ describe("resolveSeo — category /products call-site (TASK-247)", () => {
     });
 
     // Derived (non-absolute) name → root template appends the brand.
-    expect(meta.title).toEqual({ absolute: "Чохли для iPhone | MobileStore" });
+    expect(meta.title).toEqual({ absolute: "Чохли для iPhone | CaseStore" });
     expect(meta.description).toBe("Похідний опис категорії");
   });
 });

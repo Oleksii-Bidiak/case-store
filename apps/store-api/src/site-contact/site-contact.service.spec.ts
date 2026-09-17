@@ -6,7 +6,7 @@ import { RevalidationNotifier } from '../publishing';
 
 const mockRow = {
   id: SINGLETON_ID,
-  email: 'support@mobilestore.ua',
+  email: 'support@casestore.ua',
   phone: '+380 44 000 0000',
   workingHours: 'Пн–Нд: 9:00 – 20:00',
   viberLink: null,
@@ -60,7 +60,7 @@ describe('SiteContactService', () => {
       const result = await service.getSettings();
 
       expect(result).toBeInstanceOf(SiteContactSettingsEntity);
-      expect(result.email).toBe('support@mobilestore.ua');
+      expect(result.email).toBe('support@casestore.ua');
       expect(result.phone).toBe('+380 44 000 0000');
       expect(result.workingHours).toBe('Пн–Нд: 9:00 – 20:00');
     });

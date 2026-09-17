@@ -62,7 +62,7 @@ describe("AdminShell — mobile nav drawer", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(
-      within(dialog).getByRole("heading", { name: "MobileStore" }),
+      within(dialog).getByRole("heading", { name: "CaseStore" }),
     ).toBeInTheDocument();
     expect(
       within(dialog).getByRole("link", { name: dict.nav.products }),

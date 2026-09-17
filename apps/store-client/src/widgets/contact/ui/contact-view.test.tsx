@@ -8,9 +8,9 @@ import { ContactView } from "./contact-view";
 const contact = {
   id: "1",
   phone: "0 800 55 44 33",
-  email: "hi@mobilestore.ua",
+  email: "hi@casestore.ua",
   workingHours: "Пн–Пт 9:00–18:00",
-  telegramLink: "https://t.me/mobilestore",
+  telegramLink: "https://t.me/casestore",
   viberLink: null,
   instagramLink: null,
   createdAt: "",

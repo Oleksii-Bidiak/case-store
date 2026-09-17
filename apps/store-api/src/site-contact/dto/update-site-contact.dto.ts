@@ -9,7 +9,7 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 export class UpdateSiteContactDto {
   @ApiPropertyOptional({
     description: 'Support email address',
-    example: 'support@mobilestore.ua',
+    example: 'support@casestore.ua',
   })
   @IsOptional()
   @IsEmail({}, { message: 'Email must be a valid email address' })

@@ -61,7 +61,7 @@ PDP/blog/legal; `defaultOgImage`/`titleTemplate`/`noindexSite` у SeoSettings і
 
 ### SEO-3 — Бренд у домашньому title + брендовий og:image + favicon-пакет — **M**
 
-- `dict.meta.rootTitle` («Магазин аксесуарів для телефонів») → «MobileStore — магазин
+- `dict.meta.rootTitle` («Магазин аксесуарів для телефонів») → «CaseStore — магазин
   аксесуарів для телефонів» (код-fallback; адмінський defaultMetaTitle і так має пріоритет);
 - створити брендовий OG-образ 1200×630 (простий: логотип + слоган на брендовому фоні,
   статичний файл `app/opengraph-image.png` або public/) і зашити як code-fallback,
@@ -105,7 +105,7 @@ Low-пункт репорту: явні stanza для GPTBot/Google-Extended/Per
 - FAQ-записи «доставка / гарантія / оплата / сумісність» (FAQPage-схема вже рендериться —
   порожня без контенту): Claude Code може згенерувати чернетки відповідей на базі
   наявних legal/info-текстів, власник вичитує і публікує через адмінку;
-- заповнити SeoSettings: defaultMetaTitle/Description, titleTemplate `%s | MobileStore`,
+- заповнити SeoSettings: defaultMetaTitle/Description, titleTemplate `%s | CaseStore`,
   завантажити og-image (після SEO-3 з'явиться і code-fallback);
 - alt-тексти банерів (поле в схемі є) — пройтись по активних банерах.
 

@@ -119,7 +119,7 @@ describe("SeoHealthSection — defaults-filled nudge (TASK-269)", () => {
     renderWithProviders(
       <SeoHealthSection
         settings={makeSettings({
-          defaultMetaTitle: "MobileStore",
+          defaultMetaTitle: "CaseStore",
           defaultMetaDescription: "Магазин аксесуарів",
         })}
       />,
@@ -133,7 +133,7 @@ describe("SeoHealthSection — defaults-filled nudge (TASK-269)", () => {
     stubHealth();
     renderWithProviders(
       <SeoHealthSection
-        settings={makeSettings({ defaultMetaTitle: "MobileStore" })}
+        settings={makeSettings({ defaultMetaTitle: "CaseStore" })}
       />,
     );
 

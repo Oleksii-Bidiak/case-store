@@ -137,7 +137,7 @@ export const dict = {
   },
 
   footer: {
-    rights: (year: number) => `© ${year} MobileStore. Усі права захищено.`,
+    rights: (year: number) => `© ${year} CaseStore. Усі права захищено.`,
     tagline:
       "Інтернет-магазин аксесуарів та ґаджетів. Оригінальна продукція з офіційною гарантією та доставкою по Україні.",
     shopTitle: "Магазин",
@@ -152,7 +152,7 @@ export const dict = {
     companyPrivacy: "Політика конфіденційності",
     companyTerms: "Умови використання",
     contactTitle: "Контакти",
-    contactEmail: "support@mobilestore.ua",
+    contactEmail: "support@casestore.ua",
     contactPhone: "+380 44 000 0000",
     contactHours: "Пн–Нд: 9:00 – 20:00",
     paymentsAria: "Способи оплати",
@@ -363,7 +363,7 @@ export const dict = {
     badge: "ЖУРНАЛ MOBILESTORE",
     heading: "Блог про техніку та ґаджети",
     subtitle:
-      "Огляди, гайди й поради від команди MobileStore — щоб обрати саме те, що потрібно, і вичавити з ґаджета максимум.",
+      "Огляди, гайди й поради від команди CaseStore — щоб обрати саме те, що потрібно, і вичавити з ґаджета максимум.",
     searchPlaceholder: "Пошук у блозі…",
     searchAria: "Пошук у блозі",
     categoryFilterAria: "Категорії блогу",
@@ -381,7 +381,7 @@ export const dict = {
     newsletter: {
       heading: "Не пропускай нові статті",
       subtitle:
-        "Підписуйся на канали MobileStore — огляди, гайди та знижки першими.",
+        "Підписуйся на канали CaseStore — огляди, гайди та знижки першими.",
       // External social links — no real URLs yet (href "#"). The widget renders a
       // "coming soon" toast for any placeholder href and a real <a> once set.
       socials: [
@@ -406,7 +406,7 @@ export const dict = {
       readSuffix: "читання",
       authorRolePlaceholder: "Оглядач мобільної техніки",
       authorBioPlaceholder:
-        "Тестує смартфони й ноутбуки для MobileStore понад 5 років. Любить довгі порівняння та чесні висновки без маркетингу.",
+        "Тестує смартфони й ноутбуки для CaseStore понад 5 років. Любить довгі порівняння та чесні висновки без маркетингу.",
     },
     // TASK-417 — the hub pages properly now (numbered pages, one slice each)
     // instead of growing one ever-longer list, so the old "показати більше"
@@ -437,7 +437,7 @@ export const dict = {
       badge: "ДОКУМЕНТИ",
       heading: "Правова інформація",
       subtitle:
-        "Усі офіційні документи MobileStore в одному місці — політики, умови та гарантії. Оберіть потрібний документ, щоб прочитати повну редакцію.",
+        "Усі офіційні документи CaseStore в одному місці — політики, умови та гарантії. Оберіть потрібний документ, щоб прочитати повну редакцію.",
       // "{updatedPrefix} {date}" → "Оновлено 12 черв. 2026".
       updatedPrefix: "Оновлено",
       empty: "Документів поки немає.",
@@ -544,7 +544,7 @@ export const dict = {
     warrantyIntro:
       "Уся техніка — офіційна, з гарантією виробника. Сервісне обслуговування — [сервісний центр / партнер].",
     servicesHeading: "Додаткові сервіси захисту",
-    aboutHeading: "Ми — MobileStore",
+    aboutHeading: "Ми — CaseStore",
     aboutIntro:
       "Інтернет-магазин електроніки, який з [рік заснування] року допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
     valuesHeading: "Чому обирають нас",
@@ -923,7 +923,7 @@ export const dict = {
       },
       warranty: {
         title: "Офіційна гарантія 12 міс.",
-        text: "Сервісне обслуговування MobileStore",
+        text: "Сервісне обслуговування CaseStore",
       },
       returns: { title: "Повернення 14 днів", text: "Без пояснення причин" },
     },
@@ -1778,7 +1778,7 @@ export const dict = {
   },
 
   meta: {
-    rootTitle: "MobileStore — магазин аксесуарів для телефонів",
+    rootTitle: "CaseStore — магазин аксесуарів для телефонів",
     rootDescription:
       "Ваш магазин аксесуарів для мобільних телефонів — чохли, зарядні пристрої, захисні скельця та інше.",
     homeTitle: "Головна",
@@ -1797,45 +1797,45 @@ export const dict = {
     compatTitle: (categoryName: string, deviceName: string) =>
       `${categoryName} для ${deviceName}`,
     compatDescription: (categoryName: string, deviceName: string) =>
-      `${categoryName} для ${deviceName} у MobileStore — перевірена сумісність, оригінальні аксесуари та швидка доставка по Україні.`,
+      `${categoryName} для ${deviceName} у CaseStore — перевірена сумісність, оригінальні аксесуари та швидка доставка по Україні.`,
     // Shown only for the split second before notFound() owns the response: a
     // 404 still needs *a* metadata object (same shape as the category landing).
     compatFallbackTitle: "Сумісні аксесуари",
     productFallbackTitle: "Товар",
     productFallbackDescription: "Переглянути деталі товару.",
     pageFallbackTitle: "Сторінка",
-    cartTitle: "Кошик | MobileStore",
+    cartTitle: "Кошик | CaseStore",
     cartDescription: "Перегляньте та змініть товари у вашому кошику.",
-    checkoutTitle: "Оформлення замовлення | MobileStore",
+    checkoutTitle: "Оформлення замовлення | CaseStore",
     checkoutDescription: "Завершіть оформлення покупки.",
-    orderTitle: (ref: string) => `Замовлення ${ref} підтверджено | MobileStore`,
+    orderTitle: (ref: string) => `Замовлення ${ref} підтверджено | CaseStore`,
     // Deliberately carries no order reference: the URL that reaches this page is
     // a bearer token from an email, so the title must stay uninformative to
     // anyone the link is forwarded to (TASK-338).
-    guestOrderTitle: "Статус замовлення | MobileStore",
+    guestOrderTitle: "Статус замовлення | CaseStore",
     // TASK-483: публічна форма «номер + телефон». Індексувати її МОЖНА — на
     // відміну від сторінки за токеном, тут в URL немає нічого приватного, а
     // покупець, який шукає «як дізнатися статус замовлення», має її знайти.
-    orderLookupTitle: "Статус замовлення за номером | MobileStore",
+    orderLookupTitle: "Статус замовлення за номером | CaseStore",
     orderLookupDescription:
       "Перевірте стан замовлення за номером із листа-підтвердження та номером телефону — без реєстрації та входу.",
-    loginTitle: "Вхід | MobileStore",
+    loginTitle: "Вхід | CaseStore",
     loginDescription: "Увійдіть до свого акаунту.",
-    registerTitle: "Реєстрація | MobileStore",
+    registerTitle: "Реєстрація | CaseStore",
     registerDescription: "Створіть новий акаунт.",
-    forgotPasswordTitle: "Відновлення пароля | MobileStore",
+    forgotPasswordTitle: "Відновлення пароля | CaseStore",
     forgotPasswordDescription: "Отримайте посилання для скидання пароля.",
-    resetPasswordTitle: "Новий пароль | MobileStore",
+    resetPasswordTitle: "Новий пароль | CaseStore",
     resetPasswordDescription: "Установіть новий пароль для вашого акаунту.",
-    verifyEmailTitle: "Підтвердження email | MobileStore",
+    verifyEmailTitle: "Підтвердження email | CaseStore",
     verifyEmailDescription: "Підтвердіть свою електронну адресу.",
-    accountTitle: "Мій акаунт | MobileStore",
+    accountTitle: "Мій акаунт | CaseStore",
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
-    ordersTitle: "Мої замовлення | MobileStore",
+    ordersTitle: "Мої замовлення | CaseStore",
     ordersDescription: "Історія ваших замовлень.",
     blogTitle: "Блог",
     blogDescription:
-      "Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди MobileStore.",
+      "Огляди, гайди та поради про смартфони, аксесуари й техніку — від команди CaseStore.",
     notFoundTitle: "Сторінку не знайдено",
     notFoundDescription:
       "Схоже, такої сторінки не існує. Скористайтеся пошуком або поверніться на головну.",
@@ -1844,7 +1844,7 @@ export const dict = {
       "Найкращі ціни сезону — промокоди тижня та товари зі знижкою на смартфони, ноутбуки та аудіо.",
     contactTitle: "Звʼязатися з нами",
     contactDescription:
-      "Гаряча лінія, пошта, месенджери та адреса шоуруму — оберіть зручний спосіб звʼязку з MobileStore.",
+      "Гаряча лінія, пошта, месенджери та адреса шоуруму — оберіть зручний спосіб звʼязку з CaseStore.",
   },
 
   // TASK-077 — variant dots + quick-add overlay on the product card.
@@ -1896,7 +1896,7 @@ export const dict = {
     /** Error toast when a toggle/remove mutation fails. */
     error: "Не вдалося оновити список бажань. Спробуйте ще раз.",
     /** Metadata for the /wishlist route. */
-    metaTitle: "Список бажань | MobileStore",
+    metaTitle: "Список бажань | CaseStore",
     metaDescription: "Збережені товари у вашому списку бажань.",
     // TASK-167-P — wishlist redesign (Wishlist.dc.html): a client-side toolbar
     // (view / sort / add-all) + sidebar filters over the fetched saved items.

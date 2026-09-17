@@ -5,7 +5,7 @@ import { SeoSnippetPreview, type SeoSnippetPreviewProps } from ".";
 const d = dict.seoSnippetPreview;
 
 const baseProps: SeoSnippetPreviewProps = {
-  title: "Best iPhone 15 Case | MobileStore",
+  title: "Best iPhone 15 Case | CaseStore",
   titleTier: "own",
   description: "Shop the best clear case for iPhone 15.",
   descriptionTier: "own",
@@ -25,7 +25,7 @@ describe("SeoSnippetPreview — rendering", () => {
   it("renders the title, green URL, and description from props", () => {
     renderPreview();
     expect(screen.getByTestId("seo-snippet-title")).toHaveTextContent(
-      "Best iPhone 15 Case | MobileStore",
+      "Best iPhone 15 Case | CaseStore",
     );
     expect(screen.getByTestId("seo-snippet-url")).toHaveTextContent(
       "example.ua › products › clear-case",

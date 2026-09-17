@@ -176,7 +176,7 @@ model SeoSettings {
   id                      String   @id
   defaultMetaTitle        String?  @map("default_meta_title")
   defaultMetaDescription  String?  @map("default_meta_description")
-  /// Must contain exactly one `%s` token when set, e.g. "%s | MobileStore".
+  /// Must contain exactly one `%s` token when set, e.g. "%s | CaseStore".
   /// Null → falls back to the current hardcoded `%s | ${SITE_NAME}` template.
   titleTemplate           String?  @map("title_template")
   defaultOgImage          String?  @map("default_og_image")
@@ -324,7 +324,7 @@ unit-tested per the existing `SiteContactRepository`/`SiteContactService` spec c
       (`dict.nav.seoSettings` → `/settings/seo`, `Search` icon)
 - [ ] Every field has a `dict.seoSettingsForm.xHint` plain-UA explainer, e.g.
       `titleTemplateHint: "Шаблон заголовка сторінки. %s буде замінено на назву конкретної
-    сторінки. Залиште порожнім — і будемо використовувати назву магазину."`
+сторінки. Залиште порожнім — і будемо використовувати назву магазину."`
 - [ ] `additionalSameAsLinks` rendered as one `<Textarea>` (one URL per line); zod splits/trims/
       drops blanks/validates each as a URL (Decision 4)
 - [ ] `npm run build`/`lint`/`typecheck` clean across all three workspaces
@@ -432,7 +432,7 @@ unit-tested per the existing `SiteContactRepository`/`SiteContactService` spec c
       автоматично з назви товару."_)
 - [ ] PDP `generateMetadata` (`app/products/[slug]/page.tsx`) replaced with
       `resolveSeo({ entityTitle: product.metaTitle, entityDescription: product.metaDescription,
-    fallback: { name: product.name, description: product.description, brand: brandName } })` —
+fallback: { name: product.name, description: product.description, brand: brandName } })` —
       entity meta wins, else `SeoSettings` defaults, else the current
       `dict.meta.productFallbackDescription`-based derivation (kept as the innermost fallback)
 - [ ] Admin RTL test: fields render, submit includes trimmed values, blank submits `undefined`

@@ -223,14 +223,14 @@ export async function GET(): Promise<Response> {
 <?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">
   <channel>
-    <title>MobileStore</title>
-    <link>https://mobilestore.com</link>
+    <title>CaseStore</title>
+    <link>https://casestore.com</link>
     <description>Ваш магазин аксесуарів для мобільних телефонів — ...</description>
     <item>
       <g:id>550e8400-e29b-41d4-a716-446655440000</g:id>
       <title>iPhone 15 Pro Case — Clear MagSafe</title>
       <description>Premium clear case...</description>
-      <link>https://mobilestore.com/products/iphone-15-pro-case-clear-magsafe</link>
+      <link>https://casestore.com/products/iphone-15-pro-case-clear-magsafe</link>
       <g:image_link>https://cdn.example.com/images/product-1.jpg</g:image_link>
       <g:price>29.99 UAH</g:price>
       <g:availability>in_stock</g:availability>

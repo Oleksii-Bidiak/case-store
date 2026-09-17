@@ -37,7 +37,7 @@ function personForm(count: number): string {
  * defined in one place. Grow this per area as screens are localized.
  */
 export const dict = {
-  brand: "MobileStore",
+  brand: "CaseStore",
 
   app: {
     metaTitle: "Адмін-панель — Магазин мобільних аксесуарів",

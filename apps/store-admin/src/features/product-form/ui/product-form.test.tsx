@@ -664,7 +664,7 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
     );
 
     await waitFor(() =>
-      expect(previewTitle()).toHaveTextContent("Clear Case | MobileStore"),
+      expect(previewTitle()).toHaveTextContent("Clear Case | CaseStore"),
     );
     expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintDerived);
   });
@@ -684,7 +684,7 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
       expect(previewTitle()).toHaveTextContent("Best Clear Case"),
     );
     // Own title used verbatim (no brand suffix) → tier "own".
-    expect(previewTitle()).not.toHaveTextContent("| MobileStore");
+    expect(previewTitle()).not.toHaveTextContent("| CaseStore");
     expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintOwn);
     expect(titleCounter()).toHaveTextContent("15/60");
     // Typing through the full RHF form + live SERP preview re-renders is slow in jsdom.
@@ -706,7 +706,7 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
     await userEvent.clear(metaTitleField());
 
     await waitFor(() =>
-      expect(previewTitle()).toHaveTextContent("Clear Case | MobileStore"),
+      expect(previewTitle()).toHaveTextContent("Clear Case | CaseStore"),
     );
   });
 });

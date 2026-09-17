@@ -18,7 +18,7 @@ export class SiteContactSettingsEntity {
 
   @ApiProperty({
     description: 'Support email address',
-    example: 'support@mobilestore.ua',
+    example: 'support@casestore.ua',
     type: String,
     nullable: true,
     required: false,

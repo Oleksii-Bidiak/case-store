@@ -105,7 +105,7 @@ describe("root layout generateMetadata (TASK-279)", () => {
     const meta = await generateMetadata();
 
     const title = meta.title as { default: string; template: string };
-    expect(title.default.startsWith("MobileStore —")).toBe(true);
+    expect(title.default.startsWith("CaseStore —")).toBe(true);
     expect(title.default).toBe(dict.meta.rootTitle);
   });
 

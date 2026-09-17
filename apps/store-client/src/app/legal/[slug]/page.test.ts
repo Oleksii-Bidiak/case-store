@@ -109,9 +109,9 @@ describe("legal/[slug] generateMetadata (TASK-268 review)", () => {
 
     const meta = await runMeta();
 
-    // Tier-3 derived title → branded via the default `%s | MobileStore` template.
+    // Tier-3 derived title → branded via the default `%s | CaseStore` template.
     expect(meta.title).toEqual({
-      absolute: "Доставка та оплата | MobileStore",
+      absolute: "Доставка та оплата | CaseStore",
     });
     // Description derived from the excerpt (tier 3), not omitted like before.
     expect(meta.description).toBe("Умови доставки Новою Поштою.");
@@ -123,7 +123,7 @@ describe("legal/[slug] generateMetadata (TASK-268 review)", () => {
   it("uses a page's own metaTitle verbatim (absolute, unbranded)", async () => {
     fetchPage.mockResolvedValue(
       makePage({
-        metaTitle: "Доставка Новою Поштою — MobileStore",
+        metaTitle: "Доставка Новою Поштою — CaseStore",
         metaDescription: "Все про доставку.",
       }),
     );
@@ -132,7 +132,7 @@ describe("legal/[slug] generateMetadata (TASK-268 review)", () => {
     const meta = await runMeta();
 
     expect(meta.title).toEqual({
-      absolute: "Доставка Новою Поштою — MobileStore",
+      absolute: "Доставка Новою Поштою — CaseStore",
     });
     expect(meta.description).toBe("Все про доставку.");
   });
@@ -146,8 +146,8 @@ describe("legal/[slug] generateMetadata (TASK-268 review)", () => {
     const meta = await runMeta();
 
     const absolute = (meta.title as { absolute: string }).absolute;
-    expect(absolute.endsWith(" | MobileStore")).toBe(true);
-    const derivedPart = absolute.replace(" | MobileStore", "");
+    expect(absolute.endsWith(" | CaseStore")).toBe(true);
+    const derivedPart = absolute.replace(" | CaseStore", "");
     expect(derivedPart.length).toBeLessThanOrEqual(61); // 60 + ellipsis
     expect(derivedPart.endsWith("…")).toBe(true);
   });

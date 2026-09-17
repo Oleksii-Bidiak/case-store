@@ -119,7 +119,7 @@ describe("Footer — store logo (TASK-299)", () => {
     render(await Footer());
 
     // The brand link is the wordmark — unchanged from before the Logo component.
-    expect(screen.getByRole("link", { name: "MobileStore" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "CaseStore" })).toHaveAttribute(
       "href",
       "/",
     );
@@ -132,10 +132,10 @@ describe("Footer — store logo (TASK-299)", () => {
 
     render(await Footer());
 
-    const img = screen.getByRole("img", { name: "MobileStore" });
+    const img = screen.getByRole("img", { name: "CaseStore" });
     expect(img).toHaveAttribute("src", logoUrl);
     // The link's accessible name still resolves to the brand, via the alt text.
-    expect(screen.getByRole("link", { name: "MobileStore" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "CaseStore" })).toHaveAttribute(
       "href",
       "/",
     );

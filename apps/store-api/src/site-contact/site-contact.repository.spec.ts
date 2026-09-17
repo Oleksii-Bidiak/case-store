@@ -4,7 +4,7 @@ import { SiteContactRepository, SINGLETON_ID } from './site-contact.repository';
 
 const mockRow = {
   id: SINGLETON_ID,
-  email: 'support@mobilestore.ua',
+  email: 'support@casestore.ua',
   phone: '+380 44 000 0000',
   workingHours: 'Пн–Нд: 9:00 – 20:00',
   viberLink: null,
@@ -60,7 +60,7 @@ describe('SiteContactRepository', () => {
   describe('upsertSettings', () => {
     it('upserts the singleton row with the well-known ID and provided fields', async () => {
       prismaMock.siteContactSettings.upsert.mockResolvedValue(mockRow);
-      const dto = { email: 'support@mobilestore.ua', phone: '+380 44 000 0000' };
+      const dto = { email: 'support@casestore.ua', phone: '+380 44 000 0000' };
 
       const result = await repository.upsertSettings(dto);
 

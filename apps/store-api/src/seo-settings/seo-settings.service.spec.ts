@@ -6,7 +6,7 @@ import { RevalidationNotifier } from '../publishing';
 
 const mockRow = {
   id: SINGLETON_ID,
-  siteName: 'MobileStore',
+  siteName: 'CaseStore',
   defaultMetaTitle: null,
   defaultMetaDescription: 'Магазин аксесуарів',
   titleTemplate: null,
@@ -85,7 +85,7 @@ describe('SeoSettingsService', () => {
       const result = await service.getSettings();
 
       expect(result).toBeInstanceOf(SeoSettingsEntity);
-      expect(result.siteName).toBe('MobileStore');
+      expect(result.siteName).toBe('CaseStore');
       expect(result.defaultMetaDescription).toBe('Магазин аксесуарів');
       expect(result.noindexSite).toBe(false);
     });

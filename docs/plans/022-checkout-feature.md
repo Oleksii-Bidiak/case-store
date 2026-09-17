@@ -689,7 +689,7 @@ font-semibold`; disabled and `opacity-50` when pending
 - [ ] Exports static `metadata`:
   ```ts
   export const metadata: Metadata = {
-    title: "Checkout | MobileStore",
+    title: "Checkout | CaseStore",
     description: "Complete your purchase.",
   };
   ```
@@ -725,7 +725,7 @@ font-semibold`; disabled and `opacity-50` when pending
 - [ ] `src/app/orders/[id]/confirmation/page.tsx` created as a Server Component
 - [ ] Accepts `params: Promise<{ id: string }>` per Next.js App Router convention (params
       is a Promise in the version used by this project — see existing `[slug]` pattern)
-- [ ] Exports `generateMetadata` returning `{ title: "Order Confirmed | MobileStore" }`
+- [ ] Exports `generateMetadata` returning `{ title: "Order Confirmed | CaseStore" }`
 - [ ] Renders a minimal placeholder UI:
   - `<h1>Thank you for your order!</h1>`
   - `<p>Your order <strong>{id}</strong> has been placed.</p>`
@@ -755,7 +755,7 @@ font-semibold`; disabled and `opacity-50` when pending
 - [ ] `src/widgets/cart/ui/cart-summary.tsx` updated: the disabled `<button>` placeholder
       "Proceed to Checkout" is replaced with an active `<Link href="/checkout">` styled
       identically to the old button (`bg-primary text-primary-foreground rounded-lg w-full
-    px-6 py-3 font-semibold text-center`) but no longer `disabled` or `cursor-not-allowed`
+px-6 py-3 font-semibold text-center`) but no longer `disabled` or `cursor-not-allowed`
 - [ ] The `Link` is imported from `next/link`
 - [ ] The `aria-label="Checkout — coming in a future update"` is removed; replace with
       `aria-label="Proceed to checkout"`

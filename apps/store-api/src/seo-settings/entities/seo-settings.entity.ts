@@ -20,7 +20,7 @@ export class SeoSettingsEntity {
   @ApiProperty({
     description:
       'Human-readable store name (TASK-433). Null → the storefront falls back to its built-in SITE_NAME constant. Read by every server-rendered surface: title template, og:site_name, Organization/WebSite/BlogPosting JSON-LD, llms.txt, the web manifest, the Merchant feed.',
-    example: 'MobileStore',
+    example: 'CaseStore',
     type: String,
     nullable: true,
     required: false,
@@ -29,7 +29,7 @@ export class SeoSettingsEntity {
 
   @ApiProperty({
     description: 'Default meta title used when a page has no own title',
-    example: 'MobileStore — аксесуари для смартфонів',
+    example: 'CaseStore — аксесуари для смартфонів',
     type: String,
     nullable: true,
     required: false,
@@ -46,8 +46,8 @@ export class SeoSettingsEntity {
   defaultMetaDescription!: string | null;
 
   @ApiProperty({
-    description: 'Title template — must contain exactly one `%s` token, e.g. "%s | MobileStore"',
-    example: '%s | MobileStore',
+    description: 'Title template — must contain exactly one `%s` token, e.g. "%s | CaseStore"',
+    example: '%s | CaseStore',
     type: String,
     nullable: true,
     required: false,
@@ -56,7 +56,7 @@ export class SeoSettingsEntity {
 
   @ApiProperty({
     description: 'Default Open Graph / social-preview image URL',
-    example: 'https://mobilestore.ua/og-default.jpg',
+    example: 'https://casestore.ua/og-default.jpg',
     type: String,
     nullable: true,
     required: false,
@@ -111,7 +111,7 @@ export class SeoSettingsEntity {
   @ApiProperty({
     description:
       'Additional brand-authority profile URLs merged into the Organization `sameAs` schema',
-    example: ['https://facebook.com/mobilestore', 'https://youtube.com/@mobilestore'],
+    example: ['https://facebook.com/casestore', 'https://youtube.com/@casestore'],
     type: [String],
   })
   additionalSameAsLinks!: string[];

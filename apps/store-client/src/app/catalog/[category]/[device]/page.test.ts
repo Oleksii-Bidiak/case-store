@@ -178,7 +178,7 @@ describe("catalog/[category]/[device] — metadata (TASK-490)", () => {
       pair({
         deviceModel: {
           ...pair().data.deviceModel,
-          metaTitle: "Чохли для iPhone 15 Pro — MobileStore",
+          metaTitle: "Чохли для iPhone 15 Pro — CaseStore",
           metaDescription: "Понад 40 моделей у наявності.",
         },
       }) as never,
@@ -188,7 +188,7 @@ describe("catalog/[category]/[device] — metadata (TASK-490)", () => {
 
     // An admin-typed title is used verbatim (titleAbsolute), not re-branded.
     expect(result.title).toEqual({
-      absolute: "Чохли для iPhone 15 Pro — MobileStore",
+      absolute: "Чохли для iPhone 15 Pro — CaseStore",
     });
     expect(result.description).toBe("Понад 40 моделей у наявності.");
   });

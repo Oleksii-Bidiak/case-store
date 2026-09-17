@@ -181,7 +181,7 @@ is introduced.
   rendered) to suppress Radix's dev-only "Missing Description" warning — same convention as
   `store-client`'s header `SheetContent`.
 - `SheetContent` renders a visible `SheetHeader`/`SheetTitle` reusing the same brand row (Package
-  icon + "MobileStore") the desktop `<aside>` already shows, satisfying Radix's requirement for an
+  icon + "CaseStore") the desktop `<aside>` already shows, satisfying Radix's requirement for an
   accessible dialog title without inventing new copy.
 - No duplicate-landmark risk: `hidden lg:flex` fully removes the desktop `<aside>` from the
   accessibility tree (`display: none`) below `lg`, so only one `<nav>` is ever reachable by
@@ -294,7 +294,7 @@ below.
       the DOM's rendered layout and the accessibility tree below `lg` via `display: none`)
 - [ ] `mobile-nav-drawer.tsx` created: fully-controlled `Sheet` (`open`/`onOpenChange` props, no
       `SheetTrigger`), `SheetContent side="left"` with `aria-describedby={undefined}`, a
-      `SheetHeader`/`SheetTitle` reusing the brand row (Package icon + "MobileStore"), and
+      `SheetHeader`/`SheetTitle` reusing the brand row (Package icon + "CaseStore"), and
       `<AdminNavList onNavigate={() => onOpenChange(false)} />`
 - [ ] `admin-shell.tsx` created ("use client"): owns `useState mobileNavOpen`, a
       `useEffect(() => setMobileNavOpen(false), [pathname])` route-change backstop (via
@@ -303,7 +303,7 @@ below.
 p-4 lg:p-6">{children}</main>` inside the existing `flex h-screen overflow-hidden` wrapper
 - [ ] `admin-header.tsx`: accepts `mobileNavOpen: boolean` + `onOpenMobileNav: () => void` props;
       renders a `Button variant="ghost" size="icon" className="shrink-0 lg:hidden"
-  aria-label={dict.header.openMenu} aria-expanded={mobileNavOpen} onClick={onOpenMobileNav}`
+aria-label={dict.header.openMenu} aria-expanded={mobileNavOpen} onClick={onOpenMobileNav}`
       (lucide `Menu` icon) to the left of the `<h1>`; header row gets `px-4 lg:px-6` (was `px-6`)
       and the left group gets `min-w-0 flex-1`; `<h1>` gains `truncate`
 - [ ] `apps/store-admin/src/app/(dashboard)/layout.tsx` simplifies to
@@ -311,7 +311,7 @@ p-4 lg:p-6">{children}</main>` inside the existing `flex h-screen overflow-hidde
 - [ ] `dictionary.ts` gains `dict.header.openMenu: "Відкрити меню"`
 - [ ] `index.ts` barrel-exports `AdminShell` and `MobileNavDrawer`
 - [ ] New `admin-shell.test.tsx` (or `mobile-nav-drawer.test.tsx`): burger click opens the drawer
-      (drawer content becomes visible, e.g. the "MobileStore" `SheetTitle` and nav links appear);
+      (drawer content becomes visible, e.g. the "CaseStore" `SheetTitle` and nav links appear);
       clicking a nav link inside the open drawer closes it (drawer content disappears); pressing
       Esc while the drawer is open closes it (mirrors the existing Radix-based Esc-close precedent
       in `apps/store-client/src/shared/ui/account-dropdown.test.tsx`)
@@ -360,7 +360,7 @@ p-4 lg:p-6">{children}</main>` inside the existing `flex h-screen overflow-hidde
 - [ ] At 1024 (the `lg` cutover): the static desktop `<aside>` renders instead of the drawer/burger
       (burger is `lg:hidden`, hidden at this width)
 - [ ] At every width in the matrix, `document.documentElement.scrollWidth <=
-  document.documentElement.clientWidth` (no page-level horizontal scrollbar) on every section
+document.documentElement.clientWidth` (no page-level horizontal scrollbar) on every section
       listed above — a data table scrolling **inside its own bounded container** is acceptable and
       not a failure (that's TASK-258's remit); a page-level sideways scroll is a failure
 - [ ] `AdminHeader` does not overflow at 360px on any section — title truncates instead of wrapping
