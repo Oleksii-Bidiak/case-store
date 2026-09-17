@@ -237,7 +237,7 @@ omits `sku` when null.
 Note: There is no `brand` field on `ProductEntity`. The `Organization` schema
 on the home page doubles as the brand for the `Product` schema's `brand.name`
 (hardcoded to site name or `NEXT_PUBLIC_SITE_NAME` if added). For now it
-defaults to `"MobileStore"` — flagged as a future env var.
+defaults to `"CaseStore"` — flagged as a future env var.
 
 Note: `aggregateRating` is absent from the API response — deferred as documented
 in A7.
@@ -282,7 +282,7 @@ next.config.ts                    (modify) — add NEXT_PUBLIC_SITE_URL + NEXT_P
 {
   "@context": "https://schema.org",
   "@type": "Organization",
-  "name": "MobileStore",
+  "name": "CaseStore",
   "url": "https://example.com",
   "logo": "https://example.com/logo.png"
 }
@@ -296,7 +296,7 @@ Note: `logo` is optional; included only when a logo URL is available from config
 {
   "@context": "https://schema.org",
   "@type": "WebSite",
-  "name": "MobileStore",
+  "name": "CaseStore",
   "url": "https://example.com",
   "potentialAction": {
     "@type": "SearchAction",
@@ -319,7 +319,7 @@ Note: `logo` is optional; included only when a logo URL is available from config
   "description": "...",
   "sku": "CASE-15-BLK",
   "image": ["https://cdn.example.com/images/case.jpg"],
-  "brand": { "@type": "Brand", "name": "MobileStore" },
+  "brand": { "@type": "Brand", "name": "CaseStore" },
   "offers": {
     "@type": "Offer",
     "url": "https://example.com/products/iphone-15-case",
@@ -424,13 +424,13 @@ export const metadata: Metadata = {
     process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
   ),
   title: {
-    default: "MobileStore",
-    template: "%s | MobileStore",
+    default: "CaseStore",
+    template: "%s | CaseStore",
   },
   description: "Your one-stop shop for mobile phone accessories.",
   openGraph: {
     type: "website",
-    siteName: "MobileStore",
+    siteName: "CaseStore",
   },
 };
 ```
@@ -441,7 +441,7 @@ The existing `generateMetadata` in `app/products/[slug]/page.tsx` is extended:
 
 ```typescript
 return {
-  title: product.name, // template applies: "iPhone 15 Case | MobileStore"
+  title: product.name, // template applies: "iPhone 15 Case | CaseStore"
   description: product.description ?? "View product details.",
   alternates: {
     canonical: `${SITE_URL}/products/${product.slug}`,
@@ -473,7 +473,7 @@ return {
 **Acceptance Criteria:**
 
 - [ ] `NEXT_PUBLIC_SITE_URL` and `NEXT_PUBLIC_CURRENCY` added to `next.config.ts` `env` block.
-- [ ] `apps/store-client/src/shared/config/site.ts` exports `SITE_URL: string` (reads `process.env.NEXT_PUBLIC_SITE_URL`, falls back to `'http://localhost:3000'`), `CURRENCY: string` (reads `NEXT_PUBLIC_CURRENCY`, falls back to `'USD'`), and `SITE_NAME = 'MobileStore'`.
+- [ ] `apps/store-client/src/shared/config/site.ts` exports `SITE_URL: string` (reads `process.env.NEXT_PUBLIC_SITE_URL`, falls back to `'http://localhost:3000'`), `CURRENCY: string` (reads `NEXT_PUBLIC_CURRENCY`, falls back to `'USD'`), and `SITE_NAME = 'CaseStore'`.
 - [ ] `shared/config/index.ts` re-exports from `site.ts`.
 - [ ] Both vars documented with comments in `.env.example` (root of monorepo or store-client, whichever hosts the existing file).
 - [ ] `npm run build -w apps/store-client` passes.
@@ -629,7 +629,7 @@ return {
 
 - [ ] `apps/store-client/src/app/layout.tsx` `metadata` export is updated to include:
   - `metadataBase: new URL(SITE_URL)` (imported from `shared/config/site.ts`).
-  - `title: { default: SITE_NAME, template: '%s | MobileStore' }`.
+  - `title: { default: SITE_NAME, template: '%s | CaseStore' }`.
   - `openGraph: { type: 'website', siteName: SITE_NAME }`.
 - [ ] Existing `viewport` export and font setup are preserved unchanged.
 - [ ] `npm run build -w apps/store-client` passes.

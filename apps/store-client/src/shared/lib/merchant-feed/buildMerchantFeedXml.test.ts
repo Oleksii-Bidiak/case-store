@@ -5,8 +5,8 @@ import {
   type MerchantFeedProduct,
 } from "./buildMerchantFeedXml";
 
-const SITE_URL = "https://mobilestore.com";
-const SITE_NAME = "MobileStore";
+const SITE_URL = "https://casestore.com";
+const SITE_NAME = "CaseStore";
 const CURRENCY = "UAH";
 const CHANNEL_DESCRIPTION = "Магазин аксесуарів для смартфонів";
 const FALLBACK_DESCRIPTION = "Переглянути деталі товару.";

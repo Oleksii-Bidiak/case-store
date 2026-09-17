@@ -41,7 +41,7 @@ interface LogoProps {
  * monogram + wordmark, unchanged — so a store that never uploads anything looks
  * exactly as it did before. An uploaded logo REPLACES the wordmark (logos
  * normally carry the brand name themselves), which is why the image alt is the
- * site name: the accessible name of the link stays "MobileStore" either way.
+ * site name: the accessible name of the link stays "CaseStore" either way.
  *
  * Rendering path per file type:
  *   • SVG → a plain `<img>`. `next/image` refuses to optimize SVG unless

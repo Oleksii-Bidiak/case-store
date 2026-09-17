@@ -1020,7 +1020,7 @@ model SeoSettings {
   siteName               String?  @map("site_name")
   defaultMetaTitle       String?  @map("default_meta_title")
   defaultMetaDescription String?  @map("default_meta_description")
-  /// Must contain exactly one `%s` token when set, e.g. "%s | MobileStore".
+  /// Must contain exactly one `%s` token when set, e.g. "%s | CaseStore".
   /// Null → falls back to the current hardcoded `%s | ${SITE_NAME}` template.
   titleTemplate          String?  @map("title_template")
   defaultOgImage         String?  @map("default_og_image")

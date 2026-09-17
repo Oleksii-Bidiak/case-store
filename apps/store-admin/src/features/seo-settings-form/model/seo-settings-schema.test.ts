@@ -68,7 +68,7 @@ describe("seoSettingsSchema", () => {
   it("accepts a titleTemplate containing exactly one %s token", () => {
     const result = seoSettingsSchema.safeParse({
       ...base,
-      titleTemplate: "%s | MobileStore",
+      titleTemplate: "%s | CaseStore",
     });
     expect(result.success).toBe(true);
   });
@@ -76,7 +76,7 @@ describe("seoSettingsSchema", () => {
   it("rejects a titleTemplate without a %s token", () => {
     const result = seoSettingsSchema.safeParse({
       ...base,
-      titleTemplate: "MobileStore",
+      titleTemplate: "CaseStore",
     });
     expect(result.success).toBe(false);
   });

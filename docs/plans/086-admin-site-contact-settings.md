@@ -402,7 +402,7 @@ value: `"Контакти"`.
 - [ ] Uses `prisma.siteContactSettings.upsert({ where: { id: SINGLETON_ID }, ... })` with
       `SINGLETON_ID = '00000000-0000-0000-0000-000000000001'` (same constant as the repository)
 - [ ] Seed data provides realistic defaults matching the existing hardcoded footer values:
-  - `email: 'support@mobilestore.ua'`
+  - `email: 'support@casestore.ua'`
   - `phone: '+380 44 000 0000'`
   - `workingHours: 'Пн–Нд: 9:00 – 20:00'`
   - `viberLink: null`, `telegramLink: null`, `instagramLink: null`

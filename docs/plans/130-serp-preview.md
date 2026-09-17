@@ -147,7 +147,7 @@ export function resolveSeoPreviewDescription(
 }
 
 /** Effective template mirrors resolveTitleTemplate(): settings.titleTemplate if it contains
- *  exactly one `%s`, else `%s | ${brand}`. `brand` defaults to `dict.brand` ("MobileStore"),
+ *  exactly one `%s`, else `%s | ${brand}`. `brand` defaults to `dict.brand` ("CaseStore"),
  *  the store-admin mirror of store-client's SITE_NAME. */
 export function resolveEffectiveTitleTemplate(
   titleTemplate: string | null | undefined,
@@ -178,7 +178,7 @@ export interface SeoSnippetPreviewProps {
   /** Fully resolved description (from resolveSeoPreviewDescription().text), or undefined. */
   description?: string;
   descriptionTier: "own" | "default" | "derived" | "empty";
-  /** Display URL for the green breadcrumb line, e.g. "mobilestore.ua › products › chohol-iphone". */
+  /** Display URL for the green breadcrumb line, e.g. "casestore.ua › products › chohol-iphone". */
   url: string;
   /** Raw length of what's actually typed in the entity's own metaTitle field (0 if blank) —
    *  independent of the resolved/templated `title` length, used only for the counter. */
@@ -225,7 +225,7 @@ no title of its own:
   i.e. what an untitled real page would render, tier `"derived"`.
 - Same logic for `defaultMetaDescription` vs. a `dict.seoSnippetPreview.samplePageDescription`
   placeholder.
-- The URL breadcrumb here is a generic `mobilestore.ua › …` placeholder, not tied to any real slug.
+- The URL breadcrumb here is a generic `casestore.ua › …` placeholder, not tied to any real slug.
 
 This is called out as a distinct, explicit case in the Tasks below (Task F) rather than silently
 reusing the entity-form wiring, since the input shape differs (no `entityTitle`/`content.name`
@@ -379,7 +379,7 @@ resolver functions — only the two numeric constants, re-exported or duplicated
 contentName: nameValue, titleTemplate: resolveEffectiveTitleTemplate(settings?.titleTemplate,
 dict.brand) })` (and the description equivalent); `url` built from `slugValue` (fallback to the
       live `slugify(nameValue)` preview already computed for the slug field) as
-      `` `mobilestore.ua › products › ${slug}` `` (or the implementer's equivalent breadcrumb format —
+      `` `casestore.ua › products › ${slug}` `` (or the implementer's equivalent breadcrumb format —
       structural requirement is that it reflects the product's real PDP path, `/products/[slug]`)
 - [ ] Preview renders correctly (own → verbatim; blank + settings default → default shown; blank +
       no default → derived from `name`, template-branded) in both create mode (no `defaultValues`)
@@ -413,7 +413,7 @@ dict.brand) })` (and the description equivalent); `url` built from `slugValue` (
       (~L229–260), same resolution wiring as Task C, `contentName` = the watched category `name`
 - [ ] URL breadcrumb reflects the real category route, `/products?categoryId=…` — since the category
       being edited has a real `id` only in edit mode, the create-mode breadcrumb shows a generic
-      `mobilestore.ua › products › (нова категорія)` placeholder (or equivalent — structural
+      `casestore.ua › products › (нова категорія)` placeholder (or equivalent — structural
       requirement: edit mode shows the real filtered-listing path, create mode degrades gracefully,
       never renders `undefined` in the URL string)
 - [ ] `category-form.test.tsx`: same shape of cases as Task C (live typing, tier fallback, counter)

@@ -57,7 +57,7 @@ export class DeviceModelEntity {
    */
   @ApiProperty({
     description: 'Admin override for the compatibility landing page <title> (null = generated)',
-    example: 'Чохли для iPhone 15 Pro — купити в MobileStore',
+    example: 'Чохли для iPhone 15 Pro — купити в CaseStore',
     type: String,
     nullable: true,
     required: false,

@@ -63,7 +63,7 @@ describe("STOREFRONT_HOST (TASK-433)", () => {
 
   it("never returns the domain that used to be hardcoded", async () => {
     await expect(loadHost(undefined, undefined)).resolves.not.toBe(
-      "mobilestore.ua",
+      "casestore.ua",
     );
   });
 });

@@ -719,6 +719,6 @@ The UI/UX redesign in plan 039 touches every visual component in the storefront.
 
 - **Seed/demo data:** Product names and descriptions in the seed file are English (e.g., "iPhone 15 Pro Case"). This is content/data, not code — it is outside the scope of this plan. The localization plan only covers UI strings (labels, headings, buttons, validation messages, metadata). Product data Ukrainianization should be handled as a content task when the store goes live.
 - **Status enum values** (PENDING, CONFIRMED, SHIPPED, etc.) are rendered verbatim from the backend in the order confirmation header. A translation map for status labels can be added in plan 039 or a future polish iteration.
-- **`shared/config/site.ts` `SITE_NAME`** is `"MobileStore"` — a brand name, kept as-is.
+- **`shared/config/site.ts` `SITE_NAME`** is `"CaseStore"` — a brand name, kept as-is.
 - **Font:** The Geist font set in `layout.tsx` supports Cyrillic (Latin Extended + Cyrillic subset is included by default in Geist). No font change is needed.
 - **`next.config.ts`** has no `i18n` block. Do not add one — App Router does not use the legacy `i18n` config, and we are not implementing locale-based routing.

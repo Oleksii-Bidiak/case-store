@@ -4,7 +4,7 @@ import { SeoSettingsRepository, SINGLETON_ID } from './seo-settings.repository';
 
 const mockRow = {
   id: SINGLETON_ID,
-  siteName: 'MobileStore',
+  siteName: 'CaseStore',
   defaultMetaTitle: null,
   defaultMetaDescription: 'Магазин аксесуарів',
   titleTemplate: null,
@@ -69,7 +69,7 @@ describe('SeoSettingsRepository', () => {
     it('upserts the singleton row with the well-known ID and provided fields', async () => {
       prismaMock.seoSettings.upsert.mockResolvedValue(mockRow);
       const dto = {
-        siteName: 'MobileStore',
+        siteName: 'CaseStore',
         defaultMetaDescription: 'Магазин аксесуарів',
         additionalSameAsLinks: ['https://facebook.com/store'],
       };

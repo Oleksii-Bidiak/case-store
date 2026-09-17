@@ -67,7 +67,7 @@ describe("SeoSettingsForm — self-referential SERP preview (TASK-268)", () => {
     renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
 
     expect(previewTitle()).toHaveTextContent(
-      `${dict.seoSnippetPreview.samplePageName} | MobileStore`,
+      `${dict.seoSnippetPreview.samplePageName} | CaseStore`,
     );
     expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintDerived);
   });
@@ -93,12 +93,12 @@ describe("SeoSettingsForm — self-referential SERP preview (TASK-268)", () => {
     await waitFor(() =>
       expect(previewTitle()).toHaveTextContent("Мій магазин аксесуарів"),
     );
-    expect(previewTitle()).not.toHaveTextContent("| MobileStore");
+    expect(previewTitle()).not.toHaveTextContent("| CaseStore");
     expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintOwn);
   });
 
   // TASK-433 — the green breadcrumb line used to be the hardcoded string
-  // "mobilestore.ua": somebody else's domain in the owner's own Google preview.
+  // "casestore.ua": somebody else's domain in the owner's own Google preview.
   // It now comes from the storefront origin in the environment, so the assertion
   // is against that resolved host — not against a literal copied from the output.
   it("shows the storefront host from the environment, not a hardcoded domain", () => {
@@ -106,7 +106,7 @@ describe("SeoSettingsForm — self-referential SERP preview (TASK-268)", () => {
 
     const url = screen.getByTestId("seo-snippet-url");
     expect(url).toHaveTextContent(STOREFRONT_HOST);
-    expect(url).not.toHaveTextContent("mobilestore.ua");
+    expect(url).not.toHaveTextContent("casestore.ua");
   });
 });
 

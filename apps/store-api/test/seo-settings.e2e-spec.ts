@@ -74,7 +74,7 @@ describe('SeoSettings (e2e)', () => {
 
   const settingsRow = {
     id: SINGLETON_ID,
-    siteName: 'MobileStore',
+    siteName: 'CaseStore',
     defaultMetaTitle: null,
     defaultMetaDescription: 'Магазин аксесуарів',
     titleTemplate: null,
@@ -165,7 +165,7 @@ describe('SeoSettings (e2e)', () => {
       const response = await request(app.getHttpServer()).get('/api/seo-settings').expect(200);
 
       expect(response.body.data).toMatchObject({
-        siteName: 'MobileStore',
+        siteName: 'CaseStore',
         defaultMetaDescription: 'Магазин аксесуарів',
         noindexSite: false,
       });
@@ -199,10 +199,10 @@ describe('SeoSettings (e2e)', () => {
     it('upserts the settings and returns the submitted values', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
       const body = {
-        defaultMetaTitle: 'MobileStore',
-        titleTemplate: '%s | MobileStore',
+        defaultMetaTitle: 'CaseStore',
+        titleTemplate: '%s | CaseStore',
         noindexSite: true,
-        additionalSameAsLinks: ['https://facebook.com/mobilestore'],
+        additionalSameAsLinks: ['https://facebook.com/casestore'],
       };
       seoSettingsRepositoryMock.upsertSettings.mockResolvedValue({ ...settingsRow, ...body });
 
@@ -247,13 +247,13 @@ describe('SeoSettings (e2e)', () => {
       await request(app.getHttpServer())
         .put('/api/admin/seo-settings')
         .set('Authorization', `Bearer ${token}`)
-        .send({ titleTemplate: 'MobileStore' })
+        .send({ titleTemplate: 'CaseStore' })
         .expect(400);
     });
 
     it('accepts a titleTemplate with exactly one %s token', async () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
-      const body = { titleTemplate: '%s — MobileStore' };
+      const body = { titleTemplate: '%s — CaseStore' };
       seoSettingsRepositoryMock.upsertSettings.mockResolvedValue({ ...settingsRow, ...body });
 
       await request(app.getHttpServer())

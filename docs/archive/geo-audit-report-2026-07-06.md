@@ -8,7 +8,7 @@
 > повторний аудит **по коду** (живого стенда не було, у звіті це позначено явно).
 > Читайте його, а цей файл — лише як історію «що було до».
 
-# GEO Audit Report: MobileStore (store-client)
+# GEO Audit Report: CaseStore (store-client)
 
 **Audit Date:** 2026-07-06
 **URL:** http://localhost:3000 (prod build, `next start`)
@@ -66,7 +66,7 @@ was fixed during this pass.
 - **No `FAQPage` schema.** Adding a short FAQ block (delivery, warranty,
   compatibility) with FAQPage markup on PDP/info pages is high-citability content
   AI assistants quote directly.
-- **Homepage `<title>` is `Головна`** without the brand — the `%s | MobileStore`
+- **Homepage `<title>` is `Головна`** without the brand — the `%s | CaseStore`
   template should surface the brand on the home route for entity clarity.
 
 ### Low
@@ -102,7 +102,7 @@ was fixed during this pass.
    profiles.
 4. **Add a small `FAQPage` block** on PDP + `/info` (delivery, warranty,
    compatibility) — highly quotable by AI answer engines. _(planned)_
-5. **Brand the home `<title>`** (`Головна | MobileStore`) + a default branded
+5. **Brand the home `<title>`** (`Головна | CaseStore`) + a default branded
    `og:image`. _(planned — rolls into the admin SeoSettings work)_
 
 ## Post-launch (Brand Authority & Platform — the N/A half)

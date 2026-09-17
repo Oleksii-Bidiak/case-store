@@ -72,7 +72,7 @@ instead of the old client-side `isOnSale()` sweep).
   the upload/sanitize pipeline.
 - **Shared `<Logo/>`** in the storefront header (brand link + mobile `SheetTitle`), footer, and a
   shared `AdminBrandMark` in the admin sidebar rail + mobile drawer. The monogram/wordmark fallback
-  is derived from `SITE_NAME` — the hardcoded «M»/«MobileStore» is gone from header/footer.
+  is derived from `SITE_NAME` — the hardcoded «M»/«CaseStore» is gone from header/footer.
 - **Organization JSON-LD** emits `logo` as an absolute URL (relative paths resolve against
   `siteUrl`, omitted when empty).
 
@@ -168,7 +168,7 @@ sameAs?, logoUrl?)`. SVG renders via plain `<img>`; allow-listed raster via `nex
   (`isOptimizableImageSrc` pre-check avoids a render-time throw on a non-allowlisted host).
 - **Admin:** shared `SingleImageUpload` dumb primitive + `features/store-logo-upload` (Orval
   upload/delete mutations + invalidate `getSeoSettingsControllerGetSettingsQueryKey()`); shared
-  `AdminBrandMark` renders the logo (or `Package` + «MobileStore» fallback) in the sidebar rail +
+  `AdminBrandMark` renders the logo (or `Package` + «CaseStore» fallback) in the sidebar rail +
   mobile drawer; error map 413/415/400 → UA messages.
 
 **Acceptance:** upload SVG/PNG/WebP in admin → header/footer/mobile-menu + admin sidebar show it,

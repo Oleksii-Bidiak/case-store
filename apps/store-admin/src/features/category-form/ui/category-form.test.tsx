@@ -432,7 +432,7 @@ describe("CategoryForm — SERP snippet preview (TASK-268)", () => {
     );
 
     await waitFor(() =>
-      expect(previewTitle()).toHaveTextContent("iPhone Cases | MobileStore"),
+      expect(previewTitle()).toHaveTextContent("iPhone Cases | CaseStore"),
     );
     expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintDerived);
   });

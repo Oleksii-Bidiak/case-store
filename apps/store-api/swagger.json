@@ -17596,7 +17596,7 @@
           "metaTitle": {
             "type": "string",
             "description": "Admin override for the compatibility landing page <title> (null = generated)",
-            "example": "Чохли для iPhone 15 Pro — купити в MobileStore",
+            "example": "Чохли для iPhone 15 Pro — купити в CaseStore",
             "nullable": true
           },
           "metaDescription": {
@@ -17872,7 +17872,7 @@
           "metaTitle": {
             "type": "string",
             "description": "Admin override for the compatibility landing page <title>",
-            "example": "Чохли для iPhone 15 Pro — купити в MobileStore"
+            "example": "Чохли для iPhone 15 Pro — купити в CaseStore"
           },
           "metaDescription": {
             "type": "string",
@@ -17928,7 +17928,7 @@
           "metaTitle": {
             "type": "string",
             "description": "Admin override for the compatibility landing page <title>",
-            "example": "Чохли для iPhone 15 Pro — купити в MobileStore",
+            "example": "Чохли для iPhone 15 Pro — купити в CaseStore",
             "nullable": true
           },
           "metaDescription": {
@@ -22951,7 +22951,7 @@
           "email": {
             "type": "string",
             "description": "Support email address",
-            "example": "support@mobilestore.ua",
+            "example": "support@casestore.ua",
             "nullable": true
           },
           "phone": {
@@ -23020,7 +23020,7 @@
           "email": {
             "type": "string",
             "description": "Support email address",
-            "example": "support@mobilestore.ua"
+            "example": "support@casestore.ua"
           },
           "phone": {
             "type": "string",
@@ -23060,13 +23060,13 @@
           "siteName": {
             "type": "string",
             "description": "Human-readable store name (TASK-433). Null → the storefront falls back to its built-in SITE_NAME constant. Read by every server-rendered surface: title template, og:site_name, Organization/WebSite/BlogPosting JSON-LD, llms.txt, the web manifest, the Merchant feed.",
-            "example": "MobileStore",
+            "example": "CaseStore",
             "nullable": true
           },
           "defaultMetaTitle": {
             "type": "string",
             "description": "Default meta title used when a page has no own title",
-            "example": "MobileStore — аксесуари для смартфонів",
+            "example": "CaseStore — аксесуари для смартфонів",
             "nullable": true
           },
           "defaultMetaDescription": {
@@ -23077,14 +23077,14 @@
           },
           "titleTemplate": {
             "type": "string",
-            "description": "Title template — must contain exactly one `%s` token, e.g. \"%s | MobileStore\"",
-            "example": "%s | MobileStore",
+            "description": "Title template — must contain exactly one `%s` token, e.g. \"%s | CaseStore\"",
+            "example": "%s | CaseStore",
             "nullable": true
           },
           "defaultOgImage": {
             "type": "string",
             "description": "Default Open Graph / social-preview image URL",
-            "example": "https://mobilestore.ua/og-default.jpg",
+            "example": "https://casestore.ua/og-default.jpg",
             "nullable": true
           },
           "logoUrl": {
@@ -23119,8 +23119,8 @@
           "additionalSameAsLinks": {
             "description": "Additional brand-authority profile URLs merged into the Organization `sameAs` schema",
             "example": [
-              "https://facebook.com/mobilestore",
-              "https://youtube.com/@mobilestore"
+              "https://facebook.com/casestore",
+              "https://youtube.com/@casestore"
             ],
             "type": "array",
             "items": {
@@ -23231,13 +23231,13 @@
           "siteName": {
             "type": "string",
             "description": "Human-readable store name — the single source for the storefront's title template, `openGraph.siteName`, Organization/WebSite JSON-LD, llms.txt, the web manifest and the Merchant feed. Blank/absent → the storefront's built-in SITE_NAME constant (TASK-433).",
-            "example": "MobileStore",
+            "example": "CaseStore",
             "maxLength": 120
           },
           "defaultMetaTitle": {
             "type": "string",
             "description": "Default meta title used when a page has no own title",
-            "example": "MobileStore — аксесуари для смартфонів"
+            "example": "CaseStore — аксесуари для смартфонів"
           },
           "defaultMetaDescription": {
             "type": "string",
@@ -23246,13 +23246,13 @@
           },
           "titleTemplate": {
             "type": "string",
-            "description": "Page title template — must contain exactly one `%s` token (replaced by the page name), e.g. \"%s | MobileStore\"",
-            "example": "%s | MobileStore"
+            "description": "Page title template — must contain exactly one `%s` token (replaced by the page name), e.g. \"%s | CaseStore\"",
+            "example": "%s | CaseStore"
           },
           "defaultOgImage": {
             "type": "string",
             "description": "Default Open Graph / social-preview image URL",
-            "example": "https://mobilestore.ua/og-default.jpg"
+            "example": "https://casestore.ua/og-default.jpg"
           },
           "googleSiteVerification": {
             "type": "string",
@@ -23277,8 +23277,8 @@
           "additionalSameAsLinks": {
             "description": "Additional brand-authority profile URLs merged into the Organization `sameAs` schema",
             "example": [
-              "https://facebook.com/mobilestore",
-              "https://youtube.com/@mobilestore"
+              "https://facebook.com/casestore",
+              "https://youtube.com/@casestore"
             ],
             "type": "array",
             "items": {

@@ -21,7 +21,7 @@ export async function seedSiteContactSettings(prisma: PrismaClient) {
     update: {},
     create: {
       id: SINGLETON_ID,
-      email: 'support@mobilestore.ua',
+      email: 'support@casestore.ua',
       phone: '+380 44 000 0000',
       workingHours: 'Пн–Нд: 9:00 – 20:00',
       viberLink: null,

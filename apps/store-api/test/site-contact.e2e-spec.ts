@@ -73,7 +73,7 @@ describe('SiteContact (e2e)', () => {
 
   const settingsRow = {
     id: SINGLETON_ID,
-    email: 'support@mobilestore.ua',
+    email: 'support@casestore.ua',
     phone: '+380 44 000 0000',
     workingHours: 'Пн–Нд: 9:00 – 20:00',
     viberLink: null,
@@ -158,7 +158,7 @@ describe('SiteContact (e2e)', () => {
       const response = await request(app.getHttpServer()).get('/api/site-contact').expect(200);
 
       expect(response.body.data).toMatchObject({
-        email: 'support@mobilestore.ua',
+        email: 'support@casestore.ua',
         phone: '+380 44 000 0000',
         workingHours: 'Пн–Нд: 9:00 – 20:00',
       });

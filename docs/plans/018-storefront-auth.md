@@ -237,7 +237,7 @@ if one exists). It must be a `'use client'` component because it reads `useAuth(
 
 - Route: `/login`
 - Server Component: renders `<LoginForm>` inside a centred layout card
-- Exports `metadata`: `{ title: 'Sign In | MobileStore', description: '...' }`
+- Exports `metadata`: `{ title: 'Sign In | CaseStore', description: '...' }`
 - If the user is already authenticated (checked client-side in `LoginForm`), redirect to `/`
 - Renders a link to `/register` ("Don't have an account? Register")
 
@@ -245,7 +245,7 @@ if one exists). It must be a `'use client'` component because it reads `useAuth(
 
 - Route: `/register`
 - Server Component: renders `<RegisterForm>` inside the same centred layout card
-- Exports `metadata`: `{ title: 'Register | MobileStore', description: '...' }`
+- Exports `metadata`: `{ title: 'Register | CaseStore', description: '...' }`
 - Renders a link to `/login` ("Already have an account? Sign in")
 
 ### entities/session barrel
@@ -538,7 +538,7 @@ Check `apps/store-client/package.json` before adding to confirm what's missing.
 - [ ] `apps/store-client/src/app/(auth)/login/page.tsx` created
 - [ ] The `(auth)` route group has its own layout (`(auth)/layout.tsx`) that centres the
       auth card on the page (or the page itself handles centring)
-- [ ] Exports `metadata`: `{ title: 'Sign In | MobileStore', description: 'Sign in to your account' }`
+- [ ] Exports `metadata`: `{ title: 'Sign In | CaseStore', description: 'Sign in to your account' }`
 - [ ] Renders `<LoginForm />` from `@/features/auth` inside a centred card container
 - [ ] The `/login` URL is accessible without authentication
 - [ ] Visiting `/login` while already authenticated (detected by `useAuth()` in `LoginForm`)
@@ -565,7 +565,7 @@ Check `apps/store-client/package.json` before adding to confirm what's missing.
 **Acceptance Criteria:**
 
 - [ ] `apps/store-client/src/app/(auth)/register/page.tsx` created
-- [ ] Exports `metadata`: `{ title: 'Register | MobileStore', description: 'Create a new account' }`
+- [ ] Exports `metadata`: `{ title: 'Register | CaseStore', description: 'Create a new account' }`
 - [ ] Renders `<RegisterForm />` from `@/features/auth` inside the same `(auth)` layout card
 - [ ] `npm run build -w apps/store-client` exits 0
 - [ ] `npm run typecheck -w apps/store-client` passes

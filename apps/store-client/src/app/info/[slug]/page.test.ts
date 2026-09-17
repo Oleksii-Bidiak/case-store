@@ -116,7 +116,7 @@ describe("info/[slug] generateMetadata (TASK-435)", () => {
 
     const meta = await runMeta("dostavka");
 
-    expect(meta.title).toEqual({ absolute: "Доставка | MobileStore" });
+    expect(meta.title).toEqual({ absolute: "Доставка | CaseStore" });
     expect(meta.description).toBe("Як ми відправляємо замовлення.");
     expect(meta.alternates?.canonical).toBe(
       "http://localhost:3000/info/dostavka",

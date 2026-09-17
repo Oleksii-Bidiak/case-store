@@ -13,15 +13,15 @@ const SITE = "https://example.com";
 
 describe("buildOrganizationSchema", () => {
   it("emits an Organization node with name and url", () => {
-    const schema = buildOrganizationSchema(SITE, "MobileStore");
+    const schema = buildOrganizationSchema(SITE, "CaseStore");
     expect(schema["@context"]).toBe("https://schema.org");
     expect(schema["@type"]).toBe("Organization");
-    expect(schema.name).toBe("MobileStore");
+    expect(schema.name).toBe("CaseStore");
     expect(schema.url).toBe(SITE);
   });
 
   it("emits sameAs from configured social links, dropping blanks/nulls", () => {
-    const schema = buildOrganizationSchema(SITE, "MobileStore", [
+    const schema = buildOrganizationSchema(SITE, "CaseStore", [
       "https://t.me/store",
       "",
       null,
@@ -35,40 +35,39 @@ describe("buildOrganizationSchema", () => {
   });
 
   it("omits sameAs when no usable social links are configured", () => {
-    expect(buildOrganizationSchema(SITE, "MobileStore").sameAs).toBeUndefined();
+    expect(buildOrganizationSchema(SITE, "CaseStore").sameAs).toBeUndefined();
     expect(
-      buildOrganizationSchema(SITE, "MobileStore", [null, "", "  "]).sameAs,
+      buildOrganizationSchema(SITE, "CaseStore", [null, "", "  "]).sameAs,
     ).toBeUndefined();
   });
 
   it("emits the uploaded store logo (TASK-299)", () => {
     const logo = "http://localhost:3001/uploads/branding/logo.svg";
-    expect(buildOrganizationSchema(SITE, "MobileStore", [], logo).logo).toBe(
+    expect(buildOrganizationSchema(SITE, "CaseStore", [], logo).logo).toBe(
       logo,
     );
   });
 
   it("absolutizes a site-relative logo path against the site url", () => {
     expect(
-      buildOrganizationSchema(SITE, "MobileStore", [], "/uploads/logo.webp")
-        .logo,
+      buildOrganizationSchema(SITE, "CaseStore", [], "/uploads/logo.webp").logo,
     ).toBe(`${SITE}/uploads/logo.webp`);
   });
 
   it("omits logo when unset, blank or unparseable", () => {
-    expect(buildOrganizationSchema(SITE, "MobileStore").logo).toBeUndefined();
+    expect(buildOrganizationSchema(SITE, "CaseStore").logo).toBeUndefined();
     expect(
-      buildOrganizationSchema(SITE, "MobileStore", [], null).logo,
+      buildOrganizationSchema(SITE, "CaseStore", [], null).logo,
     ).toBeUndefined();
     expect(
-      buildOrganizationSchema(SITE, "MobileStore", [], "   ").logo,
+      buildOrganizationSchema(SITE, "CaseStore", [], "   ").logo,
     ).toBeUndefined();
   });
 });
 
 describe("buildWebSiteSchema", () => {
   it("emits a WebSite node with a SearchAction pointing at /products", () => {
-    const schema = buildWebSiteSchema(SITE, "MobileStore");
+    const schema = buildWebSiteSchema(SITE, "CaseStore");
     expect(schema["@type"]).toBe("WebSite");
     expect(schema.url).toBe(SITE);
 
@@ -228,7 +227,7 @@ describe("buildProductSchema", () => {
   const opts = {
     siteUrl: SITE,
     currency: "UAH",
-    fallbackBrandName: "MobileStore",
+    fallbackBrandName: "CaseStore",
   };
 
   it("emits a Product node with name, sku, description, brand and image array", () => {
@@ -245,14 +244,14 @@ describe("buildProductSchema", () => {
     // baseProduct has no brand of its own, so the store name stands in.
     expect(schema.brand).toMatchObject({
       "@type": "Brand",
-      name: "MobileStore",
+      name: "CaseStore",
     });
     // Images sorted by sortOrder.
     expect(schema.image).toEqual(["https://cdn/a.jpg", "https://cdn/x.jpg"]);
   });
 
   // TASK-437 (GEO audit). This used to emit the store name for EVERY product,
-  // so an Anker cable was published to Google as brand "MobileStore" — while
+  // so an Anker cable was published to Google as brand "CaseStore" — while
   // merchant-feed.xml sent "Anker" for the same item. Two of our own feeds
   // disagreed about the manufacturer of every branded product we sell.
   it("publishes the product's real manufacturer, not the shop, when it has one", () => {

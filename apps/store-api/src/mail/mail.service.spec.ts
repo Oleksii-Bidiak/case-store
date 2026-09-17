@@ -50,7 +50,7 @@ function makeLogger(): PinoLogger {
 
 const enabledConfig = (): Record<string, unknown> => ({
   MAIL_ENABLED: 'true',
-  MAIL_FROM: 'MobileStore <no-reply@example.com>',
+  MAIL_FROM: 'CaseStore <no-reply@example.com>',
   SMTP_HOST: 'smtp.example.com',
   SMTP_PORT: 587,
   SMTP_SECURE: 'false',
@@ -82,7 +82,7 @@ describe('MailService', () => {
 
       const message = sendMail.mock.calls[0][0];
       expect(message.to).toBe('customer@example.com');
-      expect(message.from).toBe('MobileStore <no-reply@example.com>');
+      expect(message.from).toBe('CaseStore <no-reply@example.com>');
       expect(message.subject).toContain('ORDER-UU'); // first 8 chars, uppercased
       expect(typeof message.html).toBe('string');
       expect(message.html.length).toBeGreaterThan(0);

@@ -38,7 +38,7 @@ No backend changes are required. All filtering is driven by the existing
 - a11y: labelled form controls, `<fieldset>`/`<legend>` for filter groups, `<nav>`
   landmark for pagination, `aria-live` region for result count
 - Design tokens only — no raw hex values in any `.tsx` file
-- Export of page-level `metadata` (`"Products | MobileStore"`)
+- Export of page-level `metadata` (`"Products | CaseStore"`)
 
 ### Out of Scope
 
@@ -456,7 +456,7 @@ No new backend endpoints. Public `GET /api/products` is used with all its existi
     the first string value if the type is `string[]`)
 - [ ] Constructs `initialParams: ProductControllerFindAllParams` from resolved values and
       passes it to `<ProductListView>`
-- [ ] Exports `metadata: Metadata` with `title: 'Products | MobileStore'` and a description
+- [ ] Exports `metadata: Metadata` with `title: 'Products | CaseStore'` and a description
 - [ ] Renders:
   ```tsx
   <div className="mx-auto w-full max-w-7xl px-4 py-8">

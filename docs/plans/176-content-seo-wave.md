@@ -27,7 +27,7 @@
 Власник запитав, чи нормально, що description і og-теги на товарі показують магазин у цілому —
 не нормально: `resolveSeo` ставить глобальний дефолт **вище** за контент сторінки, а сід
 заповнює саме глобальний. Плюс редактор не вміє посилань (на `/legal/offer` лежить текст
-`/legal/privacy-policy`), `/info` не редагується ніде, у прев'ю SERP — `mobilestore.ua`, назва
+`/legal/privacy-policy`), `/info` не редагується ніде, у прев'ю SERP — `casestore.ua`, назва
 магазину живе в кількох місцях, у блозі немає «читайте також».
 
 ## Задачі
@@ -45,7 +45,7 @@
 
 ### TASK-433 — Хост у прев'ю SERP і назва магазину в одному місці (S)
 
-- `apps/store-admin/src/shared/config/dictionary.ts:2403` `urlHost: "mobilestore.ua"` (4 споживачі:
+- `apps/store-admin/src/shared/config/dictionary.ts:2403` `urlHost: "casestore.ua"` (4 споживачі:
   seo-settings-form:181, product-form:627, category-form:317, page-form:256) →
   `new URL(process.env.NEXT_PUBLIC_SITE_URL).host` з дефолтом; `dictionary.ts:1465` OG-плейсхолдер так само.
 - Назва магазину: інвентаризувати `SITE_NAME` (вітрина), `SeoSettings.siteName/titleTemplate`,

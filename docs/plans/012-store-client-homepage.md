@@ -376,7 +376,7 @@ follow-up backend annotation task is noted in the Risks table below.
 
 - [ ] `src/app/page.tsx` is a Server Component (no `'use client'`)
 - [ ] Exports a `metadata: Metadata` constant overriding the page-level title
-      (`"Home | MobileStore"`) and description
+      (`"Home | CaseStore"`) and description
 - [ ] Renders in order:
   1. `<HeroBanner />`
   2. `<section>` with a `<h2>` heading "Shop by Category" + `<Suspense fallback={<CategoryNavSkeleton />}><CategoryNav /></Suspense>`
@@ -461,7 +461,7 @@ consume CSS variables (e.g. `viewport.themeColor` in `layout.tsx`).
 - `src/widgets/index.ts` and `src/entities/index.ts` currently export nothing. Both need to be
   populated as part of this task.
 
-- The root `src/app/layout.tsx` already includes a minimal `<header>` with a "MobileStore" link
+- The root `src/app/layout.tsx` already includes a minimal `<header>` with a "CaseStore" link
   and a `<footer>`. The HomePage's `<main>` content is rendered inside the layout's
   `<main className="flex-1">` — the HomePage `page.tsx` must NOT render a second `<main>`.
   Use a `<div>` or fragment as the page root.

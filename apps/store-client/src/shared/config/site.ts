@@ -2,7 +2,7 @@
 //
 // SITE_URL is the canonical public origin used by sitemap.xml, robots.txt,
 // canonical <link>s, Open Graph URLs, and Schema.org url/@id values. Set
-// NEXT_PUBLIC_SITE_URL in production (e.g. https://mobilestore.com). It falls
+// NEXT_PUBLIC_SITE_URL in production (e.g. https://casestore.com). It falls
 // back to the pre-existing NEXT_PUBLIC_APP_URL, then to localhost for local dev.
 //
 // IMPORTANT: in production NEXT_PUBLIC_SITE_URL MUST be set, otherwise every
@@ -32,7 +32,7 @@ export const CURRENCY = process.env.NEXT_PUBLIC_CURRENCY ?? "UAH";
 // with no access to the server-side settings fetch, so the lettering inside the
 // header/footer logo still comes from here. Wiring that up is a separate task
 // (the admin form says so in plain UA, and docs/admin-guide.md §27 repeats it).
-export const SITE_NAME = "MobileStore";
+export const SITE_NAME = "CaseStore";
 
 // ─── Brand OG-image fallback (TASK-279, plan 145) ────────────────────────────
 // Static branded 1200×630 card served whenever SeoSettings.defaultOgImage is

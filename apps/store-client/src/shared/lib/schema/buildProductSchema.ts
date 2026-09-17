@@ -20,7 +20,7 @@ export interface BuildProductSchemaInput {
    *
    * Named `brandName` until the TASK-437 GEO audit caught what that name was
    * hiding: the schema emitted it UNCONDITIONALLY, so an Anker cable was
-   * published to Google as brand "MobileStore" while `merchant-feed.xml` sent
+   * published to Google as brand "CaseStore" while `merchant-feed.xml` sent
    * `product.brand?.name` for the same item. Two of our own feeds disagreed
    * about the manufacturer of every branded product in the catalogue, and the
    * call site's comment described the fallback behaviour this code did not have.

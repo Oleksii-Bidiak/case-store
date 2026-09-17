@@ -89,7 +89,7 @@ export class UpdateDeviceModelDto {
 
   @ApiProperty({
     description: 'Admin override for the compatibility landing page <title>',
-    example: 'Чохли для iPhone 15 Pro — купити в MobileStore',
+    example: 'Чохли для iPhone 15 Pro — купити в CaseStore',
     required: false,
     nullable: true,
     type: String,

@@ -81,7 +81,7 @@ describe("categories hub generateMetadata", () => {
   it("uses the hub row's metaTitle/metaDescription verbatim", async () => {
     fetchPage.mockResolvedValue(
       makeHubRow({
-        metaTitle: "Категорії товарів | MobileStore",
+        metaTitle: "Категорії товарів | CaseStore",
         metaDescription: "Усі категорії магазину в одному списку.",
       }),
     );
@@ -89,7 +89,7 @@ describe("categories hub generateMetadata", () => {
 
     const meta = await generateMetadata();
 
-    expect(meta.title).toEqual({ absolute: "Категорії товарів | MobileStore" });
+    expect(meta.title).toEqual({ absolute: "Категорії товарів | CaseStore" });
     expect(meta.description).toBe("Усі категорії магазину в одному списку.");
     expect(meta.alternates?.canonical).toBe("http://localhost:3000/categories");
   });
@@ -101,7 +101,7 @@ describe("categories hub generateMetadata", () => {
     const meta = await generateMetadata();
 
     expect(meta.title).toEqual({
-      absolute: `${dict.meta.categoriesTitle} | MobileStore`,
+      absolute: `${dict.meta.categoriesTitle} | CaseStore`,
     });
     expect(meta.description).toBe(dict.meta.categoriesDescription);
     expect(meta.alternates?.canonical).toBe("http://localhost:3000/categories");
@@ -114,7 +114,7 @@ describe("categories hub generateMetadata", () => {
     fetchPage.mockResolvedValue(null);
     fetchSeo.mockResolvedValue({
       ...settings,
-      defaultMetaTitle: "MobileStore — аксесуари та техніка",
+      defaultMetaTitle: "CaseStore — аксесуари та техніка",
       defaultMetaDescription: "Магазин аксесуарів та Apple-техніки в Україні.",
     });
 
@@ -122,7 +122,7 @@ describe("categories hub generateMetadata", () => {
 
     expect(meta.description).toBe(dict.meta.categoriesDescription);
     expect(meta.title).toEqual({
-      absolute: `${dict.meta.categoriesTitle} | MobileStore`,
+      absolute: `${dict.meta.categoriesTitle} | CaseStore`,
     });
   });
 
