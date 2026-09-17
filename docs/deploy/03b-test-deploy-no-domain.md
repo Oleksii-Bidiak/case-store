@@ -985,7 +985,7 @@ git reset --hard origin/develop
 > curl -sI https://203-0-113-10.nip.io | grep -i x-robots-tag
 > ```
 
-curl.exe -sI https://62-238-55-236.nip.io | findstr /i x-robots-tag
+curl.exe -sI https://203-0-113-10.nip.io | findstr /i x-robots-tag
 
 > (у PowerShell на ноуті: `curl.exe -sI https://… | Select-String X-Robots-Tag` — `curl` там
 > аліас на `Invoke-WebRequest`, а `grep` немає взагалі)
