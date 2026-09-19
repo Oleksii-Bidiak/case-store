@@ -180,6 +180,9 @@ Code не створює макетів у Claude Design — він лише с�
 Прочитай шаблони templates/homepage/Homepage.dc.html і templates/cart/Cart.dc.html у проєкті store-client Design System (DesignSync get_file, лише читання). Порівняй їх із поточними сторінками / і /cart у store-client і з оновленою дизайн-системою: назва магазину, структура, компоненти, токени. Дай таблицю розбіжностей і для кожного шаблону рекомендацію: оновити / лишити / прибрати. Для «оновити» — підготуй промпт для Claude Design. Нічого не змінюй.
 ```
 
+Результат ревізії 2026-09-19 з промптами для обох шаблонів:
+[reviews/2026-09-19-claude-design-templates.md](reviews/2026-09-19-claude-design-templates.md).
+
 **S7.3 — макет** (власник, у claude.ai/design). Новий дизайн на базі `store-client Design System`;
 промпт дає Claude Code наприкінці S7.1 — він має називати лише компоненти, що є в оновленій
 системі.
