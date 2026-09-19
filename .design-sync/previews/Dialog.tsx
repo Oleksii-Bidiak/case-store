@@ -9,19 +9,20 @@ import {
 } from "@store/store-client";
 
 // Rendered open so the modal surface is visible in the card (cardMode: single).
+// Confirmations use Dialog — never window.confirm (docs/design-system.md §10).
 export const Open = () => (
   <Dialog open>
     <DialogContent>
       <DialogHeader>
-        <DialogTitle>Remove from cart?</DialogTitle>
+        <DialogTitle>Скасувати замовлення?</DialogTitle>
         <DialogDescription>
-          This removes “Braided USB-C Cable 2m” from your cart. You can add it
-          again at any time.
+          Замовлення #A1B2C3D4 буде скасовано, а товари повернуться на склад.
+          Цю дію не можна відмінити.
         </DialogDescription>
       </DialogHeader>
       <DialogFooter>
-        <Button variant="outline">Keep it</Button>
-        <Button variant="destructive">Remove</Button>
+        <Button variant="outline">Залишити</Button>
+        <Button variant="destructive">Скасувати замовлення</Button>
       </DialogFooter>
     </DialogContent>
   </Dialog>

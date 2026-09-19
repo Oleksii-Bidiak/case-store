@@ -18,11 +18,11 @@ const avatar: React.CSSProperties = {
 export const Trigger = () => (
   <AccountDropdown
     triggerContent={<span style={avatar}>ОБ</span>}
-    triggerAria="Account menu"
-    menuAria="Account"
+    triggerAria="Відкрити меню акаунту"
+    menuAria="Меню акаунту"
   >
-    <AccountDropdownItem href="/account">My account</AccountDropdownItem>
-    <AccountDropdownItem href="/orders">My orders</AccountDropdownItem>
-    <AccountDropdownItem onClick={() => {}}>Sign out</AccountDropdownItem>
+    <AccountDropdownItem href="/account">Мій акаунт</AccountDropdownItem>
+    <AccountDropdownItem href="/orders">Історія замовлень</AccountDropdownItem>
+    <AccountDropdownItem onClick={() => {}}>Вийти</AccountDropdownItem>
   </AccountDropdown>
 );

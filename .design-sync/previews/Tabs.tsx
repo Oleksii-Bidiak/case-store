@@ -16,21 +16,21 @@ export const ProductDetails = () => (
   <div style={{ width: 440 }}>
     <Tabs defaultValue="description">
       <TabsList>
-        <TabsTrigger value="description">Description</TabsTrigger>
-        <TabsTrigger value="specs">Specs</TabsTrigger>
-        <TabsTrigger value="reviews">Reviews</TabsTrigger>
+        <TabsTrigger value="description">Опис</TabsTrigger>
+        <TabsTrigger value="specs">Характеристики</TabsTrigger>
+        <TabsTrigger value="reviews">Відгуки</TabsTrigger>
       </TabsList>
       <TabsContent value="description">
         <p style={body}>
-          Durable braided nylon USB-C cable with fast-charge support up to 100W
-          and a 2-metre reach.
+          Кабель у нейлоновому обплетенні з підтримкою швидкого заряджання до
+          60 Вт. Довжина 2 м — вистачить від розетки до дивана.
         </p>
       </TabsContent>
       <TabsContent value="specs">
-        <p style={body}>Length 2m · USB-C to USB-C · 100W PD · Nylon braid.</p>
+        <p style={body}>Довжина 2 м · USB-C → USB-C · 60 Вт PD · нейлон.</p>
       </TabsContent>
       <TabsContent value="reviews">
-        <p style={body}>213 reviews · 4.6 average rating.</p>
+        <p style={body}>213 відгуків · середня оцінка 4,6.</p>
       </TabsContent>
     </Tabs>
   </div>

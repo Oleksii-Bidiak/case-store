@@ -76,6 +76,8 @@ ds-bundle/
 .design-sync/learnings/
 .design-sync/node_modules
 apps/store-client/.ds-sync-css/
+# build/ above would swallow the sync build inputs (compile-css, shims, tsconfig)
+!.design-sync/build/
 .design-sync/build/.generated/
 
 # Supplier catalogue source files (TASK-360). Real business data belongs to the

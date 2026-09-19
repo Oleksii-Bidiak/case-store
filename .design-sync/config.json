@@ -6,13 +6,31 @@
   "srcDir": "src/shared/ui",
   "tsconfig": "../../../.design-sync/build/tsconfig.json",
   "cssEntry": ".ds-sync-css/ui.css",
+  "extraEntries": ["../../../.design-sync/build/shims/bundle-prelude.ts"],
+  "libOverrides": {
+    "dts.mjs": "Next app ships no .d.ts tree: read prop contracts from src/shared/ui TS sources via the app tsconfig"
+  },
   "readmeHeader": ".design-sync/conventions.md",
   "componentSrcMap": {
     "JsonLd": null
   },
   "overrides": {
-    "Dialog": { "cardMode": "single", "viewport": "680x460" },
-    "Sheet": { "cardMode": "single", "viewport": "680x460" },
-    "CheckoutSkeleton": { "cardMode": "column" }
+    "Dialog": {
+      "cardMode": "single",
+      "viewport": "680x460"
+    },
+    "Sheet": {
+      "cardMode": "single",
+      "viewport": "680x460"
+    },
+    "CheckoutSkeleton": {
+      "cardMode": "column"
+    },
+    "Button": {
+      "cardMode": "column"
+    },
+    "Pagination": {
+      "cardMode": "column"
+    }
   }
 }

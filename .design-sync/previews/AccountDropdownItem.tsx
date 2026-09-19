@@ -4,6 +4,7 @@ import { AccountDropdownItem } from "@store/store-client";
 // renders when open) so the real item styling is visible statically.
 const panel: React.CSSProperties = {
   minWidth: 208,
+  width: 240,
   padding: 4,
   borderRadius: 8,
   border: "1px solid var(--color-border)",
@@ -16,10 +17,10 @@ const panel: React.CSSProperties = {
 
 export const Menu = () => (
   <ul role="menu" style={panel}>
-    <AccountDropdownItem href="/account">My account</AccountDropdownItem>
-    <AccountDropdownItem href="/orders">My orders</AccountDropdownItem>
-    <AccountDropdownItem href="/wishlist">Wishlist</AccountDropdownItem>
-    <AccountDropdownItem onClick={() => {}}>Sign out</AccountDropdownItem>
-    <AccountDropdownItem disabled>Admin panel</AccountDropdownItem>
+    <AccountDropdownItem href="/account">Мій акаунт</AccountDropdownItem>
+    <AccountDropdownItem href="/orders">Історія замовлень</AccountDropdownItem>
+    <AccountDropdownItem href="/wishlist">Обране</AccountDropdownItem>
+    <AccountDropdownItem onClick={() => {}}>Вийти</AccountDropdownItem>
+    <AccountDropdownItem disabled>Адмін-панель</AccountDropdownItem>
   </ul>
 );

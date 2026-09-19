@@ -4,9 +4,9 @@ import { SheetFooter, Button } from "@store/store-client";
 export const Default = () => (
   <div style={{ width: 320, border: "1px solid var(--color-border)", borderRadius: 8 }}>
     <SheetFooter>
-      <Button style={{ width: "100%" }}>Checkout</Button>
+      <Button style={{ width: "100%" }}>Оформити замовлення</Button>
       <Button variant="outline" style={{ width: "100%" }}>
-        Continue shopping
+        Продовжити покупки
       </Button>
     </SheetFooter>
   </div>

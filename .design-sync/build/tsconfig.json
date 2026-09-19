@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "paths": {
+      "@/shared/config": ["./shims/shared-config.ts"],
+      "@/shared/lib": ["./shims/shared-lib.ts"],
+      "@/*": ["../../apps/store-client/src/*"],
+      "next/link": ["./shims/next-link.tsx"],
+      "next/image": ["./shims/next-image.tsx"],
+      "next-themes": ["./shims/next-themes.tsx"]
+    }
+  }
+}

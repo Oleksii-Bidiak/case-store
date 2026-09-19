@@ -6,9 +6,9 @@ import { SheetHeader } from "@store/store-client";
 export const Default = () => (
   <div style={{ width: 320, border: "1px solid var(--color-border)", borderRadius: 8 }}>
     <SheetHeader>
-      <span style={{ fontWeight: 600 }}>Your cart</span>
+      <span style={{ fontWeight: 600 }}>Кошик</span>
       <span style={{ fontSize: 14, color: "var(--color-muted-foreground)" }}>
-        2 items · 598 ₴
+        2 товари · 1 198 ₴
       </span>
     </SheetHeader>
   </div>
