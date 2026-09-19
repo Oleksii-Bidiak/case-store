@@ -14,7 +14,8 @@ import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
- * E2E tests for the Contact module admin inbox (TASK-177 + TASK-256).
+ * E2E tests for the Contact module: the admin inbox (TASK-177 + TASK-256) and
+ * the public submit's anti-spam rules (TASK-452).
  *
  * Mirrors site-contact.e2e-spec.ts: mocks AuthRepository, ContactRepository,
  * and PrismaService so no real database is required. JWT tokens are minted
@@ -31,7 +32,7 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
   }
 }
 
-describe('Contact admin inbox (e2e)', () => {
+describe('Contact (e2e)', () => {
   let app: INestApplication;
   let jwtService: JwtService;
 
@@ -59,6 +60,7 @@ describe('Contact admin inbox (e2e)', () => {
     countByStatus: jest.fn(),
     findMatchingUserId: jest.fn(),
     findMatchingUserIds: jest.fn(),
+    findLatestCreatedAtByEmail: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -142,6 +144,81 @@ describe('Contact admin inbox (e2e)', () => {
 
   afterEach(() => {
     jest.resetAllMocks();
+  });
+
+  // ─── Public submit: honeypot + per-email cooldown (TASK-452) ───────────────────
+
+  describe('POST /api/contact (anti-spam)', () => {
+    const body = {
+      name: 'Ivan Petrenko',
+      phone: '+380 67 123 45 67',
+      email: 'ivan@example.com',
+      message: 'Доброго дня! Питання по замовленню.',
+    };
+
+    it('stores a normal submission and returns 201 { data: { id } }', async () => {
+      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+      contactRepositoryMock.create.mockResolvedValue(makeMessageRow());
+
+      const res = await request(app.getHttpServer()).post('/api/contact').send(body).expect(201);
+
+      expect(res.body).toEqual({ data: { id: '550e8400-e29b-41d4-a716-446655440000' } });
+      expect(contactRepositoryMock.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('answers a filled honeypot with the same 201 shape and stores nothing', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/api/contact')
+        .send({ ...body, website: 'https://spam.example' })
+        .expect(201);
+
+      expect(Object.keys(res.body)).toEqual(['data']);
+      expect(Object.keys(res.body.data)).toEqual(['id']);
+      expect(res.body.data.id).toMatch(/^[0-9a-f-]{36}$/);
+      expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+      expect(contactRepositoryMock.findLatestCreatedAtByEmail).not.toHaveBeenCalled();
+    });
+
+    it('accepts an empty honeypot as a human submission', async () => {
+      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+      contactRepositoryMock.create.mockResolvedValue(makeMessageRow());
+
+      await request(app.getHttpServer())
+        .post('/api/contact')
+        .send({ ...body, website: '' })
+        .expect(201);
+
+      expect(contactRepositoryMock.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses a second message from the same email within 10 minutes with 429 CONTACT_COOLDOWN', async () => {
+      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
+        new Date(Date.now() - 60 * 1000),
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/api/contact')
+        .send({ ...body, email: 'IVAN@example.com' })
+        .expect(429);
+
+      expect(res.body).toEqual(expect.objectContaining({ error: 'CONTACT_COOLDOWN' }));
+      expect(contactRepositoryMock.findLatestCreatedAtByEmail).toHaveBeenCalledWith(
+        'ivan@example.com',
+      );
+      expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    it('bounds the honeypot like any other string field (400 over 255 chars)', async () => {
+      // A non-string does NOT 400: `enableImplicitConversion` turns `42` into
+      // "42", which is simply a filled honeypot. The length bound is what keeps
+      // the field from carrying a megabyte.
+      await request(app.getHttpServer())
+        .post('/api/contact')
+        .send({ ...body, website: 'x'.repeat(256) })
+        .expect(400);
+
+      expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+    });
   });
 
   // ─── Auth guard ───────────────────────────────────────────────────────────────

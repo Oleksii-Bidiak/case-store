@@ -4,7 +4,7 @@ import { ContactController } from './contact.controller';
 import { ContactService } from './contact.service';
 
 const contactServiceMock = {
-  create: jest.fn(),
+  submit: jest.fn(),
 };
 
 describe('ContactController', () => {
@@ -22,8 +22,8 @@ describe('ContactController', () => {
   });
 
   describe('submit', () => {
-    it('delegates to the service and returns only the new id', async () => {
-      contactServiceMock.create.mockResolvedValue({ id: 'msg-uuid-1' });
+    it('delegates to the anti-spam submit path and returns only the id', async () => {
+      contactServiceMock.submit.mockResolvedValue({ id: 'msg-uuid-1' });
 
       const dto = {
         name: 'Ivan Petrenko',
@@ -35,7 +35,7 @@ describe('ContactController', () => {
       const result = await controller.submit(dto as never);
 
       expect(result).toEqual({ data: { id: 'msg-uuid-1' } });
-      expect(contactServiceMock.create).toHaveBeenCalledWith(dto);
+      expect(contactServiceMock.submit).toHaveBeenCalledWith(dto);
     });
   });
 

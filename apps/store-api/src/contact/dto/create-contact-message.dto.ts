@@ -87,4 +87,30 @@ export class CreateContactMessageDto {
   @IsString()
   @MaxLength(120, { message: 'Order reference must be at most 120 characters' })
   orderRef?: string;
+
+  /**
+   * Honeypot (TASK-452). The storefront renders this as an input no person can
+   * see or reach — visually hidden, `aria-hidden`, out of the tab order — so a
+   * human never fills it, and a form-filling bot that types into every field
+   * does. A non-empty value makes the service answer exactly as for a real
+   * message (same 201, same `{ data: { id } }` shape, a fresh random id) while
+   * storing nothing: a bot that got a distinguishable error would simply learn
+   * to leave the field alone.
+   *
+   * Bounded like any other string so it cannot be used to post a megabyte.
+   */
+  @ApiProperty({
+    description:
+      'Anti-spam honeypot. Must stay empty (or be omitted): the storefront hides it ' +
+      'from people. A non-empty value is accepted with the normal 201 response but ' +
+      'the message is silently discarded.',
+    example: '',
+    required: false,
+    maxLength: 255,
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(255, { message: 'Website must be at most 255 characters' })
+  website?: string;
 }

@@ -59,9 +59,16 @@ export class ContactController {
     type: ContactMessageCreatedResponse,
   })
   @ApiResponse({ status: 400, description: 'Validation error' })
-  @ApiResponse({ status: 429, description: 'Too many requests — rate limit exceeded' })
+  @ApiResponse({
+    status: 429,
+    description:
+      'Too many requests: either the per-IP rate limit (5/min) or the per-email ' +
+      'cooldown (1 message per email per 10 min, `error: "CONTACT_COOLDOWN"`)',
+  })
   async submit(@Body() dto: CreateContactMessageDto): Promise<ContactMessageCreatedResponse> {
-    const message = await this.contactService.create(dto);
-    return { data: { id: message.id } };
+    // Honeypot + per-email cooldown live in the service (TASK-452); a tripped
+    // honeypot still comes back as an id, so this line cannot tell bots apart.
+    const { id } = await this.contactService.submit(dto);
+    return { data: { id } };
   }
 }

@@ -28,6 +28,8 @@ export const infoContactSchema = z.object({
     .trim()
     .min(10, dict.contact.errors.messageRequired)
     .max(5000, dict.contact.errors.messageRequired),
+  // Honeypot (TASK-452) — see `ContactHoneypot` in entities/contact.
+  website: z.string().max(255).optional(),
 });
 
 export type InfoContactFormValues = z.infer<typeof infoContactSchema>;

@@ -26,6 +26,7 @@ const prismaMock = {
     create: jest.fn(),
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
     count: jest.fn(),
@@ -386,6 +387,30 @@ describe('ContactRepository', () => {
 
       expect(result.size).toBe(0);
       expect(prismaMock.user.findMany).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('findLatestCreatedAtByEmail (TASK-452)', () => {
+    it('returns the newest message time for the email, matched case-insensitively', async () => {
+      const latest = new Date('2026-09-19T11:55:00.000Z');
+      prismaMock.contactMessage.findFirst.mockResolvedValue({ createdAt: latest });
+
+      const result = await repository.findLatestCreatedAtByEmail('ivan@example.com');
+
+      expect(result).toBe(latest);
+      // `mode: 'insensitive'` because `email` is stored as typed: a sender who
+      // wrote `Ivan@Example.com` once must not dodge the cooldown by lower-casing.
+      expect(prismaMock.contactMessage.findFirst).toHaveBeenCalledWith({
+        where: { email: { equals: 'ivan@example.com', mode: 'insensitive' } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+    });
+
+    it('returns null when that email never wrote', async () => {
+      prismaMock.contactMessage.findFirst.mockResolvedValue(null);
+
+      await expect(repository.findLatestCreatedAtByEmail('ghost@example.com')).resolves.toBeNull();
     });
   });
 

@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  fireEvent,
+  renderWithProviders,
+  screen,
+  userEvent,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
@@ -121,6 +126,99 @@ describe("ContactView", () => {
     expect(await screen.findByText(d.errors.rateLimited)).toBeInTheDocument();
     // The form stays visible so the user can retry — no confirmation panel.
     expect(screen.queryByText(d.sentHeading)).not.toBeInTheDocument();
+  });
+
+  it("tells a sender on the per-email cooldown to wait 10 minutes, not one (TASK-452)", async () => {
+    server.use(
+      http.post("*/api/contact", () =>
+        HttpResponse.json(
+          {
+            statusCode: 429,
+            error: "CONTACT_COOLDOWN",
+            message: "A message from this email was received recently.",
+          },
+          { status: 429 },
+        ),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ContactView contact={contact} />);
+
+    await fillAndSubmit(user);
+
+    expect(await screen.findByText(d.errors.cooldown)).toBeInTheDocument();
+    expect(screen.queryByText(d.errors.rateLimited)).not.toBeInTheDocument();
+    expect(screen.queryByText(d.sentHeading)).not.toBeInTheDocument();
+  });
+
+  describe("honeypot (TASK-452)", () => {
+    const honeypot = (container: HTMLElement) =>
+      container.querySelector<HTMLInputElement>('input[name="website"]');
+
+    it("renders a field people cannot see, reach by Tab or have autofilled", () => {
+      const { container } = renderWithProviders(
+        <ContactView contact={contact} />,
+      );
+
+      const input = honeypot(container);
+      expect(input).not.toBeNull();
+      expect(input).toHaveAttribute("tabindex", "-1");
+      expect(input).toHaveAttribute("autocomplete", "off");
+      // Out of the accessibility tree: no screen reader announces it.
+      expect(input!.closest('[aria-hidden="true"]')).not.toBeNull();
+      expect(
+        screen.queryByRole("textbox", { name: d.honeypotLabel }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("sends no honeypot value for a person", async () => {
+      let received: Record<string, unknown> | null = null;
+      server.use(
+        http.post("*/api/contact", async ({ request }) => {
+          received = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(
+            { data: { id: "contact-1" } },
+            { status: 201 },
+          );
+        }),
+      );
+
+      const user = userEvent.setup();
+      renderWithProviders(<ContactView contact={contact} />);
+
+      await fillAndSubmit(user);
+
+      await screen.findByText(d.sentHeading);
+      expect(received).not.toHaveProperty("website");
+    });
+
+    it("passes a filled honeypot through, so the API can discard the message", async () => {
+      let received: Record<string, unknown> | null = null;
+      server.use(
+        http.post("*/api/contact", async ({ request }) => {
+          received = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(
+            { data: { id: "contact-1" } },
+            { status: 201 },
+          );
+        }),
+      );
+
+      const user = userEvent.setup();
+      const { container } = renderWithProviders(
+        <ContactView contact={contact} />,
+      );
+
+      // What a form-filling bot does: type into every input it finds.
+      fireEvent.input(honeypot(container)!, {
+        target: { value: "https://spam.example" },
+      });
+      await fillAndSubmit(user);
+
+      await screen.findByText(d.sentHeading);
+      expect(received).toMatchObject({ website: "https://spam.example" });
+    });
   });
 
   it("blocks submit and surfaces validation errors when required fields are empty", async () => {

@@ -41,6 +41,10 @@ export const contactSchema = z.object({
   consent: z.boolean().refine((v) => v === true, {
     message: dict.contact.errors.consentRequired,
   }),
+  // Honeypot (TASK-452). No rule beyond the API's own bound: a person never
+  // sees it, and refusing a bot here would tell it the field matters — the API
+  // accepts a filled one and quietly throws the message away instead.
+  website: z.string().max(255).optional(),
 });
 
 export type ContactFormValues = z.infer<typeof contactSchema>;
