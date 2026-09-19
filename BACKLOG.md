@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-696**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-737**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -1030,6 +1030,15 @@
 | TASK-733 | [дані, міграція TASK-435] `20260912150718_add_page_kind` ставить усім наявним сторінкам `kind DEFAULT 'LEGAL'`, тож на базі, створеній до хвилі 176, «Про нас» (`about`, у сіві — `INFO`) живе під `/legal/…`, а хабів немає зовсім (карта контенту: «Довідкові 0», «Хаби 0» на демо-стенді 2026-09-17). Потрібен бекфіл за slug (як у `pages.data.ts`) або інструкція оператору перепризначити види вручну | ⬜ | — |
 | TASK-734 | [адмінка, верстка] «Вхідні повідомлення» на 1440 px: довгий текст у колонці «Повідомлення» не обрізається й налазить на бейдж «Статус» і дату «Отримано» (рядки з реальними зверненнями, `docs/images/admin-guide/43-messages.jpg`) | ⬜ | — |
 
+### Дизайн-система / Claude Design (2026-09-19)
+
+> Знайдено під час повторної синхронізації дизайн-системи в Claude Design (ранбук S7.1).
+
+| ID | Summary | Status | Plan |
+| --- | --- | --- | --- |
+| TASK-735 | [вітрина, CSS] Кольори рамок з утиліт не працюють на всьому сайті: `globals.css:331-334` `* { border-color: var(--color-border) }` стоїть поза `@layer`, а незашарене правило завжди перемагає `@layer utilities` → ігноруються `aria-invalid:border-destructive` (поле з помилкою без червоної рамки), `hover:border-primary/30` картки товару, `focus-visible:border-ring`, ~100 інших `border-{primary,destructive,ring,…}` (перевірено обчисленим стилем у Chromium). Фікс: загорнути в `@layer base` (шаблон shadcn для Tailwind v4); `fix/`-гілка, Playwright-скріншоти до/після ключових екранів, бо зміниться вигляд десятків місць. Так з першого коміту вітрини (`8aeeada8`); у адмінці те саме правило (`store-admin/src/app/globals.css:221-224`) — чинити обидва | ⬜ | — |
+| TASK-736 | [вітрина, a11y] Неактивні стани майже зливаються з білим: `disabled:opacity-50` у `shared/ui` `button`, `input`, `textarea`, `select`, `tabs`, `label` накладається на вже сірий текст — плейсхолдер/значення `muted-foreground` на 50 % дає ≈2,0:1, `foreground` на 50 % ≈3,4:1 (при 4,5:1 для тексту), тоді як `docs/design-system.md` §6 вимагає «still readable». Замінити прозорість на явні токени неактивного стану (напр. `bg-muted` + `text-muted-foreground` без opacity, рамка `border-input`), перевірити в обох темах; помічено під час перегляду карток дизайн-системи 2026-09-19. Після TASK-735 (рамки неактивних полів теж залежать від нього) | ⬜ | — |
+
 ---
 
 ## How to Update This File
@@ -1038,6 +1047,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-735**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-737**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
