@@ -354,8 +354,25 @@ jobs:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
     needs: [test-unit]
-    # Non-blocking while the full-stack harness (web servers + seeded DB) is
-    # being stabilized. Remove once it has proven reliable over several runs.
+    # Non-blocking while the suite is not green. The rule (TASK-455): this line
+    # goes — and the job joins the deploy jobs' `needs:` — only after THREE
+    # consecutive full local runs pass, not on a feeling that it is stable.
+    #
+    # Evidence 2026-09-19 (chore/452-quality, fresh Postgres 17 + migrated
+    # store_test, 31 tests, 1 worker, no retries): 0 of 3 runs green —
+    # 7 / 5 / 5 failures. Five fail 3 of 3, so they are not flakes but the
+    # specs and the storefront disagreeing:
+    #   - responsive `/products fits 320px` — the page really scrolls sideways
+    #     (scrollWidth 331 > 320; the catalog toolbar and its sort button);
+    #   - responsive `/cart fits 320/360/390px` — the empty cart renders its
+    #     title as an h2, so the `#main-content h1` readiness gate never shows;
+    #   - theme `the dark: utilities follow the explicit choice` — the catalog
+    #     search is now labelled «Пошук товарів», and the spec looks for an
+    #     exact «Пошук».
+    # The other two failed only on the first, cold run (auth-flow login and
+    # the admin deep-linked ?status filter — both left on /login while the dev
+    # servers compiled on demand), which CI's `retries: 2` would likely absorb.
+    # Re-measure after those are fixed; the backlog row carries the details.
     continue-on-error: true
     services:
       postgres:
@@ -578,7 +595,9 @@ jobs:
   # TRIGGER: runs ONLY on a push to `develop` and ONLY after the blocking test
   # jobs above are green. The `needs:` graph IS the "after green CI" gate — no
   # extra webhook/polling. `test-e2e-playwright` is deliberately NOT in `needs:`
-  # (it is `continue-on-error` and must never gate a deploy).
+  # (it is `continue-on-error` and must never gate a deploy). It joins `needs:`
+  # here and in deploy-production together with dropping continue-on-error —
+  # the condition and the 2026-09-19 measurement are on that job (TASK-455).
   #
   # DOCS-ONLY PUSH (TASK-455): `changes` skips the test jobs, a skipped need
   # skips this job, and the run ends green with "Deploy to Staging: skipped".
