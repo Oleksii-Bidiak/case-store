@@ -97,6 +97,9 @@ crontab -e
 30 3 * * * cd /opt/case-store && ./scripts/backup.sh >> /var/log/store-backup.log 2>&1
 ```
 
+Щоб дізнатись, що нічний бекап **упав або не запустився**, додайте в цей самий рядок
+`BACKUP_PING_URL` — як саме, у [06-day-to-day.md §1.4](06-day-to-day.md).
+
 ---
 
 ## 2. Зробити бекап прямо зараз
