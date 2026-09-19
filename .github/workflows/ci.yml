@@ -59,7 +59,7 @@ on:
 #   - The heavy roots (typecheck, lint, contract-freshness) run only when it
 #     did; build, test-unit, test-e2e, test-e2e-playwright and test-int hang off
 #     those roots through `needs:` and are skipped with them.
-#   - Cheap zero-dependency gates (lockfile-platform, env-drift) are
+#   - Cheap zero-dependency gates (lockfile-platform, env-drift, docs-links) are
 #     NOT filtered: they cost seconds, and env-drift even READS a doc
 #     (docs/deploy/04a-env-matrix.md), so a "docs-only" change can break it.
 #
@@ -88,7 +88,7 @@ on:
 # changes — nothing in this file can enforce it):
 #   CI:       Detect Changes, Type Check, Lint, Build, Unit Tests, E2E Tests,
 #             Integration Tests, OpenAPI Contract Freshness,
-#             Lockfile Platform Coverage, Env Drift Gate
+#             Lockfile Platform Coverage, Env Drift Gate, Docs Links
 #   Security: Secret scan (gitleaks), npm audit, CodeQL (javascript-typescript),
 #             Dependency review (PR-only — it does not run on push, so require
 #             it for pull requests only)
@@ -226,6 +226,29 @@ jobs:
         with:
           node-version: 22
       - run: node scripts/env-check.js --audit
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # docs-links (TASK-453 wrote the checker, TASK-455 wires it) — every repo path
+  # the living docs mention must exist.
+  #
+  # Deliberately NOT behind the `changes` filter, although it is about docs:
+  # the commonest way to break a doc link is a CODE change — a script renamed,
+  # a folder moved — in a commit that never opens the doc that pointed at it.
+  # Filtering on docs/** would miss exactly that. It costs a few seconds.
+  #
+  # Zero dependencies (fs/path/child_process only), so no `npm ci`: `npm run`
+  # only reads package.json. It does call `git check-ignore`, which is why it
+  # needs the checkout rather than a bare download.
+  # ──────────────────────────────────────────────────────────────────────────
+  docs-links:
+    name: Docs Links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run docs:links
 
   lint:
     name: Lint
