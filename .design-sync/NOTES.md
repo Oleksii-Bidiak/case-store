@@ -124,6 +124,17 @@ category tile reuses the site's oklch `categoryGradient` formula). 27 subcompone
 - **ProductCard preview** uses an inline mock cast `as any` and MUST set `inStock`
   (otherwise every card renders «Немає в наявності» — happened once, TASK-362 changed
   the card). If `PublicProductEntity` changes, refresh `.design-sync/previews/ProductCard.tsx`.
+- **Design projects hold their own COPY of the design system.** The store's mockups live
+  in the regular project «store-client — Pages» (`a8ec3567-e819-4d5c-948c-04a1a8fd47aa`),
+  which binds a snapshot under `_ds/store-client-design-system-<projectId>/` (README,
+  `_adherence.oxlintrc.json`, `_ds_bundle.{js,css}`, `_ds_manifest.json`, `styles.css`).
+  An upload to the design-system project does NOT refresh it — until 2026-09-19 Pages ran
+  the July bundle. After every sync: wait until the DS project's `_ds_manifest.json` is
+  regenerated (open the project once), then `copy_files` those 6 files from the DS project
+  into Pages (claude-design MCP, `finalize_plan` + `if_match`), and screenshot every Pages
+  `*.dc.html` before/after. Contract changes surface there first: 2026-09-19 the new
+  `ProductCard` rendered every mock product «Немає в наявності» because Pages' mock data
+  had no `inStock`.
 - **The Claude Design project also holds files this sync does not own**:
   `templates/homepage`, `templates/cart`, `screenshots/`, `uploads/`. Never put them
   in a plan's deletes; their freshness is audited separately (runbook S7.2).
