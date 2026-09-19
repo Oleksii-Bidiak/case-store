@@ -36,6 +36,12 @@
 #   BACKUP_KEEP_DAYS  optional   default 7 (local only; set the long retention as
 #                                a lifecycle rule on the remote bucket)
 #   COMPOSE_FILES     optional   default "-f docker-compose.prod.yml"
+#   BACKUP_PING_URL   optional   healthchecks.io ping URL (https://hc-ping.com/<uuid>),
+#                                a dead-man switch for the NIGHTLY run (TASK-454).
+#                                Set it on the crontab line, not in the env file:
+#                                the pre-deploy `--db-only` runs should not report
+#                                to the check that watches the nightly job. Unset →
+#                                no pings at all, the script behaves as it always did.
 #
 # Exits non-zero on ANY failure — the deploy pipeline depends on that to refuse
 # to migrate a database it has no fresh backup of.
@@ -64,8 +70,49 @@ COMPOSE="docker compose $COMPOSE_FILES --env-file $ENV_FILE"
 
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
-die() { echo "backup: FAILED — $*" >&2; exit 1; }
+FAIL_REASON=""
+die() { FAIL_REASON="$*"; echo "backup: FAILED — $*" >&2; exit 1; }
 log() { echo "backup: $*"; }
+
+# ─── Dead-man switch (optional) ─────────────────────────────────────────────
+# A backup that stopped running is silent: no error, no log line, nothing. The
+# only thing that notices is something that EXPECTS a signal and complains when
+# it does not arrive — healthchecks.io does exactly that. The script reports
+# start, success, or failure (with the reason); a run that never reports at all
+# (cron gone, server dead, script hung) is caught by the check's own timeout.
+#
+# The ping must never decide the backup's fate: a healthchecks.io outage or no
+# network is not a failed backup. Every ping is best-effort, bounded in time,
+# and its result is discarded.
+ping_hc() { # $1 = suffix ("" | /start | /fail), $2 = body
+  command -v curl >/dev/null 2>&1 || { echo "backup: WARNING — curl not found, ping skipped" >&2; return 0; }
+  curl -fsS -m 10 --retry 3 -o /dev/null --data-raw "${2:-}" "${BACKUP_PING_URL}$1" \
+    || echo "backup: WARNING — healthchecks ping$1 failed (backup result unaffected)" >&2
+  return 0
+}
+
+on_exit() {
+  local rc=$?
+  set +e
+  if [[ $rc -eq 0 ]]; then
+    ping_hc "" "backup: done — $STAMP"
+  else
+    ping_hc /fail "backup: FAILED (exit $rc) — ${FAIL_REASON:-see /var/log/store-backup.log}"
+  fi
+  exit "$rc"
+}
+
+if [[ -n "${BACKUP_PING_URL:-}" ]]; then
+  BACKUP_PING_URL="${BACKUP_PING_URL%/}"
+  # EXIT covers `die`, `set -e` and `set -u` exits alike. The signal traps are
+  # needed because bash runs the EXIT trap with status 0 when killed by an
+  # untrapped SIGTERM — a killed backup would otherwise report SUCCESS.
+  trap on_exit EXIT
+  trap 'FAIL_REASON="interrupted (SIGINT)"; exit 130' INT
+  trap 'FAIL_REASON="killed (SIGTERM)"; exit 143' TERM
+  trap 'FAIL_REASON="hangup (SIGHUP)"; exit 129' HUP
+  ping_hc /start ""
+fi
 
 # ─── Preflight ──────────────────────────────────────────────────────────────
 # Check everything BEFORE producing anything. A backup script that half-works is
