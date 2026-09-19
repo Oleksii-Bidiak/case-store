@@ -45,10 +45,134 @@ on:
 # node-version is 22 (not 20) on every job that ends up running orval:
 # orval@8.21 declares `engines.node >= 22.18` and refuses to start on 20.
 # ────────────────────────────────────────────────────────────────────────────
+#
+# ────────────────────────────────────────────────────────────────────────────
+# ONE PIPELINE, NOT A SPLIT MONOREPO (TASK-455) — and what that means here.
+#
+# The repo stays one monorepo on purpose: the OpenAPI → Orval contract is caught
+# inside a single PR, the production deploy already builds only the images whose
+# inputs changed (see deploy-production), and the team is one person. What a
+# split would have bought — "a docs change does not rebuild the world" — is
+# bought here by the `changes` job instead:
+#
+#   - `changes` decides whether anything OTHER than documentation changed.
+#   - The heavy roots (typecheck, lint, contract-freshness) run only when it
+#     did; build, test-unit, test-e2e, test-e2e-playwright and test-int hang off
+#     those roots through `needs:` and are skipped with them.
+#   - Cheap zero-dependency gates (lockfile-platform, env-drift) are
+#     NOT filtered: they cost seconds, and env-drift even READS a doc
+#     (docs/deploy/04a-env-matrix.md), so a "docs-only" change can break it.
+#
+# CACHES beyond `cache: npm` — added only where a measurement said it pays:
+#   - Playwright browsers: yes (test-e2e-playwright; the one big download).
+#   - Next.js `.next/cache` in `build`: no — see the comment on that job
+#     (~0.7 MB after a Turbopack build; nothing to restore).
+#   - Prisma engines: no. Prisma 7 fetches a single ~20 MB schema-engine
+#     binary during `npm ci` — seconds. Not worth a cache step in eight jobs
+#     whose key would have to be scraped out of the lockfile before `npm ci`.
+#   - The Turbopack DEV cache the Playwright web servers build (~690 MB per
+#     app): no — two of those per run would evict everything else from the
+#     repo's 10 GB cache allowance for a non-blocking job.
+#
+# BRANCH PROTECTION — a skipped job reports its check as "skipped", and GitHub
+# counts "skipped" as PASSING for a required status check. That is what lets a
+# docs-only PR merge while its build/test checks were never run, and it is
+# intended. The flip side: a job skipped by MISTAKE passes just as green. Two
+# things guard against that. The filter fails OPEN (anything it cannot
+# classify, and a filter step that errors out, count as code). And
+# `Detect Changes` itself must be required: if the job still FAILS (say, the
+# checkout), every job below it is skipped, not failed — without it on the
+# list that would read as an all-green PR.
+#
+# Checks to mark REQUIRED on `develop` and `main` (a repo setting the owner
+# changes — nothing in this file can enforce it):
+#   CI:       Detect Changes, Type Check, Lint, Build, Unit Tests, E2E Tests,
+#             Integration Tests, OpenAPI Contract Freshness,
+#             Lockfile Platform Coverage, Env Drift Gate
+#   Security: Secret scan (gitleaks), npm audit, CodeQL (javascript-typescript),
+#             Dependency review (PR-only — it does not run on push, so require
+#             it for pull requests only)
+# NOT required: E2E Tests (Playwright) — continue-on-error, see that job — and
+# the advisory Trivy scans in security.yml.
+# ────────────────────────────────────────────────────────────────────────────
 jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # changes (TASK-455) — "did anything besides documentation change?"
+  #
+  # Inverted on purpose: the filter lists what is DOCUMENTATION, and every
+  # other path counts as code. A list of code paths would have to be kept in
+  # step with every new top-level file (tsconfig, .nvmrc, compose, Caddyfile…)
+  # and would fail CLOSED the day someone forgot one — tests silently skipped.
+  # This way a forgotten path costs one unnecessary full run, never a missed one.
+  #
+  # FORCED FULL RUN on a push to `main` and on `workflow_dispatch`: those are
+  # the two paths into deploy-production, which `needs:` the test jobs — a
+  # skipped test job would skip the deploy with it, and a manual re-run is
+  # exactly the case where "nothing changed" is the point. On `develop` a
+  # docs-only push skips the tests and therefore deploy-staging too, which is
+  # correct: the images would be identical to the ones already running.
+  # ──────────────────────────────────────────────────────────────────────────
+  changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # paths-filter lists a PR's files through the REST API on pull_request.
+      pull-requests: read
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Classify changed paths
+        id: filter
+        if: >-
+          github.event_name != 'workflow_dispatch'
+          && !(github.event_name == 'push' && github.ref == 'refs/heads/main')
+        # A filter that breaks (API hiccup, missing base commit) must not skip
+        # the tests: the step is allowed to fail, and `Resolve scope` then
+        # treats the missing output as "code changed".
+        continue-on-error: true
+        uses: dorny/paths-filter@v3
+        with:
+          # `every`: a file counts as code only if it matches ALL patterns —
+          # i.e. it is anything (`**`) that is not one of the negated doc paths.
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!docs/**'
+              - '!**/*.md'
+              - '!.claude/**'
+      - name: Resolve scope
+        id: scope
+        # Through env, never interpolated into the script: github.ref is a branch
+        # name, and workflow_dispatch accepts any branch.
+        env:
+          FILTER_OUTCOME: ${{ steps.filter.outcome }}
+          FILTERED: ${{ steps.filter.outputs.code }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$FILTER_OUTCOME" = "skipped" ]; then
+            echo "Forced full run ($EVENT on $REF)."
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          elif [ "$FILTERED" = "false" ]; then
+            echo "Documentation-only change: build and test jobs will be skipped."
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          else
+            # "true", or anything unexpected (the filter failed, empty output)
+            # — fail open.
+            if [ "$FILTER_OUTCOME" != "success" ]; then
+              echo "::warning::paths-filter did not succeed ($FILTER_OUTCOME) — running everything."
+            fi
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          fi
+
   typecheck:
     name: Type Check
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -106,6 +230,8 @@ jobs:
   lint:
     name: Lint
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -116,6 +242,15 @@ jobs:
       # `prelint` runs `npm run codegen` (prisma generate + orval) first.
       - run: npm run lint
 
+  # Skipped on a docs-only change through `needs:` — typecheck and lint carry
+  # the `changes` condition, and a job whose need was skipped is skipped too.
+  #
+  # No `.next/cache` cache here, on measurement (TASK-455): Next 16 builds with
+  # Turbopack, whose persistent build cache is opt-in and experimental
+  # (`experimental.turbopackFileSystemCacheForBuild`, default false). Without it
+  # `next build` leaves ~0.7 MB in .next/cache (a config file and devtools
+  # state) — nothing a restore could speed up. Worth adding the day that flag is
+  # turned on; until then it would be a cache step that only looks useful.
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -228,7 +363,28 @@ jobs:
       # (it comes from prisma.config.ts), so a root-cwd `--schema` invocation fails
       # with "datasource.url property is required" before applying anything (TASK-303).
       - run: npx prisma migrate deploy --config apps/store-api/prisma.config.ts
-      - run: npx playwright install --with-deps chromium
+      # Browser cache (TASK-455). The Chromium download is the one sizeable
+      # fetch in this job that npm's cache does not cover. Keyed on the
+      # INSTALLED @playwright/test version, not on the lockfile: each Playwright
+      # release pins its own browser revision, so the version is exactly what
+      # decides whether a cached browser still fits — an unrelated dependency
+      # bump keeps the hit. The OS libraries live outside the cached directory
+      # (apt), so a hit still installs those, just without the download.
+      - name: Resolve the Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}-chromium
+      - name: Install Chromium with its OS dependencies
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install Chromium OS dependencies (browser restored from cache)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
       # playwright.config.ts boots the API + storefront + admin panel (webServer)
       # and seeds the DB via globalSetup before running the specs.
       - run: npm run test:e2e:pw
@@ -303,7 +459,8 @@ jobs:
   # wrong. This job re-exports the spec and fails if the result differs from what
   # is committed.
   #
-  # Standalone (no `needs:`) so it reports independently and early. It is
+  # Needs only `changes` (seconds), so it still reports independently and early,
+  # and is skipped with the other code jobs on a docs-only change. It is
   # deliberately NOT in the deploy jobs' `needs:` — those export the spec
   # themselves before building images, so a stale committed spec cannot reach an
   # image. The risk this covers is drift in the repo, not in a deployment.
@@ -314,6 +471,8 @@ jobs:
   contract-freshness:
     name: OpenAPI Contract Freshness
     runs-on: ubuntu-latest
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     services:
       # Throwaway Postgres — ONLY so `swagger:export` can boot AppModule
       # (PrismaService.$connect() opens a real connection). No schema or tables
@@ -397,6 +556,13 @@ jobs:
   # jobs above are green. The `needs:` graph IS the "after green CI" gate — no
   # extra webhook/polling. `test-e2e-playwright` is deliberately NOT in `needs:`
   # (it is `continue-on-error` and must never gate a deploy).
+  #
+  # DOCS-ONLY PUSH (TASK-455): `changes` skips the test jobs, a skipped need
+  # skips this job, and the run ends green with "Deploy to Staging: skipped".
+  # That is the intended outcome, not a stuck pipeline — nothing that goes into
+  # an image changed, so there is nothing to redeploy. The next code push
+  # deploys as usual. deploy-production never sees this case: `changes` forces
+  # a full run on `main` pushes and on workflow_dispatch.
   #
   # FIRST REAL DEPLOY IS MANUAL: this job cannot run until the owner provisions
   # the VPS, points DNS, and fills the `staging` GitHub Environment (4 secrets +
@@ -745,6 +911,11 @@ jobs:
   #      running untouched — no restart, no dropped requests. (The old scheme
   #      tagged all three with the pushed commit's SHA, so every deploy looked like
   #      a change to all three, and all three restarted.)
+  #
+  # Its `needs:` test jobs ALWAYS run on the two events that can reach it (a
+  # push to `main`, workflow_dispatch) — the `changes` job forces a full run
+  # there, so a docs-only merge to main cannot silently skip a production
+  # deploy or a manual re-run (TASK-455).
   # ──────────────────────────────────────────────────────────────────────────
   deploy-production:
     name: Deploy to Production
