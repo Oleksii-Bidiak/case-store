@@ -12,7 +12,14 @@ on:
     # Mondays 06:00 UTC, alongside the Dependabot run.
     - cron: "0 6 * * 1"
   workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "GHCR tag for the image scan (staging-latest = what develop last deployed)"
+        required: false
+        default: staging-latest
 
+# Least privilege by default; the two jobs that need more (CodeQL uploading
+# results, the image scan pulling from GHCR) raise it for themselves only.
 permissions:
   contents: read
 
@@ -101,6 +108,131 @@ jobs:
         with:
           scan-type: fs
           scan-ref: .
+          scanners: vuln
+          exit-code: "0"
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+
+  # ── Static analysis (TASK-452) ─────────────────────────────────────────────
+  # CodeQL's JS/TS queries: injection, SSRF, open redirect, prototype pollution,
+  # insecure randomness and the like, traced across the three apps. Free since
+  # the repository went public (on a private repo it needs GitHub Advanced
+  # Security). Findings land in Security → Code scanning rather than failing this
+  # job; whether a new alert blocks a merge is a branch-protection setting
+  # ("Code scanning results" as a required check), not something to encode here.
+  codeql:
+    name: CodeQL (javascript-typescript)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Upload SARIF to code scanning.
+      security-events: write
+      # Read the run's own metadata (only required on private repos).
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: javascript-typescript
+          # Interpreted language: CodeQL reads the sources directly, so no
+          # `npm ci` and no build — and no Orval output, which is gitignored
+          # generated code and not ours to review.
+          build-mode: none
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:javascript-typescript"
+
+  # ── New-dependency gate on pull requests (TASK-452) ────────────────────────
+  # Diffs the PR's lockfile against its base and fails on a newly ADDED
+  # dependency with a known high/critical advisory — the moment it is cheapest to
+  # say no. Same line as the blocking `npm audit` gate above: high and critical,
+  # runtime scope only (dev tooling never ships, see the report-only audit step).
+  # It complements that gate rather than duplicating it: audit-gate judges the
+  # whole tree on every run, this one only what the PR introduces.
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          fail-on-scopes: runtime
+          # A PR comment would need `pull-requests: write`; the job summary
+          # carries the same table.
+          comment-summary-in-pr: never
+
+  # ── Built-image scan (TASK-452) ────────────────────────────────────────────
+  # The `trivy` job above reads the repo; this one reads what actually ships —
+  # the three images ci.yml's staging deploy pushes to GHCR — so it also sees the
+  # OS packages of the node base image, which no lockfile lists.
+  #
+  # Advisory like the other Trivy scans (exit-code 0: read the log/summary), and
+  # scheduled rather than per-push: an image's CVE count changes when advisories
+  # are published, not when we commit, and the weekly cron is what catches that.
+  image-scan:
+    name: Trivy image (${{ matrix.image }})
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Pull the images from GHCR with the workflow token.
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [store-api, store-client, store-admin]
+    env:
+      # `inputs` is empty on the cron run, so fall back to the develop tag.
+      IMAGE_TAG: ${{ inputs.image_tag || 'staging-latest' }}
+    steps:
+      # Same coordinates as ci.yml's deploy jobs: GHCR paths must be lowercase and
+      # the owner renders mixed-case (keep in sync with ci.yml and
+      # docker-compose.staging.yml).
+      - name: Compute image reference
+        id: img
+        run: |
+          owner_lc="$(printf '%s' "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')"
+          echo "ref=ghcr.io/${owner_lc}/${{ matrix.image }}:${IMAGE_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Until a staging deploy has pushed the tag there is nothing to scan (no
+      # deploy has run while Actions was locked, TASK-491). Say so in the summary
+      # instead of going red: a missing image is not a vulnerability.
+      - name: Check the image exists
+        id: exists
+        env:
+          REF: ${{ steps.img.outputs.ref }}
+        run: |
+          if docker manifest inspect "$REF" > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::$REF not found in GHCR — nothing to scan."
+            echo "### ${{ matrix.image }}: \`$REF\` not found — skipped" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Scan the image for known CVEs
+        if: steps.exists.outputs.found == 'true'
+        uses: aquasecurity/trivy-action@0.28.0
+        env:
+          # Trivy pulls the image itself; these are its registry credentials.
+          TRIVY_USERNAME: ${{ github.actor }}
+          TRIVY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          scan-type: image
+          image-ref: ${{ steps.img.outputs.ref }}
           scanners: vuln
           exit-code: "0"
           severity: HIGH,CRITICAL
