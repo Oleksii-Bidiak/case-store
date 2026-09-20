@@ -149,8 +149,17 @@ jobs:
   # ── New-dependency gate on pull requests (TASK-452) ────────────────────────
   # Diffs the PR's lockfile against its base and fails on a newly ADDED
   # dependency with a known high/critical advisory — the moment it is cheapest to
-  # say no. Same line as the blocking `npm audit` gate above: high and critical,
-  # runtime scope only (dev tooling never ships, see the report-only audit step).
+  # say no. Nominally the same line as the blocking `npm audit` gate above —
+  # high and critical, runtime scope only (dev tooling never ships).
+  #
+  # NOT the same line in practice, and it is worth knowing which way it leans:
+  # GitHub's dependency graph scopes a package by how it ENTERS the manifest, so
+  # the ESLint chain is `development` to it, while `npm audit --omit=dev` walks
+  # it as production because the root links `packages/eslint-config` as a
+  # workspace dependency (the quirk scripts/audit-gate.js documents at length).
+  # So `fail-on-scopes: runtime` never sees the class of advisory audit-gate has
+  # to allowlist — this gate is the narrower of the two, not an equal one.
+  #
   # It complements that gate rather than duplicating it: audit-gate judges the
   # whole tree on every run, this one only what the PR introduces.
   dependency-review:
@@ -210,18 +219,41 @@ jobs:
       # Until a staging deploy has pushed the tag there is nothing to scan (no
       # deploy has run while Actions was locked, TASK-491). Say so in the summary
       # instead of going red: a missing image is not a vulnerability.
+      #
+      # ONLY a missing image, though. Treating every non-zero exit as "not
+      # found" — which is what a bare `if docker manifest inspect` does — makes
+      # a registry 5xx, an expired token or a CLI change look exactly like an
+      # image that was never pushed, and the job then reports green while
+      # scanning nothing, for as long as the condition lasts. So: inspect the
+      # error, skip on a real "unknown manifest" (or 404/denied for a tag that
+      # does not exist yet), and fail on anything else.
       - name: Check the image exists
         id: exists
         env:
           REF: ${{ steps.img.outputs.ref }}
         run: |
-          if docker manifest inspect "$REF" > /dev/null 2>&1; then
+          set +e
+          err="$(docker manifest inspect "$REF" 2>&1 >/dev/null)"
+          rc=$?
+          set -e
+
+          if [ "$rc" -eq 0 ]; then
             echo "found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "found=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::$REF not found in GHCR — nothing to scan."
-            echo "### ${{ matrix.image }}: \`$REF\` not found — skipped" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
           fi
+
+          case "$err" in
+            *MANIFEST_UNKNOWN*|*manifest\ unknown*|*not\ found*|*NAME_UNKNOWN*|*denied*)
+              echo "found=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::$REF not found in GHCR — nothing to scan."
+              echo "### ${{ matrix.image }}: \`$REF\` not found — skipped" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::Could not reach GHCR for $REF — this is NOT 'no image yet'."
+              echo "$err"
+              exit 1
+              ;;
+          esac
 
       - name: Scan the image for known CVEs
         if: steps.exists.outputs.found == 'true'

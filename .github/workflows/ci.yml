@@ -10,6 +10,11 @@ on:
   # the `workflow_dispatch` condition on deploy-production could never be true.
   workflow_dispatch:
 
+# Least privilege by default. The three jobs that need more (changes, and the
+# two deploys) widen it themselves; the other eleven only read the checkout.
+permissions:
+  contents: read
+
 # ────────────────────────────────────────────────────────────────────────────
 # API CONTRACT & CODEGEN (TASK-325) — why these jobs look the way they do.
 #
@@ -134,6 +139,15 @@ jobs:
         continue-on-error: true
         uses: dorny/paths-filter@v3
         with:
+          # REQUIRED on push. Without `base` the action falls back to the
+          # repository's DEFAULT branch (`main`), so a push to develop is diffed
+          # against its merge-base with main — i.e. against the last release,
+          # which always contains code. `code` would then be true on every
+          # develop push and the docs-only skip below would never once fire.
+          # Naming the branch that was pushed to is what makes the action diff
+          # against the commit before the push. Ignored on pull_request, where
+          # the action lists the PR's files through the API instead.
+          base: ${{ github.ref_name }}
           # `every`: a file counts as code only if it matches ALL patterns —
           # i.e. it is anything (`**`) that is not one of the negated doc paths.
           predicate-quantifier: every
@@ -647,6 +661,36 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      # ── does a staging stand exist yet? ──────────────────────────────────
+      # FIRST, before anything is built or pushed. The three image builds below
+      # carry `push: true` and run long before the first step that touches a
+      # secret, so without this guard the first push to develop publishes
+      # `store-{api,client,admin}:staging-latest` built with
+      # NEXT_PUBLIC_API_URL=https://api. (empty STAGING_DOMAIN) and only THEN
+      # goes red on an scp to an empty host. Those broken images then become
+      # what the weekly Trivy image scan scans.
+      #
+      # A step rather than a job-level `if:`: STAGING_DOMAIN lives in the
+      # `staging` Environment, and environment-scoped vars are not resolved yet
+      # when `jobs.<id>.if` is evaluated — the job would stay skipped forever,
+      # including after the owner fills it in.
+      - name: Staging must be configured
+        env:
+          STAGING_DOMAIN: ${{ vars.STAGING_DOMAIN }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          missing=""
+          [ -n "$STAGING_DOMAIN" ] || missing="$missing vars.STAGING_DOMAIN"
+          [ -n "$SSH_HOST" ] || missing="$missing secrets.SSH_HOST"
+          if [ -n "$missing" ]; then
+            echo "::error::Staging is not provisioned yet — missing:$missing."
+            echo "Nothing was built or published. Fill the 'staging' GitHub"
+            echo "Environment (see docs/deploy/04-secrets-ci.md), or this job"
+            echo "would push images built against an empty domain."
+            exit 1
+          fi
+          echo "Staging target: $STAGING_DOMAIN"
+
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
@@ -990,6 +1034,24 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
+      # Same guard as the staging job, same reason: the image builds push before
+      # any step reads a secret, so an unprovisioned target must stop the job
+      # BEFORE anything reaches GHCR.
+      - name: Production must be configured
+        env:
+          PROD_DOMAIN: ${{ vars.PROD_DOMAIN }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          missing=""
+          [ -n "$PROD_DOMAIN" ] || missing="$missing vars.PROD_DOMAIN"
+          [ -n "$SSH_HOST" ] || missing="$missing secrets.SSH_HOST"
+          if [ -n "$missing" ]; then
+            echo "::error::Production is not provisioned yet — missing:$missing."
+            echo "Nothing was built or published. See docs/deploy/04-secrets-ci.md."
+            exit 1
+          fi
+          echo "Production target: $PROD_DOMAIN"
+
       - uses: actions/checkout@v4
         with:
           # Full history: the per-app tags below are computed from `git log`, and
