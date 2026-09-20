@@ -33,20 +33,49 @@
  * changes, this one must change with it — or `form-action` blocks every card
  * payment with nothing but a console line to show for it.
  */
-export const LIQPAY_CHECKOUT_ORIGIN = "https://www.liqpay.ua";
+export const LIQPAY_CHECKOUT_ORIGINS = [
+  "https://www.liqpay.ua",
+  // The apex too, deliberately. Chrome and Safari apply `form-action` to every
+  // REDIRECT of the form navigation, not just its first target: a 302 from
+  // `www.liqpay.ua` to `liqpay.ua` would cancel the navigation with nothing but
+  // a console line, and the order would already exist server-side with a
+  // pending payment. We have never run this path against the live provider
+  // (SF-PAY-17 is still blocked on a LiqPay sandbox), so the narrow guess is
+  // the expensive one — both hosts are the same provider either way.
+  "https://liqpay.ua",
+] as const;
 
 export interface ContentSecurityPolicyInput {
   /** `NODE_ENV === "development"` — adds `'unsafe-eval'` for React's dev stacks. */
   isDev: boolean;
   /** `NEXT_PUBLIC_API_URL` — XHR target and the `/uploads` image origin. */
   apiUrl?: string;
-  /** Validated bare hostnames from `NEXT_PUBLIC_IMAGE_HOSTS` (https only). */
+  /**
+   * Bare hostnames from `NEXT_PUBLIC_IMAGE_HOSTS` (https only). Validated HERE,
+   * not by the caller: sources are joined with spaces, so one value containing
+   * a space would splice a second, arbitrary source into `img-src` — and the
+   * header is assembled in this file, which is also the part that has tests.
+   */
   imageHosts?: readonly string[];
   /** `NEXT_PUBLIC_UMAMI_SRC` — tracker script URL; beacons go to the same origin. */
   umamiSrc?: string;
-  /** `NEXT_PUBLIC_SENTRY_DSN` — only its host is used (the ingest endpoint). */
+  /**
+   * `NEXT_PUBLIC_SENTRY_DSN` — only its host is used (the ingest endpoint).
+   *
+   * No `worker-src` is emitted, which is correct only while Session Replay is
+   * off: Replay's compression worker is a `blob:` URL, and `worker-src` falls
+   * back through `child-src` to `script-src`, which carries no `blob:`. Adding
+   * `replayIntegration()` therefore needs `worker-src 'self' blob:` here, or
+   * replays silently never arrive.
+   */
   sentryDsn?: string;
 }
+
+/**
+ * A bare hostname: letters, digits, dots and dashes. No scheme, port, path,
+ * wildcard — and, critically, no whitespace or CSP keyword.
+ */
+const HOSTNAME_RE = /^[a-z0-9.-]+$/;
 
 /**
  * The `http(s)` origin of a URL, or undefined for anything unset, unparseable or
@@ -81,7 +110,10 @@ export function buildContentSecurityPolicy(
   const api = httpOrigin(input.apiUrl);
   const umami = httpOrigin(input.umamiSrc);
   const sentry = httpOrigin(input.sentryDsn);
-  const imageHosts = (input.imageHosts ?? []).map((host) => `https://${host}`);
+  const imageHosts = (input.imageHosts ?? [])
+    .map((host) => host.trim().toLowerCase())
+    .filter((host) => HOSTNAME_RE.test(host))
+    .map((host) => `https://${host}`);
 
   const directives: [string, string[]][] = [
     ["default-src", ["'self'"]],
@@ -104,7 +136,7 @@ export function buildContentSecurityPolicy(
     ["connect-src", sources("'self'", api, sentry, umami)],
     ["object-src", ["'none'"]],
     ["base-uri", ["'self'"]],
-    ["form-action", ["'self'", LIQPAY_CHECKOUT_ORIGIN]],
+    ["form-action", ["'self'", ...LIQPAY_CHECKOUT_ORIGINS]],
     // Matches `X-Frame-Options: SAMEORIGIN`, which stays for old browsers.
     ["frame-ancestors", ["'self'"]],
   ];

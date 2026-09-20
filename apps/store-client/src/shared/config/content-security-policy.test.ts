@@ -1,6 +1,6 @@
 import {
   buildContentSecurityPolicy,
-  LIQPAY_CHECKOUT_ORIGIN,
+  LIQPAY_CHECKOUT_ORIGINS,
 } from "./content-security-policy";
 
 /** Split a policy into `directive → sources[]` for order-independent asserts. */
@@ -47,8 +47,13 @@ describe("buildContentSecurityPolicy (TASK-452)", () => {
   it("lets the storefront post to the LiqPay checkout and nowhere else", () => {
     const csp = parse(buildContentSecurityPolicy(base));
 
-    expect(LIQPAY_CHECKOUT_ORIGIN).toBe("https://www.liqpay.ua");
-    expect(csp["form-action"]).toEqual(["'self'", LIQPAY_CHECKOUT_ORIGIN]);
+    // Both provider hosts: `form-action` is enforced on REDIRECTS of the form
+    // navigation too, so a 302 from www to the apex must not cancel a payment.
+    expect(LIQPAY_CHECKOUT_ORIGINS).toEqual([
+      "https://www.liqpay.ua",
+      "https://liqpay.ua",
+    ]);
+    expect(csp["form-action"]).toEqual(["'self'", ...LIQPAY_CHECKOUT_ORIGINS]);
   });
 
   it("allows the API origin for XHR and for upload images", () => {
@@ -85,6 +90,31 @@ describe("buildContentSecurityPolicy (TASK-452)", () => {
       "blob:",
       "https://cdn.mystore.ua",
       "https://images.brand.com",
+    ]);
+  });
+
+  it("drops an image host that is not a bare hostname", () => {
+    // Sources are joined with spaces: a value carrying one would otherwise
+    // splice an arbitrary second source (here a CSP keyword) into img-src.
+    const csp = parse(
+      buildContentSecurityPolicy({
+        ...base,
+        imageHosts: [
+          "CDN.MyStore.UA",
+          "evil.com 'unsafe-eval'",
+          "cdn.example.com/path",
+          "*.wildcard.com",
+          "host:8443",
+          "  ",
+        ],
+      }),
+    );
+
+    expect(csp["img-src"]).toEqual([
+      "'self'",
+      "data:",
+      "blob:",
+      "https://cdn.mystore.ua",
     ]);
   });
 
