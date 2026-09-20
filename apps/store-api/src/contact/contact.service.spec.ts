@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessage, ContactMessageStatus } from '@prisma/client';
 import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
@@ -31,6 +31,7 @@ const contactRepositoryMock = {
   countByStatus: jest.fn(),
   findMatchingUserId: jest.fn(),
   findMatchingUserIds: jest.fn(),
+  findLatestCreatedAtByEmail: jest.fn(),
 };
 
 const pinoLoggerMock = {
@@ -115,6 +116,120 @@ describe('ContactService', () => {
       expect(result.matchedUserId).toBeNull();
       expect(contactRepositoryMock.findMatchingUserId).not.toHaveBeenCalled();
       expect(contactRepositoryMock.findMatchingUserIds).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('submit (TASK-452 anti-spam)', () => {
+    const validDto = {
+      name: 'Ivan Petrenko',
+      phone: '380671234567',
+      email: 'ivan@example.com',
+      message: 'Доброго дня! Питання по замовленню.',
+    };
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+    beforeEach(() => {
+      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+      contactRepositoryMock.create.mockResolvedValue(makeMessage());
+    });
+
+    describe('honeypot', () => {
+      it('answers a filled honeypot with a plausible id but stores nothing', async () => {
+        const result = await service.submit({ ...validDto, website: 'https://spam.example' });
+
+        expect(result.id).toMatch(UUID_RE);
+        expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+      });
+
+      it('does not even consult the cooldown for a bot — no DB read at all', async () => {
+        await service.submit({ ...validDto, website: 'x' });
+
+        expect(contactRepositoryMock.findLatestCreatedAtByEmail).not.toHaveBeenCalled();
+      });
+
+      it('mints a fresh id per bot submission, so the fake is not a constant to fingerprint', async () => {
+        const first = await service.submit({ ...validDto, website: 'x' });
+        const second = await service.submit({ ...validDto, website: 'x' });
+
+        expect(first.id).not.toBe(second.id);
+      });
+
+      it('logs the trip without the sender PII', async () => {
+        await service.submit({ ...validDto, website: 'x' });
+
+        const logged = JSON.stringify(pinoLoggerMock.info.mock.calls);
+        expect(logged).toContain('honeypot');
+        expect(logged).not.toContain('ivan@example.com');
+      });
+
+      it.each([undefined, ''])(
+        'treats an empty honeypot (%p) as a human and stores the message',
+        async (website) => {
+          const result = await service.submit({ ...validDto, website });
+
+          expect(result).toEqual({ id: 'msg-uuid-1' });
+          expect(contactRepositoryMock.create).toHaveBeenCalledTimes(1);
+        },
+      );
+
+      it('never forwards the honeypot field to the repository', async () => {
+        await service.submit({ ...validDto, website: '' });
+
+        expect(contactRepositoryMock.create.mock.calls[0][0]).not.toHaveProperty('website');
+      });
+    });
+
+    describe('per-email cooldown', () => {
+      const NOW = new Date('2026-09-19T12:00:00.000Z');
+
+      beforeEach(() => {
+        jest.useFakeTimers({ now: NOW, doNotFake: ['nextTick', 'setImmediate'] });
+      });
+
+      afterEach(() => {
+        jest.useRealTimers();
+      });
+
+      it('looks the sender up by the lower-cased, trimmed email', async () => {
+        await service.submit({ ...validDto, email: '  Ivan@Example.COM ' });
+
+        expect(contactRepositoryMock.findLatestCreatedAtByEmail).toHaveBeenCalledWith(
+          'ivan@example.com',
+        );
+      });
+
+      it('refuses a second message from the same email inside 10 minutes with 429', async () => {
+        contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
+          new Date(NOW.getTime() - 9 * 60 * 1000),
+        );
+
+        const error = await service.submit(validDto).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(HttpException);
+        expect((error as HttpException).getStatus()).toBe(HttpStatus.TOO_MANY_REQUESTS);
+        expect((error as HttpException).getResponse()).toEqual(
+          expect.objectContaining({
+            statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            error: 'CONTACT_COOLDOWN',
+          }),
+        );
+        expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+      });
+
+      it('accepts the next message once 10 minutes have passed', async () => {
+        contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
+          new Date(NOW.getTime() - 10 * 60 * 1000),
+        );
+
+        await expect(service.submit(validDto)).resolves.toEqual({ id: 'msg-uuid-1' });
+        expect(contactRepositoryMock.create).toHaveBeenCalledTimes(1);
+      });
+
+      it('accepts the first message from an email that never wrote before', async () => {
+        contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+
+        await expect(service.submit(validDto)).resolves.toEqual({ id: 'msg-uuid-1' });
+      });
     });
   });
 

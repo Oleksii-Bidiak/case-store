@@ -1,6 +1,7 @@
 import path from "node:path";
 import type { NextConfig } from "next";
 import { withSentryConfig } from "@sentry/nextjs";
+import { buildContentSecurityPolicy } from "./src/shared/config/content-security-policy";
 
 // Product images are served by store-api from `${PUBLIC_BASE_URL}/uploads/...`,
 // which mirrors NEXT_PUBLIC_API_URL on the client. `next/image` refuses any
@@ -46,13 +47,37 @@ const extraImageHosts = (process.env.NEXT_PUBLIC_IMAGE_HOSTS ?? "")
 
 /**
  * Storefront security headers. `X-Frame-Options: SAMEORIGIN` is safe here — no
- * page is meant to be framed by third parties. No CSP: Next injects inline
- * <style>/<script> (RSC payload, next/font, the theme-flash guard) whose hashes
- * we do not control, so a hand-written policy would either break rendering or be
- * neutered by `unsafe-inline`. A nonce-based CSP needs a middleware + a
- * `Content-Security-Policy` wired through `next/headers`; tracked separately.
+ * page is meant to be framed by third parties; the CSP's `frame-ancestors`
+ * says the same for browsers that read it, and the header stays for those that
+ * do not.
+ *
+ * CSP WITHOUT A NONCE (TASK-452, decision 2026-09-19). Next injects inline
+ * <script>/<style> (the RSC payload, next/font, the theme-flash guard), so the
+ * policy has to carry `'unsafe-inline'` for both. The alternative — a nonce from
+ * a proxy/middleware — only works on DYNAMIC rendering: Next stamps the nonce
+ * while rendering a request, and a statically generated page has no request.
+ * Adopting it would turn off static generation and ISR for the whole storefront,
+ * i.e. render every catalogue page and PDP on each hit, on a 2-vCPU box. So the
+ * policy does not block an injected inline script (React's escaping and the
+ * server-side sanitizer own that); it blocks foreign script origins, exfiltration
+ * over fetch/XHR, plugins, `<base>` hijacking, foreign form posts and framing.
+ * The full reasoning and every allowed origin: `src/shared/config/content-security-policy.ts`.
+ *
+ * All origins come from the same NEXT_PUBLIC_* values the bundle is built with
+ * (headers() runs at build time too), so an unset Umami or Sentry simply drops
+ * out of the policy. Relative import, not `@/`: the config loader does not know
+ * the app's path aliases.
  */
+const contentSecurityPolicy = buildContentSecurityPolicy({
+  isDev: process.env.NODE_ENV === "development",
+  apiUrl: apiUrl.toString(),
+  imageHosts: extraImageHosts,
+  umamiSrc: process.env.NEXT_PUBLIC_UMAMI_SRC,
+  sentryDsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+});
+
 const securityHeaders = [
+  { key: "Content-Security-Policy", value: contentSecurityPolicy },
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },

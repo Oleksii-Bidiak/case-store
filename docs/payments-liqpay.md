@@ -334,9 +334,11 @@ base64-символів (20-байтовий дайджест), тоді як у
 **Рішення на запуск:** LiqPay сам, BNPL Привату прапорцем. Якщо за два-три місяці
 розстрочка виявиться помітною часткою продажів — додаємо другий адаптер.
 
-Порт спроєктований саме так, щоб це була **нова тека**
-`apps/store-api/src/payment/adapters/monopay/`, а не переписування: модуль `order` про
-існування LiqPay не знає взагалі, він працює з `PaymentProvider`.
+Порт спроєктований саме так, щоб другий провайдер був **новою текою** поруч із
+[`apps/store-api/src/payment/adapters/liqpay/`](../apps/store-api/src/payment/adapters/liqpay/)
+(для plata by mono — `adapters/monopay/`; **поки що це план, такої теки немає**), а не
+переписуванням: модуль `order` про існування LiqPay не знає взагалі, він працює з
+`PaymentProvider` ([`payment.port.ts`](../apps/store-api/src/payment/payment.port.ts)).
 
 ---
 

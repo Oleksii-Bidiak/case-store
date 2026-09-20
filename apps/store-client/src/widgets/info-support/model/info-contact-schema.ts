@@ -28,6 +28,10 @@ export const infoContactSchema = z.object({
     .trim()
     .min(10, dict.contact.errors.messageRequired)
     .max(5000, dict.contact.errors.messageRequired),
+  // Honeypot (TASK-452) — see `ContactHoneypot` in entities/contact. No rule,
+  // for the reason spelled out in `widgets/contact/model/contact-schema.ts`:
+  // a blocking rule here would silently kill the submit. The form clamps.
+  website: z.string().optional(),
 });
 
 export type InfoContactFormValues = z.infer<typeof infoContactSchema>;

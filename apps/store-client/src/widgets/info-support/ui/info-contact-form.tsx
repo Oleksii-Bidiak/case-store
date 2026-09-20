@@ -2,7 +2,12 @@
 
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useContactControllerSubmit } from "@/entities/contact";
+import {
+  CONTACT_HONEYPOT_FIELD,
+  ContactHoneypot,
+  contactSubmitErrorKind,
+  useContactControllerSubmit,
+} from "@/entities/contact";
 import { dict } from "@/shared/config";
 import {
   infoContactSchema,
@@ -29,11 +34,15 @@ export function InfoContactForm() {
     formState: { errors },
   } = useForm<InfoContactFormValues>({
     resolver: zodResolver(infoContactSchema),
-    defaultValues: { name: "", phone: "", email: "", message: "" },
+    defaultValues: { name: "", phone: "", email: "", message: "", website: "" },
   });
 
-  const onSubmit = (values: InfoContactFormValues) => {
-    submit.mutate({ data: values });
+  const onSubmit = ({ website, ...values }: InfoContactFormValues) => {
+    // Only a bot fills the honeypot (TASK-452); a person's request carries no
+    // key. Clamped to the DTO's 255 — the schema does not validate it.
+    submit.mutate({
+      data: { ...values, website: website?.slice(0, 255) || undefined },
+    });
   };
 
   return (
@@ -144,12 +153,18 @@ export function InfoContactForm() {
             )}
           </div>
 
+          <ContactHoneypot {...register(CONTACT_HONEYPOT_FIELD)} />
+
           {submit.isError && (
             <p
               role="alert"
               className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
             >
-              {d.formError}
+              {/* The cooldown gets its own sentence (TASK-452): this form's
+                  generic «спробуйте ще раз за хвилину» is wrong for it. */}
+              {contactSubmitErrorKind(submit.error) === "cooldown"
+                ? dict.contact.errors.cooldown
+                : d.formError}
             </p>
           )}
 

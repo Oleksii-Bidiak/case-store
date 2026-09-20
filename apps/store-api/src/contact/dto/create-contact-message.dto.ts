@@ -87,4 +87,34 @@ export class CreateContactMessageDto {
   @IsString()
   @MaxLength(120, { message: 'Order reference must be at most 120 characters' })
   orderRef?: string;
+
+  /**
+   * Honeypot (TASK-452). The storefront renders this as an input no person can
+   * see or reach — visually hidden, `aria-hidden`, out of the tab order — so a
+   * human never fills it, and a form-filling bot that types into every field
+   * does. A non-empty value makes the service answer exactly as for a real
+   * message (same 201, same `{ data: { id } }` shape, a fresh random id) while
+   * storing nothing: a bot that got a distinguishable error would simply learn
+   * to leave the field alone.
+   *
+   * Bounded like any other string so it cannot be used to post a megabyte.
+   *
+   * The `@ApiProperty` description below is deliberately bland. `swagger.json`
+   * is committed and this repository is public, so spelling out what the field
+   * is for would hand a scraper the one thing the trap depends on not knowing.
+   * The explanation lives here, in the source, where it belongs.
+   */
+  @ApiProperty({
+    description:
+      'Optional website of the sender. Leave empty or omit it; the storefront ' +
+      'does not collect it.',
+    example: '',
+    required: false,
+    maxLength: 255,
+  })
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(255, { message: 'Website must be at most 255 characters' })
+  website?: string;
 }

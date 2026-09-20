@@ -234,6 +234,27 @@ export class ContactRepository {
   }
 
   /**
+   * When did this email last write to us? Returns the newest `createdAt`, or null
+   * for a first-time sender. Feeds the per-email cooldown in
+   * `ContactService.submit` (TASK-452) — the rule lives there, this is the read.
+   *
+   * Case-insensitive because `email` is stored as the sender typed it: a
+   * cooldown matched exactly would let `Ivan@Example.com` and `ivan@example.com`
+   * each send once.
+   *
+   * No index backs this (`email` is unindexed on `contact_messages`): the table is
+   * a human-answered inbox, orders of magnitude below where a scan matters.
+   */
+  async findLatestCreatedAtByEmail(email: string): Promise<Date | null> {
+    const latest = await this.prisma.contactMessage.findFirst({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      orderBy: { createdAt: 'desc' },
+      select: { createdAt: true },
+    });
+    return latest?.createdAt ?? null;
+  }
+
+  /**
    * Count messages in the NEW (unread) state — powers the admin sidebar badge.
    */
   countByStatus(status: ContactMessageStatus): Promise<number> {

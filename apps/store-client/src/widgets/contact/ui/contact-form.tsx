@@ -4,7 +4,12 @@ import Link from "next/link";
 import { Check } from "lucide-react";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useContactControllerSubmit } from "@/entities/contact";
+import {
+  CONTACT_HONEYPOT_FIELD,
+  ContactHoneypot,
+  contactSubmitErrorKind,
+  useContactControllerSubmit,
+} from "@/entities/contact";
 import { dict } from "@/shared/config";
 // The mask function rather than `shared/ui`'s `PhoneInput`: this form draws its
 // own fields (`FIELD` below), and pulling in the shadcn-styled input would drag
@@ -46,6 +51,7 @@ export function ContactForm() {
       orderRef: "",
       message: "",
       consent: false,
+      website: "",
     },
   });
 
@@ -63,6 +69,10 @@ export function ContactForm() {
           message: values.message,
           topic: values.topic || undefined,
           orderRef: values.orderRef?.trim() ? values.orderRef : undefined,
+          // Only a bot fills the honeypot; a person's request carries no key.
+          // Clamped to the DTO's 255, because the schema deliberately does not
+          // validate it — see `contact-schema.ts`.
+          website: values.website?.slice(0, 255) || undefined,
         },
       },
       {
@@ -96,11 +106,14 @@ export function ContactForm() {
     );
   }
 
-  // 429 → dedicated rate-limit copy; any other failure → generic submit error.
+  // The per-email cooldown and the per-IP throttle both answer 429 but clear
+  // after 10 minutes vs one (TASK-452); anything else → generic submit error.
   const errorMessage = submit.isError
-    ? submit.error?.response?.status === 429
-      ? d.errors.rateLimited
-      : d.errors.submitFailed
+    ? {
+        cooldown: d.errors.cooldown,
+        rateLimited: d.errors.rateLimited,
+        failed: d.errors.submitFailed,
+      }[contactSubmitErrorKind(submit.error)]
     : null;
 
   return (
@@ -245,6 +258,8 @@ export function ContactForm() {
             </span>
           )}
         </label>
+
+        <ContactHoneypot {...register(CONTACT_HONEYPOT_FIELD)} />
 
         <label className="flex cursor-pointer items-start gap-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
           <input

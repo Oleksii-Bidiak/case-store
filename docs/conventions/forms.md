@@ -7,7 +7,7 @@
 > These rules are the agreed remediation patterns. See `docs/plans/050-forms-state-sync-audit.md`
 > (TASK-141) for the full inventory and rationale.
 
-There are three rules. Reviewers should reject any new form/input that violates them.
+There are four rules. Reviewers should reject any new form/input that violates them.
 
 ---
 
@@ -129,21 +129,59 @@ import the hook across app boundaries.
 
 ## Rule 4 — Validation timing, and validating the value rather than the mask
 
-**Placeholder — the rule itself is written by TASK-453.** TASK-407 fixed the instances that prompted
-it and records them here so the eventual text has something concrete to generalise from:
+> Written by TASK-453 from the instances TASK-407 fixed on the storefront checkout.
 
-- **Timing.** A multi-step RHF form advances through `handleSubmit(next)` on a `type="submit"`
-  button, never a `type="button"` calling `trigger()` by hand. RHF arms `reValidateMode` on
-  **submit**, and a manual `trigger` is not one — so errors raised that way appear at the right
-  moment but never clear while the user fixes the field. Seen on
-  `apps/store-client/src/widgets/checkout/ui/checkout-view.tsx`, step 1.
-- **Mask vs value.** Validate the **normalised** value, never the characters a display mask drew.
-  `checkout-schema.ts` tested the phone against `/^\+?[\d\s()-]{10,20}$/`, which accepted a string of
-  brackets and a number with digits missing out of the middle. The mask and the rule now live
-  together in `apps/store-client/src/shared/lib/phone.ts`.
-- **Defaults.** Every field the schema validates needs an entry in the form's default values, or an
-  untouched field is `undefined` and zod reports its own English `"Required"` where the localized
-  message belongs.
+### 4a. Timing: say nothing before the first submit, then clear each message as it is fixed
+
+The timing every form here wants is RHF's **default** pair — `mode: "onSubmit"` (no error before
+the user first presses the button) and `reValidateMode: "onChange"` (after that, each field
+re-validates as it is edited, so a fixed field's message disappears immediately). No form in either
+app overrides them today; **do not set `mode: "onChange"` / `"all"`** (the user is told off for an
+email they have not finished typing), and if a form genuinely needs another mode, say why in a
+comment next to `useForm`.
+
+The trap is that RHF arms `reValidateMode` only **after a real submit**. A manual `trigger()` is not
+one: errors it raises appear on time but then **stick** while the user fixes the field. Hence:
+
+- **A step is a submit.** A multi-step form advances through `handleSubmit(next)` on a
+  `type="submit"` button — never a `type="button"` whose `onClick` calls `trigger([...fields])`. See
+  the step-1 «Далі» in `apps/store-client/src/widgets/checkout/ui/checkout-view.tsx`
+  (`onStepSubmit`) and why `apps/store-client/src/features/checkout/model/use-checkout-steps.ts`
+  no longer validates. A side benefit: no hand-kept second list of "which fields are on this step".
+- **Values set from code re-validate explicitly.** A field filled by a picker rather than by typing
+  (`setValue("npCityRef", …)`) passes `{ shouldValidate: true }`, so its "required" message clears
+  the moment a value lands (`np-city-field.tsx`, `np-warehouse-field.tsx`).
+- **Blocked submit moves focus.** Pass an `onInvalid` to `handleSubmit` that focuses the first
+  invalid field (`focusFirstError` in `checkout-view.tsx`) — otherwise a submit that does nothing is
+  indistinguishable from a broken button.
+
+### 4b. Validate the normalised value, never the mask
+
+A display mask is for the eye. The schema must judge the **normalised** value — the thing the
+backend will store — never the characters the mask drew.
+
+- `checkout-schema.ts` once tested the phone against `/^\+?[\d\s()-]{10,20}$/`: a string of
+  brackets passed, and so did a number with two digits missing out of the middle. It now does
+  `.refine(isValidUAPhone, …)`, which normalises to `380XXXXXXXXX` first.
+- **The mask and the rule live together**, in `apps/store-client/src/shared/lib/phone.ts`:
+  `formatUAPhone` (display, may truncate), `normalizeUAPhone` (never truncates) and `isValidUAPhone`
+  (`normalize` → pattern). A mask in the component and a regex in the schema is exactly how the
+  two drifted apart.
+- **The input emits the raw string.** `apps/store-client/src/shared/ui/phone-input.tsx` shows
+  `formatUAPhone(value)` but hands RHF what the user typed; whoever consumes it normalises before
+  deciding anything. Never validate the output of a function that can truncate.
+- **The server also counts digits, not mask characters.** The contact form's rule runs server-side
+  as `@IsUaPhone()` (`apps/store-api/src/common/validators/is-ua-phone.decorator.ts`); the order
+  address deliberately uses the looser, country-agnostic `@IsInternationalPhone()` (an operator may
+  take a foreign number by phone — see the comment in `apps/store-api/src/order/dto/address.dto.ts`).
+  Either way the server never trusts the mask. A new masked field (EDRPOU, IBAN…) gets its
+  normaliser + validator pair in `shared/lib` the same way.
+
+### 4c. Every validated field has a default
+
+Every field the schema validates needs an entry in the form's default values (e.g.
+`CHECKOUT_DEFAULT_VALUES`, where `phone: ""` is there on purpose), or an untouched field is
+`undefined` and zod reports its own English `"Required"` where the localized message belongs.
 
 ---
 
@@ -156,3 +194,7 @@ it and records them here so the eventual text has something concrete to generali
 - [ ] No inline `setTimeout` debounce — `useDebouncedCallback` used instead.
 - [ ] No multi-step form advancing via a hand-rolled `trigger()` on a `type="button"` (Rule 4).
 - [ ] No schema validating a masked string instead of the normalised value (Rule 4).
+- [ ] No `useForm({ mode: "onChange" | "all" })` without a comment saying why (Rule 4a).
+- [ ] A field set from code (`setValue`) passes `shouldValidate: true`; a blocked submit focuses
+      the first invalid field (Rule 4a).
+- [ ] Every schema-validated field has a default value (Rule 4c).

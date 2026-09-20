@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessageStatus } from '@prisma/client';
 import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
@@ -11,6 +12,29 @@ import {
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
+
+/**
+ * One message per email per this window (TASK-452), on top of the controller's
+ * 5/min per-IP `@Throttle`. The two limits answer different abuse: the IP cap
+ * stops one machine hammering the form, this one stops a single address being
+ * used to flood the inbox from many machines — and stops a real customer's
+ * double-click or impatient resend from landing as two tickets.
+ */
+export const CONTACT_EMAIL_COOLDOWN_MS = 10 * 60 * 1000;
+
+/**
+ * The `error` code of the cooldown 429. The storefront keys its copy off it,
+ * because a 429 alone is ambiguous: the per-IP throttler answers 429 too, and
+ * "wait a minute" is the wrong thing to tell someone who must wait ten.
+ */
+export const CONTACT_COOLDOWN_ERROR = 'CONTACT_COOLDOWN';
+
+/**
+ * What the public submit returns — only the id, never the stored PII.
+ */
+export interface ContactSubmissionResult {
+  id: string;
+}
 
 /**
  * Pagination metadata returned alongside inbox lists.
@@ -45,6 +69,50 @@ export class ContactService {
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(ContactService.name);
+  }
+
+  /**
+   * The public storefront submit (TASK-452): the anti-spam rules, then
+   * {@link create}.
+   *
+   * 1. **Honeypot.** A non-empty `website` is a bot. It gets the success answer
+   *    — a fresh random id in the usual shape — and nothing is read or written.
+   *    The id is minted per call so the fake cannot be told apart by being the
+   *    same every time. Checked first so a bot costs no database round-trip.
+   * 2. **Per-email cooldown.** A second message from the same address (compared
+   *    trimmed and lower-cased) inside {@link CONTACT_EMAIL_COOLDOWN_MS} is a
+   *    429 with `error: 'CONTACT_COOLDOWN'`.
+   *
+   * The cooldown is a read-then-write, so two requests racing in the same
+   * instant can both pass. Accepted: the per-IP throttle still caps the burst,
+   * and the cost of the miss is one extra ticket — not worth a lock or a unique
+   * constraint on an inbox.
+   */
+  async submit(dto: CreateContactMessageDto): Promise<ContactSubmissionResult> {
+    const { website, ...message } = dto;
+
+    if (website) {
+      // No name/email/phone in the log line: this is a bot's payload, and it is
+      // also possibly a real person's address a bot is abusing.
+      this.logger.info({ topic: dto.topic ?? null }, 'Contact honeypot tripped — discarded');
+      return { id: randomUUID() };
+    }
+
+    const email = dto.email.trim().toLowerCase();
+    const latest = await this.contactRepository.findLatestCreatedAtByEmail(email);
+    if (latest && Date.now() - latest.getTime() < CONTACT_EMAIL_COOLDOWN_MS) {
+      throw new HttpException(
+        {
+          statusCode: HttpStatus.TOO_MANY_REQUESTS,
+          error: CONTACT_COOLDOWN_ERROR,
+          message: 'A message from this email was received recently. Try again in 10 minutes.',
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+
+    const created = await this.create(message);
+    return { id: created.id };
   }
 
   /**

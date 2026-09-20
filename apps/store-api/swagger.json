@@ -11093,7 +11093,7 @@
             "description": "Validation error"
           },
           "429": {
-            "description": "Too many requests — rate limit exceeded"
+            "description": "Too many requests: either the per-IP rate limit (5/min) or the per-email cooldown (1 message per email per 10 min, `error: \"CONTACT_COOLDOWN\"`)"
           }
         },
         "summary": "Submit a contact message",
@@ -23562,6 +23562,12 @@
             "type": "string",
             "description": "Optional order reference the customer typed in",
             "example": "ORD-10231"
+          },
+          "website": {
+            "type": "string",
+            "description": "Optional website of the sender. Leave empty or omit it; the storefront does not collect it.",
+            "example": "",
+            "maxLength": 255
           }
         },
         "required": [

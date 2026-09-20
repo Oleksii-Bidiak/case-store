@@ -7,3 +7,11 @@ export type {
 } from "@/shared/api/generated/models";
 
 export { useContactControllerSubmit } from "@/shared/api/generated/contact/contact";
+
+// Anti-spam pieces shared by both storefront contact forms (TASK-452).
+export { ContactHoneypot, CONTACT_HONEYPOT_FIELD } from "./ui/contact-honeypot";
+export {
+  contactSubmitErrorKind,
+  CONTACT_COOLDOWN_ERROR,
+  type ContactSubmitErrorKind,
+} from "./lib/submit-error";

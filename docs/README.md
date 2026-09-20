@@ -79,7 +79,26 @@
 | [reviews/2026-07-24-launch-readiness-audit.md](reviews/2026-07-24-launch-readiness-audit.md)   | **аудит готовності до запуску 2026-07-24** (TASK-329): блокери, матриця можливостей, порівняння платіжних провайдерів                                                   |
 | [reviews/2026-09-19-claude-design-templates.md](reviews/2026-09-19-claude-design-templates.md) | **ревізія шаблонів Claude Design 2026-09-19** (S7.2): головна й кошик проти сайту, промпти для оновлення                                                                |
 | [reviews/2026-09-11-access-model.md](reviews/2026-09-11-access-model.md)                       | **поточна модель доступів 2026-09-11** (крок 0 до TASK-445): ролі, каталог прав, `@OwnerOnly`, видача службового акаунта, PII для менеджера, що неможливо сьогодні      |
-| [plans/](plans/)                                                                               | 169 планів реалізації (до номера 170) — **історичні записи**, не інструкції                                                                                             |
+| [reviews/2026-07-13-full-project-review.md](reviews/2026-07-13-full-project-review.md)         | **повне ревʼю проєкту 2026-07-13**: бекенд, фронтенди, безпека, доки; знахідки закрито хвилею фіксів (план 159)                                                         |
+| [reviews/2026-08-27-demo-run.md](reviews/2026-08-27-demo-run.md)                               | **журнал живого прогону на демо-стенді 2026-08-27**: знахідки власника 🐞/💡/❓ як вони були записані                                                                   |
+| [reviews/2026-08-27-demo-run-triage.md](reviews/2026-08-27-demo-run-triage.md)                 | **тріаж того прогону (2026-09-10)**: що з кожною знахідкою, корені по коду, розкладка на плани 173–179 і задачі                                                         |
+| [session-runbook.md](session-runbook.md)                                                       | **ранбук сесій** хвиль після прогону: порядок, самодостатні промпти для кожної сесії Claude Code, таблиця деплоїв                                                       |
+| [plans/](plans/)                                                                               | 187 планів реалізації (до номера 188; 165-го немає) — **історичні записи**, не інструкції                                                                               |
+
+**Плани хвиль після живого прогону 2026-08-27** (порядок сесій — у
+[session-runbook.md](session-runbook.md)):
+
+- з тріажу: [173](plans/173-demo-run-fix-wave.md) фікси для повторного прогону,
+  [174](plans/174-storefront-ux-wave.md) вітрина, [175](plans/175-admin-crm-wave.md) адмінка як
+  CRM, [176](plans/176-content-seo-wave.md) контент і SEO, [177](plans/177-media-pipeline.md)
+  медіа, [178](plans/178-brainstorms.md) брейншторми,
+  [179](plans/179-quality-security-docs-infra.md) якість: безпека, доки, моніторинг, пайплайн;
+- з рішень брейншторму: [180](plans/180-orders-after-b1-b5.md) замовлення,
+  [181](plans/181-access-model.md) модель доступів, [182](plans/182-catalogue-facets.md) фасети
+  каталогу, [183](plans/183-reviews-moderation-split.md) відгуки,
+  [184](plans/184-delivery-methods.md) способи доставки, [185](plans/185-deletion.md) видалення,
+  [186](plans/186-home-blocks-and-preview.md) головна як блоки,
+  [187](plans/187-notifications.md) сповіщення, [188](plans/188-analytics.md) статистика.
 
 ---
 
@@ -94,5 +113,6 @@
 | [backlog-archive.md](backlog-archive.md)                                           | завершені фази 1–5                                                                                                                                                               |
 | [roadmap.md](roadmap.md)                                                           | ⚠ застаріло (описує Phase 1–5). Актуальне — [../BACKLOG.md](../BACKLOG.md)                                                                                                       |
 | [handoff-2026-07-07.md](handoff-2026-07-07.md)                                     | передача задач між сесіями розробки                                                                                                                                              |
+| [handoff-2026-07-18.md](handoff-2026-07-18.md)                                     | наступна передача — фаза деплою: викидне демо на Hetzner без домену, пастки, перевірені по коду                                                                                  |
 | [archive/handoff-seo.md](archive/handoff-seo.md)                                   | **застаріле.** Виконаний SEO/GEO-handoff (SEO-1…SEO-9 → задачі Етапу 7). Актуальний стан — [geo-audit-2026-09-13.md](geo-audit-2026-09-13.md)                                    |
 | [archive/geo-audit-report-2026-07-06.md](archive/geo-audit-report-2026-07-06.md)   | **застаріле.** GEO-аудит від 2026-07-06. Замінений на [geo-audit-2026-09-13.md](geo-audit-2026-09-13.md)                                                                         |

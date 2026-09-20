@@ -16,7 +16,7 @@
 >   baseURL alignment" (Tech Debt).
 > - `TASK-051-O` appeared as two rows in the source; merged into one below.
 > - `TASK-069/070` were renumbered to `TASK-071/072` for the bugfix set to avoid colliding
->   with the localization plan (`TASK-069`) and redesign (`TASK-068`); `docs/manual-qa-master.md`
+>   with the localization plan (`TASK-069`) and redesign (`TASK-068`); `docs/archive/manual-qa-master.md`
 >   still references the original 069/070 labels.
 > - `TASK-019`/`TASK-020` were superseded by `TASK-018-B`/`TASK-018-C` and dropped.
 
@@ -263,7 +263,7 @@
 | TASK-037-F | Hook dispatch into OrderService.createOrder (fault-isolated) + tests                               | ✅     | docs/plans/024-order-confirmation-emails.md |
 | TASK-037-H | Build / lint / typecheck / unit + e2e verification gate                                            | ✅     | docs/plans/024-order-confirmation-emails.md |
 
-### Phase 3 — code-review follow-ups (`docs/manual-qa-phase3.md`)
+### Phase 3 — code-review follow-ups (checklist `manual-qa-phase3.md` was dropped as stale in 38f46942, 2026-07-03 — see git history)
 
 | Task ID  | Description                                                                                                                                        | Status | Plan                 |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | -------------------- |
@@ -463,16 +463,16 @@
 | TASK-059-A | Zero-diff gate after generate:api                                                                                                  | ✅     | docs/plans/038-instance-baseurl-alignment.md   |
 | TASK-059-B | Manual verification: admin login, silent refresh, CSRF path (pending running stack → tracked separately)                           | 🔄     | docs/plans/038-instance-baseurl-alignment.md   |
 
-### Bugfixes (from 2026-06-20 manual QA pass — `docs/manual-qa-master.md`)
+### Bugfixes (from 2026-06-20 manual QA pass — `docs/archive/manual-qa-master.md`)
 
 > Renumbered from TASK-069/070 → TASK-071/072 to avoid colliding with the localization
-> plan (TASK-069) and redesign (TASK-068). `docs/manual-qa-master.md` still references the
+> plan (TASK-069) and redesign (TASK-068). `docs/archive/manual-qa-master.md` still references the
 > original 069/070 labels for these two fixes.
 
-| Task ID  | Description                                                                                     | Status | Plan                     |
-| -------- | ----------------------------------------------------------------------------------------------- | ------ | ------------------------ |
-| TASK-071 | **HIGH (SEO)** — sitemap fetchAllProducts PAGE_SIZE 200 → 100 (API caps limit at 100)           | ✅     | docs/manual-qa-master.md |
-| TASK-072 | **MEDIUM (DevOps)** — docker-compose redis `--requirepass` crash-loop when REDIS_PASSWORD unset | ✅     | docs/manual-qa-master.md |
+| Task ID  | Description                                                                                     | Status | Plan                             |
+| -------- | ----------------------------------------------------------------------------------------------- | ------ | -------------------------------- |
+| TASK-071 | **HIGH (SEO)** — sitemap fetchAllProducts PAGE_SIZE 200 → 100 (API caps limit at 100)           | ✅     | docs/archive/manual-qa-master.md |
+| TASK-072 | **MEDIUM (DevOps)** — docker-compose redis `--requirepass` crash-loop when REDIS_PASSWORD unset | ✅     | docs/archive/manual-qa-master.md |
 
 ---
 
