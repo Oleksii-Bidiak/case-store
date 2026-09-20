@@ -54,6 +54,13 @@ DISK_THRESHOLD=$((10#$DISK_THRESHOLD))
 # --output=pcent asks GNU df for the "Use%" column alone. Picking a column out
 # of the full table is fragile: a device or mount name with a space in it shifts
 # every column after it, and the check would then compare the wrong number.
+#
+# GNU coreutils ONLY — the flag does not exist in BusyBox df (Alpine) or on
+# macOS/BSD, where df exits with "unrecognized option". stderr is discarded, so
+# there the operator sees only the generic "could not read usage" below plus
+# exit 2. That is fine for the target (a Debian/Ubuntu VPS, which is what
+# docs/deploy/03-server.md provisions); anywhere else, swap this line for
+# `df -P "$DISK_PATH" | awk 'NR==2 {print $5}'`.
 USED=$(df --output=pcent "$DISK_PATH" 2>/dev/null | tail -n 1 | tr -dc '0-9')
 [[ "$USED" =~ ^[0-9]+$ ]] || fail_config "could not read usage of '$DISK_PATH' from df"
 

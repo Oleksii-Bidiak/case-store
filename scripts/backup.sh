@@ -40,8 +40,11 @@
 #                                a dead-man switch for the NIGHTLY run (TASK-454).
 #                                Set it on the crontab line, not in the env file:
 #                                the pre-deploy `--db-only` runs should not report
-#                                to the check that watches the nightly job. Unset →
-#                                no pings at all, the script behaves as it always did.
+#                                to the check that watches the nightly job. A value
+#                                passed by the caller WINS over one in the env file,
+#                                so a stray line there cannot silently re-point the
+#                                nightly check. Unset → no pings at all, the script
+#                                behaves as it always did.
 #
 # Exits non-zero on ANY failure — the deploy pipeline depends on that to refuse
 # to migrate a database it has no fresh backup of.
@@ -54,12 +57,24 @@ DB_ONLY=false
 [[ "${1:-}" == "--db-only" ]] && DB_ONLY=true
 
 # ─── Config ─────────────────────────────────────────────────────────────────
+# The caller's BACKUP_PING_URL wins over the env file, and it has to be captured
+# BEFORE sourcing: `set -a; source` overwrites it. The header tells the operator
+# to put it on the crontab line precisely so the pre-deploy `--db-only` runs do
+# NOT report to the check that watches the nightly job — and without this the
+# env file would quietly invert that, keeping the nightly check green while cron
+# was dead.
+PING_URL_FROM_CALLER="${BACKUP_PING_URL:-}"
+
 ENV_FILE="${ENV_FILE:-.env.production}"
 if [[ -f "$ENV_FILE" ]]; then
   set -a
   # shellcheck disable=SC1090
   source "$ENV_FILE"
   set +a
+fi
+
+if [[ -n "$PING_URL_FROM_CALLER" ]]; then
+  BACKUP_PING_URL="$PING_URL_FROM_CALLER"
 fi
 
 BACKUP_DIR="${BACKUP_DIR:-$PWD/backups}"
@@ -91,26 +106,48 @@ ping_hc() { # $1 = suffix ("" | /start | /fail), $2 = body
   return 0
 }
 
+# ─── Plaintext work area ────────────────────────────────────────────────────
+# pg_dump and tar produce UNENCRYPTED files — every order, every customer, every
+# uploaded image. They exist only as the input to `age`, so they live in a
+# private temp directory that is removed no matter how the script ends: a `die`
+# on an empty dump, an unreadable dump, a failed encryption, or a `kill`.
+#
+# Before this they were written straight into $BACKUP_DIR and deleted only on
+# the success path, while the retention prune matched `*.age` alone — so one
+# failed run left a readable database dump on the server permanently.
+WORK_DIR=""
+
+cleanup_work_dir() {
+  [[ -n "$WORK_DIR" && -d "$WORK_DIR" ]] && rm -rf "$WORK_DIR"
+  return 0
+}
+
 on_exit() {
   local rc=$?
   set +e
-  if [[ $rc -eq 0 ]]; then
-    ping_hc "" "backup: done — $STAMP"
-  else
-    ping_hc /fail "backup: FAILED (exit $rc) — ${FAIL_REASON:-see /var/log/store-backup.log}"
+  cleanup_work_dir
+  if [[ -n "${BACKUP_PING_URL:-}" ]]; then
+    if [[ $rc -eq 0 ]]; then
+      ping_hc "" "backup: done — $STAMP"
+    else
+      ping_hc /fail "backup: FAILED (exit $rc) — ${FAIL_REASON:-see /var/log/store-backup.log}"
+    fi
   fi
   exit "$rc"
 }
 
+# ALWAYS installed, whether or not anything is being pinged: the cleanup above
+# is not optional. EXIT covers `die`, `set -e` and `set -u` exits alike. The
+# signal traps are needed because bash runs the EXIT trap with status 0 when
+# killed by an untrapped SIGTERM — a killed backup would otherwise report
+# SUCCESS, and would leave its plaintext behind.
+trap on_exit EXIT
+trap 'FAIL_REASON="interrupted (SIGINT)"; exit 130' INT
+trap 'FAIL_REASON="killed (SIGTERM)"; exit 143' TERM
+trap 'FAIL_REASON="hangup (SIGHUP)"; exit 129' HUP
+
 if [[ -n "${BACKUP_PING_URL:-}" ]]; then
   BACKUP_PING_URL="${BACKUP_PING_URL%/}"
-  # EXIT covers `die`, `set -e` and `set -u` exits alike. The signal traps are
-  # needed because bash runs the EXIT trap with status 0 when killed by an
-  # untrapped SIGTERM — a killed backup would otherwise report SUCCESS.
-  trap on_exit EXIT
-  trap 'FAIL_REASON="interrupted (SIGINT)"; exit 130' INT
-  trap 'FAIL_REASON="killed (SIGTERM)"; exit 143' TERM
-  trap 'FAIL_REASON="hangup (SIGHUP)"; exit 129' HUP
   ping_hc /start ""
 fi
 
@@ -128,8 +165,12 @@ fi
 
 mkdir -p "$BACKUP_DIR"
 
+WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/store-backup-XXXXXX")" || die "could not create a temp directory"
+chmod 700 "$WORK_DIR"
+
 # ─── Database ───────────────────────────────────────────────────────────────
-DB_FILE="$BACKUP_DIR/db-$STAMP.dump"
+DB_FILE="$WORK_DIR/db-$STAMP.dump"
+DB_AGE="$BACKUP_DIR/db-$STAMP.dump.age"
 
 log "dumping database '$POSTGRES_DB'…"
 $COMPOSE exec -T postgres pg_dump \
@@ -150,15 +191,16 @@ $COMPOSE exec -T postgres pg_restore --list /dev/stdin < "$DB_FILE" > /dev/null 
 TABLES=$($COMPOSE exec -T postgres pg_restore --list /dev/stdin < "$DB_FILE" | grep -c "TABLE DATA" || true)
 log "  ok — $TABLES tables with data"
 
-age -r "$AGE_PUBLIC_KEY" -o "$DB_FILE.age" "$DB_FILE" || die "encryption failed"
+age -r "$AGE_PUBLIC_KEY" -o "$DB_AGE" "$DB_FILE" || die "encryption failed"
 rm -f "$DB_FILE"
-log "  encrypted → $(basename "$DB_FILE.age") ($(du -h "$DB_FILE.age" | cut -f1))"
+log "  encrypted → $(basename "$DB_AGE") ($(du -h "$DB_AGE" | cut -f1))"
 
-ARTIFACTS=("$DB_FILE.age")
+ARTIFACTS=("$DB_AGE")
 
 # ─── Uploads ────────────────────────────────────────────────────────────────
 if [[ "$DB_ONLY" == false ]]; then
-  UP_FILE="$BACKUP_DIR/uploads-$STAMP.tar.gz"
+  UP_FILE="$WORK_DIR/uploads-$STAMP.tar.gz"
+  UP_AGE="$BACKUP_DIR/uploads-$STAMP.tar.gz.age"
 
   # Streamed out of the running container rather than read from the named volume
   # directly: the volume's real name depends on the compose project prefix, and
@@ -172,11 +214,11 @@ if [[ "$DB_ONLY" == false ]]; then
   FILES=$(tar tzf "$UP_FILE" | grep -cv '/$' || true)
   log "  ok — $FILES file(s)"
 
-  age -r "$AGE_PUBLIC_KEY" -o "$UP_FILE.age" "$UP_FILE" || die "encryption failed"
+  age -r "$AGE_PUBLIC_KEY" -o "$UP_AGE" "$UP_FILE" || die "encryption failed"
   rm -f "$UP_FILE"
-  log "  encrypted → $(basename "$UP_FILE.age") ($(du -h "$UP_FILE.age" | cut -f1))"
+  log "  encrypted → $(basename "$UP_AGE") ($(du -h "$UP_AGE" | cut -f1))"
 
-  ARTIFACTS+=("$UP_FILE.age")
+  ARTIFACTS+=("$UP_AGE")
 fi
 
 # ─── Off-site copy ──────────────────────────────────────────────────────────
@@ -198,5 +240,13 @@ fi
 # Local retention is a short buffer only. Long-term retention belongs to a
 # lifecycle rule on the bucket, where a compromised server cannot delete it.
 find "$BACKUP_DIR" -name '*.age' -mtime "+$BACKUP_KEEP_DAYS" -delete 2>/dev/null || true
+
+# Stray PLAINTEXT left by a pre-2026-09-20 run that failed between the dump and
+# the encryption: those never had an owner and the prune above never matched
+# them, so a readable database dump could sit here indefinitely. Not age-based —
+# nothing plaintext belongs in this directory at any age.
+find "$BACKUP_DIR" -maxdepth 1 -type f \
+  \( -name 'db-*.dump' -o -name 'uploads-*.tar.gz' \) -print -delete 2>/dev/null \
+  | sed 's/^/backup: removed stray plaintext artefact /' || true
 
 log "done — $STAMP"
