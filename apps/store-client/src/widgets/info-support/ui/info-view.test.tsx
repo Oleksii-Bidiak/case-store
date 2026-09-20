@@ -93,7 +93,10 @@ describe("InfoView", () => {
       const input = container.querySelector('input[name="website"]');
       expect(input).toHaveAttribute("tabindex", "-1");
       expect(input).toHaveAttribute("autocomplete", "off");
-      expect(input!.closest('[aria-hidden="true"]')).not.toBeNull();
+      expect(input).toHaveAttribute("data-1p-ignore");
+      expect(input).toHaveAttribute("data-lpignore", "true");
+      expect(input!.closest("div")).toHaveAttribute("inert");
+      expect(input!.closest("div")).toHaveAttribute("aria-hidden", "true");
     });
 
     it("sends no honeypot value for a person", async () => {

@@ -165,11 +165,54 @@ describe("ContactView", () => {
       expect(input).not.toBeNull();
       expect(input).toHaveAttribute("tabindex", "-1");
       expect(input).toHaveAttribute("autocomplete", "off");
-      // Out of the accessibility tree: no screen reader announces it.
-      expect(input!.closest('[aria-hidden="true"]')).not.toBeNull();
+      // The opt-outs the password managers actually read: `website` is a real
+      // field in their identity records, and `autocomplete="off"` alone does
+      // not stop them (nor Chrome's profile autofill).
+      expect(input).toHaveAttribute("data-1p-ignore");
+      expect(input).toHaveAttribute("data-lpignore", "true");
+      expect(input).toHaveAttribute("data-bwignore");
+      expect(input).toHaveAttribute("data-form-type", "other");
+      // Out of the accessibility tree AND out of reach of focus/pointer:
+      // `aria-hidden` alone leaves the input focusable, `inert` is what closes
+      // that. (jsdom does not implement `inert`, so the role query below is
+      // what `aria-hidden` buys us here.)
+      const wrapper = input!.closest("div");
+      expect(wrapper).toHaveAttribute("inert");
+      expect(wrapper).toHaveAttribute("aria-hidden", "true");
       expect(
         screen.queryByRole("textbox", { name: d.honeypotLabel }),
       ).not.toBeInTheDocument();
+    });
+
+    it("still submits when the trap holds an over-long value", async () => {
+      // Regression: a blocking `max()` on a field no error is rendered for made
+      // the submit button do nothing and threw focus into the hidden input.
+      let received: Record<string, unknown> | null = null;
+      server.use(
+        http.post("*/api/contact", async ({ request }) => {
+          received = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(
+            { data: { id: "contact-1" } },
+            { status: 201 },
+          );
+        }),
+      );
+
+      const user = userEvent.setup();
+      const { container } = renderWithProviders(
+        <ContactView contact={contact} />,
+      );
+
+      fireEvent.input(honeypot(container)!, {
+        target: { value: `https://spam.example/${"x".repeat(400)}` },
+      });
+      await fillAndSubmit(user);
+
+      await screen.findByText(d.sentHeading);
+      // Clamped to the DTO's bound rather than refused by the client.
+      expect((received as unknown as { website: string }).website).toHaveLength(
+        255,
+      );
     });
 
     it("sends no honeypot value for a person", async () => {

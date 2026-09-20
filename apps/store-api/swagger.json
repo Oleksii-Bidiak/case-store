@@ -23565,7 +23565,7 @@
           },
           "website": {
             "type": "string",
-            "description": "Anti-spam honeypot. Must stay empty (or be omitted): the storefront hides it from people. A non-empty value is accepted with the normal 201 response but the message is silently discarded.",
+            "description": "Optional website of the sender. Leave empty or omit it; the storefront does not collect it.",
             "example": "",
             "maxLength": 255
           }

@@ -98,12 +98,16 @@ export class CreateContactMessageDto {
    * to leave the field alone.
    *
    * Bounded like any other string so it cannot be used to post a megabyte.
+   *
+   * The `@ApiProperty` description below is deliberately bland. `swagger.json`
+   * is committed and this repository is public, so spelling out what the field
+   * is for would hand a scraper the one thing the trap depends on not knowing.
+   * The explanation lives here, in the source, where it belongs.
    */
   @ApiProperty({
     description:
-      'Anti-spam honeypot. Must stay empty (or be omitted): the storefront hides it ' +
-      'from people. A non-empty value is accepted with the normal 201 response but ' +
-      'the message is silently discarded.',
+      'Optional website of the sender. Leave empty or omit it; the storefront ' +
+      'does not collect it.',
     example: '',
     required: false,
     maxLength: 255,

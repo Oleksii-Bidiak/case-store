@@ -38,8 +38,11 @@ export function InfoContactForm() {
   });
 
   const onSubmit = ({ website, ...values }: InfoContactFormValues) => {
-    // Only a bot fills the honeypot (TASK-452); a person's request carries no key.
-    submit.mutate({ data: { ...values, website: website || undefined } });
+    // Only a bot fills the honeypot (TASK-452); a person's request carries no
+    // key. Clamped to the DTO's 255 — the schema does not validate it.
+    submit.mutate({
+      data: { ...values, website: website?.slice(0, 255) || undefined },
+    });
   };
 
   return (

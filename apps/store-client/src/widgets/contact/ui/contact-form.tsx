@@ -70,7 +70,9 @@ export function ContactForm() {
           topic: values.topic || undefined,
           orderRef: values.orderRef?.trim() ? values.orderRef : undefined,
           // Only a bot fills the honeypot; a person's request carries no key.
-          website: values.website || undefined,
+          // Clamped to the DTO's 255, because the schema deliberately does not
+          // validate it — see `contact-schema.ts`.
+          website: values.website?.slice(0, 255) || undefined,
         },
       },
       {

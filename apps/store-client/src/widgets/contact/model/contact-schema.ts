@@ -41,10 +41,14 @@ export const contactSchema = z.object({
   consent: z.boolean().refine((v) => v === true, {
     message: dict.contact.errors.consentRequired,
   }),
-  // Honeypot (TASK-452). No rule beyond the API's own bound: a person never
-  // sees it, and refusing a bot here would tell it the field matters — the API
-  // accepts a filled one and quietly throws the message away instead.
-  website: z.string().max(255).optional(),
+  // Honeypot (TASK-452). NO rule at all, deliberately — not even the API's
+  // `maxLength: 255`. A blocking rule on a field nothing renders an error for
+  // makes the submit button do nothing and throws focus into an invisible
+  // input (RHF `shouldFocusError`), which is what an autofilled long URL would
+  // hit. The form clamps the value to 255 before sending instead, and refusing
+  // a bot here would tell it the field matters — the API accepts a filled one
+  // and quietly throws the message away.
+  website: z.string().optional(),
 });
 
 export type ContactFormValues = z.infer<typeof contactSchema>;
