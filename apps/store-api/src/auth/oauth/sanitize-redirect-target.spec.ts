@@ -35,9 +35,51 @@ describe('sanitizeRedirectTarget', () => {
     expect(sanitizeRedirectTarget('/\\evil.com')).toBe('/');
   });
 
-  it('rejects paths containing CR/LF (header-injection guard)', () => {
-    expect(sanitizeRedirectTarget('/checkout\r\nSet-Cookie: x=1')).toBe('/');
-    expect(sanitizeRedirectTarget('/checkout\npath')).toBe('/');
-    expect(sanitizeRedirectTarget('/checkout\rpath')).toBe('/');
+  it('keeps a same-origin path with query and hash intact', () => {
+    expect(sanitizeRedirectTarget('/products?page=2#top')).toBe('/products?page=2#top');
+  });
+
+  /**
+   * TASK-770. The WHATWG URL parser drops TAB/LF/CR before parsing, so a
+   * leading-`//` check on the raw string can be dodged by hiding one of them
+   * between the slashes: `?redirect=/%09/evil.com` decodes to `/\t/evil.com`,
+   * and `new URL('/\t/evil.com', origin)` is `https://evil.com/`.
+   */
+  it.each([
+    ['decoded %09 (TAB) between the slashes', '/\t/evil.com'],
+    ['decoded %0a (LF) between the slashes', '/\n/evil.com'],
+    ['decoded %0d (CR) between the slashes', '/\r/evil.com'],
+    ['a run of mixed TAB/LF/CR', '/\t\r\n/evil.com'],
+    ['TAB before the backslash spelling', '/\t\\evil.com'],
+    ['a leading TAB before //', '\t//evil.com'],
+  ])('rejects %s', (_label, raw) => {
+    expect(sanitizeRedirectTarget(raw)).toBe('/');
+  });
+
+  it('decodes %09 the way a query string would and still rejects it', () => {
+    const raw = new URLSearchParams('redirect=/%09/evil.com').get('redirect');
+    expect(raw).toBe('/\t/evil.com');
+    expect(sanitizeRedirectTarget(raw)).toBe('/');
+  });
+
+  it('never returns a value the URL parser resolves off-origin', () => {
+    const origin = 'https://shop.example';
+    for (const raw of ['/\t/evil.com', '/\n/evil.com', '/\r/evil.com', '/\t\\evil.com']) {
+      // Sanity: the raw input really is an open redirect without the fix.
+      expect(new URL(raw, origin).origin).not.toBe(origin);
+      expect(new URL(sanitizeRedirectTarget(raw), origin).origin).toBe(origin);
+    }
+  });
+
+  it('strips CR/LF/TAB from an otherwise legit path (header-injection guard)', () => {
+    // The returned value can no longer split a `Location` header.
+    expect(sanitizeRedirectTarget('/checkout\r\nSet-Cookie: x=1')).toBe('/checkoutSet-Cookie: x=1');
+    expect(sanitizeRedirectTarget('/checkout\npath')).toBe('/checkoutpath');
+    expect(sanitizeRedirectTarget('/check\tout')).toBe('/checkout');
+  });
+
+  it('falls back to / when nothing but parser-dropped characters remains', () => {
+    expect(sanitizeRedirectTarget('\t\r\n')).toBe('/');
+    expect(sanitizeRedirectTarget(null)).toBe('/');
   });
 });
