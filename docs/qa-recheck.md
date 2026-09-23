@@ -602,6 +602,8 @@
 - [ ] **SF-SEO-16 — Структуровані дані сайту.** **Зроби:** перевір `ld+json` на головній і
       категорії. **Має бути:** `Organization` і `BreadcrumbList` без синтаксичних помилок.
       🎯 🔧 curl у TASK-457 · 📝 було: не маю компетенції це перевірити
+- [🔁] **SF-SEO-20 — `noindexSite` вимикає індексацію всюди.** **Зроби:** в адмінці `/settings/seo` увімкни «вимкнути індексацію сайту» (`noindexSite`) і збережи. На вітрині відкрий view-source трьох сторінок: головна `/`, товар `/products/<slug>`, категорія `/categories/<slug>` без фільтрів. Потім відкрий `/robots.txt`, `/sitemap.xml`, `/llms.txt` і `/merchant-feed.xml`. Після цього вимкни прапорець і повтори. **Має бути:** з прапорцем — у `<head>` кожної з трьох сторінок `<meta name="robots" content="noindex, nofollow">`; `robots.txt` містить `Disallow: /` і не має рядка `Sitemap`; `/sitemap.xml` — порожній `<urlset>` без `<url>`; `/llms.txt` і `/merchant-feed.xml` — 404 з порожнім тілом. Без прапорця — robots-meta на сторінках немає (категорія з параметром фільтра й далі `noindex, follow`), sitemap, llms.txt і merchant-feed знову 200 зі вмістом.
+      🎯 TASK-550
 
 ### SF-UX — Наскрізний UX, адаптив, доступність, помилки
 
@@ -1649,6 +1651,7 @@ C @ 1-vwssf0vdy4x.js:2
 - **TASK-485** — SF-ACC-22, SF-ACC-32, SF-ACC-33
 - **ревʼю плану 180** — AD-ORD-44, AD-ORD-45, AD-ORD-46, AD-ORD-47
 - **TASK-547** — AD-CNT-10
+- **TASK-550** — SF-SEO-20
 - **TASK-474** — AD-STAFF-11, AD-STAFF-12
 - **TASK-475** — AD-RBAC-01, AD-RBAC-02, AD-RBAC-05, AD-RBAC-06, AD-RBAC-07, AD-RBAC-18
 - **TASK-476** — AD-CRM-10, AD-STAFF-01, AD-STAFF-05, AD-STAFF-07, AD-STAFF-08, AD-STAFF-09
