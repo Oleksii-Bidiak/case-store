@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-883**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-886**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -1006,12 +1006,13 @@
 | TASK-771 | [🔴 гроші, замовлення] `cancelAndRestock` (`order.repository.ts:1028-1094`) повертає стік, але не звільняє `DiscountRedemption`/`redeemedCount` — покинута оплата назавжди зʼїдає `perUserLimit`, зняти з адмінки нічим. Парний крок — заявлення слота в `reviveAndReserve` | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-772 | [🔴 дані, auth] Email не нормалізується (`email String @unique` на `text`, без citext): реєстрація `A@Gmail.com` + вхід через Google `a@gmail.com` створює **другий акаунт**. `@Transform(trim+toLowerCase)` на 4 DTO + міграція-бекфіл; `RegisterDto.email` без `@MaxLength` | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-773 | [🔴 вітрина, чекаут] Провал refresh скидає токен у модульній змінній (`instance.ts:284`), але не `isAuthenticated` (`auth.context.tsx:158`) — блок email не рендериться, замовлення йде без `contact` і без `Authorization` → 400 англійською, вихід лише F5. Робити разом із TASK-794 | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
-| TASK-774 | [🔴 дані, імпорт] `excludeAllConflicts` (`use-import-decisions.ts:73-86`) будує мапу з нуля і **замінює** попередню — ручні зняття галочок оператора зникають, написані руками описи перезаписуються й лягають у журнал як застосовані. Фікс: `new Map(previous)` як база | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
+| TASK-774 | [🔴 дані, імпорт] `excludeAllConflicts` (`use-import-decisions.ts:73-86`) будує мапу з нуля і **замінює** попередню — ручні зняття галочок оператора зникають, написані руками описи перезаписуються й лягають у журнал як застосовані. Фікс: `new Map(previous)` як база — **зроблено 2026-09-24:** «виключити всі конфлікти» тепер додає конфліктні поля до копії попереднього стану (набори рядків копіюються), ручні зняття галочок зберігаються, 2 нові тести (3ead414d) | ✅ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-775 | [🔴 адмінка, верстка] `table-toolbar.tsx:80` має `flex-col` без пари `md:flex-row` — 24 тулбари списків стоять колонкою на всіх ширинах. Регресія коміту `be2da26e` «change store name» (2026-09-17). **Корінь TASK-732** — після фікса перепровірити і, ймовірно, закрити його — **зроблено 2026-09-24:** тулбар — колонка до `md`, рядок від `md`, пошук `md:flex-1`, 4 тести; перевірка TASK-732 на 1440 px — AD-ORD-49 (d88c026f) | ✅ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-784 | [повернення, склад] Ліміт «не більше, ніж куплено» (`return.service.ts:313`) рахується поза транзакцією, а в БД немає ні унікального ключа, ні CHECK: два натискання «Подати заявку» дають дві заявки на 1 куплену одиницю, і `restock: true` по обох додає на склад товар, якого не повертали | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-785 | [повернення, гроші] `refundedAmount` (`resolve-return.dto.ts:46`) валідується лише формою — ні стелі по `order.total`, ні по вартості повернутих позицій, ні по вже виплаченому. `49900` замість `499.00` приймається, тече в `refundedTotal` і в звіти B-8. Межу продублювати в zod-схемі адмінки | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-794 | [обидві апки, форми] «Мовчазна кнопка» ×5: блокуюче `max()` у zod на полі без рендеру помилки і без `maxLength` — `order-create-form.tsx:384-402`, `return-resolve-form.tsx:193-199`, `profile-form.tsx:93,100`, `submit-review-form.tsx:314` і латентно `checkout-view.tsx:128-149`. Останній **активує TASK-773**, тож робити разом. Зразок поруч: `checkout-view.tsx:267` | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-884 | [знайдено в TASK-775] Застарілий коментар про `md:flex-nowrap` у тулбарі: `apps/store-admin/src/widgets/order-list/ui/admin-order-table.tsx:148` згадує клас `md:flex-nowrap`, який d88c026f прибрав із `table-toolbar.tsx`; зміст досі правдивий (flex-рядок від `md` не переноситься за замовчуванням), але назва класу вже неіснуюча — оновити коментар | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
+| TASK-885 | [знайдено в TASK-774] Хибний шлях хука в плані 190: `docs/plans/190-red-wave-ci-security-money.md:36` (файли смуги R-admin) називає `features/catalog-import/model/use-import-decisions.ts`, а файл лежить у `apps/store-admin/src/widgets/catalog-import-view/model/use-import-decisions.ts` (так і в ревʼю `docs/reviews/2026-09-code-review.md:149`); лише документація — виправити шлях | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 
 ### План 191 — Онбординг замовника по адмінці ([план](docs/plans/191-admin-customer-onboarding.md))
 
@@ -1313,6 +1314,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-883**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-886**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
