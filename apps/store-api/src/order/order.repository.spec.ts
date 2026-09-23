@@ -59,6 +59,17 @@ const makeTx = () => ({
   orderStatusHistory: {
     create: jest.fn(),
   },
+  // TASK-771: cancel releases the promo redemption, revive re-claims it.
+  discountRedemption: {
+    findUnique: jest.fn(),
+    deleteMany: jest.fn(),
+    count: jest.fn(),
+    create: jest.fn(),
+  },
+  discount: {
+    findUnique: jest.fn(),
+    updateMany: jest.fn(),
+  },
 });
 
 const prismaMock = {
@@ -74,6 +85,10 @@ const prismaMock = {
   // TASK-251: history read path.
   orderStatusHistory: {
     findMany: jest.fn(),
+  },
+  // TASK-771: the revive's cap check compares against a field reference.
+  discount: {
+    fields: { maxRedemptions: { name: 'maxRedemptions', modelName: 'Discount' } },
   },
 };
 
@@ -552,6 +567,73 @@ describe('OrderRepository', () => {
         expect.objectContaining({ data: expect.objectContaining({ changedBy: null }) }),
       );
     });
+
+    // ── TASK-771: the promo slot goes back together with the stock ──
+    describe('promo redemption release (TASK-771)', () => {
+      it('deletes the order’s redemption and decrements redeemedCount by the rows deleted', async () => {
+        const tx = seedCancelTx();
+        tx.discountRedemption.findUnique.mockResolvedValue({
+          id: 'redemption-1',
+          discountId: 'discount-1',
+        });
+        tx.discountRedemption.deleteMany.mockResolvedValue({ count: 1 });
+        tx.discount.updateMany.mockResolvedValue({ count: 1 });
+
+        await repository.cancelAndRestock('order-1', null);
+
+        expect(tx.discountRedemption.findUnique).toHaveBeenCalledWith({
+          where: { orderId: 'order-1' },
+          select: { id: true, discountId: true },
+        });
+        expect(tx.discountRedemption.deleteMany).toHaveBeenCalledWith({
+          where: { id: 'redemption-1' },
+        });
+        // Guarded so a drifted counter can never go negative.
+        expect(tx.discount.updateMany).toHaveBeenCalledWith({
+          where: { id: 'discount-1', redeemedCount: { gte: 1 } },
+          data: { redeemedCount: { decrement: 1 } },
+        });
+      });
+
+      it('does not decrement when no redemption row was actually deleted', async () => {
+        const tx = seedCancelTx();
+        tx.discountRedemption.findUnique.mockResolvedValue({
+          id: 'redemption-1',
+          discountId: 'discount-1',
+        });
+        tx.discountRedemption.deleteMany.mockResolvedValue({ count: 0 });
+
+        await repository.cancelAndRestock('order-1', null);
+
+        expect(tx.discount.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('touches no discount when the order redeemed no promo code', async () => {
+        const tx = seedCancelTx();
+        tx.discountRedemption.findUnique.mockResolvedValue(null);
+
+        await repository.cancelAndRestock('order-1', null);
+
+        expect(tx.discountRedemption.findUnique).toHaveBeenCalled();
+        expect(tx.discountRedemption.deleteMany).not.toHaveBeenCalled();
+        expect(tx.discount.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('a losing concurrent cancel releases nothing', async () => {
+        const tx = seedCancelTx({ won: false });
+        tx.discountRedemption.findUnique.mockResolvedValue({
+          id: 'redemption-1',
+          discountId: 'discount-1',
+        });
+
+        await expect(repository.cancelAndRestock('order-1', null)).rejects.toThrow(
+          ConflictException,
+        );
+
+        expect(tx.discountRedemption.deleteMany).not.toHaveBeenCalled();
+        expect(tx.discount.updateMany).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // ─── reviveAndReserve — re-reserve stock on revive (CRITICAL / TASK-228) ────
@@ -667,6 +749,135 @@ describe('OrderRepository', () => {
       await expect(
         repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID, null),
       ).resolves.toBeDefined();
+    });
+
+    // ── TASK-771: the revive re-claims the promo slot its cancel released ──
+    describe('promo redemption re-claim (TASK-771)', () => {
+      const seedPromoTx = () => {
+        const tx = seedTx();
+        tx.order.findUniqueOrThrow.mockResolvedValue({
+          id: 'order-1',
+          userId: 'user-uuid-1',
+          discountCode: 'SPRING10',
+          status: OrderStatus.CANCELLED,
+          items: [
+            { productId: 'product-uuid-1', quantity: 2, product: { name: 'iPhone 15 Pro Case' } },
+          ],
+        });
+        tx.product.updateMany.mockResolvedValue({ count: 1 });
+        tx.discountRedemption.findUnique.mockResolvedValue(null);
+        tx.discount.findUnique.mockResolvedValue({ id: 'discount-1', perUserLimit: 1 });
+        tx.discount.updateMany.mockResolvedValue({ count: 1 });
+        tx.discountRedemption.count.mockResolvedValue(0);
+        return tx;
+      };
+
+      const revive = () =>
+        repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID, null);
+
+      it('claims one slot under the global cap and re-creates the redemption', async () => {
+        const tx = seedPromoTx();
+
+        await revive();
+
+        expect(tx.discount.findUnique).toHaveBeenCalledWith({
+          where: { code: 'SPRING10' },
+          select: { id: true, perUserLimit: true },
+        });
+        // Same conditional claim as DiscountRepository.tryIncrementRedeemed.
+        expect(tx.discount.updateMany).toHaveBeenCalledWith({
+          where: {
+            id: 'discount-1',
+            OR: [{ maxRedemptions: null }, { redeemedCount: { lt: expect.anything() } }],
+          },
+          data: { redeemedCount: { increment: 1 } },
+        });
+        expect(tx.discountRedemption.count).toHaveBeenCalledWith({
+          where: { discountId: 'discount-1', userId: 'user-uuid-1' },
+        });
+        expect(tx.discountRedemption.create).toHaveBeenCalledWith({
+          data: { discountId: 'discount-1', userId: 'user-uuid-1', orderId: 'order-1' },
+        });
+        expect(tx.order.update).toHaveBeenCalled();
+      });
+
+      it('fails with MAX_REDEMPTIONS_REACHED when the global cap was used up meanwhile', async () => {
+        const tx = seedPromoTx();
+        tx.discount.updateMany.mockResolvedValue({ count: 0 });
+
+        const err = await revive().catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ConflictException);
+        expect((err as ConflictException).getResponse()).toMatchObject({
+          error: 'DISCOUNT_MAX_REDEMPTIONS_REACHED',
+        });
+        expect(tx.discountRedemption.create).not.toHaveBeenCalled();
+        expect(tx.order.update).not.toHaveBeenCalled();
+      });
+
+      it('fails with USER_LIMIT_REACHED when the customer used the code again meanwhile', async () => {
+        const tx = seedPromoTx();
+        tx.discountRedemption.count.mockResolvedValue(1);
+
+        const err = await revive().catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ConflictException);
+        expect((err as ConflictException).getResponse()).toMatchObject({
+          error: 'DISCOUNT_USER_LIMIT_REACHED',
+        });
+        expect(tx.discountRedemption.create).not.toHaveBeenCalled();
+        expect(tx.order.update).not.toHaveBeenCalled();
+      });
+
+      it('skips the per-user count when the code has no perUserLimit', async () => {
+        const tx = seedPromoTx();
+        tx.discount.findUnique.mockResolvedValue({ id: 'discount-1', perUserLimit: null });
+
+        await revive();
+
+        expect(tx.discountRedemption.count).not.toHaveBeenCalled();
+        expect(tx.discountRedemption.create).toHaveBeenCalled();
+      });
+
+      it('fails with DISCOUNT_NOT_FOUND when the code no longer resolves to a discount', async () => {
+        const tx = seedPromoTx();
+        tx.discount.findUnique.mockResolvedValue(null);
+
+        const err = await revive().catch((e: unknown) => e);
+
+        expect(err).toBeInstanceOf(ConflictException);
+        expect((err as ConflictException).getResponse()).toMatchObject({
+          error: 'DISCOUNT_NOT_FOUND',
+        });
+        expect(tx.order.update).not.toHaveBeenCalled();
+      });
+
+      // An order cancelled before TASK-771 still holds its redemption — claiming
+      // again would double-count and trip the unique orderId.
+      it('claims nothing when the order still holds its redemption', async () => {
+        const tx = seedPromoTx();
+        tx.discountRedemption.findUnique.mockResolvedValue({ id: 'redemption-1' });
+
+        await revive();
+
+        expect(tx.discountRedemption.findUnique).toHaveBeenCalledWith({
+          where: { orderId: 'order-1' },
+          select: { id: true },
+        });
+        expect(tx.discount.updateMany).not.toHaveBeenCalled();
+        expect(tx.discountRedemption.create).not.toHaveBeenCalled();
+        expect(tx.order.update).toHaveBeenCalled();
+      });
+
+      it('touches no discount when the order carries no promo code', async () => {
+        const tx = seedTx();
+        tx.product.updateMany.mockResolvedValue({ count: 1 });
+
+        await revive();
+
+        expect(tx.discount.findUnique).not.toHaveBeenCalled();
+        expect(tx.discountRedemption.create).not.toHaveBeenCalled();
+      });
     });
   });
 
