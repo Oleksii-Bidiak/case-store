@@ -11,7 +11,11 @@ import {
 } from "@/entities/user";
 import { Button, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { profileSchema, type ProfileFormValues } from "../model/profile-schema";
+import {
+  PROFILE_NAME_MAX,
+  profileSchema,
+  type ProfileFormValues,
+} from "../model/profile-schema";
 
 interface ProfileFormProps {
   user: UserEntity;
@@ -90,16 +94,44 @@ export function ProfileForm({ user }: ProfileFormProps) {
           <Input
             id="account-firstName"
             autoComplete="given-name"
+            maxLength={PROFILE_NAME_MAX}
+            aria-invalid={errors.firstName ? true : undefined}
+            aria-describedby={
+              errors.firstName ? "account-firstName-error" : undefined
+            }
             {...register("firstName")}
           />
+          {errors.firstName && (
+            <p
+              id="account-firstName-error"
+              role="alert"
+              className="text-sm text-destructive"
+            >
+              {errors.firstName.message}
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="account-lastName">{dict.account.lastName}</Label>
           <Input
             id="account-lastName"
             autoComplete="family-name"
+            maxLength={PROFILE_NAME_MAX}
+            aria-invalid={errors.lastName ? true : undefined}
+            aria-describedby={
+              errors.lastName ? "account-lastName-error" : undefined
+            }
             {...register("lastName")}
           />
+          {errors.lastName && (
+            <p
+              id="account-lastName-error"
+              role="alert"
+              className="text-sm text-destructive"
+            >
+              {errors.lastName.message}
+            </p>
+          )}
         </div>
       </div>
 

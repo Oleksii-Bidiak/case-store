@@ -996,6 +996,7 @@ export const dict = {
     ratingRequired: "Будь ласка, оберіть оцінку",
     starAria: (n: number) => `${n} з 5 зірок`,
     commentLabel: "Коментар (необов'язково)",
+    commentMax: "Коментар не може перевищувати 1000 символів",
     commentPlaceholder: "Поділіться враженнями про товар…",
     submitReview: "Надіслати відгук",
     submitting: "Надсилаємо…",
@@ -1477,6 +1478,8 @@ export const dict = {
     signOut: "Вийти",
     loadError: "Не вдалося завантажити профіль.",
     phoneInvalid: "Вкажіть коректний номер телефону",
+    firstNameMax: "Ім'я не може перевищувати 100 символів",
+    lastNameMax: "Прізвище не може перевищувати 100 символів",
     // Account dashboard redesign (Account.dc.html).
     dashboard: {
       backHome: "Повернутись на головну",

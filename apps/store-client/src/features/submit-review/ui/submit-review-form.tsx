@@ -20,7 +20,11 @@ import {
 } from "@/entities/review";
 import { Button, ReviewRatingStars, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { reviewSchema, type ReviewFormValues } from "../model/review-schema";
+import {
+  REVIEW_COMMENT_MAX,
+  reviewSchema,
+  type ReviewFormValues,
+} from "../model/review-schema";
 
 interface SubmitReviewFormProps {
   productId: string;
@@ -309,10 +313,31 @@ export function SubmitReviewForm({ productId }: SubmitReviewFormProps) {
         <Textarea
           id="review-comment"
           rows={3}
+          maxLength={REVIEW_COMMENT_MAX}
           placeholder={dict.reviews.commentPlaceholder}
-          aria-describedby={existing ? "review-moderation-note" : undefined}
+          aria-invalid={errors.comment ? true : undefined}
+          aria-describedby={
+            [
+              existing ? "review-moderation-note" : null,
+              errors.comment ? "review-comment-error" : null,
+            ]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
           {...register("comment")}
         />
+        <span className="self-end text-xs text-muted-foreground">
+          {(comment ?? "").length}/{REVIEW_COMMENT_MAX}
+        </span>
+        {errors.comment && (
+          <p
+            id="review-comment-error"
+            role="alert"
+            className="text-sm text-destructive"
+          >
+            {errors.comment.message}
+          </p>
+        )}
         {/* Said BEFORE the author presses save, not after: an approved text
             going back into the queue is a consequence they should be able to
             decline. */}

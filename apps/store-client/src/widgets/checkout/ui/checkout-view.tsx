@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, type BaseSyntheticEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldErrors } from "react-hook-form";
@@ -15,6 +15,7 @@ import {
   useCheckoutPrefill,
   useCheckoutSteps,
   checkoutSchemaFor,
+  coercePaymentMethod,
   readConfiguredMethods,
   resolvePaymentMethods,
   CHECKOUT_DEFAULT_VALUES,
@@ -106,29 +107,62 @@ export function CheckoutView() {
   const { step, goToReview, goToDelivery } = useCheckoutSteps();
   const reviewHeadingRef = useRef<HTMLHeadingElement>(null);
   const isFirstRender = useRef(true);
+  // The invalid field a blocked step-2 submit sends the shopper back to — see
+  // `focusFirstError`. Consumed by the step-transition effect below.
+  const pendingErrorFocus = useRef<keyof CheckoutFormValues | null>(null);
 
   // Move focus on step transitions (not on initial mount): to the review heading
-  // when advancing, back to the first field when returning (WCAG 2.4.3).
+  // when advancing, back to the first field when returning (WCAG 2.4.3) — or to
+  // the invalid field when the return was forced by a blocked submit.
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false;
       return;
     }
-    if (step === 2) reviewHeadingRef.current?.focus();
-    else setFocus("firstName");
+    if (step === 2) {
+      reviewHeadingRef.current?.focus();
+      return;
+    }
+    const target = pendingErrorFocus.current ?? "firstName";
+    pendingErrorFocus.current = null;
+    setFocus(target);
   }, [step, setFocus]);
 
   const notes = useWatch({ control, name: "notes" }) ?? "";
   // Drives the live Nova Poshta shipping estimate in the order summary (TASK-080).
   const npCityRef = useWatch({ control, name: "npCityRef" });
   const guestEmail = useWatch({ control, name: "email" }) ?? "";
+  const paymentMethod = useWatch({ control, name: "paymentMethod" });
+
+  // A session that expires mid-checkout (TASK-773) disables the online methods
+  // under a choice already made. Nothing would then be checked, and the order
+  // would go out as a guest with a method guests cannot complete — fall back to
+  // the method this shopper can still use.
+  useEffect(() => {
+    const allowed = coercePaymentMethod(paymentMethod, paymentOptions);
+    if (allowed !== paymentMethod) setValue("paymentMethod", allowed);
+  }, [paymentMethod, paymentOptions, setValue]);
 
   // Surface a blocked submit instead of failing silently: focus the first
   // invalid field so the user sees exactly what needs fixing.
+  //
+  // Every field — and so every error message — lives on step 1; step 2 renders
+  // none of them. Step 2 still validates the whole form, and it CAN fail there:
+  // a session that expires on the review screen flips the resolver to the guest
+  // schema, whose email is required (TASK-773/794). Focusing a field that is not
+  // mounted does nothing, which left «Оформити» a silent button. So a blocked
+  // step-2 submit goes back to step 1, where the message is rendered, and the
+  // transition effect focuses the field once it has mounted.
   const focusFirstError = (formErrors: FieldErrors<CheckoutFormValues>) => {
     const first = Object.keys(formErrors)[0] as
       keyof CheckoutFormValues | undefined;
-    if (first) setFocus(first);
+    if (!first) return;
+    if (step === 2) {
+      pendingErrorFocus.current = first;
+      goToDelivery();
+      return;
+    }
+    setFocus(first);
   };
 
   /**
@@ -143,10 +177,12 @@ export function CheckoutView() {
    * through `handleSubmit` gives the intended timing for free: nothing is said
    * before the first «Далі», and every message clears as the field is fixed.
    */
-  const onStepSubmit = handleSubmit(
-    step === 1 ? goToReview : submitOrder,
-    focusFirstError,
-  );
+  //
+  // Built per submit rather than once per render: `focusFirstError` writes a ref,
+  // and handing it to `handleSubmit` during render is what the React Compiler's
+  // refs rule forbids.
+  const onStepSubmit = (event?: BaseSyntheticEvent) =>
+    handleSubmit(step === 1 ? goToReview : submitOrder, focusFirstError)(event);
 
   const items = data?.data?.items ?? [];
   const cartIsEmpty = !isInitializing && !isCartLoading && items.length === 0;

@@ -13,10 +13,13 @@
  * installed by hand per test, which is also the cheapest way to model a browser
  * that refuses storage entirely.
  */
+import { AxiosError, type AxiosAdapter, type AxiosResponse } from "axios";
 import {
   api,
   clearSessionMarker,
+  getAccessToken,
   markSessionActive,
+  onSessionExpired,
   refreshSession,
   setAccessToken,
   shouldAttemptSessionRefresh,
@@ -156,5 +159,82 @@ describe("session marker", () => {
     expect(shouldAttemptSessionRefresh()).toBe(true);
     expect(() => markSessionActive()).not.toThrow();
     expect(() => clearSessionMarker()).not.toThrow();
+  });
+});
+
+/**
+ * TASK-773: the interceptor's failed refresh must tell the AuthProvider, which
+ * owns the React copy of the session (`isAuthenticated`). The provider side is
+ * covered in `auth.context.test.tsx`; this pins the signal itself.
+ */
+describe("session-expired signal", () => {
+  /** Answers every request with a 401 without touching the network. */
+  const unauthorized: AxiosAdapter = (config) =>
+    Promise.reject(
+      new AxiosError("Unauthorized", "ERR_BAD_REQUEST", config, null, {
+        status: 401,
+        statusText: "Unauthorized",
+        data: {},
+        headers: {},
+        config,
+      } as AxiosResponse),
+    );
+
+  beforeEach(() => {
+    installStorage();
+    markSessionActive();
+  });
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+    setAccessToken(null);
+    removeWindow();
+  });
+
+  it("fires, and drops the token, when the refresh behind a 401 fails", async () => {
+    setAccessToken("stale-token");
+    failRefreshWith(401);
+    const listener = jest.fn();
+    const unsubscribe = onSessionExpired(listener);
+
+    await expect(
+      api.get("/api/users/me", { adapter: unauthorized }),
+    ).rejects.toBeInstanceOf(AxiosError);
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(getAccessToken()).toBeNull();
+    unsubscribe();
+  });
+
+  it("stops calling a listener once it unsubscribes", async () => {
+    failRefreshWith(401);
+    const listener = jest.fn();
+    onSessionExpired(listener)();
+
+    await expect(
+      api.get("/api/users/me", { adapter: unauthorized }),
+    ).rejects.toBeInstanceOf(AxiosError);
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("does not sign out a session that began while the refresh was in flight", async () => {
+    setAccessToken("stale-token");
+    // A sign-in lands while the old session's refresh is still out: the
+    // failure belongs to the old session and must not end the new one.
+    jest.spyOn(api, "post").mockImplementation(() => {
+      setAccessToken("fresh-token");
+      return Promise.reject(refreshFailure(401));
+    });
+    const listener = jest.fn();
+    const unsubscribe = onSessionExpired(listener);
+
+    await expect(
+      api.get("/api/users/me", { adapter: unauthorized }),
+    ).rejects.toBeInstanceOf(AxiosError);
+
+    expect(listener).not.toHaveBeenCalled();
+    expect(getAccessToken()).toBe("fresh-token");
+    unsubscribe();
   });
 });
