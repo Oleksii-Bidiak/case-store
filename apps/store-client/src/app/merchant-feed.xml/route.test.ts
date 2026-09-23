@@ -116,6 +116,34 @@ describe("GET /merchant-feed.xml", () => {
     expect(body).toContain("<g:brand>Аксесуарня</g:brand>");
   });
 
+  // TASK-550 — the site-wide noindex flag withdraws the feed entirely.
+  it("answers 404 without reading the catalogue when noindexSite is on", async () => {
+    mockFetchSeoSettings.mockResolvedValue({
+      noindexSite: true,
+    } as Awaited<ReturnType<typeof fetchSeoSettings>>);
+    mockFetchAllActiveProducts.mockResolvedValue([makeProduct()]);
+
+    const response = await GET();
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(mockFetchAllActiveProducts).not.toHaveBeenCalled();
+    expect(mockGetCategoryTree).not.toHaveBeenCalled();
+  });
+
+  it("serves the feed when noindexSite is off", async () => {
+    mockFetchSeoSettings.mockResolvedValue({
+      noindexSite: false,
+    } as Awaited<ReturnType<typeof fetchSeoSettings>>);
+    mockFetchAllActiveProducts.mockResolvedValue([makeProduct()]);
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(countItems(await response.text())).toBe(1);
+  });
+
   it("returns 200 with feed headers and one <item> per active product (happy path)", async () => {
     mockFetchAllActiveProducts.mockResolvedValue([
       makeProduct(),

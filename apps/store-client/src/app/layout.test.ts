@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { SeoSettingsEntity } from "@/shared/api/generated/models";
 
 // Isolate generateMetadata from the React tree (plan 145 / TASK-279-B), mirror
@@ -160,6 +162,32 @@ describe("root layout generateMetadata (TASK-279)", () => {
     expect(meta.verification?.other).toEqual({ "msvalidate.01": "B-TOKEN" });
   });
 
+  // --- Site-wide noindex kill switch (TASK-550) ----------------------------
+
+  it("emits robots noindex,nofollow for every route when noindexSite is on", async () => {
+    fetchSeo.mockResolvedValue(makeSettings({ noindexSite: true }));
+
+    const meta = await generateMetadata();
+
+    expect(meta.robots).toEqual({ index: false, follow: false });
+  });
+
+  it("emits no robots key when noindexSite is off, leaving pages indexable", async () => {
+    fetchSeo.mockResolvedValue(makeSettings({ noindexSite: false }));
+
+    const meta = await generateMetadata();
+
+    expect(meta).not.toHaveProperty("robots");
+  });
+
+  it("fails open (no robots key) when SeoSettings is unavailable", async () => {
+    fetchSeo.mockResolvedValue(null);
+
+    const meta = await generateMetadata();
+
+    expect(meta).not.toHaveProperty("robots");
+  });
+
   it("emits both verification keys simultaneously when both tokens are set", async () => {
     fetchSeo.mockResolvedValue(
       makeSettings({
@@ -172,5 +200,59 @@ describe("root layout generateMetadata (TASK-279)", () => {
 
     expect(meta.verification?.google).toBe("G-TOKEN");
     expect(meta.verification?.other).toEqual({ "msvalidate.01": "B-TOKEN" });
+  });
+});
+
+/**
+ * TASK-550 — Next merges metadata SHALLOWLY: a page that returns its own
+ * `robots` replaces the root layout's object wholesale. The root emits
+ * `{ index: false, follow: false }` under `noindexSite`, so the kill switch holds
+ * only while no route (or the shared listing helper that routes spread in) can
+ * produce anything but `index: false`. Every existing child does exactly that —
+ * pages without a `robots` key (the product page, the home page) simply inherit
+ * the root's. This guard fails the moment someone writes an indexable robots
+ * value — `index: true`, `index: someFlag`, or the string form
+ * `robots: "index, follow"` — where it would silently punch through the flag.
+ * If a route ever genuinely needs one, it has to read `noindexSite` itself.
+ */
+describe("page-level robots cannot re-enable indexing (TASK-550)", () => {
+  const SRC_ROOT = join(__dirname, "..");
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) return walk(full);
+      if (!/\.tsx?$/.test(entry.name) || /\.test\.tsx?$/.test(entry.name)) {
+        return [];
+      }
+      return [full];
+    });
+  const sources = [
+    ...walk(join(SRC_ROOT, "app")),
+    ...walk(join(SRC_ROOT, "shared", "lib", "seo")),
+  ].map((file) => ({ file, code: readFileSync(file, "utf8") }));
+
+  it("scans the metadata sources (sanity: the known noindex routes are found)", () => {
+    const withRobots = sources.filter(({ code }) => /\brobots\s*:/.test(code));
+    // verify-email, checkout, not-found, both order pages, search, the layout,
+    // three listing routes and the listing helper.
+    expect(withRobots.length).toBeGreaterThan(5);
+  });
+
+  it("no source sets `index` to anything but false", () => {
+    const indexable = /\bindex\s*:\s*(?!false\b|boolean\b)\S/;
+    const offenders = sources
+      .filter(({ code }) => indexable.test(code))
+      .map(({ file }) => file);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("no source uses the string form of `robots`", () => {
+    const stringRobots = /\brobots\s*:\s*["'`]/;
+    const offenders = sources
+      .filter(({ code }) => stringRobots.test(code))
+      .map(({ file }) => file);
+
+    expect(offenders).toEqual([]);
   });
 });

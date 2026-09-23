@@ -26,7 +26,7 @@ jest.mock("@/shared/lib/slug-redirect", () => ({
   resolveSlugRedirect: jest.fn(),
 }));
 
-import ProductDetailPage from "./page";
+import ProductDetailPage, { generateMetadata } from "./page";
 import { permanentRedirect } from "next/navigation";
 import { productControllerFindBySlug } from "@/shared/api/generated/products/products";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
@@ -89,5 +89,43 @@ describe("products/[slug] slug-redirect (TASK-285)", () => {
 
     expect(resolveRedirect).not.toHaveBeenCalled();
     expect(permanentRedirect).not.toHaveBeenCalled();
+  });
+});
+
+// TASK-550 — the site-wide `noindexSite` robots live on the root layout, and
+// Next merges metadata shallowly: a product page that returned its own `robots`
+// would replace them. The PDP (the bulk of indexable URLs) must therefore carry
+// no `robots` key on either branch, so it always inherits the root's.
+describe("products/[slug] generateMetadata robots inheritance (TASK-550)", () => {
+  const runMetadata = (slug: string) =>
+    generateMetadata({ params: Promise.resolve({ slug }) });
+
+  it("emits no robots key for a resolved product", async () => {
+    findBySlug.mockResolvedValue({
+      data: {
+        id: "product-1",
+        name: "Чохол",
+        slug: "chohol",
+        description: null,
+        price: "29.99",
+        metaTitle: null,
+        metaDescription: null,
+      },
+      images: [],
+      category: { id: "cat-1", name: "Чохли" },
+    } as never);
+
+    const meta = await runMetadata("chohol");
+
+    expect(meta.title).toBeDefined();
+    expect(meta).not.toHaveProperty("robots");
+  });
+
+  it("emits no robots key on the fetch-failure fallback", async () => {
+    findBySlug.mockRejectedValue(new Error("API down"));
+
+    const meta = await runMetadata("chohol");
+
+    expect(meta).not.toHaveProperty("robots");
   });
 });

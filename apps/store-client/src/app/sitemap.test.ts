@@ -8,6 +8,11 @@ jest.mock("@/shared/lib/schema", () => ({
 jest.mock("@/shared/api/blog-server", () => ({
   fetchPublishedPosts: jest.fn(),
 }));
+// The noindexSite kill switch (TASK-550). null by default — unconfigured, i.e.
+// the normal indexable path every older case below was written against.
+jest.mock("@/shared/api/seo-settings-server", () => ({
+  fetchSeoSettings: jest.fn(),
+}));
 
 import * as Sentry from "@sentry/nextjs";
 import {
@@ -17,6 +22,8 @@ import {
   fetchAllPublishedPages,
 } from "@/shared/lib/schema";
 import { fetchPublishedPosts } from "@/shared/api/blog-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import type { SeoSettingsEntity } from "@/shared/api/generated/models";
 import { INFO_SLUG_INLINED_ON_HUB, SITE_URL } from "@/shared/config";
 import sitemap from "./sitemap";
 
@@ -26,6 +33,7 @@ const categories = fetchAllActiveCategories as jest.Mock;
 const pages = fetchAllPublishedPages as jest.Mock;
 const posts = fetchPublishedPosts as jest.Mock;
 const compat = fetchAllCompatLandingPages as jest.Mock;
+const seoSettings = fetchSeoSettings as jest.Mock;
 
 const STATIC_ROUTE_COUNT = 8;
 
@@ -40,6 +48,7 @@ describe("sitemap", () => {
     pages.mockResolvedValue([]);
     posts.mockResolvedValue({ posts: [] });
     compat.mockResolvedValue([]);
+    seoSettings.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -87,6 +96,46 @@ describe("sitemap", () => {
         tags: { route: "sitemap", source: "products" },
       }),
     );
+  });
+
+  // TASK-550 — the site-wide noindex flag empties the sitemap.
+  describe("noindexSite", () => {
+    beforeEach(() => {
+      products.mockResolvedValue([
+        { slug: "case-alpha", updatedAt: "2026-06-01T00:00:00.000Z" },
+      ]);
+    });
+
+    it("returns an empty sitemap and reads no catalogue source when the flag is on", async () => {
+      seoSettings.mockResolvedValue({ noindexSite: true } as SeoSettingsEntity);
+
+      const routes = await sitemap();
+
+      expect(routes).toEqual([]);
+      expect(products).not.toHaveBeenCalled();
+      expect(categories).not.toHaveBeenCalled();
+      expect(pages).not.toHaveBeenCalled();
+      expect(posts).not.toHaveBeenCalled();
+      expect(compat).not.toHaveBeenCalled();
+    });
+
+    it("lists every route when the flag is off", async () => {
+      seoSettings.mockResolvedValue({
+        noindexSite: false,
+      } as SeoSettingsEntity);
+
+      const routes = await sitemap();
+
+      expect(routes).toHaveLength(STATIC_ROUTE_COUNT + 1);
+    });
+
+    it("fails open (lists every route) when the settings fetch returns null", async () => {
+      seoSettings.mockResolvedValue(null);
+
+      const routes = await sitemap();
+
+      expect(routes).toHaveLength(STATIC_ROUTE_COUNT + 1);
+    });
   });
 
   // TASK-435 — a page row's kind decides its address, and a HUB row has none.
