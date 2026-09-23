@@ -69,17 +69,28 @@ export function useImportDecisions() {
    * Untick every change that would overwrite a hand edit. The one bulk action
    * worth having: conflicts are exactly the changes an operator might regret,
    * and hunting for them across 1300 rows is not review, it is archaeology.
+   *
+   * It ADDS to what the operator has already unticked — it never replaces it
+   * (TASK-774). Rebuilding the map from scratch silently re-ticked every manual
+   * exclusion, and those changes were then applied and journalled as decided.
+   * Per-row sets are copied, not shared, so the previous state stays intact.
    */
   const excludeAllConflicts = useCallback((rows: DecidableRow[]) => {
-    setExcludedFields(() => {
+    setExcludedFields((previous) => {
       const next = new Map<string, Set<string>>();
+      for (const [sku, fields] of previous) {
+        next.set(sku, new Set(fields));
+      }
       for (const row of rows) {
         const conflicting = row.changes
           .filter((change) => change.conflict)
           .map((change) => change.field);
-        if (conflicting.length > 0) {
-          next.set(row.sourceSku, new Set(conflicting));
+        if (conflicting.length === 0) continue;
+        const fields = next.get(row.sourceSku) ?? new Set<string>();
+        for (const field of conflicting) {
+          fields.add(field);
         }
+        next.set(row.sourceSku, fields);
       }
       return next;
     });

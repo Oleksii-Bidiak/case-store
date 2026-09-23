@@ -73,6 +73,42 @@ describe("useImportDecisions (TASK-360)", () => {
     });
   });
 
+  // TASK-774: the bulk action used to rebuild the map from scratch, silently
+  // re-ticking whatever the operator had unticked by hand — which then got
+  // applied and logged in the journal as the operator's decision.
+  it("keeps manual unticks when excluding all conflicts", () => {
+    const { result } = renderHook(() => useImportDecisions());
+
+    act(() => result.current.toggleField("A1", "name"));
+    act(() => result.current.toggleField("A2", "description"));
+    act(() => result.current.excludeAllConflicts(rows));
+
+    expect(result.current.isFieldExcluded("A1", "name")).toBe(true);
+    expect(result.current.isFieldExcluded("A2", "description")).toBe(true);
+    expect(result.current.isFieldExcluded("A1", "price")).toBe(true);
+
+    const payload = result.current.toPayload().excludedFields;
+    expect(Object.keys(payload).sort()).toEqual(["A1", "A2"]);
+    expect([...payload.A1].sort()).toEqual(["name", "price"]);
+    expect(payload.A2).toEqual(["description"]);
+  });
+
+  it("does not mutate the previous state's per-row sets when merging", () => {
+    const { result } = renderHook(() => useImportDecisions());
+
+    act(() => result.current.toggleField("A1", "name"));
+    const before = result.current.toPayload().excludedFields;
+    act(() => result.current.excludeAllConflicts(rows));
+    // Ticking "name" back on must leave the conflict exclusion in place and
+    // must not resurrect anything through a shared Set reference.
+    act(() => result.current.toggleField("A1", "name"));
+
+    expect(before).toEqual({ A1: ["name"] });
+    expect(result.current.toPayload().excludedFields).toEqual({
+      A1: ["price"],
+    });
+  });
+
   it("clears everything on reset, so a second upload starts clean", () => {
     const { result } = renderHook(() => useImportDecisions());
 
