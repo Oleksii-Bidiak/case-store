@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { useCheckout } from "./use-checkout";
@@ -34,11 +39,11 @@ const VALUES: CheckoutFormValues = {
  * hook's `errorMessage` rendered as-is. The whole point of this suite is what
  * that string says — the full form is `checkout-view.test.tsx`'s job.
  */
-function Harness() {
+function Harness({ values = VALUES }: { values?: CheckoutFormValues }) {
   const { submitOrder, errorMessage } = useCheckout({ isGuest: false });
   return (
     <div>
-      <button type="button" onClick={() => void submitOrder(VALUES)}>
+      <button type="button" onClick={() => void submitOrder(values)}>
         submit
       </button>
       {errorMessage && <p role="alert">{errorMessage}</p>}
@@ -128,4 +133,51 @@ describe("useCheckout — order-creation failures (TASK-402)", () => {
     ).toBeInTheDocument();
     expect(screen.queryByText("Internal server error")).toBeNull();
   });
+});
+
+// TASK-650. The server stamps `reservationExpiresAt` — the 30-minute window after
+// which an unpaid online order's stock is released — only when the create call
+// itself says ONLINE / INSTALLMENTS. Omitted, it stores ON_DELIVERY, so for as
+// long as the storefront did not send the field no reservation ever expired.
+describe("useCheckout — the payment method travels on the create call (TASK-650)", () => {
+  beforeEach(() => {
+    mockPush.mockClear();
+  });
+
+  it.each([
+    ["ON_DELIVERY", "ON_DELIVERY"],
+    ["ONLINE", "ONLINE"],
+    ["INSTALLMENTS", "INSTALLMENTS"],
+  ] as const)(
+    "sends paymentMethod %s when the shopper picks %s",
+    async (expected, picked) => {
+      let orderBody: Record<string, unknown> | null = null;
+      server.use(
+        http.post("*/api/orders", async ({ request }) => {
+          orderBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(
+            { data: { id: "order-1" } },
+            { status: 201 },
+          );
+        }),
+        // The handoff is not under test here; failing it keeps the browser on
+        // the page and ends the flow on the confirmation route.
+        http.post("*/api/payments/orders/:orderId/checkout", () =>
+          HttpResponse.json({ message: "unavailable" }, { status: 503 }),
+        ),
+      );
+      const user = userEvent.setup();
+      renderWithProviders(
+        <Harness values={{ ...VALUES, paymentMethod: picked }} />,
+        authed,
+      );
+
+      await user.click(screen.getByRole("button", { name: "submit" }));
+
+      await waitFor(() =>
+        expect(mockPush).toHaveBeenCalledWith("/orders/order-1/confirmation"),
+      );
+      expect(orderBody).toMatchObject({ paymentMethod: expected });
+    },
+  );
 });

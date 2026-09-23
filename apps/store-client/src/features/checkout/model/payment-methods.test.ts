@@ -3,6 +3,7 @@ import {
   parseConfiguredMethods,
   requiresPaymentHandoff,
   resolvePaymentMethods,
+  toOrderPaymentMethod,
   type PaymentMethodOption,
 } from "./payment-methods";
 
@@ -126,5 +127,16 @@ describe("coercePaymentMethod", () => {
 
   it("falls back when nothing was selected at all", () => {
     expect(coercePaymentMethod(undefined, options)).toBe("ON_DELIVERY");
+  });
+});
+
+// TASK-650: every UI method maps onto a value `CreateOrderDto` accepts.
+describe("toOrderPaymentMethod", () => {
+  it.each([
+    ["ON_DELIVERY", "ON_DELIVERY"],
+    ["ONLINE", "ONLINE"],
+    ["INSTALLMENTS", "INSTALLMENTS"],
+  ] as const)("maps %s to the API's %s", (method, expected) => {
+    expect(toOrderPaymentMethod(method)).toBe(expected);
   });
 });

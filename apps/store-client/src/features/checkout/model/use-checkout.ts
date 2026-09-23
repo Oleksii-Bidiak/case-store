@@ -16,7 +16,10 @@ import {
 import { dict } from "@/shared/config";
 import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
 import type { CheckoutFormValues } from "./checkout-schema";
-import { requiresPaymentHandoff } from "./payment-methods";
+import {
+  requiresPaymentHandoff,
+  toOrderPaymentMethod,
+} from "./payment-methods";
 import { checkoutHandoffMessage, useOrderPayment } from "./use-order-payment";
 
 export interface UseCheckoutOptions {
@@ -36,10 +39,11 @@ export interface UseCheckoutOptions {
  * 1. **Cash on delivery, signed in** — create the order, push to
  *    `/orders/[id]/confirmation`. Unchanged behaviour.
  * 2. **Card / instalments** — create the order, then open a payment attempt and
- *    hand the browser to the provider (`useOrderPayment`). This is *how the
- *    chosen method reaches the API*: `CreateOrderDto` carries no payment field,
- *    so the choice is expressed as a second call rather than a property of the
- *    first (docs/payments-liqpay.md §3, steps 2–5).
+ *    hand the browser to the provider (`useOrderPayment`). The method itself
+ *    already travelled on the first call as `CreateOrderDto.paymentMethod` —
+ *    that is what makes the server stamp the 30-minute stock reservation
+ *    (TASK-650); the second call only opens the payment attempt
+ *    (docs/payments-liqpay.md §3, steps 2–5).
  * 3. **Guest** — create the order and surface {@link placedOrder} for an in-page
  *    success panel. No redirect: the confirmation route needs a JWT, so pushing a
  *    guest there would show them a login screen seconds after they paid us money.
@@ -92,6 +96,10 @@ export function useCheckout({ isGuest }: UseCheckoutOptions) {
           : undefined,
       },
       notes: values.notes || undefined,
+      // TASK-650. Always sent, ON_DELIVERY included: without it the server
+      // stores its default ON_DELIVERY for a card order too, so the order never
+      // gets `reservationExpiresAt` and its stock is never released if unpaid.
+      paymentMethod: toOrderPaymentMethod(values.paymentMethod),
       discountCode: appliedDiscount?.code || undefined,
       // TASK-338. Sent only for guests: the backend ignores a contact block from
       // an authenticated caller, whose account is the source of truth. Name and

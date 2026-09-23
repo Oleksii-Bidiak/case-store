@@ -701,12 +701,14 @@ describe("CheckoutView", () => {
         .spyOn(HTMLFormElement.prototype, "submit")
         .mockImplementation(() => {});
       let checkoutCalls = 0;
+      let orderBody: Record<string, unknown> | null = null;
 
       setupBlankProfile();
       server.use(
-        http.post("*/api/orders", () =>
-          HttpResponse.json(makeOrder(), { status: 201 }),
-        ),
+        http.post("*/api/orders", async ({ request }) => {
+          orderBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(makeOrder(), { status: 201 });
+        }),
         http.post("*/api/payments/orders/:orderId/checkout", () => {
           checkoutCalls += 1;
           return HttpResponse.json(
@@ -730,11 +732,12 @@ describe("CheckoutView", () => {
       await user.click(screen.getByRole("radio", { name: /Картка онлайн/ }));
       await placeOrder(user);
 
-      // This is the whole point of the task: the chosen method reached the API.
-      // `CreateOrderDto` has no payment field, so the choice is expressed as a
-      // second call — and if that call never happened, nothing about the choice
-      // would be real.
+      // This is the whole point of the task: the chosen method reached the API,
+      // twice. On the create call as `paymentMethod` — without it the server
+      // stores ON_DELIVERY and never starts the stock reservation (TASK-650) —
+      // and as the payment-attempt call that opens the provider handoff.
       await waitFor(() => expect(checkoutCalls).toBe(1));
+      expect(orderBody).toMatchObject({ paymentMethod: "ONLINE" });
       await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
 
       const form = document.querySelector(
@@ -758,12 +761,14 @@ describe("CheckoutView", () => {
     it("does not touch the payment endpoint for cash on delivery", async () => {
       process.env.NEXT_PUBLIC_PAYMENT_METHODS = "ONLINE";
       let checkoutCalls = 0;
+      let orderBody: Record<string, unknown> | null = null;
 
       setupBlankProfile();
       server.use(
-        http.post("*/api/orders", () =>
-          HttpResponse.json(makeOrder(), { status: 201 }),
-        ),
+        http.post("*/api/orders", async ({ request }) => {
+          orderBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(makeOrder(), { status: 201 });
+        }),
         http.post("*/api/payments/orders/:orderId/checkout", () => {
           checkoutCalls += 1;
           return HttpResponse.json({ data: {} }, { status: 201 });
@@ -778,6 +783,7 @@ describe("CheckoutView", () => {
         expect(mockPush).toHaveBeenCalledWith("/orders/order-1/confirmation"),
       );
       expect(checkoutCalls).toBe(0);
+      expect(orderBody).toMatchObject({ paymentMethod: "ON_DELIVERY" });
     });
 
     it("lands on the order page — never a success claim — when the handoff fails", async () => {
