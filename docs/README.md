@@ -84,7 +84,9 @@
 | [reviews/2026-08-27-demo-run.md](reviews/2026-08-27-demo-run.md)                               | **журнал живого прогону на демо-стенді 2026-08-27**: знахідки власника 🐞/💡/❓ як вони були записані                                                                    |
 | [reviews/2026-08-27-demo-run-triage.md](reviews/2026-08-27-demo-run-triage.md)                 | **тріаж того прогону (2026-09-10)**: що з кожною знахідкою, корені по коду, розкладка на плани 173–179 і задачі                                                          |
 | [session-runbook.md](session-runbook.md)                                                       | **ранбук сесій** хвиль після прогону: порядок, самодостатні промпти для кожної сесії Claude Code, таблиця деплоїв                                                        |
-| [plans/](plans/)                                                                               | 187 планів реалізації (до номера 188; 165-го немає) — **історичні записи**, не інструкції                                                                                |
+| [session-runbook-2.md](session-runbook-2.md)                                                   | **ранбук циклу 2** (з 2026-09-23): порядок, промпти для кожної сесії хвиль 189–198, черги 184–188 і дизайн-треку, staging і «після запуску»                              |
+| [reviews/2026-09-23-cycle-2-inventory.md](reviews/2026-09-23-cycle-2-inventory.md)             | **інвентар циклу 2**: усі 376 відкритих рядків BACKLOG на 2026-09-23, кожен з одним місцем — хвиля, звірка, staging, рішення власника чи після запуску                   |
+| [plans/](plans/)                                                                               | 197 планів реалізації (до номера 198; 165-го немає) — **історичні записи**, не інструкції                                                                                |
 
 **Плани хвиль після живого прогону 2026-08-27** (порядок сесій — у
 [session-runbook.md](session-runbook.md)):
@@ -100,6 +102,20 @@
   [184](plans/184-delivery-methods.md) способи доставки, [185](plans/185-deletion.md) видалення,
   [186](plans/186-home-blocks-and-preview.md) головна як блоки,
   [187](plans/187-notifications.md) сповіщення, [188](plans/188-analytics.md) статистика.
+
+**Плани циклу 2** (з 2026-09-23; порядок сесій — у [session-runbook-2.md](session-runbook-2.md),
+розкладка всього відкритого — в [інвентарі](reviews/2026-09-23-cycle-2-inventory.md)):
+[189](plans/189-design-track-cycle-2.md) дизайн-трек (синхронізація макетів, адмінка в Claude
+Design, нові екрани), [190](plans/190-red-wave-ci-security-money.md) червоне: CI, безпека, гроші,
+[191](plans/191-admin-customer-onboarding.md) онбординг замовника по адмінці,
+[192](plans/192-api-orders-money-auth.md) API: замовлення, гроші, auth,
+[193](plans/193-api-catalogue-search-content.md) API: каталог, пошук, контент,
+[194](plans/194-ci-ops-docs-architecture.md) CI, ops, доки, архітектура API,
+[195](plans/195-admin-functions.md) адмінка: функції,
+[196](plans/196-storefront-logic-seo-content.md) вітрина: логіка, SEO, контент,
+[197](plans/197-storefront-visual-by-mockups.md) вітрина за макетами,
+[198](plans/198-admin-by-mockups.md) адмінка за макетами. Плани 184–188 отримали розділ «Кластери
+(цикл 2)»: API зараз, UI — після дизайн-воріт.
 
 ---
 
