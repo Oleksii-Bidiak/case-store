@@ -1,7 +1,7 @@
 import { IsString, IsOptional, IsEmail, MaxLength, MinLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { IsUaPhone, normalizePhone } from '../../common/validators';
+import { IsUaPhone, normalizeEmail, normalizePhone } from '../../common/validators';
 
 /**
  * Trim a string value coming off the request body. Non-string values pass
@@ -51,7 +51,8 @@ export class CreateContactMessageDto {
   phone!: string;
 
   @ApiProperty({ description: 'Contact email address', example: 'ivan@example.com' })
-  @Transform(trim)
+  // TASK-772: lowercased too — the customer card matches messages by email.
+  @Transform(normalizeEmail)
   @IsEmail({}, { message: 'A valid email is required' })
   @MaxLength(255, { message: 'Email must be at most 255 characters' })
   email!: string;

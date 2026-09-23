@@ -14,6 +14,7 @@ import { ReviewService } from '../review/review.service';
 import { StaffPermissionsEntity, StaffUserEntity } from './entities';
 import { CreateStaffDto, StaffListQueryDto } from './dto';
 import { hashPassword } from '../common/security';
+import { normalizeEmailAddress } from '../common/validators';
 import {
   AccessLevel,
   PermissionGrantRepository,
@@ -167,7 +168,11 @@ export class StaffService {
   async create(dto: CreateStaffDto, actor: PermissionActor): Promise<StaffUserEntity> {
     assertMayAssign(actor, levelOfRole(dto.role));
 
-    const existing = await this.userRepository.findByEmail(dto.email);
+    // TASK-772: the DTO already normalises, but the uniqueness check and the
+    // write must agree with the login lookup even for a caller that skipped it.
+    const email = normalizeEmailAddress(dto.email);
+
+    const existing = await this.userRepository.findByEmail(email);
     if (existing) {
       throw new ConflictException('Email is already taken');
     }
@@ -175,7 +180,7 @@ export class StaffService {
     const passwordHash = await hashPassword(dto.password);
 
     const created = await this.staffRepository.create({
-      email: dto.email,
+      email,
       passwordHash,
       role: dto.role,
       firstName: dto.firstName,

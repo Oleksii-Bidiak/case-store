@@ -777,6 +777,46 @@ describe('AuthService', () => {
       expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
     });
 
+    // ─── TASK-772: the Google email is not a DTO, so nothing normalised it ────
+    //
+    // `users.email` is a case-sensitive unique text column. Google hands back
+    // whatever spelling the account holder chose, so a shopper who registered
+    // `a@gmail.com` and then pressed «Увійти з Google» as `A@Gmail.com` got a
+    // SECOND account. The profile email is normalised before every use.
+
+    it('matches an existing account whatever case Google spells the email in (TASK-772)', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue(mockUser);
+
+      await service.loginWithGoogleProfile({ ...googleProfile, email: '  Test@Example.COM ' });
+
+      expect(authRepository.findByEmail).toHaveBeenCalledWith('test@example.com');
+      expect(authRepository.createUserFromOAuth).not.toHaveBeenCalled();
+      expect(authRepository.linkOAuthAccount).toHaveBeenCalledWith(
+        mockUser.id,
+        OAuthProvider.GOOGLE,
+        'google-sub-123',
+        'test@example.com',
+      );
+    });
+
+    it('provisions a new Google user under the normalised email (TASK-772)', async () => {
+      const newUser = { ...mockUser, id: 'user-uuid-new', passwordHash: null };
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue(null);
+      authRepository.createUserFromOAuth.mockResolvedValue({
+        user: newUser,
+        oauthAccount: { ...mockOAuthLink, userId: newUser.id },
+      });
+
+      await service.loginWithGoogleProfile({ ...googleProfile, email: 'New.User@Gmail.com' });
+
+      expect(authRepository.findByEmail).toHaveBeenCalledWith('new.user@gmail.com');
+      expect(authRepository.createUserFromOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'new.user@gmail.com' }),
+      );
+    });
+
     // ─── TASK-314: the storefront's Google button is CUSTOMER-only ────────────
     //
     // Owner decision, 2026-07-27: storefront Google sign-in may NEVER mint a

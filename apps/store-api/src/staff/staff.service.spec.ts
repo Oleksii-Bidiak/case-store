@@ -208,6 +208,21 @@ describe('StaffService', () => {
       );
     });
 
+    // TASK-772: the DTO normalises too, but the service is also called from code
+    // that never went through a pipe — the uniqueness check and the write must
+    // see the same spelling the login lookup will.
+    it('looks up and stores the email trimmed and lowercased', async () => {
+      userRepositoryMock.findByEmail.mockResolvedValue(null);
+      staffRepositoryMock.create.mockResolvedValue({ ...managerRow, email: 'new@example.com' });
+
+      await service.create({ ...dto, email: ' New@Example.COM ' }, deputyActor);
+
+      expect(userRepositoryMock.findByEmail).toHaveBeenCalledWith('new@example.com');
+      expect(staffRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'new@example.com' }),
+      );
+    });
+
     it('refuses an email that is already taken', async () => {
       userRepositoryMock.findByEmail.mockResolvedValue(managerRow);
 

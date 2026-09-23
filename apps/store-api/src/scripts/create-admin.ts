@@ -37,6 +37,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { hashPassword } from '../common/security';
 import {
+  normalizeEmailAddress,
   PASSWORD_MIN_LENGTH,
   STAFF_PASSWORD_MESSAGE,
   STAFF_PASSWORD_REGEX,
@@ -51,7 +52,10 @@ function parseArgs(): Args {
     return i === -1 ? undefined : argv[i + 1];
   };
 
-  const email = read('--email') ?? process.env.ADMIN_EMAIL;
+  // TASK-772: normalised like every DTO email, or `--email Owner@Shop.ua` would
+  // create a row the login form (which lowercases) can never find.
+  const rawEmail = read('--email') ?? process.env.ADMIN_EMAIL;
+  const email = rawEmail === undefined ? undefined : normalizeEmailAddress(rawEmail);
   if (!email || !email.includes('@')) {
     throw new Error('Usage: create-admin --email <address> [--password <password>]');
   }

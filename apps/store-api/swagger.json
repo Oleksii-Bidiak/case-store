@@ -14152,7 +14152,8 @@
           "email": {
             "type": "string",
             "description": "User email address",
-            "example": "user@example.com"
+            "example": "user@example.com",
+            "maxLength": 254
           },
           "password": {
             "type": "string",

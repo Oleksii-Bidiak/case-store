@@ -1,13 +1,22 @@
 import { IsEmail, IsString, MaxLength, IsOptional } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { CUSTOMER_PASSWORD_DESCRIPTION, IsCustomerPassword } from '../../common/validators';
+import {
+  CUSTOMER_PASSWORD_DESCRIPTION,
+  IsCustomerPassword,
+  normalizeEmail,
+} from '../../common/validators';
 
 export class RegisterDto {
   @ApiProperty({
     description: 'User email address',
     example: 'user@example.com',
+    maxLength: 254,
   })
+  // TASK-772: one address, one account — stored trimmed and lowercased.
+  @Transform(normalizeEmail)
   @IsEmail({}, { message: 'Please provide a valid email address' })
+  @MaxLength(254, { message: 'Email must be at most 254 characters' })
   email!: string;
 
   @ApiProperty({

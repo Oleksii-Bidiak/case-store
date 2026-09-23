@@ -1,5 +1,7 @@
 import { IsString, IsOptional, IsEmail, IsUrl, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { normalizeEmail } from '../../common/validators';
 
 /**
  * DTO for updating the singleton site-contact settings (admin-only).
@@ -12,6 +14,7 @@ export class UpdateSiteContactDto {
     example: 'support@casestore.ua',
   })
   @IsOptional()
+  @Transform(normalizeEmail) // TASK-772
   @IsEmail({}, { message: 'Email must be a valid email address' })
   @MaxLength(255)
   email?: string;

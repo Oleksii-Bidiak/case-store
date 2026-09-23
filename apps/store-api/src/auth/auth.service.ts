@@ -15,7 +15,11 @@ import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
 import { hashPassword, verifyPassword } from '../common/security';
-import { STAFF_PASSWORD_MESSAGE, STAFF_PASSWORD_REGEX } from '../common/validators';
+import {
+  normalizeEmailAddress,
+  STAFF_PASSWORD_MESSAGE,
+  STAFF_PASSWORD_REGEX,
+} from '../common/validators';
 
 /** Bytes of entropy for an opaque password-reset token (→ 64 hex chars). */
 const PASSWORD_RESET_TOKEN_BYTES = 32;
@@ -280,6 +284,12 @@ export class AuthService {
       throw new UnauthorizedException(GOOGLE_EMAIL_UNVERIFIED_MESSAGE);
     }
 
+    // TASK-772: the profile never went through a DTO, and Google returns the
+    // spelling the account holder chose. `users.email` is case-sensitive, so an
+    // un-normalised lookup missed `a@gmail.com` for `A@Gmail.com` and the signup
+    // branch minted a SECOND account for the same person.
+    const email = normalizeEmailAddress(profile.email);
+
     const existingLink = await this.authRepository.findOAuthAccount(
       OAuthProvider.GOOGLE,
       profile.providerId,
@@ -291,13 +301,13 @@ export class AuthService {
     if (existingLink) {
       user = existingLink.user;
     } else {
-      const matchedUser = await this.authRepository.findByEmail(profile.email);
+      const matchedUser = await this.authRepository.findByEmail(email);
 
       if (!matchedUser) {
         // Brand-new signup — Google doubles as registration. No lock check
         // needed (a row that doesn't exist yet can't be locked).
         const created = await this.authRepository.createUserFromOAuth({
-          email: profile.email,
+          email,
           firstName: profile.firstName,
           lastName: profile.lastName,
           provider: OAuthProvider.GOOGLE,
@@ -348,7 +358,7 @@ export class AuthService {
         user.id,
         OAuthProvider.GOOGLE,
         profile.providerId,
-        profile.email,
+        email,
       );
       this.logger.info(
         { event: 'user.googleAccountLinked', userId: user.id },
