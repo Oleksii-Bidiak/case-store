@@ -5,12 +5,14 @@ import { Logo } from "./logo";
 /** store-api uploads origin — allow-listed in next.config.ts by default. */
 const RASTER_LOGO = "http://localhost:3001/uploads/branding/logo.webp";
 const SVG_LOGO = "http://localhost:3001/uploads/branding/logo.svg";
+/** The typographic fallback shows the first letter of the brand name (TASK-743). */
+const MONOGRAM = SITE_NAME.charAt(0);
 
 describe("Logo (TASK-299)", () => {
   it("renders the typographic monogram + wordmark when no logo is uploaded", () => {
     render(<Logo />);
 
-    expect(screen.getByText("M")).toBeInTheDocument();
+    expect(screen.getByText(MONOGRAM)).toBeInTheDocument();
     expect(screen.getByText(SITE_NAME)).toBeInTheDocument();
     expect(document.querySelector("img")).not.toBeInTheDocument();
   });
@@ -74,7 +76,7 @@ describe("Logo (TASK-299)", () => {
 
     fireEvent.error(screen.getByRole("img", { name: SITE_NAME }));
 
-    expect(screen.getByText("M")).toBeInTheDocument();
+    expect(screen.getByText(MONOGRAM)).toBeInTheDocument();
     expect(screen.getByText(SITE_NAME)).toBeInTheDocument();
     expect(document.querySelector("img")).not.toBeInTheDocument();
   });
@@ -85,7 +87,7 @@ describe("Logo (TASK-299)", () => {
     const { rerender } = render(<Logo logoUrl={SVG_LOGO} />);
 
     fireEvent.error(screen.getByRole("img", { name: SITE_NAME }));
-    expect(screen.getByText("M")).toBeInTheDocument();
+    expect(screen.getByText(MONOGRAM)).toBeInTheDocument();
     expect(document.querySelector("img")).not.toBeInTheDocument();
 
     const NEW_LOGO = "http://localhost:3001/uploads/branding/logo-v2.svg";
@@ -93,7 +95,7 @@ describe("Logo (TASK-299)", () => {
 
     const img = screen.getByRole("img", { name: SITE_NAME });
     expect(img).toHaveAttribute("src", NEW_LOGO);
-    expect(screen.queryByText("M")).not.toBeInTheDocument();
+    expect(screen.queryByText(MONOGRAM)).not.toBeInTheDocument();
   });
 
   // ── TASK-410: the brand block is what yields on a 320px header row ─────────
@@ -104,7 +106,7 @@ describe("Logo (TASK-299)", () => {
     // logo would push the header's action cluster off a narrow screen instead of
     // shortening itself.
     expect(container.firstChild).toHaveClass("min-w-0");
-    expect(screen.getByText("M")).toHaveClass("shrink-0");
+    expect(screen.getByText(MONOGRAM)).toHaveClass("shrink-0");
     expect(screen.getByText(SITE_NAME)).toHaveClass("truncate");
   });
 
@@ -121,6 +123,6 @@ describe("Logo (TASK-299)", () => {
     );
 
     expect(container.firstChild).toHaveClass("gap-2.5");
-    expect(screen.getByText("M")).toHaveClass("shadow-elevated");
+    expect(screen.getByText(MONOGRAM)).toHaveClass("shadow-elevated");
   });
 });
