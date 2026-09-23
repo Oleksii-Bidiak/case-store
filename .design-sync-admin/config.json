@@ -1,0 +1,104 @@
+{
+  "projectId": "5af18e64-c9d0-40df-8299-d1ccbdb27e0b",
+  "shape": "package",
+  "pkg": "@store/store-admin",
+  "globalName": "StoreAdminUI",
+  "srcDir": "src/shared/ui",
+  "tsconfig": "../../../.design-sync-admin/build/tsconfig.json",
+  "cssEntry": ".ds-sync-css/ui.css",
+  "extraEntries": ["../../../.design-sync-admin/build/shims/bundle-prelude.ts"],
+  "libOverrides": {
+    "dts.mjs": "Next app ships no .d.ts tree: read prop contracts from src/shared/ui TS sources via the app tsconfig"
+  },
+  "overrides": {
+    "Dialog": {
+      "cardMode": "single",
+      "viewport": "880x440"
+    },
+    "Table": {
+      "cardMode": "column"
+    },
+    "Sheet": {
+      "cardMode": "single",
+      "viewport": "880x520"
+    },
+    "DropdownMenu": {
+      "cardMode": "single",
+      "viewport": "560x380"
+    },
+    "Tooltip": {
+      "cardMode": "single",
+      "viewport": "480x200"
+    },
+    "TableToolbar": {
+      "cardMode": "column"
+    },
+    "BulkActionsBar": {
+      "cardMode": "column"
+    },
+    "FormActionsBar": {
+      "cardMode": "column"
+    },
+    "TablePagination": {
+      "cardMode": "column"
+    },
+    "RichTextEditor": {
+      "cardMode": "column"
+    },
+    "SortableTree": {
+      "cardMode": "column"
+    },
+    "BannerPlacementPreview": {
+      "cardMode": "column"
+    },
+    "SeoSnippetPreview": {
+      "cardMode": "column"
+    },
+    "TableFilters": {
+      "cardMode": "column"
+    },
+    "TableSearch": {
+      "cardMode": "column"
+    },
+    "AdminFormSkeleton": {
+      "cardMode": "column"
+    },
+    "Combobox": {
+      "cardMode": "column"
+    },
+    "CopyButton": {
+      "cardMode": "column"
+    },
+    "Input": {
+      "cardMode": "column"
+    },
+    "ReorderUndoButton": {
+      "cardMode": "column"
+    },
+    "Separator": {
+      "cardMode": "column"
+    },
+    "SingleImageUpload": {
+      "cardMode": "column"
+    },
+    "Skeleton": {
+      "cardMode": "column"
+    },
+    "Switch": {
+      "cardMode": "column"
+    },
+    "Tabs": {
+      "cardMode": "column"
+    },
+    "Textarea": {
+      "cardMode": "column"
+    },
+    "RichTextPreview": {
+      "cardMode": "column"
+    },
+    "TableSelectCell": {
+      "cardMode": "column"
+    }
+  },
+  "readmeHeader": "conventions.md"
+}

@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "paths": {
+      "@/shared/config": ["./shims/shared-config.ts"],
+      "@/shared/lib": ["./shims/shared-lib.ts"],
+      "@/shared/lib/seo": [
+        "../../apps/store-admin/src/shared/lib/seo/index.ts"
+      ],
+      "@/shared/lib/sortable-tree": [
+        "../../apps/store-admin/src/shared/lib/sortable-tree/index.ts"
+      ],
+      "@/shared/ui/live-announcer": [
+        "../../apps/store-admin/src/shared/ui/live-announcer/index.ts"
+      ],
+      "@/*": ["../../apps/store-admin/src/*"],
+      "next/navigation": ["./shims/next-navigation.ts"],
+      "next/dynamic": ["./shims/next-dynamic.tsx"],
+      "next-themes": ["./shims/next-themes.tsx"]
+    }
+  }
+}
