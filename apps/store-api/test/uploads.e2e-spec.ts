@@ -34,7 +34,9 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
 }
 
 const PNG_BYTES = Buffer.from('png-bytes');
-const GIF_BYTES = Buffer.from('gif-bytes');
+// A real GIF: since TASK-587 the passthrough walks the block structure, so a
+// placeholder string would be refused with 415 before it reached storage.
+const GIF_BYTES = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
 describe('UploadsController (e2e)', () => {
   let app: INestApplication;

@@ -18,6 +18,8 @@ import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing
 const PRODUCT_ID = '11111111-1111-1111-1111-111111111111';
 const SLUG = 'iphone-15-case';
 const ASSET_ID = '22222222-2222-2222-2222-222222222222';
+/** A real 1×1 GIF: the passthrough walks the block structure (TASK-587). */
+const GIF_BYTES = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
 /** A library row as Prisma hands it back — only the fields an attach reads. */
 const LIBRARY_ASSET = {
@@ -199,14 +201,14 @@ describe('ProductImageService', () => {
     });
 
     it('passes animated GIFs through unprocessed with a null blurDataUrl', async () => {
-      const gif = makeFile({ mimetype: 'image/gif', buffer: Buffer.from('gif-bytes') });
+      const gif = makeFile({ mimetype: 'image/gif', buffer: GIF_BYTES });
 
       const result = await service.uploadImages(PRODUCT_ID, [gif]);
 
       // GIFs skip the re-encode entirely to preserve animation.
       expect(imageProcessor.process).not.toHaveBeenCalled();
       const [savedBuffer, savedExt] = storage.save.mock.calls[0];
-      expect(savedBuffer).toEqual(Buffer.from('gif-bytes'));
+      expect(savedBuffer).toEqual(GIF_BYTES);
       expect(savedExt).toBe('gif');
 
       const rows = imageRepository.bulkCreate.mock.calls[0][0];

@@ -13,3 +13,4 @@ export {
 export { LocalDiskStorageService } from './local-disk-storage.service';
 export { ImageProcessor, type ImageProbe, type ProcessedImage } from './image-processor.service';
 export { sanitizeSvg } from './sanitize-svg';
+export { GifStructureError, stripGifMetadata } from './strip-gif-metadata';

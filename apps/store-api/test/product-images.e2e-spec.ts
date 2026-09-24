@@ -32,6 +32,8 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
 const PRODUCT_ID = 'product-e2e-1';
 const IMAGE_ID = '550e8400-e29b-41d4-a716-446655440000';
 const ASSET_ID = '770e8400-e29b-41d4-a716-446655440222';
+/** A real 1×1 GIF: the passthrough walks the block structure (TASK-587). */
+const GIF_BYTES = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
 
 describe('ProductImageController (e2e)', () => {
   let app: INestApplication;
@@ -219,7 +221,7 @@ describe('ProductImageController (e2e)', () => {
       const response = await request(app.getHttpServer())
         .post(`/api/products/${PRODUCT_ID}/images`)
         .set('Authorization', `Bearer ${token}`)
-        .attach('files', Buffer.from('GIF89a-fake'), {
+        .attach('files', GIF_BYTES, {
           filename: 'a.gif',
           contentType: 'image/gif',
         })
