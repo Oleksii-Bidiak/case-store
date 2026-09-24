@@ -85,9 +85,27 @@ describe('cache-key.util', () => {
       expect(withFilter).not.toBe(without);
     });
 
-    it('includes onSale=false (a meaningful filter, not omitted)', () => {
+    // TASK-541: the where builder branches on TRUTHINESS for these two — `false`
+    // runs the very SQL an absent param runs — so a separate `=false` entry only
+    // split one listing's hit rate in two. Same SQL ⇒ same key.
+    it('keys onSale=false exactly like onSale absent (same SQL, one entry)', () => {
       const key = buildProductListKey({ page: 1, limit: 20, onSale: false });
-      expect(key).toContain('onSale=false');
+
+      expect(key).toBe(buildProductListKey({ page: 1, limit: 20 }));
+      expect(key).not.toContain('onSale');
+    });
+
+    it('keys inStock=false exactly like inStock absent (same SQL, one entry)', () => {
+      const key = buildProductListKey({ page: 1, limit: 20, inStock: false });
+
+      expect(key).toBe(buildProductListKey({ page: 1, limit: 20 }));
+      expect(key).not.toContain('inStock');
+    });
+
+    it('still keys inStock=true distinctly from inStock absent', () => {
+      expect(buildProductListKey({ page: 1, limit: 20, inStock: true })).not.toBe(
+        buildProductListKey({ page: 1, limit: 20 }),
+      );
     });
 
     // The builder's own promise is "two structurally identical queries map to

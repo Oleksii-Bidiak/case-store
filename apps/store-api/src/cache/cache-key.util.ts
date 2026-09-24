@@ -118,6 +118,9 @@ const KEY_FIELDS: ReadonlyArray<keyof ProductListKeyParams> = [
   'sortOrder',
 ];
 
+/** Boolean filters that narrow only when `true` (see {@link buildProductListKey}). */
+const ON_ONLY_FIELDS: ReadonlySet<keyof ProductListKeyParams> = new Set(['onSale', 'inStock']);
+
 /**
  * Normalize a serialized spec-facet param to ONE canonical string.
  *
@@ -187,6 +190,7 @@ function encodeSegment(value: string): string {
  * - `undefined` / `null` values are omitted (not serialized as the literal
  *   string `"undefined"`).
  * - An empty-string `search` is treated as absent.
+ * - `onSale: false` / `inStock: false` are treated as absent (TASK-541).
  */
 export function buildProductListKey(params: ProductListKeyParams): string {
   const segments: string[] = [];
@@ -196,6 +200,12 @@ export function buildProductListKey(params: ProductListKeyParams): string {
 
     if (value === undefined || value === null) continue;
     if (field === 'search' && value === '') continue;
+    // `onSale` / `inStock` are ON-only filters: `buildProductListWhere` tests
+    // their truthiness, so `false` runs the same SQL as an absent param and
+    // must share its entry (TASK-541) — otherwise a hand-written `=false` URL
+    // splits one listing's hit rate in two. `isActive` is NOT one of them:
+    // `false` there is a real, different slice.
+    if (ON_ONLY_FIELDS.has(field) && value === false) continue;
 
     if (field === 'specs') {
       const canonical = canonicalizeSpecs(String(value));
