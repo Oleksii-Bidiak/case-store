@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { sanitizeRedirectTarget } from './sanitize-redirect-target';
 
 /**
@@ -81,5 +84,32 @@ describe('sanitizeRedirectTarget', () => {
   it('falls back to / when nothing but parser-dropped characters remains', () => {
     expect(sanitizeRedirectTarget('\t\r\n')).toBe('/');
     expect(sanitizeRedirectTarget(null)).toBe('/');
+  });
+});
+
+/**
+ * TASK-527 / TASK-770: the storefront and admin carry copies of this function
+ * (no shared package). Their bodies are compared here as text — comment lines,
+ * quote style, whitespace and braces normalized away — so a hotfix to one copy
+ * cannot silently reopen the redirect in the others.
+ */
+describe('sanitizeRedirectTarget — parity with the storefront and admin copies', () => {
+  const apps = resolve(__dirname, '../../../..');
+  const body = (relative: string): string => {
+    const source = readFileSync(resolve(apps, relative), 'utf8');
+    return source
+      .slice(source.indexOf('export function sanitizeRedirectTarget'))
+      .replace(/^\s*\/\/.*$/gm, '')
+      .replace(/'/g, '"')
+      .replace(/[\s{}]/g, '');
+  };
+  const api = body('store-api/src/auth/oauth/sanitize-redirect-target.ts');
+
+  it('matches the storefront copy', () => {
+    expect(body('store-client/src/features/auth/lib/sanitize-redirect-target.ts')).toBe(api);
+  });
+
+  it('matches the admin copy', () => {
+    expect(body('store-admin/src/features/admin-auth/lib/sanitize-redirect-target.ts')).toBe(api);
   });
 });

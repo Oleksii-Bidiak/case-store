@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { sanitizeRedirectTarget } from "./sanitize-redirect-target";
 
 /**
@@ -76,5 +79,40 @@ describe("sanitizeRedirectTarget", () => {
     expect(sanitizeRedirectTarget(undefined)).toBe("/");
     expect(sanitizeRedirectTarget("")).toBe("/");
     expect(sanitizeRedirectTarget("\t\r\n")).toBe("/");
+  });
+});
+
+/**
+ * TASK-527 / TASK-770: the storefront, admin and API copies share no package,
+ * so "change one, change all three" is only a comment unless something reads
+ * them. This compares the function bodies as text — comment lines, quote style,
+ * whitespace and braces normalized away, since the API is formatted differently.
+ */
+describe("sanitizeRedirectTarget — parity with the admin and API copies", () => {
+  const apps = resolve(__dirname, "../../../../..");
+  const body = (relative: string): string => {
+    const source = readFileSync(resolve(apps, relative), "utf8");
+    return source
+      .slice(source.indexOf("export function sanitizeRedirectTarget"))
+      .replace(/^\s*\/\/.*$/gm, "")
+      .replace(/'/g, '"')
+      .replace(/[\s{}]/g, "");
+  };
+  const storefront = body(
+    "store-client/src/features/auth/lib/sanitize-redirect-target.ts",
+  );
+
+  it("matches the admin copy", () => {
+    expect(
+      body(
+        "store-admin/src/features/admin-auth/lib/sanitize-redirect-target.ts",
+      ),
+    ).toBe(storefront);
+  });
+
+  it("matches the API copy", () => {
+    expect(body("store-api/src/auth/oauth/sanitize-redirect-target.ts")).toBe(
+      storefront,
+    );
   });
 });

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
 import { sanitizeRedirectTarget } from "./sanitize-redirect-target";
 
 /**
@@ -78,5 +81,37 @@ describe("sanitizeRedirectTarget", () => {
     expect(sanitizeRedirectTarget(undefined)).toBe("/");
     expect(sanitizeRedirectTarget("")).toBe("/");
     expect(sanitizeRedirectTarget("\t\r\n")).toBe("/");
+  });
+});
+
+/**
+ * TASK-527: "edit both or neither" enforced — the function bodies of all three
+ * copies compared as text (comment lines, quotes, whitespace and braces
+ * normalized away). The storefront's test runs the same check.
+ */
+describe("sanitizeRedirectTarget — parity with the storefront and API copies", () => {
+  const apps = resolve(__dirname, "../../../../..");
+  const body = (relative: string): string => {
+    const source = readFileSync(resolve(apps, relative), "utf8");
+    return source
+      .slice(source.indexOf("export function sanitizeRedirectTarget"))
+      .replace(/^\s*\/\/.*$/gm, "")
+      .replace(/'/g, '"')
+      .replace(/[\s{}]/g, "");
+  };
+  const admin = body(
+    "store-admin/src/features/admin-auth/lib/sanitize-redirect-target.ts",
+  );
+
+  it("matches the storefront copy", () => {
+    expect(
+      body("store-client/src/features/auth/lib/sanitize-redirect-target.ts"),
+    ).toBe(admin);
+  });
+
+  it("matches the API copy", () => {
+    expect(body("store-api/src/auth/oauth/sanitize-redirect-target.ts")).toBe(
+      admin,
+    );
   });
 });
