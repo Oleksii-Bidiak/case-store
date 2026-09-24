@@ -46,6 +46,7 @@ import { useAuth } from "@/entities/session";
 import { Badge } from "@/shared/ui";
 import { Separator } from "@/shared/ui/separator";
 import { cn } from "@/shared/lib/utils";
+import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import { dict } from "@/shared/config";
 
 /**
@@ -338,13 +339,16 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
   //    the badge and the queue it leads to cannot disagree.
   // Every write that moves either number already invalidates these list keys
   // by prefix (status changes, moderation), so the badges refresh with them.
+  // They also share the operational freshness of the lists they lead to (30 s
+  // and a focus refetch, not the panel-wide five minutes): a colleague's new
+  // order must show up on the badge as soon as it shows up on «Нові».
   const { data: pendingOrdersData } = useAdminOrderControllerFindAll(
     { status: OrderEntityStatus.PENDING, limit: 1 },
-    { query: { enabled: canReadOrders } },
+    { query: { ...OPERATIONAL_LIST_QUERY, enabled: canReadOrders } },
   );
   const { data: pendingReviewsData } = useAdminReviewControllerList(
     { status: AdminReviewControllerListStatus.pending, limit: 1 },
-    { query: { enabled: canModerateReviews } },
+    { query: { ...OPERATIONAL_LIST_QUERY, enabled: canModerateReviews } },
   );
   const newOrders = pendingOrdersData?.meta?.total ?? 0;
   const pendingReviews = pendingReviewsData?.meta?.total ?? 0;
