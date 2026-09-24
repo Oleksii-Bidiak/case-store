@@ -64,8 +64,13 @@ interface AddressFields {
  */
 export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   const router = useRouter();
-  const { can } = useAuth();
-  const canWriteOrders = can(PERM.ordersWrite);
+  const { can, arePermissionsLoading } = useAuth();
+  // Two answers, not one boolean negated: until the grant set arrives neither is
+  // true, so the card renders neither the controls nor the «view only» line —
+  // the same wait `PermissionGate` does. Reading `!can()` as "read-only" flashed
+  // that line at every writer, the owner included, on each cold load.
+  const canWriteOrders = !arePermissionsLoading && can(PERM.ordersWrite);
+  const isReadOnly = !arePermissionsLoading && !can(PERM.ordersWrite);
   const { data, dataUpdatedAt, isLoading, isError, error } =
     useAdminOrderControllerFindById(orderId);
 
@@ -184,11 +189,11 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                     status down would just be a second, staler copy of it. */}
                 <OrderStatusSelect orderId={order.id} />
               </div>
-            ) : (
+            ) : isReadOnly ? (
               <p className="text-sm text-muted-foreground">
                 {dict.common.viewOnly}
               </p>
-            )}
+            ) : null}
           </section>
 
           {/* TASK-330-C: everything about money for this order in one card. */}

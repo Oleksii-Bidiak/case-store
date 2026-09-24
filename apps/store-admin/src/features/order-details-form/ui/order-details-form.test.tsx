@@ -337,6 +337,20 @@ describe("OrderDetailsForm — without orders:write (TASK-715)", () => {
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
   });
 
+  it("renders neither the text nor the editor while the rights are loading", () => {
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, {
+      auth: { permissions: [], arePermissionsLoading: true },
+    });
+
+    expect(
+      screen.queryByText(dict.orders.detailsValueEmpty),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.orders.detailsSave }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the editor for a session that holds the right", () => {
     renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
 

@@ -745,6 +745,27 @@ describe("OrderDetailView — read-only without orders:write (TASK-715)", () => 
     expect(screen.getByText(dict.orders.updateStatus)).toBeInTheDocument();
     expect(screen.queryByText(dict.common.viewOnly)).not.toBeInTheDocument();
   });
+
+  // Until the grant set arrives `can()` is false for everyone, the owner
+  // included; reading that as "read-only" flashed the line at every writer.
+  it("shows neither the controls nor the read-only line while rights load", async () => {
+    serve();
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: [], arePermissionsLoading: true },
+    });
+
+    expect(await screen.findByText("Kyiv")).toBeInTheDocument();
+    expect(screen.queryByText(dict.common.viewOnly)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orders.updateStatus),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.updatePaymentStatus),
+    ).not.toBeInTheDocument();
+    // The waybill block waits too — neither its text view nor its inputs.
+    expect(screen.queryByText("59000000000000")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
 });
 
 /** TASK-724 — the card shows the order's returns to whoever may read them. */

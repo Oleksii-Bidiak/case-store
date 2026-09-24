@@ -62,9 +62,14 @@ interface OrderDetailsFormProps {
  * The PATCH answers 403 to anyone else, so inputs and «Зберегти» would only be a
  * way to lose typing. A read-only operator still needs the waybill to answer the
  * phone, so the two values are shown as text instead.
+ *
+ * Neither branch renders while the grant set is still loading: `can()` answers
+ * false in that window for everyone, and choosing the text view on it flashed a
+ * read-only card at every writer (the owner too) before swapping in the form.
  */
 export function OrderDetailsForm({ order }: OrderDetailsFormProps) {
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
+  if (arePermissionsLoading) return null;
   if (!can(PERM.ordersWrite)) return <OrderDetailsReadOnly order={order} />;
   return <OrderDetailsEditor order={order} />;
 }
