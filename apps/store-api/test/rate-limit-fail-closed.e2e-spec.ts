@@ -1,6 +1,8 @@
 import { Test } from '@nestjs/testing';
-import { Body, Controller, Get, Module, Post } from '@nestjs/common';
+import { Body, Controller, Get, Module, Post, type ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
+import { JwtService } from '@nestjs/jwt';
 import { ThrottlerModule, type ThrottlerStorage } from '@nestjs/throttler';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -13,6 +15,13 @@ import {
 import { OrderController } from '../src/order/order.controller';
 import { OrderService } from '../src/order/order.service';
 import { JwtAuthGuard } from '../src/auth';
+import { AuthController } from '../src/auth/auth.controller';
+import { AuthService } from '../src/auth/auth.service';
+import { EmailVerificationService } from '../src/auth/email-verification.service';
+import { GoogleAuthGuard, JwtRefreshGuard } from '../src/auth/guards';
+import { PermissionService } from '../src/auth/permissions';
+import { CartService } from '../src/cart/cart.service';
+import { WishlistService } from '../src/wishlist/wishlist.service';
 import { OptionalJwtAuthGuard } from '../src/cart/guards';
 import { CartIdentityInterceptor } from '../src/cart/interceptors';
 
@@ -205,5 +214,111 @@ describe('Guest order routes fail closed when the limiter is down (e2e, TASK-606
 
     expect(response.body.error).toBe(ThrottlerErrorCode.STORAGE_UNAVAILABLE);
     expect(orderService.lookupOrders).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * TASK-493 — `POST /api/auth/password-reset/confirm` over real HTTP, on the REAL
+ * `AuthController`.
+ *
+ * Fail-closed here is for uniformity (owner decision B-11), not brute force: the
+ * token is 256-bit. The route still has to answer 503 when the limiter is down,
+ * and a probe would stay green with the decorator deleted from the controller,
+ * so the real class is mounted and only its collaborators are stubbed. The
+ * service stub would succeed for ANY token — a 200 would mean the guard let the
+ * request through.
+ *
+ * `POST /api/auth/email/verify/confirm` rides along (it was already fail-closed,
+ * without an HTTP-level test), and `POST /api/auth/refresh` pins the named
+ * exception from the other side: it must NOT be refused for a limiter outage.
+ */
+describe('Auth token-confirm routes fail closed when the limiter is down (e2e, TASK-493)', () => {
+  let app: INestApplication;
+  const authService = {
+    confirmPasswordReset: jest.fn().mockResolvedValue(undefined),
+    refreshToken: jest.fn().mockResolvedValue({ accessToken: 'a', refreshToken: 'r' }),
+  };
+  const emailVerificationService = {
+    confirm: jest.fn().mockResolvedValue({ claimedOrders: 0 }),
+  };
+
+  @Module({
+    imports: [
+      ThrottlerModule.forRoot({
+        throttlers: [{ ttl: 60_000, limit: 5 }],
+        storage: unreachableStorage,
+      }),
+    ],
+    controllers: [AuthController],
+    providers: [
+      { provide: APP_GUARD, useClass: ClientIpThrottlerGuard },
+      { provide: AuthService, useValue: authService },
+      { provide: EmailVerificationService, useValue: emailVerificationService },
+      { provide: ConfigService, useValue: { get: (_key: string, fallback?: unknown) => fallback } },
+      { provide: JwtService, useValue: {} },
+      { provide: CartService, useValue: {} },
+      { provide: WishlistService, useValue: {} },
+      { provide: PermissionService, useValue: {} },
+    ],
+  })
+  class RealAuthRoutesModule {}
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({ imports: [RealAuthRoutesModule] })
+      // The refresh guard normally validates the cookie through passport; here it
+      // just hands the handler a user so the named exception can be exercised.
+      .overrideGuard(JwtRefreshGuard)
+      .useValue({
+        canActivate: (ctx: ExecutionContext) => {
+          ctx.switchToHttp().getRequest<{ user: unknown }>().user = {
+            id: 'user-1',
+            refreshToken: 'raw',
+          };
+          return true;
+        },
+      })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: () => true })
+      .overrideGuard(GoogleAuthGuard)
+      .useValue({ canActivate: () => true })
+      .compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    authService.confirmPasswordReset.mockClear();
+    authService.refreshToken.mockClear();
+    emailVerificationService.confirm.mockClear();
+  });
+
+  it('POST /auth/password-reset/confirm answers 503 and never resets the password', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/auth/password-reset/confirm')
+      .send({ token: 'a'.repeat(64), newPassword: 'N3w-Passw0rd!' })
+      .expect(503);
+
+    expect(response.body.error).toBe(ThrottlerErrorCode.STORAGE_UNAVAILABLE);
+    expect(authService.confirmPasswordReset).not.toHaveBeenCalled();
+  });
+
+  it('POST /auth/email/verify/confirm answers 503 as well', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/auth/email/verify/confirm')
+      .send({ token: 'b'.repeat(64) })
+      .expect(503);
+
+    expect(response.body.error).toBe(ThrottlerErrorCode.STORAGE_UNAVAILABLE);
+    expect(emailVerificationService.confirm).not.toHaveBeenCalled();
+  });
+
+  it('POST /auth/refresh — the named exception — keeps working', async () => {
+    await request(app.getHttpServer()).post('/auth/refresh').expect(200);
+    expect(authService.refreshToken).toHaveBeenCalledWith('raw');
   });
 });
