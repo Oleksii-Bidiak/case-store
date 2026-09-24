@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { sanitizeRichText } from '../../../src/common/sanitize';
 import { buildProductsData } from '../data/catalogue';
 import { deterministicUuid } from '../lib/ids';
 import { pickIcon } from '../lib/images/icon-set';
@@ -87,6 +88,12 @@ export async function seedProducts(
 
     const positionSlugs = positionSlugsOf(p);
 
+    // The PDP renders the description as markup, and the admin write path
+    // sanitizes it (TASK-361); the seed is the other writer and holds the same
+    // line, like the pages and blog seeders (TASK-572). Once per entry — every
+    // position shares it.
+    const description = sanitizeRichText(p.description);
+
     // Create one position per variant. Group members carry the variant name and
     // attributes; a standalone position takes the entry name and empty attributes.
     for (let i = 0; i < p.variants.length; i++) {
@@ -99,7 +106,7 @@ export async function seedProducts(
       const positionData = {
         name: positionName,
         slug: positionSlug,
-        description: p.description,
+        description,
         price: v.price,
         compareAtPrice: p.compareAtPrice ?? null,
         sku: positionSku,
