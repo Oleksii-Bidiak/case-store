@@ -109,6 +109,53 @@ describe('PermissionService (TASK-475)', () => {
         isOwner: false,
         isAdmin: false,
         permissions: ['blog:write', 'faq:write'],
+        entries: [
+          { key: 'blog:write', label: 'Блог' },
+          { key: 'faq:write', label: 'FAQ' },
+        ],
+      });
+    });
+
+    // TASK-725: the profile screen shows these labels instead of raw keys.
+    it('labels each held key from the catalogue, in catalogue order', async () => {
+      repositoryMock.findActor.mockResolvedValue(
+        actor({ permissions: new Set(['products:write', 'orders:read', 'products:read']) }),
+      );
+
+      const result = await service.getEffectivePermissions('u1');
+
+      expect(result.permissions).toEqual(['orders:read', 'products:read', 'products:write']);
+      expect(result.entries).toEqual([
+        { key: 'orders:read', label: 'Переглядати замовлення' },
+        { key: 'products:read', label: 'Переглядати товари' },
+        { key: 'products:write', label: 'Редагувати товари й ціни' },
+      ]);
+    });
+
+    it('labels a stale key that left the catalogue with the key itself, last', async () => {
+      repositoryMock.findActor.mockResolvedValue(
+        actor({ permissions: new Set(['zz:retired', 'orders:read']) }),
+      );
+
+      const result = await service.getEffectivePermissions('u1');
+
+      expect(result.entries).toEqual([
+        { key: 'orders:read', label: 'Переглядати замовлення' },
+        { key: 'zz:retired', label: 'zz:retired' },
+      ]);
+    });
+
+    it('labels every catalogue key for an admin, the non-grantable staff/audit keys included', async () => {
+      repositoryMock.findActor.mockResolvedValue(actor({ role: UserRole.ADMIN, isOwner: false }));
+
+      const result = await service.getEffectivePermissions('u1');
+
+      expect(result.entries).toEqual(
+        PERMISSIONS.map((permission) => ({ key: permission.key, label: permission.label })),
+      );
+      expect(result.entries).toContainEqual({
+        key: 'audit:read',
+        label: 'Читати журнал дій',
       });
     });
 
@@ -145,6 +192,7 @@ describe('PermissionService (TASK-475)', () => {
         isOwner: false,
         isAdmin: false,
         permissions: [],
+        entries: [],
       });
     });
 
@@ -158,6 +206,7 @@ describe('PermissionService (TASK-475)', () => {
         isOwner: false,
         isAdmin: false,
         permissions: [],
+        entries: [],
       });
     });
   });
