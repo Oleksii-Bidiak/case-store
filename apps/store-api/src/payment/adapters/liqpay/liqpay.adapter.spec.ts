@@ -124,6 +124,27 @@ describe('LiqPayAdapter', () => {
       );
     });
 
+    // TASK-352 (a): LiqPay's `expired_date` — "YYYY-MM-DD HH:mm:ss", in UTC
+    // (docs/payments-liqpay.md). After it the hosted page refuses to take money.
+    it('sends the reservation deadline as expired_date in UTC', async () => {
+      const payload = decodeFields(
+        (
+          await buildAdapter().createCheckout({
+            ...params,
+            expiresAt: new Date('2026-09-24T14:30:05.678Z'),
+          })
+        ).fields,
+      );
+
+      expect(payload.expired_date).toBe('2026-09-24 14:30:05');
+    });
+
+    it('sends no expired_date when there is no deadline (cash on delivery)', async () => {
+      const payload = decodeFields((await buildAdapter().createCheckout(params)).fields);
+
+      expect(payload).not.toHaveProperty('expired_date');
+    });
+
     it('sets the sandbox flag only when configured for sandbox', async () => {
       const live = decodeFields((await buildAdapter().createCheckout(params)).fields);
       const sandbox = decodeFields(

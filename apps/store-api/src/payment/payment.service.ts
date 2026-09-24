@@ -98,6 +98,11 @@ export class PaymentService {
       description: `Замовлення №${order.id.slice(0, 8)}`,
       resultUrl: `${this.storefrontOrigin()}/orders/${order.id}/confirmation`,
       callbackUrl: `${this.apiOrigin()}/api/payments/${this.provider.key}/callback`,
+      // TASK-352 (a): the page stops taking money when the reservation lapses,
+      // so a page opened at 14:25 cannot charge at 14:35 for an order the TTL
+      // worker has cancelled and whose stock is back on sale.
+      // (The entity carries it as an ISO string.)
+      ...(order.reservationExpiresAt ? { expiresAt: new Date(order.reservationExpiresAt) } : {}),
     });
 
     this.logger.info(

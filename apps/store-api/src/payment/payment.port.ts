@@ -43,6 +43,12 @@ export interface CreateCheckoutParams {
   readonly resultUrl: string;
   /** Where the provider POSTs its callback. The only source of truth about money. */
   readonly callbackUrl: string;
+  /**
+   * When the hosted page must stop accepting payment (TASK-352): the order's
+   * reservation deadline. Omitted for an order with no deadline — the provider
+   * then applies its own default.
+   */
+  readonly expiresAt?: Date;
 }
 
 export interface PaymentProvider {
