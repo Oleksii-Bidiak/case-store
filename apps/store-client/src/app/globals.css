@@ -26,6 +26,15 @@
   --color-muted: #f1f5f9;
   --color-muted-foreground: #64748b;
 
+  /* Disabled — the inactive state of the `shared/ui` controls (TASK-736).
+     Explicit colours instead of `opacity-50`: half opacity over already grey
+     text gave ≈2.0:1 (muted-foreground) / ≈3.4:1 (foreground). The foreground
+     is a step darker than `muted-foreground`, which on this surface is only
+     4.34:1. ≥ 4.5:1 against `disabled`, `background`, `card`, `popover` and
+     `muted` in BOTH themes is pinned by app/globals-disabled-contrast.test.ts. */
+  --color-disabled: #f1f5f9;
+  --color-disabled-foreground: #475569;
+
   /* Accent — secondary actions, highlights */
   --color-accent: #f1f5f9;
   --color-accent-foreground: #0f172a;
@@ -132,6 +141,10 @@
     --color-muted: #1e293b;
     --color-muted-foreground: #94a3b8;
 
+    /* Disabled (TASK-736) — see the light block */
+    --color-disabled: #1e293b;
+    --color-disabled-foreground: #94a3b8;
+
     /* Accent */
     --color-accent: #1e293b;
     --color-accent-foreground: #ededed;
@@ -195,6 +208,10 @@
   /* Muted */
   --color-muted: #1e293b;
   --color-muted-foreground: #94a3b8;
+
+  /* Disabled (TASK-736) — see the light block */
+  --color-disabled: #1e293b;
+  --color-disabled-foreground: #94a3b8;
 
   /* Accent */
   --color-accent: #1e293b;
@@ -280,6 +297,8 @@
   --color-secondary-foreground: var(--color-secondary-foreground);
   --color-muted: var(--color-muted);
   --color-muted-foreground: var(--color-muted-foreground);
+  --color-disabled: var(--color-disabled);
+  --color-disabled-foreground: var(--color-disabled-foreground);
   --color-accent: var(--color-accent);
   --color-accent-foreground: var(--color-accent-foreground);
   --color-destructive: var(--color-destructive);
