@@ -208,7 +208,7 @@ describe("CarouselForm — conditional fields per source", () => {
 });
 
 describe("CarouselForm — placement (TASK-288)", () => {
-  it("offers both placements and explains that sortOrder drives the tab order", async () => {
+  it("offers both placements and explains that dragging list rows sets the order", async () => {
     stubAdminTree();
     renderWithProviders(<CarouselForm onSubmit={noop} isPending={false} />);
 
