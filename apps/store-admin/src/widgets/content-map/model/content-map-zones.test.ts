@@ -1,4 +1,5 @@
 import { PageEntityKind } from "@/entities/page";
+import { dict } from "@/shared/config";
 import {
   CONTENT_MAP_ZONES,
   CONTENT_MAP_PAGE_GROUPS,
@@ -113,6 +114,38 @@ describe("content-map zone config (TASK-264-A)", () => {
       expect(zone.targetLabel.length).toBeGreaterThan(0);
       expect(zone.targetHref.startsWith("/")).toBe(true);
     }
+  });
+
+  // TASK-720: one slot, one name — the map used to say «Hero-слайдер» /
+  // «Стрічка оголошень зверху» for what the Banners screen calls «Головний
+  // слайдер» / «Смуга оголошень».
+  it("names each banner zone exactly as the Banners screen names its placement", () => {
+    const bannerZones = CONTENT_MAP_ZONES.filter(
+      (z) => z.count?.kind === "banner",
+    );
+    expect(bannerZones).toHaveLength(4);
+    for (const zone of bannerZones) {
+      if (zone.count?.kind !== "banner") continue;
+      const { placement } = zone.count;
+      expect(zone.sourceLabel).toBe(dict.banners.placements[placement]);
+      expect(zone.sourceLabel).toBe(dict.bannerForm.placements[placement]);
+    }
+  });
+
+  // TASK-721: the zone promised an address the Contacts form has no field for.
+  it("promises only what the Contacts form edits", () => {
+    const source = dict.contentMap.zones.siteContact.source;
+    expect(source).not.toMatch(/адрес/i);
+    expect(source).toMatch(/телефон/);
+    expect(source).toMatch(/пошта/);
+    expect(source).toMatch(/години роботи/);
+  });
+
+  it("titles the page with the sidebar item's name", () => {
+    expect(dict.contentMap.heading).toBe(dict.nav.contentMap);
+    expect(dict.contentMap.metaTitle.startsWith(dict.nav.contentMap)).toBe(
+      true,
+    );
   });
 });
 

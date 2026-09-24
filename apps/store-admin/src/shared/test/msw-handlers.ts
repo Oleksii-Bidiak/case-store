@@ -227,7 +227,13 @@ export const handlers = [
   // DEPUTY admin, which is `isOwner: false` with `isAdmin: true`.
   http.get("*/api/auth/me/permissions", () =>
     HttpResponse.json({
-      data: { role: "ADMIN", isOwner: true, isAdmin: true, permissions: [] },
+      data: {
+        role: "ADMIN",
+        isOwner: true,
+        isAdmin: true,
+        permissions: [],
+        entries: [],
+      },
     }),
   ),
 

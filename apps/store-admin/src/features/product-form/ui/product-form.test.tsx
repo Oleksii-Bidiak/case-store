@@ -75,6 +75,9 @@ function stubFormQueries() {
   );
 }
 
+// The form has no default label: each screen names its own action (TASK-729).
+const SUBMIT = dict.products.createSubmit;
+
 const nameField = () => screen.getByLabelText(dict.productForm.name);
 const slugField = () => screen.getByLabelText(dict.productForm.slug);
 const preview = () => screen.queryByTestId("slug-preview");
@@ -87,7 +90,9 @@ beforeEach(() => {
 
 describe("ProductForm — live slug preview (TASK-136)", () => {
   it("CREATE: shows the derived slug when a name is typed and slug is blank", async () => {
-    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+    renderWithProviders(
+      <ProductForm onSubmit={noop} isPending={false} submitLabel={SUBMIT} />,
+    );
 
     await userEvent.type(nameField(), "iPhone 15 Pro Max");
 
@@ -96,7 +101,9 @@ describe("ProductForm — live slug preview (TASK-136)", () => {
   });
 
   it("CREATE: hides the preview once a manual slug is entered", async () => {
-    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+    renderWithProviders(
+      <ProductForm onSubmit={noop} isPending={false} submitLabel={SUBMIT} />,
+    );
 
     await userEvent.type(nameField(), "iPhone 15 Pro Max");
     await waitFor(() => expect(preview()).toBeInTheDocument());
@@ -107,7 +114,9 @@ describe("ProductForm — live slug preview (TASK-136)", () => {
   });
 
   it("CREATE: renders no preview while the name is empty", () => {
-    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+    renderWithProviders(
+      <ProductForm onSubmit={noop} isPending={false} submitLabel={SUBMIT} />,
+    );
 
     expect(preview()).not.toBeInTheDocument();
   });
@@ -122,6 +131,7 @@ describe("ProductForm — live slug preview (TASK-136)", () => {
     };
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={defaultValues}
         onSubmit={noop}
         isPending={false}
@@ -142,6 +152,7 @@ describe("ProductForm — live slug preview (TASK-136)", () => {
     };
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={defaultValues}
         onSubmit={noop}
         isPending={false}
@@ -226,9 +237,7 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
   }
 
   async function submitForm() {
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.productForm.submit }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: SUBMIT }));
   }
 
   it("EDIT: category and group seeded before the options load survive through submit", async () => {
@@ -236,6 +245,7 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     const onSubmit = jest.fn();
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={editValues}
         onSubmit={onSubmit}
         isPending={false}
@@ -264,6 +274,7 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     const onSubmit = jest.fn();
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={editValues}
         onSubmit={onSubmit}
         isPending={false}
@@ -292,6 +303,7 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     const onSubmit = jest.fn();
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={editValues}
         onSubmit={onSubmit}
         isPending={false}
@@ -316,6 +328,7 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     stubOptionQueriesDelayed();
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={editValues}
         onSubmit={jest.fn()}
         isPending={false}
@@ -351,6 +364,7 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     const onSubmit = jest.fn();
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={editValues}
         onSubmit={onSubmit}
         isPending={false}
@@ -377,6 +391,7 @@ describe("ProductForm — category/group survive late-loading options (TASK-232)
     const onSubmit = jest.fn();
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={editValues}
         onSubmit={onSubmit}
         isPending={false}
@@ -499,7 +514,9 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
     screen.getByLabelText(dict.productForm.metaDescription);
 
   it("renders the meta title/description fields with their plain-UA hints", () => {
-    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+    renderWithProviders(
+      <ProductForm onSubmit={noop} isPending={false} submitLabel={SUBMIT} />,
+    );
 
     expect(metaTitleField()).toBeInTheDocument();
     expect(metaDescriptionField()).toBeInTheDocument();
@@ -515,6 +532,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
     const onSubmit = jest.fn();
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={validDefaults}
         onSubmit={onSubmit}
         isPending={false}
@@ -523,9 +541,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
 
     await userEvent.type(metaTitleField(), "Best Clear Case");
     await userEvent.type(metaDescriptionField(), "Shop the best clear case");
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.productForm.submit }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: SUBMIT }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(
@@ -541,6 +557,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
   it("EDIT: seeds the meta fields from defaultValues", async () => {
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={{
           ...validDefaults,
           metaTitle: "Seeded Title",
@@ -559,7 +576,9 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
   // operator that this is NOT the Google keywords tag. If that sentence ever
   // disappears, the field starts promising ranking it does not deliver.
   it("renders the tag and OG fields, and says the tags are not a Google meta tag", () => {
-    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+    renderWithProviders(
+      <ProductForm onSubmit={noop} isPending={false} submitLabel={SUBMIT} />,
+    );
 
     expect(screen.getByLabelText(dict.seoFields.keywords)).toBeInTheDocument();
     expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
@@ -570,6 +589,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
   it("EDIT: seeds the tag field as a comma-separated list", async () => {
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={{ ...validDefaults, keywords: "magsafe, чохол" }}
         onSubmit={noop}
         isPending={false}
@@ -587,6 +607,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
     const onSubmit = jest.fn();
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={validDefaults}
         onSubmit={onSubmit}
         isPending={false}
@@ -597,9 +618,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
       screen.getByLabelText(dict.seoFields.ogImage),
       "og-card.jpg",
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.productForm.submit }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: SUBMIT }));
 
     expect(
       await screen.findByText(dict.seoFields.errors.ogImageUrl),
@@ -618,7 +637,9 @@ describe("ProductForm — stock hint & breakdown (TASK-253 / TASK-254)", () => {
   };
 
   it("always renders the static «Вільний залишок» hint", () => {
-    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+    renderWithProviders(
+      <ProductForm onSubmit={noop} isPending={false} submitLabel={SUBMIT} />,
+    );
 
     expect(screen.getByText(dict.productForm.stockHint)).toBeInTheDocument();
   });
@@ -626,6 +647,7 @@ describe("ProductForm — stock hint & breakdown (TASK-253 / TASK-254)", () => {
   it("renders the dynamic breakdown line when stockInfo is passed (edit mode)", () => {
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={validDefaults}
         onSubmit={noop}
         isPending={false}
@@ -639,7 +661,9 @@ describe("ProductForm — stock hint & breakdown (TASK-253 / TASK-254)", () => {
   });
 
   it("omits the breakdown line when stockInfo is absent (create mode)", () => {
-    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+    renderWithProviders(
+      <ProductForm onSubmit={noop} isPending={false} submitLabel={SUBMIT} />,
+    );
 
     // The breakdown text (with any numbers) must not appear without stockInfo.
     expect(screen.queryByText(/Фізично на складі:/)).not.toBeInTheDocument();
@@ -664,6 +688,7 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
   it("renders the preview and derives the branded title from the name when meta is blank", async () => {
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={validDefaults}
         onSubmit={noop}
         isPending={false}
@@ -679,6 +704,7 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
   it("live-updates the preview to the typed meta title and its counter", async () => {
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={validDefaults}
         onSubmit={noop}
         isPending={false}
@@ -700,6 +726,7 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
   it("falls back through the tier chain when the typed meta title is cleared", async () => {
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={{ ...validDefaults, metaTitle: "Typed Title" }}
         onSubmit={noop}
         isPending={false}
@@ -751,7 +778,9 @@ describe("ProductForm — leaf-only category picker (TASK-236)", () => {
 
   it("offers leaf categories (incl. a standalone root) but NOT a branch category", async () => {
     stubAdminTree();
-    renderWithProviders(<ProductForm onSubmit={noop} isPending={false} />);
+    renderWithProviders(
+      <ProductForm onSubmit={noop} isPending={false} submitLabel={SUBMIT} />,
+    );
 
     await userEvent.click(categoryTrigger());
 
@@ -774,6 +803,7 @@ describe("ProductForm — leaf-only category picker (TASK-236)", () => {
     const onSubmit = jest.fn();
     renderWithProviders(
       <ProductForm
+        submitLabel={SUBMIT}
         defaultValues={{
           name: "Clear Case",
           slug: "clear-case",
@@ -789,9 +819,7 @@ describe("ProductForm — leaf-only category picker (TASK-236)", () => {
     await userEvent.click(
       await screen.findByRole("option", { name: "— iPhone Cases" }),
     );
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.productForm.submit }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: SUBMIT }));
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(

@@ -1,6 +1,8 @@
 "use client";
 
-import { useAuth } from "@/entities/session";
+import { useMemo } from "react";
+import { useAuth, useGetMyPermissions } from "@/entities/session";
+import type { PermissionEntryEntity } from "@/shared/api";
 import { roleLabel } from "@/entities/user";
 import { AdminPasswordChangeForm } from "@/features/admin-password-change";
 import { Badge, Separator } from "@/shared/ui";
@@ -22,8 +24,28 @@ const d = dict.profile;
  * permission the API would refuse.
  */
 export function AdminProfileView() {
-  const { email, userId, role, isOwner, permissions, arePermissionsLoading } =
-    useAuth();
+  const {
+    accessToken,
+    email,
+    userId,
+    role,
+    isOwner,
+    permissions,
+    arePermissionsLoading,
+  } = useAuth();
+
+  // TASK-725: the Ukrainian labels come from the same endpoint the auth context
+  // already reads (same query key, so this is a cache hit, not a second
+  // request). The context's `permissions` stays the source of truth for WHAT is
+  // held; `entries` only names it — so a label never shows for a key the
+  // session does not hold, and a key without a label still shows as the key.
+  const { data: permissionsData } = useGetMyPermissions({
+    query: { enabled: accessToken !== null, staleTime: 30_000 },
+  });
+  const labelled = useMemo(
+    () => labelPermissions(permissions, permissionsData?.data?.entries),
+    [permissions, permissionsData?.data?.entries],
+  );
 
   return (
     <div className="flex flex-col gap-6">
@@ -52,9 +74,11 @@ export function AdminProfileView() {
           <p className="text-sm text-muted-foreground">{d.permissionsEmpty}</p>
         ) : (
           <ul className="flex flex-wrap gap-2">
-            {[...permissions].sort().map((permission) => (
-              <li key={permission}>
-                <Badge variant="secondary">{permission}</Badge>
+            {labelled.map(({ key, label }) => (
+              <li key={key}>
+                <Badge variant="secondary" title={key}>
+                  {label}
+                </Badge>
               </li>
             ))}
           </ul>
@@ -70,6 +94,25 @@ export function AdminProfileView() {
       </section>
     </div>
   );
+}
+
+/**
+ * Pair each held key with its label: in the server's catalogue order (which
+ * groups rights by zone) for the labelled ones, then any key the server did not
+ * label, alphabetically, shown as the key itself.
+ */
+function labelPermissions(
+  held: readonly string[],
+  entries: readonly PermissionEntryEntity[] | undefined,
+): PermissionEntryEntity[] {
+  const heldSet = new Set(held);
+  const labelled = (entries ?? []).filter((entry) => heldSet.has(entry.key));
+  const labelledKeys = new Set(labelled.map((entry) => entry.key));
+  const rest = [...heldSet]
+    .filter((key) => !labelledKeys.has(key))
+    .sort()
+    .map((key) => ({ key, label: key }));
+  return [...labelled, ...rest];
 }
 
 function Field({
