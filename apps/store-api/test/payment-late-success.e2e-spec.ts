@@ -111,9 +111,13 @@ describe('LiqPay success callback after TTL auto-cancel (e2e, TASK-619)', () => 
     return { data, signature: signLiqPayData(data, privateKey) };
   };
 
-  /** The `data` of the single order.update the transaction made. */
-  const orderWrite = () =>
-    (prismaServiceMock.order.update.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+  /** The single conditional order write the transaction made. */
+  const orderWriteCall = () =>
+    prismaServiceMock.order.updateMany.mock.calls[0][0] as {
+      where: Record<string, unknown>;
+      data: Record<string, unknown>;
+    };
+  const orderWrite = () => orderWriteCall().data;
 
   /** Every history row the callback wrote, in order. */
   const historyRows = () =>
@@ -169,7 +173,7 @@ describe('LiqPay success callback after TTL auto-cancel (e2e, TASK-619)', () => 
     jest.clearAllMocks();
     prismaServiceMock.paymentEvent.create.mockResolvedValue({ id: 'evt-619' });
     prismaServiceMock.payment.update.mockResolvedValue({});
-    prismaServiceMock.order.update.mockResolvedValue({});
+    prismaServiceMock.order.updateMany.mockResolvedValue({ count: 1 });
     prismaServiceMock.order.findUniqueOrThrow.mockResolvedValue({ id: ORDER_ID });
     prismaServiceMock.orderStatusHistory.create.mockResolvedValue({});
     prismaServiceMock.$transaction.mockImplementation(
@@ -188,6 +192,12 @@ describe('LiqPay success callback after TTL auto-cancel (e2e, TASK-619)', () => 
       .send(successCallback())
       .expect(200, { data: { received: true } });
 
+    // Conditional on what the plan read — a cancel committed since cannot be overwritten.
+    expect(orderWriteCall().where).toEqual({
+      id: ORDER_ID,
+      status: OrderStatus.CANCELLED,
+      paymentStatus: PaymentStatus.PENDING,
+    });
     const written = orderWrite();
     expect(written.paymentStatus).toBe(PaymentStatus.PAID);
     expect(written.paidAt).toBeInstanceOf(Date);

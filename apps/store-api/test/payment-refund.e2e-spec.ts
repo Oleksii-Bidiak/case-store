@@ -52,7 +52,7 @@ describe('LiqPay reversed callback — partial vs full refund (e2e, TASK-618)', 
     $on: jest.fn(),
     payment: { findUnique: jest.fn(), update: jest.fn() },
     paymentEvent: { create: jest.fn(), delete: jest.fn() },
-    order: { update: jest.fn(), findUniqueOrThrow: jest.fn() },
+    order: { updateMany: jest.fn(), findUniqueOrThrow: jest.fn() },
     orderStatusHistory: { create: jest.fn() },
     $transaction: jest.fn(),
   };
@@ -100,9 +100,9 @@ describe('LiqPay reversed callback — partial vs full refund (e2e, TASK-618)', 
     return { data, signature: signLiqPayData(data, privateKey) };
   };
 
-  /** The `data` of the single order.update the transaction made. */
+  /** The `data` of the single conditional order write the transaction made. */
   const orderWrite = () =>
-    (prismaServiceMock.order.update.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+    (prismaServiceMock.order.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
 
   /** The `status` the attempt row was last written with. */
   const lastAttemptStatus = () =>
@@ -160,7 +160,7 @@ describe('LiqPay reversed callback — partial vs full refund (e2e, TASK-618)', 
     jest.clearAllMocks();
     prismaServiceMock.paymentEvent.create.mockResolvedValue({ id: 'evt-618' });
     prismaServiceMock.payment.update.mockResolvedValue({});
-    prismaServiceMock.order.update.mockResolvedValue({});
+    prismaServiceMock.order.updateMany.mockResolvedValue({ count: 1 });
     prismaServiceMock.order.findUniqueOrThrow.mockResolvedValue({ id: ORDER_ID });
     prismaServiceMock.orderStatusHistory.create.mockResolvedValue({});
     prismaServiceMock.$transaction.mockImplementation(
@@ -215,6 +215,6 @@ describe('LiqPay reversed callback — partial vs full refund (e2e, TASK-618)', 
     await request(app.getHttpServer()).post(url).send(reversedCallback('5000.00')).expect(400);
 
     expect(prismaServiceMock.paymentEvent.create).not.toHaveBeenCalled();
-    expect(prismaServiceMock.order.update).not.toHaveBeenCalled();
+    expect(prismaServiceMock.order.updateMany).not.toHaveBeenCalled();
   });
 });
