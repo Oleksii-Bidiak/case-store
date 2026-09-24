@@ -228,4 +228,30 @@ export const handlers = [
   http.get("*/api/csrf-token", () =>
     HttpResponse.json({ data: { csrfToken: "test-csrf" } }),
   ),
+
+  // Applying a permission template (TASK-638): the hiring wizard now calls this
+  // after creating the account, so a suite that walks the wizard to the end
+  // stays off onUnhandledRequest. Echoes an empty template onto the requested
+  // person; suites that care about the result override it.
+  http.post(
+    "*/api/admin/permission-templates/:id/apply",
+    async ({ params, request }) => {
+      const body = (await request.json()) as { userId: string };
+      return HttpResponse.json({
+        data: {
+          template: {
+            id: String(params.id),
+            name: "Template",
+            description: null,
+            permissions: [],
+            createdAt: "2026-09-01T00:00:00.000Z",
+            updatedAt: "2026-09-01T00:00:00.000Z",
+          },
+          userId: body.userId,
+          before: [],
+          after: [],
+        },
+      });
+    },
+  ),
 ];
