@@ -42,6 +42,8 @@ describe('Catalogue filters: inStock + multi-value spec facets (integration)', (
   let categoryId: string;
   let materialDefId: string;
   let formDefId: string;
+  let screenDefId: string;
+  let gripDefId: string;
   const productIds: string[] = [];
   const nameById = new Map<string, string>();
 
@@ -83,14 +85,54 @@ describe('Catalogue filters: inStock + multi-value spec facets (integration)', (
     categoryId = category.id;
 
     const material = await prisma.attributeDefinition.create({
-      data: { categoryId, key: 'material', label: 'Матеріал', isFilterable: true, sortOrder: 0 },
+      data: {
+        categoryId,
+        key: 'material',
+        label: 'Матеріал',
+        type: 'SELECT',
+        isFilterable: true,
+        sortOrder: 0,
+      },
     });
     materialDefId = material.id;
 
     const form = await prisma.attributeDefinition.create({
-      data: { categoryId, key: 'form', label: 'Форм-фактор', isFilterable: true, sortOrder: 1 },
+      data: {
+        categoryId,
+        key: 'form',
+        label: 'Форм-фактор',
+        type: 'SELECT',
+        isFilterable: true,
+        sortOrder: 1,
+      },
     });
     formDefId = form.id;
+
+    // Two specs that are NOT facets (TASK-706): a legacy filterable TEXT row
+    // (the database predates validateFacetType) and a SELECT nobody marked
+    // filterable. Both carried by silicone-case, so a match would show.
+    const screen = await prisma.attributeDefinition.create({
+      data: {
+        categoryId,
+        key: 'screen',
+        label: 'Екран',
+        type: 'TEXT',
+        isFilterable: true,
+        sortOrder: 2,
+      },
+    });
+    screenDefId = screen.id;
+    const grip = await prisma.attributeDefinition.create({
+      data: {
+        categoryId,
+        key: 'grip',
+        label: 'Хват',
+        type: 'SELECT',
+        isFilterable: false,
+        sortOrder: 3,
+      },
+    });
+    gripDefId = grip.id;
 
     const fixtures: Array<{ name: string; material: string; form: string; stock: number }> = [
       { name: 'silicone-case', material: 'Силікон', form: 'Накладка', stock: 5 },
@@ -116,6 +158,14 @@ describe('Catalogue filters: inStock + multi-value spec facets (integration)', (
         },
       });
       productIds.push(product.id);
+      if (fixture.name === 'silicone-case') {
+        await prisma.productAttributeValue.createMany({
+          data: [
+            { productId: product.id, definitionId: screenDefId, value: '6.1" OLED' },
+            { productId: product.id, definitionId: gripDefId, value: 'Так' },
+          ],
+        });
+      }
       nameById.set(product.id, fixture.name);
     }
   });
@@ -130,7 +180,7 @@ describe('Catalogue filters: inStock + multi-value spec facets (integration)', (
     await prisma.productAttributeValue.deleteMany({ where: { productId: { in: productIds } } });
     await prisma.product.deleteMany({ where: { id: { in: productIds } } });
     await prisma.attributeDefinition.deleteMany({
-      where: { id: { in: [materialDefId, formDefId] } },
+      where: { id: { in: [materialDefId, formDefId, screenDefId, gripDefId] } },
     });
     await prisma.category.deleteMany({ where: { id: categoryId } });
     await app.close();
@@ -221,6 +271,25 @@ describe('Catalogue filters: inStock + multi-value spec facets (integration)', (
       expect(
         await listNames({ specFilters: parseSpecFilters('material:Силікон'), inStock: true }),
       ).toEqual(['silicone-case']);
+    });
+  });
+
+  describe('spec facets — only real facets narrow (TASK-706)', () => {
+    it('matches nothing through a free-text spec, even one left filterable by an old database', async () => {
+      expect(await listNames({ specFilters: parseSpecFilters('screen:6.1" OLED') })).toEqual([]);
+    });
+
+    it('matches nothing through a spec nobody marked filterable', async () => {
+      expect(await listNames({ specFilters: parseSpecFilters('grip:Так') })).toEqual([]);
+    });
+
+    it('treats a non-facet key like an unknown key, alongside a real facet', async () => {
+      expect(
+        await listNames({ specFilters: parseSpecFilters('material:Силікон;screen:6.1" OLED') }),
+      ).toEqual([]);
+      expect(
+        await listNames({ specFilters: parseSpecFilters('material:Силікон;nonexistent:x') }),
+      ).toEqual([]);
     });
   });
 });

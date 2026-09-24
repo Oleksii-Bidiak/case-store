@@ -1,3 +1,5 @@
+import { AttributeType } from '@prisma/client';
+import { FACETABLE_TYPES } from '../attribute-definition/attribute-definition.constants';
 import { buildProductListWhere } from './product-list-where';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 
@@ -190,6 +192,42 @@ describe('buildProductListWhere', () => {
         },
       ]);
       expect(where).not.toHaveProperty('specValues');
+    });
+
+    // TASK-706: «TEXT is never a facet» was enforced on read (filterable-specs),
+    // on write (validateFacetType), in the seed and the import — but not when a
+    // `?specs=` filter was APPLIED, so a hand-written `?specs=screen:6.1" OLED`
+    // narrowed the public listing by a free-text spec. The guard lives in the
+    // builder so all three of its readers (listing, facet counters, compat
+    // landings) apply it identically.
+    it('matches a facet only through a filterable definition of a facetable type', () => {
+      const where = buildProductListWhere({
+        specFilters: [{ key: 'screen', values: ['6.1" OLED'] }],
+      });
+
+      expect(where.AND).toEqual([
+        {
+          specValues: {
+            some: {
+              value: { in: ['6.1" OLED'] },
+              definition: {
+                key: 'screen',
+                isFilterable: true,
+                type: { in: [...FACETABLE_TYPES] },
+              },
+            },
+          },
+        },
+      ]);
+    });
+
+    it('never lets TEXT or NUMBER into the facet type set', () => {
+      const where = buildProductListWhere({ specFilters: [{ key: 'k', values: ['v'] }] });
+      const entry = (where.AND as Array<{ specValues: { some: { definition: unknown } } }>)[0];
+      const definition = entry.specValues.some.definition as { type: { in: AttributeType[] } };
+
+      expect(definition.type.in).not.toContain(AttributeType.TEXT);
+      expect(definition.type.in).not.toContain(AttributeType.NUMBER);
     });
 
     it('leaves AND off when no facet is requested', () => {

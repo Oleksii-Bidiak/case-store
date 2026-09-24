@@ -553,15 +553,23 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       });
 
       const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      // The full definition guard (filterable + facetable type, TASK-706) is
+      // pinned in product-list-where.spec.ts; here only the per-facet shape.
       expect(findManyArgs.where.AND).toEqual([
         {
           specValues: {
-            some: { value: { in: ['Силікон', 'TPU'] }, definition: { key: 'material' } },
+            some: {
+              value: { in: ['Силікон', 'TPU'] },
+              definition: expect.objectContaining({ key: 'material', isFilterable: true }),
+            },
           },
         },
         {
           specValues: {
-            some: { value: { in: ['Накладка'] }, definition: { key: 'case-type' } },
+            some: {
+              value: { in: ['Накладка'] },
+              definition: expect.objectContaining({ key: 'case-type', isFilterable: true }),
+            },
           },
         },
       ]);

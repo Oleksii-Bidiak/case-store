@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { FACETABLE_TYPES } from '../attribute-definition/attribute-definition.constants';
 import type { SpecFacetFilter } from './dto/product-list-query.dto';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 
@@ -239,9 +240,23 @@ export function buildProductListWhere(
   // `where.AND` is assigned here and NOWHERE else in this builder — every
   // other filter writes its own `where` key — so a plain assignment is safe;
   // if that ever stops being true this must become an append.
+  //
+  // A value matches only through a definition that IS a facet — `isFilterable`
+  // and of a facetable type (TASK-706). «TEXT is never a facet» was already
+  // enforced where facets are offered and where definitions are written, but a
+  // hand-typed `?specs=screen:6.1" OLED` still narrowed the listing by a
+  // free-text spec. Here the rule holds for every reader of this builder at
+  // once. A non-facet key therefore behaves exactly like an unknown key: it
+  // matches no spec row, so the slice it asks for is empty — never a slice cut
+  // by a spec the shopper was never offered.
   if (params.specFilters && params.specFilters.length > 0) {
     where.AND = params.specFilters.map((facet) => ({
-      specValues: { some: { value: { in: facet.values }, definition: { key: facet.key } } },
+      specValues: {
+        some: {
+          value: { in: facet.values },
+          definition: { key: facet.key, isFilterable: true, type: { in: [...FACETABLE_TYPES] } },
+        },
+      },
     }));
   }
 
