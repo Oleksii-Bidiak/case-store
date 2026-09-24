@@ -318,7 +318,12 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
   // target must start with a real sidebar label, and a `→ Tab` suffix must name
   // a real tab of the Pages screen.
   it("names only sidebar items (and Pages tabs) that exist", () => {
-    const sidebar = new Set<string>(Object.values(dict.nav));
+    // «Каруселі» is a sidebar item too, but its label lives in its own block
+    // (`admin-nav-list.tsx` reads `dict.carousels.navLabel`), not in `dict.nav`.
+    const sidebar = new Set<string>([
+      ...Object.values(dict.nav),
+      dict.carousels.navLabel,
+    ]);
     const pageTabs = new Set<string>([
       dict.pages.tabLegal,
       dict.pages.tabInfo,
