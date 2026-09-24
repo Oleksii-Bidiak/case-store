@@ -1474,6 +1474,8 @@ export class OrderRepository {
             changeType: OrderHistoryChangeType.PAYMENT_STATUS,
             fromPaymentStatus: plan.paymentStatusChange.from,
             toPaymentStatus: plan.paymentStatusChange.to,
+            // TASK-619: the flag an operator's list queries (e.g. PAID_AFTER_CANCEL).
+            ...(plan.paymentStatusChange.note ? { note: plan.paymentStatusChange.note } : {}),
             changedBy: null,
           },
         });

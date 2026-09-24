@@ -5,6 +5,7 @@ import {
   PaymentMethod,
   PaymentAttemptStatus,
   OrderHistoryChangeType,
+  OrderHistoryNote,
 } from '@prisma/client';
 import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { OrderRepository } from './order.repository';
@@ -1200,6 +1201,44 @@ describe('OrderRepository', () => {
           changedBy: null,
         },
       });
+    });
+
+    // TASK-619: a late success on a CANCELLED order. The money is written and the
+    // history row carries the note the operator's «Потребує дії» list queries —
+    // and nothing about stock or the cancellation itself is touched.
+    it('writes the «paid after cancel» note and leaves status and restock alone', async () => {
+      const tx = seedTx();
+
+      await repository.applyPaymentOutcome({
+        paymentId: 'payment-1',
+        orderId: 'order-1',
+        attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+        settledAt: successPlan.settledAt,
+        paymentStatusChange: {
+          from: PaymentStatus.PENDING,
+          to: PaymentStatus.PAID,
+          note: OrderHistoryNote.PAID_AFTER_CANCEL,
+        },
+        paidAt: successPlan.paidAt,
+        clearReservation: true,
+      });
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromPaymentStatus: PaymentStatus.PENDING,
+          toPaymentStatus: PaymentStatus.PAID,
+          note: OrderHistoryNote.PAID_AFTER_CANCEL,
+          changedBy: null,
+        },
+      });
+      const orderData = (tx.order.update.mock.calls[0][0] as { data: Record<string, unknown> })
+        .data;
+      expect(orderData).not.toHaveProperty('status');
+      expect(orderData).not.toHaveProperty('restockedAt');
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
     });
 
     it('writes no STATUS row when the plan carries no status move', async () => {

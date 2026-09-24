@@ -8,7 +8,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
+import { OrderHistoryNote, OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
@@ -2967,6 +2967,98 @@ describe('OrderService', () => {
           expect(plan.statusChange).toBeUndefined();
         },
       );
+
+      // ── TASK-619 / owner decision B-11 №3: a success that lands after the
+      // reservation lapsed. The money is a fact and is recorded; the order is
+      // NOT revived — that needs stock, and deciding it is the operator's job.
+      describe('late success on a CANCELLED order (TASK-619)', () => {
+        const seedCancelled = (paymentStatus: PaymentStatus = PaymentStatus.PENDING) =>
+          seed(
+            makePayment(
+              { status: OrderStatus.CANCELLED, paymentStatus },
+              { status: PaymentAttemptStatus.EXPIRED },
+            ),
+          );
+
+        it('records the money as PAID', async () => {
+          seedCancelled();
+
+          const result = await service.applyPaymentEvent(makeEvent());
+
+          expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
+          const plan = lastPlan();
+          expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
+          expect(plan.paymentStatusChange).toEqual(
+            expect.objectContaining({ from: PaymentStatus.PENDING, to: PaymentStatus.PAID }),
+          );
+          expect(plan.paidAt).toBeInstanceOf(Date);
+        });
+
+        it('leaves the order CANCELLED (no CANCELLED → CONFIRMED revive)', async () => {
+          seedCancelled();
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(lastPlan().statusChange).toBeUndefined();
+        });
+
+        it('reserves no stock', async () => {
+          seedCancelled();
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+          expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+        });
+
+        it('marks the payment history row «оплачено після скасування» for the operator', async () => {
+          seedCancelled();
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(lastPlan().paymentStatusChange?.note).toBe(OrderHistoryNote.PAID_AFTER_CANCEL);
+        });
+
+        it('warns in the log so the late payment is visible before the dashboard reads it', async () => {
+          seedCancelled();
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(pinoLoggerMock.warn).toHaveBeenCalledWith(
+            expect.objectContaining({
+              event: 'order.payment_after_cancel',
+              orderId: 'order-uuid-1',
+              paymentId: PAYMENT_ID,
+            }),
+            expect.any(String),
+          );
+        });
+
+        it('marks it the same way after an earlier declined card (FAILED → PAID)', async () => {
+          seedCancelled(PaymentStatus.FAILED);
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(lastPlan().paymentStatusChange).toEqual({
+            from: PaymentStatus.FAILED,
+            to: PaymentStatus.PAID,
+            note: OrderHistoryNote.PAID_AFTER_CANCEL,
+          });
+          expect(lastPlan().statusChange).toBeUndefined();
+        });
+
+        it('carries no note on a success for a live PENDING order', async () => {
+          seed(makePayment());
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(lastPlan().paymentStatusChange?.note).toBeUndefined();
+          expect(lastPlan().statusChange).toEqual({
+            from: OrderStatus.PENDING,
+            to: OrderStatus.CONFIRMED,
+          });
+        });
+      });
 
       it('changes nothing when the order is already PAID (a re-delivered callback)', async () => {
         seed(makePayment({ paymentStatus: PaymentStatus.PAID, paidAt: new Date() }));

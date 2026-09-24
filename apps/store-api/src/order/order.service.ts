@@ -8,7 +8,13 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { createHash, randomBytes } from 'crypto';
-import { OrderStatus, PaymentStatus, PaymentAttemptStatus, PaymentMethod } from '@prisma/client';
+import {
+  OrderHistoryNote,
+  OrderStatus,
+  PaymentStatus,
+  PaymentAttemptStatus,
+  PaymentMethod,
+} from '@prisma/client';
 import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 // TASK-483: the public lookup has its own repository — see its docblock for why
 // the narrow projection gets a narrow query rather than a filtered wide one.
@@ -1663,6 +1669,20 @@ export class OrderService {
       );
     }
 
+    if (plan.paymentStatusChange?.note === OrderHistoryNote.PAID_AFTER_CANCEL) {
+      // WARN: money arrived for an order the shop no longer holds stock for.
+      // Nothing is broken, but a person has to revive or refund it (TASK-619).
+      this.logger.warn(
+        {
+          event: 'order.payment_after_cancel',
+          orderId: order.id,
+          paymentId: payment.id,
+          providerStatus: event.providerStatus,
+        },
+        'Payment succeeded on a cancelled order; recorded as paid, order left cancelled for the operator',
+      );
+    }
+
     await this.orderRepository.applyPaymentOutcome(plan);
 
     this.logger.info(
@@ -1734,6 +1754,9 @@ export class OrderService {
    *
    * - **SUCCEEDED** marks the money ours, stamps `paidAt`, lifts the reservation
    *   deadline, and moves a still-PENDING order to CONFIRMED. Already PAID → null.
+   *   On a CANCELLED order (TASK-619) the money is recorded but the order stays
+   *   CANCELLED with no stock moved, and the history row is flagged
+   *   `PAID_AFTER_CANCEL` for the operator to revive or refund.
    * - **FAILED** records the failed attempt and marks the order's payment FAILED,
    *   but only while it is still unpaid: a late failure callback for a superseded
    *   attempt must never un-pay a paid order. The order itself is NOT cancelled —
@@ -1801,6 +1824,30 @@ export class OrderService {
               rejected: PaymentStatus.PAID,
               reason: 'table',
             },
+          };
+        }
+        // TASK-619 (owner decision B-11 №3, plan 178): a success on an order that
+        // is already CANCELLED — the reservation TTL lapsed while the LiqPay page
+        // was still open. CANCELLED → CONFIRMED is a legal move, but only through
+        // the revive path, which re-reserves stock and clears `restockedAt`; done
+        // here it produced a paid, confirmed order with nothing held for it. So
+        // the money is recorded and the order is left exactly as cancelled, with
+        // a flagged history row: revive (if stock allows) or refund is the
+        // operator's call, never an automatic one.
+        if (order.status === OrderStatus.CANCELLED) {
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+            settledAt: now,
+            failureCode: null,
+            failureMessage: null,
+            paymentStatusChange: {
+              from: order.paymentStatus,
+              to: PaymentStatus.PAID,
+              note: OrderHistoryNote.PAID_AFTER_CANCEL,
+            },
+            paidAt: order.paidAt ?? now,
+            clearReservation: true,
           };
         }
         return {

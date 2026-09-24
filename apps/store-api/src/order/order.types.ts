@@ -5,6 +5,7 @@ import {
   PaymentMethod,
   PaymentAttemptStatus,
   OrderHistoryChangeType,
+  OrderHistoryNote,
 } from '@prisma/client';
 import type { CartWithItems } from '../cart/cart.repository';
 import type { AddressDto } from './dto';
@@ -351,7 +352,16 @@ export interface PaymentApplyPlan {
    * Order payment-status move. Omitted when the event changes only the attempt
    * (e.g. a late failure for a superseded attempt on an already-paid order).
    */
-  paymentStatusChange?: { from: PaymentStatus; to: PaymentStatus };
+  paymentStatusChange?: {
+    from: PaymentStatus;
+    to: PaymentStatus;
+    /**
+     * Written onto the PAYMENT_STATUS history row when the move is one the shop
+     * recorded but did not otherwise act on (TASK-619: a success on a CANCELLED
+     * order → `PAID_AFTER_CANCEL`). Omitted for an ordinary move.
+     */
+    note?: OrderHistoryNote;
+  };
   /**
    * An order payment-status move the state machine refused (TASK-431).
    *
