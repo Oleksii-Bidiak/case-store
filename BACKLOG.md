@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-979**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-980**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -1103,6 +1103,7 @@
 | TASK-946 | [знайдено в TASK-510] Залишкова компенсація `react-remove-scroll-bar` у Firefox: бібліотека також інжектить `.right-scroll-bar-position { right: <gap>px !important }` і `.width-before-scroll-bar { margin-right: <gap>px !important }`; у Firefox під стабільним гутером gap ненульовий, а нове правило `html body[data-scroll-locked] { margin-right: 0 !important }` ці класи не гасить. Зараз у store-client їх ніхто не використовує (grep порожній), тож важливо лише при майбутньому використанні; Firefox для Playwright на машині не встановлено — шлях не перевірено | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-947 | [знайдено в TASK-618] Дві перевірки суми рефанду розходяться на сумах з більш ніж двома знаками після коми: `PaymentService.classifyRefund` (`apps/store-api/src/payment/payment.service.ts` ~347) порівнює точні Decimal, а `OrderService.assertAmountMatches` (`apps/store-api/src/order/order.service.ts` ~1714-1727) округлює до копійок через `Math.round(parseFloat*100)` — `reversed` на `1248.999` при списанні 1249.00 позначається PARTIALLY_REFUNDED, округлюється до 124900 копійок, не проходить «менше за списання» і отримує 400, який LiqPay повторює; так само `0.004` проходить «> 0» як Decimal, але округлюється до 0. LiqPay шле не більше двох знаків, тож на практиці малоймовірно; звести обидві перевірки до однієї арифметики (копійки або Decimal) | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-978 | [ревʼю мержу 190, косметика] `ClientIpThrottlerGuard.reportOrderLookupLockout` (`apps/store-api/src/throttler/client-ip-throttler.guard.ts:78-79,115-136`) удруге викликає `getTracker` лише для логу, який бакет відмовив — зайвий HMAC на шляху 429; передати вже обчислений ключ | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
+| TASK-979 | [тести, флейк, знайдено прогоном перед мержем 190] `apps/store-admin/src/widgets/product-form-view/ui/create-product-view.test.tsx`: у повному `--runInBand`-прогоні адмінки 2 тести («sends nothing to any product-keyed endpoint…», «creates the product, then places photos…») раз упали за таймаутом 5000 мс; окремо файл 6/6 зі швидкістю ~3,3 с на тест, повторний повний прогін 1790/1790. Той самий клас, що TASK-977: тест на межі дефолтного таймауту — пришвидшити (менше `userEvent.type`) або дати явний таймаут | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 
 ### План 191 — Онбординг замовника по адмінці ([план](docs/plans/191-admin-customer-onboarding.md))
 
@@ -1404,6 +1405,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-979**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-980**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
