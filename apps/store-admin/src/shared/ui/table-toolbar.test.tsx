@@ -23,7 +23,10 @@ describe("TableToolbar layout (TASK-775)", () => {
     // unprefixed direction/wrap would pin every viewport to one layout.
     expect(classes).toContain("md:flex-row");
     expect(classes).not.toContain("flex-col-reverse");
+    // Wrapping is scoped to the row (`md:flex-wrap`); unprefixed it would be
+    // meaningless in column mode and hide where the row behaviour lives.
     expect(classes).not.toContain("flex-wrap");
+    expect(classes).toContain("md:flex-wrap");
     // `items-center` unprefixed would shrink the search to its content width
     // and centre it in column mode.
     expect(classes).not.toContain("items-center");
@@ -36,6 +39,14 @@ describe("TableToolbar layout (TASK-775)", () => {
 
     expect(wrapper).toHaveClass("min-w-0", "md:flex-1");
     expect(wrapper).not.toHaveClass("flex-1");
+  });
+
+  it("keeps a width floor on the search so wide filters wrap instead of crushing it (TASK-732)", () => {
+    render(<TableToolbar search={<input aria-label="Пошук" />} />);
+    const wrapper = screen.getByRole("textbox", { name: "Пошук" })
+      .parentElement as HTMLElement;
+
+    expect(wrapper).toHaveClass("md:min-w-64");
   });
 
   it("keeps a call-site className (every list passes mb-0)", () => {
