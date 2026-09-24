@@ -243,8 +243,13 @@
   }
 
   /* Border global default — overrides preflight's `border-color: currentColor`,
-     yields to any `border-*` colour utility. */
-  * {
+     yields to any `border-*` colour utility. Same selector list as preflight's
+     reset, so `before:border` / `file:border` get the token too. */
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
     border-color: var(--color-border);
   }
 }

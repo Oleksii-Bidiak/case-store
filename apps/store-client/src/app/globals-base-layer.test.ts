@@ -54,7 +54,10 @@ const baseLayer = topLevel
   .filter((r) => squash(r.prelude) === "@layer base")
   .flatMap((r) => blocks(r.body));
 
-const ELEMENT_DEFAULTS = ["*", "body", "button:not(:disabled)"];
+// Preflight's own reset list — the pseudo-elements are not matched by `*`.
+const BORDER_DEFAULT =
+  "*, ::before, ::after, ::backdrop, ::file-selector-button";
+const ELEMENT_DEFAULTS = [BORDER_DEFAULT, "body", "button:not(:disabled)"];
 
 describe("globals.css — element defaults live in @layer base (TASK-735)", () => {
   it.each(ELEMENT_DEFAULTS)("`%s` is not an un-layered rule", (selector) => {
@@ -70,7 +73,9 @@ describe("globals.css — element defaults live in @layer base (TASK-735)", () =
   );
 
   it("keeps the global border colour token inside the base layer", () => {
-    const universal = baseLayer.find((r) => squash(r.prelude) === "*");
+    const universal = baseLayer.find(
+      (r) => squash(r.prelude) === BORDER_DEFAULT,
+    );
     expect(squash(universal!.body)).toContain(
       "border-color: var(--color-border);",
     );
