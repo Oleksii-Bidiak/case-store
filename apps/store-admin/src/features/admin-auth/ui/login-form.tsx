@@ -8,6 +8,7 @@ import { z } from "zod";
 import { useAuth, useAuthControllerLogin } from "@/entities/session";
 import { Button, Input, Label } from "@/shared/ui";
 import { dict, STOREFRONT_URL } from "@/shared/config";
+import { sanitizeRedirectTarget } from "../lib/sanitize-redirect-target";
 
 const loginSchema = z.object({
   email: z.string().email(dict.login.emailInvalid),
@@ -47,11 +48,10 @@ export function AdminLoginForm() {
   const { isStaff, setTokens } = useAuth();
   const [notAdmin, setNotAdmin] = useState(false);
 
-  // Honour a same-origin `?redirect=` param (leading-slash check blocks
-  // open-redirects); default to the dashboard.
-  const redirectParam = searchParams.get("redirect");
-  const redirectTarget =
-    redirectParam && redirectParam.startsWith("/") ? redirectParam : "/";
+  // Honour a same-origin `?redirect=` param; default to the dashboard. A bare
+  // leading-slash check let `//evil.com` and `/%09/evil.com` through (TASK-527)
+  // — the sanitizer is the storefront's, copied with its case table.
+  const redirectTarget = sanitizeRedirectTarget(searchParams.get("redirect"));
 
   const {
     register,
