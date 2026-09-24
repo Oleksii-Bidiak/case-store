@@ -90,6 +90,17 @@ export class AuthService {
   private readonly jwtRefreshSecret: string;
   private readonly jwtExpiration: string;
   private readonly jwtRefreshExpiration: string;
+
+  /**
+   * Lifetime of a refresh token in milliseconds, from `JWT_REFRESH_EXPIRATION`.
+   *
+   * Public because the refresh COOKIE must live exactly as long as the token it
+   * carries (TASK-789). The controller used to hard-code seven days: set the env
+   * to `30d` and shoppers were signed out on day eight with no trace in any log;
+   * set it to `1d` and the browser kept a dead cookie for six more days. One
+   * number, read once, used for the token's `expiresAt` and the cookie's Max-Age.
+   */
+  readonly refreshTokenTtlMs: number;
   private readonly passwordResetExpiration: string;
   private readonly storeClientUrl: string;
   private readonly accountLockedNoticeWindowHours: number;
@@ -115,9 +126,9 @@ export class AuthService {
     // Parsed once here so an unreadable duration fails the boot (DI builds this
     // service at start-up), not the first login or reset request (TASK-790).
     // env.validation.ts already refuses one; this covers any path around it.
-    [this.jwtExpiration, this.jwtRefreshExpiration, this.passwordResetExpiration].forEach(
-      parseDurationToMs,
-    );
+    parseDurationToMs(this.jwtExpiration);
+    parseDurationToMs(this.passwordResetExpiration);
+    this.refreshTokenTtlMs = parseDurationToMs(this.jwtRefreshExpiration);
     this.storeClientUrl = this.configService.get<string>(
       'STORE_CLIENT_URL',
       'http://localhost:3000',
@@ -747,8 +758,7 @@ export class AuthService {
       },
     );
 
-    const refreshExpirationMs = parseDurationToMs(this.jwtRefreshExpiration);
-    const refreshExpiresAt = new Date(Date.now() + refreshExpirationMs);
+    const refreshExpiresAt = new Date(Date.now() + this.refreshTokenTtlMs);
 
     const tokens = new AuthTokens();
     tokens.accessToken = accessToken;

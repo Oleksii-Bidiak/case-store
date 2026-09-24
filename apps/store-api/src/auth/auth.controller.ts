@@ -608,7 +608,8 @@ export class AuthController {
     response.cookie(
       REFRESH_TOKEN_COOKIE,
       refreshToken,
-      buildRefreshCookieOptions(this.isProduction(), 7 * 24 * 60 * 60 * 1000),
+      // Max-Age = the token's own lifetime (TASK-789), never a constant.
+      buildRefreshCookieOptions(this.isProduction(), this.authService.refreshTokenTtlMs),
     );
   }
 

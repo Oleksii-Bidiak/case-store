@@ -1561,4 +1561,14 @@ describe('AuthService — durations have no silent fallback', () => {
   it('constructs with well-formed durations', () => {
     expect(build({})).not.toThrow();
   });
+
+  // TASK-789: the refresh cookie's Max-Age is read from here, so it must be the
+  // configured lifetime rather than a constant.
+  it.each([
+    ['7d', 7 * 86_400_000],
+    ['30d', 30 * 86_400_000],
+    ['1d', 86_400_000],
+  ])('exposes JWT_REFRESH_EXPIRATION=%s as refreshTokenTtlMs=%d', (value, ms) => {
+    expect(build({ JWT_REFRESH_EXPIRATION: value })().refreshTokenTtlMs).toBe(ms);
+  });
 });

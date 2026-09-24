@@ -18,7 +18,7 @@ import { GuestStateMergeService } from './guest-state-merge.service';
  */
 describe('AuthController — google oauth callback', () => {
   let controller: AuthController;
-  let authService: { loginWithGoogleProfile: jest.Mock };
+  let authService: { loginWithGoogleProfile: jest.Mock; refreshTokenTtlMs: number };
 
   const testConfig: Record<string, string> = {
     STORE_CLIENT_URL: 'http://localhost:3000',
@@ -44,6 +44,8 @@ describe('AuthController — google oauth callback', () => {
   beforeEach(() => {
     authService = {
       loginWithGoogleProfile: jest.fn(),
+      // 30 days — anything but the old hard-coded seven (TASK-789).
+      refreshTokenTtlMs: 30 * 24 * 60 * 60 * 1000,
     };
 
     const configMock = {
@@ -83,7 +85,12 @@ describe('AuthController — google oauth callback', () => {
     expect(response.cookie).toHaveBeenCalledWith(
       'refreshToken',
       'refresh-token-value',
-      expect.objectContaining({ httpOnly: true, path: '/api/auth/refresh' }),
+      expect.objectContaining({
+        httpOnly: true,
+        path: '/api/auth/refresh',
+        // Max-Age is the refresh token's configured lifetime (TASK-789).
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+      }),
     );
 
     // Success redirect — and NO token anywhere in the URL.
