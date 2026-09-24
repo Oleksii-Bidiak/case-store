@@ -70,7 +70,7 @@
   },
   "meta": {
     "mode": "after",
-    "capturedAt": "2026-09-24T11:36:18.324Z",
+    "capturedAt": "2026-09-24T11:52:14.237Z",
     "note": "Written by e2e/screens-190.spec.ts. Widths are CSS px."
   },
   "disabledControlScreen": {
@@ -85,20 +85,20 @@
     "route": "/orders",
     "searchInput": {
       "visible": true,
-      "width": 46,
+      "width": 320,
       "height": 36,
       "x": 280,
-      "y": 166,
+      "y": 144,
       "centre": {
-        "x": 303,
-        "y": 184
+        "x": 440,
+        "y": 162
       },
       "elementAtCentre": "input.h-9.w-full.min-w-0.rounded-md[aria-label=\"Пошук замовлень\"]",
       "centreIsInput": true
     },
     "statusTabs": {
-      "x": 288,
-      "y": 146,
+      "x": 280,
+      "y": 188,
       "width": 303.171875,
       "height": 36
     }

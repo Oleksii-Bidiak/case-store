@@ -1,6 +1,6 @@
 # План 190 — Червоне: CI, безпека, гроші
 
-**Статус:** ⬜ · **Задачі:** 30 рядків (див. кластери) · **Гілка:** `worktree-fix-770-red-wave`
+**Статус:** ⬜ · **Задачі:** 30 рядків (див. кластери) · **Гілка:** `fix/770-red-wave`
 (worktree `fix-770-red-wave`) · **Після:** Z0 і B-11 (рішення для TASK-493) · **Джерело:**
 [ревʼю якості 2026-09-20](../reviews/2026-09-code-review.md) (6 CRITICAL), знахідки ревʼю хвиль
 180/181/183, хвости 174/176/179, [інвентар циклу 2](../reviews/2026-09-23-cycle-2-inventory.md).
@@ -33,7 +33,7 @@
 | ------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **R-API**     | 616, 617, 756, 757, 770, 771, 772, 618, 619, 784, 785, 606, 493, 623, 624, 496, 583, 587, 748 | `test/order-restock.repository.int-spec.ts`, `test/dashboard.repository.int-spec.ts`, `scripts/env-check.js` + `env.validation.ts`, `scripts/audit-gate.js` + allowlist, `auth/…sanitize-redirect` і дзеркало у вітрині `features/auth/lib/sanitize-redirect-target.ts`, `order.repository.ts` (`cancelAndRestock`, `reviveAndReserve`), `payment.service.ts` + `order.service.ts` (`assertAmountMatches`, `applyPaymentOutcome`), `return.service.ts`, `resolve-return.dto.ts`, `order.controller.ts` (guest/lookup throttle), `auth.controller.ts` (fail-closed на двох POST), `auth.service.ts` (`refreshToken`), міграція нормалізації email, `storage/image-*` |
 | **R-вітрина** | 773 + 794 (вітринна частина), 650, 743, 510, 550, 735 і 736 (вітринна частина)                | `shared/api/instance.ts`, `entities/session/model/auth.context.tsx`, `checkout-view.tsx`, `profile-form.tsx`, `submit-review-form.tsx`, `use-checkout.ts` + `payment-methods.ts`, `shared/ui/logo.test.tsx`, `globals.css` (`@layer base`, `scrollbar-gutter`), `shared/ui` (disabled-стани), `app/robots.ts` + metadata `robots` + `llms.txt`/`sitemap`/`merchant-feed`                                                                                                                                                                                                                                                                                            |
-| **R-адмінка** | 775, 527, 774, 794 і 735 (адмінська частина)                                                  | `shared/ui/table-toolbar.tsx`, `features/admin-auth/ui/login-form.tsx`, `features/catalog-import/model/use-import-decisions.ts`, `order-create-form.tsx`, `return-resolve-form.tsx`, `globals.css` адмінки                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| **R-адмінка** | 775, 527, 774, 794 і 735 (адмінська частина)                                                  | `shared/ui/table-toolbar.tsx`, `features/admin-auth/ui/login-form.tsx`, `widgets/catalog-import-view/model/use-import-decisions.ts`, `order-create-form.tsx`, `return-resolve-form.tsx`, `globals.css` адмінки                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 **Порядок усередині хвилі** — за ревʼю якості: 775 → 770 → 772 → 771 → 774 → 773 разом із 794 → решта.
 Кластери паралельні, дві залежності між ними:
@@ -102,7 +102,7 @@ node scripts/env-check.js --audit && node scripts/audit-gate.js
 `test:int` і `test:e2e:pw` у `npm run test` не входять — запускати окремо (урок плану 181).
 Закриваючи задачу — `[🔁]` на її чеках у `docs/qa-recheck.md` і id у Додатку А. Нові чеки:
 AD-ORD-48 (повернення на 1 куплену одиницю двічі), SF-CHK-30 (онлайн-замовлення має резерв 30 хв),
-SF-SEO-20 (noindexSite), AD-AUTH-10 (редирект із TAB у логіні адмінки) — перед додаванням звірити,
+SF-SEO-20 (noindexSite), AD-AUTH-11 (редирект із TAB у логіні адмінки; AD-AUTH-10 уже зайнятий у `qa-manual-full.md` — «Вихід») — перед додаванням звірити,
 що id вільні в `qa-manual-full.md`.
 
 ## Ризики

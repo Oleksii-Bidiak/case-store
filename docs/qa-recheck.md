@@ -1745,6 +1745,7 @@ C @ 1-vwssf0vdy4x.js:2
 - **TASK-623** — AD-ORD-54, AD-ORD-56
 - **TASK-624** — SF-OST-19
 - **TASK-650** — SF-CHK-30
+- **TASK-732** — AD-ORD-49
 - **TASK-735** — SF-UX-20, AD-UX-01, AD-UX-02
 - **TASK-736** — SF-UX-21
 - **TASK-757** — SF-UX-22, AD-CNT-31, AD-CNT-32, SYS-39
