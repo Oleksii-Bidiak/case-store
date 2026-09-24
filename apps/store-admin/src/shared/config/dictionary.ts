@@ -763,7 +763,6 @@ export const dict = {
     attrValueAria: (i: number) => `Значення атрибута ${i}`,
     removeAttrAria: (i: number) => `Видалити атрибут ${i}`,
     addAttribute: "Додати атрибут",
-    active: "Активний (показувати в магазині)",
     metaTitle: "SEO-заголовок (meta title)",
     metaTitlePlaceholder: "Залиште порожнім, щоб використати назву товару",
     metaTitleHint:
@@ -772,7 +771,6 @@ export const dict = {
     metaDescriptionPlaceholder: "Короткий опис товару для пошукових систем",
     metaDescriptionHint:
       "Короткий текст під заголовком у результатах пошуку. Залиште порожнім — і він згенерується автоматично з опису товару.",
-    submit: "Зберегти товар",
     errors: {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
@@ -1384,7 +1382,6 @@ export const dict = {
       excerptMax: "Короткий опис має містити не більше 500 символів",
       metaTitleMax: "SEO заголовок має містити не більше 255 символів",
       metaDescriptionMax: "SEO опис має містити не більше 500 символів",
-      sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої сторінки",
       // TASK-435 — a hub row whose slug names no hub renders nowhere.
       hubSlugRequired: "Оберіть розділ, для якого задаються мета-теги",
@@ -1997,9 +1994,6 @@ export const dict = {
       "https://facebook.com/ваша-сторінка\nhttps://youtube.com/@ваш-канал",
     additionalSameAsLinksHint:
       "Посилання на офіційні сторінки магазину в інших мережах (Facebook, YouTube, LinkedIn тощо) — по одному в рядку. Це показує пошуковим системам, що це офіційні профілі вашого бренду.",
-    noindexSite: "Приховати сайт від пошукових систем",
-    noindexSiteHint:
-      "Повністю приховує весь сайт від Google та інших пошукових систем. Вмикайте лише на тестовому сайті. УВАГА: якщо увімкнути на робочому магазині — сайт зникне з пошуку Google.",
     submit: "Зберегти SEO-налаштування",
     errors: {
       urlInvalid: "Вкажіть коректний URL (https://…)",
@@ -4159,7 +4153,6 @@ export const dict = {
       titleMax: "Заголовок має містити не більше 255 символів",
       categoryRequired: "Оберіть категорію для джерела «Категорія»",
       itemLimitRange: "Кількість товарів має бути цілим числом від 1 до 24",
-      sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої каруселі",
     },
   },

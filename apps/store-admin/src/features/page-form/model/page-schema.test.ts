@@ -7,7 +7,7 @@ import {
 } from "./page-schema";
 
 // Output-shaped values (post-parse) — used by the DTO mappers, which consume
-// `PageFormValues` (sortOrder already a number).
+// `PageFormValues`.
 const baseValues: PageFormValues = {
   title: "Privacy Policy",
   slug: "",
@@ -15,14 +15,12 @@ const baseValues: PageFormValues = {
   excerpt: "",
   metaTitle: "",
   metaDescription: "",
-  sortOrder: 0,
   status: "DRAFT",
   kind: "LEGAL",
   scheduledAt: "",
 };
 
-// Input-shaped values (pre-parse) — used with `pageSchema.safeParse`, where
-// sortOrder is still bound to a text input (string).
+// Input-shaped values (pre-parse) — used with `pageSchema.safeParse`.
 const baseInput: PageFormInput = {
   title: "Privacy Policy",
   slug: "",
@@ -30,7 +28,6 @@ const baseInput: PageFormInput = {
   excerpt: "",
   metaTitle: "",
   metaDescription: "",
-  sortOrder: "0",
   status: "DRAFT",
   kind: "LEGAL",
   scheduledAt: "",
@@ -55,7 +52,6 @@ describe("pageFormValuesToCreateDto", () => {
       excerpt: "Summary",
       metaTitle: "SEO title",
       metaDescription: "SEO description",
-      sortOrder: 3,
       status: "PUBLISHED",
     });
 
@@ -72,8 +68,8 @@ describe("pageFormValuesToCreateDto", () => {
   // page to the END of the list; on update it leaves the position the operator dragged
   // the row to untouched. Sending `0` — which the old form did for every new page — put
   // them all in slot 0 and left the /legal order to the database.
-  it("does NOT send sortOrder, even when the inert input value is set", () => {
-    const dto = pageFormValuesToCreateDto({ ...baseValues, sortOrder: 3 });
+  it("does NOT send sortOrder", () => {
+    const dto = pageFormValuesToCreateDto(baseValues);
     expect(dto).not.toHaveProperty("sortOrder");
   });
 

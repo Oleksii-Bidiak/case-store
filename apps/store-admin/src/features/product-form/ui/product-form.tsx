@@ -82,7 +82,8 @@ interface ProductFormProps {
   defaultValues?: Partial<ProductFormInput>;
   onSubmit: (values: ProductFormValues) => void;
   isPending: boolean;
-  submitLabel?: string;
+  /** Each screen names its own action («Створити товар» / «Зберегти зміни»). */
+  submitLabel: string;
   /**
    * Optional slot rendered below the fields (TASK-191) — receives the LIVE
    * selected `categoryId` so an embedded structured-spec editor re-renders its
@@ -134,7 +135,7 @@ export function ProductForm({
   defaultValues,
   onSubmit,
   isPending,
-  submitLabel = dict.productForm.submit,
+  submitLabel,
   renderSpecsSection,
   stockInfo,
 }: ProductFormProps) {
