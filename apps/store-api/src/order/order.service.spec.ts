@@ -14,6 +14,7 @@ import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
 import { OrderEntity, PublicOrderEntity, type PublicOrderRow } from './entities';
 import { CartRepository, CartWithItems } from '../cart/cart.repository';
+import { CartEntity } from '../cart/entities/cart.entity';
 import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
 import {
@@ -527,6 +528,50 @@ describe('OrderService', () => {
         // TASK-103: createFromCart now also receives the in-transaction
         // afterCreate callback (mail-outbox enqueue) as a second argument.
         expect.any(Function),
+      );
+    });
+
+    it('recomputes the discount on the same subtotal the cart (and so the preview) shows (TASK-807)', async () => {
+      // The discount preview reads cart.totals.subtotal (CartEntity); checkout
+      // recomputes from the raw cart rows. Prices that float-multiply badly
+      // (0.07 × 3, 19.99 × 7) must still land on one number in both places.
+      const trickyCart: CartWithItems = {
+        ...cartWithItems,
+        items: [
+          {
+            ...cartWithItems.items[0],
+            quantity: 3,
+            product: {
+              ...cartWithItems.items[0].product,
+              price: { toString: () => '0.07' } as never,
+            },
+          },
+          {
+            ...cartWithItems.items[1],
+            quantity: 7,
+            product: {
+              ...cartWithItems.items[1].product,
+              price: { toString: () => '19.99' } as never,
+            },
+          },
+        ],
+      };
+      const discountDto: CreateOrderDto = { shippingAddress: address, discountCode: 'SUMMER10' };
+      cartRepositoryMock.findByUserId.mockResolvedValue(trickyCart);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      discountServiceMock.computeDiscount.mockResolvedValue({
+        discount: { id: 'd1', code: 'SUMMER10' },
+        amount: '3.00',
+      });
+
+      await service.createOrder(userActor, discountDto);
+
+      const previewSubtotal = CartEntity.fromPrisma(trickyCart).totals.subtotal;
+      expect(previewSubtotal).toBe('140.14');
+      expect(discountServiceMock.computeDiscount).toHaveBeenCalledWith(
+        'SUMMER10',
+        previewSubtotal,
+        USER_ID,
       );
     });
 

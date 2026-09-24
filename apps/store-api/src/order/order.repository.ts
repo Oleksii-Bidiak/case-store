@@ -37,6 +37,7 @@ import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto'
 // the other one, and the chip would then quietly disagree with the tile.
 import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { staleOrderError } from './order.errors';
+import { centsToString, sumLineCents, toCents } from '../addon-service/money.util';
 // TASK-771: a revive that cannot re-claim its promo slot fails with the same
 // stable codes the checkout uses, so the admin sees the reason it already knows.
 import { DiscountErrorCode, conflictDiscount } from '../discount/discount.errors';
@@ -342,11 +343,7 @@ export class OrderRepository {
 
     // Derive the subtotal from the persisted order-item rows themselves (single
     // source of truth) using integer-cents arithmetic to avoid float drift.
-    const subtotalCents = itemData.reduce(
-      (cents, item) => cents + Math.round(item.price.toNumber() * 100) * item.quantity,
-      0,
-    );
-    const subtotal = new Prisma.Decimal(centsToDecimalString(subtotalCents));
+    const subtotal = new Prisma.Decimal(centsToString(sumLineCents(itemData)));
 
     // Shipping cost comes from the Nova Poshta estimate (TASK-080); 0 for
     // free-text/manual orders.
@@ -358,8 +355,8 @@ export class OrderRepository {
     // Flat: an add-on is charged once per line, never multiplied by quantity.
     const addonsCents = [...addonsByCartItemId.values()]
       .flat()
-      .reduce((cents, addon) => cents + Math.round(parseFloat(addon.price) * 100), 0);
-    const addonsTotal = new Prisma.Decimal(centsToDecimalString(addonsCents));
+      .reduce((cents, addon) => cents + toCents(addon.price), 0);
+    const addonsTotal = new Prisma.Decimal(centsToString(addonsCents));
     // ───────────────────────────────────────────────────────────────────────────
 
     // ─── TASK-079 discount block ───────────────────────────────────────────────
@@ -537,11 +534,7 @@ export class OrderRepository {
       price: new Prisma.Decimal(item.price),
     }));
 
-    const subtotalCents = itemData.reduce(
-      (cents, item) => cents + Math.round(item.price.toNumber() * 100) * item.quantity,
-      0,
-    );
-    const subtotal = new Prisma.Decimal(centsToDecimalString(subtotalCents));
+    const subtotal = new Prisma.Decimal(centsToString(sumLineCents(itemData)));
     const shipping = new Prisma.Decimal((params.shippingCost ?? 0).toString());
     const total = subtotal.plus(shipping);
 
@@ -1728,13 +1721,4 @@ export class OrderRepository {
       });
     }
   }
-}
-
-/**
- * Convert an integer number of cents to a "XX.YY" decimal string.
- */
-function centsToDecimalString(cents: number): string {
-  const dollars = Math.floor(cents / 100);
-  const remainder = cents % 100;
-  return `${dollars}.${remainder.toString().padStart(2, '0')}`;
 }

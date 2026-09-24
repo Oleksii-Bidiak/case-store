@@ -39,7 +39,13 @@ import {
   reviveRefundedPaymentError,
   staleOrderError,
 } from './order.errors';
-import { AddonApplicabilityResolver, toTwoDecimals } from '../addon-service';
+import {
+  AddonApplicabilityResolver,
+  centsToString,
+  sumLineCents,
+  toCents,
+  toTwoDecimals,
+} from '../addon-service';
 // Shared with the newsletter export: one formula-injection guard, so a fix
 // cannot land in one export and miss the other (see the helper's docblock).
 import { escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
@@ -2119,28 +2125,13 @@ export class OrderService {
 }
 
 /**
- * Parse a decimal money string into integer cents.
- *
- * Used to compare a provider's reported amount against the frozen charge. "100.0"
- * and "100.00" are the same money; a string comparison disagrees, and a float
- * comparison disagrees intermittently, which is worse.
- */
-function toCents(value: string): number {
-  return Math.round(parseFloat(value) * 100);
-}
-
-/**
- * Compute the cart subtotal as a "XX.YY" decimal string using integer-cents
- * arithmetic (mirrors CartEntity/order line-total math). Feeds the authoritative
- * discount recomputation in {@link OrderService.createOrder}.
+ * Compute the cart subtotal as a "XX.YY" decimal string with the one shared
+ * line-total rule (`money.util`, TASK-807) — the same one CartEntity uses for
+ * the subtotal the discount preview shows. Feeds the authoritative discount
+ * recomputation in {@link OrderService.createOrder}.
  */
 function computeSubtotalString(items: CartWithItems['items']): string {
-  const subtotalCents = items.reduce(
-    (cents, item) =>
-      cents + Math.round(parseFloat(item.product.price.toString()) * 100) * item.quantity,
-    0,
+  return centsToString(
+    sumLineCents(items.map((item) => ({ price: item.product.price, quantity: item.quantity }))),
   );
-  const dollars = Math.floor(subtotalCents / 100);
-  const remainder = subtotalCents % 100;
-  return `${dollars}.${remainder.toString().padStart(2, '0')}`;
 }
