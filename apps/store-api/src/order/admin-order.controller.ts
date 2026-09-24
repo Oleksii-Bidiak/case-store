@@ -352,6 +352,10 @@ export class AdminOrderController {
    * credential the customer is currently holding. The global `AuditInterceptor`
    * records the call because the route is permission-guarded and mutating — and
    * it records the ORDER id, never the token.
+   *
+   * Guest orders only (TASK-623): an order with a `userId` answers 409 — the
+   * account holder reads it in their cabinet, and a 60-day bearer link pasted
+   * into a chat would only widen who can read the address.
    */
   @Post(':orderId/access-link')
   @RequirePermission('orders:write')
@@ -371,6 +375,12 @@ export class AdminOrderController {
   @ApiResponse({ status: 400, description: 'The storefront address is not configured' })
   @ApiResponse({ status: 403, description: 'Forbidden — orders:write required' })
   @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'The order belongs to an account (userId is set) — links are issued for guest orders ' +
+      'only; the customer sees the order in their account cabinet (TASK-623)',
+  })
   async issueAccessLink(@Param('orderId') orderId: string): Promise<AdminOrderAccessLinkResponse> {
     return { data: await this.orderService.issueOrderAccessLink(orderId) };
   }

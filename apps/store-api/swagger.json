@@ -11996,6 +11996,9 @@
           },
           "404": {
             "description": "Order not found"
+          },
+          "409": {
+            "description": "The order belongs to an account (userId is set) — links are issued for guest orders only; the customer sees the order in their account cabinet (TASK-623)"
           }
         },
         "security": [

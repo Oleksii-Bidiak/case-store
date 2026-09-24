@@ -1201,13 +1201,31 @@ export class OrderService {
    * recorded by `AuditInterceptor`, and the response it inspects carries only
    * the order id, never the token.
    *
+   * ── Guest orders only (TASK-623) ──────────────────────────────────────────
+   * The link is a 60-day bearer credential for the whole order, delivery and
+   * billing address included, and operators paste it into chats that other
+   * people will read later. A guest has no other way in, so for them the risk
+   * buys something. An account holder already sees the order in their cabinet,
+   * behind a password — minting a bearer link for them is pure exposure. That
+   * includes a guest order later claimed by a registering account: once
+   * `userId` is set, the cabinet is the way in. Refused BEFORE the rotation, so
+   * the attempt does not kill a link the buyer may still be using.
+   *
    * @throws NotFoundException when no such order exists (or it is soft-deleted).
+   * @throws ConflictException when the order belongs to an account.
    */
   async issueOrderAccessLink(orderId: string): Promise<{ url: string; issuedAt: Date }> {
     const existing = await this.orderRepository.findById(orderId);
 
     if (!existing) {
       throw new NotFoundException('Order not found');
+    }
+
+    if (existing.userId !== null) {
+      throw new ConflictException(
+        'Order links are issued for guest orders only — this order belongs to an account, ' +
+          'and the customer sees it in their account cabinet',
+      );
     }
 
     const rawToken = generateGuestToken();

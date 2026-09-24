@@ -1990,8 +1990,34 @@ describe('OrderService', () => {
 
     beforeEach(() => {
       configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
-      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      // A guest order — the only kind a link is issued for (TASK-623).
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
       orderRepositoryMock.rotateAccessToken.mockResolvedValue(now);
+    });
+
+    it('issues a link for a guest order', async () => {
+      const { url } = await service.issueOrderAccessLink(ORDER_ID);
+
+      expect(url).toMatch(/^https:\/\/shop\.example\.com\/orders\/guest\/[0-9a-f]+$/);
+      expect(orderRepositoryMock.rotateAccessToken).toHaveBeenCalledTimes(1);
+    });
+
+    it('409s for an account order, leaving the existing link untouched (TASK-623)', async () => {
+      // The account holder reads the order in their cabinet. A 60-day bearer
+      // link pasted into a chat would only widen who can read the address.
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: USER_ID }));
+
+      await expect(service.issueOrderAccessLink(ORDER_ID)).rejects.toThrow(ConflictException);
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('409s for a guest order since claimed by an account — the cabinet is the way in now', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ userId: USER_ID, guestEmail: 'buyer@example.com' }),
+      );
+
+      await expect(service.issueOrderAccessLink(ORDER_ID)).rejects.toThrow(ConflictException);
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
     });
 
     it('writes a fresh hash, so the link the buyer had stops working', async () => {
