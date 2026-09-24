@@ -107,6 +107,37 @@ export class AuthRepository {
   }
 
   /**
+   * Rotate a refresh token (TASK-496): persist the replacement, then revoke the
+   * presented token — both in ONE transaction.
+   *
+   * The order and the atomicity are the point. Revoking first and inserting
+   * second meant any failed insert left the session with no live token; the
+   * client then retried the now-revoked cookie, which reuse detection correctly
+   * reads as theft and answers by revoking every session the user holds. Here a
+   * failed insert rolls the revoke back with it, so the presented token stays
+   * exactly as live as it was and the retry simply succeeds.
+   *
+   * The replacement is hashed like {@link saveRefreshToken}; the raw value is
+   * never stored.
+   */
+  async rotateRefreshToken(
+    oldTokenId: string,
+    userId: string,
+    rawToken: string,
+    expiresAt: Date,
+  ): Promise<void> {
+    await this.prisma.$transaction([
+      this.prisma.refreshToken.create({
+        data: { token: this.hashToken(rawToken), userId, expiresAt },
+      }),
+      this.prisma.refreshToken.update({
+        where: { id: oldTokenId },
+        data: { isRevoked: true },
+      }),
+    ]);
+  }
+
+  /**
    * Revoke a single refresh token by setting isRevoked = true.
    */
   async revokeToken(id: string): Promise<void> {

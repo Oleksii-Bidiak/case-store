@@ -272,6 +272,57 @@ describe('AuthRepository', () => {
     });
   });
 
+  // ─── rotateRefreshToken (TASK-496) ───────────────────────────────────────────
+
+  describe('rotateRefreshToken (TASK-496)', () => {
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    beforeEach(() => {
+      // Array dialect of `$transaction` (see markEmailVerified below): the
+      // callback form used by createUserFromOAuth leaves its implementation
+      // behind, so re-arm it for an array here.
+      prismaMock.$transaction.mockImplementation((operations: unknown[]) =>
+        Promise.resolve(operations),
+      );
+    });
+
+    it('persists the hashed replacement and revokes the old token in one transaction', async () => {
+      await repository.rotateRefreshToken('rt-uuid-1', 'user-uuid-1', rawToken, expiresAt);
+
+      expect(prismaMock.refreshToken.create).toHaveBeenCalledWith({
+        data: { token: hashedToken, userId: 'user-uuid-1', expiresAt },
+      });
+      expect(prismaMock.refreshToken.update).toHaveBeenCalledWith({
+        where: { id: 'rt-uuid-1' },
+        data: { isRevoked: true },
+      });
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(prismaMock.$transaction.mock.calls[0][0]).toHaveLength(2);
+    });
+
+    it('queues the insert BEFORE the revoke', async () => {
+      await repository.rotateRefreshToken('rt-uuid-1', 'user-uuid-1', rawToken, expiresAt);
+
+      const [createOrder] = prismaMock.refreshToken.create.mock.invocationCallOrder;
+      const [updateOrder] = prismaMock.refreshToken.update.mock.invocationCallOrder;
+      expect(createOrder).toBeLessThan(updateOrder);
+    });
+
+    it('never stores the raw replacement token', async () => {
+      await repository.rotateRefreshToken('rt-uuid-1', 'user-uuid-1', rawToken, expiresAt);
+
+      expect(prismaMock.refreshToken.create.mock.calls[0][0].data.token).not.toBe(rawToken);
+    });
+
+    it('propagates a failed transaction so the caller never hands out an unsaved token', async () => {
+      prismaMock.$transaction.mockRejectedValueOnce(new Error('unique constraint'));
+
+      await expect(
+        repository.rotateRefreshToken('rt-uuid-1', 'user-uuid-1', rawToken, expiresAt),
+      ).rejects.toThrow('unique constraint');
+    });
+  });
+
   // ─── revokeAllUserTokens ────────────────────────────────────────────────────
 
   describe('revokeAllUserTokens', () => {
