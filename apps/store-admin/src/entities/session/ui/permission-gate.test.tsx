@@ -72,3 +72,43 @@ describe("PermissionGate", () => {
     expect(screen.queryByText("Секція")).not.toBeInTheDocument();
   });
 });
+
+describe("PermissionGate — silent mode (TASK-639)", () => {
+  const silent = (
+    <PermissionGate permission="staff:read" fallback={null}>
+      <button type="button">Шаблони прав</button>
+    </PermissionGate>
+  );
+
+  it("renders nothing — no refusal, no spinner — without the permission", () => {
+    const { container } = renderWithProviders(
+      <WithAuth isOwner={false} permissions={["orders:read"]}>
+        {silent}
+      </WithAuth>,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders nothing while the grant set is loading", () => {
+    const { container } = renderWithProviders(
+      <WithAuth isOwner={false} permissions={[]} arePermissionsLoading>
+        {silent}
+      </WithAuth>,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the children with the permission", () => {
+    renderWithProviders(
+      <WithAuth isOwner={false} permissions={["staff:read"]}>
+        {silent}
+      </WithAuth>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Шаблони прав" }),
+    ).toBeInTheDocument();
+  });
+});

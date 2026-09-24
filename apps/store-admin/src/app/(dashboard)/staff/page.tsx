@@ -3,6 +3,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { FullAccessPanel, StaffTable, StaffTableSkeleton } from "@/widgets";
 import { CreateStaffButton } from "@/features/staff-create";
+import { PERM } from "@/entities/permission";
+import { PermissionGate } from "@/entities/session";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
@@ -34,24 +36,37 @@ export default function StaffPage() {
             {dict.staff.intro}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href="/staff/templates">{dict.staff.templatesNav}</Link>
-          </Button>
-          <CreateStaffButton />
-        </div>
+        {/* TASK-639: silent — the section below refuses once, for both. */}
+        <PermissionGate permission={PERM.staffRead} fallback={null}>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline">
+              <Link href="/staff/templates">{dict.staff.templatesNav}</Link>
+            </Button>
+            <CreateStaffButton />
+          </div>
+        </PermissionGate>
       </div>
 
-      {/* Decision 5: the number of people with full access is not capped, it is
-          made visible — permanently, above the list, rather than inferable from
-          a filter somebody would have to think to apply. */}
-      <Suspense fallback={null}>
-        <FullAccessPanel />
-      </Suspense>
+      {/* TASK-639: `staff:read`, not merely `isStaff`. Without it a manager who
+          typed the URL got the page with a red «не вдалося завантажити» from
+          each widget; now one refusal that says who has access. The heading
+          stays outside so the refusal is labelled. */}
+      <PermissionGate
+        permission={PERM.staffRead}
+        title={dict.staff.forbidden}
+        hint={dict.staff.forbiddenHint}
+      >
+        {/* Decision 5: the number of people with full access is not capped, it
+            is made visible — permanently, above the list, rather than
+            inferable from a filter somebody would have to think to apply. */}
+        <Suspense fallback={null}>
+          <FullAccessPanel />
+        </Suspense>
 
-      <Suspense fallback={<StaffTableSkeleton />}>
-        <StaffTable />
-      </Suspense>
+        <Suspense fallback={<StaffTableSkeleton />}>
+          <StaffTable />
+        </Suspense>
+      </PermissionGate>
     </div>
   );
 }

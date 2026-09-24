@@ -4,15 +4,30 @@ import type { ReactNode } from "react";
 import { dict } from "@/shared/config";
 import { useAuth } from "../model/use-auth";
 
-interface PermissionGateProps {
+type PermissionGateProps = {
   /** The permission key the section needs, e.g. `PERM.staffRead`. */
   permission: string;
-  /** First line of the refusal — WHAT is refused. */
-  title: string;
-  /** Second line — who can grant it, or who has it. */
-  hint: string;
   children: ReactNode;
-}
+} & (
+  | {
+      /** First line of the refusal — WHAT is refused. */
+      title: string;
+      /** Second line — who can grant it, or who has it. */
+      hint: string;
+      fallback?: never;
+    }
+  | {
+      /**
+       * Rendered INSTEAD of the refusal — `null` to hide silently. For a
+       * control that sits beside a section the same gate already refuses once
+       * (a header button next to the refused table), so the page still shows ONE
+       * refusal, not two.
+       */
+      fallback: ReactNode;
+      title?: never;
+      hint?: never;
+    }
+);
 
 /**
  * Route gate: one clean refusal instead of a page of failed requests (TASK-639).
@@ -32,13 +47,19 @@ interface PermissionGateProps {
  * on its own request, and refusing first would flash "no access" at every
  * operator who genuinely has it. The owner and deputies pass through `can()`.
  */
-export function PermissionGate({
-  permission,
-  title,
-  hint,
-  children,
-}: PermissionGateProps) {
+export function PermissionGate(props: PermissionGateProps) {
+  const { permission, children } = props;
   const { can, arePermissionsLoading } = useAuth();
+
+  if (props.fallback !== undefined) {
+    // A silent gate shows nothing while it waits either: the spinner belongs to
+    // the section, not to every control that shares its right.
+    return arePermissionsLoading || !can(permission) ? (
+      <>{props.fallback}</>
+    ) : (
+      <>{children}</>
+    );
+  }
 
   if (arePermissionsLoading) {
     return (
@@ -59,8 +80,8 @@ export function PermissionGate({
         role="alert"
         className="flex flex-col gap-2 rounded-md border border-border p-6"
       >
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="text-sm text-muted-foreground">{hint}</p>
+        <p className="text-sm font-medium text-foreground">{props.title}</p>
+        <p className="text-sm text-muted-foreground">{props.hint}</p>
       </div>
     );
   }
