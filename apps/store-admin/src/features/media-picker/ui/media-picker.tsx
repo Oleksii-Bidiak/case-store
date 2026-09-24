@@ -51,6 +51,13 @@ export interface MediaPickerProps {
    * own so the control matches the toolbar it sits in.
    */
   children?: ReactElement;
+  /**
+   * Accessible name for the DEFAULT trigger, when the form has more than one
+   * image field (TASK-728): two buttons both announced as «З медіатеки» give a
+   * screen-reader user no way to tell which field each one fills. The visible
+   * label stays the same. Ignored when `children` supplies the trigger.
+   */
+  ariaLabel?: string;
 }
 
 /**
@@ -92,7 +99,12 @@ export interface MediaPickerProps {
  * an addition on the upload tab, never the only way: the picker button inside
  * the drop zone remains the accessible path.
  */
-export function MediaPicker({ onPick, disabled, children }: MediaPickerProps) {
+export function MediaPicker({
+  onPick,
+  disabled,
+  children,
+  ariaLabel,
+}: MediaPickerProps) {
   const { can } = useAuth();
   const canRead = can(PERM.mediaRead);
   const canWrite = can(PERM.mediaWrite);
@@ -111,7 +123,12 @@ export function MediaPicker({ onPick, disabled, children }: MediaPickerProps) {
     >
       <DialogTrigger asChild>
         {children ?? (
-          <Button type="button" variant="outline" disabled={disabled}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled}
+            aria-label={ariaLabel}
+          >
             <ImageIcon />
             {t.trigger}
           </Button>

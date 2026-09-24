@@ -10,6 +10,9 @@ import {
 import { useProductGroupControllerFindAll } from "@/entities/product-group";
 import { useBrandControllerAdminFindAll } from "@/entities/brand";
 import { useSeoSettingsControllerGetSettings } from "@/entities/seo-settings";
+import { useMediaControllerUpload } from "@/entities/media";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import { slugify } from "@/shared/lib";
 import {
   resolveSeoPreviewTitle,
@@ -32,7 +35,11 @@ import {
   Textarea,
   type ComboboxOption,
 } from "@/shared/ui";
-import { MediaPickerEditorButton } from "@/features/media-picker";
+import {
+  ContentImageField,
+  useImageUploadField,
+} from "@/features/content-image-upload";
+import { MediaPicker, MediaPickerEditorButton } from "@/features/media-picker";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import {
   productSchema,
@@ -141,6 +148,7 @@ export function ProductForm({
   const {
     register,
     control,
+    setValue,
     handleSubmit,
     formState: { errors },
   } = useForm<ProductFormInput, unknown, ProductFormValues>({
@@ -193,6 +201,23 @@ export function ProductForm({
     entityDescription: metaDescriptionValue,
     defaultDescription: seoSettings?.defaultMetaDescription,
     contentDescription: descriptionValue,
+  });
+
+  // TASK-728: the social-card image takes a file and a library pick as well as a
+  // link. There is no product-specific single-image route, so a file goes into
+  // the media library (`POST /admin/media`, `media:write`) and its URL comes
+  // back into the field — the same asset is then reusable elsewhere. An editor
+  // without `media:write` is not offered the upload at all; MediaPicker gates
+  // its own tabs on the media keys. Both paths write through `setValue` with
+  // `shouldDirty`, which is what keeps `keepDirtyValues` from overwriting the
+  // new URL on a background refetch (docs/conventions/forms.md).
+  const { can } = useAuth();
+  const ogImageValue = useWatch({ control, name: "ogImage" }) ?? "";
+  const ogImageUpload = useImageUploadField({
+    upload: useMediaControllerUpload(),
+    copy: dict.seoFields.ogImageUpload,
+    onUploaded: (url) =>
+      setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),
   });
 
   // TASK-236: the picker offers LEAF categories from the FULL admin tree
@@ -606,20 +631,34 @@ export function ProductForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="product-og-image">{dict.seoFields.ogImage}</Label>
-        <Input
+        <ContentImageField
           id="product-og-image"
-          placeholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
-          {...register("ogImage")}
+          label={dict.seoFields.ogImage}
+          urlPlaceholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
+          copy={dict.seoFields.ogImageUpload}
+          value={ogImageValue}
+          urlInput={register("ogImage")}
+          onRemove={() =>
+            setValue("ogImage", "", { shouldDirty: true, shouldValidate: true })
+          }
+          fieldError={errors.ogImage?.message}
+          canUpload={can(PERM.mediaWrite)}
+          picker={
+            <MediaPicker
+              ariaLabel={dict.seoFields.ogImagePickerAria}
+              onPick={(asset) =>
+                setValue("ogImage", asset.url, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+            />
+          }
+          {...ogImageUpload}
         />
         <p className="text-sm text-muted-foreground">
           {dict.seoFields.ogImageHint}
         </p>
-        {errors.ogImage && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.ogImage.message}
-          </p>
-        )}
       </div>
 
       <SeoSnippetPreview

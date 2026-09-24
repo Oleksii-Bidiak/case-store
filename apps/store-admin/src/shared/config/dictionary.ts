@@ -1770,6 +1770,15 @@ export const dict = {
     toastActivated: "Бренд активовано",
     toastDeactivated: "Бренд приховано",
     toastStatusFailed: "Не вдалося змінити статус бренду",
+    // TASK-831: the brand's uuid, shown on its edit page so an old
+    // `?brandId=<uuid>` link can be checked without database access.
+    idLabel: "ID бренду",
+    idHint:
+      "Внутрішній ідентифікатор. Знадобиться, щоб перевірити старе посилання виду ?brandId=… або назвати бренд розробнику.",
+    copyId: "Скопіювати ID",
+    copyIdDone: "Скопійовано",
+    copyIdFailed: "Не вдалося скопіювати — виділіть ID вручну",
+    copyIdAria: "Скопіювати ID бренду",
   },
 
   brandForm: {
@@ -4384,6 +4393,28 @@ export const dict = {
         `Один тег має містити не більше ${max} символів`,
       ogImageUrl: "Вкажіть коректний URL картинки (http:// або https://)",
     },
+    // TASK-728: the OG field takes a FILE and a media-library pick as well as a
+    // link — the same three paths the neighbouring image fields offer.
+    ogImageUpload: {
+      alt: "Картинка для соцмереж",
+      empty: "Картинку ще не задано — соцмережі візьмуть автоматичну.",
+      upload: "Завантажити файл",
+      replace: "Замінити файл",
+      remove: "Прибрати",
+      removeTitle: "Прибрати картинку для соцмереж?",
+      removeDescription:
+        "Поле очиститься, і після збереження соцмережі покажуть автоматичну картинку. Сам файл залишиться у сховищі.",
+      hint: "JPEG, PNG, WebP або GIF — до 20 МБ, найкраще 1200×630. Або виберіть із медіатеки чи вставте посилання в поле нижче.",
+      toastUploaded: "Картинку завантажено — не забудьте зберегти зміни",
+      errorTooLarge:
+        "Файл завеликий — максимум 20 МБ. Стисніть зображення і спробуйте ще раз.",
+      errorUnsupportedType:
+        "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
+      errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
+    },
+    // Starts with the visible «З медіатеки» (WCAG 2.5.3 label in name); tells
+    // it apart from the other picker in the same form.
+    ogImagePickerAria: "З медіатеки — картинка для соцмереж",
   },
 } as const;
 

@@ -4,9 +4,16 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { PERM } from "@/entities/permission";
+import {
+  MEDIA_PERMISSIONS,
+  makeMediaAsset,
+  stubMediaLibrary,
+} from "@/features/media-picker/model/media-picker.fixture";
 import { ProductForm } from "./product-form";
 import {
   productFormValuesToDto,
@@ -791,5 +798,134 @@ describe("ProductForm — leaf-only category picker (TASK-236)", () => {
       expect.objectContaining({ categoryId: CHILD_UUID }),
       expect.anything(),
     );
+  });
+});
+
+describe("ProductForm — OG image upload and library pick (TASK-728)", () => {
+  const noopSubmit = () => {};
+  const SUBMIT = dict.common.saveChanges;
+  const validDefaults: Partial<ProductFormInput> = {
+    name: "Clear Case",
+    slug: "clear-case",
+    price: "29.99",
+    stock: "5",
+    categoryId: CATEGORY_UUID,
+  };
+
+  // The URL box keeps its label — every earlier OG test finds it this way.
+  const ogField = () =>
+    screen.getByLabelText(dict.seoFields.ogImage) as HTMLInputElement;
+  /** The URL input is a direct child of its field, so its parent scopes it. */
+  const ogScope = () => within(ogField().parentElement as HTMLElement);
+  const ogPicker = () =>
+    screen.queryByRole("button", { name: dict.seoFields.ogImagePickerAria });
+
+  it("uploads a file into the media library and writes its URL into the OG field (media:write)", async () => {
+    const library = stubMediaLibrary([]);
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <ProductForm
+        defaultValues={validDefaults}
+        onSubmit={onSubmit}
+        isPending={false}
+        submitLabel={SUBMIT}
+      />,
+      { auth: { permissions: [PERM.mediaWrite] } },
+    );
+
+    await userEvent.upload(
+      ogScope().getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "og.png", { type: "image/png" }),
+    );
+
+    // No product-specific route: the file goes through `POST /admin/media`, so
+    // the asset is in the library for the next product too.
+    await waitFor(() => expect(library.uploadedNames).toEqual(["og.png"]));
+    const stored = makeMediaAsset("up-1").url;
+    await waitFor(() => expect(ogField()).toHaveValue(stored));
+
+    await userEvent.click(screen.getByRole("button", { name: SUBMIT }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ ogImage: stored });
+  });
+
+  it("EDIT: a picked OG image survives a background refetch of the product", async () => {
+    const OG_URL = "http://localhost:3001/uploads/media/og-card.webp";
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: "Картка для соцмереж", url: OG_URL }),
+    ]);
+    const { rerender } = renderWithProviders(
+      <ProductForm
+        id="p1"
+        defaultValues={{ ...validDefaults, ogImage: "" }}
+        onSubmit={noopSubmit}
+        isPending={false}
+        submitLabel={SUBMIT}
+      />,
+      { auth: { permissions: MEDIA_PERMISSIONS } },
+    );
+
+    await userEvent.click(ogPicker() as HTMLElement);
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.mediaPicker.pickCardAria("Картка для соцмереж"),
+      }),
+    );
+    await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
+
+    // A refetch hands the form a NEW object with the server's (still empty)
+    // value. `setValue(…, { shouldDirty })` is what lets `keepDirtyValues`
+    // protect the pick — without it the field would silently snap back.
+    rerender(
+      <ProductForm
+        id="p1"
+        defaultValues={{ ...validDefaults, ogImage: "" }}
+        onSubmit={noopSubmit}
+        isPending={false}
+        submitLabel={SUBMIT}
+      />,
+    );
+    await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
+  });
+
+  it("media:read only — offers the library, not the upload", () => {
+    renderWithProviders(
+      <ProductForm
+        onSubmit={noopSubmit}
+        isPending={false}
+        submitLabel={SUBMIT}
+      />,
+      { auth: { permissions: [PERM.mediaRead] } },
+    );
+
+    expect(ogPicker()).toBeInTheDocument();
+    expect(
+      ogScope().queryByRole("button", {
+        name: dict.seoFields.ogImageUpload.upload,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      ogScope().queryByTestId("single-image-upload-input"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("no media keys — neither upload nor library is rendered; the URL box still works", async () => {
+    renderWithProviders(
+      <ProductForm
+        onSubmit={noopSubmit}
+        isPending={false}
+        submitLabel={SUBMIT}
+      />,
+    );
+
+    expect(ogPicker()).not.toBeInTheDocument();
+    expect(
+      ogScope().queryByRole("button", {
+        name: dict.seoFields.ogImageUpload.upload,
+      }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.type(ogField(), "https://cdn.example.com/og.jpg");
+    expect(ogField()).toHaveValue("https://cdn.example.com/og.jpg");
   });
 });
