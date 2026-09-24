@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-946**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-947**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -1072,6 +1072,7 @@
 | TASK-940 | [знайдено в TASK-770] Повторений `redirect` валить старт Google-входу 500-ю: `apps/store-api/src/auth/oauth/google-oauth-state.store.ts:70` приводить `req.query.redirect as string \| undefined`, але `/auth/google?redirect=/a&redirect=/b` дає масив → `raw.replace` кидає TypeError замість відкату на `/`; баг був і до фіксу (`raw.startsWith`) — додати гард `typeof raw === 'string'` + тест | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-944 | [знайдено в TASK-771] Адмінка не розпізнає відмови відновлення через промо-слот: `apps/store-admin/src/features/order-status-update/model/order-conflict.ts:17-27,85-95` знає лише три коди 409 (`ORDER_STALE`, `ORDER_TRANSITION_INVALID`, `ORDER_REVIVE_REFUNDED_PAYMENT`), тож нові `DISCOUNT_MAX_REDEMPTIONS_REACHED`, `DISCOUNT_USER_LIMIT_REACHED`, `DISCOUNT_NOT_FOUND` показують загальне `dict.orderStatus.conflictUnknown`, а `requiresReload()` радить перезавантажити — після перезавантаження та сама відмова, і оператор так і не дізнається, що слот коду зайнято; так само поводиться давній некодований 409 «Insufficient stock» при відновленні | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-945 | [знайдено в TASK-550] Слабкий guard «дочірня сторінка не вмикає індексацію»: `apps/store-client/src/app/layout.test.ts` ловить лише літерал `index\s*:` зі значенням не `false` у вихідному коді `src/app` і `src/shared/lib/seo`, тож `robots: someVar`, обчислений опосередковано чи поза цими теками, пройде непоміченим; зараз усі місця виклику чисті — не дефект, а посилити перевірку (напр. рантайм-тест `generateMetadata` кожного маршруту) | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
+| TASK-946 | [знайдено в TASK-510] Залишкова компенсація `react-remove-scroll-bar` у Firefox: бібліотека також інжектить `.right-scroll-bar-position { right: <gap>px !important }` і `.width-before-scroll-bar { margin-right: <gap>px !important }`; у Firefox під стабільним гутером gap ненульовий, а нове правило `html body[data-scroll-locked] { margin-right: 0 !important }` ці класи не гасить. Зараз у store-client їх ніхто не використовує (grep порожній), тож важливо лише при майбутньому використанні; Firefox для Playwright на машині не встановлено — шлях не перевірено | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 
 ### План 191 — Онбординг замовника по адмінці ([план](docs/plans/191-admin-customer-onboarding.md))
 
@@ -1373,6 +1374,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-946**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-947**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
