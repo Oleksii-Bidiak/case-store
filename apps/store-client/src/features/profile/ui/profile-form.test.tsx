@@ -4,6 +4,7 @@ import {
   renderWithProviders,
   screen,
   userEvent,
+  waitFor,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { makeUser } from "@/shared/test/msw-handlers";
@@ -61,4 +62,71 @@ describe("ProfileForm — name limits are visible (TASK-794)", () => {
       expect(saved).toBe(false);
     },
   );
+});
+
+/**
+ * TASK-799: the phone is checked on DIGITS with the storefront's one phone rule
+ * (`isValidUAPhone`), and emptying the field is sent as an explicit `null`.
+ */
+describe("ProfileForm — phone (TASK-799)", () => {
+  function captureSave() {
+    const bodies: unknown[] = [];
+    server.use(
+      http.put("*/api/users/me", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(makeUser());
+      }),
+    );
+    return bodies;
+  }
+
+  it.each(["----------", "+1 234 567 8901", "(((((((((("])(
+    "refuses %p with a visible message and sends nothing",
+    async (phone) => {
+      const user = userEvent.setup();
+      const bodies = captureSave();
+
+      renderWithProviders(<ProfileForm user={makeUser().data} />);
+
+      const input = screen.getByLabelText(dict.account.phone);
+      fireEvent.change(input, { target: { value: phone } });
+      await user.click(screen.getByRole("button", { name: dict.account.save }));
+
+      expect(
+        await screen.findByText(dict.account.phoneInvalid),
+      ).toBeInTheDocument();
+      expect(input).toHaveAttribute("aria-invalid", "true");
+      expect(bodies).toHaveLength(0);
+    },
+  );
+
+  it("saves a Ukrainian number typed with separators", async () => {
+    const user = userEvent.setup();
+    const bodies = captureSave();
+
+    renderWithProviders(<ProfileForm user={makeUser().data} />);
+
+    fireEvent.change(screen.getByLabelText(dict.account.phone), {
+      target: { value: "050 111 2233" },
+    });
+    await user.click(screen.getByRole("button", { name: dict.account.save }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ phone: "050 111 2233" });
+  });
+
+  it("sends an emptied phone as an explicit null (removal)", async () => {
+    const user = userEvent.setup();
+    const bodies = captureSave();
+
+    renderWithProviders(<ProfileForm user={makeUser().data} />);
+
+    fireEvent.change(screen.getByLabelText(dict.account.phone), {
+      target: { value: "" },
+    });
+    await user.click(screen.getByRole("button", { name: dict.account.save }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ phone: null });
+  });
 });

@@ -296,6 +296,52 @@ describe('UserController (e2e)', () => {
         .send({ email: 'not-an-email' })
         .expect(400);
     });
+
+    // TASK-799: a garbled phone is refused, not stored as an empty number.
+    it('should return 400 for a phone of dashes and never write it', async () => {
+      const token = generateAccessToken(testUser.id, testUser.role);
+      userRepositoryMock.findById.mockResolvedValue(testUser);
+
+      const response = await request(app.getHttpServer())
+        .put('/api/users/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ phone: '----------' })
+        .expect(400);
+
+      expect(JSON.stringify(response.body)).toContain('9 to 15 digits');
+      expect(userRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('should store a valid phone normalised to digits', async () => {
+      const token = generateAccessToken(testUser.id, testUser.role);
+      userRepositoryMock.findById.mockResolvedValue(testUser);
+      userRepositoryMock.update.mockResolvedValue({ ...testUser, phone: '380501112233' });
+
+      await request(app.getHttpServer())
+        .put('/api/users/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ phone: '050 111 2233' })
+        .expect(200);
+
+      expect(userRepositoryMock.update).toHaveBeenCalledWith(testUser.id, {
+        phone: '380501112233',
+      });
+    });
+
+    it('should remove the phone only on an explicit null', async () => {
+      const token = generateAccessToken(testUser.id, testUser.role);
+      userRepositoryMock.findById.mockResolvedValue(testUser);
+      userRepositoryMock.update.mockResolvedValue({ ...testUser, phone: null });
+
+      const response = await request(app.getHttpServer())
+        .put('/api/users/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ phone: null })
+        .expect(200);
+
+      expect(userRepositoryMock.update).toHaveBeenCalledWith(testUser.id, { phone: null });
+      expect(response.body.data.phone).toBeNull();
+    });
   });
 
   // ─── GET /api/users (admin) ─────────────────────────────────────────────────
