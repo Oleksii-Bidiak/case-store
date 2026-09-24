@@ -10,6 +10,7 @@ import { SentryModule } from '@sentry/nestjs/setup';
 import { LoggerModule } from 'nestjs-pino';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { AppRepository } from './app.repository';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth';
 import { PermissionModule } from './auth/permissions';
@@ -295,6 +296,7 @@ import { buildPinoHttpOptions } from './config/pino.config';
   controllers: [AppController],
   providers: [
     AppService,
+    AppRepository,
     // Register filter and interceptor as providers so they receive PinoLogger via DI
     HttpExceptionFilter,
     LoggingInterceptor,
