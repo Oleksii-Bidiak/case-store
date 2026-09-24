@@ -4,6 +4,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -612,5 +613,117 @@ describe("CategoryForm — SEO meta fields (TASK-236)", () => {
     expect(screen.getByLabelText(dict.seoFields.keywords)).toBeInTheDocument();
     expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
     expect(screen.getByText(dict.seoFields.keywordsHint)).toBeInTheDocument();
+  });
+});
+
+describe("CategoryForm — OG image upload and library pick (TASK-728)", () => {
+  const OG_URL = "http://localhost:3001/uploads/content/og-card.webp";
+
+  const ogField = () =>
+    screen.getByLabelText(dict.seoFields.ogImage) as HTMLInputElement;
+  const imageField = () =>
+    screen.getByLabelText(dict.categoryForm.image) as HTMLInputElement;
+  /**
+   * The form now has TWO uploaders (tile + OG). The URL input is a direct
+   * child of its `ContentImageField`, so its parent scopes the OG one.
+   */
+  const ogScope = () => within(ogField().parentElement as HTMLElement);
+
+  /** Stub `POST /api/admin/uploads/categories`; collects uploaded filenames. */
+  function stubCategoryUpload() {
+    const uploaded: string[] = [];
+    server.use(
+      http.post("*/api/admin/uploads/categories", async ({ request }) => {
+        const form = await request.formData();
+        const file = form.get("file");
+        uploaded.push(file instanceof File ? file.name : String(file));
+        return HttpResponse.json({ data: { url: OG_URL, blurDataUrl: null } });
+      }),
+    );
+    return uploaded;
+  }
+
+  it("uploads a file into the OG field only — the tile stays empty — and submits it", async () => {
+    stubCategories();
+    const uploaded = stubCategoryUpload();
+    const onSubmit = jest.fn();
+    renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(
+      screen.getByLabelText(dict.categoryForm.name),
+      "Чохли",
+    );
+    await userEvent.upload(
+      ogScope().getByTestId("single-image-upload-input"),
+      new File(["png-bytes"], "og.png", { type: "image/png" }),
+    );
+
+    await waitFor(() => expect(uploaded).toEqual(["og.png"]));
+    await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
+    expect(imageField()).toHaveValue("");
+    expect(
+      screen.getByAltText(dict.seoFields.ogImageUpload.alt),
+    ).toHaveAttribute("src", OG_URL);
+
+    await submitForm();
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ ogImage: OG_URL });
+    expect(onSubmit.mock.calls[0][0].image).toBeFalsy();
+  });
+
+  it("picks the OG image from the library through its own, separately named trigger", async () => {
+    stubCategories();
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: "Картка для соцмереж", url: OG_URL }),
+    ]);
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <CategoryForm onSubmit={onSubmit} isPending={false} />,
+      { auth: { permissions: MEDIA_PERMISSIONS } },
+    );
+
+    // Two pickers in one form: the tile's keeps its plain name, the OG one is
+    // named after its field so neither is ambiguous to a screen reader.
+    expect(
+      screen.getByRole("button", { name: dict.mediaPicker.trigger }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.seoFields.ogImagePickerAria }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.mediaPicker.pickCardAria("Картка для соцмереж"),
+      }),
+    );
+
+    await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
+    expect(imageField()).toHaveValue("");
+
+    await userEvent.type(
+      screen.getByLabelText(dict.categoryForm.name),
+      "Чохли",
+    );
+    await submitForm();
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ ogImage: OG_URL });
+  });
+
+  it("offers no OG library picker without media keys, but keeps upload and the URL box", () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm onSubmit={jest.fn()} isPending={false} />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: dict.seoFields.ogImagePickerAria }),
+    ).not.toBeInTheDocument();
+    // The upload goes through the category route — the form's own key — so it
+    // is offered to everyone who can open this form.
+    expect(
+      ogScope().getByRole("button", {
+        name: dict.seoFields.ogImageUpload.upload,
+      }),
+    ).toBeInTheDocument();
+    expect(ogField()).toHaveValue("");
   });
 });
