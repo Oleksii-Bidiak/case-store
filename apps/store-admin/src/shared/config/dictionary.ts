@@ -2571,6 +2571,18 @@ export const dict = {
     paymentTransitionsLoadError:
       "Не вдалося отримати список статусів оплати. Оновіть сторінку.",
     noPaymentTransitions: "Статус оплати змінити неможливо",
+    // --- Виправлення помилкової мітки «Кошти повернено» (TASK-620, B-11 №7) ---
+    // Окрема дія, а не пункт списку: REFUNDED лишається кінцевим для фактів;
+    // виправити можна лише мітку, яку поставив оператор, з обов'язковою причиною.
+    paymentCorrectAction: "Виправити помилкову мітку «Кошти повернено»",
+    paymentCorrectTitle: "Виправити помилкову мітку «Кошти повернено»",
+    paymentCorrectDescription:
+      "Лише якщо мітку поставили помилково вручну. Якщо гроші повернула платіжна система, мітку виправити не можна. Причина потрапить у журнал дій.",
+    paymentCorrectTargetLegend: "Яким має бути статус оплати",
+    paymentCorrectReason: "Причина виправлення",
+    paymentCorrectConfirm: "Виправити",
+    paymentCorrectCancel: "Скасувати",
+    paymentCorrectToast: "Мітку оплати виправлено",
     // Says the quiet part out loud: a full refund is missing from the list on
     // purpose while the order is live, and the operator's next step is named.
     paymentTransitionsHint:
@@ -2629,6 +2641,10 @@ export const dict = {
       // «виправте статус оплати» було б порадою в нікуди.
       ORDER_REVIVE_REFUNDED_PAYMENT:
         "Гроші за цим замовленням уже повернуті покупцеві, тож повернути його в роботу не можна. Створіть нове замовлення.",
+      // TASK-620: мітку «Кошти повернено» поставила платіжна система (LiqPay
+      // reversed), а не оператор — це факт про гроші, його не виправляють.
+      ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND:
+        "Цю мітку поставила платіжна система: гроші справді повернуто покупцеві. Виправити її не можна.",
     },
     conflictUnknown:
       "Замовлення змінилося, і зміну не збережено. Оновіть сторінку й спробуйте ще раз.",
@@ -3458,6 +3474,8 @@ export const dict = {
       // підтверджена, лист із підтвердженням пішов на неї.
       changeEmail: "змінено email для входу",
       clearProductDelta: "скинуто винятки для товару",
+      // TASK-620: lifting an operator's mistaken «Кошти повернено».
+      correctPaymentStatus: "виправлено помилкову мітку «Кошти повернено»",
       create: "створено",
       createBrand: "створено бренд",
       createCategory: "створено категорію",

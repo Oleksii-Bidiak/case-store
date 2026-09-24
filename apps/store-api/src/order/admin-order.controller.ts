@@ -37,6 +37,7 @@ import {
   AdminOrderListQueryDto,
   UpdateOrderStatusDto,
   UpdateOrderPaymentStatusDto,
+  CorrectPaymentStatusDto,
   UpdateOrderDetailsDto,
   CreateManualOrderDto,
 } from './dto';
@@ -677,6 +678,59 @@ export class AdminOrderController {
     const order = await this.orderService.adminUpdatePaymentStatus(
       orderId,
       dto.paymentStatus,
+      adminUserId,
+    );
+
+    return { data: order };
+  }
+
+  /**
+   * POST /api/admin/orders/:orderId/payment-correction
+   *
+   * Lift an operator's mistaken «Кошти повернено» back to PAID or
+   * PARTIALLY_REFUNDED (TASK-620, decision B-11 №7). A door of its own, not an
+   * edge in the payment table: REFUNDED stays terminal for every fact-driven
+   * writer. Its own key (`payments:correct`, no backfill), a required reason, and
+   * an action-log row written by the audit interceptor (the body carries the
+   * reason). A REFUNDED the provider reported cannot be lifted.
+   */
+  @Post(':orderId/payment-correction')
+  @RequirePermission('payments:correct')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Correct a mistaken REFUNDED payment mark (admin)',
+    operationId: 'adminOrderControllerCorrectPaymentStatus',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment mark corrected',
+    type: AdminOrderResponseEnvelope,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Missing reason, or a target other than PAID / PARTIALLY_REFUNDED',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — payments:correct required' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND — the REFUNDED mark was reported by the ' +
+      'payment provider, not set by an operator; or ORDER_PAYMENT_TRANSITION_INVALID — the ' +
+      'payment is not REFUNDED (or changed underneath the write)',
+  })
+  async correctPaymentStatus(
+    @Param('orderId') orderId: string,
+    @Body() dto: CorrectPaymentStatusDto,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<AdminOrderResponseEnvelope> {
+    const order = await this.orderService.adminCorrectRefundedPayment(
+      orderId,
+      dto.paymentStatus,
+      dto.reason,
       adminUserId,
     );
 

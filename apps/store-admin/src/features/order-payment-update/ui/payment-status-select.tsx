@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -11,10 +12,15 @@ import {
   paymentStatusLabel,
   useAdminOrderControllerGetAllowedPaymentTransitions,
   useAdminOrderControllerUpdatePaymentStatus,
+  useAdminOrderControllerCorrectPaymentStatus,
+  OrderEntityPaymentStatus,
   type UpdateOrderPaymentStatusDto,
 } from "@/entities/order";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import {
+  Button,
   Select,
   SelectContent,
   SelectItem,
@@ -27,6 +33,7 @@ import {
   paymentConflictMessage,
   type ApiErrorLike,
 } from "../model/payment-conflict";
+import { PaymentCorrectionDialog } from "./payment-correction-dialog";
 
 interface PaymentStatusSelectProps {
   orderId: string;
@@ -74,8 +81,66 @@ export function PaymentStatusSelect({ orderId }: PaymentStatusSelectProps) {
   const transitions =
     useAdminOrderControllerGetAllowedPaymentTransitions(orderId);
   const updatePaymentStatus = useAdminOrderControllerUpdatePaymentStatus();
+  const correctPaymentStatus = useAdminOrderControllerCorrectPaymentStatus();
+  const { can } = useAuth();
+  const [correctionOpen, setCorrectionOpen] = useState(false);
 
-  const { allowed } = toPaymentTransitionOptions(transitions.data);
+  const { allowed, current } = toPaymentTransitionOptions(transitions.data);
+  // TASK-620: REFUNDED offers no ordinary move (rule 4 stays true for facts);
+  // an operator holding `payments:correct` gets the separate correction. The
+  // server decides whether THIS mark is correctable (operator vs provider).
+  const canCorrect =
+    current === OrderEntityPaymentStatus.REFUNDED && can(PERM.paymentsCorrect);
+
+  /** Every view derived from this order is out of date after a payment write. */
+  const invalidateOrderViews = () => {
+    void queryClient.invalidateQueries({
+      queryKey: getAdminOrderControllerFindAllQueryKey(),
+    });
+    void queryClient.invalidateQueries({
+      queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
+    });
+    // TASK-400: the lock token moved with this write — refetch it, or the
+    // operator's next status change is refused as stale by their own edit.
+    void queryClient.invalidateQueries({
+      queryKey: getAdminOrderControllerGetAllowedTransitionsQueryKey(orderId),
+    });
+    // TASK-431: and this control's own option list, which the write has just
+    // changed — PAID becomes "partially refunded / refunded", and so on.
+    void queryClient.invalidateQueries({
+      queryKey:
+        getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey(orderId),
+    });
+    // A payment change DOES write an audit row (`updatePaymentStatus` in
+    // `order.repository.ts`, changeType PAYMENT_STATUS), so the timeline
+    // rendered on this page is now out of date too.
+    void queryClient.invalidateQueries({
+      queryKey: getAdminOrderControllerGetHistoryQueryKey(orderId),
+    });
+    // TASK-248: marking an order paid/unpaid moves it in/out of the
+    // unpaid-in-transit counter — refresh the needs-action widget + badges.
+    void queryClient.invalidateQueries({
+      queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
+    });
+  };
+
+  const handleRefusal = (error: unknown) => {
+    const message = paymentConflictMessage(error as ApiErrorLike);
+    if (message) {
+      // Refetch the options either way: after a refused move they are
+      // simply wrong, and the order card beside them with it.
+      void queryClient.invalidateQueries({
+        queryKey:
+          getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey(orderId),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
+      });
+      toast.error(message);
+      return;
+    }
+    toast.error(dict.orderStatus.paymentToastFailed);
+  };
 
   const handleChange = (value: string) => {
     updatePaymentStatus.mutate(
@@ -87,63 +152,55 @@ export function PaymentStatusSelect({ orderId }: PaymentStatusSelectProps) {
       },
       {
         onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: getAdminOrderControllerFindAllQueryKey(),
-          });
-          void queryClient.invalidateQueries({
-            queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
-          });
-          // TASK-400: the lock token moved with this write — refetch it, or the
-          // operator's next status change is refused as stale by their own edit.
-          void queryClient.invalidateQueries({
-            queryKey:
-              getAdminOrderControllerGetAllowedTransitionsQueryKey(orderId),
-          });
-          // TASK-431: and this control's own option list, which the write has
-          // just changed — PAID becomes "partially refunded / refunded", and so on.
-          void queryClient.invalidateQueries({
-            queryKey:
-              getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey(
-                orderId,
-              ),
-          });
-          // A payment change DOES write an audit row (`updatePaymentStatus` in
-          // `order.repository.ts`, changeType PAYMENT_STATUS), so the timeline
-          // rendered on this page is now out of date too.
-          void queryClient.invalidateQueries({
-            queryKey: getAdminOrderControllerGetHistoryQueryKey(orderId),
-          });
-          // TASK-248: marking an order paid/unpaid moves it in/out of the
-          // unpaid-in-transit counter — refresh the needs-action widget + badges.
-          void queryClient.invalidateQueries({
-            queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
-          });
+          invalidateOrderViews();
           toast.success(
             dict.orderStatus.paymentToastUpdated(paymentStatusLabel(value)),
           );
         },
+        onError: handleRefusal,
+      },
+    );
+  };
+
+  const handleCorrect = (values: {
+    paymentStatus: (typeof OrderEntityPaymentStatus)[
+      "PAID" | "PARTIALLY_REFUNDED"];
+    reason: string;
+  }) => {
+    correctPaymentStatus.mutate(
+      { orderId, data: values },
+      {
+        onSuccess: () => {
+          setCorrectionOpen(false);
+          invalidateOrderViews();
+          toast.success(dict.orderStatus.paymentCorrectToast);
+        },
         onError: (error) => {
-          const message = paymentConflictMessage(error as ApiErrorLike);
-          if (message) {
-            // Refetch the options either way: after a refused move they are
-            // simply wrong, and the order card beside them with it.
-            void queryClient.invalidateQueries({
-              queryKey:
-                getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey(
-                  orderId,
-                ),
-            });
-            void queryClient.invalidateQueries({
-              queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
-            });
-            toast.error(message);
-            return;
-          }
-          toast.error(dict.orderStatus.paymentToastFailed);
+          setCorrectionOpen(false);
+          handleRefusal(error);
         },
       },
     );
   };
+
+  const correction = canCorrect ? (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={() => setCorrectionOpen(true)}
+      >
+        {dict.orderStatus.paymentCorrectAction}
+      </Button>
+      <PaymentCorrectionDialog
+        open={correctionOpen}
+        onOpenChange={setCorrectionOpen}
+        onConfirm={handleCorrect}
+        disabled={correctPaymentStatus.isPending}
+      />
+    </>
+  ) : null;
 
   if (transitions.isLoading) {
     return (
@@ -163,9 +220,12 @@ export function PaymentStatusSelect({ orderId }: PaymentStatusSelectProps) {
 
   if (allowed.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        {dict.orderStatus.noPaymentTransitions}
-      </p>
+      <div className="flex flex-col gap-2">
+        <p className="text-sm text-muted-foreground">
+          {dict.orderStatus.noPaymentTransitions}
+        </p>
+        {correction}
+      </div>
     );
   }
 

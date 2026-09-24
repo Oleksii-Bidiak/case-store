@@ -18,6 +18,8 @@ export const PAYMENT_CONFLICT_CODE = {
   TRANSITION_INVALID: "ORDER_PAYMENT_TRANSITION_INVALID",
   /** A full refund was asked for while the order is still live. */
   REFUND_REQUIRES_CLOSED_ORDER: "ORDER_REFUND_REQUIRES_CLOSED_ORDER",
+  /** TASK-620: the REFUNDED mark was reported by the provider — not correctable. */
+  CORRECTION_PROVIDER_REFUND: "ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND",
 } as const;
 
 /**
@@ -64,6 +66,9 @@ export function paymentConflictMessage(
   }
   if (code === PAYMENT_CONFLICT_CODE.REFUND_REQUIRES_CLOSED_ORDER) {
     return dict.orderStatus.conflict.ORDER_REFUND_REQUIRES_CLOSED_ORDER;
+  }
+  if (code === PAYMENT_CONFLICT_CODE.CORRECTION_PROVIDER_REFUND) {
+    return dict.orderStatus.conflict.ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND;
   }
   return dict.orderStatus.conflictUnknown;
 }

@@ -1209,6 +1209,26 @@ export class OrderRepository {
   }
 
   /**
+   * Who set the order's newest `toPaymentStatus = status` mark (TASK-620):
+   * `changedBy` is the operator's id, or null for the provider callback and the
+   * reconcile worker. Null when no such row exists.
+   */
+  findLastPaymentMark(
+    orderId: string,
+    status: PaymentStatus,
+  ): Promise<{ changedBy: string | null } | null> {
+    return this.prisma.orderStatusHistory.findFirst({
+      where: {
+        orderId,
+        changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+        toPaymentStatus: status,
+      },
+      orderBy: { changedAt: 'desc' },
+      select: { changedBy: true },
+    });
+  }
+
+  /**
    * Update the operator-editable, lifecycle-neutral fields of an order
    * (TASK-335 / TASK-336).
    *

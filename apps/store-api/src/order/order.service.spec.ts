@@ -198,6 +198,8 @@ const orderRepositoryMock = {
   cancelAndRestock: jest.fn(),
   reviveAndReserve: jest.fn(),
   updatePaymentStatus: jest.fn(),
+  // TASK-620: who set the REFUNDED mark a correction would lift.
+  findLastPaymentMark: jest.fn(),
   // TASK-330: the payment seam — the order module reads the attempt it is told
   // about and writes the whole application in one go.
   findPaymentWithOrder: jest.fn(),
@@ -1459,6 +1461,142 @@ describe('OrderService', () => {
   });
 
   // ─── adminUpdatePaymentStatus (admin) (TASK-151) ──────────────────────────────
+  // ─── TASK-620: correcting a mistaken REFUNDED mark (decision B-11 №7) ───────
+  // REFUNDED stays terminal for FACTS (rule 4). The one exception is an
+  // operator's own typo: a REFUNDED the operator set may be corrected back to
+  // PAID / PARTIALLY_REFUNDED, under its own key, with a reason. A REFUNDED the
+  // provider reported (LiqPay `reversed`, changedBy null) is a fact about money
+  // and nobody lifts it.
+
+  describe('adminCorrectRefundedPayment (TASK-620)', () => {
+    const refundedOrder = () =>
+      makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.REFUNDED });
+
+    it.each([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED])(
+      'corrects an operator-set REFUNDED to %s, guarded on REFUNDED still holding',
+      async (target) => {
+        orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+        orderRepositoryMock.findLastPaymentMark.mockResolvedValue({ changedBy: 'admin-uuid-7' });
+        orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
+          makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: target }),
+        );
+
+        const result = await service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          target,
+          'Помилково натиснув «Кошти повернено»',
+          ADMIN_ID,
+        );
+
+        expect(orderRepositoryMock.findLastPaymentMark).toHaveBeenCalledWith(
+          'order-uuid-1',
+          PaymentStatus.REFUNDED,
+        );
+        expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
+          'order-uuid-1',
+          target,
+          ADMIN_ID,
+          { expectedFrom: PaymentStatus.REFUNDED },
+        );
+        expect(result.paymentStatus).toBe(target);
+      },
+    );
+
+    it('refuses to lift a REFUNDED the provider reported (409), writing nothing', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+      orderRepositoryMock.findLastPaymentMark.mockResolvedValue({ changedBy: null });
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PAID,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_CORRECTION_PROVIDER_REFUND },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('refuses when no REFUNDED mark is on record at all (409)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+      orderRepositoryMock.findLastPaymentMark.mockResolvedValue(null);
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PAID,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_CORRECTION_PROVIDER_REFUND },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('refuses on an order whose payment is not REFUNDED (409)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PARTIALLY_REFUNDED,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('refuses a target other than PAID / PARTIALLY_REFUNDED (409)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+      orderRepositoryMock.findLastPaymentMark.mockResolvedValue({ changedBy: 'admin-uuid-7' });
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PENDING,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 when the payment moved between the read and the write', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+      orderRepositoryMock.findLastPaymentMark.mockResolvedValue({ changedBy: 'admin-uuid-7' });
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(null);
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PAID,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+    });
+
+    it('throws NotFoundException for an unknown order', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(
+        service.adminCorrectRefundedPayment('missing', PaymentStatus.PAID, 'причина', ADMIN_ID),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   // The admin sets payment status directly and independently of the order status.
 
   describe('adminUpdatePaymentStatus', () => {

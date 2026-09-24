@@ -88,6 +88,8 @@ const prismaMock = {
   // TASK-251: history read path.
   orderStatusHistory: {
     findMany: jest.fn(),
+    // TASK-620: who set the REFUNDED mark a correction would lift.
+    findFirst: jest.fn(),
   },
   // TASK-771: the revive's cap check compares against a field reference.
   discount: {
@@ -2065,6 +2067,35 @@ describe('OrderRepository', () => {
       await expect(repository.claimGuestOrders('user-uuid-1', 'guest@example.com')).resolves.toBe(
         2,
       );
+    });
+  });
+
+  // ─── TASK-620: who set the latest payment mark ──────────────────────────────
+
+  describe('findLastPaymentMark', () => {
+    it('reads the newest PAYMENT_STATUS row that set the given status', async () => {
+      prismaMock.orderStatusHistory.findFirst.mockResolvedValue({ changedBy: 'admin-7' });
+
+      const mark = await repository.findLastPaymentMark('order-1', PaymentStatus.REFUNDED);
+
+      expect(prismaMock.orderStatusHistory.findFirst).toHaveBeenCalledWith({
+        where: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          toPaymentStatus: PaymentStatus.REFUNDED,
+        },
+        orderBy: { changedAt: 'desc' },
+        select: { changedBy: true },
+      });
+      expect(mark).toEqual({ changedBy: 'admin-7' });
+    });
+
+    it('is null when no such row exists', async () => {
+      prismaMock.orderStatusHistory.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.findLastPaymentMark('order-1', PaymentStatus.REFUNDED),
+      ).resolves.toBeNull();
     });
   });
 

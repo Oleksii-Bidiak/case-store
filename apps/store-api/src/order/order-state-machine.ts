@@ -206,3 +206,25 @@ export function canTransitionPayment(from: PaymentStatus, to: PaymentStatus): bo
 export function allowedPaymentTransitions(from: PaymentStatus): PaymentStatus[] {
   return [...PAYMENT_TRANSITIONS[from]];
 }
+
+/**
+ * Corrections of a mistaken payment MARK (TASK-620, owner decision B-11 №7).
+ *
+ * Deliberately NOT an edge of {@link PAYMENT_TRANSITIONS}: rule 4 (REFUNDED is
+ * terminal) stays true for every writer that records FACTS — the LiqPay
+ * callback, the reconcile worker, the ordinary admin payment select. This table
+ * answers a different question: "an operator typed REFUNDED by mistake — what
+ * may it be put back to?" Only the states REFUNDED can have been reached from,
+ * and only through its own door (`OrderService.adminCorrectRefundedPayment`),
+ * which additionally requires the `payments:correct` key, a reason, and that
+ * the mark was set by an operator rather than reported by the provider.
+ */
+const PAYMENT_CORRECTIONS: Readonly<Partial<Record<PaymentStatus, readonly PaymentStatus[]>>> =
+  Object.freeze({
+    [PaymentStatus.REFUNDED]: Object.freeze([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED]),
+  });
+
+/** Whether a mistaken `from` mark may be corrected to `to` (TASK-620). */
+export function canCorrectPayment(from: PaymentStatus, to: PaymentStatus): boolean {
+  return PAYMENT_CORRECTIONS[from]?.includes(to) ?? false;
+}

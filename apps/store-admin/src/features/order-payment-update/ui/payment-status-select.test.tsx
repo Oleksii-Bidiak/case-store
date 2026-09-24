@@ -13,6 +13,7 @@ import {
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
 } from "@/entities/order";
+import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { PaymentStatusSelect } from "./payment-status-select";
 
 const toastSuccess = jest.fn();
@@ -58,9 +59,19 @@ function stubPatch(status = 200, body?: unknown) {
   );
 }
 
-function renderSelect(queryClient?: QueryClient) {
+/**
+ * Inside a session: the picker asks `can('payments:correct')` before offering
+ * the correction of a mistaken REFUNDED mark (TASK-620). The default session
+ * is a manager with `orders:write` only — every pre-620 test's world.
+ */
+function renderSelect(
+  queryClient?: QueryClient,
+  permissions: string[] = ["orders:write"],
+) {
   return renderWithProviders(
-    <PaymentStatusSelect orderId={ORDER_ID} />,
+    <WithAuth permissions={permissions}>
+      <PaymentStatusSelect orderId={ORDER_ID} />
+    </WithAuth>,
     queryClient ? { queryClient } : {},
   );
 }
@@ -312,6 +323,129 @@ describe("PaymentStatusSelect (TASK-151, TASK-431)", () => {
       expect(invalidate).toHaveBeenCalledWith({
         queryKey: getAdminOrderControllerGetHistoryQueryKey(ORDER_ID),
       }),
+    );
+  });
+});
+
+/**
+ * TASK-620 (decision B-11 №7): the correction of a mistaken «Кошти повернено».
+ * REFUNDED offers no ordinary move — that stays true — but an operator holding
+ * `payments:correct` gets a separate, explained action with a required reason.
+ */
+describe("PaymentStatusSelect — correcting a mistaken REFUNDED (TASK-620)", () => {
+  const CORRECT = ["orders:write", "payments:correct"];
+
+  function stubCorrection(status = 200, body?: unknown) {
+    const bodies: unknown[] = [];
+    server.use(
+      http.post(
+        "*/api/admin/orders/:orderId/payment-correction",
+        async ({ request }) => {
+          bodies.push(await request.json());
+          if (status !== 200) {
+            return HttpResponse.json(body ?? null, { status });
+          }
+          return HttpResponse.json({
+            data: { id: ORDER_ID, status: "CANCELLED", paymentStatus: "PAID" },
+          });
+        },
+      ),
+    );
+    return bodies;
+  }
+
+  const openCorrection = async () =>
+    userEvent.click(
+      await screen.findByRole("button", {
+        name: dict.orderStatus.paymentCorrectAction,
+      }),
+    );
+
+  beforeEach(() => {
+    toastSuccess.mockClear();
+    toastError.mockClear();
+  });
+
+  it("is not offered without payments:correct", async () => {
+    stubTransitions("REFUNDED", []);
+    renderSelect(undefined, ["orders:write", "payments:refund"]);
+
+    expect(
+      await screen.findByText(dict.orderStatus.noPaymentTransitions),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: dict.orderStatus.paymentCorrectAction,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("is not offered on a payment that is not REFUNDED", async () => {
+    stubTransitions("PAID", ["PARTIALLY_REFUNDED"]);
+    renderSelect(undefined, CORRECT);
+
+    await screen.findByRole("combobox", {
+      name: dict.orderStatus.paymentUpdateAria,
+    });
+    expect(
+      screen.queryByRole("button", {
+        name: dict.orderStatus.paymentCorrectAction,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("requires a reason, then sends the target and the reason", async () => {
+    stubTransitions("REFUNDED", []);
+    const bodies = stubCorrection();
+    renderSelect(undefined, CORRECT);
+
+    await openCorrection();
+    const confirm = screen.getByRole("button", {
+      name: dict.orderStatus.paymentCorrectConfirm,
+    });
+    expect(confirm).toBeDisabled();
+
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Частково повернуто" }),
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.orderStatus.paymentCorrectReason),
+      "Помилково натиснула повне повернення",
+    );
+    await userEvent.click(confirm);
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({
+      paymentStatus: "PARTIALLY_REFUNDED",
+      reason: "Помилково натиснула повне повернення",
+    });
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalled());
+  });
+
+  it("explains a refusal for a mark the provider reported", async () => {
+    stubTransitions("REFUNDED", []);
+    stubCorrection(409, {
+      error: "ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND",
+      message: "x",
+      statusCode: 409,
+    });
+    renderSelect(undefined, CORRECT);
+
+    await openCorrection();
+    await userEvent.type(
+      screen.getByLabelText(dict.orderStatus.paymentCorrectReason),
+      "причина",
+    );
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.orderStatus.paymentCorrectConfirm,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        dict.orderStatus.conflict.ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND,
+      ),
     );
   });
 });

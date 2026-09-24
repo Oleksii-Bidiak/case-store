@@ -31,9 +31,11 @@ import {
   allowedTransitions,
   canTransition,
   canTransitionPayment,
+  canCorrectPayment,
 } from './order-state-machine';
 import {
   invalidPaymentTransitionError,
+  paymentCorrectionProviderRefundError,
   invalidTransitionError,
   refundRequiresClosedOrderError,
   reviveRefundedPaymentError,
@@ -1600,6 +1602,81 @@ export class OrderService {
     this.logger.info(
       { event: 'order.payment_status_updated', orderId, paymentStatus },
       'Order payment status updated',
+    );
+
+    return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Admin — correct a mistaken REFUNDED mark (TASK-620, decision B-11 №7).
+   *
+   * REFUNDED is terminal for facts ({@link PAYMENT_TRANSITIONS} rule 4) and stays
+   * so: this is a separate door for an operator's typo, with its own rule
+   * ({@link canCorrectPayment}), its own key (`payments:correct`, checked by the
+   * controller) and a mandatory reason (written to the action log by the audit
+   * interceptor together with the request body).
+   *
+   * Only a mark an OPERATOR set may be lifted. The provider's `reversed`
+   * callback writes REFUNDED with `changedBy = null`: that is LiqPay reporting
+   * where the money is, and a correction would make the ledger lie. No mark on
+   * record at all is refused the same way — nothing proves an operator set it.
+   *
+   * The write is conditional on REFUNDED still holding (the same
+   * `expectedFrom` guard every admin payment write uses), so a concurrent change
+   * turns into a 409 rather than a silent overwrite.
+   *
+   * @throws NotFoundException when the order does not exist.
+   * @throws ConflictException `ORDER_PAYMENT_TRANSITION_INVALID` when the payment
+   *   is not REFUNDED or the target is not a legal correction;
+   *   `ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND` when no operator set the mark.
+   */
+  async adminCorrectRefundedPayment(
+    orderId: string,
+    paymentStatus: PaymentStatus,
+    reason: string,
+    changedBy: string,
+  ): Promise<OrderEntity> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (!canCorrectPayment(existing.paymentStatus, paymentStatus)) {
+      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
+    }
+
+    const mark = await this.orderRepository.findLastPaymentMark(orderId, existing.paymentStatus);
+    if (!mark || mark.changedBy === null) {
+      this.logger.warn(
+        { event: 'order.payment_correction_refused_provider_mark', orderId, changedBy },
+        'Refused to correct a REFUNDED mark that no operator set',
+      );
+      throw paymentCorrectionProviderRefundError();
+    }
+
+    const order = await this.orderRepository.updatePaymentStatus(
+      orderId,
+      paymentStatus,
+      changedBy,
+      { expectedFrom: existing.paymentStatus },
+    );
+
+    if (!order) {
+      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
+    }
+
+    this.logger.info(
+      {
+        event: 'order.payment_mark_corrected',
+        orderId,
+        from: existing.paymentStatus,
+        to: paymentStatus,
+        markSetBy: mark.changedBy,
+        changedBy,
+        reason,
+      },
+      'A mistaken REFUNDED mark was corrected',
     );
 
     return OrderEntity.fromPrisma(order);
