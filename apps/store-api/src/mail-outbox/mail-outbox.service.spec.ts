@@ -70,6 +70,8 @@ const mailServiceMock = {
   sendAccountLockedPayload: jest.fn(),
   sendEmailChangeConfirmPayload: jest.fn(),
   sendEmailChangeNoticePayload: jest.fn(),
+  // TASK-352 (b): «оплату не отримано».
+  sendOrderPaymentExpiredPayload: jest.fn(),
 };
 
 const loggerMock = {
@@ -272,6 +274,45 @@ describe('MailOutboxService', () => {
       const result = await service.dispatchDue();
 
       expect(mailServiceMock[sender]).toHaveBeenCalledWith(payload);
+      expect(result).toEqual({ sent: 1, retried: 0, failed: 0 });
+    });
+  });
+
+  // ─── «оплату не отримано» (TASK-352 (b)) ──────────────────────────────────────
+
+  describe('order-payment-expired letter (TASK-352)', () => {
+    const payload = {
+      to: 'buyer@example.com',
+      order: { id: 'order-1', items: [{ name: 'Скло', quantity: 1 }] },
+      reorderUrl: 'https://shop.test/catalog',
+    };
+
+    it('enqueues an order-payment-expired row to the buyer', async () => {
+      await service.enqueueOrderPaymentExpired(payload);
+
+      expect(repositoryMock.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'order-payment-expired',
+          recipient: 'buyer@example.com',
+          payload,
+        }),
+        undefined,
+      );
+    });
+
+    it('routes an order-payment-expired row to sendOrderPaymentExpiredPayload', async () => {
+      repositoryMock.claimDue.mockResolvedValue([
+        makeRow({
+          id: 'pe-1',
+          type: 'order-payment-expired',
+          payload: payload as unknown as MailOutbox['payload'],
+        }),
+      ]);
+      mailServiceMock.sendOrderPaymentExpiredPayload.mockResolvedValue(undefined);
+
+      const result = await service.dispatchDue();
+
+      expect(mailServiceMock.sendOrderPaymentExpiredPayload).toHaveBeenCalledWith(payload);
       expect(result).toEqual({ sent: 1, retried: 0, failed: 0 });
     });
   });

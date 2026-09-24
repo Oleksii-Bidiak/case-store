@@ -9,6 +9,7 @@ import type { PasswordResetMailPayload } from '../mail/templates/password-reset.
 import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
 import type { EmailVerificationMailPayload } from '../mail/templates/email-verification.template';
 import type { OrderShippedMailPayload } from '../mail/templates/order-shipped.template';
+import type { OrderPaymentExpiredMailPayload } from '../mail/templates/order-payment-expired.template';
 import type {
   EmailChangeConfirmMailPayload,
   EmailChangeNoticeMailPayload,
@@ -21,6 +22,7 @@ import {
   EMAIL_VERIFICATION_MAIL_TYPE,
   ORDER_CONFIRMATION_MAIL_TYPE,
   ORDER_SHIPPED_MAIL_TYPE,
+  ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
   type DispatchResult,
 } from './mail-outbox.types';
@@ -211,6 +213,25 @@ export class MailOutboxService {
   }
 
   /**
+   * Enqueue «оплату не отримано» (TASK-352 (b)) — after the reconcile worker's
+   * cancellation of an unpaid online order has committed. The caller enqueues
+   * only on a cancel that really happened; this method does not second-guess it.
+   */
+  async enqueueOrderPaymentExpired(
+    payload: OrderPaymentExpiredMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
+        recipient: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
    * Whether an account-locked notice was already enqueued for `recipient` at or
    * after `since` — the rate-limit probe callers use before
    * {@link enqueueAccountLockedNotice}. Reuses the outbox rows themselves as the
@@ -332,6 +353,11 @@ export class MailOutboxService {
       case ORDER_SHIPPED_MAIL_TYPE:
         await this.mailService.sendOrderShippedPayload(
           row.payload as unknown as OrderShippedMailPayload,
+        );
+        return;
+      case ORDER_PAYMENT_EXPIRED_MAIL_TYPE:
+        await this.mailService.sendOrderPaymentExpiredPayload(
+          row.payload as unknown as OrderPaymentExpiredMailPayload,
         );
         return;
       case ACCOUNT_LOCKED_MAIL_TYPE:

@@ -231,6 +231,8 @@ const mailOutboxServiceMock = {
   enqueueOrderConfirmation: jest.fn(),
   // TASK-335: the "your parcel is on its way" notice.
   enqueueOrderShipped: jest.fn(),
+  // TASK-352 (b): «оплату не отримано».
+  enqueueOrderPaymentExpired: jest.fn(),
 };
 
 /** Fake transaction client handed to the createFromCart afterCreate hook. */
@@ -2502,6 +2504,64 @@ describe('OrderService', () => {
 
       expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
       expect(pinoLoggerMock.warn).toHaveBeenCalled();
+    });
+  });
+
+  // ─── «оплату не отримано» (TASK-352 (b), decision B-11 №2) ────────────────────
+
+  describe('notifyPaymentExpired', () => {
+    const cancelled = () => OrderEntity.fromPrisma(makeOrder({ status: OrderStatus.CANCELLED }));
+
+    it('enqueues one letter with the items and the way back to the shop', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com/');
+      orderRepositoryMock.findRecipient.mockResolvedValue({
+        email: 'buyer@example.com',
+        name: 'Olena',
+      });
+      const order = cancelled();
+
+      await service.notifyPaymentExpired(order);
+
+      expect(mailOutboxServiceMock.enqueueOrderPaymentExpired).toHaveBeenCalledTimes(1);
+      expect(mailOutboxServiceMock.enqueueOrderPaymentExpired).toHaveBeenCalledWith({
+        to: 'buyer@example.com',
+        customerName: 'Olena',
+        order: {
+          id: order.id,
+          items: order.items.map((item) => ({
+            name: item.productName,
+            quantity: item.quantity,
+            url: `https://shop.example.com/products/${item.productSlug}`,
+          })),
+        },
+        reorderUrl: 'https://shop.example.com/catalog',
+      });
+    });
+
+    it('omits the links on a dev box without STORE_CLIENT_URL', async () => {
+      orderRepositoryMock.findRecipient.mockResolvedValue({ email: 'buyer@example.com' });
+
+      await service.notifyPaymentExpired(cancelled());
+
+      const payload = mailOutboxServiceMock.enqueueOrderPaymentExpired.mock.calls[0][0];
+      expect(payload).not.toHaveProperty('reorderUrl');
+      expect(payload.order.items[0]).not.toHaveProperty('url');
+    });
+
+    it('sends nothing when the order has no email on file', async () => {
+      orderRepositoryMock.findRecipient.mockResolvedValue(null);
+
+      await service.notifyPaymentExpired(cancelled());
+
+      expect(mailOutboxServiceMock.enqueueOrderPaymentExpired).not.toHaveBeenCalled();
+    });
+
+    it('never throws — the cancellation already stands', async () => {
+      orderRepositoryMock.findRecipient.mockResolvedValue({ email: 'buyer@example.com' });
+      mailOutboxServiceMock.enqueueOrderPaymentExpired.mockRejectedValue(new Error('outbox down'));
+
+      await expect(service.notifyPaymentExpired(cancelled())).resolves.toBeUndefined();
+      expect(pinoLoggerMock.error).toHaveBeenCalled();
     });
   });
 

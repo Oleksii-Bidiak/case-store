@@ -25,6 +25,10 @@ import {
   type OrderShippedMailPayload,
 } from './templates/order-shipped.template';
 import {
+  buildOrderPaymentExpiredEmail,
+  type OrderPaymentExpiredMailPayload,
+} from './templates/order-payment-expired.template';
+import {
   buildEmailChangeConfirmEmail,
   buildEmailChangeNoticeEmail,
   type EmailChangeConfirmMailPayload,
@@ -257,6 +261,28 @@ export class MailService {
     }
 
     const template = buildOrderShippedEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Render and send «оплату не отримано» from its outbox payload (TASK-352 (b)).
+   * Same contract as the other payload senders: a logged no-op when mail is
+   * disabled, throwing on transport failure so the outbox worker retries.
+   */
+  async sendOrderPaymentExpiredPayload(payload: OrderPaymentExpiredMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping payment-expired notice to ${payload.to}`);
+      return;
+    }
+
+    const template = buildOrderPaymentExpiredEmail(payload);
 
     await this.getTransporter().sendMail({
       from: this.from,

@@ -52,6 +52,14 @@ export const EMAIL_CHANGE_NOTICE_MAIL_TYPE = 'email-change-notice';
  */
 export const ORDER_SHIPPED_MAIL_TYPE = 'order-shipped';
 
+/**
+ * `MailOutbox.type` value for «оплату не отримано» (TASK-352 (b), decision B-11
+ * №2): the ONE letter sent after the reconcile worker cancels an online order
+ * whose reservation lapsed unpaid. Enqueued only once the cancellation has
+ * really happened.
+ */
+export const ORDER_PAYMENT_EXPIRED_MAIL_TYPE = 'order-payment-expired';
+
 /** Aggregate outcome of a single {@link MailOutboxService.dispatchDue} run. */
 export interface DispatchResult {
   /** Rows delivered (or drained as a no-op when mail is disabled). */

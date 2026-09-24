@@ -36,7 +36,11 @@ const providerMock = {
 };
 
 const paymentServiceMock = { applyEvent: jest.fn() };
-const orderServiceMock = { updateStatus: jest.fn() };
+const orderServiceMock = {
+  updateStatus: jest.fn(),
+  // TASK-352 (b): «оплату не отримано» after a real cancellation.
+  notifyPaymentExpired: jest.fn(),
+};
 const schedulerRegistryMock = { addCronJob: jest.fn() };
 
 function buildWorker(env: Record<string, string | undefined> = {}): PaymentReconcileWorker {
@@ -272,6 +276,33 @@ describe('PaymentReconcileWorker', () => {
         expect.objectContaining({ event: 'payment.reconcile.expire_failed' }),
         expect.any(String),
       );
+    });
+
+    // ── TASK-352 (b): ONE «оплату не отримано» letter, only after a real cancel ──
+    it('sends the letter for the order it actually cancelled', async () => {
+      repositoryMock.findExpiredReservations.mockResolvedValue(expired);
+      const cancelled = { id: 'order-1', status: OrderStatus.CANCELLED };
+      orderServiceMock.updateStatus.mockResolvedValue(cancelled);
+
+      await buildWorker().tick();
+
+      expect(orderServiceMock.notifyPaymentExpired).toHaveBeenCalledTimes(1);
+      expect(orderServiceMock.notifyPaymentExpired).toHaveBeenCalledWith(cancelled);
+    });
+
+    it('sends no letter when the cancellation threw', async () => {
+      repositoryMock.findExpiredReservations.mockResolvedValue(expired);
+      orderServiceMock.updateStatus.mockRejectedValue(new Error('already restocked'));
+
+      await buildWorker().tick();
+
+      expect(orderServiceMock.notifyPaymentExpired).not.toHaveBeenCalled();
+    });
+
+    it('sends no letter when auto-cancel is switched off', async () => {
+      await buildWorker({ ORDER_AUTOCANCEL_UNPAID: 'false' }).tick();
+
+      expect(orderServiceMock.notifyPaymentExpired).not.toHaveBeenCalled();
     });
   });
 

@@ -1380,6 +1380,58 @@ export class OrderService {
   }
 
   /**
+   * «Оплату не отримано, замовлення скасовано, товар повернуто в продаж»
+   * (TASK-352 (b), decision B-11 №2).
+   *
+   * Called by the payment reconcile worker AFTER its `updateStatus(CANCELLED)`
+   * resolved — so the letter follows a cancellation that really happened, and a
+   * cancel that threw (lost race, already restocked) sends nothing. One letter,
+   * no reminder before the deadline.
+   *
+   * Never throws: the cancellation is committed and the stock is back on sale;
+   * a failed enqueue is logged, not retried by failing the worker's batch.
+   */
+  async notifyPaymentExpired(order: OrderEntity): Promise<void> {
+    try {
+      const recipient = await this.orderRepository.findRecipient(order.id);
+
+      if (!recipient) {
+        this.logger.warn(
+          { event: 'order.payment_expired_notice_no_recipient', orderId: order.id },
+          'Order cancelled for non-payment but no email address is on file — no notice sent',
+        );
+        return;
+      }
+
+      const storeUrl = this.configService.get<string>('STORE_CLIENT_URL')?.replace(/\/+$/, '');
+
+      await this.mailOutbox.enqueueOrderPaymentExpired({
+        to: recipient.email,
+        ...(recipient.name ? { customerName: recipient.name } : {}),
+        order: {
+          id: order.id,
+          items: order.items.map((item) => ({
+            name: item.productName,
+            quantity: item.quantity,
+            ...(storeUrl ? { url: `${storeUrl}/products/${item.productSlug}` } : {}),
+          })),
+        },
+        ...(storeUrl ? { reorderUrl: `${storeUrl}/catalog` } : {}),
+      });
+
+      this.logger.info(
+        { event: 'order.payment_expired_notice_enqueued', orderId: order.id },
+        'Payment-expired notice enqueued',
+      );
+    } catch (err) {
+      this.logger.error(
+        { err, event: 'order.payment_expired_notice_failed', orderId: order.id },
+        'Failed to enqueue the payment-expired notice; the cancellation stands',
+      );
+    }
+  }
+
+  /**
    * Admin — which statuses this order may move to right now (TASK-332).
    *
    * Exists so the admin panel offers exactly the legal targets. Before this, the

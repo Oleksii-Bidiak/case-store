@@ -191,7 +191,14 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
         // attempts EXPIRED is idempotent, so if the cancel below fails the next
         // tick finds the same order (still unpaid and pre-shipment) and retries.
         await this.paymentRepository.markExpiredByOrderId(order.id);
-        await this.orderService.updateStatus(order.id, OrderStatus.CANCELLED, null);
+        const cancelledOrder = await this.orderService.updateStatus(
+          order.id,
+          OrderStatus.CANCELLED,
+          null,
+        );
+        // TASK-352 (b): one «оплату не отримано» letter — reached only when the
+        // cancel above resolved; a cancel that threw skips it with the rest.
+        await this.orderService.notifyPaymentExpired(cancelledOrder);
 
         cancelled += 1;
         this.logger.info(
