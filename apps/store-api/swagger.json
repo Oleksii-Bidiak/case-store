@@ -6686,6 +6686,15 @@
             }
           },
           {
+            "name": "visibility",
+            "required": false,
+            "in": "query",
+            "description": "Filter by the moderator’s account-wide hide (TASK-596): `visible` — authors nobody has withdrawn (the queue, default); `hidden` — rows of withdrawn accounts only; `all` — both",
+            "schema": {
+              "$ref": "#/components/schemas/ReviewAuthorVisibility"
+            }
+          },
+          {
             "name": "page",
             "required": false,
             "in": "query",
@@ -14795,7 +14804,8 @@
             "type": "number",
             "description": "Quantity to add (1-99)",
             "example": 1,
-            "default": 1
+            "minimum": 1,
+            "maximum": 99
           }
         },
         "required": [
@@ -14809,7 +14819,9 @@
           "quantity": {
             "type": "number",
             "description": "New quantity for the cart item (1-99)",
-            "example": 3
+            "example": 3,
+            "minimum": 1,
+            "maximum": 99
           }
         },
         "required": [
@@ -19835,6 +19847,15 @@
           }
         }
       },
+      "ReviewHiddenReason": {
+        "type": "string",
+        "enum": [
+          "BAN",
+          "MODERATOR",
+          "DELETED"
+        ],
+        "description": "Why the author’s contribution was withdrawn — BAN (account switched off; lifted by the un-ban), MODERATOR (lifted only by a moderator’s restore), DELETED (account soft-deleted). Null when not withdrawn"
+      },
       "AdminReviewEntity": {
         "type": "object",
         "properties": {
@@ -19900,6 +19921,23 @@
             "description": "Whether this rating counts toward the product's average",
             "example": true
           },
+          "hiddenAt": {
+            "type": "string",
+            "description": "When the author’s contribution was withdrawn; null when it was not",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          },
+          "hiddenReason": {
+            "description": "Why the author’s contribution was withdrawn — BAN (account switched off; lifted by the un-ban), MODERATOR (lifted only by a moderator’s restore), DELETED (account soft-deleted). Null when not withdrawn",
+            "nullable": true,
+            "example": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReviewHiddenReason"
+              }
+            ]
+          },
           "userEmail": {
             "type": "string",
             "description": "Author email address",
@@ -19927,6 +19965,8 @@
           "reply",
           "textStatus",
           "ratingVisible",
+          "hiddenAt",
+          "hiddenReason",
           "userEmail",
           "productName",
           "productSku"
@@ -20050,6 +20090,14 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "ReviewAuthorVisibility": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "hidden",
+          "all"
         ]
       },
       "BulkReviewModerationDto": {
