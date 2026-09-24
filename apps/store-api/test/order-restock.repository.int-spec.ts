@@ -6,6 +6,7 @@ import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
 import { CacheService } from '../src/cache';
 import { PrismaService } from '../src/prisma';
+import { ProductIndexer } from '../src/search/product-indexer';
 
 /**
  * Integration tests for the cancel/restock concurrency guard (TASK-315) — the
@@ -48,6 +49,16 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
         // The repository only evicts caches after the transaction commits; the
         // concurrency guarantee under test does not involve Redis.
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
+        // TASK-616: the repository re-indexes restocked products (best-effort,
+        // after commit). Search is not under test — a resolving mock of every
+        // ProductIndexer method is enough for Nest to build OrderRepository.
+        {
+          provide: ProductIndexer,
+          useValue: {
+            index: jest.fn().mockResolvedValue(undefined),
+            remove: jest.fn().mockResolvedValue(undefined),
+          } satisfies ProductIndexer,
+        },
       ],
     }).compile();
 
@@ -57,7 +68,9 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
   });
 
   afterAll(async () => {
-    await prisma.$disconnect();
+    // If beforeAll failed, `prisma` was never assigned — do not mask the real
+    // error with a second TypeError here.
+    await prisma?.$disconnect();
   });
 
   beforeEach(async () => {
@@ -86,12 +99,20 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
   });
 
   afterEach(async () => {
-    await prisma.orderStatusHistory.deleteMany({});
-    await prisma.orderItem.deleteMany({});
-    await prisma.order.deleteMany({ where: { userId } });
-    await prisma.product.deleteMany({ where: { id: productId } });
-    await prisma.category.deleteMany({ where: { id: categoryId } });
-    await prisma.user.deleteMany({ where: { id: userId } });
+    // TASK-616: robust teardown. Skip when the module never compiled, scope
+    // every delete to THIS test's rows (the old `deleteMany({})` wiped other
+    // suites' history/items on the shared store_test), and never pass an unset
+    // id — Prisma drops `{ id: undefined }` and would delete every row.
+    if (!prisma) return;
+    if (userId) {
+      await prisma.orderStatusHistory.deleteMany({ where: { order: { userId } } });
+      await prisma.orderItem.deleteMany({ where: { order: { userId } } });
+      await prisma.order.deleteMany({ where: { userId } });
+    }
+    if (productId) await prisma.product.deleteMany({ where: { id: productId } });
+    if (categoryId) await prisma.category.deleteMany({ where: { id: categoryId } });
+    if (userId) await prisma.user.deleteMany({ where: { id: userId } });
+    userId = productId = categoryId = '';
   });
 
   /** A PENDING order holding a reservation, exactly as createFromCart leaves it. */
