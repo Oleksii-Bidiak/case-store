@@ -321,24 +321,36 @@
 
 /* ─────────────────────────────────────────────
    Base Styles
+   These are element defaults, so they live in `@layer base` (after Tailwind's
+   preflight, before `utilities`). An UN-layered rule beats every layered one
+   regardless of specificity — outside the layer, `* { border-color }` silently
+   cancelled every `border-{primary,destructive,ring,…}` utility on the site
+   (`aria-invalid:border-destructive`, `hover:border-primary/30`,
+   `focus-visible:border-ring`, …) and `button:not(:disabled)` cancelled every
+   `cursor-*` utility on an enabled button (TASK-735). Keep new element
+   defaults inside this block.
    ───────────────────────────────────────────── */
-body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-}
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  }
 
-/* Border global default */
-* {
-  border-color: var(--color-border);
-}
+  /* Border global default — overrides preflight's `border-color: currentColor`,
+     yields to any `border-*` colour utility. */
+  * {
+    border-color: var(--color-border);
+  }
 
-/* Enabled buttons always show the hand cursor — Tailwind v4 preflight resets
-   `<button>` to `cursor: default`, so this restores a single site-wide policy
-   (disabled buttons keep the default arrow). Removes the need for per-element
-   `cursor-pointer` utilities on plain buttons (TASK-259-C / F-03). */
-button:not(:disabled) {
-  cursor: pointer;
+  /* Enabled buttons show the hand cursor by default — Tailwind v4 preflight
+     resets `<button>` to `cursor: default`, so this restores a single site-wide
+     policy (disabled buttons keep the default arrow) without per-element
+     `cursor-pointer` utilities (TASK-259-C / F-03). An explicit `cursor-*`
+     utility (e.g. `cursor-zoom-in`) still wins. */
+  button:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 /* ─────────────────────────────────────────────
