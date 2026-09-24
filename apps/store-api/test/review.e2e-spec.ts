@@ -59,10 +59,13 @@ describe('ReviewController (e2e)', () => {
     isEmailVerified: jest.fn(),
     // TASK-598: hiding an account has to stop it writing NEW ratings too, not
     // merely withdraw the ones it already wrote.
-    isAuthorHidden: jest.fn().mockResolvedValue(false),
+    findAuthorHiddenReason: jest.fn().mockResolvedValue(null),
     // TASK-589: the one-click account-wide lever.
     hideAuthorReviews: jest.fn(),
     restoreAuthorReviews: jest.fn(),
+    // TASK-599: a moderator's restore asks whether the ACCOUNT still holds the rows.
+    findAccountHoldReason: jest.fn(),
+    relabelAuthorReviews: jest.fn(),
   };
 
   const authRepositoryMock = {
@@ -120,6 +123,7 @@ describe('ReviewController (e2e)', () => {
     ratingVisible: false,
     textStatus: 'PENDING',
     hiddenAt: null,
+    hiddenReason: null,
     createdIp: null,
     createdAt: now,
     updatedAt: now,
@@ -782,7 +786,7 @@ describe('ReviewController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1');
+      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1', 'MODERATOR');
       // The number the confirmation quotes is what the database wrote, not what
       // the operator assumed — the same rule as bulk moderation.
       expect(response.body.data.updatedCount).toBe(12);
@@ -815,7 +819,7 @@ describe('ReviewController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1');
+      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1', 'MODERATOR');
     });
   });
 
@@ -836,6 +840,8 @@ describe('ReviewController (e2e)', () => {
     it('gives the account its reviews back, and its ratings only if the address is proven', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
+      // A live account: nothing but the moderator's own verdict holds the rows.
+      reviewRepositoryMock.findAccountHoldReason.mockResolvedValue(null);
       reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(5);
 
       const response = await request(app.getHttpServer())
@@ -845,7 +851,12 @@ describe('ReviewController (e2e)', () => {
 
       // Lifting the moderator's verdict says nothing about the email gate; an
       // un-hide that forced `ratingVisible: true` would be a way around it.
-      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith('forgiven-1', false);
+      // And only the rows a MODERATOR hid (TASK-599) — a ban's rows wait for the un-ban.
+      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith(
+        'forgiven-1',
+        'MODERATOR',
+        false,
+      );
       expect(response.body.data.updatedCount).toBe(5);
     });
   });

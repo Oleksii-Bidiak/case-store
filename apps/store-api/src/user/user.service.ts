@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { ReviewHiddenReason } from '@prisma/client';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
 import { AuthRepository } from '../auth/auth.repository';
 import { EmailChangeService } from '../auth/email-change.service';
@@ -258,7 +259,7 @@ export class UserService {
     await this.authRepository.revokeAllUserTokens(id);
 
     // …and take down what they wrote, ratings included (TASK-589).
-    await this.reviewService.hideAuthor(id);
+    await this.reviewService.hideAuthor(id, ReviewHiddenReason.BAN);
 
     return UserEntity.fromPrisma(deactivatedUser);
   }
@@ -373,7 +374,7 @@ export class UserService {
     // The mirror of the ban (TASK-589). Whether the restored account's RATINGS
     // count again is decided by the email gate, not by this call — see
     // ReviewService.unhideAuthor.
-    await this.reviewService.unhideAuthor(id);
+    await this.reviewService.unhideAuthor(id, ReviewHiddenReason.BAN);
 
     return UserEntity.fromPrisma(activatedUser);
   }

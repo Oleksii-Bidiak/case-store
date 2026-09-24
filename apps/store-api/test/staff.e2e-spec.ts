@@ -142,6 +142,8 @@ describe('Staff (e2e)', () => {
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
+    // Hiding an author is three statements in one transaction since TASK-599.
+    $transaction: jest.fn((fn: (tx: unknown) => unknown): unknown => fn(prismaServiceMock)),
     auditLog: {
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
@@ -442,6 +444,11 @@ describe('Staff (e2e)', () => {
 
       expect(response.body.data.isActive).toBe(false);
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('target-manager');
+      // Same side effect as the customer ban, same reason (TASK-599).
+      expect(reviewRepositoryStub.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'target-manager', hiddenAt: null },
+        data: { hiddenAt: expect.any(Date), hiddenReason: 'BAN' },
+      });
     });
 
     it('is 403 on another ADMIN and on the OWNER', async () => {

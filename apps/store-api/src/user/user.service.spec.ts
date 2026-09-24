@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { ReviewHiddenReason, UserRole } from '@prisma/client';
 import { UserRepository, UpdateUserInput } from './user.repository';
 import { UserService } from './user.service';
 import { UserEntity, UserAdminCardEntity } from './entities';
@@ -576,7 +576,10 @@ describe('UserService', () => {
 
       await service.deactivateUser('user-uuid-2', adminActor);
 
-      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith('user-uuid-2');
+      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith(
+        'user-uuid-2',
+        ReviewHiddenReason.BAN,
+      );
     });
 
     it('does not touch the reviews of an account it refused to ban', async () => {
@@ -625,7 +628,11 @@ describe('UserService', () => {
 
       await service.activateUser('user-uuid-2', adminActor);
 
-      expect(reviewServiceMock.unhideAuthor).toHaveBeenCalledWith('user-uuid-2');
+      // BAN, and only BAN (TASK-599): an un-ban must not lift what a moderator hid.
+      expect(reviewServiceMock.unhideAuthor).toHaveBeenCalledWith(
+        'user-uuid-2',
+        ReviewHiddenReason.BAN,
+      );
     });
   });
 

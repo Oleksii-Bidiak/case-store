@@ -74,6 +74,9 @@ describe('UserController (e2e)', () => {
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
+    // Hiding an author is three statements in one transaction since TASK-599;
+    // the callback gets this same mock as its client.
+    $transaction: jest.fn((fn: (tx: unknown) => unknown): unknown => fn(prismaServiceMock)),
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
@@ -746,6 +749,12 @@ describe('UserController (e2e)', () => {
       expect(response.body).toHaveProperty('data');
       expect(response.body.data.isActive).toBe(false);
       expect(response.body.data).not.toHaveProperty('passwordHash');
+      // The ban hides what the account wrote, and says it was a BAN (TASK-599) —
+      // so the un-ban can lift exactly this and nothing a moderator did.
+      expect(prismaServiceMock.review.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-to-deactivate', hiddenAt: null },
+        data: { hiddenAt: expect.any(Date), hiddenReason: 'BAN' },
+      });
     });
 
     it('should return 404 when deactivating non-existent user', async () => {
@@ -811,6 +820,12 @@ describe('UserController (e2e)', () => {
       expect(response.body).toHaveProperty('data');
       expect(response.body.data.isActive).toBe(true);
       expect(response.body.data).not.toHaveProperty('passwordHash');
+      // TASK-599: the un-ban restores the BAN rows and only those. A review a
+      // moderator hid stays hidden — the where clause is the whole fix.
+      const restores = prismaServiceMock.review.updateMany.mock.calls.map(
+        (call: [{ where: Record<string, unknown> }]) => call[0].where,
+      );
+      expect(restores).toEqual([{ userId: 'user-to-activate', hiddenReason: 'BAN' }]);
     });
 
     it('should return 404 when activating non-existent user', async () => {

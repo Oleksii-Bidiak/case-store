@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, Review, ReviewReply, ReviewTextStatus } from '@prisma/client';
+import { Prisma, Review, ReviewHiddenReason, ReviewReply, ReviewTextStatus } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import {
   AUTHOR_NOT_HIDDEN,
@@ -61,6 +61,38 @@ export interface CreateReviewInput {
    * new row arrives withdrawn too. Null for everybody else.
    */
   hiddenAt?: Date | null;
+  /**
+   * Which decision withdrew the author (TASK-599) — required whenever
+   * `hiddenAt` is set, null otherwise; the database refuses the pair apart.
+   */
+  hiddenReason?: ReviewHiddenReason | null;
+}
+
+/**
+ * The hide reasons, weakest first (TASK-599). A reason is only ever replaced by a
+ * STRONGER one: banning an account a moderator already withdrew must leave the
+ * moderator's verdict in place, or the un-ban would lift it again — which is the
+ * exact defect this ranking exists to prevent.
+ */
+export const HIDDEN_REASON_RANK: readonly ReviewHiddenReason[] = [
+  ReviewHiddenReason.BAN,
+  ReviewHiddenReason.MODERATOR,
+  ReviewHiddenReason.DELETED,
+];
+
+/** The reasons strictly weaker than `reason` — the ones it may overwrite. */
+function weakerReasons(reason: ReviewHiddenReason): ReviewHiddenReason[] {
+  return HIDDEN_REASON_RANK.slice(0, HIDDEN_REASON_RANK.indexOf(reason));
+}
+
+/** The stronger of two reasons (null counts as weaker than any). */
+export function strongerReason(
+  a: ReviewHiddenReason | null,
+  b: ReviewHiddenReason | null,
+): ReviewHiddenReason | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return HIDDEN_REASON_RANK.indexOf(a) >= HIDDEN_REASON_RANK.indexOf(b) ? a : b;
 }
 
 /**
@@ -148,13 +180,19 @@ export class ReviewRepository {
         ratingVisible: data.ratingVisible,
         createdIp: data.createdIp,
         hiddenAt: data.hiddenAt ?? null,
+        hiddenReason: data.hiddenReason ?? null,
         textStatus: ReviewTextStatus.PENDING,
       },
     });
   }
 
   /**
-   * Has a moderator withdrawn this account's contribution (TASK-598)?
+   * Why this account's contribution is withdrawn, or null when it is not
+   * (TASK-598, reason since TASK-599).
+   *
+   * Returns the STRONGEST reason among the author's rows, so a new row inherits
+   * the decision that is actually holding the rest down — a row written as `BAN`
+   * beside thirty `MODERATOR` ones would be the only one an un-ban lifts.
    *
    * `hideAuthorReviews` stamps the rows that exist at that moment and nothing
    * consulted it again, so the lever did not hold: the account is not banned and
@@ -167,11 +205,37 @@ export class ReviewRepository {
    * keep in step is how `ratingVisible` and `hiddenAt` drifted apart in the first
    * place.
    */
-  async isAuthorHidden(userId: string): Promise<boolean> {
-    const hidden = await this.prisma.review.count({
-      where: { userId, hiddenAt: { not: null } },
+  async findAuthorHiddenReason(userId: string): Promise<ReviewHiddenReason | null> {
+    const rows = await this.prisma.review.findMany({
+      where: { userId, hiddenReason: { not: null } },
+      select: { hiddenReason: true },
+      distinct: ['hiddenReason'],
     });
-    return hidden > 0;
+    return rows.reduce<ReviewHiddenReason | null>(
+      (acc, row) => strongerReason(acc, row.hiddenReason),
+      null,
+    );
+  }
+
+  /**
+   * What is holding the ACCOUNT itself down, as a review hide reason (TASK-599):
+   * `DELETED` for a soft-deleted account, `BAN` for a switched-off one, null for
+   * a live one (or one that does not exist).
+   *
+   * Asked when a moderator restores an author: lifting the moderator's verdict
+   * must not publish the reviews of an account that is banned or deleted — those
+   * rows are handed over to the account's own reason instead, so they come back
+   * with the un-ban and not before.
+   */
+  async findAccountHoldReason(userId: string): Promise<ReviewHiddenReason | null> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isActive: true, deletedAt: true },
+    });
+    if (!user) return null;
+    if (user.deletedAt) return ReviewHiddenReason.DELETED;
+    if (!user.isActive) return ReviewHiddenReason.BAN;
+    return null;
   }
 
   /**
@@ -460,36 +524,87 @@ export class ReviewRepository {
    * leaves a state that looks entirely normal — the reviews disappear and the
    * product's score does not move.
    *
-   * Unfiltered on `hiddenAt` on purpose: re-hiding must be idempotent, and a
-   * `hiddenAt: null` filter here would skip a row whose stars had somehow been
-   * flipped back on, leaving the operator clicking a button that does nothing.
+   * Since TASK-599 it also records WHICH decision withdrew the rows. Three
+   * statements in one transaction:
+   *  1. every row of the author loses its stars — unfiltered on purpose, so
+   *     re-hiding stays idempotent and a row whose stars had somehow been flipped
+   *     back on is caught, rather than leaving the operator clicking a button
+   *     that does nothing;
+   *  2. visible rows are stamped hidden now, with `reason`;
+   *  3. rows already hidden for a WEAKER reason take `reason` but keep their
+   *     `hiddenAt` — "hidden when" is what an appeal asks. Rows hidden for an
+   *     equal or stronger reason are left alone: see {@link HIDDEN_REASON_RANK}.
    *
-   * Returns how many rows were written.
+   * Returns how many of the author's rows there are — the number the operator is
+   * told was withdrawn, as before.
    */
-  async hideAuthorReviews(userId: string): Promise<number> {
+  async hideAuthorReviews(userId: string, reason: ReviewHiddenReason): Promise<number> {
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.review.updateMany({
+        where: { userId },
+        data: { ratingVisible: false },
+      });
+      await tx.review.updateMany({
+        where: { userId, hiddenAt: null },
+        data: { hiddenAt: new Date(), hiddenReason: reason },
+      });
+      const weaker = weakerReasons(reason);
+      if (weaker.length > 0) {
+        await tx.review.updateMany({
+          where: { userId, hiddenReason: { in: weaker } },
+          data: { hiddenReason: reason },
+        });
+      }
+      return count;
+    });
+  }
+
+  /**
+   * Give an account back what ONE decision took (TASK-589; reason since
+   * TASK-599).
+   *
+   * Only rows hidden for exactly `reason` come back. An un-ban lifts `BAN` and
+   * leaves a moderator's `MODERATOR` rows where they are — before TASK-599 it
+   * cleared `hiddenAt` on every row of the user, so switching a banned spammer
+   * back on republished everything a moderator had pulled, without a trace.
+   *
+   * `ratingVisible` is a PARAMETER rather than a hard `true`, and that is the
+   * point: the flag folds two gates — the hide and the author's confirmed address
+   * — so lifting the first does not waive the second. The service re-asks the
+   * email gate and passes the answer here; a `true` written blind would turn an
+   * ordinary un-ban into a way around it, with nothing on any screen to say so.
+   *
+   * Returns how many rows were restored.
+   */
+  async restoreAuthorReviews(
+    userId: string,
+    reason: ReviewHiddenReason,
+    ratingVisible: boolean,
+  ): Promise<number> {
     const { count } = await this.prisma.review.updateMany({
-      where: { userId },
-      data: { hiddenAt: new Date(), ratingVisible: false },
+      where: { userId, hiddenReason: reason },
+      data: { hiddenAt: null, hiddenReason: null, ratingVisible },
     });
     return count;
   }
 
   /**
-   * Give an account its contribution back (TASK-589).
+   * Hand rows hidden for `from` over to `to`, keeping them hidden (TASK-599).
    *
-   * `ratingVisible` is a PARAMETER rather than a hard `true`, and that is the
-   * whole point: the flag folds two gates — the moderator's `hiddenAt` and the
-   * author's confirmed address — so lifting the first does not waive the second.
-   * The service re-asks the email gate and passes the answer here; a `true`
-   * written blind would turn an ordinary un-ban into a way around it, with
-   * nothing on any screen to say so.
+   * What a moderator's restore does to a banned or deleted account: the
+   * moderator's verdict is lifted, but the account's own state still holds the
+   * rows, so they wait under that reason instead of being published.
    *
-   * Returns how many rows were written.
+   * Returns how many rows changed hands.
    */
-  async restoreAuthorReviews(userId: string, ratingVisible: boolean): Promise<number> {
+  async relabelAuthorReviews(
+    userId: string,
+    from: ReviewHiddenReason,
+    to: ReviewHiddenReason,
+  ): Promise<number> {
     const { count } = await this.prisma.review.updateMany({
-      where: { userId },
-      data: { hiddenAt: null, ratingVisible },
+      where: { userId, hiddenReason: from },
+      data: { hiddenReason: to },
     });
     return count;
   }

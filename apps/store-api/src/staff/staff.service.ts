@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { User, UserRole } from '@prisma/client';
+import { ReviewHiddenReason, User, UserRole } from '@prisma/client';
 import { StaffRepository, type StaffAccount } from './staff.repository';
 import { UserRepository } from '../user/user.repository';
 import { AuthRepository } from '../auth/auth.repository';
@@ -316,13 +316,13 @@ export class StaffService {
 
     if (isActive) {
       const activated = await this.userRepository.activate(id);
-      await this.reviewService.unhideAuthor(id);
+      await this.reviewService.unhideAuthor(id, ReviewHiddenReason.BAN);
       return toEntity({ ...account, user: activated });
     }
 
     const deactivated = await this.userRepository.deactivate(id);
     await this.authRepository.revokeAllUserTokens(id);
-    await this.reviewService.hideAuthor(id);
+    await this.reviewService.hideAuthor(id, ReviewHiddenReason.BAN);
 
     return toEntity({ ...account, user: deactivated });
   }
