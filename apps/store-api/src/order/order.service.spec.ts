@@ -8,7 +8,13 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderHistoryNote, OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
+import {
+  OrderHistoryNote,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  PaymentAttemptStatus,
+} from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
@@ -1279,6 +1285,79 @@ describe('OrderService', () => {
         ADMIN_ID,
         expect.anything(),
       );
+    });
+  });
+
+  // ─── updateStatus — shipping without a confirmed payment (TASK-788) ─────────
+  // Decision B-1: shipping an online-paid order whose money has not arrived is
+  // allowed — but it must leave a trace, so "why did we send this" has an
+  // answer a month later. The note is decided from the server's own read of the
+  // payment, not from what the client claims.
+
+  describe('updateStatus — shipping without a confirmed payment (TASK-788)', () => {
+    const seed = (current: Partial<OrderWithItems>) => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PROCESSING, ...current }),
+      );
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, ...current }),
+      );
+    };
+    const optionsPassed = () =>
+      orderRepositoryMock.updateStatus.mock.calls[0][5] as { note?: OrderHistoryNote };
+
+    it.each([PaymentStatus.PENDING, PaymentStatus.FAILED])(
+      'notes SHIPPED_UNPAID on an ONLINE order whose payment is %s',
+      async (paymentStatus) => {
+        seed({ paymentMethod: PaymentMethod.ONLINE, paymentStatus });
+
+        await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID, {
+          confirmUnpaidShipment: true,
+        });
+
+        expect(optionsPassed().note).toBe(OrderHistoryNote.SHIPPED_UNPAID);
+      },
+    );
+
+    it('notes it from the payment state even when the client sent no confirmation', async () => {
+      seed({ paymentMethod: PaymentMethod.ONLINE, paymentStatus: PaymentStatus.PENDING });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+      expect(optionsPassed().note).toBe(OrderHistoryNote.SHIPPED_UNPAID);
+    });
+
+    it.each([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED])(
+      'writes no note when the money arrived (%s) — even if the client asked to confirm',
+      async (paymentStatus) => {
+        seed({ paymentMethod: PaymentMethod.ONLINE, paymentStatus });
+
+        await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID, {
+          confirmUnpaidShipment: true,
+        });
+
+        expect(optionsPassed().note).toBeUndefined();
+      },
+    );
+
+    it('writes no note for cash on delivery — unpaid at shipment is the normal case', async () => {
+      seed({ paymentMethod: PaymentMethod.ON_DELIVERY, paymentStatus: PaymentStatus.PENDING });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+      expect(optionsPassed().note).toBeUndefined();
+    });
+
+    it('writes no note for a move that is not a shipment', async () => {
+      seed({
+        status: OrderStatus.CONFIRMED,
+        paymentMethod: PaymentMethod.ONLINE,
+        paymentStatus: PaymentStatus.PENDING,
+      });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.PROCESSING, ADMIN_ID);
+
+      expect(optionsPassed().note).toBeUndefined();
     });
   });
 

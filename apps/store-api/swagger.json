@@ -24722,6 +24722,16 @@
             "nullable": true,
             "example": "550e8400-e29b-41d4-a716-446655440002"
           },
+          "note": {
+            "type": "string",
+            "description": "A flag on the row for an event the operator must see (TASK-932 / TASK-788): PAID_AFTER_CANCEL on a payment row — the money arrived after the order was cancelled; SHIPPED_UNPAID on a status row — shipped while the online payment was unconfirmed. Null on an ordinary row.",
+            "enum": [
+              "PAID_AFTER_CANCEL",
+              "SHIPPED_UNPAID"
+            ],
+            "nullable": true,
+            "example": null
+          },
           "changedAt": {
             "format": "date-time",
             "type": "string",
@@ -24738,6 +24748,7 @@
           "fromPaymentStatus",
           "toPaymentStatus",
           "changedBy",
+          "note",
           "changedAt"
         ]
       },
@@ -25110,6 +25121,11 @@
             "description": "The order's `updatedAt` as the client last read it. When supplied and no longer current, the request is rejected with 409 ORDER_STALE (another admin changed the order first). Omit for system-driven changes.",
             "format": "date-time",
             "example": "2026-07-28T10:15:30.000Z"
+          },
+          "confirmUnpaidShipment": {
+            "type": "boolean",
+            "description": "The operator confirmed shipping an ONLINE order whose payment is not confirmed yet (the admin dialog «Оплату не підтверджено — відправляти?»). Such a move is recorded in the order history with note SHIPPED_UNPAID — decided from the payment state, with or without this flag.",
+            "example": true
           }
         },
         "required": [

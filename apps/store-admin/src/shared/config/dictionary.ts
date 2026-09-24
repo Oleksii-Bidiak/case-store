@@ -2596,9 +2596,15 @@ export const dict = {
     unpaidShipAmount: "До сплати",
     unpaidShipConfirm: "Все одно відправити",
     unpaidShipCancel: "Не відправляти",
-    // Рядок, що лягає в OrderStatusHistory як примітка оператора.
+    // Підпис примітки SHIPPED_UNPAID на рядку історії (TASK-788): сервер
+    // ставить її сам, коли оператор відправляє онлайн-замовлення з оплатою
+    // PENDING/FAILED; таймлайн показує цей рядок під переходом.
     unpaidShipHistoryNote:
       "Відправлено без підтвердженої онлайн-оплати — підтверджено оператором.",
+    // Підпис примітки PAID_AFTER_CANCEL (TASK-619 / TASK-932): оплата прийшла,
+    // коли замовлення вже скасоване; рішення за оператором.
+    paidAfterCancelHistoryNote:
+      "Оплата надійшла після скасування — відновіть замовлення або поверніть кошти.",
 
     // One string per stable 409 code from `order.errors.ts`. The client never
     // echoes a raw backend message: these codes are the contract, the wording is

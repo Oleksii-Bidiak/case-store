@@ -101,6 +101,46 @@ describe("OrderTimeline (TASK-251)", () => {
     ).toBeInTheDocument();
   });
 
+  // TASK-932 / TASK-788: a flagged row must not read as an ordinary move.
+  it("shows the note of a flagged row under its change", async () => {
+    mockHistory([
+      {
+        ...historyRows[1],
+        id: "hist-ship",
+        fromStatus: "PROCESSING",
+        toStatus: "SHIPPED",
+        note: "SHIPPED_UNPAID",
+      },
+      {
+        ...historyRows[1],
+        id: "hist-pay",
+        changeType: "PAYMENT_STATUS",
+        fromStatus: null,
+        toStatus: null,
+        fromPaymentStatus: "PENDING",
+        toPaymentStatus: "PAID",
+        changedBy: null,
+        note: "PAID_AFTER_CANCEL",
+      },
+      { ...historyRows[0], note: null },
+    ]);
+
+    renderWithProviders(
+      <OrderTimeline orderId="order-1" customerUserId={CUSTOMER_USER_ID} />,
+    );
+
+    // Wait for the data, not the skeleton (which renders list items too).
+    await screen.findByText("Статус: В обробці → Відправлено");
+    const items = screen.getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent(dict.orderStatus.unpaidShipHistoryNote);
+    expect(items[1]).toHaveTextContent(
+      dict.orderStatus.paidAfterCancelHistoryNote,
+    );
+    expect(items[2]).not.toHaveTextContent(
+      dict.orderStatus.unpaidShipHistoryNote,
+    );
+  });
+
   it("shows the empty-state copy when there are no rows", async () => {
     mockHistory([]);
 

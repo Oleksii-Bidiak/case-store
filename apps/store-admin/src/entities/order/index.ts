@@ -80,4 +80,8 @@ export { isPreShipmentStatus } from "./is-pre-shipment-status";
 export { orderDerivedMarks, minutesUntil } from "./order-marks";
 export type { OrderMark, OrderMarkKind, OrderMarkSource } from "./order-marks";
 
-export { historyActorLabel, historyChangeLabel } from "./history-label";
+export {
+  historyActorLabel,
+  historyChangeLabel,
+  historyNoteLabel,
+} from "./history-label";

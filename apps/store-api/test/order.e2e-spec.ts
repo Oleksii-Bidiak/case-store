@@ -3,7 +3,14 @@ import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/com
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
-import { OrderStatus, PaymentStatus, OrderHistoryChangeType, Prisma } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentStatus,
+  PaymentMethod,
+  OrderHistoryChangeType,
+  OrderHistoryNote,
+  Prisma,
+} from '@prisma/client';
 import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import { AppModule } from '../src/app.module';
@@ -1311,6 +1318,43 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.findHistoryByOrderId).toHaveBeenCalledWith('order-e2e-1');
     });
 
+    it('exposes the row note — PAID_AFTER_CANCEL and SHIPPED_UNPAID (TASK-932 / TASK-788)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      orderRepositoryMock.findHistoryByOrderId.mockResolvedValue([
+        { ...historyRows[1], note: null },
+        {
+          ...historyRows[1],
+          id: 'hist-3',
+          fromStatus: OrderStatus.PROCESSING,
+          toStatus: OrderStatus.SHIPPED,
+          note: OrderHistoryNote.SHIPPED_UNPAID,
+        },
+        {
+          ...historyRows[1],
+          id: 'hist-4',
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromStatus: null,
+          toStatus: null,
+          fromPaymentStatus: PaymentStatus.PENDING,
+          toPaymentStatus: PaymentStatus.PAID,
+          changedBy: null,
+          note: OrderHistoryNote.PAID_AFTER_CANCEL,
+        },
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.map((row: { note: unknown }) => row.note)).toEqual([
+        null,
+        OrderHistoryNote.SHIPPED_UNPAID,
+        OrderHistoryNote.PAID_AFTER_CANCEL,
+      ]);
+    });
+
     it('should return 404 when the order does not exist', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       orderRepositoryMock.findById.mockResolvedValue(null);
@@ -1543,6 +1587,70 @@ describe('OrderController (e2e)', () => {
         // token (absent here — the request declared no `expectedUpdatedAt`).
         { evictProductStockCaches: false, expectedUpdatedAt: undefined },
       );
+    });
+
+    // ── TASK-788: shipping without a confirmed payment leaves a trace ──────────
+    it('ships an unpaid ONLINE order with the operator’s confirmation and notes it in history (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.PROCESSING,
+          paymentMethod: PaymentMethod.ONLINE,
+          paymentStatus: PaymentStatus.PENDING,
+        }),
+      );
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, paymentMethod: PaymentMethod.ONLINE }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.SHIPPED, confirmUnpaidShipment: true })
+        .expect(200);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-e2e-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PENDING,
+        admin.id,
+        expect.objectContaining({ note: OrderHistoryNote.SHIPPED_UNPAID }),
+      );
+    });
+
+    it('ships a PAID order with no note (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.PROCESSING,
+          paymentMethod: PaymentMethod.ONLINE,
+          paymentStatus: PaymentStatus.PAID,
+        }),
+      );
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.SHIPPED })
+        .expect(200);
+
+      expect(orderRepositoryMock.updateStatus.mock.calls[0][5]).not.toHaveProperty('note');
+    });
+
+    it('refuses a non-boolean confirmUnpaidShipment (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.SHIPPED, confirmUnpaidShipment: 'yes please' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 
     // ── TASK-332: the server, not the admin UI, decides what is legal ──────────

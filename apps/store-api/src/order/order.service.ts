@@ -188,6 +188,23 @@ function shouldAutoRestock(currentStatus: OrderStatus, targetStatus: OrderStatus
 }
 
 /**
+ * «No money has arrived yet» on an order paid online (TASK-788) — the same test
+ * as the admin panel's «Оплату не підтверджено — відправляти?» dialog
+ * (`order-status-select.tsx`, TASK-468). PENDING/FAILED only: PARTIALLY_REFUNDED
+ * and REFUNDED are reachable solely FROM PAID, so there the money did arrive.
+ */
+function isUnconfirmedOnlinePayment(order: {
+  // Optional on the row type (older fixtures); an absent method is not ONLINE.
+  paymentMethod?: PaymentMethod;
+  paymentStatus: PaymentStatus;
+}): boolean {
+  return (
+    order.paymentMethod === PaymentMethod.ONLINE &&
+    (order.paymentStatus === PaymentStatus.PENDING || order.paymentStatus === PaymentStatus.FAILED)
+  );
+}
+
+/**
  * Pagination metadata returned alongside a list of orders.
  */
 export interface PaginationMeta {
@@ -866,12 +883,21 @@ export class OrderService {
    * `expectedUpdatedAt` is optional so system callers with no stale UI to guard
    * against — the payment callback, the reconcile worker — are not forced to
    * invent one.
+   *
+   * TASK-788: a move to SHIPPED of an ONLINE-paid order whose payment is still
+   * PENDING/FAILED writes its STATUS history row with `note = SHIPPED_UNPAID`.
+   * The note is decided from the order's own payment state, never from the
+   * client: a request that skipped the admin's confirmation dialog must not be
+   * able to ship unpaid without a trace, and a confirmation sent for an order
+   * that has meanwhile been paid must not write a false one.
+   * `confirmUnpaidShipment` is the operator's acknowledgment from that dialog;
+   * it is logged with the event, next to what the server actually found.
    */
   async updateStatus(
     orderId: string,
     status: OrderStatus,
     changedBy: string | null,
-    options: { expectedUpdatedAt?: Date } = {},
+    options: { expectedUpdatedAt?: Date; confirmUnpaidShipment?: boolean } = {},
   ): Promise<OrderEntity> {
     const existing = await this.orderRepository.findById(orderId);
 
@@ -975,6 +1001,7 @@ export class OrderService {
     // reserved membership unchanged and needs no eviction.
     const crossesPreShipmentBoundary =
       PRE_SHIPMENT_STATUSES.has(existing.status) !== PRE_SHIPMENT_STATUSES.has(status);
+    const shippedUnpaid = status === OrderStatus.SHIPPED && isUnconfirmedOnlinePayment(existing);
     const order = await this.orderRepository.updateStatus(
       orderId,
       existing.status,
@@ -984,8 +1011,24 @@ export class OrderService {
       {
         evictProductStockCaches: crossesPreShipmentBoundary,
         expectedUpdatedAt: options.expectedUpdatedAt,
+        ...(shippedUnpaid ? { note: OrderHistoryNote.SHIPPED_UNPAID } : {}),
       },
     );
+
+    if (shippedUnpaid) {
+      this.logger.info(
+        {
+          event: 'order.shipped_unpaid',
+          orderId,
+          paymentStatus: existing.paymentStatus,
+          // Whether the operator went through the confirmation dialog — the note
+          // is written either way, from the payment state above.
+          confirmedByOperator: options.confirmUnpaidShipment === true,
+          changedBy,
+        },
+        'Order shipped without a confirmed online payment',
+      );
+    }
 
     // TASK-335: the parcel has left the warehouse — tell the customer, with the
     // waybill if the operator has already entered one. If they enter it later,

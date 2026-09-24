@@ -26,6 +26,8 @@ export interface OrderStatusHistoryRow {
   fromPaymentStatus: PaymentStatus | null;
   toPaymentStatus: PaymentStatus | null;
   changedBy: string | null;
+  /** TASK-619 / TASK-788: a flag the operator lists query; null on an ordinary row. */
+  note: OrderHistoryNote | null;
   changedAt: Date;
 }
 

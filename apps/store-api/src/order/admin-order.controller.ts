@@ -571,6 +571,9 @@ export class AdminOrderController {
       // The DTO carries an ISO string on purpose (see its docblock); this is the
       // single, explicit conversion.
       ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
+      ...(dto.confirmUnpaidShipment !== undefined
+        ? { confirmUnpaidShipment: dto.confirmUnpaidShipment }
+        : {}),
     });
 
     return { data: order };

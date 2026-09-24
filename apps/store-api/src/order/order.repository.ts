@@ -5,6 +5,7 @@ import {
   PaymentStatus,
   PaymentMethod,
   OrderHistoryChangeType,
+  OrderHistoryNote,
 } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { normalizeUaPhone, phoneDigits } from '../common/validators';
@@ -915,7 +916,12 @@ export class OrderRepository {
     toStatus: OrderStatus,
     paymentStatus: PaymentStatus,
     changedBy: string | null,
-    options: { evictProductStockCaches?: boolean; expectedUpdatedAt?: Date } = {},
+    options: {
+      evictProductStockCaches?: boolean;
+      expectedUpdatedAt?: Date;
+      /** TASK-788: a flag on the history row (e.g. SHIPPED_UNPAID); the service decides. */
+      note?: OrderHistoryNote;
+    } = {},
   ): Promise<OrderWithItems> {
     // TASK-251: converted from a bare update to a $transaction so the status
     // change and its audit-log row commit (or roll back) together. `fromStatus`
@@ -944,6 +950,7 @@ export class OrderRepository {
           fromStatus,
           toStatus,
           changedBy,
+          ...(options.note ? { note: options.note } : {}),
         },
       });
       return tx.order.findUniqueOrThrow({

@@ -928,6 +928,40 @@ describe('OrderRepository', () => {
       expect(cacheMock.del).not.toHaveBeenCalled();
     });
 
+    it('writes the history row with the note the service decided on (TASK-788)', async () => {
+      const tx = seedTx();
+
+      await repository.updateStatus(
+        'order-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PENDING,
+        'admin-uuid-1',
+        { note: OrderHistoryNote.SHIPPED_UNPAID },
+      );
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          toStatus: OrderStatus.SHIPPED,
+          note: OrderHistoryNote.SHIPPED_UNPAID,
+        }),
+      });
+    });
+
+    it('writes no note on an ordinary move', async () => {
+      const tx = seedTx();
+
+      await repository.updateStatus(
+        'order-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PAID,
+        'admin-uuid-1',
+      );
+
+      expect(tx.orderStatusHistory.create.mock.calls[0][0].data).not.toHaveProperty('note');
+    });
+
     // ── TASK-332: optimistic locking on updatedAt (edge case E-11) ──────────────
     // The service already compared versions before calling, but that read sits
     // outside this transaction — two admins clicking at the same moment both pass
