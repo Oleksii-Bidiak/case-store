@@ -31,6 +31,22 @@ enum UserRole {
   MANAGER
 }
 
+/// What an EmailVerificationToken is for (TASK-396). One table for all three,
+/// because each is the same single-use, hashed-at-rest link that proves control
+/// of one inbox; only what the click DOES differs.
+///
+/// VERIFY              — proves the account's current address (TASK-342).
+/// EMAIL_CHANGE        — proves a NEW address before it becomes the login. Mailed
+///                       to the new address; confirming applies the change.
+/// EMAIL_CHANGE_REVERT — mailed to the OLD address when a change is requested:
+///                       "this wasn't me". Cancels a pending change or restores
+///                       the old address, and signs every session out.
+enum EmailTokenPurpose {
+  VERIFY
+  EMAIL_CHANGE
+  EMAIL_CHANGE_REVERT
+}
+
 /// How the customer chose to pay (TASK-330). Distinct from PaymentStatus, which
 /// says whether money actually moved: an ON_DELIVERY order stays PENDING until the
 /// operator settles it by hand, an ONLINE one until the provider's callback says
@@ -2010,10 +2026,21 @@ model EmailVerificationToken {
   token     String    @unique
   userId    String    @map("user_id")
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The address this link was mailed to — the one a click PROVES.
   email     String
   expiresAt DateTime  @map("expires_at")
   usedAt    DateTime? @map("used_at")
   createdAt DateTime  @default(now()) @map("created_at")
+
+  /// What a click on this link does (TASK-396). Every row that existed before
+  /// the column is a plain verification link, which is what the default says.
+  purpose EmailTokenPurpose @default(VERIFY)
+
+  /// The account's address when the link was issued — set for the two
+  /// address-change purposes. On EMAIL_CHANGE, confirming is refused unless the
+  /// account still has this address (the change was requested FROM it). On
+  /// EMAIL_CHANGE_REVERT, it is the address the click restores.
+  previousEmail String? @map("previous_email")
 
   @@index([userId])
   @@index([expiresAt])
