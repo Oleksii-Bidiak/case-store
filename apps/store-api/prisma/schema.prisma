@@ -1104,6 +1104,11 @@ model Discount {
   startsAt       DateTime?    @map("starts_at")
   expiresAt      DateTime?    @map("expires_at")
   isActive       Boolean      @default(true) @map("is_active")
+  /// «Показувати на сторінці «Акції»» (TASK-731, рішення B-11). A new code is
+  /// private until the operator publishes it; the public feed
+  /// (`GET /discounts/active`) filters on this in the repository, so an
+  /// unpublished code is invisible in the API too — it still applies by code.
+  showOnPromoPage Boolean     @default(false) @map("show_on_promo_page")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
