@@ -380,7 +380,9 @@ export class AuthController {
   })
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
   async refresh(
-    @CurrentUser('id') userId: string,
+    // The refresh token alone identifies the session — AuthService resolves
+    // its owner from the stored row. The `@CurrentUser('id')` that used to sit
+    // here was never read (TASK-815).
     @CurrentUser('refreshToken') refreshToken: string,
     @Res({ passthrough: true }) response: Response,
   ): Promise<{ data: AuthResponse }> {

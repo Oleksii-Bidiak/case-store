@@ -2,7 +2,6 @@ import { Test } from '@nestjs/testing';
 import { Body, Controller, Get, Module, Post, type ExecutionContext } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { ThrottlerModule, type ThrottlerStorage } from '@nestjs/throttler';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -18,10 +17,9 @@ import { JwtAuthGuard } from '../src/auth';
 import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
 import { EmailVerificationService } from '../src/auth/email-verification.service';
+import { GuestStateMergeService } from '../src/auth/guest-state-merge.service';
 import { GoogleAuthGuard, JwtRefreshGuard } from '../src/auth/guards';
 import { PermissionService } from '../src/auth/permissions';
-import { CartService } from '../src/cart/cart.service';
-import { WishlistService } from '../src/wishlist/wishlist.service';
 import { OptionalJwtAuthGuard } from '../src/cart/guards';
 import { CartIdentityInterceptor } from '../src/cart/interceptors';
 
@@ -236,7 +234,8 @@ describe('Auth token-confirm routes fail closed when the limiter is down (e2e, T
   let app: INestApplication;
   const authService = {
     confirmPasswordReset: jest.fn().mockResolvedValue(undefined),
-    refreshToken: jest.fn().mockResolvedValue({ accessToken: 'a', refreshToken: 'r' }),
+    refreshTokenTtlMs: 7 * 24 * 60 * 60 * 1000,
+    refreshToken: jest.fn().mockResolvedValue({ userId: 'u', accessToken: 'a', refreshToken: 'r' }),
   };
   const emailVerificationService = {
     confirm: jest.fn().mockResolvedValue({ claimedOrders: 0 }),
@@ -255,9 +254,8 @@ describe('Auth token-confirm routes fail closed when the limiter is down (e2e, T
       { provide: AuthService, useValue: authService },
       { provide: EmailVerificationService, useValue: emailVerificationService },
       { provide: ConfigService, useValue: { get: (_key: string, fallback?: unknown) => fallback } },
-      { provide: JwtService, useValue: {} },
-      { provide: CartService, useValue: {} },
-      { provide: WishlistService, useValue: {} },
+      // TASK-824: the guest merge moved out of the controller into this service.
+      { provide: GuestStateMergeService, useValue: {} },
       { provide: PermissionService, useValue: {} },
     ],
   })
