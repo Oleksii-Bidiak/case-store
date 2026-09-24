@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-941**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-942**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -1017,6 +1017,7 @@
 | TASK-887 | [знайдено в TASK-773] Схема чекауту без стель під бекенд: `features/checkout/model/checkout-schema.ts` має лише `min(1)` на firstName/lastName/city/deliveryAddress і жодного `max` на гостьовому email, а `address.dto.ts` обмежує 100/100/…/255, `guest-contact.dto.ts` — email 254 і name 120 (firstName+lastName разом). Задовге значення проходить клієнт і вертається 400 англійською під кнопкою замість помилки поля — той самий клас, що W19, лише гучний | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-888 | [знайдено в TASK-773] Шоста «мовчазна кнопка» класу W19: `widgets/contact/model/contact-schema.ts:35` — `orderRef: z.string().trim().max(120).optional()` без повідомлення, а поле в `widgets/contact/ui/contact-form.tsx:235-239` без `maxLength` і без рендеру помилки → номер замовлення 121+ символ мовчки блокує надсилання (`topic max(60)` задається лише кнопками — недосяжний) | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-889 | [знайдено в TASK-773] Барель `apps/store-client/src/shared/api/index.ts` не реекспортує хелпери сесії — `clearSessionMarker`, `markSessionActive`, `shouldAttemptSessionRefresh` і новий `onSessionExpired`; `auth.context.tsx` бере їх напряму з `@/shared/api/instance` за коментарем TASK-526. Нешкідливо, але публічний API бареля неповний | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
+| TASK-941 | [знайдено в TASK-773] `POST /api/orders` не дає 401 на протухлий токен: `apps/store-api/src/order/order.controller.ts:185-187` стоїть під `OptionalJwtAuthGuard` (`cart/guards/optional-jwt-auth.guard.ts`), що робить прострочений/невалідний bearer гостем, тож у покупця з живим refresh-cookie замовлення з кроку 2 вертається 400 англійською «Either an existing customer or contact details are required…» (`order.service.ts:1081-1083`) — перехоплювач не спрацьовує, `onSessionExpired` не шлеться, глухий кут лишається; RTL-тест кроку 2 у `checkout-view.test.tsx` мокає 401, якого бекенд не надсилає. Фікс: клієнт оновлює застарілий токен перед POST замовлення, або гард відхиляє наявний, але невалідний bearer (401); перевірка — SF-CHK-27 | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-890 | [знайдено в TASK-772] Неефективний обхід тротлера в e2e store-api: 33 спеки в `apps/store-api/test` (cart, user, staff, review, returns, newsletter…) роблять `.overrideProvider(APP_GUARD).useClass(ThrottlerGuardPassThrough)`, але це не доходить до глобального `ClientIpThrottlerGuard` (задокументовано в `order.e2e-spec.ts`) — кожна з них за один запит під `@Throttle` від хибних 429; перевести на override `ThrottlerStorage`, як у `auth.e2e-spec.ts` | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-891 | [знайдено в TASK-772] Email власника в сіді не нормалізується: `apps/store-api/prisma/seed/seeders/users.seeder.ts:75` робить upsert із сирим `ADMIN_SEED_EMAIL` — значення в змішаному регістрі створить рядок, якого (тепер нормалізуючий) вхід не знайде; фікс в один рядок `normalizeEmailAddress(...)`, як у `create-admin.ts` | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-892 | [знайдено в TASK-772] Подвійне приведення email у `ContactService`: `apps/store-api/src/contact/contact.service.ts:101` робить `dto.email.trim().toLowerCase()` для перевірки кулдауна, хоча DTO вже нормалізує; нешкідливо — прибрати при чистці | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
@@ -1369,6 +1370,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-941**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-942**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
