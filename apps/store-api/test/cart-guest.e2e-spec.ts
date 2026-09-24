@@ -10,6 +10,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
+import { createCartRepositoryMock } from './cart-repository.mock';
 import { CartService } from '../src/cart/cart.service';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -50,18 +51,7 @@ describe('Cart — guest & merge (e2e)', () => {
   const GUEST_TOKEN = 'guest-token-e2e-1';
 
   // Mock CartRepository — clean architecture boundary
-  const cartRepositoryMock = {
-    findByUserId: jest.fn(),
-    findByToken: jest.fn(),
-    findOrCreate: jest.fn(),
-    assignCartToUser: jest.fn(),
-    mergeGuestCartIntoUser: jest.fn(),
-    addItem: jest.fn(),
-    updateItem: jest.fn(),
-    removeItem: jest.fn(),
-    clearItems: jest.fn(),
-    findProductForCartValidation: jest.fn(),
-  };
+  const cartRepositoryMock = createCartRepositoryMock();
 
   // Mock AuthRepository — for login + JWT strategy user lookup
   const authRepositoryMock = {
@@ -107,12 +97,17 @@ describe('Cart — guest & merge (e2e)', () => {
 
   // ─── Test data ──────────────────────────────────────────────────────────────
 
-  const testProduct = {
+  type CartLine = CartWithItems['items'][number];
+
+  const testProduct: CartLine['product'] = {
     id: 'prod-e2e-1',
     name: 'iPhone 15 Pro Case — Clear MagSafe',
+    slug: 'iphone-15-pro-case-clear-magsafe',
     price: { toString: () => '29.99' },
     compareAtPrice: null,
+    stock: 50,
     isActive: true,
+    categoryId: 'cat-e2e-1',
     // TASK-297: the line's availability now folds in the CATEGORY's status, so
     // CART_ITEMS_INCLUDE joins it — the mock must supply it or fromPrisma throws.
     category: { isActive: true },
@@ -121,15 +116,14 @@ describe('Cart — guest & merge (e2e)', () => {
     images: [],
   };
 
-  const guestCartItem = {
+  const guestCartItem: CartLine = {
     id: 'guest-item-1',
     productId: 'prod-e2e-1',
-    variantId: null,
     quantity: 1,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    addons: [],
     product: testProduct,
-    variant: null,
   };
 
   const makeGuestCart = (items: CartWithItems['items'] = []): CartWithItems => ({
@@ -299,7 +293,14 @@ describe('Cart — guest & merge (e2e)', () => {
       cartRepositoryMock.findByToken
         .mockResolvedValueOnce(makeGuestCart([guestCartItem]))
         .mockResolvedValueOnce(makeGuestCart([{ ...guestCartItem, quantity: 3 }]));
-      cartRepositoryMock.updateItem.mockResolvedValue({ ...guestCartItem, quantity: 3 });
+      cartRepositoryMock.updateItem.mockResolvedValue({
+        id: guestCartItem.id,
+        cartId: 'guest-cart-e2e-1',
+        productId: guestCartItem.productId,
+        quantity: 3,
+        createdAt: guestCartItem.createdAt,
+        updatedAt: guestCartItem.updatedAt,
+      });
 
       const res = await request(app.getHttpServer())
         .patch('/api/cart/items/guest-item-1')

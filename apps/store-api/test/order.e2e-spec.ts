@@ -17,6 +17,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
+import { createCartRepositoryMock } from './cart-repository.mock';
 import { OrderRepository } from '../src/order/order.repository';
 import { OrderLookupRepository } from '../src/order/order-lookup.repository';
 // TASK-425: the export's row cap, asserted rather than restated as a literal.
@@ -95,19 +96,7 @@ describe('OrderController (e2e)', () => {
     createRedemption: jest.fn(),
   };
 
-  const cartRepositoryMock = {
-    findByUserId: jest.fn(),
-    findByToken: jest.fn(),
-    findById: jest.fn(),
-    findOrCreate: jest.fn(),
-    assignCartToUser: jest.fn(),
-    mergeGuestCartIntoUser: jest.fn(),
-    addItem: jest.fn(),
-    updateItem: jest.fn(),
-    removeItem: jest.fn(),
-    clearItems: jest.fn(),
-    findItem: jest.fn(),
-  };
+  const cartRepositoryMock = createCartRepositoryMock();
 
   const authRepositoryMock = {
     findByEmail: jest.fn(),
@@ -182,29 +171,25 @@ describe('OrderController (e2e)', () => {
   const cartItem: CartWithItems['items'][number] = {
     id: 'cart-item-e2e-1',
     productId: 'prod-e2e-1',
-    variantId: 'var-e2e-1',
     quantity: 2,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    addons: [],
     product: {
       id: 'prod-e2e-1',
       name: 'iPhone 15 Pro Case',
+      slug: 'iphone-15-pro-case',
       price: { toString: () => '29.99' },
       compareAtPrice: null,
+      stock: 50,
       isActive: true,
+      categoryId: 'cat-e2e-1',
       // TASK-297: checkout re-checks the owning category's status, so the cart
       // fixture must carry it (mirrors CART_ITEMS_INCLUDE's category select).
       category: { isActive: true },
       // Match the CartWithItems contract: CART_ITEMS_INCLUDE always selects
       // product.images, so the cart fixture must carry it too.
       images: [],
-    },
-    variant: {
-      id: 'var-e2e-1',
-      name: 'Black',
-      price: { toString: () => '29.99' },
-      stock: 50,
-      isActive: true,
     },
   };
 
@@ -242,7 +227,6 @@ describe('OrderController (e2e)', () => {
         id: 'order-item-e2e-1',
         orderId: 'order-e2e-1',
         productId: 'prod-e2e-1',
-        variantId: 'var-e2e-1',
         quantity: 2,
         price: { toString: () => '29.99' },
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -252,7 +236,7 @@ describe('OrderController (e2e)', () => {
           slug: 'iphone-15-pro-case',
           images: [{ url: ORDER_ITEM_IMAGE_URL }],
         },
-        variant: { id: 'var-e2e-1', name: 'Black' },
+        addons: [],
       },
     ],
     ...overrides,

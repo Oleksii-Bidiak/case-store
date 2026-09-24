@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
+import { createCartRepositoryMock } from './cart-repository.mock';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
@@ -45,18 +46,7 @@ describe('CartController (e2e)', () => {
   const VALID_PRODUCT_UUID = '550e8400-e29b-41d4-a716-446655440000';
 
   // Mock CartRepository — clean architecture boundary
-  const cartRepositoryMock = {
-    findByUserId: jest.fn(),
-    findByToken: jest.fn(),
-    findOrCreate: jest.fn(),
-    assignCartToUser: jest.fn(),
-    mergeGuestCartIntoUser: jest.fn(),
-    addItem: jest.fn(),
-    updateItem: jest.fn(),
-    removeItem: jest.fn(),
-    clearItems: jest.fn(),
-    findProductForCartValidation: jest.fn(),
-  };
+  const cartRepositoryMock = createCartRepositoryMock();
 
   // Mock AuthRepository — for JWT strategy user lookup
   const authRepositoryMock = {
@@ -108,12 +98,17 @@ describe('CartController (e2e)', () => {
   const userA = { id: 'user-a-e2e-1', role: 'CUSTOMER' as const };
   const userB = { id: 'user-b-e2e-1', role: 'CUSTOMER' as const };
 
-  const testProduct = {
+  type CartLine = CartWithItems['items'][number];
+
+  const testProduct: CartLine['product'] = {
     id: 'prod-e2e-1',
     name: 'iPhone 15 Pro Case — Clear MagSafe',
+    slug: 'iphone-15-pro-case-clear-magsafe',
     price: { toString: () => '29.99' },
     compareAtPrice: null,
+    stock: 50,
     isActive: true,
+    categoryId: 'cat-e2e-1',
     // TASK-297: the line's availability now folds in the CATEGORY's status, so
     // CART_ITEMS_INCLUDE joins it — the mock must supply it or fromPrisma throws.
     category: { isActive: true },
@@ -122,16 +117,25 @@ describe('CartController (e2e)', () => {
     images: [],
   };
 
-  const testCartItem = {
+  const testCartItem: CartLine = {
     id: 'item-e2e-1',
     productId: 'prod-e2e-1',
-    variantId: null,
     quantity: 1,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    addons: [],
     product: testProduct,
-    variant: null,
   };
+
+  /** The bare `cart_items` row `CartRepository.updateItem` returns. */
+  const cartItemRow = (quantity: number) => ({
+    id: testCartItem.id,
+    cartId: 'cart-e2e-1',
+    productId: testCartItem.productId,
+    quantity,
+    createdAt: testCartItem.createdAt,
+    updatedAt: testCartItem.updatedAt,
+  });
 
   const makeCartWithItems = (
     userId: string,
@@ -308,7 +312,7 @@ describe('CartController (e2e)', () => {
         product: { ...testProduct, isActive: true, category: { isActive: false } },
       };
       cartRepositoryMock.findByUserId.mockResolvedValue(
-        makeCartWithItems(userA.id, [withdrawnItem] as CartWithItems['items']),
+        makeCartWithItems(userA.id, [withdrawnItem]),
       );
 
       const response = await request(app.getHttpServer())
@@ -350,7 +354,7 @@ describe('CartController (e2e)', () => {
       expect(response.body.data.totals.itemCount).toBe(1);
     });
 
-    it('should increment quantity when the same product+variant is added again', async () => {
+    it('should increment quantity when the same product is added again', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findOrCreate.mockResolvedValue(makeCartWithItems(userA.id));
       cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
@@ -459,7 +463,7 @@ describe('CartController (e2e)', () => {
       cartRepositoryMock.findByUserId
         .mockResolvedValueOnce(makeCartWithItems(userA.id))
         .mockResolvedValueOnce(updatedCart);
-      cartRepositoryMock.updateItem.mockResolvedValue({ ...testCartItem, quantity: 3 });
+      cartRepositoryMock.updateItem.mockResolvedValue(cartItemRow(3));
 
       const response = await request(app.getHttpServer())
         .patch('/api/cart/items/item-e2e-1')
@@ -477,7 +481,7 @@ describe('CartController (e2e)', () => {
       const token = generateAccessToken(userA.id, userA.role);
       const withdrawnItem = { ...testCartItem, product: { ...testProduct, isActive: false } };
       cartRepositoryMock.findByUserId.mockResolvedValue(
-        makeCartWithItems(userA.id, [withdrawnItem] as CartWithItems['items']),
+        makeCartWithItems(userA.id, [withdrawnItem]),
       );
 
       await request(app.getHttpServer())

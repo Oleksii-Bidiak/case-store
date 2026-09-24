@@ -20,6 +20,7 @@ import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
 import { OrderEntity, PublicOrderEntity, type PublicOrderRow } from './entities';
 import { CartRepository, CartWithItems } from '../cart/cart.repository';
+import { createCartRepositoryMock } from '../../test/cart-repository.mock';
 import { CartEntity } from '../cart/entities/cart.entity';
 import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
@@ -91,6 +92,7 @@ const cartWithItems: CartWithItems = {
       quantity: 2,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-1',
         name: 'iPhone 15 Pro Case',
@@ -101,6 +103,7 @@ const cartWithItems: CartWithItems = {
         // TASK-297: checkout re-checks the owning category's status too.
         category: { isActive: true },
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -110,6 +113,7 @@ const cartWithItems: CartWithItems = {
       quantity: 1,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-2',
         name: 'Screen Protector',
@@ -119,6 +123,7 @@ const cartWithItems: CartWithItems = {
         isActive: true,
         category: { isActive: true },
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -170,6 +175,7 @@ const makeOrder = (overrides: Partial<OrderWithItems> = {}): OrderWithItems => (
         slug: 'iphone-15-pro-case',
         images: [],
       },
+      addons: [],
     },
   ],
   ...overrides,
@@ -208,11 +214,7 @@ const orderRepositoryMock = {
   applyPaymentOutcome: jest.fn(),
 };
 
-const cartRepositoryMock = {
-  findByUserId: jest.fn(),
-  // TASK-338: a guest's cart is found by the cookie token, not a user id.
-  findByToken: jest.fn(),
-};
+const cartRepositoryMock = createCartRepositoryMock();
 
 // TASK-338: GUEST_ORDER_TOKEN_TTL_DAYS and STORE_CLIENT_URL. Defaults to the
 // service's own fallback when a key is not seeded, mirroring ConfigService.
