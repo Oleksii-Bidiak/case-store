@@ -20,7 +20,8 @@
  *             `XMP DataXMP`, `ICCRGBG1012`, `MGK8BIM`, `MGKIPTC` …; Plain Text
  *             Extensions (0x01, rendered by no browser — a text carrier in
  *             practice) together with the GCE that belonged to them; extension
- *             labels we do not recognise; anything after the trailer (0x3B), which
+ *             labels we do not recognise (a GCE in front of a dropped
+ *             non-rendering block stays with its image); anything after the trailer (0x3B), which
  *             no decoder reads and a polyglot would hide in.
  *
  * Dropping an ICC profile is deliberate: no mainstream browser applies ICC to a
@@ -46,6 +47,12 @@ const TRAILER = 0x3b;
 
 const LABEL_GRAPHIC_CONTROL = 0xf9;
 const LABEL_APPLICATION = 0xff;
+/**
+ * GIF89a §23: labels 0x00–0x7F are graphic rendering blocks — besides an image,
+ * the only blocks a GCE's scope can end on. 0x80–0xF9 are control blocks and
+ * 0xFA–0xFF special-purpose ones (Comment, Application); a GCE skips over those.
+ */
+const LAST_GRAPHIC_RENDERING_LABEL = 0x7f;
 
 /** Application extensions whose only job is the animation loop count. */
 const LOOP_APPLICATION_IDS = new Set(['NETSCAPE2.0', 'ANIMEXTS1.0']);
@@ -134,7 +141,8 @@ export function stripGifMetadata(input: Buffer): Buffer {
   const out: Buffer[] = [input.subarray(0, pos)];
   // A GCE describes the NEXT graphic rendering block. It is held back until we
   // know what that block is: emitted in front of an image, discarded in front of
-  // a dropped Plain Text Extension or the trailer.
+  // a dropped Plain Text Extension or the trailer, and carried across every
+  // non-rendering block dropped on the way (a Comment, an XMP packet …).
   let pendingGce: Buffer | null = null;
 
   for (;;) {
@@ -191,11 +199,15 @@ export function stripGifMetadata(input: Buffer): Buffer {
         if (loop) {
           out.push(loop);
         }
-      } else {
-        // Comment (0xFE), Plain Text (0x01) or an unknown label. A Plain Text
-        // block is a graphic rendering block, so the GCE waiting for it goes too.
+      } else if (label <= LAST_GRAPHIC_RENDERING_LABEL) {
+        // Plain Text (0x01) or another graphic rendering label: it is the block
+        // the waiting GCE was scoped to, so that GCE goes with it.
         pendingGce = null;
       }
+      // Comment (0xFE) and unknown control / special-purpose labels are dropped
+      // WITHOUT touching pendingGce: they are not rendering blocks, so a GCE in
+      // front of them still belongs to the image that follows (GCE, Comment,
+      // Image is legal, and decoders apply that GCE to the image).
       pos = end;
       continue;
     }

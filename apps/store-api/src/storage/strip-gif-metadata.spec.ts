@@ -152,6 +152,43 @@ describe('stripGifMetadata', () => {
     });
   });
 
+  describe('metadata between a frame’s GCE and its image descriptor', () => {
+    // GCE → Comment → Image is legal (a GCE is scoped to the next RENDERING
+    // block, and a Comment is not one), and decoders apply that GCE to the
+    // image. Dropping the comment must not drop the frame's timing with it.
+    let clean: Buffer;
+    let dirty: Buffer;
+
+    beforeAll(async () => {
+      clean = await animatedGif();
+      const pre = preambleLength(clean);
+      const firstFrameGce = clean.indexOf(Buffer.from([0x21, 0xf9]), pre);
+      const secondFrameGce = clean.indexOf(Buffer.from([0x21, 0xf9]), firstFrameGce + 2);
+      const secondFrameImage = secondFrameGce + 8; // 21 F9 04 <4 bytes> 00
+      expect(clean[secondFrameImage]).toBe(0x2c);
+      dirty = Buffer.concat([
+        clean.subarray(0, secondFrameImage),
+        commentExtension('SECRET'),
+        xmpExtension(XMP_PACKET),
+        Buffer.from([0x21, 0x99]), // an unknown CONTROL label (0x80–0xF9)
+        subBlocks(Buffer.from('SECRET control')),
+        clean.subarray(secondFrameImage),
+      ]);
+    });
+
+    it('fixture sanity: decoders still apply the GCE across the comment', async () => {
+      expect((await sharp(dirty, { animated: true }).metadata()).delay).toEqual(DELAYS);
+    });
+
+    it('keeps the frame’s own GCE, so its delay is unchanged', async () => {
+      const out = stripGifMetadata(dirty);
+
+      expectNoSecrets(out);
+      expect((await sharp(out, { animated: true }).metadata()).delay).toEqual(DELAYS);
+      expect(out.equals(clean)).toBe(true);
+    });
+  });
+
   describe('the loop extension', () => {
     const canonicalLoop = applicationExtension(
       'NETSCAPE2.0',
@@ -210,6 +247,18 @@ describe('stripGifMetadata', () => {
     expectNoSecrets(out);
     // The frame keeps its OWN GCE; the orphaned one does not get re-attached to it.
     expect(out.equals(TINY_GIF)).toBe(true);
+  });
+
+  it('treats an unknown RENDERING label (0x00–0x7F) like Plain Text: its GCE goes too', () => {
+    const gif = Buffer.concat([
+      TINY_GIF.subarray(0, TINY_PREAMBLE),
+      Buffer.from([0x21, 0xf9, 0x04, 0x00, 0x09, 0x00, 0x00, 0x00]),
+      Buffer.from([0x21, 0x02]),
+      subBlocks(Buffer.from('SECRET')),
+      TINY_GIF.subarray(TINY_PREAMBLE),
+    ]);
+
+    expect(stripGifMetadata(gif).equals(TINY_GIF)).toBe(true);
   });
 
   it('drops an extension label it does not recognise', () => {
