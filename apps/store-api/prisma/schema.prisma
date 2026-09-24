@@ -128,8 +128,14 @@ enum OrderHistoryChangeType {
 /// order stays CANCELLED and no stock moves; the operator either revives it (the
 /// normal revive path re-reserves stock) or refunds. Owner decision B-11 №3,
 /// plan 178.
+///
+/// SHIPPED_UNPAID — «відправлено без підтвердженої оплати» (TASK-788): an
+/// operator moved an ONLINE-paid order to SHIPPED while its payment was still
+/// PENDING/FAILED. Allowed (decision B-1: only the impossible is refused), but
+/// recorded on the STATUS row so the decision has a trace.
 enum OrderHistoryNote {
   PAID_AFTER_CANCEL
+  SHIPPED_UNPAID
 }
 
 /// Data type of a structured product characteristic (TASK-191, plan 112).
