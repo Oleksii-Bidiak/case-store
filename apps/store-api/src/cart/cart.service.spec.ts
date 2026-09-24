@@ -874,82 +874,138 @@ describe('CartService', () => {
       });
     });
 
-    it('should sum overlapping quantities and clamp to MAX_QUANTITY (99)', async () => {
-      // Guest has the position (qty 15); user already has 90. Stock is ample so
-      // the MAX_QUANTITY clamp (not stock) is what bites.
-      const amplyStocked = {
-        ...mockGuestCart.items[1],
-        quantity: 15,
-        product: { ...mockGuestCart.items[1].product, stock: 200 },
-      };
-      cartRepositoryMock.findByToken.mockResolvedValue({
-        ...mockGuestCart,
-        items: [amplyStocked],
-      });
-      cartRepositoryMock.findByUserId.mockResolvedValue({
+    // TASK-777 — ONE rule for every branch: the merged line keeps the LARGER of
+    // the two quantities, max(user, guest), capped at MAX_QUANTITY. Stock is NOT
+    // applied during the merge (it is checked where it is for any line — in the
+    // cart read's maxQty and at checkout), so a login never silently shrinks what
+    // the shopper had put in either cart.
+    describe('quantity rule — keeps the larger (TASK-777)', () => {
+      const userCartWith = (quantity: number, stock = 50) => ({
         ...mockEmptyCart,
         id: 'user-cart-1',
         items: [
           {
             ...mockCartWithNoVariantItem.items[0],
             id: 'user-item-x',
-            quantity: 90,
+            quantity,
+            product: { ...mockCartWithNoVariantItem.items[0].product, stock },
           },
         ],
       });
-
-      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
-
-      // 90 + 15 = 105 → clamped to 99
-      expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
-        userCartId: 'user-cart-1',
-        guestCartId: 'guest-cart-1',
-        lines: [{ productId: 'product-uuid-2', quantity: 99, addonServiceIds: [] }],
-      });
-    });
-
-    it('should clamp the merged quantity to variant stock', async () => {
-      // Guest item is a variant with stock 2; summed quantity would exceed it.
-      cartRepositoryMock.findByToken.mockResolvedValue({
+      const guestCartWith = (quantity: number, stock = 50) => ({
         ...mockGuestCart,
         items: [
           {
-            ...mockCartWithLowStockItem.items[0], // variant stock 2
-            quantity: 1,
+            ...mockGuestCart.items[1], // product-uuid-2, same position as the user line
+            quantity,
+            product: { ...mockGuestCart.items[1].product, stock },
           },
         ],
       });
-      cartRepositoryMock.findByUserId.mockResolvedValue({
-        ...mockEmptyCart,
-        id: 'user-cart-1',
-        items: [
-          {
-            ...mockCartWithLowStockItem.items[0],
-            id: 'user-item-low',
-            quantity: 2,
-          },
-        ],
+      const writtenLines = () =>
+        cartRepositoryMock.mergeGuestCartIntoUser.mock.calls[0][0].lines as Array<{
+          productId: string;
+          quantity: number;
+        }>;
+
+      it('both carts hold the line → the larger quantity wins (guest larger)', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue(guestCartWith(7));
+        cartRepositoryMock.findByUserId.mockResolvedValue(userCartWith(3));
+
+        await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+        expect(writtenLines()).toEqual([
+          { productId: 'product-uuid-2', quantity: 7, addonServiceIds: [] },
+        ]);
       });
 
-      await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+      it('both carts hold the line → the larger quantity wins (user larger), never the sum', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue(guestCartWith(2));
+        cartRepositoryMock.findByUserId.mockResolvedValue(userCartWith(10));
 
-      // 2 + 1 = 3 → clamped to stock 2
-      expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
-        userCartId: 'user-cart-1',
-        guestCartId: 'guest-cart-1',
-        lines: [{ productId: 'product-uuid-3', quantity: 2, addonServiceIds: [] }],
+        await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+        expect(writtenLines()).toEqual([
+          { productId: 'product-uuid-2', quantity: 10, addonServiceIds: [] },
+        ]);
+      });
+
+      it('only the guest holds the line → its quantity is kept as-is', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue(guestCartWith(5));
+        cartRepositoryMock.findByUserId.mockResolvedValue({ ...mockEmptyCart, id: 'user-cart-1' });
+
+        await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+        expect(writtenLines()).toEqual([
+          { productId: 'product-uuid-2', quantity: 5, addonServiceIds: [] },
+        ]);
+      });
+
+      it('stock below both quantities does NOT trim the merged line (10 stays 10 at stock 2)', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue(guestCartWith(3, 2));
+        cartRepositoryMock.findByUserId.mockResolvedValue(userCartWith(10, 2));
+
+        await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+        expect(writtenLines()).toEqual([
+          { productId: 'product-uuid-2', quantity: 10, addonServiceIds: [] },
+        ]);
+      });
+
+      it('zero stock follows the same rule: the line is written, not skipped', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue(guestCartWith(3, 0));
+        cartRepositoryMock.findByUserId.mockResolvedValue(userCartWith(1, 0));
+
+        await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+        expect(writtenLines()).toEqual([
+          { productId: 'product-uuid-2', quantity: 3, addonServiceIds: [] },
+        ]);
+      });
+
+      it('zero stock on a guest-only line keeps the line as well', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue(guestCartWith(4, 0));
+        cartRepositoryMock.findByUserId.mockResolvedValue({ ...mockEmptyCart, id: 'user-cart-1' });
+
+        await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+        expect(writtenLines()).toEqual([
+          { productId: 'product-uuid-2', quantity: 4, addonServiceIds: [] },
+        ]);
+      });
+
+      it('caps at MAX_QUANTITY (99) — 99 and 99 merge to 99, not 198', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue(guestCartWith(99, 500));
+        cartRepositoryMock.findByUserId.mockResolvedValue(userCartWith(99, 500));
+
+        await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+        expect(writtenLines()).toEqual([
+          { productId: 'product-uuid-2', quantity: 99, addonServiceIds: [] },
+        ]);
+      });
+
+      it('caps a line that is already above MAX_QUANTITY (legacy row) at 99', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue(guestCartWith(120, 500));
+        cartRepositoryMock.findByUserId.mockResolvedValue(userCartWith(4, 500));
+
+        await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
+
+        expect(writtenLines()).toEqual([
+          { productId: 'product-uuid-2', quantity: 99, addonServiceIds: [] },
+        ]);
       });
     });
 
-    it('should merge overlapping and new lines together while dropping lines clamped to zero stock', async () => {
+    it('should merge overlapping and new lines together, keeping an out-of-stock line', async () => {
       cartRepositoryMock.findByToken.mockResolvedValue({
         ...mockGuestCart,
         items: [
-          // Overlapping item: guest 1 + user 2 → 3
+          // Overlapping item: guest 1, user 2 → the larger, 2
           { ...mockGuestCart.items[1], quantity: 1 },
           // Brand-new position (stock 50): copied as-is
           { ...mockCartWithVariantItem.items[0], id: 'guest-new', quantity: 2 },
-          // Out-of-stock position: clamps to 0 and must be dropped entirely
+          // Out-of-stock position: kept — stock is checked in the cart and at checkout
           {
             ...mockCartWithLowStockItem.items[0],
             id: 'guest-oos',
@@ -966,13 +1022,13 @@ describe('CartService', () => {
 
       await service.mergeGuestCart('guest-token-1', 'user-uuid-1');
 
-      // Only the two viable lines are written; the zero-stock line is filtered out.
       expect(cartRepositoryMock.mergeGuestCartIntoUser).toHaveBeenCalledWith({
         userCartId: 'user-cart-1',
         guestCartId: 'guest-cart-1',
         lines: [
-          { productId: 'product-uuid-2', quantity: 3, addonServiceIds: [] },
+          { productId: 'product-uuid-2', quantity: 2, addonServiceIds: [] },
           { productId: 'product-uuid-1', quantity: 2, addonServiceIds: [] },
+          { productId: 'product-uuid-3', quantity: 3, addonServiceIds: [] },
         ],
       });
     });
@@ -1218,7 +1274,7 @@ describe('CartService', () => {
           lines: [
             {
               productId: 'product-uuid-1',
-              quantity: 4, // 2 (guest) + 2 (user)
+              quantity: 2, // max(2 guest, 2 user) — the larger, never the sum (TASK-777)
               addonServiceIds: ['svc-warranty', 'svc-insurance'], // union; both still resolve
             },
             {

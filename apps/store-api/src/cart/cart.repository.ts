@@ -21,9 +21,10 @@ export interface UpdateCartItemInput {
 }
 
 /**
- * A single already-clamped line to write into the user's cart during a merge.
- * The quantity is absolute (final) — the service has summed and clamped it
- * against stock / MAX_QUANTITY before handing it to the repository.
+ * A single final line to write into the user's cart during a merge.
+ * The quantity is absolute (final) — the service has already applied the merge
+ * rule (the larger quantity, capped at MAX_QUANTITY — TASK-777) before handing it
+ * to the repository.
  */
 export interface MergeCartLine {
   productId: string;
@@ -226,13 +227,13 @@ export class CartRepository {
   }
 
   /**
-   * Atomically merge a set of already-clamped lines into the user's cart and
+   * Atomically merge a set of final lines into the user's cart and
    * delete the guest cart, in a single transaction. Either every line is
    * written and the guest cart removed, or nothing changes — there is no
    * partially-merged state and no orphaned guest cart left behind on failure.
    *
-   * Quantities are absolute: the service has already summed the guest and user
-   * quantities and clamped them against stock / MAX_QUANTITY.
+   * Quantities are absolute: the service has already applied the merge rule
+   * (`CartService.mergedQuantity`, TASK-777).
    */
   async mergeGuestCartIntoUser(params: {
     userCartId: string;
@@ -288,7 +289,7 @@ export class CartRepository {
    * so there is no nullable variant to special-case.
    *
    * `mode: 'increment'` adds to the existing quantity (add-to-cart); `mode:
-   * 'set'` writes the absolute quantity (merge, where the service pre-clamps).
+   * 'set'` writes the absolute quantity (merge, final quantity from the service).
    */
   private writeCartLine(
     tx: Prisma.TransactionClient,

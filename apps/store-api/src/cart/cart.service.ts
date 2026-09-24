@@ -235,9 +235,10 @@ export class CartService {
 
   /**
    * Merge a guest cart (identified by token) into the user's cart on login or
-   * registration. Quantities of matching items are summed and clamped to
-   * MAX_QUANTITY (and to variant stock where applicable). The guest cart is
-   * deleted afterwards. A no-op when the guest cart is missing or empty.
+   * registration. A product in both carts keeps the larger of the two
+   * quantities, capped at MAX_QUANTITY (see `mergedQuantity`, TASK-777); stock
+   * is not applied during the merge. The guest cart is deleted afterwards. A
+   * no-op when the guest cart is missing or empty.
    *
    * This must never throw in a way that blocks authentication — the caller
    * wraps it defensively.
@@ -280,27 +281,21 @@ export class CartService {
       })),
     );
 
-    // Compute the final (summed + clamped) quantity for each guest line before
-    // touching the database, so the transactional write is a pure data apply.
-    const lines: MergeCartLine[] = guestCart.items
-      .map((guestItem) => {
-        const existing = userCart.items.find((item) => item.productId === guestItem.productId);
+    // Compute the final quantity for each guest line before touching the
+    // database, so the transactional write is a pure data apply.
+    const lines: MergeCartLine[] = guestCart.items.map((guestItem) => {
+      const existing = userCart.items.find((item) => item.productId === guestItem.productId);
 
-        const summed = (existing?.quantity ?? 0) + guestItem.quantity;
-        // Clamp to MAX_QUANTITY and the position's available stock.
-        const quantity = Math.min(MAX_QUANTITY, summed, guestItem.product.stock);
-
-        return {
-          productId: guestItem.productId,
-          quantity,
-          addonServiceIds: this.mergeAddonSelections(
-            guestItem.addons,
-            existing?.addons ?? [],
-            resolvedAddons.get(guestItem.product.id) ?? [],
-          ),
-        };
-      })
-      .filter((line) => line.quantity > 0);
+      return {
+        productId: guestItem.productId,
+        quantity: this.mergedQuantity(existing?.quantity ?? 0, guestItem.quantity),
+        addonServiceIds: this.mergeAddonSelections(
+          guestItem.addons,
+          existing?.addons ?? [],
+          resolvedAddons.get(guestItem.product.id) ?? [],
+        ),
+      };
+    });
 
     // Apply all lines and delete the guest cart atomically.
     await this.cartRepository.mergeGuestCartIntoUser({
@@ -308,6 +303,21 @@ export class CartService {
       guestCartId: guestCart.id,
       lines,
     });
+  }
+
+  /**
+   * Guest→user quantity rule (TASK-777): the merged line keeps the LARGER of the
+   * two quantities, capped at MAX_QUANTITY — one rule for every branch.
+   *
+   * Not the sum: the same item in both carts is usually the same intent recorded
+   * twice (added on the phone as a guest, and earlier on the laptop), so summing
+   * doubles it. And stock is deliberately NOT applied here: clamping to stock
+   * used to turn 10 into 2 on login without a word, while a zero-stock line was
+   * skipped and left the user's 10 alone — two rules at once. Stock is checked
+   * where it is for any line: the cart read's `maxQty` and the checkout.
+   */
+  private mergedQuantity(userQuantity: number, guestQuantity: number): number {
+    return Math.min(MAX_QUANTITY, Math.max(userQuantity, guestQuantity));
   }
 
   /**
