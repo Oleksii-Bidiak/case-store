@@ -13,6 +13,7 @@ import { AuthRepository, CreateUserInput } from './auth.repository';
 import { AuthTokens } from './entities';
 import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
+import { humanizeDuration, parseDurationToMs } from './duration.util';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
 import { hashPassword, verifyPassword } from '../common/security';
 import {
@@ -110,6 +111,12 @@ export class AuthService {
     this.passwordResetExpiration = this.configService.get<string>(
       'PASSWORD_RESET_TOKEN_EXPIRATION',
       '1h',
+    );
+    // Parsed once here so an unreadable duration fails the boot (DI builds this
+    // service at start-up), not the first login or reset request (TASK-790).
+    // env.validation.ts already refuses one; this covers any path around it.
+    [this.jwtExpiration, this.jwtRefreshExpiration, this.passwordResetExpiration].forEach(
+      parseDurationToMs,
     );
     this.storeClientUrl = this.configService.get<string>(
       'STORE_CLIENT_URL',
@@ -470,7 +477,7 @@ export class AuthService {
 
     // Opaque (non-JWT) token: used once, synchronously, against the DB anyway.
     const rawToken = randomBytes(PASSWORD_RESET_TOKEN_BYTES).toString('hex');
-    const expiresAt = new Date(Date.now() + this.parseExpirationToMs(this.passwordResetExpiration));
+    const expiresAt = new Date(Date.now() + parseDurationToMs(this.passwordResetExpiration));
 
     await this.authRepository.savePasswordResetToken(user.id, rawToken, expiresAt);
 
@@ -478,7 +485,7 @@ export class AuthService {
     await this.mailOutboxService.enqueuePasswordReset({
       to: user.email,
       resetUrl,
-      expiresInHuman: this.formatExpirationHuman(this.passwordResetExpiration),
+      expiresInHuman: humanizeDuration(this.passwordResetExpiration),
     });
 
     // Critical business event — never log the raw token or the reset URL.
@@ -740,7 +747,7 @@ export class AuthService {
       },
     );
 
-    const refreshExpirationMs = this.parseExpirationToMs(this.jwtRefreshExpiration);
+    const refreshExpirationMs = parseDurationToMs(this.jwtRefreshExpiration);
     const refreshExpiresAt = new Date(Date.now() + refreshExpirationMs);
 
     const tokens = new AuthTokens();
@@ -836,65 +843,5 @@ export class AuthService {
    */
   private async burnTimingCost(): Promise<void> {
     await hashPassword(DUMMY_TIMING_PASSWORD);
-  }
-
-  /**
-   * Parse a duration string like "7d", "15m", "2h" into milliseconds.
-   */
-  private parseExpirationToMs(expiration: string): number {
-    const match = expiration.match(/^(\d+)([smhd])$/);
-    if (!match) {
-      // Default to 7 days if format is unexpected
-      return 7 * 24 * 60 * 60 * 1000;
-    }
-
-    const value = parseInt(match[1], 10);
-    const unit = match[2];
-
-    switch (unit) {
-      case 's':
-        return value * 1000;
-      case 'm':
-        return value * 60 * 1000;
-      case 'h':
-        return value * 60 * 60 * 1000;
-      case 'd':
-        return value * 24 * 60 * 60 * 1000;
-      default:
-        return 7 * 24 * 60 * 60 * 1000;
-    }
-  }
-
-  /**
-   * Render a duration string like "1h"/"30m" into Ukrainian email copy
-   * ("1 годину", "30 хвилин"), applying Ukrainian plural rules. Falls back to
-   * the raw string if the format is unexpected.
-   */
-  private formatExpirationHuman(expiration: string): string {
-    const match = expiration.match(/^(\d+)([smhd])$/);
-    if (!match) {
-      return expiration;
-    }
-
-    const value = parseInt(match[1], 10);
-    // [one, few, many] forms per Ukrainian pluralization.
-    const forms: Record<string, [string, string, string]> = {
-      s: ['секунду', 'секунди', 'секунд'],
-      m: ['хвилину', 'хвилини', 'хвилин'],
-      h: ['годину', 'години', 'годин'],
-      d: ['день', 'дні', 'днів'],
-    };
-    const [one, few, many] = forms[match[2]];
-
-    const mod10 = value % 10;
-    const mod100 = value % 100;
-    let word = many;
-    if (mod10 === 1 && mod100 !== 11) {
-      word = one;
-    } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
-      word = few;
-    }
-
-    return `${value} ${word}`;
   }
 }

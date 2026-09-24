@@ -27,8 +27,12 @@ import { WishlistModule } from '../wishlist/wishlist.module';
           // `number | ms.StringValue`, where StringValue is a template-literal
           // union such as `${number}m`. A value read from the environment at
           // runtime can never be narrowed to that statically, so the cast is
-          // unavoidable; the format itself is validated at boot by
-          // config/env.validation.ts.
+          // unavoidable. What makes the cast honest is the boot check: until
+          // TASK-790 env.validation.ts only asserted "is a string", so this
+          // comment claimed a guarantee nobody enforced. It now `@Matches` the
+          // shared DURATION_PATTERN (auth/duration.util.ts) — `<n><s|m|h|d>`,
+          // a subset of what jsonwebtoken's `ms` accepts — and refuses to start
+          // on anything else.
           expiresIn: configService.get<string>(
             'JWT_EXPIRATION',
             '15m',

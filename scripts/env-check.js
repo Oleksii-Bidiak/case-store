@@ -484,7 +484,8 @@ const VARS = [
     validated: "optional",
     code: "used",
     effect: "Дефолт `15m` — час життя access-токена.",
-    howTo: "`15m`.",
+    howTo:
+      "`15m`. Формат `<число><s|m|h|d>`; голе число на кшталт `60` — API не стартує (TASK-790).",
   },
   {
     name: "JWT_REFRESH_EXPIRATION",
@@ -496,8 +497,10 @@ const VARS = [
     example: true,
     validated: "optional",
     code: "used",
-    effect: "Дефолт `7d` — скільки клієнт лишається залогіненим.",
-    howTo: "`7d`.",
+    effect:
+      "Дефолт `7d` — скільки клієнт лишається залогіненим; з неї ж рахується Max-Age refresh-куки (TASK-789).",
+    howTo:
+      "`7d`. Формат `<число><s|m|h|d>`; голе число на кшталт `60` — API не стартує (TASK-790).",
   },
   {
     name: "CORS_ORIGINS",
@@ -986,7 +989,8 @@ const VARS = [
     code: "used",
     effect:
       "Порожній → дефолт сервісу. Скільки живе посилання з листа підтвердження адреси (TASK-342).",
-    howTo: "Формат тривалості, як у JWT_EXPIRATION (напр. `24h`).",
+    howTo:
+      "Формат тривалості, як у JWT_EXPIRATION: `<число><s|m|h|d>` (напр. `24h`); інакше API не стартує.",
   },
   {
     name: "NEXT_PUBLIC_PAYMENT_METHODS",
@@ -1610,7 +1614,8 @@ const VARS = [
     validated: "optional",
     code: "used",
     effect: "Дефолт `1h` — скільки живе посилання «відновити пароль».",
-    howTo: "Напр. `1h`.",
+    howTo:
+      "Напр. `1h`. Формат `<число><s|m|h|d>`; `60` без одиниці — API не стартує, а не «тиждень» як раніше (TASK-790).",
   },
   {
     name: "PUBLISHING_CRON",

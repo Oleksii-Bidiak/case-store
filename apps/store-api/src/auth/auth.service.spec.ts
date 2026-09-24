@@ -1527,3 +1527,38 @@ describe('AuthService', () => {
     });
   });
 });
+
+/**
+ * TASK-790: an unreadable duration is a boot failure, never a silent default.
+ * `PASSWORD_RESET_TOKEN_EXPIRATION=60` used to become a seven-day reset link.
+ */
+describe('AuthService — durations have no silent fallback', () => {
+  const build = (overrides: Record<string, string>) => {
+    const config = { ...testConfig, ...overrides };
+    const configService = {
+      get: (key: string, fallback?: string) => config[key] ?? fallback,
+      getOrThrow: (key: string) => config[key],
+    } as unknown as ConfigService;
+    const logger = { setContext: jest.fn() } as unknown as PinoLogger;
+
+    return () =>
+      new AuthService(
+        {} as AuthRepository,
+        {} as JwtService,
+        configService,
+        {} as MailOutboxService,
+        logger,
+      );
+  };
+
+  it.each(['JWT_EXPIRATION', 'JWT_REFRESH_EXPIRATION', 'PASSWORD_RESET_TOKEN_EXPIRATION'])(
+    'refuses to construct with %s = "60"',
+    (name) => {
+      expect(build({ [name]: '60' })).toThrow(/Invalid duration "60"/);
+    },
+  );
+
+  it('constructs with well-formed durations', () => {
+    expect(build({})).not.toThrow();
+  });
+});

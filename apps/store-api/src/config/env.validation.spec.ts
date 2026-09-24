@@ -388,3 +388,47 @@ describe('validateEnv — TOTP_ENCRYPTION_KEY treats empty as unset', () => {
     expect(validateEnv({ ...base, TOTP_ENCRYPTION_KEY: key }).TOTP_ENCRYPTION_KEY).toBe(key);
   });
 });
+
+/**
+ * TASK-790: every *_EXPIRATION is `<integer><s|m|h|d>` or the API refuses to
+ * start. A bare "60" used to boot and was silently read as seven days.
+ */
+describe('validateEnv — durations must carry a unit', () => {
+  const baseConfig = {
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+  };
+
+  const names = [
+    'JWT_EXPIRATION',
+    'JWT_REFRESH_EXPIRATION',
+    'PASSWORD_RESET_TOKEN_EXPIRATION',
+    'EMAIL_VERIFICATION_TOKEN_EXPIRATION',
+  ];
+
+  it.each(names)('accepts "15m" for %s', (name) => {
+    expect(() => validateEnv({ ...baseConfig, [name]: '15m' })).not.toThrow();
+  });
+
+  it.each(names)('accepts %s left unset (the service default applies)', (name) => {
+    const result = validateEnv({ ...baseConfig });
+    expect((result as unknown as Record<string, unknown>)[name]).toBeUndefined();
+  });
+
+  it.each(names)('refuses a bare "60" for %s, naming the variable', (name) => {
+    expect(() => validateEnv({ ...baseConfig, [name]: '60' })).toThrow(
+      new RegExp(`${name} must be a whole number followed by a unit`),
+    );
+  });
+
+  it.each(['1w', '15 m', '1.5h', 'h', '', '-1d', '7days'])(
+    'refuses %p for JWT_REFRESH_EXPIRATION',
+    (value) => {
+      expect(() => validateEnv({ ...baseConfig, JWT_REFRESH_EXPIRATION: value })).toThrow(
+        /JWT_REFRESH_EXPIRATION must be a whole number/,
+      );
+    },
+  );
+});
