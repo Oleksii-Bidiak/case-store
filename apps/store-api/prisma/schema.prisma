@@ -283,6 +283,8 @@ model User {
 
   @@unique([isOwner], where: { isOwner: true }, map: "users_single_owner_key")
   @@index([deletedAt])
+  // TASK-625: the public order lookup matches an account order by `user.phone`.
+  @@index([phone])
   @@map("users")
 }
 
@@ -724,6 +726,8 @@ model Order {
   @@index([paymentStatus])
   @@index([createdAt(sort: Desc)])
   @@index([deletedAt])
+  // TASK-625: the public order lookup matches a guest order by phone equality.
+  @@index([guestPhone])
   @@map("orders")
 }
 
