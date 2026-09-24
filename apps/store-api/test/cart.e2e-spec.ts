@@ -474,6 +474,23 @@ describe('CartController (e2e)', () => {
       expect(cartRepositoryMock.updateItem).toHaveBeenCalledWith('item-e2e-1', { quantity: 3 });
     });
 
+    // TASK-778: "+" on a withdrawn line is refused exactly as POST /cart/items is.
+    it('should return 400 and NOT write when the line was withdrawn from sale', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      const withdrawnItem = { ...testCartItem, product: { ...testProduct, isActive: false } };
+      cartRepositoryMock.findByUserId.mockResolvedValue(
+        makeCartWithItems(userA.id, [withdrawnItem] as CartWithItems['items']),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/cart/items/item-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ quantity: 2 })
+        .expect(400);
+
+      expect(cartRepositoryMock.updateItem).not.toHaveBeenCalled();
+    });
+
     it('should return 400 when quantity is 0 (blocked by DTO @Min(1))', async () => {
       const token = generateAccessToken(userA.id, userA.role);
 

@@ -723,6 +723,54 @@ describe('CartService', () => {
         NotFoundException,
       );
     });
+
+    // TASK-778: an update is held to the SAME purchasability rule as an add —
+    // "+" on a withdrawn line used to answer 200 while POST /cart/items on the
+    // very same product answered 400.
+    describe('withdrawn lines (TASK-778)', () => {
+      const withLineProduct = (patch: Record<string, unknown>): CartWithItems => ({
+        ...mockCartWithVariantItem,
+        items: [
+          {
+            ...mockCartWithVariantItem.items[0],
+            product: { ...mockCartWithVariantItem.items[0].product, ...patch },
+          },
+        ],
+      });
+
+      it('rejects with 400 and writes nothing when the product was deactivated', async () => {
+        cartRepositoryMock.findByUserId.mockResolvedValue(withLineProduct({ isActive: false }));
+
+        await expect(
+          service.updateItem(userIdentity, 'item-uuid-1', { quantity: 3 }),
+        ).rejects.toThrow(
+          new BadRequestException('Product "iPhone 15 Pro Case" is no longer available'),
+        );
+        expect(cartRepositoryMock.updateItem).not.toHaveBeenCalled();
+      });
+
+      it('rejects with 400 and writes nothing when the product CATEGORY was deactivated', async () => {
+        cartRepositoryMock.findByUserId.mockResolvedValue(
+          withLineProduct({ category: { isActive: false } }),
+        );
+
+        await expect(
+          service.updateItem(userIdentity, 'item-uuid-1', { quantity: 3 }),
+        ).rejects.toThrow(BadRequestException);
+        expect(cartRepositoryMock.updateItem).not.toHaveBeenCalled();
+      });
+
+      it('reports the same stock message as an add does', async () => {
+        cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithLowStockItem);
+
+        await expect(
+          service.updateItem(userIdentity, 'item-uuid-3', { quantity: 5 }),
+        ).rejects.toThrow(
+          'Requested quantity (5) exceeds available stock (2) for "Limited Edition Case — Gold"',
+        );
+        expect(cartRepositoryMock.updateItem).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // ─── removeItem ──────────────────────────────────────────────────────────────

@@ -43,7 +43,7 @@ export class CartService {
   /**
    * Select or deselect an add-on service on a cart line (TASK-174).
    *
-   * Validate-before-write, mirroring `validateAddition`: the add-on must be in
+   * Validate-before-write, mirroring `assertLinePurchasable`: the add-on must be in
    * the line's RESOLVED set (i.e. it comes from the product's category template
    * or an ADD delta, is not REMOVEd, and its catalog row is active) — otherwise a
    * 400, and nothing is persisted. Both directions are idempotent: selecting
@@ -116,7 +116,7 @@ export class CartService {
       throw new NotFoundException('Product not found');
     }
 
-    this.validateAddition(product, resultingQuantity);
+    this.assertLinePurchasable(product, resultingQuantity);
 
     const input: AddToCartInput = {
       cartId: cart.id,
@@ -180,17 +180,7 @@ export class CartService {
       return this.getCart(identity);
     }
 
-    // Validate max quantity
-    if (dto.quantity > MAX_QUANTITY) {
-      throw new BadRequestException(`Quantity cannot exceed ${MAX_QUANTITY}`);
-    }
-
-    // Validate stock availability against the position's stock.
-    if (dto.quantity > cartItem.product.stock) {
-      throw new BadRequestException(
-        `Requested quantity (${dto.quantity}) exceeds available stock (${cartItem.product.stock})`,
-      );
-    }
+    this.assertLinePurchasable(cartItem.product, dto.quantity);
 
     await this.cartRepository.updateItem(itemId, { quantity: dto.quantity });
 
@@ -357,13 +347,16 @@ export class CartService {
   }
 
   /**
-   * Validate an add-to-cart request against the resulting line quantity, BEFORE
-   * any DB write. Checks active status (the product's AND its category's), stock
-   * availability, and the per-item maximum.
+   * The one purchasability rule for a cart line (TASK-778), checked against the
+   * RESULTING line quantity BEFORE any DB write — by `addToCart` (existing qty +
+   * incoming) and by `updateItem` (the new absolute qty) alike. Checks active
+   * status (the product's AND its category's), stock availability, and the
+   * per-item maximum. Before TASK-778 the update path skipped the active check,
+   * so "+" on a withdrawn line answered 200 while an add of it answered 400.
    *
    * @throws BadRequestException if any rule fails
    */
-  private validateAddition(
+  private assertLinePurchasable(
     product: { name: string; stock: number; isActive: boolean; category: { isActive: boolean } },
     resultingQuantity: number,
   ): void {
