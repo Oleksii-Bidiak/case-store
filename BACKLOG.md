@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-940**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-941**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -1067,6 +1067,7 @@
 | TASK-937 | [знайдено в TASK-619] Дашборд рахує CANCELLED + PAID_AFTER_CANCEL у виручку: `dashboard.repository.ts:172,181,280,491,555` фільтрують лише `paymentStatus = PAID`, не статус замовлення, тож таке замовлення потрапляє у виручку й топ товарів до рефанду. Можливо прийнятно (гроші отримано), але має бути свідомим рішенням — напр. у плані 192 | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-938 | [знайдено в TASK-784] Статус замовлення перевіряється поза новим блокуванням: `ReturnService.assertLinesAreReturnable` (`apps/store-api/src/order/returns/return.service.ts`) звіряє SHIPPED/DELIVERED з читання `findById` до транзакції, тож замовлення, скасоване чи повернене в ту ж мить, ще може отримати заявку на повернення; фікс — перечитати статус у тому ж `FOR UPDATE`-запиті в `ReturnRepository.create` | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 | TASK-939 | [знайдено в TASK-784] Дані до фіксу можуть уже містити дублі повернень на один рядок замовлення (SUM(`return_items.quantity`) не-REJECTED повернень > `order_items.quantity`): `ReturnRepository.resolve` стережеться лише `restockedAt`, тож RECEIVED з поверненням на склад по кожному дублю знову двічі додасть сток, а «N remain returnable» покаже від'ємне число — потрібен разовий аудит-запит на демо/проді | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
+| TASK-940 | [знайдено в TASK-770] Повторений `redirect` валить старт Google-входу 500-ю: `apps/store-api/src/auth/oauth/google-oauth-state.store.ts:70` приводить `req.query.redirect as string \| undefined`, але `/auth/google?redirect=/a&redirect=/b` дає масив → `raw.replace` кидає TypeError замість відкату на `/`; баг був і до фіксу (`raw.startsWith`) — додати гард `typeof raw === 'string'` + тест | ⬜ | [190](docs/plans/190-red-wave-ci-security-money.md) |
 
 ### План 191 — Онбординг замовника по адмінці ([план](docs/plans/191-admin-customer-onboarding.md))
 
@@ -1368,6 +1369,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-940**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-941**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
