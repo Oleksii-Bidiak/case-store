@@ -6,7 +6,6 @@ import {
   allowedTransitions,
   canTransition,
   canTransitionPayment,
-  isTerminalStatus,
 } from './order-state-machine';
 
 const ALL_STATUSES = Object.values(OrderStatus);
@@ -179,22 +178,6 @@ describe('order-state-machine (TASK-332)', () => {
           expect(canTransition(from, to)).toBe(false);
         }
       }
-    });
-  });
-
-  describe('isTerminalStatus', () => {
-    it.each([OrderStatus.CANCELLED, OrderStatus.REFUNDED])('reports %s as terminal', (status) => {
-      expect(isTerminalStatus(status)).toBe(true);
-    });
-
-    it.each([
-      OrderStatus.PENDING,
-      OrderStatus.CONFIRMED,
-      OrderStatus.PROCESSING,
-      OrderStatus.SHIPPED,
-      OrderStatus.DELIVERED,
-    ])('reports %s as live', (status) => {
-      expect(isTerminalStatus(status)).toBe(false);
     });
   });
 

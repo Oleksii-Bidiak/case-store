@@ -12,7 +12,6 @@ export {
   ORDER_TRANSITIONS,
   allowedTransitions,
   canTransition,
-  isTerminalStatus,
   // TASK-431: the payment table is public for the same reason — the payment
   // module writes `paymentStatus` too, and a second copy of these rules would be
   // a second set of rules.

@@ -94,15 +94,6 @@ export const ORDER_TRANSITIONS: Readonly<Record<OrderStatus, readonly OrderStatu
   });
 
 /**
- * Statuses from which no further progress is expected. Used for reporting and to
- * keep the admin UI honest about which orders are still work.
- */
-const TERMINAL_STATUSES: ReadonlySet<OrderStatus> = new Set([
-  OrderStatus.CANCELLED,
-  OrderStatus.REFUNDED,
-]);
-
-/**
  * Whether an order may move from `from` to `to`.
  *
  * The single question every writer asks. `false` for a same-status "transition"
@@ -121,11 +112,6 @@ export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
  */
 export function allowedTransitions(from: OrderStatus): OrderStatus[] {
   return [...ORDER_TRANSITIONS[from]];
-}
-
-/** Whether the status is one an order is expected to rest in (CANCELLED/REFUNDED). */
-export function isTerminalStatus(status: OrderStatus): boolean {
-  return TERMINAL_STATUSES.has(status);
 }
 
 /**

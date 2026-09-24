@@ -1532,19 +1532,6 @@ export class OrderRepository {
   }
 
   /**
-   * Soft-delete an order (TASK-104): stamp `deletedAt` so it is excluded from
-   * every read path. Child `OrderItem` rows are left in place. Orders carry no
-   * unique constraints beyond `id`, so no field mangling is needed.
-   */
-  softDelete(orderId: string): Promise<OrderWithItems> {
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: { deletedAt: new Date() },
-      include: ORDERS_INCLUDE,
-    }) as Promise<OrderWithItems>;
-  }
-
-  /**
    * Give an order's promo-code slot back (TASK-771). Called from
    * {@link cancelAndRestock} AFTER its `restockedAt IS NULL` arbiter, so a
    * losing concurrent cancel never reaches it and the slot is released once.

@@ -1356,16 +1356,6 @@ describe('OrderRepository', () => {
         where: expect.objectContaining({ deletedAt: null }),
       });
     });
-
-    it('softDelete stamps deletedAt and leaves child items in place', async () => {
-      prismaMock.order.update.mockResolvedValue({ id: 'order-1', items: [] });
-
-      await repository.softDelete('order-1');
-
-      const updateArgs = prismaMock.order.update.mock.calls[0][0];
-      expect(updateArgs.where).toEqual({ id: 'order-1' });
-      expect(updateArgs.data.deletedAt).toBeInstanceOf(Date);
-    });
   });
 
   // ─── cache invalidation on stock mutations (TASK-044-H) ────────────────────
