@@ -219,6 +219,28 @@ enum ReviewTextStatus {
   REJECTED
 }
 
+/// WHY an account's contribution was withdrawn (TASK-599) — the half of
+/// `Review.hiddenAt` that says which decision is holding the row down.
+///
+/// A ban and a moderator's hide used to write the same column, so un-banning
+/// cleared both: a spammer's reviews a moderator had pulled came straight back
+/// on the storefront the day the account was switched on again, without a
+/// trace. Each lever now lifts only what it put down.
+///
+/// Ranked, weakest first, and the order is the rule: a stronger reason is never
+/// overwritten by a weaker one, so banning a moderated account does not turn
+/// the moderator's decision into something an un-ban can undo.
+///  - `BAN`       — the account was switched off; switching it on restores these.
+///  - `MODERATOR` — a moderator withdrew the account's contribution; only a
+///                  moderator's explicit "restore" brings it back.
+///  - `DELETED`   — the account was soft-deleted (TASK-603). Nothing restores a
+///                  deleted account, so nothing restores these.
+enum ReviewHiddenReason {
+  BAN
+  MODERATOR
+  DELETED
+}
+
 // Models
 
 model User {
@@ -875,6 +897,13 @@ model Review {
   /// appeal actually asks.
   hiddenAt DateTime? @map("hidden_at")
 
+  /// Which decision set `hiddenAt` (TASK-599). Null exactly when `hiddenAt` is —
+  /// a CHECK constraint in the migration holds the pair together, so a row can
+  /// never be hidden for no reason or carry a reason while visible. Every row
+  /// hidden before this column existed was backfilled `MODERATOR`: the
+  /// conservative reading, because an un-ban then cannot resurrect it.
+  hiddenReason ReviewHiddenReason? @map("hidden_reason")
+
   /// The address the submission came from, kept only for the abuse signals the
   /// owner asked for: a per-IP daily cap, and "a run of 1★ from one address".
   ///
@@ -902,6 +931,13 @@ model Review {
   // Abuse queries only: "how many submissions from this address today". Leads with
   // the address because that is what is known when the question is asked.
   @@index([createdIp, createdAt])
+  // The rating-abuse burst query (TASK-600): `GROUP BY product_id WHERE
+  // hidden_at IS NULL AND created_at >= now() - 1h`. None of the indexes above
+  // leads with `createdAt`, so every "needs action" read — invalidated after each
+  // order and each review — was a sequential scan of the whole table. Partial on
+  // `hiddenAt: null` because that is the query's own predicate, and the withdrawn
+  // rows are exactly the ones it must never touch.
+  @@index([createdAt, productId], where: { hiddenAt: null }, map: "reviews_visible_created_at_product_idx")
   @@map("reviews")
 }
 
