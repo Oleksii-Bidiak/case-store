@@ -61,8 +61,19 @@ const DYNAMIC_ACCESS: Record<string, string> = {
     "widgets/audit-log/model/action-label.ts, ui/AuditLogView.tsx — per entity type",
   "auditLog.actionVerbs":
     "widgets/audit-log/model/action-label.ts — verb per action",
-  siteContactForm:
-    "features/site-contact-form/ui/site-contact-form.tsx — siteContactForm[`${name}Placeholder`]",
+  // Only the leaves `renderTextField` reads by computed key — `siteContactForm[name]`
+  // and `[`${name}Placeholder`]` over CONTACT_FIELDS + LINK_FIELDS. The rest of
+  // the block (working hours, submit, errors) is read statically and stays
+  // under the scan.
+  ...Object.fromEntries(
+    ["email", "phone", "viberLink", "telegramLink", "instagramLink"].flatMap(
+      (name) =>
+        [name, `${name}Placeholder`].map((leaf) => [
+          `siteContactForm.${leaf}`,
+          "features/site-contact-form/ui/site-contact-form.tsx — siteContactForm[name] / [`${name}Placeholder`]",
+        ]),
+    ),
+  ),
   "bannerForm.imageUpload":
     "features/banner-form/ui/banner-form.tsx — `copy` of useImageUploadField/ContentImageField",
   "blogPostForm.coverUpload":
