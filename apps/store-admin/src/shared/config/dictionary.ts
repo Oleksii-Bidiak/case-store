@@ -1939,7 +1939,7 @@ export const dict = {
     metaTitle: "SEO — Адмін",
     heading: "SEO-налаштування",
     subheading:
-      "Глобальні параметри для пошукових систем: заголовки, описи, зображення для соцмереж і видимість сайту.",
+      "Глобальні параметри для пошукових систем: назва магазину, заголовки, описи й зображення для соцмереж.",
     loadError: "Не вдалося завантажити SEO-налаштування. Спробуйте ще раз.",
     toastUpdated: "SEO-налаштування оновлено",
     toastUpdateFailed: "Не вдалося оновити SEO-налаштування",
@@ -4031,8 +4031,11 @@ export const dict = {
       "Рекомендуємо заповнити заголовок і опис сайту за замовчуванням нижче.",
     // noindex — the one genuinely urgent, RED state.
     noindexWarningTitle: "Сайт прихований від пошукових систем!",
+    // TASK-718: the toggle this used to point at was removed (TASK-307) — the flag
+    // is an emergency switch set in the database, so the advice is "call the
+    // developer", not an action the operator cannot perform here.
     noindexWarningBody:
-      "Зараз увесь магазин не показується в Google та інших пошукових системах. Якщо це робочий сайт — вимкніть «Приховати сайт від пошукових систем» нижче, інакше клієнти не знайдуть вас у пошуку.",
+      "Зараз увесь магазин не показується в Google та інших пошукових системах. Це аварійний перемикач, який вмикають у базі даних, а не в адмінці, — тут його не зняти. Якщо це робочий магазин, негайно зверніться до розробника, інакше клієнти не знайдуть вас у пошуку.",
     noindexOkLabel: "Сайт видимий для пошукових систем.",
     // Outbound eyeball links to what the storefront actually serves.
     linksHeading: "Перевірити службові файли сайту",
