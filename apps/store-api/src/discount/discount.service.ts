@@ -268,6 +268,7 @@ export class DiscountService {
       startsAt: dto.startsAt ? new Date(dto.startsAt) : null,
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       isActive: dto.isActive,
+      showOnPromoPage: dto.showOnPromoPage ?? false,
     };
 
     const created = await this.discountRepository.create(input);
@@ -317,6 +318,7 @@ export class DiscountService {
         ? { expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null }
         : {}),
       ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      ...(dto.showOnPromoPage !== undefined ? { showOnPromoPage: dto.showOnPromoPage } : {}),
     };
 
     const updated = await this.discountRepository.update(id, input);

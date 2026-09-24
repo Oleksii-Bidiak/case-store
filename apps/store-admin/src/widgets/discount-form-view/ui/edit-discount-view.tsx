@@ -131,5 +131,6 @@ function mapDiscountToFormValues(
     startsAt: toDateInput(discount.startsAt),
     expiresAt: toDateInput(discount.expiresAt),
     isActive: discount.isActive,
+    showOnPromoPage: discount.showOnPromoPage,
   };
 }

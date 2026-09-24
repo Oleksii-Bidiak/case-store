@@ -40,6 +40,7 @@ function makeDiscount(overrides: Partial<Discount> = {}): Discount {
     startsAt: null,
     expiresAt: null,
     isActive: true,
+    showOnPromoPage: true,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     ...overrides,
@@ -548,5 +549,58 @@ describe('DiscountService.update — undefined leaves a field, null clears it (T
       'startsAt must be before expiresAt',
     );
     expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+});
+
+// ─── TASK-731: «Показувати на сторінці «Акції»» ───────────────────────────────
+
+describe('DiscountService — showOnPromoPage (TASK-731)', () => {
+  let service: DiscountService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscountService(repositoryMock as never, cartServiceMock as never);
+    repositoryMock.findByCode.mockResolvedValue(null);
+    repositoryMock.create.mockImplementation((input: Partial<Discount>) =>
+      Promise.resolve(makeDiscount(input)),
+    );
+    repositoryMock.findById.mockResolvedValue(makeDiscount({ showOnPromoPage: false }));
+    repositoryMock.update.mockImplementation((_id: string, input: Partial<Discount>) =>
+      Promise.resolve(makeDiscount(input)),
+    );
+  });
+
+  it('creates a private code when the flag is omitted', async () => {
+    const entity = await service.create({ code: 'PRIVATE', type: DiscountType.PERCENT, value: 5 });
+
+    expect(repositoryMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ showOnPromoPage: false }),
+    );
+    expect(entity.showOnPromoPage).toBe(false);
+  });
+
+  it('creates a published code when the operator ticks the flag', async () => {
+    const entity = await service.create({
+      code: 'PUBLIC',
+      type: DiscountType.PERCENT,
+      value: 5,
+      showOnPromoPage: true,
+    });
+
+    expect(repositoryMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ showOnPromoPage: true }),
+    );
+    expect(entity.showOnPromoPage).toBe(true);
+  });
+
+  it('publishes an existing code on update, and leaves the flag alone when omitted', async () => {
+    await service.update('d1', { showOnPromoPage: true });
+    expect(repositoryMock.update).toHaveBeenLastCalledWith(
+      'd1',
+      expect.objectContaining({ showOnPromoPage: true }),
+    );
+
+    await service.update('d1', { isActive: false });
+    expect(repositoryMock.update.mock.calls[1][1]).not.toHaveProperty('showOnPromoPage');
   });
 });

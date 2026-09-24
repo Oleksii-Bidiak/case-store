@@ -428,10 +428,67 @@ describe('CartService', () => {
       expect(result.items).toHaveLength(1);
       expect(result.items[0].quantity).toBe(2);
       expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith(userIdentity);
-      expect(cartRepositoryMock.addItem).toHaveBeenCalledWith({
-        cartId: 'cart-uuid-1',
-        productId: 'product-uuid-1',
-        quantity: 2,
+      expect(cartRepositoryMock.addItem).toHaveBeenCalledWith(
+        {
+          cartId: 'cart-uuid-1',
+          productId: 'product-uuid-1',
+          quantity: 2,
+        },
+        expect.any(Function),
+      );
+    });
+
+    // TASK-779: the pre-check above runs on a read taken OUTSIDE the write, so a
+    // concurrent add can slip past it. The authoritative check is the guard the
+    // service hands to the repository, which runs it inside the locked write
+    // transaction against the fresh line quantity.
+    describe('in-transaction guard (TASK-779)', () => {
+      const guardPassedToRepository = () =>
+        cartRepositoryMock.addItem.mock.calls[0][1] as (
+          product: typeof activeProduct,
+          resultingQuantity: number,
+        ) => void;
+
+      it('hands the repository a guard that enforces the purchasability rule', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+        cartRepositoryMock.findProductForCartValidation.mockResolvedValue(activeProduct);
+        cartRepositoryMock.addItem.mockResolvedValue(mockCartWithVariantItem);
+
+        await service.addToCart(userIdentity, addDto);
+
+        const guard = guardPassedToRepository();
+        expect(() => guard({ ...activeProduct, stock: 1 }, 2)).toThrow(BadRequestException);
+        expect(() => guard({ ...activeProduct, isActive: false }, 1)).toThrow(BadRequestException);
+        expect(() => guard(activeProduct, 100)).toThrow(BadRequestException);
+        expect(() => guard(activeProduct, 50)).not.toThrow();
+      });
+
+      it('answers 400 when the fresh in-transaction state refuses the add (a concurrent add won)', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+        // The stale pre-check read sees stock 1 and an empty line — it passes.
+        cartRepositoryMock.findProductForCartValidation.mockResolvedValue({
+          ...activeProduct,
+          stock: 1,
+        });
+        // Inside the lock the line already holds the 1 unit a racing request added.
+        cartRepositoryMock.addItem.mockImplementation(
+          async (_input: unknown, guard: (p: unknown, q: number) => void) => {
+            guard({ ...activeProduct, stock: 1 }, 2);
+            return mockCartWithVariantItem;
+          },
+        );
+
+        await expect(
+          service.addToCart(userIdentity, { productId: 'product-uuid-1', quantity: 1 }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('answers 404 when the product vanished before the locked write', async () => {
+        cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+        cartRepositoryMock.findProductForCartValidation.mockResolvedValue(activeProduct);
+        cartRepositoryMock.addItem.mockResolvedValue(null);
+
+        await expect(service.addToCart(userIdentity, addDto)).rejects.toThrow(NotFoundException);
       });
     });
 
@@ -445,6 +502,7 @@ describe('CartService', () => {
       expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith(tokenIdentity);
       expect(cartRepositoryMock.addItem).toHaveBeenCalledWith(
         expect.objectContaining({ cartId: 'guest-cart-1' }),
+        expect.any(Function),
       );
     });
 
@@ -633,6 +691,7 @@ describe('CartService', () => {
       expect(result.items[0].productId).toBe('product-uuid-2');
       expect(cartRepositoryMock.addItem).toHaveBeenCalledWith(
         expect.objectContaining({ productId: 'product-uuid-2' }),
+        expect.any(Function),
       );
     });
   });

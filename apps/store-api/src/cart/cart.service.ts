@@ -97,7 +97,8 @@ export class CartService {
    * historical bug was validating after the write, leaving a "ghost" item that
    * reappeared on reload). Validation runs against the *resulting* quantity
    * (`existing line qty + incoming qty`) to match the repository's increment
-   * semantics.
+   * semantics — first as a cheap early refusal on the loaded cart, then
+   * authoritatively inside the repository's locked write (TASK-779).
    */
   async addToCart(identity: ResolvedCartIdentity, dto: AddToCartDto): Promise<CartEntity> {
     const cart = await this.cartRepository.findOrCreate(identity);
@@ -124,7 +125,16 @@ export class CartService {
       quantity: dto.quantity,
     };
 
-    const updated = await this.cartRepository.addItem(input);
+    // The check above ran on a read taken outside the write, so a concurrent add
+    // can slip past it. The authoritative check runs again INSIDE the locked write
+    // transaction, on the fresh line quantity (TASK-779).
+    const updated = await this.cartRepository.addItem(input, (fresh, freshQuantity) =>
+      this.assertLinePurchasable(fresh, freshQuantity),
+    );
+
+    if (!updated) {
+      throw new NotFoundException('Product not found');
+    }
 
     return this.toEntity(updated);
   }

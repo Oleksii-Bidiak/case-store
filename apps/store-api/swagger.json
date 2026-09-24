@@ -14446,7 +14446,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Cart unique identifier",
+            "description": "Cart unique identifier. An empty string while the cart has not been saved yet — a read never creates one (TASK-776); the first added item does.",
             "example": "550e8400-e29b-41d4-a716-446655440000"
           },
           "userId": {
@@ -25770,6 +25770,11 @@
             "description": "Whether the code is active",
             "example": true
           },
+          "showOnPromoPage": {
+            "type": "boolean",
+            "description": "Whether the code is published on the storefront «Акції» page / GET /discounts/active (TASK-731)",
+            "example": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -25795,6 +25800,7 @@
           "startsAt",
           "expiresAt",
           "isActive",
+          "showOnPromoPage",
           "createdAt",
           "updatedAt"
         ]
@@ -25927,6 +25933,12 @@
             "description": "Whether the code is active",
             "example": true,
             "default": true
+          },
+          "showOnPromoPage": {
+            "type": "boolean",
+            "description": "Publish the code on the storefront «Акції» page and in GET /discounts/active (TASK-731). An unpublished code is private but still applies when entered by code.",
+            "example": false,
+            "default": false
           }
         },
         "required": [
@@ -25987,6 +25999,12 @@
             "description": "Whether the code is active",
             "example": true,
             "default": true
+          },
+          "showOnPromoPage": {
+            "type": "boolean",
+            "description": "Publish the code on the storefront «Акції» page and in GET /discounts/active (TASK-731). An unpublished code is private but still applies when entered by code.",
+            "example": false,
+            "default": false
           }
         }
       },

@@ -109,4 +109,16 @@ export class CreateDiscountDto {
   @IsOptional()
   @IsBoolean({ message: 'isActive must be true or false' })
   isActive?: boolean;
+
+  @ApiProperty({
+    description:
+      'Publish the code on the storefront «Акції» page and in GET /discounts/active (TASK-731). ' +
+      'An unpublished code is private but still applies when entered by code.',
+    example: false,
+    required: false,
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'showOnPromoPage must be true or false' })
+  showOnPromoPage?: boolean;
 }

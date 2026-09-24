@@ -210,31 +210,95 @@ describe('CartRepository', () => {
       quantity: 2,
     };
 
-    const makeTx = (cart: unknown) => ({
+    const purchasable = {
+      name: 'iPhone 15 Pro Case',
+      stock: 50,
+      isActive: true,
+      category: { isActive: true },
+    };
+
+    const makeTx = (
+      cart: unknown,
+      { product = purchasable as unknown, lineQuantity = null as number | null } = {},
+    ) => ({
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'cart-uuid-1' }]),
       cart: { findUnique: jest.fn().mockResolvedValue(cart) },
+      product: { findUnique: jest.fn().mockResolvedValue(product) },
       cartItem: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue(lineQuantity === null ? null : { quantity: lineQuantity }),
         upsert: jest.fn().mockResolvedValue({}),
       },
     });
 
-    it('should use a transaction to ensure atomicity', async () => {
-      const txMock = makeTx(mockCartWithItems);
+    const useTx = (txMock: unknown) =>
       prismaMock.$transaction.mockImplementation(async (cb: (tx: any) => Promise<any>) =>
         cb(txMock),
       );
 
-      await repository.addItem(input);
+    it('should use a transaction to ensure atomicity', async () => {
+      useTx(makeTx(mockCartWithItems));
+
+      await repository.addItem(input, jest.fn());
 
       expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
     });
 
+    // TASK-779: the check and the write must see the same state. The cart row is
+    // locked first, so a concurrent add to the same cart waits here and then
+    // reads the line the first one committed.
+    it('locks the cart row, then checks the FRESH line + product before writing', async () => {
+      const txMock = makeTx(mockCartWithItems, { lineQuantity: 3 });
+      useTx(txMock);
+      const guard = jest.fn();
+
+      await repository.addItem(input, guard);
+
+      expect(txMock.$queryRaw).toHaveBeenCalledTimes(1);
+      const sql = (txMock.$queryRaw.mock.calls[0][0] as TemplateStringsArray).join('?');
+      expect(sql).toMatch(/FROM carts\s+WHERE id = \?\s+FOR UPDATE/);
+      expect(txMock.$queryRaw.mock.calls[0][1]).toBe('cart-uuid-1');
+      // existing 3 + incoming 2
+      expect(guard).toHaveBeenCalledWith(purchasable, 5);
+      const lockOrder = txMock.$queryRaw.mock.invocationCallOrder[0];
+      expect(lockOrder).toBeLessThan(txMock.product.findUnique.mock.invocationCallOrder[0]);
+      expect(lockOrder).toBeLessThan(txMock.cartItem.findUnique.mock.invocationCallOrder[0]);
+      expect(guard.mock.invocationCallOrder[0]).toBeLessThan(
+        txMock.cartItem.upsert.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('writes nothing and propagates the rejection when the guard refuses', async () => {
+      const txMock = makeTx(mockCartWithItems, { lineQuantity: 1 });
+      useTx(txMock);
+      const refusal = new Error('exceeds stock');
+
+      await expect(
+        repository.addItem(input, () => {
+          throw refusal;
+        }),
+      ).rejects.toBe(refusal);
+
+      expect(txMock.cartItem.upsert).not.toHaveBeenCalled();
+    });
+
+    it('returns null and writes nothing when the product no longer exists', async () => {
+      const txMock = makeTx(mockCartWithItems, { product: null });
+      useTx(txMock);
+      const guard = jest.fn();
+
+      await expect(repository.addItem(input, guard)).resolves.toBeNull();
+
+      expect(guard).not.toHaveBeenCalled();
+      expect(txMock.cartItem.upsert).not.toHaveBeenCalled();
+    });
+
     it('should upsert the line by (cartId, productId) then return the full cart', async () => {
       const txMock = makeTx(mockCartWithItems);
-      prismaMock.$transaction.mockImplementation(async (cb: (tx: any) => Promise<any>) =>
-        cb(txMock),
-      );
+      useTx(txMock);
 
-      const result = await repository.addItem(input);
+      const result = await repository.addItem(input, jest.fn());
 
       // The line is upserted on the compound unique; create on miss, increment
       // on hit — in a single call.

@@ -38,6 +38,10 @@ describe('CartRepository (integration)', () => {
 
   const MISSING_PRODUCT_ID = '00000000-0000-0000-0000-000000000000';
 
+  // The purchasability rule belongs to CartService (and is exercised in
+  // cart-add-concurrency.int-spec.ts); these repository tests only need the write.
+  const allowAll = (): void => undefined;
+
   beforeAll(async () => {
     // Hard safety net: never run destructive integration tests against a
     // database that is not clearly a test database.
@@ -155,7 +159,7 @@ describe('CartRepository (integration)', () => {
     const emptyOld = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
     const emptyFresh = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
     const filledOld = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
-    await repo.addItem({ cartId: filledOld.id, productId, quantity: 1 });
+    await repo.addItem({ cartId: filledOld.id, productId, quantity: 1 }, allowAll);
     const userEmptyOld = await repo.findOrCreate({ type: 'user', userId });
 
     await prisma.cart.updateMany({
@@ -201,12 +205,12 @@ describe('CartRepository (integration)', () => {
   it('addItem creates the line then increments it on the same product', async () => {
     const cart = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
 
-    await repo.addItem({ cartId: cart.id, productId, quantity: 2 });
+    await repo.addItem({ cartId: cart.id, productId, quantity: 2 }, allowAll);
     let updated = await repo.findById(cart.id);
     expect(updated?.items).toHaveLength(1);
     expect(updated?.items[0].quantity).toBe(2);
 
-    await repo.addItem({ cartId: cart.id, productId, quantity: 3 });
+    await repo.addItem({ cartId: cart.id, productId, quantity: 3 }, allowAll);
     updated = await repo.findById(cart.id);
     expect(updated?.items).toHaveLength(1);
     expect(updated?.items[0].quantity).toBe(5);
@@ -269,7 +273,7 @@ describe('CartRepository (integration)', () => {
   it('mergeGuestCartIntoUser ROLLS BACK on a mid-transaction failure (no partial merge, guest cart kept)', async () => {
     const userCart = await repo.findOrCreate({ type: 'user', userId });
     // Pre-existing user line so we can prove it is untouched after rollback.
-    await repo.addItem({ cartId: userCart.id, productId, quantity: 1 });
+    await repo.addItem({ cartId: userCart.id, productId, quantity: 1 }, allowAll);
 
     const token = `tok-${randomUUID()}`;
     const guest = await repo.findOrCreate({ type: 'token', token });

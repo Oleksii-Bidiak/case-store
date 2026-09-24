@@ -95,6 +95,7 @@ describe('Discount (e2e)', () => {
       startsAt: null,
       expiresAt: null,
       isActive: true,
+      showOnPromoPage: true,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       ...overrides,
@@ -185,6 +186,20 @@ describe('Discount (e2e)', () => {
         amount: '20.00',
         newTotal: '180.00',
       });
+    });
+
+    it('200 for a private (unpublished) code entered by code (TASK-731)', async () => {
+      discountRepositoryMock.findByCode.mockResolvedValue(
+        makeDiscount({ code: 'PARTNER', showOnPromoPage: false }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/api/cart/discount/preview')
+        .set('Authorization', `Bearer ${token(testCustomer.id, 'CUSTOMER')}`)
+        .send({ code: 'partner' })
+        .expect(200);
+
+      expect(res.body.data).toMatchObject({ code: 'PARTNER', amount: '20.00' });
     });
 
     it('400 DISCOUNT_NOT_FOUND for an unknown code', async () => {
@@ -303,6 +318,28 @@ describe('Discount (e2e)', () => {
 
       expect(res.body.data).toMatchObject({ code: 'WELCOME5' });
       expect(discountRepositoryMock.create).toHaveBeenCalled();
+    });
+
+    it('201 create is private by default and publishes on request (TASK-731)', async () => {
+      discountRepositoryMock.findByCode.mockResolvedValue(null);
+      discountRepositoryMock.create.mockImplementation((input: Record<string, unknown>) =>
+        Promise.resolve(makeDiscount(input)),
+      );
+      const auth = `Bearer ${token(testAdmin.id, 'ADMIN')}`;
+
+      const priv = await request(app.getHttpServer())
+        .post('/api/admin/discounts')
+        .set('Authorization', auth)
+        .send({ code: 'PARTNER', type: 'PERCENT', value: 5 })
+        .expect(201);
+      expect(priv.body.data.showOnPromoPage).toBe(false);
+
+      const pub = await request(app.getHttpServer())
+        .post('/api/admin/discounts')
+        .set('Authorization', auth)
+        .send({ code: 'PUBLIC5', type: 'PERCENT', value: 5, showOnPromoPage: true })
+        .expect(201);
+      expect(pub.body.data.showOnPromoPage).toBe(true);
     });
 
     it('400 create with an out-of-range percent value', async () => {

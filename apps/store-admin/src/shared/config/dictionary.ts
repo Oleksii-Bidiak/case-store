@@ -1258,6 +1258,10 @@ export const dict = {
     expiresAt: "Діє до",
     optional: "(необов'язково)",
     active: "Активний",
+    // TASK-731 (рішення B-11): a new code is private until published here.
+    showOnPromoPage: "Показувати на сторінці «Акції»",
+    showOnPromoPageHint:
+      "Без позначки код приватний: його немає на сторінці «Акції» вітрини, але він працює, якщо покупець введе його вручну.",
     submit: "Зберегти промокод",
     errors: {
       codeRequired: "Вкажіть код",

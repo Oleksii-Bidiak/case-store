@@ -39,6 +39,26 @@ export interface MergeCartLine {
 }
 
 /**
+ * The product fields the cart's purchasability rule needs (TASK-297, TASK-778):
+ * its own status, its category's status, and its stock. A subset of the
+ * `CART_ITEMS_INCLUDE` product shape, so a loaded line and a fresh read can be
+ * handed to the same check.
+ */
+export interface PurchasableProduct {
+  name: string;
+  stock: number;
+  isActive: boolean;
+  category: { isActive: boolean };
+}
+
+const PURCHASABLE_PRODUCT_SELECT = {
+  name: true,
+  stock: true,
+  isActive: true,
+  category: { select: { isActive: true } },
+} satisfies Prisma.ProductSelect;
+
+/**
  * Cart with its items and related product (position) details.
  * This is the shape returned by all cart queries — it includes
  * the full item tree so the service can calculate totals and validate stock.
@@ -308,12 +328,41 @@ export class CartRepository {
   /**
    * Add an item to a specific cart. If the same product position already exists,
    * increment the quantity instead of creating a duplicate. Returns the full
-   * updated cart with items.
+   * updated cart with items, or `null` when the product no longer exists.
+   *
+   * Atomic check-then-write (TASK-779): the cart row is locked
+   * (`SELECT … FOR UPDATE`) before anything is read, so two adds to the same
+   * cart run one after the other. The product and the line's CURRENT quantity
+   * are then read inside that lock and handed to `assertPurchasable` with the
+   * resulting quantity; if it throws, the transaction rolls back and nothing is
+   * written. Before this, two racing adds at `stock = 1` both read "0 in the
+   * cart" and both incremented, leaving 2 units the checkout would refuse.
+   * The rule itself stays in the service — the repository only guarantees that
+   * the check and the write see the same state.
    */
-  async addItem(input: AddToCartInput): Promise<CartWithItems> {
+  async addItem(
+    input: AddToCartInput,
+    assertPurchasable: (product: PurchasableProduct, resultingQuantity: number) => void,
+  ): Promise<CartWithItems | null> {
     const { cartId, productId, quantity } = input;
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM carts WHERE id = ${cartId} FOR UPDATE`;
+
+      const product = await tx.product.findUnique({
+        where: { id: productId },
+        select: PURCHASABLE_PRODUCT_SELECT,
+      });
+      if (!product) {
+        return null;
+      }
+
+      const line = await tx.cartItem.findUnique({
+        where: { cartId_productId: { cartId, productId } },
+        select: { quantity: true },
+      });
+      assertPurchasable(product, (line?.quantity ?? 0) + quantity);
+
       // Add the line, incrementing the quantity if the same product already
       // exists in this cart.
       await this.writeCartLine(tx, cartId, productId, quantity, 'increment');
