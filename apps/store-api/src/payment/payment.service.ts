@@ -148,21 +148,22 @@ export class PaymentService {
    *
    * @throws BadRequestException when the reported money does not match the attempt.
    */
-  async applyEvent(event: PaymentEventInput): Promise<PaymentApplyResult> {
-    const payment = await this.paymentRepository.findById(event.paymentId);
+  async applyEvent(reported: PaymentEventInput): Promise<PaymentApplyResult> {
+    const payment = await this.paymentRepository.findById(reported.paymentId);
 
     if (!payment) {
       // The signature verified, so this is genuinely from the provider — but it
       // names a payment we have no record of. Retrying cannot help, so answer
       // "nothing to do" and make the log loud enough to investigate.
       this.logger.error(
-        { event: 'payment.event.unknown_payment', paymentId: event.paymentId },
+        { event: 'payment.event.unknown_payment', paymentId: reported.paymentId },
         'Verified provider event references an unknown payment',
       );
       return { applied: false, orderId: '' };
     }
 
-    this.assertMoneyMatches(payment, event);
+    this.assertMoneyMatches(payment, reported);
+    const event = this.classifyRefund(payment, reported);
 
     // The idempotency claim. A duplicate INSERT is rejected by the unique
     // constraint on (paymentId, providerStatus, providerPaymentId) — that
@@ -280,8 +281,10 @@ export class PaymentService {
    *
    * Scope of the check is deliberate:
    *  - SUCCEEDED must match exactly — the whole amount, in the currency invoiced.
-   *  - REFUNDED must be in the same currency and no more than we charged; a
-   *    partial refund legitimately reports less.
+   *  - REFUNDED must be in the same currency, more than zero and no more than
+   *    we charged; a partial refund legitimately reports less, and
+   *    {@link classifyRefund} then relabels it PARTIALLY_REFUNDED so the order
+   *    module's exact-amount check agrees with this one (TASK-618).
    *  - FAILED / IGNORED move no money, and providers routinely omit the amount
    *    on them, so there is nothing to verify.
    */
@@ -325,15 +328,56 @@ export class PaymentService {
     if (event.outcome === PaymentOutcome.REFUNDED && reported.greaterThan(payment.amount)) {
       reject('refund exceeds the amount paid');
     }
+
+    if (event.outcome === PaymentOutcome.REFUNDED && !reported.greaterThan(0)) {
+      reject('refund of nothing');
+    }
+  }
+
+  /**
+   * Decide whether a refund is partial or full (TASK-618).
+   *
+   * The adapter cannot: a provider reports `reversed` either way, and the adapter
+   * never sees what was charged. This class holds the Payment row, so it decides,
+   * and the order module receives an outcome with an exact amount contract —
+   * REFUNDED means the whole charge, PARTIALLY_REFUNDED strictly less. Called
+   * only after {@link assertMoneyMatches}, so the amount is known to parse and to
+   * lie in (0, charged].
+   */
+  private classifyRefund(payment: Payment, event: PaymentEventInput): PaymentEventInput {
+    if (event.outcome !== PaymentOutcome.REFUNDED) return event;
+    if (!new Prisma.Decimal(event.amount).lessThan(payment.amount)) return event;
+    return { ...event, outcome: PaymentOutcome.PARTIALLY_REFUNDED };
   }
 
   /** Record the attempt's outcome on the Payment row. */
   private async settle(payment: Payment, event: PaymentEventInput): Promise<void> {
+    // A partial refund leaves the attempt SUCCEEDED — part of the money is still
+    // ours, and `refund()` accepts only a SUCCEEDED attempt, so anything else
+    // would block refunding the remainder. It does not move `settledAt` (the
+    // attempt settled when the money arrived) and never downgrades an attempt
+    // that is already fully REFUNDED.
+    if (event.outcome === PaymentOutcome.PARTIALLY_REFUNDED) {
+      await this.paymentRepository.settle(payment.id, {
+        status:
+          payment.status === PaymentAttemptStatus.REFUNDED
+            ? PaymentAttemptStatus.REFUNDED
+            : PaymentAttemptStatus.SUCCEEDED,
+        ...(event.providerPaymentId ? { providerPaymentId: event.providerPaymentId } : {}),
+      });
+      return;
+    }
+
     const status = {
       [PaymentOutcome.SUCCEEDED]: PaymentAttemptStatus.SUCCEEDED,
       [PaymentOutcome.FAILED]: PaymentAttemptStatus.FAILED,
       [PaymentOutcome.REFUNDED]: PaymentAttemptStatus.REFUNDED,
-    }[event.outcome as Exclude<PaymentOutcome, PaymentOutcome.IGNORED>];
+    }[
+      event.outcome as Exclude<
+        PaymentOutcome,
+        PaymentOutcome.IGNORED | PaymentOutcome.PARTIALLY_REFUNDED
+      >
+    ];
 
     await this.paymentRepository.settle(payment.id, {
       status,

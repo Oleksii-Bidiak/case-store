@@ -14,7 +14,7 @@
 /**
  * What a provider's notification means to us, after the adapter has translated
  * its vocabulary. Providers speak ~20 status strings between them; the order
- * module only ever needs to know which of these four things happened.
+ * module only ever needs to know which of these five things happened.
  *
  * There is deliberately no "PENDING" outcome. A callback that reports work still
  * in progress (3DS, OTP, `wait_secure`, …) resolves to {@link PaymentOutcome.IGNORED}
@@ -26,8 +26,18 @@ export enum PaymentOutcome {
   SUCCEEDED = 'SUCCEEDED',
   /** The attempt is over and failed. The customer may start a new one. */
   FAILED = 'FAILED',
-  /** Money went back to the customer. */
+  /** ALL of the money went back to the customer. */
   REFUNDED = 'REFUNDED',
+  /**
+   * PART of the money went back; the rest is still ours (TASK-618).
+   *
+   * Never produced by an adapter: a provider says "reversed" either way, and only
+   * the payment module knows what was charged. `PaymentService` turns a REFUNDED
+   * that reports less than the charge into this outcome before the order module
+   * sees it, so each outcome carries an exact amount contract — REFUNDED the
+   * whole charge, PARTIALLY_REFUNDED strictly more than zero and less than it.
+   */
+  PARTIALLY_REFUNDED = 'PARTIALLY_REFUNDED',
   /** Recognised, recorded, but not actionable — typically "still processing". */
   IGNORED = 'IGNORED',
 }

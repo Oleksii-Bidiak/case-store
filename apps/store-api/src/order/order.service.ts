@@ -1696,7 +1696,16 @@ export class OrderService {
     const reportedCents = toCents(event.amount);
     const currencyMatches = payment.currency.toUpperCase() === event.currency.toUpperCase();
 
-    if (expectedCents === reportedCents && currencyMatches) {
+    // TASK-618: a partial refund is, by definition, less than the charge — and
+    // more than nothing. Every other outcome must report the charge exactly
+    // (PaymentService relabels a smaller REFUNDED before it gets here, so a
+    // REFUNDED that still reports less is a contradiction, not a partial).
+    const amountAgrees =
+      event.outcome === PaymentOutcome.PARTIALLY_REFUNDED
+        ? reportedCents > 0 && reportedCents < expectedCents
+        : expectedCents === reportedCents;
+
+    if (amountAgrees && currencyMatches) {
       return;
     }
 
@@ -1736,6 +1745,9 @@ export class OrderService {
    *   one payment combination the cross-rule forbids outright (see the branch).
    *   Stock is deliberately NOT credited back: the goods have to physically
    *   return first (TASK-124's rule, unchanged).
+   * - **PARTIALLY_REFUNDED** (TASK-618) moves PAID to PARTIALLY_REFUNDED and
+   *   nothing else: the order status stays where it is (a partial refund never
+   *   drags DELIVERED into REFUNDED) and the attempt stays SUCCEEDED.
    * - **IGNORED** — "still processing" — changes nothing. There is no PENDING
    *   outcome for exactly this reason: treating "not finished yet" as an event to
    *   act on is how an order flips to paid before the money exists.
@@ -1888,6 +1900,43 @@ export class OrderService {
           ...(movesOrderToRefunded
             ? { statusChange: { from: order.status, to: OrderStatus.REFUNDED } }
             : {}),
+        };
+      }
+
+      case PaymentOutcome.PARTIALLY_REFUNDED: {
+        // Already labelled as at least this much back — nothing new to record.
+        if (
+          order.paymentStatus === PaymentStatus.PARTIALLY_REFUNDED ||
+          order.paymentStatus === PaymentStatus.REFUNDED
+        ) {
+          return null;
+        }
+        // The attempt stays SUCCEEDED: part of the money is still ours, and
+        // leaving it refundable is what lets the operator send the rest back.
+        // `settledAt` is left alone — the attempt settled when the money came in.
+        if (!canTransitionPayment(order.paymentStatus, PaymentStatus.PARTIALLY_REFUNDED)) {
+          // PENDING / FAILED: part of money we never recorded as received is
+          // coming back — the same lost-success contradiction as a full refund.
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+            refusedPaymentStatusChange: {
+              current: order.paymentStatus,
+              rejected: PaymentStatus.PARTIALLY_REFUNDED,
+              reason: 'table',
+            },
+          };
+        }
+        // No order-status change, on any order: a partial refund does not end the
+        // order (B-1 §1 — one line back out of three on a DELIVERED order is an
+        // ordinary day), and the cross-rule constrains FULL refunds only.
+        return {
+          ...base,
+          attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+          paymentStatusChange: {
+            from: order.paymentStatus,
+            to: PaymentStatus.PARTIALLY_REFUNDED,
+          },
         };
       }
 

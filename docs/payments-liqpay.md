@@ -127,7 +127,12 @@ LiqPay — сервіс інтернет-еквайрингу ПриватБан
 11. **Повернення грошей.** В адмінці кнопка «Повернути гроші» → сервер-до-сервера запит
     `action: "refund"` до LiqPay → приходить callback зі статусом `reversed` →
     `paymentStatus = REFUNDED`. Тобто REFUNDED перестає бути лейблом, що бреше
-    (граничний випадок E-12 у [user-stories.md](user-stories.md)).
+    (граничний випадок E-12 у [user-stories.md](user-stories.md)). Якщо `amount` у
+    `reversed` **менший** за списану суму — це частковий рефанд:
+    `paymentStatus = PARTIALLY_REFUNDED`, статус замовлення не змінюється (DELIVERED
+    лишається DELIVERED), спроба оплати лишається SUCCEEDED, щоб решту можна було
+    повернути (TASK-618). Розрізняє `PaymentService`, а не адаптер — адаптер не знає,
+    скільки списали.
 
 ---
 
@@ -206,7 +211,7 @@ LiqPay віддає близько двадцяти значень `status`. М�
 | ------------------- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
 | **Оплачено**        | `success`; `sandbox` — **тільки** коли `LIQPAY_SANDBOX=true`                                                     | `paymentStatus = PAID`, знімаємо дедлайн резерву, лист покупцю             |
 | **Не вийшло**       | `failure`, `error`, `expired`                                                                                    | `paymentStatus = FAILED`; замовлення живе, покупець може спробувати ще раз |
-| **Гроші повернуто** | `reversed`                                                                                                       | `paymentStatus = REFUNDED`                                                 |
+| **Гроші повернуто** | `reversed`                                                                                                       | вся сума → `REFUNDED`; менша сума → `PARTIALLY_REFUNDED` (TASK-618)        |
 | **Ще в процесі**    | `processing`, `wait_secure`, `wait_accept`, `3ds_verify`, `otp_verify`, `cvv_verify`, `hold_wait`, `prepared`, … | **нічого не робимо** — чекаємо наступний callback або крон-звірку          |
 
 Поля, які ідентифікують платіж у callback: `order_id` (наш `Payment.id`), `payment_id` і

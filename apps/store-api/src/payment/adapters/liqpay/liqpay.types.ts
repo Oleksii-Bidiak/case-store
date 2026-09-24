@@ -47,7 +47,9 @@ const OUTCOME_BY_STATUS: Readonly<Record<string, PaymentOutcome>> = {
   failure: PaymentOutcome.FAILED,
   error: PaymentOutcome.FAILED,
   expired: PaymentOutcome.FAILED,
-  // Money went back.
+  // Money went back. LiqPay says `reversed` for a partial refund too; this
+  // adapter cannot tell them apart (it never sees what was charged), so
+  // PaymentService relabels a smaller amount PARTIALLY_REFUNDED (TASK-618).
   reversed: PaymentOutcome.REFUNDED,
 };
 
