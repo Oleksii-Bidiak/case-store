@@ -14481,7 +14481,14 @@
       },
       "CartResponseEnvelope": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CartEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
       },
       "AddToCartDto": {
         "type": "object",
@@ -19231,8 +19238,9 @@
           },
           "phone": {
             "type": "string",
-            "description": "User phone number. Stored normalised, as digits only.",
-            "example": "+380991234567"
+            "description": "User phone number: 9 to 15 digits, any country code, separators allowed. Stored normalised, as digits only. Omit the field to leave the number unchanged; send `null` (or an empty string) to REMOVE it. Anything else that is not a dialable number — e.g. `----------` — is refused with 400, never stored as empty.",
+            "example": "+380991234567",
+            "nullable": true
           }
         }
       },

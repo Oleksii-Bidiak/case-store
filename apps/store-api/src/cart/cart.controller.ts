@@ -16,6 +16,7 @@ import {
   ApiCookieAuth,
   ApiParam,
   ApiExtraModels,
+  ApiProperty,
   getSchemaPath,
 } from '@nestjs/swagger';
 import { CartService } from './cart.service';
@@ -29,8 +30,13 @@ import { CartEntity, CartTotals } from './entities';
 /**
  * Response envelope for cart operations.
  * All cart endpoints return the full cart with totals.
+ *
+ * `data` carries its own `@ApiProperty` (TASK-825): without it the envelope was
+ * published as an empty object and Orval typed every cart response as
+ * `{ [key: string]: unknown }`.
  */
 class CartResponseEnvelope {
+  @ApiProperty({ type: () => CartEntity })
   data!: CartEntity;
 }
 
