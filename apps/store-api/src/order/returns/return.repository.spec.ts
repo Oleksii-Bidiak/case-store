@@ -335,3 +335,146 @@ describe('ReturnRepository.create — the quantity cap is checked under a lock (
     expect(txMock.return.create).not.toHaveBeenCalled();
   });
 });
+
+describe('ReturnRepository.resolve — the refund ceilings are checked under a lock (TASK-785)', () => {
+  const ORDER_ID = 'order-uuid-1';
+  const RETURN_ID = 'return-uuid-1';
+  const existing = {
+    id: RETURN_ID,
+    orderId: ORDER_ID,
+    restockedAt: null,
+    items: [
+      {
+        quantity: 2,
+        orderItem: {
+          productId: 'product-uuid-1',
+          price: { toString: () => '499.00' },
+          product: { id: 'product-uuid-1', slug: 'case' },
+        },
+      },
+    ],
+  };
+  const siblings = [{ refundedAmount: { toString: () => '100.00' } }, { refundedAmount: null }];
+
+  /** Every statement, in the order the transaction issued it. */
+  let issued: string[];
+  let repository: ReturnRepository;
+
+  const txMock = {
+    $queryRaw: jest.fn(),
+    return: {
+      findUniqueOrThrow: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    product: { update: jest.fn() },
+  };
+  const txPrismaMock = {
+    $transaction: jest.fn((fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock)),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    issued = [];
+    txMock.return.findUniqueOrThrow.mockImplementation(async () => {
+      issued.push('read');
+      return existing;
+    });
+    txMock.$queryRaw.mockImplementation(async () => {
+      issued.push('lock');
+      return [{ total: { toString: () => '998.00' } }];
+    });
+    txMock.return.findMany.mockImplementation(async () => {
+      issued.push('ledger');
+      return siblings;
+    });
+    txMock.return.update.mockImplementation(async () => {
+      issued.push('write');
+      return existing;
+    });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: txPrismaMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  const fields = { status: ReturnStatus.REFUNDED, refundedAmount: '499.00' };
+
+  it('locks the order row, reads the sibling refunds, checks, then writes — in one transaction', async () => {
+    const assertRefundable = jest.fn(() => {
+      issued.push('check');
+    });
+
+    await repository.resolve(RETURN_ID, fields, { assertRefundable });
+
+    expect(txPrismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(issued.slice(0, 5)).toEqual(['read', 'lock', 'ledger', 'check', 'write']);
+  });
+
+  it("hands the check the order total, the OTHER returns and this return's priced lines", async () => {
+    const assertRefundable = jest.fn();
+
+    await repository.resolve(RETURN_ID, fields, { assertRefundable });
+
+    const [ledger] = assertRefundable.mock.calls[0] as unknown as [
+      {
+        orderTotal: { toString(): string };
+        otherRefunds: unknown[];
+        items: Array<{ quantity: number; unitPrice: { toString(): string } }>;
+      },
+    ];
+    expect(ledger.orderTotal.toString()).toBe('998.00');
+    expect(ledger.otherRefunds).toBe(siblings);
+    expect(ledger.items).toHaveLength(1);
+    expect(ledger.items[0].quantity).toBe(2);
+    expect(ledger.items[0].unitPrice.toString()).toBe('499.00');
+  });
+
+  it('takes a row lock (FOR UPDATE) on the order the return belongs to', async () => {
+    await repository.resolve(RETURN_ID, fields, { assertRefundable: jest.fn() });
+
+    const [strings, ...values] = txMock.$queryRaw.mock.calls[0] as [
+      TemplateStringsArray,
+      ...unknown[],
+    ];
+    expect(strings.join('?')).toMatch(/FROM\s+"?orders"?[\s\S]*FOR UPDATE/i);
+    expect(values).toContain(ORDER_ID);
+  });
+
+  it("reads every OTHER return of the order — this one's old amount is being replaced", async () => {
+    await repository.resolve(RETURN_ID, fields, { assertRefundable: jest.fn() });
+
+    expect(txMock.return.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { orderId: ORDER_ID, id: { not: RETURN_ID } } }),
+    );
+  });
+
+  it('writes nothing when the check refuses — the error rolls the transaction back', async () => {
+    const refusal = new Error('over the ceiling');
+
+    await expect(
+      repository.resolve(RETURN_ID, fields, {
+        assertRefundable: () => {
+          throw refusal;
+        },
+      }),
+    ).rejects.toBe(refusal);
+    expect(txMock.return.update).not.toHaveBeenCalled();
+    expect(txMock.return.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('takes no lock when there is no refund to check', async () => {
+    await repository.resolve(RETURN_ID, { status: ReturnStatus.APPROVED });
+
+    expect(txMock.$queryRaw).not.toHaveBeenCalled();
+    expect(txMock.return.findMany).not.toHaveBeenCalled();
+  });
+});

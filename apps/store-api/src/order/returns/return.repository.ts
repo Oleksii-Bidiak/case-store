@@ -11,7 +11,12 @@ import { normalizeUaPhone, phoneDigits } from '../../common/validators';
 import { ProductIndexer } from '../../search/product-indexer';
 import { RETURN_SORT_FIELDS } from './dto';
 import type { ReturnSortField } from './dto';
-import type { AssertReturnClaimable, CreateReturnParams, ReturnWithItems } from './return.types';
+import type {
+  AssertRefundWithinBalance,
+  AssertReturnClaimable,
+  CreateReturnParams,
+  ReturnWithItems,
+} from './return.types';
 
 /**
  * Shared include for return reads: the lines, each with the order line it points
@@ -246,6 +251,15 @@ export class ReturnRepository {
    * lock, re-evaluates after it commits, matches zero rows, and aborts before
    * touching a single product.
    *
+   * ── The refund ceilings (TASK-785) ─────────────────────────────────────────
+   * When the service passes `assertRefundable`, the order row is locked
+   * (`FOR UPDATE`, the same lock `create` takes) and the order's total plus the
+   * amounts already recorded on its OTHER returns are read under it, then handed
+   * to the check before anything is written. Two operators refunding two returns
+   * of one order at once therefore serialise, and the second sees the first's
+   * committed amount — a read taken outside the transaction would let both spend
+   * the same balance.
+   *
    * @throws ConflictException when the stock was already credited back.
    */
   async resolve(
@@ -256,13 +270,30 @@ export class ReturnRepository {
       refundedAmount?: string | null;
       resolvedAt?: Date | null;
     },
-    options: { restock?: boolean } = {},
+    options: { restock?: boolean; assertRefundable?: AssertRefundWithinBalance } = {},
   ): Promise<ReturnWithItems> {
     const updated = (await this.prisma.$transaction(async (tx) => {
       const existing = await tx.return.findUniqueOrThrow({
         where: { id: returnId },
         include: RETURNS_INCLUDE,
       });
+
+      if (options.assertRefundable) {
+        const [order] = await tx.$queryRaw<Array<{ total: Prisma.Decimal }>>`
+          SELECT total FROM orders WHERE id = ${existing.orderId} FOR UPDATE`;
+        const otherRefunds = await tx.return.findMany({
+          where: { orderId: existing.orderId, id: { not: returnId } },
+          select: { refundedAmount: true },
+        });
+        options.assertRefundable({
+          orderTotal: order.total,
+          otherRefunds,
+          items: existing.items.map((item) => ({
+            quantity: item.quantity,
+            unitPrice: item.orderItem.price,
+          })),
+        });
+      }
 
       const data: Prisma.ReturnUpdateInput = { status: fields.status };
       if (fields.operatorNotes !== undefined) data.operatorNotes = fields.operatorNotes;

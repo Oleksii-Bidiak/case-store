@@ -72,6 +72,30 @@ export interface ReturnClaimRow {
  */
 export type AssertReturnClaimable = (ledger: ReturnClaimRow[]) => void;
 
+/**
+ * What the refund ceilings are measured against (TASK-785), read by the
+ * repository INSIDE the resolve transaction under a lock on the order row.
+ */
+export interface RefundLedger {
+  /** `Order.total` — what the customer actually paid, discount and shipping included. */
+  orderTotal: { toString(): string };
+  /**
+   * Every OTHER return of the order, whatever its status: money recorded as paid
+   * out is gone whether the return was later rejected or not. This return is
+   * left out because its own amount is the one being replaced.
+   */
+  otherRefunds: Array<{ refundedAmount: { toString(): string } | null }>;
+  /** This return's lines, priced at the order line's unit price. */
+  items: Array<{ quantity: number; unitPrice: { toString(): string } }>;
+}
+
+/**
+ * The service's refund ceilings, run by the repository against a
+ * {@link RefundLedger} inside the resolve transaction (TASK-785). Throwing aborts
+ * the write.
+ */
+export type AssertRefundWithinBalance = (ledger: RefundLedger) => void;
+
 /** What the service hands the repository to open a return (TASK-340). */
 export interface CreateReturnParams {
   orderId: string;

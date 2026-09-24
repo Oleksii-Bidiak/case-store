@@ -569,5 +569,177 @@ describe('ReturnService (TASK-340)', () => {
         });
       });
     });
+
+    // ── The refund ceilings (TASK-785) ──────────────────────────────────────────
+    //
+    // `refundedAmount` used to be checked for SHAPE only, so "49900" typed for
+    // "499.00" was accepted, summed into the order's `refundedTotal` and reported
+    // by B-8 as money that had gone back. Two ceilings now, both checked by the
+    // repository inside the resolve transaction, against a ledger read under a
+    // lock on the order row — the same shape as the quantity cap of TASK-784.
+
+    describe('refund ceilings (TASK-785)', () => {
+      /** What the repository reads under the lock and hands the service's check. */
+      let refundLedger: {
+        orderTotal: { toString(): string };
+        otherRefunds: Array<{ refundedAmount: { toString(): string } | null }>;
+        items: Array<{ quantity: number; unitPrice: { toString(): string } }>;
+      };
+      /** Only the resolves whose check passed — what the mocked repository "wrote". */
+      let written: unknown[];
+
+      const money = (value: string) => ({ toString: () => value });
+
+      beforeEach(() => {
+        written = [];
+        // Order of three at 499.00, nothing refunded yet; this return holds one unit.
+        refundLedger = {
+          orderTotal: money('1497.00'),
+          otherRefunds: [],
+          items: [{ quantity: 1, unitPrice: money('499.00') }],
+        };
+        returnRepositoryMock.findById.mockResolvedValue(
+          makeReturn({ status: ReturnStatus.RECEIVED }),
+        );
+        returnRepositoryMock.resolve.mockImplementation(
+          async (
+            _id: string,
+            fields: { status: string },
+            options?: { assertRefundable?: (ledger: typeof refundLedger) => void },
+          ) => {
+            options?.assertRefundable?.(refundLedger);
+            written.push(fields);
+            return makeReturn({ status: fields.status as ReturnStatus });
+          },
+        );
+      });
+
+      const refund = (refundedAmount: string | null) =>
+        service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED, refundedAmount });
+
+      /** The `{ error, message }` body the exception carries to the wire. */
+      const bodyOf = async (promise: Promise<unknown>) => {
+        const error = await promise.then(
+          () => {
+            throw new Error('expected a refusal');
+          },
+          (caught: unknown) => caught,
+        );
+        expect(error).toBeInstanceOf(BadRequestException);
+        return (error as BadRequestException).getResponse() as { error: string; message: string };
+      };
+
+      it('accepts a refund of exactly the value of the returned lines', async () => {
+        await refund('499.00');
+
+        expect(written).toHaveLength(1);
+      });
+
+      it('accepts a partial refund — shipping is not always refundable', async () => {
+        await refund('450.50');
+
+        expect(written).toHaveLength(1);
+      });
+
+      it('refuses "49900" typed for "499.00" — more than the returned lines are worth', async () => {
+        const body = await bodyOf(refund('49900'));
+
+        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
+        expect(body.message).toContain('499.00');
+        expect(written).toHaveLength(0);
+      });
+
+      it('refuses even one kopiyka over the returned value', async () => {
+        const body = await bodyOf(refund('499.01'));
+
+        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
+        expect(written).toHaveLength(0);
+      });
+
+      it('values the returned lines at unit price × returned quantity', async () => {
+        refundLedger.items = [
+          { quantity: 2, unitPrice: money('499.00') },
+          { quantity: 1, unitPrice: money('0.10') },
+        ];
+
+        await refund('998.10');
+        expect(written).toHaveLength(1);
+
+        const body = await bodyOf(refund('998.11'));
+        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
+      });
+
+      it('refuses more than the order has left once earlier returns were paid out', async () => {
+        // 1497.00 paid, 1200.00 already back through other returns: 297.00 left,
+        // although the unit on THIS return is worth 499.00.
+        refundLedger.otherRefunds = [
+          { refundedAmount: money('700.00') },
+          { refundedAmount: money('500.00') },
+        ];
+
+        const body = await bodyOf(refund('499.00'));
+
+        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_ORDER_BALANCE');
+        expect(body.message).toContain('297.00');
+        expect(written).toHaveLength(0);
+      });
+
+      it('accepts exactly what the order has left', async () => {
+        refundLedger.otherRefunds = [{ refundedAmount: money('1200.00') }];
+
+        await refund('297.00');
+
+        expect(written).toHaveLength(1);
+      });
+
+      it('ignores other returns that have paid nothing out yet', async () => {
+        refundLedger.otherRefunds = [{ refundedAmount: null }, { refundedAmount: null }];
+
+        await refund('499.00');
+
+        expect(written).toHaveLength(1);
+      });
+
+      it('caps by the order total, so a discounted order never refunds its gross price', async () => {
+        // The discount is order-level, not allocated to lines: one 499.00 case
+        // bought for 400.00 after a coupon. The line is worth 499.00 gross, but
+        // only 400.00 was ever paid.
+        refundLedger.orderTotal = money('400.00');
+
+        const body = await bodyOf(refund('499.00'));
+        expect(body.error).toBe('RETURN_REFUND_EXCEEDS_ORDER_BALANCE');
+
+        await refund('400.00');
+        expect(written).toHaveLength(1);
+      });
+
+      it('hands the check to the repository instead of deciding against its own earlier read', async () => {
+        await refund('499.00');
+
+        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
+          RETURN_ID,
+          expect.objectContaining({ refundedAmount: '499.00' }),
+          { restock: false, assertRefundable: expect.any(Function) },
+        );
+      });
+
+      it('asks nothing when no amount is being recorded', async () => {
+        await service.resolveReturn(RETURN_ID, { status: ReturnStatus.REFUNDED });
+
+        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(RETURN_ID, expect.anything(), {
+          restock: false,
+        });
+      });
+
+      it('lets an operator clear a mistyped amount — null is never over any ceiling', async () => {
+        await refund(null);
+
+        expect(returnRepositoryMock.resolve).toHaveBeenCalledWith(
+          RETURN_ID,
+          expect.objectContaining({ refundedAmount: null }),
+          { restock: false },
+        );
+      });
+    });
   });
 });

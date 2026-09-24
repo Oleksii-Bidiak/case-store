@@ -11,7 +11,14 @@ import { OrderRepository } from '../order.repository';
 import { ReturnEntity } from './entities';
 import { RESTOCK_ON_STATUS, canTransitionReturn } from './return-state-machine';
 import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
-import type { AssertReturnClaimable, ReturnClaimRow, ReturnWithItems } from './return.types';
+import { refundExceedsOrderBalanceError, refundExceedsReturnedValueError } from './return.errors';
+import { centsToString, toCents } from '../../addon-service';
+import type {
+  AssertRefundWithinBalance,
+  AssertReturnClaimable,
+  ReturnClaimRow,
+  ReturnWithItems,
+} from './return.types';
 
 const DEFAULT_PAGE = 1;
 /** The one admin page size (TASK-423) — was 10, which no admin table uses now. */
@@ -212,6 +219,9 @@ export class ReturnService {
    * @throws NotFoundException when the return does not exist.
    * @throws ConflictException when the state machine forbids the move, or when
    *   the goods were already credited back to stock.
+   * @throws BadRequestException when `refundedAmount` exceeds the value of the
+   *   returned lines or what the order has left to refund (TASK-785) — see
+   *   {@link assertRefundWithinCeilings}.
    */
   async resolveReturn(returnId: string, dto: ResolveReturnDto): Promise<ReturnEntity> {
     const existing = await this.returnRepository.findById(returnId);
@@ -248,7 +258,13 @@ export class ReturnService {
         // request stamps it.
         resolvedAt: new Date(),
       },
-      { restock: dto.restock === true },
+      {
+        restock: dto.restock === true,
+        // Only a real amount can be over a ceiling; null clears a mistyped one.
+        ...(typeof dto.refundedAmount === 'string'
+          ? { assertRefundable: assertRefundWithinCeilings(dto.refundedAmount) }
+          : {}),
+      },
     );
 
     this.logger.info(
@@ -356,6 +372,45 @@ function countClaimedUnits(ledger: ReturnClaimRow[]): Map<string, number> {
   }
 
   return claimed;
+}
+
+/**
+ * The two ceilings on `refundedAmount` (TASK-785), returned as a closure for the
+ * repository to run inside the resolve transaction against a ledger read under a
+ * lock on the order row — the same shape as the quantity cap (TASK-784).
+ *
+ * 1. **Returned value** — Σ (unit price × returned quantity) over this return's
+ *    lines. GROSS line value: a discount is stored once on the order
+ *    (`Order.discount`, clamped against `subtotal`) and never allocated to lines,
+ *    so there is no per-line net price to use. Add-ons and shipping are not part
+ *    of it, matching the DTO's "may be less than the line total".
+ * 2. **Order balance** — `order.total` less every amount already recorded on the
+ *    order's OTHER returns. This is the one that catches the discount: a 499.00
+ *    line bought for 400.00 after a coupon refunds at most 400.00.
+ *
+ * All arithmetic in integer cents, like every money total in this codebase.
+ */
+function assertRefundWithinCeilings(refundedAmount: string): AssertRefundWithinBalance {
+  const requested = toCents(refundedAmount);
+
+  return ({ orderTotal, otherRefunds, items }) => {
+    const returnedValue = items.reduce(
+      (sum, item) => sum + toCents(item.unitPrice) * item.quantity,
+      0,
+    );
+    if (requested > returnedValue) {
+      throw refundExceedsReturnedValueError(refundedAmount, centsToString(returnedValue));
+    }
+
+    const alreadyRefunded = otherRefunds.reduce(
+      (sum, row) => sum + (row.refundedAmount === null ? 0 : toCents(row.refundedAmount)),
+      0,
+    );
+    const remaining = Math.max(toCents(orderTotal) - alreadyRefunded, 0);
+    if (requested > remaining) {
+      throw refundExceedsOrderBalanceError(refundedAmount, centsToString(remaining));
+    }
+  };
 }
 
 /** Re-exported for the module's public surface. */
