@@ -1,7 +1,7 @@
 import { IsOptional, IsEmail, IsString, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-import { normalizePhone } from '../../common/validators';
+import { normalizeEmail, normalizePhone } from '../../common/validators';
 
 /**
  * DTO for updating the authenticated user's profile.
@@ -23,6 +23,9 @@ export class UpdateProfileDto {
     required: false,
   })
   @IsOptional()
+  // TASK-772: compared against the stored (lowercased) address, so `A@B.com`
+  // echoed back for an account stored as `a@b.com` is a repeat, not a change.
+  @Transform(normalizeEmail)
   @IsEmail({}, { message: 'Please provide a valid email address' })
   email?: string;
 

@@ -28,6 +28,17 @@
   --color-muted: #f1f5f9;
   --color-muted-foreground: #64748b;
 
+  /* Disabled — the inactive state of the `shared/ui` controls (TASK-735, the
+     admin half of the TASK-736 rule; same values as the storefront).
+     Explicit colours instead of `opacity-50`: half opacity over already grey
+     text left it at ≈2.0:1 (muted-foreground) / ≈3.4:1 (foreground). The
+     foreground is a step darker than `muted-foreground`, which on this
+     surface is only 4.34:1. ≥ 4.5:1 against `disabled`, `background`, `card`,
+     `popover` and `muted` in BOTH themes is pinned by
+     app/globals-disabled-contrast.test.ts. */
+  --color-disabled: #f1f5f9;
+  --color-disabled-foreground: #475569;
+
   /* Accent — secondary actions, highlights */
   --color-accent: #f1f5f9;
   --color-accent-foreground: #0f172a;
@@ -98,6 +109,10 @@
     --color-muted: #1e293b;
     --color-muted-foreground: #94a3b8;
 
+    /* Disabled (TASK-735) — see the light block */
+    --color-disabled: #1e293b;
+    --color-disabled-foreground: #94a3b8;
+
     /* Accent */
     --color-accent: #1e293b;
     --color-accent-foreground: #ededed;
@@ -156,6 +171,8 @@
   --color-secondary-foreground: var(--color-secondary-foreground);
   --color-muted: var(--color-muted);
   --color-muted-foreground: var(--color-muted-foreground);
+  --color-disabled: var(--color-disabled);
+  --color-disabled-foreground: var(--color-disabled-foreground);
   --color-accent: var(--color-accent);
   --color-accent-foreground: var(--color-accent-foreground);
   --color-destructive: var(--color-destructive);
@@ -210,16 +227,31 @@
 
 /* ─────────────────────────────────────────────
    Base Styles
+   These are element defaults, so they live in `@layer base` (after Tailwind's
+   preflight, before `utilities`). An UN-layered rule beats every layered one
+   regardless of specificity — outside the layer, `* { border-color }` silently
+   cancelled every `border-{primary,destructive,ring,…}` utility in the admin
+   (`aria-invalid:border-destructive`, `focus-visible:border-ring`,
+   `data-[state=checked]:border-primary`, …), exactly as it did on the
+   storefront (TASK-735). Keep new element defaults inside this block.
    ───────────────────────────────────────────── */
-body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-}
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  }
 
-/* Border global default */
-* {
-  border-color: var(--color-border);
+  /* Border global default — overrides preflight's `border-color: currentColor`,
+     yields to any `border-*` colour utility. Same selector list as preflight's
+     reset, so `before:border` / `file:border` get the token too. */
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
 }
 
 /* ─────────────────────────────────────────────

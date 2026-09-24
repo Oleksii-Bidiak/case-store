@@ -8,6 +8,9 @@ import {
 import { ImageUploadService } from './image-upload.service';
 import { ImageProcessor, STORAGE_SERVICE } from '../storage';
 
+/** A real 1×1 GIF89a (header, colour table, GCE, one frame) with no metadata. */
+const TINY_GIF = Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64');
+
 function makeFile(overrides: Partial<Express.Multer.File> = {}): Express.Multer.File {
   return {
     fieldname: 'file',
@@ -166,16 +169,17 @@ describe('ImageUploadService', () => {
   });
 
   describe('GIF passthrough', () => {
-    it('stores the original bytes with no LQIP when the buffer really is a GIF', async () => {
+    it('stores the original frames, without re-encoding or an LQIP, when the buffer really is a GIF', async () => {
       imageProcessor.probe.mockResolvedValue({ format: 'gif', width: 320, height: 240 });
       storage.save.mockResolvedValue('content/abc.gif');
-      const gif = makeFile({ mimetype: 'image/gif', buffer: Buffer.from('gif-bytes') });
+      const gif = makeFile({ mimetype: 'image/gif', buffer: TINY_GIF });
 
       const stored = await service.store(gif, 'content');
 
       expect(imageProcessor.process).not.toHaveBeenCalled();
       const [buffer, ext] = storage.save.mock.calls[0];
-      expect(buffer).toEqual(Buffer.from('gif-bytes'));
+      // A GIF with no metadata comes out byte-identical: nothing is re-encoded.
+      expect(buffer).toEqual(TINY_GIF);
       expect(ext).toBe('gif');
       expect(stored.blurDataUrl).toBeNull();
       // A passthrough still reports its real shape and type — the media library
@@ -183,13 +187,51 @@ describe('ImageUploadService', () => {
       // from a backfilled row whose dimensions are genuinely unknown.
       expect(stored.width).toBe(320);
       expect(stored.height).toBe(240);
-      expect(stored.bytes).toBe(Buffer.from('gif-bytes').length);
+      expect(stored.bytes).toBe(TINY_GIF.length);
       expect(stored.mime).toBe('image/gif');
     });
 
+    // TASK-587. "Passthrough" keeps the frames, not the client's metadata.
+    it('writes the GIF without its comment block, and reports the STORED size', async () => {
+      imageProcessor.probe.mockResolvedValue({ format: 'gif', width: 1, height: 1 });
+      storage.save.mockResolvedValue('content/abc.gif');
+      const comment = Buffer.concat([
+        Buffer.from([0x21, 0xfe, 0x0a]),
+        Buffer.from('shot@home!', 'latin1'),
+        Buffer.from([0x00]),
+      ]);
+      const withComment = Buffer.concat([TINY_GIF.subarray(0, 19), comment, TINY_GIF.subarray(19)]);
+
+      const stored = await service.store(
+        makeFile({ mimetype: 'image/gif', buffer: withComment }),
+        'content',
+      );
+
+      const [buffer] = storage.save.mock.calls[0];
+      expect(buffer).toEqual(TINY_GIF);
+      expect(buffer.toString('latin1')).not.toContain('shot@home');
+      expect(stored.bytes).toBe(TINY_GIF.length);
+    });
+
+    it('refuses with 415 a GIF whose block structure cannot be walked', async () => {
+      // sharp's probe reads only the header, so a file that is a GIF up front and
+      // something else after it passes the sniff; it must not be stored anyway.
+      imageProcessor.probe.mockResolvedValue({ format: 'gif', width: 1, height: 1 });
+      const truncated = makeFile({
+        mimetype: 'image/gif',
+        buffer: Buffer.concat([TINY_GIF.subarray(0, 19), Buffer.from('<html><script>')]),
+      });
+
+      await expect(service.store(truncated, 'content')).rejects.toThrow(
+        UnsupportedMediaTypeException,
+      );
+      expect(storage.save).not.toHaveBeenCalled();
+    });
+
     it('sniffs the bytes rather than trusting image/gif', async () => {
-      // This is the only branch that writes client bytes verbatim, so a polyglot
-      // announced as a GIF would otherwise be served from our own origin.
+      // This is the only branch that stores client frame bytes without decoding
+      // them (TASK-587 strips only the metadata blocks around them), so a
+      // polyglot announced as a GIF would otherwise be served from our own origin.
       imageProcessor.probe.mockResolvedValue(null);
       const polyglot = makeFile({
         mimetype: 'image/gif',

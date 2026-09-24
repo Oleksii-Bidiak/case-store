@@ -8,6 +8,7 @@ import {
   fetchAllPublishedPages,
 } from "@/shared/lib/schema";
 import { fetchPublishedPosts } from "@/shared/api/blog-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 
 // In Next.js 16 metadata routes are cached (statically generated) by default,
 // which would call the API at BUILD time. `force-dynamic` opts into request-time
@@ -19,8 +20,18 @@ export const dynamic = "force-dynamic";
  * Dynamic sitemap.xml: static storefront pages plus one entry per active
  * product. On any fetch failure it logs and returns the static routes only, so
  * the route never crashes.
+ *
+ * Under the site-wide `noindexSite` kill switch (TASK-550) the sitemap is an
+ * empty `<urlset>`: robots.txt already drops its `Sitemap:` line then, but the
+ * URL itself would otherwise keep handing every product address to anyone who
+ * asks. Same settings read as robots.ts, so a failed fetch (null) fails open.
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const seo = await fetchSeoSettings();
+  if (seo?.noindexSite) {
+    return [];
+  }
+
   const now = new Date();
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: SITE_URL, lastModified: now, changeFrequency: "daily", priority: 1 },

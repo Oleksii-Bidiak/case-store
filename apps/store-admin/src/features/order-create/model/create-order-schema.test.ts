@@ -1,6 +1,9 @@
+import { dict } from "@/shared/config";
 import {
   CREATE_ORDER_DEFAULTS,
   CUSTOMER_MODE,
+  INTERNAL_NOTES_MAX_LENGTH,
+  NOTES_MAX_LENGTH,
   createOrderSchema,
   createOrderValuesToDto,
   type CreateOrderFormValues,
@@ -272,5 +275,43 @@ describe("createOrderSchema — contact validation follows the chosen mode", () 
         issuePaths(values({ phone: "" })).filter((path) => path === "phone"),
       ).toHaveLength(1);
     });
+  });
+});
+
+// TASK-794: a bare `max()` blocked the submit with nothing on screen. The limits
+// are the DTO's, and each refusal now carries the sentence the form renders.
+describe("createOrderSchema — note lengths name themselves (TASK-794)", () => {
+  const issueFor = (v: CreateOrderFormValues, path: string) => {
+    const result = createOrderSchema.safeParse(v);
+    if (result.success) return undefined;
+    return result.error.issues.find((issue) => issue.path[0] === path);
+  };
+
+  it("accepts the customer note at exactly the limit", () => {
+    expect(
+      issueFor(values({ notes: "н".repeat(NOTES_MAX_LENGTH) }), "notes"),
+    ).toBeUndefined();
+  });
+
+  it("refuses one character more, with the sentence the form shows", () => {
+    expect(
+      issueFor(values({ notes: "н".repeat(NOTES_MAX_LENGTH + 1) }), "notes")
+        ?.message,
+    ).toBe(dict.orderCreate.notesTooLong);
+  });
+
+  it("does the same for the internal note at its own, larger limit", () => {
+    expect(
+      issueFor(
+        values({ internalNotes: "н".repeat(INTERNAL_NOTES_MAX_LENGTH) }),
+        "internalNotes",
+      ),
+    ).toBeUndefined();
+    expect(
+      issueFor(
+        values({ internalNotes: "н".repeat(INTERNAL_NOTES_MAX_LENGTH + 1) }),
+        "internalNotes",
+      )?.message,
+    ).toBe(dict.orderCreate.internalNotesTooLong);
   });
 });

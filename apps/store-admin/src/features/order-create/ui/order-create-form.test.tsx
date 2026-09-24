@@ -1,11 +1,13 @@
 import { http, HttpResponse } from "msw";
 import {
+  fireEvent,
   renderWithProviders,
   screen,
   userEvent,
   waitFor,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { dict } from "@/shared/config";
 import { OrderCreateForm } from "./order-create-form";
 
 jest.mock("next/navigation", () => ({
@@ -231,5 +233,38 @@ describe("OrderCreateForm — the phone fields (TASK-426)", () => {
     expect(
       screen.getAllByText(/номер будь-якої країни/i).length,
     ).toBeGreaterThan(0);
+  });
+});
+
+describe("OrderCreateForm — the notes say why they block (TASK-794)", () => {
+  it("stops typing at each note's limit", () => {
+    renderWithProviders(<OrderCreateForm />);
+
+    expect(field("notes")).toHaveAttribute("maxLength", "500");
+    expect(field("internal-notes")).toHaveAttribute("maxLength", "2000");
+  });
+
+  // `maxLength` governs typing only; a value that arrives another way still
+  // meets the schema, and that refusal used to leave the button silently dead.
+  it("shows the length error under the field", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+
+    fireEvent.change(field("notes"), { target: { value: "н".repeat(501) } });
+    fireEvent.change(field("internal-notes"), {
+      target: { value: "н".repeat(2001) },
+    });
+    await user.click(
+      screen.getByRole("button", { name: dict.orderCreate.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.orderCreate.notesTooLong),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.orderCreate.internalNotesTooLong),
+    ).toBeInTheDocument();
+    expect(field("notes")).toHaveAttribute("aria-invalid", "true");
+    expect(field("internal-notes")).toHaveAttribute("aria-invalid", "true");
   });
 });

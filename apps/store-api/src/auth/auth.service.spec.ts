@@ -101,6 +101,7 @@ describe('AuthService', () => {
       createUser: jest.fn(),
       findRefreshToken: jest.fn(),
       saveRefreshToken: jest.fn(),
+      rotateRefreshToken: jest.fn(),
       revokeToken: jest.fn(),
       revokeAllUserTokens: jest.fn(),
       savePasswordResetToken: jest.fn(),
@@ -777,6 +778,46 @@ describe('AuthService', () => {
       expect(mailOutboxService.enqueueAccountLockedNotice).not.toHaveBeenCalled();
     });
 
+    // ─── TASK-772: the Google email is not a DTO, so nothing normalised it ────
+    //
+    // `users.email` is a case-sensitive unique text column. Google hands back
+    // whatever spelling the account holder chose, so a shopper who registered
+    // `a@gmail.com` and then pressed «Увійти з Google» as `A@Gmail.com` got a
+    // SECOND account. The profile email is normalised before every use.
+
+    it('matches an existing account whatever case Google spells the email in (TASK-772)', async () => {
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue(mockUser);
+
+      await service.loginWithGoogleProfile({ ...googleProfile, email: '  Test@Example.COM ' });
+
+      expect(authRepository.findByEmail).toHaveBeenCalledWith('test@example.com');
+      expect(authRepository.createUserFromOAuth).not.toHaveBeenCalled();
+      expect(authRepository.linkOAuthAccount).toHaveBeenCalledWith(
+        mockUser.id,
+        OAuthProvider.GOOGLE,
+        'google-sub-123',
+        'test@example.com',
+      );
+    });
+
+    it('provisions a new Google user under the normalised email (TASK-772)', async () => {
+      const newUser = { ...mockUser, id: 'user-uuid-new', passwordHash: null };
+      authRepository.findOAuthAccount.mockResolvedValue(null);
+      authRepository.findByEmail.mockResolvedValue(null);
+      authRepository.createUserFromOAuth.mockResolvedValue({
+        user: newUser,
+        oauthAccount: { ...mockOAuthLink, userId: newUser.id },
+      });
+
+      await service.loginWithGoogleProfile({ ...googleProfile, email: 'New.User@Gmail.com' });
+
+      expect(authRepository.findByEmail).toHaveBeenCalledWith('new.user@gmail.com');
+      expect(authRepository.createUserFromOAuth).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'new.user@gmail.com' }),
+      );
+    });
+
     // ─── TASK-314: the storefront's Google button is CUSTOMER-only ────────────
     //
     // Owner decision, 2026-07-27: storefront Google sign-in may NEVER mint a
@@ -919,10 +960,7 @@ describe('AuthService', () => {
       authRepository.findRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
       jwtService.sign.mockReturnValueOnce('new-access-token');
       jwtService.sign.mockReturnValueOnce('new-refresh-token');
-      authRepository.saveRefreshToken.mockResolvedValue({
-        ...mockRefreshTokenRecord,
-        token: 'new-refresh-token',
-      });
+      authRepository.rotateRefreshToken.mockResolvedValue(undefined);
 
       const result = await service.refreshToken('refresh-token-value');
 
@@ -930,11 +968,76 @@ describe('AuthService', () => {
       expect(result.accessToken).toBe('new-access-token');
       expect(result.refreshToken).toBe('new-refresh-token');
 
-      // Old token must be revoked
-      expect(authRepository.revokeToken).toHaveBeenCalledWith(mockRefreshTokenRecord.id);
+      // The replacement is persisted and the old token revoked in ONE
+      // repository call (one transaction) — TASK-496.
+      expect(authRepository.rotateRefreshToken).toHaveBeenCalledTimes(1);
+      expect(authRepository.rotateRefreshToken).toHaveBeenCalledWith(
+        mockRefreshTokenRecord.id,
+        mockUser.id,
+        'new-refresh-token',
+        expect.any(Date),
+      );
+      // …and never as two separate writes, which is what let the old token die
+      // before its replacement existed.
+      expect(authRepository.revokeToken).not.toHaveBeenCalled();
+      expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+    });
 
-      // New refresh token must be persisted
-      expect(authRepository.saveRefreshToken).toHaveBeenCalled();
+    // ─── TASK-496: mint the replacement before revoking the presented token ──
+    //
+    // The old order was revokeToken → generateTokenPair. Any failure in the mint
+    // left the session with no live token; the client then retried the same,
+    // now-revoked cookie, which reads as theft and revokes EVERY session the
+    // user holds (RFC 6819 §5.2.2). A failed refresh must leave the presented
+    // token exactly as live as it was, so the retry succeeds.
+
+    it('leaves the presented token untouched when minting the replacement throws', async () => {
+      authRepository.findRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+      jwtService.sign.mockImplementation(() => {
+        throw new Error('signing failed');
+      });
+
+      await expect(service.refreshToken('refresh-token-value')).rejects.toThrow('signing failed');
+
+      expect(authRepository.revokeToken).not.toHaveBeenCalled();
+      expect(authRepository.rotateRefreshToken).not.toHaveBeenCalled();
+      expect(authRepository.revokeAllUserTokens).not.toHaveBeenCalled();
+    });
+
+    it('does not revoke the presented token on its own when persisting the replacement fails', async () => {
+      authRepository.findRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+      jwtService.sign.mockReturnValueOnce('new-access-token');
+      jwtService.sign.mockReturnValueOnce('new-refresh-token');
+      authRepository.rotateRefreshToken.mockRejectedValue(new Error('unique constraint'));
+
+      await expect(service.refreshToken('refresh-token-value')).rejects.toThrow(
+        'unique constraint',
+      );
+
+      // The revoke lives inside the same transaction as the insert, so a failed
+      // insert rolls it back — no stand-alone revoke may have run.
+      expect(authRepository.revokeToken).not.toHaveBeenCalled();
+      expect(authRepository.revokeAllUserTokens).not.toHaveBeenCalled();
+    });
+
+    it('lets the retry with the same cookie succeed after a failed rotation', async () => {
+      // The row findRefreshToken returns on the retry is still NOT revoked —
+      // that is the point: no reuse detection, a fresh pair instead.
+      authRepository.findRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+      jwtService.sign
+        .mockReturnValueOnce('access-1')
+        .mockReturnValueOnce('refresh-1')
+        .mockReturnValueOnce('access-2')
+        .mockReturnValueOnce('refresh-2');
+      authRepository.rotateRefreshToken
+        .mockRejectedValueOnce(new Error('transient'))
+        .mockResolvedValueOnce(undefined);
+
+      await expect(service.refreshToken('refresh-token-value')).rejects.toThrow('transient');
+      const retry = await service.refreshToken('refresh-token-value');
+
+      expect(retry.refreshToken).toBe('refresh-2');
+      expect(authRepository.revokeAllUserTokens).not.toHaveBeenCalled();
     });
 
     // ─── TASK-314: the session must not outlive the account ──────────────────

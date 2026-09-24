@@ -11,7 +11,12 @@ import { normalizeUaPhone, phoneDigits } from '../../common/validators';
 import { ProductIndexer } from '../../search/product-indexer';
 import { RETURN_SORT_FIELDS } from './dto';
 import type { ReturnSortField } from './dto';
-import type { CreateReturnParams, ReturnWithItems } from './return.types';
+import type {
+  AssertRefundWithinBalance,
+  AssertReturnClaimable,
+  CreateReturnParams,
+  ReturnWithItems,
+} from './return.types';
 
 /**
  * Shared include for return reads: the lines, each with the order line it points
@@ -96,9 +101,47 @@ export class ReturnRepository {
     private readonly productIndexer: ProductIndexer,
   ) {}
 
-  /** Open a return request with its lines in one write (TASK-340). */
-  async create(params: CreateReturnParams): Promise<ReturnWithItems> {
-    return this.prisma.return.create({
+  /**
+   * Open a return request with its lines, checking the "no more than was bought"
+   * cap in the SAME transaction as the insert (TASK-340, TASK-784).
+   *
+   * ── Why the order row is locked ─────────────────────────────────────────────
+   * The cap is a sum over every live return of the order, and a sum cannot be
+   * guarded by a unique key or a CHECK. It used to be read before the insert as a
+   * separate statement, so two concurrent "Подати заявку" clicks on the last unit
+   * both read "0 claimed", both inserted, and resolving each with `restock`
+   * credited the shop a unit it never got back.
+   *
+   * `SELECT … FOR UPDATE` on the order serialises every return opened against
+   * it: the second request blocks on the first's row lock and, under READ
+   * COMMITTED, its ledger read (a new statement) sees the first's committed
+   * return. The check then refuses it. Returns against other orders never wait.
+   *
+   * @param assertClaimable the service's rule, run against the locked ledger;
+   *   throwing rolls the transaction back before anything is written.
+   */
+  async create(
+    params: CreateReturnParams,
+    assertClaimable: AssertReturnClaimable,
+  ): Promise<ReturnWithItems> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM orders WHERE id = ${params.orderId} FOR UPDATE`;
+
+      const ledger = await tx.return.findMany({
+        where: { orderId: params.orderId },
+        select: { status: true, items: { select: { orderItemId: true, quantity: true } } },
+      });
+      assertClaimable(ledger);
+
+      return this.insertReturn(tx, params);
+    });
+  }
+
+  private insertReturn(
+    tx: Prisma.TransactionClient,
+    params: CreateReturnParams,
+  ): Promise<ReturnWithItems> {
+    return tx.return.create({
       data: {
         orderId: params.orderId,
         reason: params.reason ?? null,
@@ -208,6 +251,15 @@ export class ReturnRepository {
    * lock, re-evaluates after it commits, matches zero rows, and aborts before
    * touching a single product.
    *
+   * ── The refund ceilings (TASK-785) ─────────────────────────────────────────
+   * When the service passes `assertRefundable`, the order row is locked
+   * (`FOR UPDATE`, the same lock `create` takes) and the order's total plus the
+   * amounts already recorded on its OTHER returns are read under it, then handed
+   * to the check before anything is written. Two operators refunding two returns
+   * of one order at once therefore serialise, and the second sees the first's
+   * committed amount — a read taken outside the transaction would let both spend
+   * the same balance.
+   *
    * @throws ConflictException when the stock was already credited back.
    */
   async resolve(
@@ -218,13 +270,30 @@ export class ReturnRepository {
       refundedAmount?: string | null;
       resolvedAt?: Date | null;
     },
-    options: { restock?: boolean } = {},
+    options: { restock?: boolean; assertRefundable?: AssertRefundWithinBalance } = {},
   ): Promise<ReturnWithItems> {
     const updated = (await this.prisma.$transaction(async (tx) => {
       const existing = await tx.return.findUniqueOrThrow({
         where: { id: returnId },
         include: RETURNS_INCLUDE,
       });
+
+      if (options.assertRefundable) {
+        const [order] = await tx.$queryRaw<Array<{ total: Prisma.Decimal }>>`
+          SELECT total FROM orders WHERE id = ${existing.orderId} FOR UPDATE`;
+        const otherRefunds = await tx.return.findMany({
+          where: { orderId: existing.orderId, id: { not: returnId } },
+          select: { refundedAmount: true },
+        });
+        options.assertRefundable({
+          orderTotal: order.total,
+          otherRefunds,
+          items: existing.items.map((item) => ({
+            quantity: item.quantity,
+            unitPrice: item.orderItem.price,
+          })),
+        });
+      }
 
       const data: Prisma.ReturnUpdateInput = { status: fields.status };
       if (fields.operatorNotes !== undefined) data.operatorNotes = fields.operatorNotes;

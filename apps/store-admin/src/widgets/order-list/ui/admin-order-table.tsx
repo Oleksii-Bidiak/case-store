@@ -144,8 +144,9 @@ const CUSTOM_TAB = "__custom__";
  *
  * TASK-354 moved the controls into `TableToolbar` and added the refresh button.
  * The lifecycle Tabs sit in the toolbar's `filters` slot next to the Select,
- * inside their own wrapper so the two wrap against each other instead of
- * fighting the toolbar's `md:flex-nowrap` row. Their deep-link contract is
+ * inside their own wrapper so the two wrap against each other; when the whole
+ * block does not fit beside the search, the toolbar's wrapping row drops it to
+ * a second line (TASK-775 / TASK-732). Their deep-link contract is
  * untouched — this is a relayout, not a rework.
  */
 export function AdminOrderTable() {

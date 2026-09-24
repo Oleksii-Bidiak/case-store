@@ -26,6 +26,15 @@
   --color-muted: #f1f5f9;
   --color-muted-foreground: #64748b;
 
+  /* Disabled — the inactive state of the `shared/ui` controls (TASK-736).
+     Explicit colours instead of `opacity-50`: half opacity over already grey
+     text gave ≈2.0:1 (muted-foreground) / ≈3.4:1 (foreground). The foreground
+     is a step darker than `muted-foreground`, which on this surface is only
+     4.34:1. ≥ 4.5:1 against `disabled`, `background`, `card`, `popover` and
+     `muted` in BOTH themes is pinned by app/globals-disabled-contrast.test.ts. */
+  --color-disabled: #f1f5f9;
+  --color-disabled-foreground: #475569;
+
   /* Accent — secondary actions, highlights */
   --color-accent: #f1f5f9;
   --color-accent-foreground: #0f172a;
@@ -132,6 +141,10 @@
     --color-muted: #1e293b;
     --color-muted-foreground: #94a3b8;
 
+    /* Disabled (TASK-736) — see the light block */
+    --color-disabled: #1e293b;
+    --color-disabled-foreground: #94a3b8;
+
     /* Accent */
     --color-accent: #1e293b;
     --color-accent-foreground: #ededed;
@@ -195,6 +208,10 @@
   /* Muted */
   --color-muted: #1e293b;
   --color-muted-foreground: #94a3b8;
+
+  /* Disabled (TASK-736) — see the light block */
+  --color-disabled: #1e293b;
+  --color-disabled-foreground: #94a3b8;
 
   /* Accent */
   --color-accent: #1e293b;
@@ -280,6 +297,8 @@
   --color-secondary-foreground: var(--color-secondary-foreground);
   --color-muted: var(--color-muted);
   --color-muted-foreground: var(--color-muted-foreground);
+  --color-disabled: var(--color-disabled);
+  --color-disabled-foreground: var(--color-disabled-foreground);
   --color-accent: var(--color-accent);
   --color-accent-foreground: var(--color-accent-foreground);
   --color-destructive: var(--color-destructive);
@@ -321,24 +340,41 @@
 
 /* ─────────────────────────────────────────────
    Base Styles
+   These are element defaults, so they live in `@layer base` (after Tailwind's
+   preflight, before `utilities`). An UN-layered rule beats every layered one
+   regardless of specificity — outside the layer, `* { border-color }` silently
+   cancelled every `border-{primary,destructive,ring,…}` utility on the site
+   (`aria-invalid:border-destructive`, `hover:border-primary/30`,
+   `focus-visible:border-ring`, …) and `button:not(:disabled)` cancelled every
+   `cursor-*` utility on an enabled button (TASK-735). Keep new element
+   defaults inside this block.
    ───────────────────────────────────────────── */
-body {
-  background-color: var(--color-background);
-  color: var(--color-foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
-}
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  }
 
-/* Border global default */
-* {
-  border-color: var(--color-border);
-}
+  /* Border global default — overrides preflight's `border-color: currentColor`,
+     yields to any `border-*` colour utility. Same selector list as preflight's
+     reset, so `before:border` / `file:border` get the token too. */
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
 
-/* Enabled buttons always show the hand cursor — Tailwind v4 preflight resets
-   `<button>` to `cursor: default`, so this restores a single site-wide policy
-   (disabled buttons keep the default arrow). Removes the need for per-element
-   `cursor-pointer` utilities on plain buttons (TASK-259-C / F-03). */
-button:not(:disabled) {
-  cursor: pointer;
+  /* Enabled buttons show the hand cursor by default — Tailwind v4 preflight
+     resets `<button>` to `cursor: default`, so this restores a single site-wide
+     policy (disabled buttons keep the default arrow) without per-element
+     `cursor-pointer` utilities (TASK-259-C / F-03). An explicit `cursor-*`
+     utility (e.g. `cursor-zoom-in`) still wins. */
+  button:not(:disabled) {
+    cursor: pointer;
+  }
 }
 
 /* ─────────────────────────────────────────────
@@ -359,14 +395,37 @@ html {
    viewport can actually show (TASK-410). Overlay scrollbars (phones) have zero
    width, so this costs mobile nothing.
 
-   Scoped OUT while a Radix overlay is open: react-remove-scroll locks the page
-   by setting `overflow: hidden` + `margin-right: <scrollbar width>` on <body>
-   (it measures `innerWidth - documentElement.clientWidth`, see
-   react-remove-scroll-bar/utils). With a stable gutter that compensation would
-   be counted twice and the page would slide under every sheet/dialog. Dropping
-   the gutter exactly when the lock attribute appears keeps the two in step. */
-html:not(:has(body[data-scroll-locked])) {
+   The gutter is reserved ALWAYS — including while a scroll lock is on. With
+   `stable`, the gutter survives `overflow: hidden` (CSS Overflow 3), so a lock
+   that hides the scrollbar leaves the root box exactly as wide as before: zero
+   shift by construction, with no measuring at all (TASK-510). */
+html {
   scrollbar-gutter: stable;
+}
+/* …which makes every margin a scroll lock adds on <body> a double count, so
+   neutralize it. Two locks write one:
+   - react-remove-scroll-bar (every Radix Dialog/Sheet/Select) injects
+     `body[data-scroll-locked] { margin-right: <gap>px !important }`, with gap =
+     `innerWidth - documentElement.clientWidth`. Under a stable gutter Chrome
+     reports the full viewport in clientWidth (gap 0), Firefox the root box (gap
+     = scrollbar width) — so the value is browser-dependent, and any non-zero
+     one would squeeze <body> inside the gutter that is still there.
+   - the mega-menu's own lock (widgets/header/ui/header-search.tsx) sets an
+     inline `margin-right` equal to the gutter.
+   `!important` beats the inline style; the extra `html` compound out-ranks the
+   library's `body[data-scroll-locked]` (0,1,1), whose <style> tag is appended
+   to <head> after this sheet and would otherwise win the tie on order. This
+   used to be the other way round — gutter dropped while locked
+   (`html:not(:has(body[data-scroll-locked]))`) — which relied on that gap being
+   measured correctly; in Chrome it measured 0 and every overlay slid the page
+   right by the scrollbar width.
+   Behind `@supports`: a browser without `scrollbar-gutter` (Safari < 18.2)
+   reserves no gutter, so there the lock really does free a scrollbar's width —
+   and both locks measure it correctly — so their compensation must stand. */
+@supports (scrollbar-gutter: stable) {
+  html body[data-scroll-locked] {
+    margin-right: 0 !important;
+  }
 }
 *::-webkit-scrollbar {
   width: 10px;

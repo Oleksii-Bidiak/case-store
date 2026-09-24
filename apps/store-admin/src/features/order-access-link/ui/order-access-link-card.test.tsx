@@ -56,10 +56,14 @@ function issueFails(status: number): void {
  * to say that it is testing the operator who has it. The gate itself is tested
  * separately.
  */
-function renderCard(permissions: string[] = ["orders:write"]) {
-  return renderWithProviders(<OrderAccessLinkCard orderId={ORDER_ID} />, {
-    auth: { permissions },
-  });
+function renderCard(
+  permissions: string[] = ["orders:write"],
+  userId: string | null = null,
+) {
+  return renderWithProviders(
+    <OrderAccessLinkCard orderId={ORDER_ID} userId={userId} />,
+    { auth: { permissions } },
+  );
 }
 
 /**
@@ -89,6 +93,43 @@ describe("OrderAccessLinkCard — who may issue", () => {
     const { container } = renderCard(["orders:read"]);
 
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe("OrderAccessLinkCard — account orders (TASK-623)", () => {
+  it("offers no button on an account order and says the buyer uses the cabinet", () => {
+    renderCard(["orders:write"], "user-uuid-1");
+
+    // The API refuses (409) for any order with a userId. A button there could
+    // only fail, so the card explains instead.
+    expect(
+      screen.getByText(/покупець бачить замовлення в кабінеті/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Показати попереднє посилання неможливо/i),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stays absent for an account order when the viewer lacks orders:write", () => {
+    const { container } = renderCard(["orders:read"], "user-uuid-1");
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("explains a 409 that arrives because the order was claimed after the page loaded", async () => {
+    const user = userEvent.setup();
+    issueFails(409);
+    renderCard();
+
+    await user.click(
+      screen.getByRole("button", { name: "Видати нове посилання" }),
+    );
+
+    expect(
+      await screen.findByText(/Замовлення вже належить акаунту/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/orders\/guest\//)).not.toBeInTheDocument();
   });
 });
 

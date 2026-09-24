@@ -31,7 +31,18 @@ export async function GET(): Promise<Response> {
   // product fetch into an empty channel, and `fetchSeoSettings()` already
   // swallows its own errors (null → the SITE_NAME fallback), so it needs no
   // second net and must not be able to empty the catalogue by failing.
-  const siteName = resolveSiteName(await fetchSeoSettings());
+  const seo = await fetchSeoSettings();
+  // Site-wide noindex (TASK-550): a staging deploy must not publish its
+  // catalogue to Merchant Center either. 404 (not the empty-channel 200 below)
+  // because this is a deliberate "no feed here", not a degraded fetch — and it
+  // is checked before the product fetch, so the flag costs no catalogue read.
+  if (seo?.noindexSite) {
+    return new Response(null, {
+      status: 404,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
+  const siteName = resolveSiteName(seo);
 
   let products: MerchantFeedProduct[] = [];
   try {

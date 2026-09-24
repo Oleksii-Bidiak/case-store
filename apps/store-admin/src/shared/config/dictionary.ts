@@ -2656,6 +2656,14 @@ export const dict = {
     // не помилка оператора, тому текст каже, кого кликати.
     failedNotConfigured:
       "Адресу вітрини не налаштовано, тому посилання створити неможливо. Зверніться до розробника.",
+    // TASK-623: API видає посилання лише гостьовому замовленню (userId === null).
+    // Акаунтне — і гостьове, яке потім привласнив зареєстрований покупець, — 409.
+    accountOrderHint:
+      "Посилання видаються лише для гостьових замовлень: це замовлення належить акаунту, і покупець бачить замовлення в кабінеті.",
+    // 409 після натискання: замовлення привласнили акаунту вже після того, як
+    // сторінку було відкрито.
+    failedAccountOrder:
+      "Замовлення вже належить акаунту — посилання не видається, покупець бачить замовлення в кабінеті.",
   },
 
   // --- Returns / RMA (TASK-340) -----------------------------------------------
@@ -2722,6 +2730,19 @@ export const dict = {
       "Скільки фактично повернули клієнту. Може бути меншим за суму позицій — доставка повертається не завжди.",
     resolveRefundedAmountInvalid:
       "Сума має бути у форматі 499 або 499.00 (до двох знаків).",
+    // TASK-785 — the two ceilings the API enforces, in its order. The amount is
+    // named when the form knows it; the server's own 400 carries no localized
+    // number, so the same sentence is shown without one.
+    resolveRefundExceedsReturnedValue: (max?: string) =>
+      max
+        ? `Сума більша за вартість позицій, що повертаються (${max}). Перевірте, чи не пропущено крапку.`
+        : "Сума більша за вартість позицій, що повертаються. Перевірте, чи не пропущено крапку.",
+    resolveRefundExceedsOrderBalance: (max?: string) =>
+      max
+        ? `Сума більша за те, що ще можна повернути за цим замовленням (${max}) з урахуванням знижки та інших повернень.`
+        : "Сума більша за те, що ще можна повернути за цим замовленням з урахуванням знижки та інших повернень.",
+    // TASK-794 — the limit is `ResolveReturnDto.operatorNotes` (@MaxLength).
+    operatorNotesTooLong: "Примітка має містити не більше 2000 символів.",
     resolveRestock: "Повернути товар у продаж",
     // `restock` is explicit rather than inferred from the status because "the
     // parcel arrived" and "the contents are sellable again" are different claims.
@@ -2826,6 +2847,11 @@ export const dict = {
     notesPlaceholder: "Побажання клієнта…",
     internalNotes: "Внутрішні примітки",
     internalNotesPlaceholder: "Нотатка для команди…",
+    // TASK-794 — the limits are `CreateManualOrderDto` (@MaxLength 500 / 2000).
+    // Shown under the field: a blocked submit with no visible reason is a button
+    // that silently does nothing.
+    notesTooLong: "Примітка для клієнта — не більше 500 символів.",
+    internalNotesTooLong: "Внутрішня примітка — не більше 2000 символів.",
 
     submit: "Створити замовлення",
     cancel: "Скасувати",

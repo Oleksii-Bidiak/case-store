@@ -252,6 +252,49 @@ async function refreshAccessToken(): Promise<string | null> {
   return (await refreshSession()).accessToken;
 }
 
+// ─── Session-expired signal (TASK-773) ───────────────────────────────────────
+// The token above is a module variable, but `isAuthenticated` is React state in
+// `AuthProvider`. When the interceptor's refresh failed it used to drop only the
+// module copy, so the app went on believing a shopper was signed in while every
+// request left without `Authorization`: checkout hid the guest email block and
+// the order went out with neither a contact nor a bearer (400, in English, and
+// no way out but F5). This is the one-way wire back: the interceptor announces
+// that the session it was carrying is gone, and the provider — the only owner
+// of the React copy — signs its context out.
+//
+// A listener set rather than a window event: the only subscriber is in-process,
+// and a plain callback needs no event-name string for two files to agree on.
+
+type SessionExpiredListener = () => void;
+
+const sessionExpiredListeners = new Set<SessionExpiredListener>();
+
+/**
+ * Subscribe to "the interceptor's refresh failed and the access token was
+ * dropped". Returns the unsubscribe function (so it drops straight into a
+ * `useEffect` cleanup).
+ *
+ * Fired for EVERY failed refresh, transient ones included: whatever the reason,
+ * the token is gone from memory from this point on, so the UI must stop acting
+ * signed in. What a transient failure must NOT do is forget the session marker
+ * (fix/196) — `refreshSession` owns that and clears it on 401 only, so the next
+ * page load still restores a session that a 5xx merely interrupted.
+ */
+export function onSessionExpired(listener: SessionExpiredListener): () => void {
+  sessionExpiredListeners.add(listener);
+  return () => {
+    sessionExpiredListeners.delete(listener);
+  };
+}
+
+function emitSessionExpired(): void {
+  // Copy first: a listener that unsubscribes while being called must not skip
+  // the one after it.
+  for (const listener of [...sessionExpiredListeners]) {
+    listener();
+  }
+}
+
 api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
@@ -269,6 +312,10 @@ api.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
+      // The session this request was carrying. If a sign-in lands while the
+      // refresh is in flight, the failure below belongs to the OLD session and
+      // must not sign the new one out.
+      const tokenAtFailure = accessToken;
       const newToken = await refreshAccessToken();
 
       if (newToken) {
@@ -280,8 +327,14 @@ api.interceptors.response.use(
         return api(originalRequest);
       }
 
-      // Refresh failed — drop the stale token; caller handles the rejection.
-      setAccessToken(null);
+      // Refresh failed — drop the stale token and tell the AuthProvider, so
+      // `isAuthenticated` falls with it (TASK-773). The signal is idempotent
+      // (the provider only nulls its state), so concurrent 401s sharing one
+      // refresh may each send it. The caller handles the rejection.
+      if (accessToken === tokenAtFailure) {
+        setAccessToken(null);
+        emitSessionExpired();
+      }
     }
 
     return Promise.reject(error);

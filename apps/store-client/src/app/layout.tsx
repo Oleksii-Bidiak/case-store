@@ -131,6 +131,16 @@ export async function generateMetadata(): Promise<Metadata> {
               : undefined,
           }
         : undefined,
+    // Site-wide kill switch (TASK-550): `robots.txt` alone only stops crawling —
+    // a URL that is already known (linked from elsewhere, or indexed before the
+    // flag was flipped) stays in the index until the crawler sees a `noindex`
+    // on the page itself. Emitted here so every route inherits it. Next merges
+    // metadata shallowly, so a child that sets its own `robots` replaces this
+    // object — every such child only ever sets `index: false` (pinned by
+    // layout.test.ts), so no route can re-enable indexing under the flag.
+    // A failed settings fetch (null) keeps the site indexable on purpose, the
+    // same fail-open rule robots.ts follows.
+    ...(seo?.noindexSite ? { robots: { index: false, follow: false } } : {}),
   };
 }
 

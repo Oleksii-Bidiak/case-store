@@ -26,7 +26,7 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { FailClosedThrottle } from '../throttler';
+import { FailClosedThrottle, OrderLookupThrottle } from '../throttler';
 import { OrderService, PaginationMeta } from './order.service';
 import {
   OrderEntity,
@@ -232,9 +232,17 @@ export class OrderController {
    *
    * Rate-limited hard: this is the one route where a valid guess would hand over
    * somebody else's order.
+   *
+   * ── Why a GET is fail-CLOSED here (TASK-606) ──────────────────────────────
+   * `@FailClosedThrottle` is normally kept off reads, but this read IS a
+   * credential check: the path segment is the secret. With Redis down and the
+   * throttle failing open, the route would answer an unlimited stream of
+   * guesses — the same oracle `POST /orders/lookup` below refuses to become.
+   * A guest who cannot open their order during a Redis blip is the lesser harm.
    */
   @Get('guest/:token')
   @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @FailClosedThrottle()
   @ApiOperation({ summary: 'Get a guest order by its emailed token', operationId: 'getGuestOrder' })
   @ApiParam({ name: 'token', description: 'Opaque access token from the confirmation email' })
   @ApiResponse({
@@ -275,6 +283,15 @@ export class OrderController {
    * the cap. That ordering — a form that stops working rather than one that
    * becomes unlimited — is the lesson TASK-464 paid for.
    *
+   * ── Why a SECOND bucket, per order number (TASK-624) ──────────────────────
+   * The per-IP cap stops one client; it cannot see a guess spread across a
+   * thousand addresses at the same order. `@OrderLookupThrottle` adds a bucket
+   * keyed by the normalised number (ten an hour, from everyone combined — the
+   * reasoning sits next to the limit in `throttler.config.ts`), and a refusal
+   * from it is logged as `order.lookup_throttled` with a keyed fingerprint of the
+   * number, never the number. Fail-closed covers it like the per-IP one: both
+   * live in the same store.
+   *
    * Every failure answers 404, produced in one place — see
    * `OrderService.lookupOrders`.
    */
@@ -284,6 +301,7 @@ export class OrderController {
   // more than a customer checking their parcel needs, and far less than a script
   // walking through order numbers can use.
   @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @OrderLookupThrottle()
   @FailClosedThrottle()
   @ApiOperation({ summary: 'Look up an order by number and phone', operationId: 'lookupOrder' })
   @ApiResponse({

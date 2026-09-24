@@ -14,6 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 // another agent's file in this wave). Same module either way.
 import {
   clearSessionMarker,
+  onSessionExpired,
   refreshSession,
   setAccessToken,
   shouldAttemptSessionRefresh,
@@ -106,16 +107,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setRole(claims?.role ?? null);
   }, []);
 
-  const clearTokens = useCallback(() => {
-    setAccessToken(null);
+  // Null the React copy of the session. Shared by an explicit sign-out and by
+  // the interceptor's failed refresh, which differ only in the marker below.
+  const dropSessionState = useCallback(() => {
     setToken(null);
     setUserId(null);
     setRole(null);
+  }, []);
+
+  const clearTokens = useCallback(() => {
+    setAccessToken(null);
+    dropSessionState();
     // Every sign-out in the app funnels through here (header, account page,
     // logout button, password change). Forget the marker too, so the next page
     // load is a silent guest instead of one doomed refresh.
     clearSessionMarker();
-  }, []);
+  }, [dropSessionState]);
+
+  // The interceptor's refresh failed and it has already dropped the module
+  // token (TASK-773). Before this only that module copy fell: `isAuthenticated`
+  // stayed true, checkout hid the guest email block and sent an order with
+  // neither a contact nor a bearer. Sign the context out with it.
+  //
+  // Deliberately not `clearTokens()`: that also forgets the session marker, and
+  // a transient failure (429, 5xx, network) must keep it so the next page load
+  // can still restore the session (fix/196). A 401 has already cleared the
+  // marker inside `refreshSession`, so both cases end up right.
+  useEffect(() => onSessionExpired(dropSessionState), [dropSessionState]);
 
   // Restore the session once on mount via the refresh cookie.
   useEffect(() => {

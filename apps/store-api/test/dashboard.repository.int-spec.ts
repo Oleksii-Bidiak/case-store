@@ -471,12 +471,16 @@ describe('DashboardRepository (integration)', () => {
       // excluded). Since TASK-585 the counter is about the TEXT queue, not about
       // whether a rating counts — `ratingVisible` is deliberately left at its
       // default on both rows to prove the counter does not look at it.
+      // Both rows carry a comment: since TASK-598 the queue (`moderationQueueWhere`)
+      // counts only rows with text to moderate, so a star-only PENDING row would be
+      // excluded, and the APPROVED row must be excluded by its status alone (TASK-617).
       // Unique per (userId, productId), so two distinct products.
       await prisma.review.create({
         data: {
           userId,
           productId: paidProductId,
           rating: 4,
+          comment: 'Awaiting moderation',
           textStatus: ReviewTextStatus.PENDING,
         },
       });
@@ -485,6 +489,7 @@ describe('DashboardRepository (integration)', () => {
           userId,
           productId: unpaidProductId,
           rating: 5,
+          comment: 'Already moderated',
           textStatus: ReviewTextStatus.APPROVED,
         },
       });

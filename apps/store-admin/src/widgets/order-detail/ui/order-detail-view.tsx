@@ -394,10 +394,12 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
 
           {/* TASK-484: directly under "who is this", because it answers the next
               question in the same conversation — "and how does he see it?".
-              Shown for EVERY order, account ones included: an operator takes a
-              phone order for a registered customer too, and that customer may
-              never have signed in on the phone they are holding. */}
-          <OrderAccessLinkCard orderId={orderId} />
+              TASK-623: the API issues links for guest orders only (409 for an
+              account order), so the card hides the button when `userId` is set
+              and says the buyer sees the order in their cabinet. Keyed off
+              `userId`, NOT `guest`: a guest order claimed by a registering
+              account carries both, and the API refuses it too. */}
+          <OrderAccessLinkCard orderId={orderId} userId={order.userId} />
 
           {/* Above the money block since TASK-425: this is what the operator
               reads out while the courier waits on the line. */}

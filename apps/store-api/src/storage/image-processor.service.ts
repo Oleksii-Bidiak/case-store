@@ -188,6 +188,11 @@ export class ImageProcessor {
     // dimensions cost nothing and cannot disagree with the bytes we store.
     // Measuring them afterwards with a second `sharp(webp).metadata()` would be
     // a second decode AND a second source of truth.
+    //
+    // `limitInputPixels` is passed explicitly, never left to sharp's default: this
+    // is the only place untrusted bytes get fully decoded, so it is the only guard
+    // against a decompression bomb (a small file that decodes huge, which no byte
+    // cap can catch). See MAX_INPUT_PIXELS for why the number is what it is.
     const { data: webp, info } = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
       .rotate()
       .resize({
@@ -217,8 +222,9 @@ export class ImageProcessor {
    * Sniff format AND dimensions from a buffer's own bytes in one metadata read,
    * or null when it is not a decodable image (TASK-441).
    *
-   * Exists for the animated-GIF passthrough, the one path that stores client
-   * bytes verbatim: it needs the format gate {@link detectFormat} provides AND
+   * Exists for the animated-GIF path, the one path sharp never re-encodes (its
+   * bytes are only rebuilt by `stripGifMetadata`, TASK-587): it needs the
+   * format gate {@link detectFormat} provides AND
    * the dimensions the media library records, and reading the header twice to
    * get them would be two chances to disagree.
    */

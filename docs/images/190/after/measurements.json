@@ -1,0 +1,106 @@
+{
+  "task510": {
+    "viewport": {
+      "width": 900,
+      "height": 800
+    },
+    "mobileMenu": {
+      "route": "/",
+      "before": {
+        "bodyWidth": 890,
+        "innerWidth": 900,
+        "docClientWidth": 890,
+        "docOffsetWidth": 890,
+        "scrollbarWidth": 10,
+        "bodyMarginRight": "0px",
+        "bodyPaddingRight": "0px",
+        "htmlScrollbarGutter": "stable",
+        "scrollLocked": false
+      },
+      "open": {
+        "bodyWidth": 890,
+        "innerWidth": 900,
+        "docClientWidth": 900,
+        "docOffsetWidth": 890,
+        "scrollbarWidth": 10,
+        "bodyMarginRight": "0px",
+        "bodyPaddingRight": "0px",
+        "htmlScrollbarGutter": "stable",
+        "scrollLocked": true
+      },
+      "afterClose": {
+        "bodyWidth": 890,
+        "innerWidth": 900,
+        "docClientWidth": 890,
+        "docOffsetWidth": 890,
+        "scrollbarWidth": 10,
+        "bodyMarginRight": "0px",
+        "bodyPaddingRight": "0px",
+        "htmlScrollbarGutter": "stable",
+        "scrollLocked": false
+      },
+      "shiftPx": 0
+    },
+    "filterDrawer": {
+      "route": "/products",
+      "before": {
+        "bodyWidth": 890,
+        "innerWidth": 900,
+        "docClientWidth": 890,
+        "docOffsetWidth": 890,
+        "scrollbarWidth": 10,
+        "bodyMarginRight": "0px",
+        "bodyPaddingRight": "0px",
+        "htmlScrollbarGutter": "stable",
+        "scrollLocked": false
+      },
+      "open": {
+        "bodyWidth": 890,
+        "innerWidth": 900,
+        "docClientWidth": 900,
+        "docOffsetWidth": 890,
+        "scrollbarWidth": 10,
+        "bodyMarginRight": "0px",
+        "bodyPaddingRight": "0px",
+        "htmlScrollbarGutter": "stable",
+        "scrollLocked": true
+      },
+      "shiftPx": 0
+    }
+  },
+  "meta": {
+    "mode": "after",
+    "capturedAt": "2026-09-24T11:52:14.237Z",
+    "note": "Written by e2e/screens-190.spec.ts. Widths are CSS px."
+  },
+  "disabledControlScreen": {
+    "route": "/products/new",
+    "control": "button \"+ рядок\""
+  },
+  "task732": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "route": "/orders",
+    "searchInput": {
+      "visible": true,
+      "width": 320,
+      "height": 36,
+      "x": 280,
+      "y": 144,
+      "centre": {
+        "x": 440,
+        "y": 162
+      },
+      "elementAtCentre": "input.h-9.w-full.min-w-0.rounded-md[aria-label=\"Пошук замовлень\"]",
+      "centreIsInput": true
+    },
+    "statusTabs": {
+      "x": 280,
+      "y": 188,
+      "width": 303.171875,
+      "height": 36
+    }
+  }
+}

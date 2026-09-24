@@ -1,3 +1,4 @@
+import { CreateOrderDtoPaymentMethod } from "@/entities/order";
 import { dict } from "@/shared/config";
 
 /**
@@ -14,16 +15,19 @@ import { dict } from "@/shared/config";
  * is the single place that decides that.
  *
  * ── How a method actually reaches the backend ─────────────────────────────────
- * `CreateOrderDto` carries NO payment-method field (see the generated model), so
- * the choice is not a property of the create-order call. It reaches the API as an
- * *action*:
+ * Twice, and both halves matter (TASK-650):
  *
- *   ON_DELIVERY  → create the order and stop. This is the backend's own default
- *                  (`Order.paymentMethod @default(ON_DELIVERY)`), so what the
- *                  shopper picked and what is stored agree.
- *   ONLINE /     → create the order, then `POST /api/payments/orders/:id/checkout`,
- *   INSTALLMENTS   which opens a real `Payment` attempt and returns a signed
- *                  handoff. The browser then leaves for the provider's page.
+ *   1. As a FIELD. `CreateOrderDto.paymentMethod` carries the choice on the
+ *      create-order call itself ({@link toOrderPaymentMethod}). The server needs
+ *      it at creation time, not later: an ONLINE / INSTALLMENTS order is stamped
+ *      with `reservationExpiresAt`, and the reconcile worker frees the stock of
+ *      an order still unpaid past that deadline. Omitted, the column falls back
+ *      to its default `ON_DELIVERY` and gets no deadline — which is how every
+ *      storefront card order used to hold its stock indefinitely.
+ *   2. As an ACTION. ONLINE / INSTALLMENTS then also call
+ *      `POST /api/payments/orders/:id/checkout`, which opens a real `Payment`
+ *      attempt and returns a signed handoff; the browser leaves for the
+ *      provider's page. ON_DELIVERY stops after the create call.
  *
  * See `docs/payments-liqpay.md` §3 — the order is created first and the handoff
  * second, exactly as modelled above.
@@ -66,6 +70,30 @@ const HANDOFF_METHODS: ReadonlySet<CheckoutPaymentMethod> = new Set([
 /** Does choosing this method require a provider handoff after order creation? */
 export function requiresPaymentHandoff(method: CheckoutPaymentMethod): boolean {
   return HANDOFF_METHODS.has(method);
+}
+
+/**
+ * The storefront's method, in the API's vocabulary (TASK-650).
+ *
+ * The two vocabularies spell the same today, and that is exactly why this is an
+ * explicit table rather than a cast: a `Record` over {@link CheckoutPaymentMethod}
+ * fails to compile the moment the UI gains a method the API has no value for,
+ * instead of sending a string the ValidationPipe rejects with a 400 at checkout.
+ */
+const ORDER_PAYMENT_METHOD: Record<
+  CheckoutPaymentMethod,
+  CreateOrderDtoPaymentMethod
+> = {
+  ON_DELIVERY: CreateOrderDtoPaymentMethod.ON_DELIVERY,
+  ONLINE: CreateOrderDtoPaymentMethod.ONLINE,
+  INSTALLMENTS: CreateOrderDtoPaymentMethod.INSTALLMENTS,
+};
+
+/** The `paymentMethod` value to send on `CreateOrderDto` for this choice. */
+export function toOrderPaymentMethod(
+  method: CheckoutPaymentMethod,
+): CreateOrderDtoPaymentMethod {
+  return ORDER_PAYMENT_METHOD[method];
 }
 
 /**

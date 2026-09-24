@@ -21,6 +21,16 @@ const DEFAULT_INTRO =
 
 export async function GET(): Promise<Response> {
   const seo = await fetchSeoSettings();
+  // Site-wide noindex (TASK-550): a map written for AI assistants to cite is the
+  // opposite of "keep this deploy out of search", so the file does not exist
+  // while the flag is on. `no-store` so switching the flag off is visible at
+  // once instead of after a cached 404 expires.
+  if (seo?.noindexSite) {
+    return new Response(null, {
+      status: 404,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   const intro = seo?.llmsTxtSummary?.trim() || DEFAULT_INTRO;
   // The H1 is the name an AI assistant will cite the store by, so it comes from
   // the same admin-managed field as every `<title>` (TASK-433) — not from a

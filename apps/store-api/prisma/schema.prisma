@@ -118,6 +118,20 @@ enum OrderHistoryChangeType {
   PAYMENT_STATUS
 }
 
+/// Machine-readable flag on an OrderStatusHistory row for an event the shop
+/// recorded but deliberately did not act on, so an operator's list can find it
+/// with a plain `WHERE note = …` (TASK-619). The UA label lives with the reader.
+///
+/// PAID_AFTER_CANCEL — «оплачено після скасування»: a provider success landed on
+/// an order that was already CANCELLED (typically the reservation TTL lapsed
+/// while the LiqPay page was still open). The money is recorded as PAID, the
+/// order stays CANCELLED and no stock moves; the operator either revives it (the
+/// normal revive path re-reserves stock) or refunds. Owner decision B-11 №3,
+/// plan 178.
+enum OrderHistoryNote {
+  PAID_AFTER_CANCEL
+}
+
 /// Data type of a structured product characteristic (TASK-191, plan 112).
 /// Drives both the admin editor's input widget (text field / number field /
 /// checkbox / select) and the server-side value validation on assignment.
@@ -732,6 +746,9 @@ model OrderStatusHistory {
   // Populated only for changeType = PAYMENT_STATUS rows; both null for STATUS rows.
   fromPaymentStatus PaymentStatus?         @map("from_payment_status")
   toPaymentStatus   PaymentStatus?         @map("to_payment_status")
+  // Null for an ordinary move. Set when the row records an event the shop wrote
+  // down but deliberately did not act on — see OrderHistoryNote (TASK-619).
+  note              OrderHistoryNote?
   // Nullable: system/webhook-driven changes (order creation's initial PENDING
   // row today; a future Stripe/payment webhook tomorrow) have no acting
   // admin/customer user. Populated with the acting user's id when the change

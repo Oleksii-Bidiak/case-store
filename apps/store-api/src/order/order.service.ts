@@ -8,7 +8,13 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { createHash, randomBytes } from 'crypto';
-import { OrderStatus, PaymentStatus, PaymentAttemptStatus, PaymentMethod } from '@prisma/client';
+import {
+  OrderHistoryNote,
+  OrderStatus,
+  PaymentStatus,
+  PaymentAttemptStatus,
+  PaymentMethod,
+} from '@prisma/client';
 import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 // TASK-483: the public lookup has its own repository — see its docblock for why
 // the narrow projection gets a narrow query rather than a filtered wide one.
@@ -1195,13 +1201,31 @@ export class OrderService {
    * recorded by `AuditInterceptor`, and the response it inspects carries only
    * the order id, never the token.
    *
+   * ── Guest orders only (TASK-623) ──────────────────────────────────────────
+   * The link is a 60-day bearer credential for the whole order, delivery and
+   * billing address included, and operators paste it into chats that other
+   * people will read later. A guest has no other way in, so for them the risk
+   * buys something. An account holder already sees the order in their cabinet,
+   * behind a password — minting a bearer link for them is pure exposure. That
+   * includes a guest order later claimed by a registering account: once
+   * `userId` is set, the cabinet is the way in. Refused BEFORE the rotation, so
+   * the attempt does not kill a link the buyer may still be using.
+   *
    * @throws NotFoundException when no such order exists (or it is soft-deleted).
+   * @throws ConflictException when the order belongs to an account.
    */
   async issueOrderAccessLink(orderId: string): Promise<{ url: string; issuedAt: Date }> {
     const existing = await this.orderRepository.findById(orderId);
 
     if (!existing) {
       throw new NotFoundException('Order not found');
+    }
+
+    if (existing.userId !== null) {
+      throw new ConflictException(
+        'Order links are issued for guest orders only — this order belongs to an account, ' +
+          'and the customer sees it in their account cabinet',
+      );
     }
 
     const rawToken = generateGuestToken();
@@ -1663,6 +1687,20 @@ export class OrderService {
       );
     }
 
+    if (plan.paymentStatusChange?.note === OrderHistoryNote.PAID_AFTER_CANCEL) {
+      // WARN: money arrived for an order the shop no longer holds stock for.
+      // Nothing is broken, but a person has to revive or refund it (TASK-619).
+      this.logger.warn(
+        {
+          event: 'order.payment_after_cancel',
+          orderId: order.id,
+          paymentId: payment.id,
+          providerStatus: event.providerStatus,
+        },
+        'Payment succeeded on a cancelled order; recorded as paid, order left cancelled for the operator',
+      );
+    }
+
     await this.orderRepository.applyPaymentOutcome(plan);
 
     this.logger.info(
@@ -1696,7 +1734,16 @@ export class OrderService {
     const reportedCents = toCents(event.amount);
     const currencyMatches = payment.currency.toUpperCase() === event.currency.toUpperCase();
 
-    if (expectedCents === reportedCents && currencyMatches) {
+    // TASK-618: a partial refund is, by definition, less than the charge — and
+    // more than nothing. Every other outcome must report the charge exactly
+    // (PaymentService relabels a smaller REFUNDED before it gets here, so a
+    // REFUNDED that still reports less is a contradiction, not a partial).
+    const amountAgrees =
+      event.outcome === PaymentOutcome.PARTIALLY_REFUNDED
+        ? reportedCents > 0 && reportedCents < expectedCents
+        : expectedCents === reportedCents;
+
+    if (amountAgrees && currencyMatches) {
       return;
     }
 
@@ -1725,6 +1772,9 @@ export class OrderService {
    *
    * - **SUCCEEDED** marks the money ours, stamps `paidAt`, lifts the reservation
    *   deadline, and moves a still-PENDING order to CONFIRMED. Already PAID → null.
+   *   On a CANCELLED order (TASK-619) the money is recorded but the order stays
+   *   CANCELLED with no stock moved, and the history row is flagged
+   *   `PAID_AFTER_CANCEL` for the operator to revive or refund.
    * - **FAILED** records the failed attempt and marks the order's payment FAILED,
    *   but only while it is still unpaid: a late failure callback for a superseded
    *   attempt must never un-pay a paid order. The order itself is NOT cancelled —
@@ -1736,6 +1786,9 @@ export class OrderService {
    *   one payment combination the cross-rule forbids outright (see the branch).
    *   Stock is deliberately NOT credited back: the goods have to physically
    *   return first (TASK-124's rule, unchanged).
+   * - **PARTIALLY_REFUNDED** (TASK-618) moves PAID to PARTIALLY_REFUNDED and
+   *   nothing else: the order status stays where it is (a partial refund never
+   *   drags DELIVERED into REFUNDED) and the attempt stays SUCCEEDED.
    * - **IGNORED** — "still processing" — changes nothing. There is no PENDING
    *   outcome for exactly this reason: treating "not finished yet" as an event to
    *   act on is how an order flips to paid before the money exists.
@@ -1766,6 +1819,7 @@ export class OrderService {
     const base = {
       paymentId: payment.id,
       orderId: order.id,
+      expected: { status: order.status, paymentStatus: order.paymentStatus },
       ...(event.providerPaymentId ? { providerPaymentId: event.providerPaymentId } : {}),
     };
 
@@ -1789,6 +1843,30 @@ export class OrderService {
               rejected: PaymentStatus.PAID,
               reason: 'table',
             },
+          };
+        }
+        // TASK-619 (owner decision B-11 №3, plan 178): a success on an order that
+        // is already CANCELLED — the reservation TTL lapsed while the LiqPay page
+        // was still open. CANCELLED → CONFIRMED is a legal move, but only through
+        // the revive path, which re-reserves stock and clears `restockedAt`; done
+        // here it produced a paid, confirmed order with nothing held for it. So
+        // the money is recorded and the order is left exactly as cancelled, with
+        // a flagged history row: revive (if stock allows) or refund is the
+        // operator's call, never an automatic one.
+        if (order.status === OrderStatus.CANCELLED) {
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+            settledAt: now,
+            failureCode: null,
+            failureMessage: null,
+            paymentStatusChange: {
+              from: order.paymentStatus,
+              to: PaymentStatus.PAID,
+              note: OrderHistoryNote.PAID_AFTER_CANCEL,
+            },
+            paidAt: order.paidAt ?? now,
+            clearReservation: true,
           };
         }
         return {
@@ -1888,6 +1966,43 @@ export class OrderService {
           ...(movesOrderToRefunded
             ? { statusChange: { from: order.status, to: OrderStatus.REFUNDED } }
             : {}),
+        };
+      }
+
+      case PaymentOutcome.PARTIALLY_REFUNDED: {
+        // Already labelled as at least this much back — nothing new to record.
+        if (
+          order.paymentStatus === PaymentStatus.PARTIALLY_REFUNDED ||
+          order.paymentStatus === PaymentStatus.REFUNDED
+        ) {
+          return null;
+        }
+        // The attempt stays SUCCEEDED: part of the money is still ours, and
+        // leaving it refundable is what lets the operator send the rest back.
+        // `settledAt` is left alone — the attempt settled when the money came in.
+        if (!canTransitionPayment(order.paymentStatus, PaymentStatus.PARTIALLY_REFUNDED)) {
+          // PENDING / FAILED: part of money we never recorded as received is
+          // coming back — the same lost-success contradiction as a full refund.
+          return {
+            ...base,
+            attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+            refusedPaymentStatusChange: {
+              current: order.paymentStatus,
+              rejected: PaymentStatus.PARTIALLY_REFUNDED,
+              reason: 'table',
+            },
+          };
+        }
+        // No order-status change, on any order: a partial refund does not end the
+        // order (B-1 §1 — one line back out of three on a DELIVERED order is an
+        // ordinary day), and the cross-rule constrains FULL refunds only.
+        return {
+          ...base,
+          attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+          paymentStatusChange: {
+            from: order.paymentStatus,
+            to: PaymentStatus.PARTIALLY_REFUNDED,
+          },
         };
       }
 

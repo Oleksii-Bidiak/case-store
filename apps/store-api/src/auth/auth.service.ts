@@ -15,7 +15,11 @@ import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
 import { hashPassword, verifyPassword } from '../common/security';
-import { STAFF_PASSWORD_MESSAGE, STAFF_PASSWORD_REGEX } from '../common/validators';
+import {
+  normalizeEmailAddress,
+  STAFF_PASSWORD_MESSAGE,
+  STAFF_PASSWORD_REGEX,
+} from '../common/validators';
 
 /** Bytes of entropy for an opaque password-reset token (→ 64 hex chars). */
 const PASSWORD_RESET_TOKEN_BYTES = 32;
@@ -280,6 +284,12 @@ export class AuthService {
       throw new UnauthorizedException(GOOGLE_EMAIL_UNVERIFIED_MESSAGE);
     }
 
+    // TASK-772: the profile never went through a DTO, and Google returns the
+    // spelling the account holder chose. `users.email` is case-sensitive, so an
+    // un-normalised lookup missed `a@gmail.com` for `A@Gmail.com` and the signup
+    // branch minted a SECOND account for the same person.
+    const email = normalizeEmailAddress(profile.email);
+
     const existingLink = await this.authRepository.findOAuthAccount(
       OAuthProvider.GOOGLE,
       profile.providerId,
@@ -291,13 +301,13 @@ export class AuthService {
     if (existingLink) {
       user = existingLink.user;
     } else {
-      const matchedUser = await this.authRepository.findByEmail(profile.email);
+      const matchedUser = await this.authRepository.findByEmail(email);
 
       if (!matchedUser) {
         // Brand-new signup — Google doubles as registration. No lock check
         // needed (a row that doesn't exist yet can't be locked).
         const created = await this.authRepository.createUserFromOAuth({
-          email: profile.email,
+          email,
           firstName: profile.firstName,
           lastName: profile.lastName,
           provider: OAuthProvider.GOOGLE,
@@ -348,7 +358,7 @@ export class AuthService {
         user.id,
         OAuthProvider.GOOGLE,
         profile.providerId,
-        profile.email,
+        email,
       );
       this.logger.info(
         { event: 'user.googleAccountLinked', userId: user.id },
@@ -361,7 +371,8 @@ export class AuthService {
 
   /**
    * Refresh authentication tokens.
-   * Validates stored token, checks not revoked/expired, revokes old, issues new pair.
+   * Validates stored token, checks not revoked/expired, mints the new pair, then
+   * persists it and revokes the old token in one transaction (TASK-496).
    *
    * Security: If a revoked token is reused, this indicates a potential token theft.
    * Per RFC 6819 §5.2.2, we revoke ALL tokens for the user to terminate all sessions,
@@ -399,17 +410,29 @@ export class AuthService {
     // deactivateUser/deleteUser do revoke every token, but this check must not
     // lean on that: a token minted in the race window, a row flipped by
     // SQL/seed/import, or a future flow that forgets the revoke would each
-    // reopen the gap. Rejection comes BEFORE revokeToken, so a refused attempt
+    // reopen the gap. Rejection comes BEFORE the rotation, so a refused attempt
     // leaves the row untouched.
     if (!storedToken.user.isActive || storedToken.user.deletedAt) {
       throw new UnauthorizedException(INVALID_REFRESH_TOKEN_MESSAGE);
     }
 
-    // Revoke the old refresh token (rotation)
-    await this.authRepository.revokeToken(storedToken.id);
-
-    // Issue a new token pair
-    return this.generateTokenPair(storedToken.user.id, storedToken.user.role);
+    // Rotation (TASK-496): mint the replacement FIRST, then persist it and
+    // revoke the presented token in one transaction. The old order — revoke,
+    // then mint — meant any failure in the mint left the session with no live
+    // token; the client's retry of the now-revoked cookie then tripped reuse
+    // detection above and signed the user out everywhere. Now a failed sign
+    // touches nothing, and a failed insert rolls the revoke back with it.
+    const { tokens, refreshExpiresAt } = this.signTokenPair(
+      storedToken.user.id,
+      storedToken.user.role,
+    );
+    await this.authRepository.rotateRefreshToken(
+      storedToken.id,
+      storedToken.user.id,
+      tokens.refreshToken,
+      refreshExpiresAt,
+    );
+    return tokens;
   }
 
   /**
@@ -661,6 +684,21 @@ export class AuthService {
    * The refresh token is persisted in the database for tracking and rotation.
    */
   async generateTokenPair(userId: string, role: string): Promise<AuthTokens> {
+    const { tokens, refreshExpiresAt } = this.signTokenPair(userId, role);
+    await this.authRepository.saveRefreshToken(userId, tokens.refreshToken, refreshExpiresAt);
+    return tokens;
+  }
+
+  /**
+   * Sign an access/refresh pair WITHOUT persisting anything. Split out of
+   * {@link generateTokenPair} so `refreshToken()` can mint the replacement
+   * before it touches the presented token, and then persist + revoke in one
+   * transaction (TASK-496).
+   */
+  private signTokenPair(
+    userId: string,
+    role: string,
+  ): { tokens: AuthTokens; refreshExpiresAt: Date } {
     // Sign access token with JWT_SECRET
     const accessToken = this.jwtService.sign(
       { sub: userId, role },
@@ -680,14 +718,16 @@ export class AuthService {
     // produced a byte-identical token. `refresh_tokens.token` is unique on the
     // hash, so the second insert threw and the request 500'd.
     //
-    // That was not a cosmetic 500. `refreshToken()` revokes the presented token
-    // BEFORE minting the replacement, so a failed mint leaves the session with
-    // no live token at all; the clients then retry the same, now-revoked cookie,
-    // which is indistinguishable from a stolen one and correctly revokes EVERY
-    // session the user holds (RFC 6819 §5.2.2). One collision therefore signed
-    // the user out everywhere. Measured: two concurrent refreshes answered `500`
-    // and `401 Token reuse detected — all sessions terminated`, and the seeded
-    // admin ended a Playwright run with 321 tokens, every one revoked.
+    // That was not a cosmetic 500. `refreshToken()` then revoked the presented
+    // token BEFORE minting the replacement, so a failed mint left the session
+    // with no live token at all; the clients retried the same, now-revoked
+    // cookie, which is indistinguishable from a stolen one and correctly revokes
+    // EVERY session the user holds (RFC 6819 §5.2.2). One collision therefore
+    // signed the user out everywhere. Measured: two concurrent refreshes answered
+    // `500` and `401 Token reuse detected — all sessions terminated`, and the
+    // seeded admin ended a Playwright run with 321 tokens, every one revoked.
+    // The ordering itself is fixed by TASK-496: rotation now inserts the
+    // replacement first and revokes in the same transaction.
     //
     // Real users reach this by logging in on two devices within the same second,
     // or by a client refreshing twice at once — rare per request, systematic
@@ -700,16 +740,13 @@ export class AuthService {
       },
     );
 
-    // Persist refresh token in the database
     const refreshExpirationMs = this.parseExpirationToMs(this.jwtRefreshExpiration);
-    const expiresAt = new Date(Date.now() + refreshExpirationMs);
-
-    await this.authRepository.saveRefreshToken(userId, refreshToken, expiresAt);
+    const refreshExpiresAt = new Date(Date.now() + refreshExpirationMs);
 
     const tokens = new AuthTokens();
     tokens.accessToken = accessToken;
     tokens.refreshToken = refreshToken;
-    return tokens;
+    return { tokens, refreshExpiresAt };
   }
 
   /**

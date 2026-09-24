@@ -1,11 +1,15 @@
 import { IsEmail, IsString, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { normalizeEmail } from '../../common/validators';
 
 export class LoginDto {
   @ApiProperty({
     description: 'User email address',
     example: 'user@example.com',
   })
+  // TASK-772: the stored address is lowercased, so the lookup must be too.
+  @Transform(normalizeEmail)
   @IsEmail({}, { message: 'Please provide a valid email address' })
   email!: string;
 

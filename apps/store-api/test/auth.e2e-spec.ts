@@ -1,7 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ExecutionContext, INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard, ThrottlerStorage } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Observable } from 'rxjs';
@@ -158,6 +158,19 @@ describe('AuthController (e2e)', () => {
       // Override ThrottlerGuard with pass-through to avoid rate limiting in tests
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
+      // ...which does NOT reach the global ClientIpThrottlerGuard (see the
+      // long note in order.e2e-spec.ts): this suite ran through the real 5/min
+      // register limiter and 429'd once TASK-772 added more registrations.
+      // Replacing the COUNTER is what actually disables every limit.
+      .overrideProvider(ThrottlerStorage)
+      .useValue({
+        increment: async () => ({
+          totalHits: 1,
+          timeToExpire: 60,
+          isBlocked: false,
+          timeToBlockExpire: 0,
+        }),
+      })
       // Controllable Google guard: real 503 gate by default, injected profile
       // when a test arms it (see GoogleAuthGuardTestDouble above).
       .overrideGuard(GoogleAuthGuard)
@@ -813,6 +826,148 @@ describe('AuthController (e2e)', () => {
       // Nothing was resolved — the repository is never touched on this branch.
       expect(authRepositoryMock.findOAuthAccount).not.toHaveBeenCalled();
       expect(authRepositoryMock.findByEmail).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── Email case (TASK-772) ─────────────────────────────────────────────────
+
+  describe('Email case normalisation (TASK-772)', () => {
+    /**
+     * An in-memory `users` table whose lookup is EXACT string equality — the
+     * semantics of the real `email text UNIQUE` column, which is case-sensitive.
+     * With a lenient mock these cases would pass against the defect: the whole
+     * bug is that Postgres treats `A@Gmail.com` and `a@gmail.com` as two rows.
+     */
+    const usersByEmail = new Map<string, Record<string, unknown>>();
+
+    beforeEach(() => {
+      usersByEmail.clear();
+      authRepositoryMock.findByEmail.mockImplementation(
+        async (email: string) => usersByEmail.get(email) ?? null,
+      );
+      authRepositoryMock.createUser.mockImplementation(async (data: Record<string, unknown>) => {
+        const row = {
+          id: `user-case-${usersByEmail.size + 1}`,
+          email: data.email,
+          passwordHash: data.passwordHash,
+          firstName: data.firstName ?? null,
+          lastName: data.lastName ?? null,
+          phone: null,
+          role: 'CUSTOMER',
+          isActive: true,
+          deletedAt: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        usersByEmail.set(String(data.email), row);
+        return row;
+      });
+      authRepositoryMock.findOAuthAccount.mockResolvedValue(null);
+      authRepositoryMock.saveRefreshToken.mockImplementation(
+        async (userId: string, token: string) => ({
+          id: 'rt-case-1',
+          token,
+          userId,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          isRevoked: false,
+          createdAt: new Date(),
+        }),
+      );
+    });
+
+    afterEach(() => {
+      GoogleAuthGuardTestDouble.reset();
+      authRepositoryMock.findByEmail.mockReset();
+      authRepositoryMock.createUser.mockReset();
+      authRepositoryMock.findOAuthAccount.mockReset();
+      authRepositoryMock.saveRefreshToken.mockReset();
+    });
+
+    const register = (email: string) =>
+      request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({ email, password: testUser.password })
+        .expect(201);
+
+    it('stores the registered address trimmed and lowercased', async () => {
+      await register('  A@Gmail.com ');
+
+      expect(authRepositoryMock.createUser).toHaveBeenCalledWith(
+        expect.objectContaining({ email: 'a@gmail.com' }),
+      );
+    });
+
+    it('refuses a second registration that differs only in case', async () => {
+      await register('A@Gmail.com');
+
+      await request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({ email: 'a@GMAIL.com', password: testUser.password })
+        .expect(409);
+      expect(usersByEmail.size).toBe(1);
+    });
+
+    it('logs in with the password whatever case the address is typed in', async () => {
+      await register('A@Gmail.com');
+
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .send({ email: ' a@GMAIL.COM', password: testUser.password })
+        .expect(200);
+
+      expect(response.body.data).toHaveProperty('accessToken');
+    });
+
+    it('resolves a Google sign-in for "a@gmail.com" to the account registered as "A@Gmail.com"', async () => {
+      await register('A@Gmail.com');
+      const registered = usersByEmail.get('a@gmail.com');
+      expect(registered).toBeDefined();
+
+      GoogleAuthGuardTestDouble.inject({
+        providerId: 'google-sub-case-1',
+        email: 'a@gmail.com',
+        emailVerified: true,
+        firstName: 'A',
+        lastName: 'User',
+        redirect: '/',
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/auth/google/callback')
+        .expect(302);
+
+      expect(response.headers.location).not.toContain('oauthError');
+      // The SAME user — linked, never a second account.
+      expect(authRepositoryMock.createUserFromOAuth).not.toHaveBeenCalled();
+      expect(authRepositoryMock.linkOAuthAccount).toHaveBeenCalledWith(
+        registered?.id,
+        'GOOGLE',
+        'google-sub-case-1',
+        'a@gmail.com',
+      );
+    });
+
+    it('resolves a Google profile spelled "A@Gmail.COM" to the account registered as "a@gmail.com"', async () => {
+      await register('a@gmail.com');
+
+      GoogleAuthGuardTestDouble.inject({
+        providerId: 'google-sub-case-2',
+        email: 'A@Gmail.COM',
+        emailVerified: true,
+        firstName: 'A',
+        lastName: 'User',
+        redirect: '/',
+      });
+
+      await request(app.getHttpServer()).get('/api/auth/google/callback').expect(302);
+
+      expect(authRepositoryMock.createUserFromOAuth).not.toHaveBeenCalled();
+      expect(authRepositoryMock.linkOAuthAccount).toHaveBeenCalledWith(
+        usersByEmail.get('a@gmail.com')?.id,
+        'GOOGLE',
+        'google-sub-case-2',
+        'a@gmail.com',
+      );
     });
   });
 });

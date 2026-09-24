@@ -108,16 +108,22 @@
     "the parent pins an exact version. Re-check on every `next` bump — drop an",
     "entry the moment the parent ships a fixed version itself.",
     "",
-    "postcss: `next@16.2.12` declares `postcss: '8.4.31'` EXACTLY, so bumping next",
-    "does not clear GHSA-qx2v-qp2m-jg93 / GHSA-6g55-p6wh-862q / GHSA-r28c-9q8g-f849",
-    "(fixed in 8.5.18). The runtime-reachable copy is store-api's: sanitize-html",
-    "runs postcss over style attributes of admin-authored rich text, so the",
-    "sourceMappingURL path-traversal is not merely a build-time concern.",
+    "DROPPED (TASK-757): the `next` block (postcss ^8.5.23, sharp ^0.35.3). next",
+    "16.3.6 ships both fixes itself — it pins `postcss: '8.5.23'` and lists",
+    "`sharp: '^0.35.4'` — which is exactly the 'parent ships a fixed version'",
+    "condition above. Re-add it only if a future next regresses either pin.",
     "",
-    "sharp: `next` lists `sharp: '^0.34.5'` as an optional dependency, which",
-    "excludes the fix for the inherited libvips CVEs (0.35.3, semver-major). Without",
-    "the override, store-api gets 0.35.3 while next keeps a nested vulnerable 0.34.x",
-    "for its Image Optimization API — the copy that actually decodes remote images.",
+    "mysql2 (TASK-757): `prisma@7.x` declares `mysql2: '3.15.3'` EXACTLY, and",
+    "3.15.3 carries GHSA-3f6p-5ww8-9rcr (auth-plugin downgrade, fixed 3.22.0) and",
+    "GHSA-rgwj-5xj2-c3m3 (fixed after 3.23.0). Same major, so the override is a",
+    "patch-level lift, not a behaviour change. We never talk to MySQL at all",
+    "(Postgres only), so this is hygiene rather than a live exposure.",
+    "",
+    "js-yaml under orval (TASK-757): `orval@8.23.0` declares `js-yaml: '4.3.0'`",
+    "EXACTLY (GHSA-5p4m-2wfm-xmqj / GHSA-2883-xcg3-v3hh, fixed 4.3.2). Overridden",
+    "rather than bumping orval to 8.37: generated hooks are untracked and rebuilt",
+    "by every `codegen`, so an orval minor bump silently changes the API client of",
+    "both frontends; that deserves its own reviewed change, not a ride-along here.",
     "",
     "js-yaml (TASK-304): `@nestjs/swagger@11.4.6` declares `js-yaml: '5.2.1'`",
     "EXACTLY, and 5.2.1 carries GHSA (exponential parsing time in flow",
@@ -135,9 +141,11 @@
     "ignores the override instead of erroring."
   ],
   "overrides": {
-    "next": {
-      "postcss": "^8.5.23",
-      "sharp": "^0.35.3"
+    "prisma": {
+      "mysql2": "^3.24.4"
+    },
+    "orval": {
+      "js-yaml": "^4.3.2"
     },
     "@nestjs/swagger": {
       "js-yaml": "^5.2.2"

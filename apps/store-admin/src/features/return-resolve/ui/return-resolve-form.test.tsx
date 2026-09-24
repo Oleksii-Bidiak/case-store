@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import {
+  fireEvent,
   renderWithProviders,
   screen,
   userEvent,
@@ -7,6 +8,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { formatCurrency } from "@/shared/lib";
 import { returnStatusLabel, type ReturnEntity } from "@/entities/return";
 import { ReturnResolveForm } from "./return-resolve-form";
 
@@ -25,7 +27,17 @@ function makeReturn(overrides: Partial<ReturnEntity> = {}): ReturnEntity {
     resolvedAt: null,
     restockedAt: null,
     refundedAmount: null,
-    items: [],
+    // Two units at 499.00: the refund ceiling (TASK-785) is 998.00, so a 499.00
+    // refund is the partial one the money tests below send.
+    items: [
+      {
+        id: "return-item-1",
+        orderItemId: "order-item-1",
+        quantity: 2,
+        productName: "Чохол iPhone 15",
+        price: "499.00",
+      },
+    ],
     ...overrides,
   };
 }
@@ -170,5 +182,116 @@ describe("ReturnResolveForm — terminal states and money (TASK-340)", () => {
 
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0].refundedAmount).toBe("499.00");
+  });
+});
+
+describe("ReturnResolveForm — the refund ceiling (TASK-785)", () => {
+  const typeAmountAndSubmit = async (amount: string) => {
+    await pickStatus("REFUNDED");
+    await userEvent.type(
+      screen.getByLabelText(dict.returns.resolveRefundedAmount),
+      amount,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.returns.resolveSubmit }),
+    );
+  };
+
+  it("refuses 49900 typed for 499.00 before it reaches the server", async () => {
+    const bodies = stubResolve(() => HttpResponse.json({ data: makeReturn() }));
+
+    renderWithProviders(
+      <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
+    );
+    await typeAmountAndSubmit("49900");
+
+    // Compared on raw textContent: the currency's non-breaking space does not
+    // survive the query's whitespace normalisation.
+    const error = await screen.findByText(/вартість позицій/);
+    expect(error.textContent).toBe(
+      dict.returns.resolveRefundExceedsReturnedValue(formatCurrency("998.00")),
+    );
+    expect(
+      screen.getByLabelText(dict.returns.resolveRefundedAmount),
+    ).toHaveAttribute("aria-invalid", "true");
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("lets the full value of the returned lines through", async () => {
+    const bodies = stubResolve(() =>
+      HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
+    );
+
+    renderWithProviders(
+      <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
+    );
+    await typeAmountAndSubmit("998.00");
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0].refundedAmount).toBe("998.00");
+  });
+
+  // The order-balance ceiling needs data this card is not given, so the server
+  // is its only judge; its refusal belongs under the amount, not in a toast
+  // that blames the restock checkbox.
+  it("puts the server's order-balance refusal under the amount field", async () => {
+    stubResolve(() =>
+      HttpResponse.json(
+        {
+          error: "RETURN_REFUND_EXCEEDS_ORDER_BALANCE",
+          message:
+            "Refund of 499.00 exceeds what is left to refund on this order (400.00)",
+          statusCode: 400,
+        },
+        { status: 400 },
+      ),
+    );
+
+    renderWithProviders(
+      <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
+    );
+    await typeAmountAndSubmit("499.00");
+
+    expect(
+      await screen.findByText(dict.returns.resolveRefundExceedsOrderBalance()),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByLabelText(dict.returns.resolveRefundedAmount),
+    ).toHaveAttribute("aria-invalid", "true");
+  });
+});
+
+describe("ReturnResolveForm — operator notes (TASK-794)", () => {
+  it("stops typing at the DTO's limit", () => {
+    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />);
+
+    expect(screen.getByLabelText(dict.returns.operatorNotes)).toHaveAttribute(
+      "maxLength",
+      "2000",
+    );
+  });
+
+  it("says why an over-long note blocks the submit", async () => {
+    const bodies = stubResolve(() => HttpResponse.json({ data: makeReturn() }));
+
+    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />);
+    await pickStatus("REJECTED");
+    // `maxLength` governs typing only; a value arriving another way still
+    // meets the schema, and that refusal used to be silent.
+    fireEvent.change(screen.getByLabelText(dict.returns.operatorNotes), {
+      target: { value: "н".repeat(2001) },
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.returns.resolveSubmit }),
+    );
+
+    expect(
+      await screen.findByText(dict.returns.operatorNotesTooLong),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(dict.returns.operatorNotes)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(bodies).toHaveLength(0);
   });
 });

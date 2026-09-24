@@ -278,6 +278,15 @@ export class AuthController {
   @Post('password-reset/confirm')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // Fail CLOSED for UNIFORMITY (TASK-493, owner decision B-11 2026-09-23) — NOT
+  // as a brute-force defence: the reset token is 256-bit, so guessing it is
+  // hopeless with or without a limiter. The rule is simply that every
+  // unauthenticated action that mutates an account is fail-closed, so nobody has
+  // to re-argue it route by route. The named exceptions are `POST auth/refresh`
+  // (fail-closed there would log everyone out during a Redis blip) and the
+  // LiqPay callback (a 503 makes the provider give up on payments we took).
+  // Pinned by `src/throttler/fail-closed-routes.spec.ts`.
+  @FailClosedThrottle()
   @ApiOperation({ summary: 'Confirm a password reset with a single-use token' })
   @ApiResponse({
     status: 200,
@@ -354,6 +363,9 @@ export class AuthController {
   // spurious 429 → forced logout (fix/196). Possession of the HttpOnly cookie +
   // CSRF token guards this route — it is not a credential-guessing surface.
   @Throttle({ default: { limit: 30, ttl: 60000 } })
+  // Deliberately NOT @FailClosedThrottle() — the named exception to the
+  // "unauthenticated account writes fail closed" rule (TASK-493 / B-11): every
+  // page load refreshes, so a 503 here during a Redis blip would log everyone out.
   @UseGuards(JwtRefreshGuard)
   @ApiCookieAuth('refresh-token')
   @ApiOperation({ summary: 'Refresh access token' })

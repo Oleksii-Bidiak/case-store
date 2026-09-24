@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import {
+  fireEvent,
   renderWithProviders,
   screen,
   waitFor,
@@ -287,5 +288,55 @@ describe("SubmitReviewForm — editing the author's own review (TASK-446)", () =
     expect(
       screen.queryByText(dict.reviews.textPending),
     ).not.toBeInTheDocument();
+  });
+});
+
+// TASK-794: `comment` carried a bare `.max(1000)` with no error rendered and no
+// `maxLength` — an over-long comment (a paste, an autofill) stopped the submit
+// with nothing on screen to say why.
+describe("SubmitReviewForm — the comment cap is visible (TASK-794)", () => {
+  it("caps the textarea at 1000 characters", async () => {
+    serveMine(null);
+
+    renderWithProviders(<SubmitReviewForm productId={PRODUCT_ID} />, {
+      auth: authedUser,
+    });
+
+    expect(
+      await screen.findByLabelText(dict.reviews.commentLabel),
+    ).toHaveAttribute("maxLength", "1000");
+  });
+
+  it("names the limit instead of silently refusing an over-long comment", async () => {
+    const user = userEvent.setup();
+    serveMine(null);
+    let posted = false;
+    server.use(
+      http.post("*/api/products/:productId/reviews", () => {
+        posted = true;
+        return HttpResponse.json({ data: {} }, { status: 201 });
+      }),
+    );
+
+    renderWithProviders(<SubmitReviewForm productId={PRODUCT_ID} />, {
+      auth: authedUser,
+    });
+
+    await user.click(
+      await screen.findByRole("button", { name: dict.reviews.starAria(5) }),
+    );
+    // `maxLength` stops typing, not a programmatic value — set it directly,
+    // the way autofill or a script would.
+    const comment = screen.getByLabelText(dict.reviews.commentLabel);
+    fireEvent.change(comment, { target: { value: "а".repeat(1001) } });
+    await user.click(
+      screen.getByRole("button", { name: dict.reviews.submitReview }),
+    );
+
+    expect(
+      await screen.findByText(dict.reviews.commentMax),
+    ).toBeInTheDocument();
+    expect(comment).toHaveAttribute("aria-invalid", "true");
+    expect(posted).toBe(false);
   });
 });

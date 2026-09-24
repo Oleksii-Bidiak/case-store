@@ -3,7 +3,7 @@
  *
  * Client-side twin of `sanitizeRedirectTarget` in
  * `apps/store-api/src/auth/oauth/sanitize-redirect-target.ts`, and deliberately
- * the same three rules — that file already carried the note that it was the
+ * the same rules — that file already carried the note that it was the
  * "hardened" mirror of a looser check here, which is another way of saying the
  * storefront had a hole the API had already closed.
  *
@@ -16,18 +16,24 @@
  * convincing for starting on the genuine site. `/\evil.com` is the same attack:
  * browsers normalize the backslash to `//`.
  *
+ * TASK-770: TAB, LF and CR are stripped first, because the WHATWG URL parser
+ * drops exactly those before it parses. `?redirect=/%09/evil.com` decodes to
+ * `/\t/evil.com`, which does not start with `//` — yet
+ * `new URL("/\t/evil.com", origin)` is `https://evil.com/`. The path rules run
+ * on the stripped value, and the stripped value is what we return, so the check
+ * and the navigation see the same string. Stripping also removes the CR/LF the
+ * API would otherwise echo into its OAuth `Location` header.
+ *
  * Anything that is not a plain same-origin path — absent, absolute, scheme-
- * bearing, protocol-relative, or carrying CR/LF — falls back to the homepage.
- * A wrong-but-safe landing page is a papercut; an off-site one is a credential
- * theft.
+ * bearing or protocol-relative — falls back to the homepage. A wrong-but-safe
+ * landing page is a papercut; an off-site one is a credential theft.
  */
 export function sanitizeRedirectTarget(raw: string | null | undefined): string {
   if (!raw) return "/";
-  if (!raw.startsWith("/")) return "/";
+  // What the URL parser ignores must not be able to hide a `//` from us.
+  const target = raw.replace(/[\t\n\r]/g, "");
+  if (!target.startsWith("/")) return "/";
   // Protocol-relative, and the backslash spelling browsers normalize into it.
-  if (raw.startsWith("//") || raw.startsWith("/\\")) return "/";
-  // Header-injection guard: harmless in the router, but this value is also
-  // handed to the API's Google OAuth leg, which echoes it into a `Location`.
-  if (raw.includes("\r") || raw.includes("\n")) return "/";
-  return raw;
+  if (target.startsWith("//") || target.startsWith("/\\")) return "/";
+  return target;
 }

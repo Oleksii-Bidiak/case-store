@@ -989,21 +989,6 @@ const VARS = [
     howTo: "Формат тривалості, як у JWT_EXPIRATION (напр. `24h`).",
   },
   {
-    name: "RBAC_PERMISSION_CACHE_TTL_SECONDS",
-    group: "api",
-    need: "optional",
-    compose: "default",
-    services: ["store-api"],
-    buildArgs: [],
-    example: true,
-    validated: "optional",
-    code: "used",
-    effect:
-      "Порожній → дефолт сервісу (60 c). Скільки гард тримає в кеші права ролі — тобто **скільки щонайдовше діятиме вже зняте право**. Нуль вимикає кеш і б'є в БД на кожен адмін-запит.",
-    howTo:
-      "Секунди. Збільшувати лише свідомо: це вікно, у якому звільнений працівник ще має доступ.",
-  },
-  {
     name: "NEXT_PUBLIC_PAYMENT_METHODS",
     group: "frontend",
     need: "optional",

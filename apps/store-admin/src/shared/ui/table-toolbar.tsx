@@ -73,15 +73,27 @@ export function TableToolbar({
     wasRefreshing.current = isRefreshing;
   }, [announcePolite, isRefreshing]);
 
+  // Column below `md`, row from `md` (TASK-775). A bare `flex-col` without the
+  // `md:flex-row` pair stacked all list toolbars on every width. In column
+  // mode children stretch to the full width; `flex-1` on the search applies
+  // only on the row, where it is the growing item beside filters and actions.
+  //
+  // The row WRAPS and the search keeps a 16rem floor. Without both, a wide
+  // filters block (orders: lifecycle tabs + three selects + toggles) takes the
+  // whole row and the search shrinks to its magnifier icon underneath it — the
+  // TASK-732 symptom, measured at 1440 px after the first TASK-775 fix. With
+  // them, filters that do not fit beside the search drop to a second line.
   return (
     <div
       data-slot="table-toolbar"
       className={cn(
-        "mb-4 flex flex-wrap items-center gap-2 md:flex-nowrap flex-col",
+        "mb-4 flex flex-col items-stretch gap-2 md:flex-row md:flex-wrap md:items-center",
         className,
       )}
     >
-      {search ? <div className="min-w-0 flex-1">{search}</div> : null}
+      {search ? (
+        <div className="min-w-0 md:min-w-64 md:flex-1">{search}</div>
+      ) : null}
       {filters}
       {selectAll ? (
         <div className="flex items-center gap-2 md:hidden">{selectAll}</div>

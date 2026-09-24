@@ -1,12 +1,15 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { server } from "@/shared/test/msw-server";
 import { getGetCartQueryKey } from "@/shared/api/generated/cart/cart";
 import {
+  api,
   clearSessionMarker,
+  getAccessToken,
   markSessionActive,
   setAccessToken,
+  shouldAttemptSessionRefresh,
 } from "@/shared/api/instance";
 import { AuthProvider } from "./auth.context";
 import { useAuth } from "./use-auth";
@@ -22,8 +25,13 @@ function makeTestQueryClient(): QueryClient {
 
 /** Surfaces `isInitializing` so tests can await the bootstrap settling. */
 function InitProbe() {
-  const { isInitializing } = useAuth();
-  return <span data-testid="init">{isInitializing ? "init" : "ready"}</span>;
+  const { isInitializing, isAuthenticated } = useAuth();
+  return (
+    <>
+      <span data-testid="init">{isInitializing ? "init" : "ready"}</span>
+      <span data-testid="auth">{isAuthenticated ? "signed-in" : "guest"}</span>
+    </>
+  );
 }
 
 function renderProvider(client: QueryClient) {
@@ -226,5 +234,76 @@ describe("AuthProvider — transient bootstrap refresh failures (fix/196)", () =
       expect(screen.getByTestId("init")).toHaveTextContent("ready"),
     );
     expect(calls).toBe(1);
+  });
+});
+
+/**
+ * TASK-773 (review C4): when the interceptor's refresh fails it drops the
+ * in-memory token — and used to leave the React copy alone, so the app went on
+ * reading `isAuthenticated: true` while every request left without a bearer.
+ * Checkout hid the guest email block and sent an order with neither a contact
+ * nor `Authorization`. The provider must sign its context out with the token.
+ */
+describe("AuthProvider — a failed interceptor refresh signs the context out (TASK-773)", () => {
+  beforeEach(() => {
+    markSessionActive();
+  });
+
+  /** Bootstrap refresh succeeds; every later refresh answers `failStatus`. */
+  function sessionThatExpires(failStatus: number) {
+    let calls = 0;
+    server.use(
+      http.post("*/api/auth/refresh", () => {
+        calls += 1;
+        return calls === 1
+          ? HttpResponse.json({ data: { accessToken: "header.payload.sig" } })
+          : HttpResponse.json({ data: {} }, { status: failStatus });
+      }),
+      http.get("*/api/protected", () =>
+        HttpResponse.json({ message: "Unauthorized" }, { status: 401 }),
+      ),
+    );
+  }
+
+  it("drops isAuthenticated when the refresh answers 401", async () => {
+    sessionThatExpires(401);
+
+    renderProvider(makeTestQueryClient());
+    await waitFor(() =>
+      expect(screen.getByTestId("auth")).toHaveTextContent("signed-in"),
+    );
+
+    await act(async () => {
+      await expect(api.get("/api/protected")).rejects.toMatchObject({
+        response: { status: 401 },
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("auth")).toHaveTextContent("guest"),
+    );
+    expect(getAccessToken()).toBeNull();
+    // A 401 is a definitive "no session" — the next load stays a silent guest.
+    expect(shouldAttemptSessionRefresh()).toBe(false);
+  });
+
+  it("drops it on a transient failure too, but keeps the marker (fix/196)", async () => {
+    sessionThatExpires(503);
+
+    renderProvider(makeTestQueryClient());
+    await waitFor(() =>
+      expect(screen.getByTestId("auth")).toHaveTextContent("signed-in"),
+    );
+
+    await act(async () => {
+      await expect(api.get("/api/protected")).rejects.toBeTruthy();
+    });
+
+    // The token is gone from memory either way, so the UI must stop acting
+    // signed in — but a 5xx is not a sign-out: a reload must still restore it.
+    await waitFor(() =>
+      expect(screen.getByTestId("auth")).toHaveTextContent("guest"),
+    );
+    expect(shouldAttemptSessionRefresh()).toBe(true);
   });
 });

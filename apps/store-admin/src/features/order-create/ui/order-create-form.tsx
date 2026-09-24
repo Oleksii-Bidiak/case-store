@@ -31,6 +31,8 @@ import { dict } from "@/shared/config";
 import {
   CREATE_ORDER_DEFAULTS,
   CUSTOMER_MODE,
+  INTERNAL_NOTES_MAX_LENGTH,
+  NOTES_MAX_LENGTH,
   createOrderSchema,
   createOrderValuesToDto,
   type CreateOrderFormValues,
@@ -381,12 +383,22 @@ export function OrderCreateForm() {
 
         <div className="flex flex-col gap-1.5">
           <Label htmlFor="order-create-notes">{dict.orderCreate.notes}</Label>
+          {/* TASK-794: `maxLength` stops the typing at the DTO's limit, and the
+              error below explains a refusal that still gets through (a value set
+              programmatically). Before, a blocked submit showed nothing at all. */}
           <Textarea
             id="order-create-notes"
             rows={2}
+            maxLength={NOTES_MAX_LENGTH}
             placeholder={dict.orderCreate.notesPlaceholder}
+            aria-invalid={form.formState.errors.notes ? true : undefined}
             {...form.register("notes")}
           />
+          {form.formState.errors.notes ? (
+            <p role="alert" className="text-xs text-destructive">
+              {form.formState.errors.notes.message}
+            </p>
+          ) : null}
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -396,8 +408,12 @@ export function OrderCreateForm() {
           <Textarea
             id="order-create-internal-notes"
             rows={2}
+            maxLength={INTERNAL_NOTES_MAX_LENGTH}
             placeholder={dict.orderCreate.internalNotesPlaceholder}
             aria-describedby="order-create-internal-notes-hint"
+            aria-invalid={
+              form.formState.errors.internalNotes ? true : undefined
+            }
             {...form.register("internalNotes")}
           />
           <p
@@ -406,6 +422,11 @@ export function OrderCreateForm() {
           >
             {dict.orders.internalNotesHint}
           </p>
+          {form.formState.errors.internalNotes ? (
+            <p role="alert" className="text-xs text-destructive">
+              {form.formState.errors.internalNotes.message}
+            </p>
+          ) : null}
         </div>
       </section>
 

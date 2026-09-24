@@ -17,10 +17,13 @@ export const ALLOWED_IMAGE_MIME_EXT: Readonly<Record<string, string>> = {
 };
 
 /**
- * Animated GIFs are passed through untouched: re-encoding to a single WebP frame
- * would kill the animation, so they keep their original bytes/extension and get
- * no LQIP (TASK-091). This is the only path that writes client bytes verbatim,
- * which is why {@link ImageUploadService} sniffs the buffer on it.
+ * Animated GIFs are never re-encoded: re-encoding to a single WebP frame would
+ * kill the animation, so they keep their frames and `.gif` extension and get no
+ * LQIP (TASK-091). They are not stored verbatim either: since TASK-587 the bytes
+ * are rebuilt by `stripGifMetadata` (storage/strip-gif-metadata.ts), which drops
+ * comment/XMP/unknown extensions and keeps only frames, GCEs and the loop block.
+ * Client bytes still reach this path unprocessed by sharp, which is why
+ * {@link ImageUploadService} sniffs the buffer on it.
  */
 export const GIF_MIME = 'image/gif';
 

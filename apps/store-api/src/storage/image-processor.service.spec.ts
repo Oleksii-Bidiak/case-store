@@ -149,25 +149,41 @@ describe('ImageProcessor', () => {
       expect(meta.height).toBe(400);
     });
 
-    it('strips EXIF from what it hands back to be stored', async () => {
-      // `withMetadata()` is deliberately never called in the processor. Camera
-      // EXIF carries GPS coordinates, so anything we serve from our own origin
-      // must not have it — and once `.rotate()` has consumed the orientation the
-      // metadata has no remaining purpose.
-      const input = await sharp({
-        create: { width: 120, height: 90, channels: 3, background: { r: 9, g: 9, b: 9 } },
-      })
-        .withMetadata({ orientation: 6 })
-        .jpeg()
-        .toBuffer();
-      expect((await sharp(input).metadata()).exif).toBeDefined();
+    // Parametrised over the raster formats an upload can arrive in (TASK-748):
+    // libvips reads EXIF out of a PNG `eXIf` chunk and a WebP `EXIF` chunk just
+    // as it does out of a JPEG APP1 segment, so a JPEG-only test would stay
+    // green while a PNG or WebP upload leaked its camera metadata.
+    it.each(['jpeg', 'png', 'webp'] as const)(
+      'strips EXIF from what it hands back to be stored (%s input)',
+      async (format) => {
+        // `withMetadata()` is deliberately never called in the processor. Camera
+        // EXIF carries GPS coordinates, so anything we serve from our own origin
+        // must not have it — and once `.rotate()` has consumed the orientation
+        // the metadata has no remaining purpose.
+        const marker = 'exif-strip-fixture';
+        const input = await sharp({
+          create: { width: 120, height: 90, channels: 3, background: { r: 9, g: 9, b: 9 } },
+        })
+          .withExif({ IFD0: { Copyright: marker } })
+          .withMetadata({ orientation: 6 })
+          .toFormat(format)
+          .toBuffer();
 
-      const { webp, blurDataUrl } = await processor.process(input);
+        // Guard the fixture itself: if this encoder silently dropped the EXIF
+        // block, every assertion below would pass vacuously.
+        const fixtureMeta = await sharp(input).metadata();
+        expect(fixtureMeta.format).toBe(format);
+        expect(fixtureMeta.exif?.toString('latin1')).toContain(marker);
 
-      expect((await sharp(webp).metadata()).exif).toBeUndefined();
-      const lqip = Buffer.from(blurDataUrl.replace(/^data:image\/webp;base64,/, ''), 'base64');
-      expect((await sharp(lqip).metadata()).exif).toBeUndefined();
-    });
+        const { webp, blurDataUrl } = await processor.process(input);
+
+        expect((await sharp(webp).metadata()).exif).toBeUndefined();
+        expect(webp.includes(marker)).toBe(false);
+        const lqip = Buffer.from(blurDataUrl.replace(/^data:image\/webp;base64,/, ''), 'base64');
+        expect((await sharp(lqip).metadata()).exif).toBeUndefined();
+        expect(lqip.includes(marker)).toBe(false);
+      },
+    );
   });
 
   // ─── Reported dimensions (TASK-441) ───────────────────────────────────────

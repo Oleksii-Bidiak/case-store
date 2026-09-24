@@ -6,7 +6,13 @@ import {
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ImageProcessor, IStorageService, STORAGE_SERVICE, isStorageSubdir } from '../storage';
+import {
+  ImageProcessor,
+  IStorageService,
+  STORAGE_SERVICE,
+  isStorageSubdir,
+  stripGifMetadata,
+} from '../storage';
 import {
   ALLOWED_IMAGE_MIME_EXT,
   GIF_MIME,
@@ -49,7 +55,8 @@ export interface StoredImage {
  * It exists because the same eight steps were about to be written a second time.
  * They are, in order: reject an unlisted MIME type (415), reject over 20 MB (413),
  * sniff the real format from the bytes, re-encode raster to WebP + derive an
- * LQIP, pass animated GIFs through untouched, narrow the target subdir through
+ * LQIP, pass animated GIFs through with their frames untouched but their
+ * metadata blocks cut out, narrow the target subdir through
  * the storage whitelist, write the bytes, and assemble the public URL. Getting
  * any one of them wrong in one copy and right in the other is a security bug
  * that reviews do not catch, because both copies look fine on their own.
@@ -154,11 +161,13 @@ export class ImageUploadService {
    * Turn an accepted upload into bytes that are safe to serve from our origin.
    *
    * JPEG/PNG/WebP are re-encoded to WebP (smaller payload) with a base64 LQIP for
-   * blur-up. Animated GIFs are passed through untouched with no LQIP so the
-   * animation survives — and because that is the only branch that writes client
-   * bytes verbatim, it cannot trust the declared MIME type: the buffer is sniffed
-   * with `sharp` first. Without that, any file (an HTML/JS polyglot) uploaded as
-   * `image/gif` would be stored and then served from our own origin.
+   * blur-up. Animated GIFs are not re-encoded and get no LQIP so the animation
+   * survives — and because that is the only branch that writes the client's frame
+   * bytes, it cannot trust the declared MIME type: the buffer is sniffed with
+   * `sharp` first. Without that, any file (an HTML/JS polyglot) uploaded as
+   * `image/gif` would be stored and then served from our own origin. The sniffed
+   * GIF is then rebuilt without its comment/XMP/application blocks and without
+   * anything after its trailer ({@link stripGifMetadata}, TASK-587).
    *
    * A raster file whose bytes `sharp` cannot decode fails the re-encode, which is
    * translated to 415 here rather than surfacing as a 500.
@@ -180,8 +189,20 @@ export class ImageUploadService {
       if (probe?.format !== 'gif') {
         throw new UnsupportedMediaTypeException('File contents are not a valid GIF image');
       }
+      // Passthrough means "no frame is re-encoded", not "the client's bytes are
+      // stored verbatim" (TASK-587): comments, XMP and every other non-loop
+      // application extension are cut out block by block, so the privacy
+      // guarantee the WebP re-encode gives JPEG/PNG holds for GIF too. A file
+      // whose block structure cannot be walked is refused rather than stored
+      // with whatever the unparsed part happens to hold.
+      let stripped: Buffer;
+      try {
+        stripped = stripGifMetadata(file.buffer);
+      } catch {
+        throw new UnsupportedMediaTypeException('File contents are not a valid GIF image');
+      }
       return {
-        buffer: file.buffer,
+        buffer: stripped,
         ext: ALLOWED_IMAGE_MIME_EXT[GIF_MIME],
         mime: GIF_MIME,
         blurDataUrl: null,

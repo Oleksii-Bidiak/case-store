@@ -32,6 +32,11 @@ export type {
   PublicOrderLookupResponseEnvelope,
 } from "@/shared/api/generated/models";
 
+// The payment method an order is created with (TASK-650). A value export, not
+// only a type: the checkout maps its own vocabulary onto these constants, so a
+// method the API does not know fails to compile instead of failing at runtime.
+export { CreateOrderDtoPaymentMethod } from "@/shared/api/generated/models";
+
 export {
   useCreateOrder,
   useGetOrders,

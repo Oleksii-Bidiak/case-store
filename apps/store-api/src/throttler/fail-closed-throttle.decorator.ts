@@ -21,14 +21,24 @@ export const FAIL_CLOSED_THROTTLE_KEY = 'throttler:failClosed';
  * limiter" are the same thing, and the honest answer is to stop taking the
  * request.
  *
+ * In `auth` the rule is stricter and mechanical (TASK-493, B-11): EVERY
+ * unauthenticated account-mutating write is fail-closed — including
+ * password-reset and email-verify confirm, whose 256-bit tokens need no limiter
+ * — so the question is never re-argued per route. `fail-closed-routes.spec.ts`
+ * enumerates the controller and fails on any new route that skips it.
+ *
  * ## Where it does NOT belong
  *
  * - GET routes. Reads are idempotent and are what a shop exists to serve;
  *   refusing them during a Redis blip would turn a degraded limiter into an
- *   outage of the whole storefront.
+ *   outage of the whole storefront. The one exception is a read whose URL IS
+ *   the credential — `GET /api/orders/guest/:token` (TASK-606): unlimited
+ *   there means an unlimited guessing oracle, so it opts in like a write.
  * - `POST /api/payments/liqpay/callback`. It is `@SkipThrottle()`d — the only
  *   one in the codebase — because it is provider-to-server. A 503 there would
  *   make LiqPay retry, and eventually give up, on payments we already took.
+ * - `POST /api/auth/refresh`. Both frontends call it on every page load; a 503
+ *   during a Redis blip would log every signed-in user out.
  */
 export const FailClosedThrottle = (): CustomDecorator<string> =>
   SetMetadata(FAIL_CLOSED_THROTTLE_KEY, true);

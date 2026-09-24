@@ -1,6 +1,7 @@
 import { IsEmail } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { normalizeEmail } from '../../common/validators';
 
 /**
  * Body DTO for the public newsletter unsubscribe endpoint. Email normalized to
@@ -8,7 +9,7 @@ import { ApiProperty } from '@nestjs/swagger';
  */
 export class UnsubscribeDto {
   @ApiProperty({ description: 'Subscriber email address', example: 'user@example.com' })
-  @Transform(({ value }) => (typeof value === 'string' ? value.trim().toLowerCase() : value))
+  @Transform(normalizeEmail)
   @IsEmail({}, { message: 'A valid email is required' })
   email!: string;
 }

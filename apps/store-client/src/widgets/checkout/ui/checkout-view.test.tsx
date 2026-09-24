@@ -1,5 +1,8 @@
 import { http, HttpResponse, delay } from "msw";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
+  act,
+  render,
   renderWithProviders,
   screen,
   waitFor,
@@ -7,6 +10,13 @@ import {
   userEvent,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { AuthProvider } from "@/entities/session";
+import {
+  api,
+  clearSessionMarker,
+  markSessionActive,
+  setAccessToken,
+} from "@/shared/api/instance";
 import { makeCart, makeOrder, makeUser } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import { CheckoutView } from "./checkout-view";
@@ -691,12 +701,14 @@ describe("CheckoutView", () => {
         .spyOn(HTMLFormElement.prototype, "submit")
         .mockImplementation(() => {});
       let checkoutCalls = 0;
+      let orderBody: Record<string, unknown> | null = null;
 
       setupBlankProfile();
       server.use(
-        http.post("*/api/orders", () =>
-          HttpResponse.json(makeOrder(), { status: 201 }),
-        ),
+        http.post("*/api/orders", async ({ request }) => {
+          orderBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(makeOrder(), { status: 201 });
+        }),
         http.post("*/api/payments/orders/:orderId/checkout", () => {
           checkoutCalls += 1;
           return HttpResponse.json(
@@ -720,11 +732,12 @@ describe("CheckoutView", () => {
       await user.click(screen.getByRole("radio", { name: /Картка онлайн/ }));
       await placeOrder(user);
 
-      // This is the whole point of the task: the chosen method reached the API.
-      // `CreateOrderDto` has no payment field, so the choice is expressed as a
-      // second call — and if that call never happened, nothing about the choice
-      // would be real.
+      // This is the whole point of the task: the chosen method reached the API,
+      // twice. On the create call as `paymentMethod` — without it the server
+      // stores ON_DELIVERY and never starts the stock reservation (TASK-650) —
+      // and as the payment-attempt call that opens the provider handoff.
       await waitFor(() => expect(checkoutCalls).toBe(1));
+      expect(orderBody).toMatchObject({ paymentMethod: "ONLINE" });
       await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));
 
       const form = document.querySelector(
@@ -748,12 +761,14 @@ describe("CheckoutView", () => {
     it("does not touch the payment endpoint for cash on delivery", async () => {
       process.env.NEXT_PUBLIC_PAYMENT_METHODS = "ONLINE";
       let checkoutCalls = 0;
+      let orderBody: Record<string, unknown> | null = null;
 
       setupBlankProfile();
       server.use(
-        http.post("*/api/orders", () =>
-          HttpResponse.json(makeOrder(), { status: 201 }),
-        ),
+        http.post("*/api/orders", async ({ request }) => {
+          orderBody = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(makeOrder(), { status: 201 });
+        }),
         http.post("*/api/payments/orders/:orderId/checkout", () => {
           checkoutCalls += 1;
           return HttpResponse.json({ data: {} }, { status: 201 });
@@ -768,6 +783,7 @@ describe("CheckoutView", () => {
         expect(mockPush).toHaveBeenCalledWith("/orders/order-1/confirmation"),
       );
       expect(checkoutCalls).toBe(0);
+      expect(orderBody).toMatchObject({ paymentMethod: "ON_DELIVERY" });
     });
 
     it("lands on the order page — never a success claim — when the handoff fails", async () => {
@@ -796,5 +812,161 @@ describe("CheckoutView", () => {
         expect(mockPush).toHaveBeenCalledWith("/orders/order-1/confirmation"),
       );
     });
+  });
+});
+
+// ── TASK-773 + TASK-794: a session that expires mid-checkout ─────────────────
+// These run the REAL AuthProvider and the real axios interceptor: the defect
+// lived in the gap between them (the interceptor dropped its token, the
+// context kept `isAuthenticated: true`), which a stubbed context cannot show.
+describe("CheckoutView — the session expires mid-checkout (TASK-773, TASK-794)", () => {
+  function renderWithRealSession() {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false, gcTime: 0 },
+        mutations: { retry: false },
+      },
+    });
+    return render(
+      <QueryClientProvider client={client}>
+        <AuthProvider>
+          <CheckoutView />
+        </AuthProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  /** The bootstrap refresh restores a session; every later refresh is a 401. */
+  function sessionThatExpires() {
+    let refreshCalls = 0;
+    server.use(
+      http.post("*/api/auth/refresh", () => {
+        refreshCalls += 1;
+        return refreshCalls === 1
+          ? HttpResponse.json({ data: { accessToken: "header.payload.sig" } })
+          : HttpResponse.json({ message: "Unauthorized" }, { status: 401 });
+      }),
+      http.get("*/api/cart", () => HttpResponse.json(makeCart())),
+    );
+  }
+
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockPush.mockClear();
+    delete process.env.NEXT_PUBLIC_PAYMENT_METHODS;
+    setAccessToken(null);
+    markSessionActive();
+  });
+
+  afterEach(() => {
+    setAccessToken(null);
+    clearSessionMarker();
+  });
+
+  it("shows the guest contact block once the refresh fails", async () => {
+    sessionThatExpires();
+    // The profile prefill is the first authenticated call — its 401 is what
+    // sends the interceptor to a refresh that no longer works.
+    server.use(
+      http.get("*/api/users/me", () =>
+        HttpResponse.json({ message: "Unauthorized" }, { status: 401 }),
+      ),
+    );
+
+    renderWithRealSession();
+
+    await screen.findByRole("heading", { name: dict.checkout.title });
+    // Before TASK-773 the context stayed signed in and this field never came.
+    expect(
+      await screen.findByLabelText(dict.checkout.guest.emailLabel),
+    ).toBeInTheDocument();
+  });
+
+  it("sends a blocked review-step submit back to the field that blocks it", async () => {
+    sessionThatExpires();
+    let orderCalls = 0;
+    server.use(
+      http.get("*/api/users/me", () =>
+        HttpResponse.json(makeUser({ firstName: "", lastName: "", phone: "" })),
+      ),
+      // The session dies exactly here: the order POST earns a 401 and the
+      // refresh behind it fails.
+      http.post("*/api/orders", () => {
+        orderCalls += 1;
+        return HttpResponse.json({ message: "Unauthorized" }, { status: 401 });
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderWithRealSession();
+
+    await screen.findByRole("heading", { name: dict.checkout.title });
+    // Signed in: no email field on step 1.
+    await waitFor(() =>
+      expect(screen.getByLabelText(dict.checkout.fields.firstName)).toHaveValue(
+        "",
+      ),
+    );
+    expect(
+      screen.queryByLabelText(dict.checkout.guest.emailLabel),
+    ).not.toBeInTheDocument();
+    await fillDelivery(user);
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.nextStep }),
+    );
+    await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+
+    await user.click(
+      screen.getByRole("button", { name: dict.checkout.placeOrder }),
+    );
+    await waitFor(() => expect(orderCalls).toBe(1));
+
+    // Now a guest, whose schema requires an email that step 2 does not render.
+    // The second press used to do nothing at all — the silent button.
+    await user.click(
+      await screen.findByRole("button", { name: dict.checkout.placeOrder }),
+    );
+
+    expect(
+      await screen.findByText(dict.checkout.guest.validationEmailRequired),
+    ).toBeInTheDocument();
+    const email = screen.getByLabelText(dict.checkout.guest.emailLabel);
+    await waitFor(() => expect(email).toHaveFocus());
+    expect(orderCalls).toBe(1);
+  });
+
+  it("falls back to cash on delivery when the chosen online method is no longer available", async () => {
+    process.env.NEXT_PUBLIC_PAYMENT_METHODS = "ONLINE";
+    sessionThatExpires();
+    server.use(
+      http.get("*/api/users/me", () => HttpResponse.json(makeUser())),
+      http.get("*/api/protected", () =>
+        HttpResponse.json({ message: "Unauthorized" }, { status: 401 }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithRealSession();
+
+    await screen.findByRole("heading", { name: dict.checkout.title });
+    const online = await screen.findByRole("radio", { name: /Картка онлайн/ });
+    await waitFor(() => expect(online).toBeEnabled());
+    await user.click(online);
+    expect(online).toBeChecked();
+
+    // Any authenticated call can be the one that finds the session gone.
+    await act(async () => {
+      await expect(api.get("/api/protected")).rejects.toBeTruthy();
+    });
+
+    await waitFor(() => expect(online).toBeDisabled());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("radio", {
+          name: new RegExp(dict.checkout.payment.onDeliveryTitle),
+        }),
+      ).toBeChecked(),
+    );
+    expect(online).not.toBeChecked();
   });
 });

@@ -11,7 +11,14 @@ import { OrderRepository } from '../order.repository';
 import { ReturnEntity } from './entities';
 import { RESTOCK_ON_STATUS, canTransitionReturn } from './return-state-machine';
 import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
-import type { ReturnWithItems } from './return.types';
+import { refundExceedsOrderBalanceError, refundExceedsReturnedValueError } from './return.errors';
+import { centsToString, toCents } from '../../addon-service';
+import type {
+  AssertRefundWithinBalance,
+  AssertReturnClaimable,
+  ReturnClaimRow,
+  ReturnWithItems,
+} from './return.types';
 
 const DEFAULT_PAGE = 1;
 /** The one admin page size (TASK-423) — was 10, which no admin table uses now. */
@@ -64,17 +71,20 @@ export class ReturnService {
       throw new NotFoundException('Order not found');
     }
 
-    await this.assertLinesAreReturnable(order, dto);
+    const assertClaimable = this.assertLinesAreReturnable(order, dto);
 
-    const created = await this.returnRepository.create({
-      orderId,
-      ...(dto.reason ? { reason: dto.reason } : {}),
-      createdByUserId: userId,
-      items: dto.items.map((item) => ({
-        orderItemId: item.orderItemId,
-        quantity: item.quantity,
-      })),
-    });
+    const created = await this.returnRepository.create(
+      {
+        orderId,
+        ...(dto.reason ? { reason: dto.reason } : {}),
+        createdByUserId: userId,
+        items: dto.items.map((item) => ({
+          orderItemId: item.orderItemId,
+          quantity: item.quantity,
+        })),
+      },
+      assertClaimable,
+    );
 
     this.logger.info(
       { event: 'return.requested', returnId: created.id, orderId, userId },
@@ -116,17 +126,20 @@ export class ReturnService {
       throw new NotFoundException('Order not found');
     }
 
-    await this.assertLinesAreReturnable(order, dto);
+    const assertClaimable = this.assertLinesAreReturnable(order, dto);
 
-    const created = await this.returnRepository.create({
-      orderId,
-      ...(dto.reason ? { reason: dto.reason } : {}),
-      createdByUserId: actorUserId,
-      items: dto.items.map((item) => ({
-        orderItemId: item.orderItemId,
-        quantity: item.quantity,
-      })),
-    });
+    const created = await this.returnRepository.create(
+      {
+        orderId,
+        ...(dto.reason ? { reason: dto.reason } : {}),
+        createdByUserId: actorUserId,
+        items: dto.items.map((item) => ({
+          orderItemId: item.orderItemId,
+          quantity: item.quantity,
+        })),
+      },
+      assertClaimable,
+    );
 
     this.logger.info(
       {
@@ -206,6 +219,9 @@ export class ReturnService {
    * @throws NotFoundException when the return does not exist.
    * @throws ConflictException when the state machine forbids the move, or when
    *   the goods were already credited back to stock.
+   * @throws BadRequestException when `refundedAmount` exceeds the value of the
+   *   returned lines or what the order has left to refund (TASK-785) — see
+   *   {@link assertRefundWithinCeilings}.
    */
   async resolveReturn(returnId: string, dto: ResolveReturnDto): Promise<ReturnEntity> {
     const existing = await this.returnRepository.findById(returnId);
@@ -242,7 +258,13 @@ export class ReturnService {
         // request stamps it.
         resolvedAt: new Date(),
       },
-      { restock: dto.restock === true },
+      {
+        restock: dto.restock === true,
+        // Only a real amount can be over a ceiling; null clears a mistyped one.
+        ...(typeof dto.refundedAmount === 'string'
+          ? { assertRefundable: assertRefundWithinCeilings(dto.refundedAmount) }
+          : {}),
+      },
     );
 
     this.logger.info(
@@ -270,12 +292,19 @@ export class ReturnService {
    * admin path would keep accepting returns the customer path refuses, and the
    * first sign of it would be stock credited back for goods nobody bought.
    *
-   * @throws BadRequestException on any of the three.
+   * The first two are checked here and now. The third depends on every other
+   * return of the order, so it is RETURNED as a closure for the repository to run
+   * inside the transaction that inserts, against a ledger read under a lock on
+   * the order row (TASK-784). Checked here, against a read of our own, it let two
+   * concurrent requests for the last unit both see "0 claimed" and both succeed.
+   *
+   * @throws BadRequestException on either of the first two; the returned check
+   *   throws it on the third.
    */
-  private async assertLinesAreReturnable(
+  private assertLinesAreReturnable(
     order: { id: string; status: OrderStatus; items: Array<{ id: string; quantity: number }> },
     dto: CreateReturnDto,
-  ): Promise<void> {
+  ): AssertReturnClaimable {
     if (!RETURNABLE_ORDER_STATUSES.has(order.status)) {
       throw new BadRequestException(
         'Only shipped or delivered orders can be returned — cancel the order instead',
@@ -310,38 +339,78 @@ export class ReturnService {
       );
     }
 
-    const alreadyClaimed = await this.countClaimedUnits(order.id);
-    for (const [orderItemId, requested] of requestedByLineId) {
-      const ordered = orderedByLineId.get(orderItemId) as number;
-      const claimed = alreadyClaimed.get(orderItemId) ?? 0;
-      if (claimed + requested > ordered) {
-        throw new BadRequestException(
-          `Cannot return ${requested} of that item — ${ordered - claimed} remain returnable`,
-        );
+    return (ledger) => {
+      const alreadyClaimed = countClaimedUnits(ledger);
+      for (const [orderItemId, requested] of requestedByLineId) {
+        const ordered = orderedByLineId.get(orderItemId) as number;
+        const claimed = alreadyClaimed.get(orderItemId) ?? 0;
+        if (claimed + requested > ordered) {
+          throw new BadRequestException(
+            `Cannot return ${requested} of that item — ${ordered - claimed} remain returnable`,
+          );
+        }
       }
+    };
+  }
+}
+
+/**
+ * How many units of each order line are already spoken for by earlier returns.
+ *
+ * A REJECTED return releases its claim — the shop said no, the units never came
+ * back, and the customer may legitimately try again with a better reason. Every
+ * other status still holds them.
+ */
+function countClaimedUnits(ledger: ReturnClaimRow[]): Map<string, number> {
+  const claimed = new Map<string, number>();
+
+  for (const row of ledger) {
+    if (DEAD_RETURN_STATUSES.has(row.status)) continue;
+    for (const item of row.items) {
+      claimed.set(item.orderItemId, (claimed.get(item.orderItemId) ?? 0) + item.quantity);
     }
   }
 
-  /**
-   * How many units of each order line are already spoken for by earlier returns.
-   *
-   * A REJECTED return releases its claim — the shop said no, the units never came
-   * back, and the customer may legitimately try again with a better reason. Every
-   * other status still holds them.
-   */
-  private async countClaimedUnits(orderId: string): Promise<Map<string, number>> {
-    const existing = await this.returnRepository.findByOrderId(orderId);
-    const claimed = new Map<string, number>();
+  return claimed;
+}
 
-    for (const row of existing) {
-      if (DEAD_RETURN_STATUSES.has(row.status)) continue;
-      for (const item of row.items) {
-        claimed.set(item.orderItemId, (claimed.get(item.orderItemId) ?? 0) + item.quantity);
-      }
+/**
+ * The two ceilings on `refundedAmount` (TASK-785), returned as a closure for the
+ * repository to run inside the resolve transaction against a ledger read under a
+ * lock on the order row — the same shape as the quantity cap (TASK-784).
+ *
+ * 1. **Returned value** — Σ (unit price × returned quantity) over this return's
+ *    lines. GROSS line value: a discount is stored once on the order
+ *    (`Order.discount`, clamped against `subtotal`) and never allocated to lines,
+ *    so there is no per-line net price to use. Add-ons and shipping are not part
+ *    of it, matching the DTO's "may be less than the line total".
+ * 2. **Order balance** — `order.total` less every amount already recorded on the
+ *    order's OTHER returns. This is the one that catches the discount: a 499.00
+ *    line bought for 400.00 after a coupon refunds at most 400.00.
+ *
+ * All arithmetic in integer cents, like every money total in this codebase.
+ */
+function assertRefundWithinCeilings(refundedAmount: string): AssertRefundWithinBalance {
+  const requested = toCents(refundedAmount);
+
+  return ({ orderTotal, otherRefunds, items }) => {
+    const returnedValue = items.reduce(
+      (sum, item) => sum + toCents(item.unitPrice) * item.quantity,
+      0,
+    );
+    if (requested > returnedValue) {
+      throw refundExceedsReturnedValueError(refundedAmount, centsToString(returnedValue));
     }
 
-    return claimed;
-  }
+    const alreadyRefunded = otherRefunds.reduce(
+      (sum, row) => sum + (row.refundedAmount === null ? 0 : toCents(row.refundedAmount)),
+      0,
+    );
+    const remaining = Math.max(toCents(orderTotal) - alreadyRefunded, 0);
+    if (requested > remaining) {
+      throw refundExceedsOrderBalanceError(refundedAmount, centsToString(remaining));
+    }
+  };
 }
 
 /** Re-exported for the module's public surface. */

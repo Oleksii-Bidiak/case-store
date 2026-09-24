@@ -39,10 +39,12 @@ const ICONS: Record<
  * no choice at all.
  *
  * The choice returns now — and only now — because every option has somewhere real
- * to go. `ON_DELIVERY` is the backend's own column default, so what the shopper
- * picks and what gets stored agree. `ONLINE` / `INSTALLMENTS` make `useCheckout`
- * open a genuine payment attempt via `POST /api/payments/orders/:id/checkout` and
- * hand the browser to the provider's page. An option that cannot be carried
+ * to go. `CreateOrderDto` now carries `paymentMethod`, and `useCheckout` sends
+ * the selection on the create call, so what the shopper picks is what gets
+ * stored — and an online order gets its stock-reservation deadline (TASK-650).
+ * `ONLINE` / `INSTALLMENTS` then also open a genuine payment attempt via
+ * `POST /api/payments/orders/:id/checkout` and hand the browser to the
+ * provider's page. An option that cannot be carried
  * through for *this* shopper is drawn disabled with the reason attached
  * ({@link PaymentMethodOption.blockedBy}) instead of quietly swallowing a click.
  *

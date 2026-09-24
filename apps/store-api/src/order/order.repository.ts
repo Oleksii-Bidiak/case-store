@@ -37,6 +37,9 @@ import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto'
 // the other one, and the chip would then quietly disagree with the tile.
 import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { staleOrderError } from './order.errors';
+// TASK-771: a revive that cannot re-claim its promo slot fails with the same
+// stable codes the checkout uses, so the admin sees the reason it already knows.
+import { DiscountErrorCode, conflictDiscount } from '../discount/discount.errors';
 
 /**
  * Shared Prisma include clause for order queries. Always fetches the order
@@ -1069,6 +1072,9 @@ export class OrderRepository {
         });
       }
 
+      // TASK-771: the promo slot goes back with the stock, behind the same arbiter.
+      await this.releaseRedemption(tx, orderId);
+
       // TASK-251: audit row — the pre-cancel status (read via the existing
       // findUniqueOrThrow above) is the fromStatus, so no extra read is needed.
       await tx.orderStatusHistory.create({
@@ -1134,6 +1140,9 @@ export class OrderRepository {
           );
         }
       }
+
+      // TASK-771: re-claim the promo slot the cancel released, or refuse the revive.
+      await this.reclaimRedemption(tx, order);
 
       // TASK-251: audit row — the pre-revive status (e.g. CANCELLED, from the
       // findUniqueOrThrow above) is the fromStatus; the revived status is the to.
@@ -1445,7 +1454,7 @@ export class OrderRepository {
         },
       });
 
-      const orderData: Prisma.OrderUpdateInput = {};
+      const orderData: Prisma.OrderUpdateManyMutationInput = {};
       if (plan.paymentStatusChange) orderData.paymentStatus = plan.paymentStatusChange.to;
       if (plan.statusChange) orderData.status = plan.statusChange.to;
       if (plan.paidAt !== undefined) orderData.paidAt = plan.paidAt;
@@ -1455,7 +1464,25 @@ export class OrderRepository {
       if (plan.clearReservation) orderData.reservationExpiresAt = null;
 
       if (Object.keys(orderData).length > 0) {
-        await tx.order.update({ where: { id: plan.orderId }, data: orderData });
+        // Conditional on the statuses the plan was decided against: the read was
+        // not locked, and a TTL cancel may have committed since (stock returned,
+        // `restockedAt` stamped). Writing CONFIRMED/PAID over it would re-open the
+        // oversell TASK-619 closed. Zero rows → throw, the whole transaction rolls
+        // back, the payment module releases its idempotency claim, and the
+        // provider's retry is planned again against the fresh row.
+        const { count } = await tx.order.updateMany({
+          where: {
+            id: plan.orderId,
+            status: plan.expected.status,
+            paymentStatus: plan.expected.paymentStatus,
+          },
+          data: orderData,
+        });
+        if (count === 0) {
+          throw new ConflictException(
+            'The order changed while the payment event was being applied; retry',
+          );
+        }
       }
 
       if (plan.paymentStatusChange) {
@@ -1465,6 +1492,8 @@ export class OrderRepository {
             changeType: OrderHistoryChangeType.PAYMENT_STATUS,
             fromPaymentStatus: plan.paymentStatusChange.from,
             toPaymentStatus: plan.paymentStatusChange.to,
+            // TASK-619: the flag an operator's list queries (e.g. PAID_AFTER_CANCEL).
+            ...(plan.paymentStatusChange.note ? { note: plan.paymentStatusChange.note } : {}),
             changedBy: null,
           },
         });
@@ -1529,6 +1558,124 @@ export class OrderRepository {
       data: { deletedAt: new Date() },
       include: ORDERS_INCLUDE,
     }) as Promise<OrderWithItems>;
+  }
+
+  /**
+   * Give an order's promo-code slot back (TASK-771). Called from
+   * {@link cancelAndRestock} AFTER its `restockedAt IS NULL` arbiter, so a
+   * losing concurrent cancel never reaches it and the slot is released once.
+   *
+   * Without this an abandoned card payment auto-cancelled by the TTL worker kept
+   * its `DiscountRedemption` forever: a `perUserLimit = 1` code became unusable
+   * for that customer (409 USER_LIMIT_REACHED) and every such order burnt one of
+   * `maxRedemptions` — with nothing in the admin panel to undo it.
+   *
+   * The counter is decremented by the rows ACTUALLY deleted, and only while it
+   * can absorb that (`redeemedCount >= n`), so a counter that drifted below the
+   * row count is left at its value rather than pushed negative.
+   */
+  private async releaseRedemption(tx: Prisma.TransactionClient, orderId: string): Promise<void> {
+    const redemption = await tx.discountRedemption.findUnique({
+      where: { orderId },
+      select: { id: true, discountId: true },
+    });
+    if (!redemption) return;
+
+    const { count } = await tx.discountRedemption.deleteMany({ where: { id: redemption.id } });
+    if (count === 0) return;
+
+    await tx.discount.updateMany({
+      where: { id: redemption.discountId, redeemedCount: { gte: count } },
+      data: { redeemedCount: { decrement: count } },
+    });
+  }
+
+  /**
+   * Re-claim the promo-code slot that {@link releaseRedemption} gave back when
+   * this order was cancelled (TASK-771), with exactly the gates of
+   * `DiscountService.redeem`: the conditional `redeemedCount < maxRedemptions`
+   * increment first (it row-locks the discount, which serializes a concurrent
+   * checkout on the same code), then the `perUserLimit` count, then the insert.
+   *
+   * DECISION — a revive whose slot is gone FAILS; it never proceeds without a
+   * redemption. The order's `discount` amount is frozen, so reviving it silently
+   * would hand out the discount one more time than the code allows — the very
+   * leak the caps exist to stop. The 409 carries the discount error code, the
+   * whole transaction (including the stock re-reserve) rolls back, and the order
+   * keeps its terminal status for the operator to decide on.
+   *
+   * What is deliberately NOT re-checked: `isActive`, `startsAt`/`expiresAt` and
+   * `minSpend`. Those decided whether the code could be APPLIED, and it was, at
+   * placement time; the revive restores that agreed price rather than making a
+   * new sale. Only the counted caps are about how many times the code is in use
+   * right now, which is what the revive changes.
+   *
+   * The discount is found by the order's `discountCode` snapshot, because the
+   * cancel deleted the only row carrying `discountId`. A code renamed since the
+   * cancel no longer resolves; that is refused (DISCOUNT_NOT_FOUND) for the same
+   * reason as an exhausted cap — the slot cannot be accounted for.
+   *
+   * An order that still HOLDS its redemption (cancelled before TASK-771, so it
+   * was never released) claims nothing: claiming again would double-count, and
+   * the insert would trip the unique `orderId`.
+   */
+  private async reclaimRedemption(
+    tx: Prisma.TransactionClient,
+    order: { id: string; userId: string | null; discountCode: string | null },
+  ): Promise<void> {
+    // Guests cannot redeem codes (TASK-338), so a guest order never held a slot.
+    if (!order.discountCode || !order.userId) return;
+
+    const held = await tx.discountRedemption.findUnique({
+      where: { orderId: order.id },
+      select: { id: true },
+    });
+    if (held) return;
+
+    const discount = await tx.discount.findUnique({
+      where: { code: order.discountCode },
+      select: { id: true, perUserLimit: true },
+    });
+    if (!discount) {
+      throw conflictDiscount(
+        DiscountErrorCode.NOT_FOUND,
+        `Promo code "${order.discountCode}" no longer exists — cannot revive the order`,
+      );
+    }
+
+    // Same predicate as DiscountRepository.tryIncrementRedeemed.
+    const { count: claimed } = await tx.discount.updateMany({
+      where: {
+        id: discount.id,
+        OR: [
+          { maxRedemptions: null },
+          { redeemedCount: { lt: this.prisma.discount.fields.maxRedemptions } },
+        ],
+      },
+      data: { redeemedCount: { increment: 1 } },
+    });
+    if (claimed === 0) {
+      throw conflictDiscount(
+        DiscountErrorCode.MAX_REDEMPTIONS_REACHED,
+        `Promo code "${order.discountCode}" has reached its redemption limit — cannot revive the order`,
+      );
+    }
+
+    if (discount.perUserLimit !== null) {
+      const used = await tx.discountRedemption.count({
+        where: { discountId: discount.id, userId: order.userId },
+      });
+      if (used >= discount.perUserLimit) {
+        throw conflictDiscount(
+          DiscountErrorCode.USER_LIMIT_REACHED,
+          `The customer has already used promo code "${order.discountCode}" — cannot revive the order`,
+        );
+      }
+    }
+
+    await tx.discountRedemption.create({
+      data: { discountId: discount.id, userId: order.userId, orderId: order.id },
+    });
   }
 
   /**

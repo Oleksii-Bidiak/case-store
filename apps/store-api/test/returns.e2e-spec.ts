@@ -68,7 +68,19 @@ describe('Admin returns queue (e2e)', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
-    return: { count: jest.fn(), findMany: jest.fn(), create: jest.fn() },
+    return: {
+      count: jest.fn(),
+      findMany: jest.fn(),
+      create: jest.fn(),
+      // The resolve path (TASK-785): the service's first read, then the
+      // repository's reads and write inside its transaction.
+      findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn(),
+    },
+    // The row lock on the order the resolve transaction takes (TASK-785).
+    $queryRaw: jest.fn(),
     // The order-scoped return routes read the order first (review of plan 180).
     order: { findFirst: jest.fn() },
     // The list path uses the ARRAY form of $transaction; awaiting the operations
@@ -159,8 +171,12 @@ describe('Admin returns queue (e2e)', () => {
     jest.clearAllMocks();
     prismaServiceMock.return.count.mockResolvedValue(0);
     prismaServiceMock.return.findMany.mockResolvedValue([]);
+    // Both forms of $transaction: the list path hands it an ARRAY, the resolve
+    // path an interactive callback, which runs against the same double.
     prismaServiceMock.$transaction.mockImplementation((operations: unknown) =>
-      Promise.all(operations as Promise<unknown>[]),
+      typeof operations === 'function'
+        ? (operations as (tx: typeof prismaServiceMock) => Promise<unknown>)(prismaServiceMock)
+        : Promise.all(operations as Promise<unknown>[]),
     );
   });
 
@@ -396,6 +412,83 @@ describe('Admin returns queue (e2e)', () => {
 
       expect(response.status).not.toBe(403);
       expect(response.status).toBe(404);
+    });
+  });
+
+  // ─── Refund ceilings (TASK-785) ─────────────────────────────────────────────
+  //
+  // `refundedAmount` used to be checked for shape only: "49900" typed for
+  // "499.00" matched the decimal regex, was stored, and flowed into the order's
+  // `refundedTotal` and the B-8 reports. The real service and repository run
+  // here, so this pins the whole chain: DTO → service ceilings → the check the
+  // repository runs inside its transaction → a 400 with a stable code.
+
+  describe('PATCH /api/admin/returns/:returnId — refund ceilings', () => {
+    const returnId = '550e8400-e29b-41d4-a716-446655440000';
+    const adminToken = () => `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`;
+
+    /** One unit of a 499.00 line, back at the shop and waiting for its money. */
+    const received = makeReturnRow({
+      status: ReturnStatus.RECEIVED,
+      items: [
+        {
+          id: '550e8400-e29b-41d4-a716-446655440010',
+          returnId,
+          orderItemId: '550e8400-e29b-41d4-a716-446655440001',
+          quantity: 1,
+          createdAt: now,
+          orderItem: {
+            id: '550e8400-e29b-41d4-a716-446655440001',
+            productId: '550e8400-e29b-41d4-a716-446655440002',
+            quantity: 3,
+            price: '499.00',
+            product: {
+              id: '550e8400-e29b-41d4-a716-446655440002',
+              name: 'Чохол',
+              slug: 'chokhol',
+            },
+          },
+        },
+      ],
+    });
+
+    const patch = (refundedAmount: string) =>
+      request(app.getHttpServer())
+        .patch(`${url}/${returnId}`)
+        .set('Authorization', adminToken())
+        .send({ status: ReturnStatus.REFUNDED, refundedAmount });
+
+    beforeEach(() => {
+      prismaServiceMock.return.findUnique.mockResolvedValue(received);
+      prismaServiceMock.return.findUniqueOrThrow.mockResolvedValue(received);
+      prismaServiceMock.return.update.mockResolvedValue(received);
+      // The order of three at 499.00, nothing refunded through its other returns.
+      prismaServiceMock.$queryRaw.mockResolvedValue([{ total: '1497.00' }]);
+      prismaServiceMock.return.findMany.mockResolvedValue([]);
+    });
+
+    it('rejects "49900" typed for "499.00" with 400 and writes nothing', async () => {
+      const response = await patch('49900').expect(400);
+
+      expect(response.body.error).toBe('RETURN_REFUND_EXCEEDS_RETURNED_VALUE');
+      expect(response.body.message).toContain('499.00');
+      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+    });
+
+    it('rejects a refund larger than the order has left after earlier returns', async () => {
+      prismaServiceMock.return.findMany.mockResolvedValue([{ refundedAmount: '1200.00' }]);
+
+      const response = await patch('499.00').expect(400);
+
+      expect(response.body.error).toBe('RETURN_REFUND_EXCEEDS_ORDER_BALANCE');
+      expect(response.body.message).toContain('297.00');
+      expect(prismaServiceMock.return.update).not.toHaveBeenCalled();
+    });
+
+    it('accepts "499.00" — the value of the unit coming back', async () => {
+      await patch('499.00').expect(200);
+
+      expect(prismaServiceMock.return.update).toHaveBeenCalledTimes(1);
     });
   });
 });

@@ -8,7 +8,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
+import { OrderHistoryNote, OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
@@ -1990,8 +1990,34 @@ describe('OrderService', () => {
 
     beforeEach(() => {
       configValues.set('STORE_CLIENT_URL', 'https://shop.example.com');
-      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      // A guest order — the only kind a link is issued for (TASK-623).
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
       orderRepositoryMock.rotateAccessToken.mockResolvedValue(now);
+    });
+
+    it('issues a link for a guest order', async () => {
+      const { url } = await service.issueOrderAccessLink(ORDER_ID);
+
+      expect(url).toMatch(/^https:\/\/shop\.example\.com\/orders\/guest\/[0-9a-f]+$/);
+      expect(orderRepositoryMock.rotateAccessToken).toHaveBeenCalledTimes(1);
+    });
+
+    it('409s for an account order, leaving the existing link untouched (TASK-623)', async () => {
+      // The account holder reads the order in their cabinet. A 60-day bearer
+      // link pasted into a chat would only widen who can read the address.
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: USER_ID }));
+
+      await expect(service.issueOrderAccessLink(ORDER_ID)).rejects.toThrow(ConflictException);
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('409s for a guest order since claimed by an account — the cabinet is the way in now', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ userId: USER_ID, guestEmail: 'buyer@example.com' }),
+      );
+
+      await expect(service.issueOrderAccessLink(ORDER_ID)).rejects.toThrow(ConflictException);
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
     });
 
     it('writes a fresh hash, so the link the buyer had stops working', async () => {
@@ -2873,6 +2899,19 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
     });
 
+    // The read is unlocked; the repository writes only if these still hold, so a
+    // TTL cancel committed in between is not overwritten (TASK-619 under a race).
+    it('hands the repository the statuses the plan was decided against', async () => {
+      seed(makePayment({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING }));
+
+      await service.applyPaymentEvent(makeEvent());
+
+      expect(lastPlan().expected).toEqual({
+        status: OrderStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+      });
+    });
+
     // ── Rule 2: verify the money before believing it ──────────────────────────
 
     describe('amount verification', () => {
@@ -2967,6 +3006,98 @@ describe('OrderService', () => {
           expect(plan.statusChange).toBeUndefined();
         },
       );
+
+      // ── TASK-619 / owner decision B-11 №3: a success that lands after the
+      // reservation lapsed. The money is a fact and is recorded; the order is
+      // NOT revived — that needs stock, and deciding it is the operator's job.
+      describe('late success on a CANCELLED order (TASK-619)', () => {
+        const seedCancelled = (paymentStatus: PaymentStatus = PaymentStatus.PENDING) =>
+          seed(
+            makePayment(
+              { status: OrderStatus.CANCELLED, paymentStatus },
+              { status: PaymentAttemptStatus.EXPIRED },
+            ),
+          );
+
+        it('records the money as PAID', async () => {
+          seedCancelled();
+
+          const result = await service.applyPaymentEvent(makeEvent());
+
+          expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
+          const plan = lastPlan();
+          expect(plan.attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
+          expect(plan.paymentStatusChange).toEqual(
+            expect.objectContaining({ from: PaymentStatus.PENDING, to: PaymentStatus.PAID }),
+          );
+          expect(plan.paidAt).toBeInstanceOf(Date);
+        });
+
+        it('leaves the order CANCELLED (no CANCELLED → CONFIRMED revive)', async () => {
+          seedCancelled();
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(lastPlan().statusChange).toBeUndefined();
+        });
+
+        it('reserves no stock', async () => {
+          seedCancelled();
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(orderRepositoryMock.reviveAndReserve).not.toHaveBeenCalled();
+          expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
+        });
+
+        it('marks the payment history row «оплачено після скасування» for the operator', async () => {
+          seedCancelled();
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(lastPlan().paymentStatusChange?.note).toBe(OrderHistoryNote.PAID_AFTER_CANCEL);
+        });
+
+        it('warns in the log so the late payment is visible before the dashboard reads it', async () => {
+          seedCancelled();
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(pinoLoggerMock.warn).toHaveBeenCalledWith(
+            expect.objectContaining({
+              event: 'order.payment_after_cancel',
+              orderId: 'order-uuid-1',
+              paymentId: PAYMENT_ID,
+            }),
+            expect.any(String),
+          );
+        });
+
+        it('marks it the same way after an earlier declined card (FAILED → PAID)', async () => {
+          seedCancelled(PaymentStatus.FAILED);
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(lastPlan().paymentStatusChange).toEqual({
+            from: PaymentStatus.FAILED,
+            to: PaymentStatus.PAID,
+            note: OrderHistoryNote.PAID_AFTER_CANCEL,
+          });
+          expect(lastPlan().statusChange).toBeUndefined();
+        });
+
+        it('carries no note on a success for a live PENDING order', async () => {
+          seed(makePayment());
+
+          await service.applyPaymentEvent(makeEvent());
+
+          expect(lastPlan().paymentStatusChange?.note).toBeUndefined();
+          expect(lastPlan().statusChange).toEqual({
+            from: OrderStatus.PENDING,
+            to: OrderStatus.CONFIRMED,
+          });
+        });
+      });
 
       it('changes nothing when the order is already PAID (a re-delivered callback)', async () => {
         seed(makePayment({ paymentStatus: PaymentStatus.PAID, paidAt: new Date() }));
@@ -3134,6 +3265,137 @@ describe('OrderService', () => {
 
         expect(result.applied).toBe(false);
         expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+
+      it('still rejects a FULL refund that reports less than was charged', async () => {
+        // REFUNDED means "all of it". Less than all of it is PARTIALLY_REFUNDED,
+        // which PaymentService decides before handing the event over (TASK-618);
+        // a REFUNDED that reports less is a contradiction, not a partial refund.
+        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+
+        await expect(service.applyPaymentEvent({ ...refund, amount: '20.00' })).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+    });
+
+    // ── PARTIALLY_REFUNDED (TASK-618) ─────────────────────────────────────────
+    // A provider refund of less than the captured amount. Before TASK-618 there
+    // was no such outcome: the event arrived as REFUNDED, this door demanded the
+    // full amount, threw 400, and the money that had already gone back was never
+    // recorded while the provider retried forever.
+
+    describe('PARTIALLY_REFUNDED', () => {
+      const partial = makeEvent({
+        outcome: PaymentOutcome.PARTIALLY_REFUNDED,
+        providerStatus: 'reversed',
+        amount: '20.00',
+      });
+
+      it('accepts an amount below the charge and marks the payment PARTIALLY_REFUNDED', async () => {
+        seed(
+          makePayment(
+            { status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID },
+            { status: PaymentAttemptStatus.SUCCEEDED },
+          ),
+        );
+
+        const result = await service.applyPaymentEvent(partial);
+
+        expect(result).toEqual({ applied: true, orderId: 'order-uuid-1' });
+        expect(lastPlan().paymentStatusChange).toEqual({
+          from: PaymentStatus.PAID,
+          to: PaymentStatus.PARTIALLY_REFUNDED,
+        });
+      });
+
+      it('does NOT drag a DELIVERED order into REFUNDED', async () => {
+        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+
+        await service.applyPaymentEvent(partial);
+
+        expect(lastPlan().statusChange).toBeUndefined();
+      });
+
+      it('keeps the attempt SUCCEEDED, so the rest of the money can still be refunded', async () => {
+        seed(
+          makePayment(
+            { status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID },
+            { status: PaymentAttemptStatus.SUCCEEDED },
+          ),
+        );
+
+        await service.applyPaymentEvent(partial);
+
+        expect(lastPlan().attemptStatus).toBe(PaymentAttemptStatus.SUCCEEDED);
+        // The attempt settled when the money arrived; a partial refund does not
+        // move that moment.
+        expect(lastPlan().settledAt).toBeUndefined();
+      });
+
+      it.each([OrderStatus.CONFIRMED, OrderStatus.PROCESSING, OrderStatus.SHIPPED])(
+        'is accepted on a live %s order — the cross-rule constrains FULL refunds only',
+        async (status) => {
+          seed(makePayment({ status, paymentStatus: PaymentStatus.PAID }));
+
+          await service.applyPaymentEvent(partial);
+
+          expect(lastPlan().paymentStatusChange).toEqual({
+            from: PaymentStatus.PAID,
+            to: PaymentStatus.PARTIALLY_REFUNDED,
+          });
+          expect(lastPlan().statusChange).toBeUndefined();
+          expect(lastPlan().refusedPaymentStatusChange).toBeUndefined();
+        },
+      );
+
+      it.each([PaymentStatus.PARTIALLY_REFUNDED, PaymentStatus.REFUNDED])(
+        'changes nothing when the payment is already %s',
+        async (paymentStatus) => {
+          seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus }));
+
+          const result = await service.applyPaymentEvent(partial);
+
+          expect(result.applied).toBe(false);
+          expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+        },
+      );
+
+      it('refuses (without throwing) a partial refund of money never recorded as received', async () => {
+        seed(makePayment({ paymentStatus: PaymentStatus.PENDING }));
+
+        const result = await service.applyPaymentEvent(partial);
+
+        expect(result.applied).toBe(true);
+        expect(lastPlan().paymentStatusChange).toBeUndefined();
+        expect(lastPlan().refusedPaymentStatusChange).toEqual({
+          current: PaymentStatus.PENDING,
+          rejected: PaymentStatus.PARTIALLY_REFUNDED,
+          reason: 'table',
+        });
+      });
+
+      it.each([
+        ['the full charge', '69.97'],
+        ['more than the charge', '70.00'],
+        ['zero', '0.00'],
+        ['an unparsable amount', ''],
+      ])('rejects a partial refund reporting %s', async (_label, amount) => {
+        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+
+        await expect(service.applyPaymentEvent({ ...partial, amount })).rejects.toThrow(
+          BadRequestException,
+        );
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+      });
+
+      it('rejects a partial refund in a different currency', async () => {
+        seed(makePayment({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }));
+
+        await expect(service.applyPaymentEvent({ ...partial, currency: 'USD' })).rejects.toThrow(
+          BadRequestException,
+        );
       });
     });
 

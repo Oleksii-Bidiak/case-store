@@ -1,8 +1,17 @@
+import { createHmac } from 'node:crypto';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { ThrottlerModuleOptions, ThrottlerOptions } from '@nestjs/throttler';
 import Redis from 'ioredis';
+// The DTO file, not the `order/dto` barrel: the throttler needs the two pure
+// helpers and nothing else from the order module.
+import { ORDER_NUMBER_PATTERN, normalizeOrderNumber } from '../order/dto/order-lookup.dto';
+import {
+  ORDER_LOOKUP_NUMBER_THROTTLER,
+  ORDER_TRACKER_PREFIX,
+  isOrderLookupRoute,
+} from './order-lookup-throttle.decorator';
 import { RedisThrottlerStorage } from './redis-throttler-storage';
 import { isReviewSubmissionRoute } from './review-submission-throttle.decorator';
 import type { ThrottlerRedisHealth } from './throttler-redis-health';
@@ -180,6 +189,123 @@ function buildReviewSubmissionThrottlers(configService: ConfigService): Throttle
   ];
 }
 
+// ─── TASK-624: the per-order-number lookup bucket ─────────────────────────────
+
+/**
+ * Lookups one ORDER NUMBER may receive per hour, from every address combined.
+ *
+ * ## Why ten an hour
+ *
+ * The per-IP cap (5/min on the route) already makes guessing impractical; what
+ * it cannot do is notice a guess spread over many addresses. The dangerous
+ * direction is the reverse one: the number is printed on a waybill or sits in a
+ * forwarded email, and the attacker walks the ~10^7 Ukrainian mobile numbers
+ * against it. A botnet steps around a per-IP cap; it cannot step around a cap on
+ * the TARGET. At ten an hour one number sees at most 240 guesses a day — the
+ * whole phone space would take over a century — and the eleventh guess is logged.
+ *
+ * Ten is still well above what the owner of the order needs: checking a parcel a
+ * few times a day, with the odd mistyped phone, fits comfortably.
+ *
+ * ## The price, stated
+ *
+ * Whoever knows a number can keep that one order locked out of this form for an
+ * hour at a time. That is accepted: the buyer still has the link in their
+ * confirmation email (`GET /orders/guest/:token`) and, with an account, their
+ * order history — and a lockout that someone keeps renewing is precisely the
+ * signal this bucket exists to raise.
+ */
+const ORDER_LOOKUPS_PER_NUMBER_PER_HOUR = 10;
+
+/** Hex characters of the HMAC kept — 64 bits, collision-free at 2^32 numbers. */
+const ORDER_NUMBER_FINGERPRINT_LENGTH = 16;
+
+/** Maps a normalised order number to the opaque token the bucket and the log use. */
+export type OrderNumberFingerprint = (orderNumber: string) => string;
+
+/**
+ * A keyed, truncated fingerprint of an order number (TASK-624).
+ *
+ * Keyed, not a plain SHA-256: the input space is only 2^32 eight-hex-digit
+ * numbers, so an unsalted hash in a log line is reversible in minutes on a
+ * laptop — "hashed" in name only. An HMAC under a server secret is stable (the
+ * same number always yields the same fingerprint, which is what lets an operator
+ * see one order hit from fifty addresses) and says nothing to anyone without the
+ * secret. The label namespaces it so the value can never coincide with any
+ * other use of the same key.
+ */
+export function orderNumberFingerprint(secret: string): OrderNumberFingerprint {
+  return (orderNumber) =>
+    createHmac('sha256', secret)
+      .update(`order-lookup-throttle:${orderNumber}`)
+      .digest('hex')
+      .slice(0, ORDER_NUMBER_FINGERPRINT_LENGTH);
+}
+
+/**
+ * Who the per-order-number bucket counts: the normalised number in the body.
+ *
+ * ## Why it normalises by itself
+ *
+ * The throttler is a global guard, and guards run BEFORE pipes — the DTO's
+ * `@Transform` has not happened yet, so `req.body.number` is whatever was typed:
+ * `#94F5F971`, `94f5 f971`, `№94F5F971`. Counting those as three targets would
+ * hand an attacker three buckets for one order, so the tracker applies the SAME
+ * `normalizeOrderNumber` the DTO and the service apply.
+ *
+ * ## Why a malformed number falls back to the address
+ *
+ * Anything that is not eight hex digits cannot name an order (the service 404s
+ * it without a query), so there is no target to protect. It must still not
+ * collapse into one constant key — that would be TASK-386's shared bucket, with
+ * one garbage request from anyone locking the form for everyone — so it degrades
+ * to the caller's address, and a request with neither is refused.
+ */
+export function createOrderNumberTracker(
+  fingerprint: OrderNumberFingerprint,
+): (req: Record<string, unknown>) => Promise<string> {
+  return function trackOrderNumber(req: Record<string, unknown>): Promise<string> {
+    const request = req as {
+      body?: { number?: unknown };
+      ip?: string;
+      socket?: { remoteAddress?: string };
+    };
+
+    const raw = request.body?.number;
+    const number = typeof raw === 'string' ? normalizeOrderNumber(raw) : '';
+    if (ORDER_NUMBER_PATTERN.test(number)) {
+      return Promise.resolve(`${ORDER_TRACKER_PREFIX}${fingerprint(number)}`);
+    }
+
+    const address = request.ip ?? request.socket?.remoteAddress;
+    if (address) {
+      return Promise.resolve(`ip:${address}`);
+    }
+
+    return Promise.reject(
+      new Error(
+        'Cannot build an order-lookup tracker: the request carries neither an order ' +
+          'number nor a client address. Refusing rather than counting every lookup ' +
+          'in one shared bucket.',
+      ),
+    );
+  };
+}
+
+const onlyOnOrderLookup: ThrottlerOptions['skipIf'] = (context) => !isOrderLookupRoute(context);
+
+function buildOrderLookupThrottler(configService: ConfigService): ThrottlerOptions {
+  const secret = configService.getOrThrow<string>('JWT_SECRET');
+
+  return {
+    name: ORDER_LOOKUP_NUMBER_THROTTLER,
+    limit: ORDER_LOOKUPS_PER_NUMBER_PER_HOUR,
+    ttl: ONE_HOUR_MS,
+    getTracker: createOrderNumberTracker(orderNumberFingerprint(secret)),
+    skipIf: onlyOnOrderLookup,
+  };
+}
+
 /**
  * How long the boot-time PING may take before Redis is called unreachable.
  *
@@ -227,6 +353,7 @@ export async function buildThrottlerOptions(
   const throttlers: ThrottlerOptions[] = [
     { ttl: DEFAULT_TTL_MS, limit: DEFAULT_LIMIT },
     ...buildReviewSubmissionThrottlers(configService),
+    buildOrderLookupThrottler(configService),
   ];
   const redisHost = configService.get<string>('REDIS_HOST');
 

@@ -61,6 +61,8 @@ describe('OrderController (e2e)', () => {
     updateDetails: jest.fn(),
     // TASK-425: the CSV export reads a slim, unpaginated row set of its own.
     findAllForExport: jest.fn(),
+    // TASK-484 / TASK-623: the operator re-issues a buyer link.
+    rotateAccessToken: jest.fn(),
   };
 
   // TASK-483: the public "check my order" form has its own narrow repository, so
@@ -440,6 +442,49 @@ describe('OrderController (e2e)', () => {
         expect.objectContaining({
           shippingAddress: expect.objectContaining({ country: 'UA' }),
         }),
+        expect.any(Function),
+      );
+    });
+
+    // TASK-650: the storefront never sent `paymentMethod`, so every card order
+    // landed as ON_DELIVERY with no deadline and the 30-minute auto-release never
+    // fired. The storefront now sends it; these pin what the API does with it.
+    it('gives an ONLINE order a reservation deadline about 30 minutes out (TASK-650)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      const before = Date.now();
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: validAddress, paymentMethod: 'ONLINE' })
+        .expect(201);
+
+      const params = orderRepositoryMock.createFromCart.mock.calls.at(-1)?.[0] as {
+        paymentMethod: string;
+        reservationExpiresAt: Date | null;
+      };
+      expect(params.paymentMethod).toBe('ONLINE');
+      expect(params.reservationExpiresAt).toBeInstanceOf(Date);
+      const minutesOut = (params.reservationExpiresAt!.getTime() - before) / 60_000;
+      expect(minutesOut).toBeGreaterThan(29);
+      expect(minutesOut).toBeLessThanOrEqual(31);
+    });
+
+    it('holds stock indefinitely for a cash-on-delivery order (no deadline, TASK-650)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: validAddress, paymentMethod: 'ON_DELIVERY' })
+        .expect(201);
+
+      expect(orderRepositoryMock.createFromCart).toHaveBeenLastCalledWith(
+        expect.objectContaining({ paymentMethod: 'ON_DELIVERY', reservationExpiresAt: null }),
         expect.any(Function),
       );
     });
@@ -1336,6 +1381,82 @@ describe('OrderController (e2e)', () => {
 
       expect(response.body.data.internalNotes).toBeUndefined();
       expect(JSON.stringify(response.body)).not.toContain('Suspected fraud');
+    });
+  });
+
+  // ─── POST /api/admin/orders/:orderId/access-link (TASK-484, TASK-623) ──────────
+  // A 60-day bearer link to the whole order, addresses included. Issued for guest
+  // orders only: an account holder reads the order in their cabinet.
+
+  describe('POST /api/admin/orders/:orderId/access-link', () => {
+    const STORE_URL = 'https://shop.example.com';
+    let previousStoreUrl: string | undefined;
+
+    // ConfigService falls through to process.env for a key the validated env
+    // left undefined, and reads it live — so a URL set here reaches the service
+    // without rebooting the app, and is put back afterwards.
+    beforeEach(() => {
+      previousStoreUrl = process.env.STORE_CLIENT_URL;
+      process.env.STORE_CLIENT_URL = STORE_URL;
+    });
+
+    afterEach(() => {
+      if (previousStoreUrl === undefined) {
+        delete process.env.STORE_CLIENT_URL;
+      } else {
+        process.env.STORE_CLIENT_URL = previousStoreUrl;
+      }
+    });
+
+    it('issues a link for a guest order (201)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
+      orderRepositoryMock.rotateAccessToken.mockResolvedValue(new Date());
+
+      const response = await request(app.getHttpServer())
+        .post('/api/admin/orders/order-e2e-1/access-link')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(201);
+
+      expect(response.body.data.url).toMatch(
+        new RegExp(`^${STORE_URL.replace(/\./g, '\\.')}/orders/guest/[0-9a-f]+$`),
+      );
+      expect(response.body.data.issuedAt).toBeDefined();
+      expect(orderRepositoryMock.rotateAccessToken).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an account order with 409 and rotates nothing', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: userA.id }));
+
+      const response = await request(app.getHttpServer())
+        .post('/api/admin/orders/order-e2e-1/access-link')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(409);
+
+      expect(response.body.message).toMatch(/guest orders only/);
+      // Refused before the write: the buyer's current link, if any, still works.
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 for an order that does not exist', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders/nonexistent-uuid/access-link')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+
+    it('returns 403 for a non-admin user', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders/order-e2e-1/access-link')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(403);
+      expect(orderRepositoryMock.rotateAccessToken).not.toHaveBeenCalled();
     });
   });
 

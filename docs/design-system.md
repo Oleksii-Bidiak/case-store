@@ -41,6 +41,7 @@ the hex directly.
 | `primary` / `primary-foreground`         | Brand, primary CTA            | `#4f46e5` / `#fff`                | `#6366f1` / `#fff`                |
 | `secondary` / `secondary-foreground`     | Secondary CTA                 | `#f4f4f5` / `#18181b`             | `#1e293b` / `#ededed`             |
 | `muted` / `muted-foreground`             | Subtle bg / secondary text    | `#f1f5f9` / `#64748b`             | `#1e293b` / `#94a3b8`             |
+| `disabled` / `disabled-foreground`       | Inactive control bg / text    | `#f1f5f9` / `#475569`             | `#1e293b` / `#94a3b8`             |
 | `accent` / `accent-foreground`           | Highlights, hover bg          | `#f1f5f9` / `#0f172a`             | `#1e293b` / `#ededed`             |
 | `card` / `card-foreground`               | Card & popover surface        | `#ffffff` / `#0f172a`             | `#0f0f0f` / `#ededed`             |
 | `popover` / `popover-foreground`         | Dropdowns, overlays           | `#ffffff` / `#0f172a`             | `#0f0f0f` / `#ededed`             |
@@ -136,7 +137,28 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 
 1. **Default** 2. **Hover** (lift/`accent` bg) 3. **Focus-visible** (`ring-2 ring-ring ring-offset-2`)
 2. **Active/Loading** (spinner or skeleton — never a dead frozen UI) 5. **Disabled**
-   (`opacity-50 cursor-not-allowed`, still readable).
+   (explicit tokens + `cursor-not-allowed` — **never `opacity-*`**, see below).
+
+**Disabled rule (TASK-736).** Paint the inactive state with the `disabled` tokens, never by
+fading the control: `opacity-50` over text that is already grey gave ≈2.0:1
+(`muted-foreground`) / ≈3.4:1 (`foreground`), unreadable. What the `shared/ui` primitives do:
+
+| Control                              | Disabled classes                                                                                        |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `Button` (filled / outline variants) | `disabled:bg-disabled disabled:text-disabled-foreground disabled:shadow-none`                           |
+| `Button` `ghost` / `link`            | the above + `disabled:bg-transparent` (no box appears where there was none)                             |
+| `Input`, `Textarea`                  | the `Button` set + `disabled:placeholder:text-disabled-foreground`                                      |
+| `Select` trigger / item              | trigger as `Input` (+ `disabled:data-[placeholder]:…`); item `data-[disabled]:text-disabled-foreground` |
+| `TabsTrigger`                        | `disabled:text-disabled-foreground` (sits on the `bg-muted` list)                                       |
+| `Label`                              | `peer-disabled:` / `group-data-[disabled=true]:text-disabled-foreground`                                |
+
+Borders keep their enabled token (`border-input`); WCAG exempts inactive controls from the
+3:1 UI-component rule, and the grey fill already marks the state. `text-disabled-foreground`
+is ≥ 4.5:1 on `disabled`, `background`, `card`, `popover` and `muted` in both themes
+(light 6.92:1 on `disabled`, 7.58:1 on white; dark 5.71:1 on `disabled`, 7.72:1 on
+`background`) — pinned by `apps/store-client/src/app/globals-disabled-contrast.test.ts`.
+New disabled styling anywhere on the storefront uses these tokens, not opacity; decorative
+icons (e.g. the select chevron) may keep an opacity since they carry no text.
 
 - Use existing `shared/ui` primitives: `Button` (variants via CVA), `Badge`, `Input`,
   `Label`, `Select`, `Dialog`, `Sheet`, `Tabs`, `Skeleton`, `Separator`, Sonner toasts.

@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEmail, IsString, MaxLength, MinLength } from 'class-validator';
-import { IsInternationalPhone, normalizePhone } from '../../common/validators';
+import { IsInternationalPhone, normalizeEmail, normalizePhone } from '../../common/validators';
 
 /**
  * Contact details a guest supplies at checkout (TASK-338).
@@ -25,9 +25,7 @@ export class GuestContactDto {
   @MaxLength(254)
   // Normalised at the boundary so the later "claim my guest orders" lookup by
   // email is a plain equality match rather than a case-folding guess.
-  @Transform(({ value }: { value: unknown }) =>
-    typeof value === 'string' ? value.trim().toLowerCase() : value,
-  )
+  @Transform(normalizeEmail)
   email!: string;
 
   @ApiProperty({

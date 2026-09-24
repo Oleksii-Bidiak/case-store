@@ -1,7 +1,12 @@
 import { IsEmail, IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
-import { IsStaffPassword, STAFF_PASSWORD_DESCRIPTION } from '../../common/validators';
+import {
+  IsStaffPassword,
+  normalizeEmail,
+  STAFF_PASSWORD_DESCRIPTION,
+} from '../../common/validators';
 
 /**
  * Body of `POST /api/admin/staff` — provisioning a staff account (TASK-333/317,
@@ -25,6 +30,7 @@ import { IsStaffPassword, STAFF_PASSWORD_DESCRIPTION } from '../../common/valida
  */
 export class CreateStaffDto {
   @ApiProperty({ description: 'Email address (also the login)', example: 'manager@example.com' })
+  @Transform(normalizeEmail) // TASK-772: the login lookup is lowercased
   @IsEmail({}, { message: 'Please provide a valid email address' })
   email!: string;
 

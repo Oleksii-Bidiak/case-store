@@ -5,6 +5,7 @@ import {
   PaymentMethod,
   PaymentAttemptStatus,
   OrderHistoryChangeType,
+  OrderHistoryNote,
 } from '@prisma/client';
 import type { CartWithItems } from '../cart/cart.repository';
 import type { AddressDto } from './dto';
@@ -339,6 +340,13 @@ export interface PaymentWithOrderRow {
 export interface PaymentApplyPlan {
   paymentId: string;
   orderId: string;
+  /**
+   * The order statuses this plan was decided against. The read that produced
+   * them is not locked, so the repository writes the order only if both still
+   * hold — a TTL cancel that committed in between (restock done, `restockedAt`
+   * stamped) must not be overwritten by a CONFIRMED/PAID that assumed PENDING.
+   */
+  expected: { status: OrderStatus; paymentStatus: PaymentStatus };
   /** New lifecycle state of THIS attempt. */
   attemptStatus: PaymentAttemptStatus;
   /** The provider's own id, learned from the callback; '' when it sent none. */
@@ -351,7 +359,16 @@ export interface PaymentApplyPlan {
    * Order payment-status move. Omitted when the event changes only the attempt
    * (e.g. a late failure for a superseded attempt on an already-paid order).
    */
-  paymentStatusChange?: { from: PaymentStatus; to: PaymentStatus };
+  paymentStatusChange?: {
+    from: PaymentStatus;
+    to: PaymentStatus;
+    /**
+     * Written onto the PAYMENT_STATUS history row when the move is one the shop
+     * recorded but did not otherwise act on (TASK-619: a success on a CANCELLED
+     * order → `PAID_AFTER_CANCEL`). Omitted for an ordinary move.
+     */
+    note?: OrderHistoryNote;
+  };
   /**
    * An order payment-status move the state machine refused (TASK-431).
    *

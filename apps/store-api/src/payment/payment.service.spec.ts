@@ -338,6 +338,17 @@ describe('PaymentService', () => {
       ).resolves.toMatchObject({ applied: true });
     });
 
+    it('rejects a refund of nothing before recording anything', async () => {
+      repositoryMock.findById.mockResolvedValue(makePayment());
+
+      await expect(
+        buildService().applyEvent(
+          makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed', amount: '0' }),
+        ),
+      ).rejects.toThrow(BadRequestException);
+      expect(repositoryMock.insertEvent).not.toHaveBeenCalled();
+    });
+
     it('rejects a refund larger than the amount paid', async () => {
       repositoryMock.findById.mockResolvedValue(makePayment());
 
@@ -430,6 +441,61 @@ describe('PaymentService', () => {
         'pay-1',
         expect.objectContaining({ status: PaymentAttemptStatus.REFUNDED }),
       );
+    });
+
+    // TASK-618: the adapter cannot tell a partial refund from a full one — it does
+    // not know what was charged. This service does, so it decides, and hands the
+    // order module an outcome whose amount contract is exact.
+    describe('partial vs full reversal (TASK-618)', () => {
+      const reversal = (amount: string) =>
+        makeEvent({ outcome: PaymentOutcome.REFUNDED, providerStatus: 'reversed', amount });
+
+      beforeEach(() =>
+        repositoryMock.findById.mockResolvedValue(
+          makePayment({ status: PaymentAttemptStatus.SUCCEEDED }),
+        ),
+      );
+
+      it('hands a reversal of LESS than was charged on as PARTIALLY_REFUNDED', async () => {
+        await buildService().applyEvent(reversal('200.00'));
+
+        expect(orderServiceMock.applyPaymentEvent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            outcome: PaymentOutcome.PARTIALLY_REFUNDED,
+            amount: '200.00',
+            providerStatus: 'reversed',
+          }),
+        );
+      });
+
+      it('hands a reversal of the WHOLE charge on as REFUNDED', async () => {
+        await buildService().applyEvent(reversal('1249'));
+
+        expect(orderServiceMock.applyPaymentEvent).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: PaymentOutcome.REFUNDED }),
+        );
+      });
+
+      it('settles a partial reversal as still SUCCEEDED, without moving settledAt', async () => {
+        await buildService().applyEvent(reversal('200.00'));
+
+        const [, params] = repositoryMock.settle.mock.calls[0] as [string, { settledAt?: Date }];
+        expect(params).toMatchObject({ status: PaymentAttemptStatus.SUCCEEDED });
+        expect(params.settledAt).toBeUndefined();
+      });
+
+      it('never downgrades an attempt that is already REFUNDED', async () => {
+        repositoryMock.findById.mockResolvedValue(
+          makePayment({ status: PaymentAttemptStatus.REFUNDED }),
+        );
+
+        await buildService().applyEvent(reversal('200.00'));
+
+        expect(repositoryMock.settle).toHaveBeenCalledWith(
+          'pay-1',
+          expect.objectContaining({ status: PaymentAttemptStatus.REFUNDED }),
+        );
+      });
     });
 
     it('routes every order change through OrderService — never a direct write', async () => {
