@@ -315,6 +315,20 @@ describe('Discount (e2e)', () => {
         .expect(400);
     });
 
+    it('400 (not 500) create with minSpend: null (TASK-797)', async () => {
+      discountRepositoryMock.findByCode.mockResolvedValue(null);
+      discountRepositoryMock.create.mockResolvedValue(makeDiscount({ code: 'NULLMIN' }));
+
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/discounts')
+        .set('Authorization', `Bearer ${token(testAdmin.id, 'ADMIN')}`)
+        .send({ code: 'NULLMIN', type: 'PERCENT', value: 5, minSpend: null })
+        .expect(400);
+
+      expect(JSON.stringify(res.body.message)).toContain('minSpend');
+      expect(discountRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
     it('200 deactivate for an admin', async () => {
       discountRepositoryMock.findById.mockResolvedValue(makeDiscount());
       discountRepositoryMock.softDeactivate.mockResolvedValue(makeDiscount({ isActive: false }));
