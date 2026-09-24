@@ -10,6 +10,13 @@ import { formatDateTime } from "@/shared/lib";
 
 interface OrderAccessLinkCardProps {
   orderId: string;
+  /**
+   * The order's owning account, `null` for a guest order (TASK-623). Links are
+   * issued for guest orders only — pass `order.userId`, never derive it from
+   * the `guest` block: a guest order claimed by a registering account carries
+   * both, and the API answers 409 for it.
+   */
+  userId: string | null;
 }
 
 /**
@@ -40,8 +47,19 @@ interface OrderAccessLinkCardProps {
  * thing this panel can do is issue. A read-only operator would get a button that
  * 403s every time, which reads as a broken page rather than a permission they do
  * not have.
+ *
+ * ── Why there is no button on an account order (TASK-623) ────────────────────
+ * The link is a 60-day bearer to the full order, addresses included, and the
+ * operator drops it into a chat thread. An account holder already reaches the
+ * order from their cabinet, so the API refuses (409) for any order with a
+ * `userId` — claimed guest orders included. The card says why instead of
+ * offering a button that can only fail. A 409 can still arrive when the order
+ * was claimed after this page loaded, so it has its own message too.
  */
-export function OrderAccessLinkCard({ orderId }: OrderAccessLinkCardProps) {
+export function OrderAccessLinkCard({
+  orderId,
+  userId,
+}: OrderAccessLinkCardProps) {
   const d = dict.orderAccess;
   const { can } = useAuth();
   const [link, setLink] = useState<{ url: string; issuedAt: string } | null>(
@@ -67,14 +85,26 @@ export function OrderAccessLinkCard({ orderId }: OrderAccessLinkCardProps) {
     return null;
   }
 
+  if (userId !== null) {
+    return (
+      <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+        <h3 className="text-sm font-semibold text-foreground">{d.heading}</h3>
+        <p className="text-xs text-muted-foreground">{d.accountOrderHint}</p>
+      </section>
+    );
+  }
+
   // 400 means STORE_CLIENT_URL is unset — a deployment defect rather than
-  // something the operator did, so it names who can fix it.
+  // something the operator did, so it names who can fix it. 409 means the
+  // order was claimed by an account after this page loaded.
   const status = (issue.error as { response?: { status?: number } } | null)
     ?.response?.status;
   const errorMessage = issue.isError
     ? status === 400
       ? d.failedNotConfigured
-      : d.failed
+      : status === 409
+        ? d.failedAccountOrder
+        : d.failed
     : null;
 
   return (

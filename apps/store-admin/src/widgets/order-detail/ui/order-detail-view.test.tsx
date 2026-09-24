@@ -433,6 +433,76 @@ describe("OrderDetailView — guest orders have a customer too (TASK-425)", () =
   });
 });
 
+// ── The buyer's link is for guest orders only (TASK-623) ─────────────────────
+// The API answers 409 for any order with a `userId`, so the page must decide by
+// `userId` — never by the `guest` block, which a claimed guest order still has.
+describe("OrderDetailView — customer link only on guest orders (TASK-623)", () => {
+  const GUEST = {
+    email: "olena@example.com",
+    phone: "+380501112233",
+    name: "Олена Шевченко",
+  };
+
+  function serve(data: unknown) {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data }),
+      ),
+    );
+  }
+
+  function renderAsWriter() {
+    return renderWithProviders(
+      <OrderDetailView orderId="order-uuid-12345678" />,
+      { auth: { permissions: ["orders:read", "orders:write"] } },
+    );
+  }
+
+  it("offers the issue button on a guest order", async () => {
+    serve({ ...makeOrder(null), userId: null, guest: GUEST });
+    renderAsWriter();
+
+    expect(
+      await screen.findByRole("button", { name: dict.orderAccess.issue }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderAccess.accountOrderHint),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the button on an account order and says why", async () => {
+    serve(
+      makeOrder({
+        id: "user-uuid-87654321",
+        email: "buyer@example.com",
+        firstName: "Ivan",
+        lastName: "Petrenko",
+      }),
+    );
+    renderAsWriter();
+
+    expect(
+      await screen.findByText(dict.orderAccess.accountOrderHint),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.orderAccess.issue }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the button on a claimed guest order that still carries its guest block", async () => {
+    // userId set AND guest snapshot present — the API refuses this one too.
+    serve({ ...makeOrder(null), userId: "user-uuid-87654321", guest: GUEST });
+    renderAsWriter();
+
+    expect(
+      await screen.findByText(dict.orderAccess.accountOrderHint),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.orderAccess.issue }),
+    ).not.toBeInTheDocument();
+  });
+});
+
 // ── "Повернуто X з Y" (TASK-472) ──────────────────────────────────────────────
 // The fifth derived mark of B-1. It is a fraction, so it is only meaningful in
 // the one payment status that means "some of it": the tests below pin both
