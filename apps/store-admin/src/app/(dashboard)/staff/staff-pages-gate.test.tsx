@@ -72,6 +72,30 @@ describe("staff and audit-log pages — one clean refusal (TASK-639)", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(1);
     expect(screen.getByRole("alert")).toHaveTextContent(dict.staff.forbidden);
     expect(screen.queryByText("Шаблони")).not.toBeInTheDocument();
+    // The back link leads to /staff, which would refuse again — hidden too.
+    expect(
+      screen.queryByRole("link", { name: dict.staff.back }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("/staff/templates renders the templates for a deputy admin", () => {
+    renderWithProviders(<PermissionTemplatesPage />, { auth: DEPUTY });
+
+    expect(screen.getByText("Шаблони")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.staff.back }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("/staff/[id] renders the card for a deputy admin", async () => {
+    renderWithProviders(
+      await StaffDetailPage({ params: Promise.resolve({ id: "user-1" }) }),
+      { auth: DEPUTY },
+    );
+
+    expect(screen.getByText("Картка співробітника")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("/staff/[id] refuses a manager once", async () => {
