@@ -1122,6 +1122,9 @@ export const dict = {
     toastGroupApplied: (count: number) =>
       `Сумісність застосовано до ${count} позицій`,
     toastGroupFailed: "Не вдалося застосувати сумісність до групи",
+    // TASK-726: the save button said the block's title («Сумісні пристрої»)
+    // instead of the action — mirrors productSpecs.save.
+    save: "Зберегти сумісність",
   },
 
   // --- Product structured-spec values editor (TASK-191) -----------------------
