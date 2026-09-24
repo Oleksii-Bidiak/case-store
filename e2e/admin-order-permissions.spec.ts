@@ -86,7 +86,11 @@ test.describe("order card without orders:write (TASK-715)", () => {
     await expect(page.getByRole("link", { name: CREATE_CTA })).toHaveCount(0);
 
     await page.goto("/orders/new");
-    await expect(page.getByRole("alert")).toContainText(CREATE_FORBIDDEN);
+    // Next.js mounts its own empty role="alert" route announcer on every page,
+    // so count only alerts that carry text: exactly one refusal, no second banner.
+    const refusals = page.getByRole("alert").filter({ hasText: /\S/ });
+    await expect(refusals).toHaveCount(1);
+    await expect(refusals).toContainText(CREATE_FORBIDDEN);
   });
 
   test("the admin sees the same card WITH its controls (the control run)", async ({
