@@ -61,10 +61,11 @@ jobs:
       # BLOCKING. These are the packages installed into the runtime images and
       # serving customer traffic, so a high/critical advisory here is a live
       # exposure. The gate fails on any NEW one, while letting through a short,
-      # dated, task-linked allowlist (today: the six advisories discharged by the
-      # NestJS 10 → 11 upgrade, TASK-304). A plain `--audit-level=high` would be
-      # red on every PR until that lands, and a permanently red gate is one
-      # everyone learns to ignore. Exemptions expire; see scripts/audit-gate.js.
+      # dated, task-linked allowlist (since TASK-757: only the Prisma chain whose
+      # sole fix is the prisma 8 major). Every entry carries a task, a reason and
+      # an expiry; a plain `--audit-level=high` would be red on every PR until
+      # prisma 8 lands, and a permanently red gate is one everyone learns to
+      # ignore. Exemptions expire; see scripts/audit-gate.js.
       - name: Audit production dependencies (blocking)
         run: node scripts/audit-gate.js
 
@@ -158,7 +159,8 @@ jobs:
   # it as production because the root links `packages/eslint-config` as a
   # workspace dependency (the quirk scripts/audit-gate.js documents at length).
   # So `fail-on-scopes: runtime` never sees the class of advisory audit-gate has
-  # to allowlist — this gate is the narrower of the two, not an equal one.
+  # had to allowlist (the ESLint chain, TASK-343 → cleared in TASK-757) — this
+  # gate is the narrower of the two, not an equal one.
   #
   # It complements that gate rather than duplicating it: audit-gate judges the
   # whole tree on every run, this one only what the PR introduces.
