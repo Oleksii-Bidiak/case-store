@@ -446,6 +446,49 @@ describe('OrderController (e2e)', () => {
       );
     });
 
+    // TASK-650: the storefront never sent `paymentMethod`, so every card order
+    // landed as ON_DELIVERY with no deadline and the 30-minute auto-release never
+    // fired. The storefront now sends it; these pin what the API does with it.
+    it('gives an ONLINE order a reservation deadline about 30 minutes out (TASK-650)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      const before = Date.now();
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: validAddress, paymentMethod: 'ONLINE' })
+        .expect(201);
+
+      const params = orderRepositoryMock.createFromCart.mock.calls.at(-1)?.[0] as {
+        paymentMethod: string;
+        reservationExpiresAt: Date | null;
+      };
+      expect(params.paymentMethod).toBe('ONLINE');
+      expect(params.reservationExpiresAt).toBeInstanceOf(Date);
+      const minutesOut = (params.reservationExpiresAt!.getTime() - before) / 60_000;
+      expect(minutesOut).toBeGreaterThan(29);
+      expect(minutesOut).toBeLessThanOrEqual(31);
+    });
+
+    it('holds stock indefinitely for a cash-on-delivery order (no deadline, TASK-650)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: validAddress, paymentMethod: 'ON_DELIVERY' })
+        .expect(201);
+
+      expect(orderRepositoryMock.createFromCart).toHaveBeenLastCalledWith(
+        expect.objectContaining({ paymentMethod: 'ON_DELIVERY', reservationExpiresAt: null }),
+        expect.any(Function),
+      );
+    });
+
     it('recomputes and applies a promo code at checkout (TASK-079)', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
