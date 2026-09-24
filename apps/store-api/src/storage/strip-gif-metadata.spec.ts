@@ -288,6 +288,59 @@ describe('stripGifMetadata', () => {
     expect(stripGifMetadata(noTrailer).equals(TINY_GIF)).toBe(true);
   });
 
+  describe('memory stays bounded by the input', () => {
+    /** An extension whose `payloadBytes` are split into 1-byte sub-blocks. */
+    function oneByteSubBlocks(header: Buffer, payloadBytes: number): Buffer {
+      const chain = Buffer.alloc(payloadBytes * 2 + 1);
+      for (let i = 0; i < payloadBytes; i++) {
+        chain[i * 2] = 0x01;
+        chain[i * 2 + 1] = 0x41;
+      }
+      return Buffer.concat([header, chain]); // the alloc left the terminator 0x00
+    }
+
+    it('walks ten million sub-blocks without growing the JS heap', () => {
+      // A 1×1 GIF that sharp's probe accepts, carrying 20 MB of metadata made of
+      // 1-byte sub-blocks: 5M in a comment, 5M in an application extension (the
+      // one path that inspects sub-blocks). Collecting an object per sub-block
+      // grew the heap by ~650 MB here, and the API container has 640 MB in all.
+      const SUB_BLOCKS = 5_000_000;
+      const gif = Buffer.concat([
+        TINY_GIF.subarray(0, TINY_PREAMBLE),
+        oneByteSubBlocks(Buffer.from([0x21, 0xfe]), SUB_BLOCKS),
+        oneByteSubBlocks(
+          Buffer.concat([Buffer.from([0x21, 0xff, 0x0b]), Buffer.from('NETSCAPE2.0', 'latin1')]),
+          SUB_BLOCKS,
+        ),
+        TINY_GIF.subarray(TINY_PREAMBLE),
+      ]);
+      const heapBefore = process.memoryUsage().heapTotal;
+
+      const out = stripGifMetadata(gif);
+
+      const heapGrowth = process.memoryUsage().heapTotal - heapBefore;
+      expect(out.equals(TINY_GIF)).toBe(true);
+      // The output buffer lives outside the JS heap; what is left is noise.
+      expect(heapGrowth).toBeLessThan(64 * 1024 * 1024);
+    });
+
+    it('never needs more output than input + the trailer it may supply', () => {
+      // Worst case for the single up-front output buffer: every kept block is
+      // rebuilt at its minimal source size, and the file has no trailer.
+      const minimalLoop = applicationExtension('NETSCAPE2.0', Buffer.from([0x01, 0x00, 0x00]));
+      const minimalGce = Buffer.from([0x21, 0xf9, 0x04, 0x00, 0x0a, 0x00, 0x00, 0x00]);
+      const frame = TINY_GIF.subarray(TINY_PREAMBLE + 8, TINY_GIF.length - 1);
+      const body = Buffer.concat(
+        Array.from({ length: 50 }, () => Buffer.concat([minimalLoop, minimalGce, frame])),
+      );
+      const noTrailer = Buffer.concat([TINY_GIF.subarray(0, TINY_PREAMBLE), body]);
+
+      const out = stripGifMetadata(noTrailer);
+
+      expect(out.equals(Buffer.concat([noTrailer, Buffer.from([0x3b])]))).toBe(true);
+    });
+  });
+
   describe('files it cannot account for', () => {
     it.each([
       ['no GIF signature', Buffer.from('<script>alert(1)</script>')],

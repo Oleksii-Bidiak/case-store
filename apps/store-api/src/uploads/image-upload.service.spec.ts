@@ -169,7 +169,7 @@ describe('ImageUploadService', () => {
   });
 
   describe('GIF passthrough', () => {
-    it('stores the original bytes with no LQIP when the buffer really is a GIF', async () => {
+    it('stores the original frames, without re-encoding or an LQIP, when the buffer really is a GIF', async () => {
       imageProcessor.probe.mockResolvedValue({ format: 'gif', width: 320, height: 240 });
       storage.save.mockResolvedValue('content/abc.gif');
       const gif = makeFile({ mimetype: 'image/gif', buffer: TINY_GIF });
@@ -229,8 +229,9 @@ describe('ImageUploadService', () => {
     });
 
     it('sniffs the bytes rather than trusting image/gif', async () => {
-      // This is the only branch that writes client bytes verbatim, so a polyglot
-      // announced as a GIF would otherwise be served from our own origin.
+      // This is the only branch that stores client frame bytes without decoding
+      // them (TASK-587 strips only the metadata blocks around them), so a
+      // polyglot announced as a GIF would otherwise be served from our own origin.
       imageProcessor.probe.mockResolvedValue(null);
       const polyglot = makeFile({
         mimetype: 'image/gif',
