@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { http, HttpResponse } from "msw";
 import {
   fireEvent,
@@ -15,6 +16,14 @@ import { ReturnResolveForm } from "./return-resolve-form";
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
 }));
+
+/**
+ * TASK-716: the form exists only for a session holding `returns:write`, so
+ * every behavioural test renders one. The refusal is its own describe below.
+ */
+const WRITER = { permissions: ["returns:read", "returns:write"] };
+const renderAsWriter = (ui: ReactElement) =>
+  renderWithProviders(ui, { auth: WRITER });
 
 function makeReturn(overrides: Partial<ReturnEntity> = {}): ReturnEntity {
   return {
@@ -65,7 +74,7 @@ const pickStatus = async (status: string) => {
 
 describe("ReturnResolveForm — the restock question (TASK-340)", () => {
   it("offers the restock checkbox only when moving to RECEIVED", async () => {
-    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />);
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
 
     // Nothing chosen yet — the question has not arisen.
     expect(
@@ -82,7 +91,7 @@ describe("ReturnResolveForm — the restock question (TASK-340)", () => {
   });
 
   it("hides the checkbox on a refusal — no goods are coming back", async () => {
-    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />);
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
 
     await pickStatus("REJECTED");
 
@@ -92,7 +101,7 @@ describe("ReturnResolveForm — the restock question (TASK-340)", () => {
   });
 
   it("refuses to offer a second restock once the goods were already credited", async () => {
-    renderWithProviders(
+    renderAsWriter(
       <ReturnResolveForm
         rma={makeReturn({
           status: "APPROVED",
@@ -116,7 +125,7 @@ describe("ReturnResolveForm — the restock question (TASK-340)", () => {
       HttpResponse.json({ data: makeReturn({ status: "RECEIVED" }) }),
     );
 
-    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />);
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
     await pickStatus("RECEIVED");
     await userEvent.click(
       screen.getByRole("button", { name: dict.returns.resolveSubmit }),
@@ -130,7 +139,7 @@ describe("ReturnResolveForm — the restock question (TASK-340)", () => {
 
 describe("ReturnResolveForm — terminal states and money (TASK-340)", () => {
   it("offers no control at all on a refunded return", () => {
-    renderWithProviders(
+    renderAsWriter(
       <ReturnResolveForm rma={makeReturn({ status: "REFUNDED" })} />,
     );
 
@@ -145,7 +154,7 @@ describe("ReturnResolveForm — terminal states and money (TASK-340)", () => {
   it("rejects a malformed refund amount before it reaches the server", async () => {
     const bodies = stubResolve(() => HttpResponse.json({ data: makeReturn() }));
 
-    renderWithProviders(
+    renderAsWriter(
       <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
     );
     await pickStatus("REFUNDED");
@@ -168,7 +177,7 @@ describe("ReturnResolveForm — terminal states and money (TASK-340)", () => {
       HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
     );
 
-    renderWithProviders(
+    renderAsWriter(
       <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
     );
     await pickStatus("REFUNDED");
@@ -200,7 +209,7 @@ describe("ReturnResolveForm — the refund ceiling (TASK-785)", () => {
   it("refuses 49900 typed for 499.00 before it reaches the server", async () => {
     const bodies = stubResolve(() => HttpResponse.json({ data: makeReturn() }));
 
-    renderWithProviders(
+    renderAsWriter(
       <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
     );
     await typeAmountAndSubmit("49900");
@@ -222,7 +231,7 @@ describe("ReturnResolveForm — the refund ceiling (TASK-785)", () => {
       HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
     );
 
-    renderWithProviders(
+    renderAsWriter(
       <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
     );
     await typeAmountAndSubmit("998.00");
@@ -247,7 +256,7 @@ describe("ReturnResolveForm — the refund ceiling (TASK-785)", () => {
       ),
     );
 
-    renderWithProviders(
+    renderAsWriter(
       <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
     );
     await typeAmountAndSubmit("499.00");
@@ -263,7 +272,7 @@ describe("ReturnResolveForm — the refund ceiling (TASK-785)", () => {
 
 describe("ReturnResolveForm — operator notes (TASK-794)", () => {
   it("stops typing at the DTO's limit", () => {
-    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />);
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
 
     expect(screen.getByLabelText(dict.returns.operatorNotes)).toHaveAttribute(
       "maxLength",
@@ -274,7 +283,7 @@ describe("ReturnResolveForm — operator notes (TASK-794)", () => {
   it("says why an over-long note blocks the submit", async () => {
     const bodies = stubResolve(() => HttpResponse.json({ data: makeReturn() }));
 
-    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />);
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
     await pickStatus("REJECTED");
     // `maxLength` governs typing only; a value arriving another way still
     // meets the schema, and that refusal used to be silent.
@@ -293,5 +302,34 @@ describe("ReturnResolveForm — operator notes (TASK-794)", () => {
       "true",
     );
     expect(bodies).toHaveLength(0);
+  });
+});
+
+/**
+ * TASK-716 — «Зберегти рішення» is `PATCH /admin/returns/:id`, behind
+ * `returns:write`. A manager holding only `returns:read` used to get the whole
+ * form and a 403 on save. Now the section says it is view-only, in one line.
+ */
+describe("ReturnResolveForm — returns:write gate (TASK-716)", () => {
+  it("renders no form for a session that may only read returns", () => {
+    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />, {
+      auth: { permissions: ["returns:read"] },
+    });
+
+    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: dict.returns.resolveStatusAria }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
+  it("renders the decision form for a session holding returns:write", () => {
+    renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
+
+    expect(
+      screen.getByRole("combobox", { name: dict.returns.resolveStatusAria }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(dict.common.viewOnly)).not.toBeInTheDocument();
   });
 });
