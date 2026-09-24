@@ -10,7 +10,8 @@ import sanitizeHtml from 'sanitize-html';
  * Security posture: everything not on the allow-list is stripped. That removes
  * `<script>`, `<style>`, `<iframe>`, and every `on*` inline event handler, plus
  * any tag/attribute we do not explicitly permit. Links are forced to
- * `rel="noopener noreferrer nofollow"` and restricted to safe schemes; images
+ * `rel="noopener noreferrer"` (plus `nofollow` when they leave the store) and
+ * restricted to safe schemes; images
  * are restricted to `http`/`https` sources and base64 raster `data:` images
  * (never `data:text/html` or `data:image/svg+xml`); table cells keep `colspan`
  * and `rowspan` (structure, not presentation) and nothing else.
@@ -65,25 +66,117 @@ const RICH_TEXT_POLICY: sanitizeHtml.IOptions = {
     img: ['http', 'https', 'data'],
   },
   allowProtocolRelative: false,
-  // Force safe rel on every anchor regardless of the incoming markup — this
-  // both hardens `target="_blank"` links and strips SEO/link-equity leakage.
-  transformTags: {
-    a: (tagName, attribs) => ({
-      tagName,
-      attribs: {
-        ...attribs,
-        rel: 'noopener noreferrer nofollow',
-      },
-    }),
-  },
-  // An `<img>` whose source did not pass {@link isAllowedImageSrc} is dropped
-  // WHOLE. Leaving it with the src stripped would store a sourceless image —
-  // an empty box on the page, and no content anyone can edit back.
-  exclusiveFilter: (frame) => frame.tag === 'img' && !isAllowedImageSrc(frame.attribs.src),
   // Drop the CONTENTS of these tags too, not just the tags themselves, so a
   // stripped <script>alert(1)</script> leaves no dangling text payload behind.
   nonTextTags: ['script', 'style', 'textarea', 'noscript'],
 };
+
+/**
+ * Where the sanitizer's origin-dependent rules get their origins from. Every
+ * field is optional and defaults to the process environment, so the
+ * one-argument call — which every write path and the seed use — keeps working
+ * and reads the deployment's own values. Tests pass them explicitly.
+ */
+export interface RichTextSanitizeOptions {
+  /**
+   * The storefront origin. A link to it is internal and gets no `nofollow`.
+   * Default `STORE_CLIENT_URL`; `null` (or an unset/unparseable value) means
+   * "unknown", and then every absolute link is treated as external.
+   */
+  siteOrigin?: string | null;
+}
+
+/** The options with defaults applied, normalised once per call. */
+interface ResolvedSanitizeOptions {
+  siteOrigin: string | undefined;
+}
+
+/**
+ * The `http(s)` origin of a configured URL, lower-cased by the URL parser, or
+ * undefined for anything unset, unparseable or on another scheme.
+ */
+function httpOrigin(value: string | null | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.origin : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function resolveOptions(options: RichTextSanitizeOptions | undefined): ResolvedSanitizeOptions {
+  return {
+    siteOrigin: httpOrigin(
+      options?.siteOrigin !== undefined ? options.siteOrigin : process.env.STORE_CLIENT_URL,
+    ),
+  };
+}
+
+/**
+ * Base for resolving relative URLs. `.invalid` is reserved (RFC 2606) and can
+ * never be a real host, so "resolved onto this origin" means "was relative".
+ */
+const RELATIVE_BASE = 'https://relative.invalid';
+const RELATIVE_ORIGIN = new URL(RELATIVE_BASE).origin;
+
+/**
+ * Whether a link leaves the store (TASK-575): an absolute `http(s)` URL on an
+ * origin other than the storefront's. Relative paths, `#anchors` and same-origin
+ * absolute URLs are internal; `mailto:` is not a page at all. With the store
+ * origin unknown, every absolute link is external — `nofollow` on an internal
+ * link loses link equity, but a missing one on a paid or untrusted link is the
+ * worse error. An href the URL parser rejects is treated as external too.
+ */
+function isExternalLink(href: string | undefined, siteOrigin: string | undefined): boolean {
+  if (!href) {
+    return false;
+  }
+  let url: URL;
+  try {
+    url = new URL(href, RELATIVE_BASE);
+  } catch {
+    return true;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    return false;
+  }
+  if (url.origin === RELATIVE_ORIGIN) {
+    return false;
+  }
+  return url.origin !== siteOrigin;
+}
+
+/**
+ * The full policy for one call: the static allow-list plus the rules that
+ * depend on the deployment's origins.
+ */
+function buildPolicy(options: ResolvedSanitizeOptions): sanitizeHtml.IOptions {
+  return {
+    ...RICH_TEXT_POLICY,
+    transformTags: {
+      // Force rel on every anchor regardless of the incoming markup.
+      // `noopener noreferrer` always — it hardens `target="_blank"` and keeps
+      // the referrer to ourselves. `nofollow` only where the link leaves the
+      // store (TASK-575): on an internal link it throws link equity away.
+      a: (tagName, attribs) => ({
+        tagName,
+        attribs: {
+          ...attribs,
+          rel: isExternalLink(attribs.href, options.siteOrigin)
+            ? 'noopener noreferrer nofollow'
+            : 'noopener noreferrer',
+        },
+      }),
+    },
+    // An `<img>` whose source did not pass {@link isAllowedImageSrc} is dropped
+    // WHOLE. Leaving it with the src stripped would store a sourceless image —
+    // an empty box on the page, and no content anyone can edit back.
+    exclusiveFilter: (frame) => frame.tag === 'img' && !isAllowedImageSrc(frame.attribs.src),
+  };
+}
 
 /**
  * The only `data:` images that survive (TASK-571): a base64 raster in one of
@@ -120,11 +213,13 @@ function isAllowedImageSrc(src: string | undefined): boolean {
  * allow-list. Pure and side-effect free — safe to call on every write path.
  *
  * @param html Raw HTML (typically Tiptap editor output from an admin).
+ * @param options Origins for the origin-dependent rules; every field defaults
+ *   to the process environment, so callers normally pass nothing.
  * @returns A sanitized HTML string containing only allow-listed markup.
  */
-export function sanitizeRichText(html: string): string {
+export function sanitizeRichText(html: string, options?: RichTextSanitizeOptions): string {
   if (!html) {
     return '';
   }
-  return sanitizeHtml(html, RICH_TEXT_POLICY);
+  return sanitizeHtml(html, buildPolicy(resolveOptions(options)));
 }

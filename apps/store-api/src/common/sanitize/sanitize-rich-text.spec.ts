@@ -1,5 +1,30 @@
 import { sanitizeRichText } from './sanitize-rich-text';
 
+/**
+ * The environment variables the sanitizer reads its defaults from. Every test
+ * starts with all of them unset, so a developer's local env file cannot change
+ * what the suite sees; a test that needs one sets it explicitly.
+ */
+const SANITIZER_ENV_KEYS = ['STORE_CLIENT_URL', 'PUBLIC_BASE_URL', 'IMAGE_HOSTS'] as const;
+const savedEnv: Partial<Record<(typeof SANITIZER_ENV_KEYS)[number], string>> = {};
+
+beforeEach(() => {
+  for (const key of SANITIZER_ENV_KEYS) {
+    savedEnv[key] = process.env[key];
+    delete process.env[key];
+  }
+});
+
+afterEach(() => {
+  for (const key of SANITIZER_ENV_KEYS) {
+    if (savedEnv[key] === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = savedEnv[key];
+    }
+  }
+});
+
 describe('sanitizeRichText', () => {
   it('strips <script> tags and their contents', () => {
     const result = sanitizeRichText('<p>Hello</p><script>alert(1)</script>');
@@ -79,12 +104,106 @@ describe('sanitizeRichText', () => {
     expect(result).toContain('>D</td>');
   });
 
-  it('forces rel="noopener noreferrer nofollow" on links', () => {
+  it('forces rel="noopener noreferrer nofollow" on an external link', () => {
     const result = sanitizeRichText('<a href="https://example.com" target="_blank">link</a>');
 
     expect(result).toContain('href="https://example.com"');
     expect(result).toContain('rel="noopener noreferrer nofollow"');
     expect(result).toContain('target="_blank"');
+  });
+
+  /**
+   * TASK-575 — `nofollow` used to land on EVERY link, internal ones included.
+   * An internal `nofollow` does not redistribute link equity, it throws it away,
+   * so each cross-link the CMS now lets an operator make worked against SEO.
+   * `noopener noreferrer` stays on everything; `nofollow` only where the link
+   * leaves the store.
+   */
+  describe('rel by link destination (TASK-575)', () => {
+    const SHOP = 'https://shop.example.com';
+    const relOf = (html: string, options?: Parameters<typeof sanitizeRichText>[1]): string =>
+      /rel="([^"]*)"/.exec(sanitizeRichText(html, options))?.[1] ?? '<no rel>';
+
+    it('gives a relative path no nofollow', () => {
+      expect(relOf('<a href="/catalog/cases">x</a>', { siteOrigin: SHOP })).toBe(
+        'noopener noreferrer',
+      );
+    });
+
+    it('gives a bare relative path no nofollow', () => {
+      expect(relOf('<a href="catalog/cases">x</a>', { siteOrigin: SHOP })).toBe(
+        'noopener noreferrer',
+      );
+    });
+
+    it('gives an in-page anchor no nofollow', () => {
+      expect(relOf('<a href="#delivery">x</a>', { siteOrigin: SHOP })).toBe('noopener noreferrer');
+    });
+
+    it('gives an absolute link to the store itself no nofollow', () => {
+      expect(relOf(`<a href="${SHOP}/blog/post">x</a>`, { siteOrigin: SHOP })).toBe(
+        'noopener noreferrer',
+      );
+    });
+
+    it('compares origins case-insensitively, as a browser does', () => {
+      expect(relOf('<a href="HTTPS://SHOP.EXAMPLE.COM/x">x</a>', { siteOrigin: SHOP })).toBe(
+        'noopener noreferrer',
+      );
+    });
+
+    it('gives a link to another origin nofollow', () => {
+      expect(relOf('<a href="https://other.example.com/x">x</a>', { siteOrigin: SHOP })).toBe(
+        'noopener noreferrer nofollow',
+      );
+    });
+
+    it('treats another subdomain of the same site as another origin', () => {
+      expect(relOf('<a href="https://api.shop.example.com/x">x</a>', { siteOrigin: SHOP })).toBe(
+        'noopener noreferrer nofollow',
+      );
+    });
+
+    it('treats the same host on another scheme as another origin', () => {
+      expect(relOf('<a href="http://shop.example.com/x">x</a>', { siteOrigin: SHOP })).toBe(
+        'noopener noreferrer nofollow',
+      );
+    });
+
+    it('treats every absolute link as external when the store origin is unknown', () => {
+      expect(relOf(`<a href="${SHOP}/x">x</a>`, { siteOrigin: null })).toBe(
+        'noopener noreferrer nofollow',
+      );
+      expect(relOf('<a href="/x">x</a>', { siteOrigin: null })).toBe('noopener noreferrer');
+    });
+
+    it('gives mailto: no nofollow — it is not a page', () => {
+      expect(relOf('<a href="mailto:shop@example.com">x</a>', { siteOrigin: SHOP })).toBe(
+        'noopener noreferrer',
+      );
+    });
+
+    it('replaces whatever rel the markup carried', () => {
+      expect(relOf('<a href="/x" rel="nofollow ugc">x</a>', { siteOrigin: SHOP })).toBe(
+        'noopener noreferrer',
+      );
+      expect(
+        relOf('<a href="https://other.example.com" rel="follow">x</a>', { siteOrigin: SHOP }),
+      ).toBe('noopener noreferrer nofollow');
+    });
+
+    it('reads the store origin from STORE_CLIENT_URL by default (one-argument call)', () => {
+      process.env.STORE_CLIENT_URL = SHOP;
+
+      expect(relOf(`<a href="${SHOP}/x">x</a>`)).toBe('noopener noreferrer');
+      expect(relOf('<a href="https://other.example.com/x">x</a>')).toBe(
+        'noopener noreferrer nofollow',
+      );
+    });
+
+    it('treats absolute links as external when STORE_CLIENT_URL is unset', () => {
+      expect(relOf(`<a href="${SHOP}/x">x</a>`)).toBe('noopener noreferrer nofollow');
+    });
   });
 
   it('keeps http/https/mailto link schemes', () => {

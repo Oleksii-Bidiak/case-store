@@ -1,12 +1,14 @@
 import DOMPurify from "isomorphic-dompurify";
+import { withOpenerSafeRel } from "./link-rel";
 
-// Harden admin-authored links: any `target="_blank"` gets `rel="noopener
-// noreferrer"` so the opened page can't reach back via `window.opener`. The hook
-// is registered once at module load (DOMPurify hooks are global; re-adding on
-// every call would stack duplicates).
+// Harden admin-authored links: any `target="_blank"` gets `noopener noreferrer`
+// so the opened page can't reach back via `window.opener` — added to the rel
+// the API wrote, never replacing it, or the API's `nofollow` on external links
+// would vanish (TASK-575). The hook is registered once at module load
+// (DOMPurify hooks are global; re-adding on every call would stack duplicates).
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName === "A" && node.getAttribute("target") === "_blank") {
-    node.setAttribute("rel", "noopener noreferrer");
+    node.setAttribute("rel", withOpenerSafeRel(node.getAttribute("rel")));
   }
 });
 
