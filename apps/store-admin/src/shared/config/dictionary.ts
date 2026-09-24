@@ -3072,6 +3072,27 @@ export const dict = {
     deleteToastFailed: "Не вдалося видалити акаунт",
     deleteSelf: "Не можна видалити власний акаунт.",
 
+    // --- Operator email change (TASK-396) -------------------------------------
+    // The customer lost their inbox and asked for help. Owner-only. The copy has
+    // to say the three things the operator would otherwise assume wrongly: the
+    // new address is NOT confirmed by this, the customer is signed out
+    // everywhere, and the reason is written into the journal.
+    changeEmailOpen: "Змінити email",
+    changeEmailHeading: "Змінити email для входу",
+    changeEmailDescription: (email: string) =>
+      `Зараз клієнт входить з адресою ${email}. Нова адреса стане адресою для входу одразу, але НЕ буде підтвердженою: на неї піде лист із посиланням. Усі сеанси клієнта буде завершено.`,
+    changeEmailNew: "Нова адреса",
+    changeEmailReason: "Причина звернення",
+    changeEmailReasonHint:
+      "Хто звернувся і як ви переконалися, що це власник акаунта. Запишеться в журнал дій.",
+    changeEmailSubmit: "Змінити email",
+    changeEmailToastDone:
+      "Email змінено — на нову адресу надіслано лист для підтвердження",
+    changeEmailToastFailed: "Не вдалося змінити email",
+    changeEmailInvalid: "Вкажіть коректну адресу",
+    changeEmailSame: "Це вже поточна адреса клієнта",
+    changeEmailReasonRequired: "Опишіть причину — щонайменше 5 символів",
+
     // `lastAdminRefusal` stood here until TASK-480, unreferenced since TASK-476:
     // «останній адміністратор» stopped being the invariant the API defends. What
     // it defends now is stronger and differently worded — the owner exists

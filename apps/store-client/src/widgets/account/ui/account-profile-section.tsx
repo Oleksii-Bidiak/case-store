@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { type UserEntity } from "@/entities/user";
 import { ChangePasswordForm } from "@/features/auth";
+import { ChangeEmailForm } from "@/features/change-email";
 import { ProfileForm } from "@/features/profile";
 import { dict } from "@/shared/config";
 import { Button } from "@/shared/ui";
@@ -21,6 +22,7 @@ import { AccountClaimedOrders } from "./account-claimed-orders";
 export function AccountProfileSection({ user }: { user: UserEntity }) {
   const d = dict.account.dashboard;
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isChangingEmail, setIsChangingEmail] = useState(false);
 
   return (
     <div className="max-w-[680px]">
@@ -56,6 +58,23 @@ export function AccountProfileSection({ user }: { user: UserEntity }) {
             onClick={() => setIsChangingPassword(true)}
           >
             {d.changePassword}
+          </Button>
+        )}
+
+        {/* TASK-396: the sign-in address changes here, never in the contact
+            card above — it needs the password and a link to the new inbox. */}
+        {isChangingEmail ? (
+          <ChangeEmailForm
+            currentEmail={user.email}
+            onCancel={() => setIsChangingEmail(false)}
+          />
+        ) : (
+          <Button
+            variant="outline"
+            className="mt-4 ml-0 sm:ml-2"
+            onClick={() => setIsChangingEmail(true)}
+          >
+            {dict.auth.changeEmail.open}
           </Button>
         )}
       </div>
