@@ -171,7 +171,8 @@ function unavailableItemsWhere(): Prisma.OrderWhereInput {
         },
       },
       // The fourth condition: the TTL worker released this order's hold while the
-      // order itself is still expected to be fulfilled.
+      // order itself is still expected to be fulfilled — reachable only with
+      // ORDER_RESERVATION_EXPIRY=release (TASK-627); see OrderEntity.
       { restockedAt: { not: null } },
     ],
   };
@@ -1003,6 +1004,11 @@ export class OrderRepository {
    * the WHERE after it commits, matches zero rows, and aborts before touching any
    * product. The loser never increments anything.
    *
+   * TASK-627: a live order whose hold ORDER_RESERVATION_EXPIRY=release already
+   * gave back is cancelled through a second arbiter (`restockedAt IS NOT NULL`
+   * on a pre-shipment status) that credits NO stock — the units are on the shelf
+   * already — but still releases the promo slot and writes the history row.
+   *
    * @throws ConflictException when the stock was already returned, or (TASK-332)
    *   when `expectedUpdatedAt` no longer matches the stored row.
    */
@@ -1032,7 +1038,28 @@ export class OrderRepository {
         data: { status: OrderStatus.CANCELLED, restockedAt: new Date() },
       });
 
-      if (count === 0) {
+      // TASK-627: a LIVE order whose hold ORDER_RESERVATION_EXPIRY=release already
+      // gave back. Its stock is on the shelf, so this cancel credits nothing — but
+      // it is still a cancel (the customer's own used to answer 409 «already
+      // returned»), and the promo slot still goes back. Same row-lock arbiter
+      // shape: `restockedAt IS NOT NULL` on a pre-shipment status, so a second
+      // cancel, or a payment that re-took the stock first, matches nothing.
+      const releasedHold =
+        count === 0
+          ? (
+              await tx.order.updateMany({
+                where: {
+                  id: orderId,
+                  restockedAt: { not: null },
+                  status: { in: [...PRE_SHIPMENT_STATUSES] },
+                  ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+                },
+                data: { status: OrderStatus.CANCELLED },
+              })
+            ).count > 0
+          : false;
+
+      if (count === 0 && !releasedHold) {
         // Two different failures share one zero-row outcome, and the operator
         // needs to be told which: "someone already cancelled this" and "someone
         // edited this while you were deciding" call for different next moves. The
@@ -1043,11 +1070,13 @@ export class OrderRepository {
         throw new ConflictException('This order’s stock has already been returned to inventory');
       }
 
-      for (const item of order.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        });
+      if (!releasedHold) {
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
       }
 
       // TASK-771: the promo slot goes back with the stock, behind the same arbiter.
@@ -1107,6 +1136,22 @@ export class OrderRepository {
         throw staleOrderError();
       }
 
+      // TASK-627: claim the released hold BEFORE any stock moves. Since a late
+      // payment can now re-take it too (applyPaymentOutcome, `stockHold:
+      // released`), two paths race for the same `restockedAt`; each claims it on
+      // `IS NOT NULL` under the row lock, so the second finds nothing to re-take
+      // and decrements nothing. `status` joins the claim so the history row's
+      // fromStatus is still the truth.
+      const { count: claimed } = await tx.order.updateMany({
+        where: { id: orderId, status: order.status, restockedAt: { not: null } },
+        data: { restockedAt: null },
+      });
+      if (claimed === 0) {
+        throw new ConflictException(
+          'This order’s stock has already been reserved again, or the order changed; reload it',
+        );
+      }
+
       for (const item of order.items) {
         const { count } = await tx.product.updateMany({
           where: { id: item.productId, stock: { gte: item.quantity } },
@@ -1145,6 +1190,97 @@ export class OrderRepository {
     await this.evictProductCaches(updated.items);
 
     return updated;
+  }
+
+  /**
+   * Give an overdue unpaid order's stock back WITHOUT cancelling it
+   * (ORDER_RESERVATION_EXPIRY=release, TASK-627).
+   *
+   * The arbiter is the one {@link cancelAndRestock} uses — `restockedAt IS NULL`
+   * — joined by the reconcile worker's own selection (deadline passed, still
+   * unpaid, pre-shipment, not deleted). It runs as the FIRST write, so it takes
+   * the row lock: a payment committing first leaves nothing to match (it is PAID
+   * and its deadline is lifted), and a second release matches nothing either. The
+   * loser credits no stock and reports `false`.
+   *
+   * What moves: `restockedAt` is stamped (the order now shows in «Позиція
+   * недоступна»), the deadline is lifted (the worker must not pick it up again,
+   * and a new checkout must not hand LiqPay an `expired_date` in the past), and
+   * each line goes back to stock. What does NOT: the status, the payment status,
+   * the payment attempts, the promo slot (the order may still be paid at the
+   * price it was placed at), the status history (no status changed).
+   */
+  async releaseReservation(orderId: string, deadline: Date): Promise<boolean> {
+    const released = await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.order.updateMany({
+        where: {
+          id: orderId,
+          restockedAt: null,
+          reservationExpiresAt: { not: null, lte: deadline },
+          paymentStatus: PaymentStatus.PENDING,
+          status: { in: [...PRE_SHIPMENT_STATUSES] },
+          deletedAt: null,
+        },
+        data: { restockedAt: deadline, reservationExpiresAt: null },
+      });
+      if (count === 0) return null;
+
+      const lines = await tx.orderItem.findMany({
+        where: { orderId },
+        select: { productId: true, quantity: true },
+      });
+      for (const line of lines) {
+        await tx.product.update({
+          where: { id: line.productId },
+          data: { stock: { increment: line.quantity } },
+        });
+      }
+
+      return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: ORDERS_INCLUDE });
+    });
+
+    if (!released) return false;
+
+    // Stock went back on sale — evict exactly as a cancel-restock does.
+    await this.evictProductCaches((released as OrderWithItems).items);
+    return true;
+  }
+
+  /**
+   * Re-take the stock of every line, all or nothing, inside the caller's
+   * transaction (TASK-627: a late payment on a released hold).
+   *
+   * Each line decrements with the creation-time oversell guard. Unlike
+   * {@link reviveAndReserve} a short line does NOT throw — the caller is a
+   * payment, and the money is a fact that must be recorded either way — so the
+   * lines already taken are put back in the same transaction and `false` says
+   * nothing was reserved.
+   */
+  private async tryReserveLines(tx: Prisma.TransactionClient, orderId: string): Promise<boolean> {
+    const lines = await tx.orderItem.findMany({
+      where: { orderId },
+      select: { productId: true, quantity: true },
+    });
+
+    const taken: { productId: string; quantity: number }[] = [];
+    for (const line of lines) {
+      const { count } = await tx.product.updateMany({
+        where: { id: line.productId, stock: { gte: line.quantity } },
+        data: { stock: { decrement: line.quantity } },
+      });
+      if (count === 0) {
+        for (const done of taken) {
+          await tx.product.update({
+            where: { id: done.productId },
+            data: { stock: { increment: done.quantity } },
+          });
+        }
+        return false;
+      }
+      taken.push(line);
+    }
+
+    return true;
   }
 
   /**
@@ -1441,6 +1577,8 @@ export class OrderRepository {
             paymentStatus: true,
             paidAt: true,
             reservationExpiresAt: true,
+            // TASK-627: whether a success must re-take a released hold.
+            restockedAt: true,
           },
         },
       },
@@ -1462,7 +1600,8 @@ export class OrderRepository {
    * put a lie in the audit trail.
    */
   async applyPaymentOutcome(plan: PaymentApplyPlan): Promise<OrderWithItems> {
-    return (await this.prisma.$transaction(async (tx) => {
+    let stockMoved = false;
+    const applied = (await this.prisma.$transaction(async (tx) => {
       await tx.payment.update({
         where: { id: plan.paymentId },
         data: {
@@ -1490,11 +1629,18 @@ export class OrderRepository {
         // oversell TASK-619 closed. Zero rows → throw, the whole transaction rolls
         // back, the payment module releases its idempotency claim, and the
         // provider's retry is planned again against the fresh row.
+        //
+        // TASK-627: the stock hold joins the same condition. A release
+        // (ORDER_RESERVATION_EXPIRY=release) changes neither status, so without
+        // it a release committed after the read would be paid over as if the
+        // stock were still held — a paid order holding nothing.
         const { count } = await tx.order.updateMany({
           where: {
             id: plan.orderId,
             status: plan.expected.status,
             paymentStatus: plan.expected.paymentStatus,
+            ...(plan.stockHold === 'held' ? { restockedAt: null } : {}),
+            ...(plan.stockHold === 'released' ? { restockedAt: { not: null } } : {}),
           },
           data: orderData,
         });
@@ -1502,6 +1648,15 @@ export class OrderRepository {
           throw new ConflictException(
             'The order changed while the payment event was being applied; retry',
           );
+        }
+
+        // TASK-627: the hold was released — re-take it now, under the row lock the
+        // write above holds. All lines or none: when stock is short the payment is
+        // still recorded and `restockedAt` stays, which is what keeps the order in
+        // «Позиція недоступна» for the operator. Nothing is refunded automatically.
+        if (plan.stockHold === 'released' && (await this.tryReserveLines(tx, plan.orderId))) {
+          await tx.order.update({ where: { id: plan.orderId }, data: { restockedAt: null } });
+          stockMoved = true;
         }
       }
 
@@ -1554,6 +1709,11 @@ export class OrderRepository {
         include: ORDERS_INCLUDE,
       });
     })) as OrderWithItems;
+
+    // A re-reserve changed position stock — evict the same caches as createFromCart.
+    if (stockMoved) await this.evictProductCaches(applied.items);
+
+    return applied;
   }
 
   /**

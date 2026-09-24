@@ -933,6 +933,27 @@ const VARS = [
     howTo: "Рішення власника (TASK-352).",
   },
   {
+    name: "ORDER_RESERVATION_EXPIRY",
+    group: "payments",
+    need: "optional",
+    compose: "none",
+    services: [],
+    buildArgs: [],
+    example: false,
+    validated: "optional",
+    // Reader: payment/payment-reconcile.worker.ts (TASK-627).
+    code: "used",
+    effect:
+      "Порожній → `cancel`: на дедлайні резерву неоплачене онлайн-замовлення скасовується, стік повертається, покупцю йде лист «оплату не отримано». `release`: повертається лише стік, замовлення лишається відкритим і з'являється в «Позиція недоступна»; пізня оплата резервує товар знову, а якщо його вже немає — оплата зараховується, рішення за оператором. Будь-що інше — API не стартує. `ORDER_AUTOCANCEL_UNPAID=false` вимикає обидва режими.",
+    howTo:
+      "Рішення власника (TASK-627). Щоб увімкнути `release` на сервері, спершу прокинути змінну в compose і приклад (див. gap).",
+    gap: {
+      reason:
+        "not threaded through docker-compose.prod/staging or .env.production.example yet: the default (`cancel`) is the pre-TASK-627 behaviour, so nothing is lost until the owner chooses `release` — that switch adds `ORDER_RESERVATION_EXPIRY: ${ORDER_RESERVATION_EXPIRY:-cancel}` to both compose files and the example line (agents cannot edit .env* files)",
+      task: "TASK-627",
+    },
+  },
+  {
     name: "GUEST_ORDER_TOKEN_TTL_DAYS",
     group: "payments",
     need: "optional",

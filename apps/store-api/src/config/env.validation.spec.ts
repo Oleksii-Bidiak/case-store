@@ -432,3 +432,30 @@ describe('validateEnv — durations must carry a unit', () => {
     },
   );
 });
+
+/**
+ * TASK-627: what the reservation deadline does. Two values and only two — a typo
+ * must fail the boot, not quietly fall back to one behaviour or the other.
+ */
+describe('validateEnv — ORDER_RESERVATION_EXPIRY', () => {
+  const baseConfig = {
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+  };
+
+  it('is optional — unset keeps the cancel behaviour', () => {
+    expect(() => validateEnv({ ...baseConfig })).not.toThrow();
+  });
+
+  it.each(['cancel', 'release'])('accepts %p', (value) => {
+    expect(() => validateEnv({ ...baseConfig, ORDER_RESERVATION_EXPIRY: value })).not.toThrow();
+  });
+
+  it.each(['Release', 'keep', 'true'])('refuses %p, naming the variable', (value) => {
+    expect(() => validateEnv({ ...baseConfig, ORDER_RESERVATION_EXPIRY: value })).toThrow(
+      /ORDER_RESERVATION_EXPIRY/,
+    );
+  });
+});

@@ -944,7 +944,10 @@ export class OrderService {
 
     // TASK-228: reviving an order whose cancellation already credited its stock
     // back (restockedAt set) into a live status must re-reserve that stock, or
-    // a later re-cancel would credit it a second time. Moving between the
+    // a later re-cancel would credit it a second time. TASK-627: the same holds
+    // for a LIVE order whose hold ORDER_RESERVATION_EXPIRY=release gave back —
+    // the operator moving it on (PENDING → CONFIRMED, …) re-takes the units
+    // first, or gets the 409 that says they are gone. Moving between the
     // terminal statuses (CANCELLED ↔ REFUNDED) keeps the flag and touches
     // nothing. The repository re-reserves with the same conditional-decrement
     // guard as order creation, so an impossible revive gets a 409 and the
@@ -966,7 +969,7 @@ export class OrderService {
       );
       this.logger.info(
         { event: 'order.revived_reserved', orderId, from: existing.status, to: status },
-        'Cancelled order revived; stock re-reserved',
+        'Released stock re-reserved as the order moved to a live status',
       );
       return OrderEntity.fromPrisma(revived);
     }
@@ -975,10 +978,11 @@ export class OrderService {
     // evict product caches in one transaction (reuses the customer-cancel path).
     // Post-shipment cancels and refunds are deliberately NOT auto-restocked —
     // the physical return must be received and re-stocked by hand (TASK-124).
-    // The restockedAt guard is belt-and-braces: a live pre-shipment order never
-    // has it set (revive clears it), so it only blocks double credits if a
-    // status was edited outside the service.
-    if (shouldAutoRestock(existing.status, status) && existing.restockedAt === null) {
+    // TASK-627: a live order may now carry `restockedAt` (ORDER_RESERVATION_EXPIRY
+    // =release gave its hold back). It still goes through cancelAndRestock, which
+    // owns the "never credit twice" rule — it credits no stock for a released
+    // hold — and gives the promo slot back as for any other cancel.
+    if (shouldAutoRestock(existing.status, status)) {
       const restocked = await this.orderRepository.cancelAndRestock(orderId, changedBy, {
         expectedUpdatedAt: options.expectedUpdatedAt,
       });
@@ -1429,6 +1433,34 @@ export class OrderService {
         'Failed to enqueue the payment-expired notice; the cancellation stands',
       );
     }
+  }
+
+  /**
+   * ORDER_RESERVATION_EXPIRY=release (TASK-627): give an overdue unpaid order's
+   * stock back and leave the order itself alive.
+   *
+   * Called by the payment reconcile worker instead of `updateStatus(CANCELLED)`.
+   * The status is not touched, the payment attempts stay open and no letter is
+   * sent; the order carries `restockedAt` from here on, which is what puts it in
+   * «Позиція недоступна». A later payment re-takes the stock (applyPaymentEvent)
+   * and so does an operator moving it on (the revive path of updateStatus).
+   *
+   * @param deadline the moment the worker judged the reservation overdue at —
+   *   the write only lands on an order whose deadline is still at or before it.
+   * @returns `false` when the order was paid or released between the worker's
+   *   read and this write — nothing to do, not an error.
+   */
+  async releaseExpiredReservation(orderId: string, deadline: Date): Promise<boolean> {
+    const released = await this.orderRepository.releaseReservation(orderId, deadline);
+
+    if (released) {
+      this.logger.info(
+        { event: 'order.reservation_released', orderId },
+        'Unpaid order kept open; its reserved stock was returned to sale',
+      );
+    }
+
+    return released;
   }
 
   /**
@@ -1928,7 +1960,11 @@ export class OrderService {
    *   deadline, and moves a still-PENDING order to CONFIRMED. Already PAID → null.
    *   On a CANCELLED order (TASK-619) the money is recorded but the order stays
    *   CANCELLED with no stock moved, and the history row is flagged
-   *   `PAID_AFTER_CANCEL` for the operator to revive or refund.
+   *   `PAID_AFTER_CANCEL` for the operator to revive or refund. On a LIVE order
+   *   whose hold ORDER_RESERVATION_EXPIRY=release gave back (TASK-627) the plan
+   *   carries `stockHold: 'released'` and the stock is re-taken in the same
+   *   write; if it is gone, the money is still recorded and the order stays in
+   *   «Позиція недоступна».
    * - **FAILED** records the failed attempt and marks the order's payment FAILED,
    *   but only while it is still unpaid: a late failure callback for a superseded
    *   attempt must never un-pay a paid order. The order itself is NOT cancelled —
@@ -2032,6 +2068,10 @@ export class OrderService {
           paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.PAID },
           paidAt: order.paidAt ?? now,
           clearReservation: true,
+          // TASK-627: a live order whose hold ORDER_RESERVATION_EXPIRY=release gave
+          // back is re-reserved by this payment; one still held must still be held
+          // at write time. See PaymentApplyPlan.stockHold.
+          stockHold: order.restockedAt != null ? 'released' : 'held',
           ...(canTransition(order.status, OrderStatus.CONFIRMED)
             ? { statusChange: { from: order.status, to: OrderStatus.CONFIRMED } }
             : {}),

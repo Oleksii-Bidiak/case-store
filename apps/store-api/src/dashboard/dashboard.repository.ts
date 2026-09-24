@@ -224,6 +224,12 @@ export class DashboardRepository {
    * list's `hasUnavailableItems` filter is the deep-link target of this tile, so
    * the number and the rows it opens have to agree condition for condition.
    *
+   * The fourth (`restockedAt` on a live order) fires only with
+   * ORDER_RESERVATION_EXPIRY=release (TASK-627): the worker then returns an
+   * unpaid order's units and keeps the order open, and a late payment that finds
+   * them sold leaves the mark set. In the default `cancel` mode `restockedAt`
+   * only ever arrives together with CANCELLED, which is excluded below.
+   *
    * CANCELLED and REFUNDED orders are excluded: their stock returned because the
    * order ENDED, and counting them would make the tile a permanent, growing
    * number nobody can ever clear.

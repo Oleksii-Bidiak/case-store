@@ -1,6 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -477,6 +478,15 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   ORDER_AUTOCANCEL_UNPAID?: string;
+
+  // What the deadline DOES (TASK-627): `cancel` (default) cancels the order and
+  // returns its stock; `release` returns the stock only and keeps the order open
+  // for a later payment. ORDER_AUTOCANCEL_UNPAID=false still switches both off.
+  @IsOptional()
+  @IsIn(['cancel', 'release'], {
+    message: 'ORDER_RESERVATION_EXPIRY must be "cancel" or "release"',
+  })
+  ORDER_RESERVATION_EXPIRY?: 'cancel' | 'release';
 
   // How long a guest's order-status link stays valid (TASK-338) — the only way a
   // guest reaches their own order once the cart cookie is gone.

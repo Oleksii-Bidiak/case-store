@@ -197,6 +197,8 @@ const orderRepositoryMock = {
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
   reviveAndReserve: jest.fn(),
+  // TASK-627: ORDER_RESERVATION_EXPIRY=release.
+  releaseReservation: jest.fn(),
   updatePaymentStatus: jest.fn(),
   // TASK-620: who set the REFUNDED mark a correction would lift.
   findLastPaymentMark: jest.fn(),
@@ -2054,18 +2056,34 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
 
-    it('belt-and-braces: does NOT restock a live order whose flag is somehow still set (no double credit)', async () => {
-      // Anomalous state (only reachable by edits outside the service): a live
-      // PENDING order with restockedAt set. Cancelling it must NOT credit stock.
+    // TASK-627: a live order with `restockedAt` set is no longer an anomaly — it
+    // is what ORDER_RESERVATION_EXPIRY=release leaves behind. Cancelling it goes
+    // through the same repository path as any pre-shipment cancel, which holds
+    // the "never credit twice" rule itself (it credits no stock for an order whose
+    // hold is already released) and gives the promo slot back.
+    it('cancels a released live order through cancelAndRestock (which credits nothing twice)', async () => {
       seed({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING, restockedAt });
 
       await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
 
-      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+      expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith(
         'order-uuid-1',
-        OrderStatus.PENDING,
-        OrderStatus.CANCELLED,
+        ADMIN_ID,
+        expect.anything(),
+      );
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    // A released order that the operator confirms must get its stock back first:
+    // the revive path re-reserves (or refuses with 409 if the stock is gone).
+    it('re-reserves a released live order when the operator advances it (PENDING → CONFIRMED)', async () => {
+      seed({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING, restockedAt });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID);
+
+      expect(orderRepositoryMock.reviveAndReserve).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.CONFIRMED,
         PaymentStatus.PENDING,
         ADMIN_ID,
         expect.anything(),
@@ -2562,6 +2580,44 @@ describe('OrderService', () => {
 
       await expect(service.notifyPaymentExpired(cancelled())).resolves.toBeUndefined();
       expect(pinoLoggerMock.error).toHaveBeenCalled();
+    });
+  });
+
+  // ─── ORDER_RESERVATION_EXPIRY=release (TASK-627) ─────────────────────────────
+
+  describe('releaseExpiredReservation', () => {
+    const NOW = new Date('2026-09-24T12:00:00.000Z');
+
+    it('hands the deadline it acted on to the repository and reports a release', async () => {
+      orderRepositoryMock.releaseReservation.mockResolvedValue(true);
+
+      await expect(service.releaseExpiredReservation('order-uuid-1', NOW)).resolves.toBe(true);
+
+      expect(orderRepositoryMock.releaseReservation).toHaveBeenCalledWith('order-uuid-1', NOW);
+      expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'order.reservation_released', orderId: 'order-uuid-1' }),
+        expect.any(String),
+      );
+    });
+
+    it('reports false, and logs nothing as done, when the order moved first', async () => {
+      orderRepositoryMock.releaseReservation.mockResolvedValue(false);
+
+      await expect(service.releaseExpiredReservation('order-uuid-1', NOW)).resolves.toBe(false);
+
+      expect(pinoLoggerMock.info).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'order.reservation_released' }),
+        expect.any(String),
+      );
+    });
+
+    it('never touches the order status — the order stays alive', async () => {
+      orderRepositoryMock.releaseReservation.mockResolvedValue(true);
+
+      await service.releaseExpiredReservation('order-uuid-1', NOW);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
   });
 
@@ -3223,6 +3279,7 @@ describe('OrderService', () => {
         paymentStatus: PaymentStatus.PENDING,
         paidAt: null,
         reservationExpiresAt: new Date('2026-07-28T10:45:00.000Z'),
+        restockedAt: null,
         ...order,
       },
     });
@@ -3252,6 +3309,52 @@ describe('OrderService', () => {
 
       await expect(service.applyPaymentEvent(makeEvent())).rejects.toThrow(NotFoundException);
       expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+    });
+
+    // ── TASK-627: a success on an order whose hold was released ───────────────
+    // ORDER_RESERVATION_EXPIRY=release leaves a live order with `restockedAt` set.
+    // The plan names which of the two states it was decided against: the
+    // repository joins it to the conditional write (a release committed in
+    // between must not be paid over as if the stock were still held) and, for
+    // `released`, re-reserves the lines in the same transaction.
+    describe('stock hold on a success (TASK-627)', () => {
+      it('plans a re-reserve when the order’s hold was released', async () => {
+        seed(makePayment({ restockedAt: new Date('2026-09-24T11:00:00.000Z') }));
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().stockHold).toBe('released');
+        // The money and the confirmation land exactly as for a held order.
+        expect(lastPlan().paymentStatusChange).toEqual({
+          from: PaymentStatus.PENDING,
+          to: PaymentStatus.PAID,
+        });
+        expect(lastPlan().statusChange).toEqual({
+          from: OrderStatus.PENDING,
+          to: OrderStatus.CONFIRMED,
+        });
+      });
+
+      it('pins the hold as held when nothing was released', async () => {
+        seed(makePayment());
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().stockHold).toBe('held');
+      });
+
+      it('leaves the hold out for a success on a CANCELLED order (TASK-619 owns that)', async () => {
+        seed(
+          makePayment({
+            status: OrderStatus.CANCELLED,
+            restockedAt: new Date('2026-09-24T11:00:00.000Z'),
+          }),
+        );
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().stockHold).toBeUndefined();
+      });
     });
 
     // The read is unlocked; the repository writes only if these still hold, so a
