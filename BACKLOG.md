@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-998**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-999**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -1135,6 +1135,7 @@
 | TASK-986 | [знайдено в TASK-718, QA-список] `docs/qa-recheck.md` AD-SET-08 досі просить «увімкни й вимкни заборону індексації» — перемикача немає з TASK-307, тестер поставить ❌ на неіснуючу дію (замінити посиланням на AD-SET-13); у кінці AD-SET-11 висить обрізаний рядок чужого чека (««SEO». Має бути: у меню лише «Контакти»…» — хвіст AD-SET-12 з `qa-manual-full.md`) | ⬜ | [191](docs/plans/191-admin-customer-onboarding.md) |
 | TASK-996 | [адмінка, права; знайдено в полірувці TASK-857] Правило «без права кнопки немає» ще не дійшло до «Товарів» і «Повідомлень»: `products:write` / `messages:write` в UI не перевіряються ніде, крім швидкої дії на дашборді (`dashboard-view.tsx`); те саме в «Групах товарів» («Додати групу», `product-groups/page.tsx`) (у `PERM` немає навіть `messagesWrite`), тож людина з правом лише дивитися бачить кнопки й отримує 403. Сховати за `products:write`: «Додати товар» (`app/(dashboard)/products/page.tsx:30`), «Редагувати» в рядку й перемикач `ProductStatusToggle` і масові дії «Активувати/Деактивувати/Перемістити до групи/Задати колір» (`widgets/product-list/ui/admin-product-table.tsx` ~298–318, ~493, ~535), «Редагувати» на картці (`widgets/admin-product-card/ui/admin-product-card-view.tsx:132`); за `messages:write`: «Взяти в роботу»/«Прочитано»/«В архів» і «Зберегти примітку» (`widgets/message-inbox/ui/message-detail-dialog.tsx` ~180–220, поле примітки — read-only текст) і масові дії (`widgets/message-inbox/ui/message-inbox.tsx` ~219–235); застереження в `admin-guide.md` §1/глосарій/§10а і `presentation.md` §2.5 — прибрати; RTL на кожен контрол | ⬜ | [191](docs/plans/191-admin-customer-onboarding.md) |
 | TASK-997 | [API, характеристики; знайдено в полірувці TASK-727] Зміна типу характеристики «Текст» → «Так/Ні» / «Вибір зі списку» (`attribute-definition.service.ts` `update()` ~171–207) не перетворює вже записані значення товарів: після імпорту вони лишаються сирим текстом і не матчаться ні з варіантами списку, ні з булевим фільтром — а підказка імпорту TASK-727 саме цим шляхом і веде оператора. Або конвертувати/валідувати значення при зміні типу (з переліком тих, що не лягли у варіанти), або заборонити зміну типу при наявних значеннях з поясненням | ⬜ | [191](docs/plans/191-admin-customer-onboarding.md) |
+| TASK-998 | [тести, флейк, знайдено фінальним прогоном 191] Playwright `--project=admin` з кількома воркерами на холодному старті: перші логіни (`e2e/fixtures/admin-session.ts`, `expect(page).not.toHaveURL(//login/)`, 5 с) не встигають, поки `next dev` уперше компілює дашборд — падають перші тести (`admin-order-filters.spec.ts` ×2 або перший `admin-staff.spec.ts`), решта зелена; з `--workers=1` 12/12 (2026-09-25). Прогріти сервер у `globalSetup` або дати першій навігації після входу довший таймаут | ⬜ | [191](docs/plans/191-admin-customer-onboarding.md) |
 
 ### План 192 — API: замовлення, кошик, гроші, auth, відгуки, права ([план](docs/plans/192-api-orders-money-auth.md))
 
@@ -1411,6 +1412,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-998**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-999**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
