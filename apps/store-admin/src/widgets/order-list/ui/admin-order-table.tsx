@@ -6,6 +6,7 @@ import {
   Clock3,
   Download,
   Loader2,
+  BadgeAlert,
   PackageX,
   Timer,
   TimerOff,
@@ -176,6 +177,8 @@ export function AdminOrderTable() {
   const reservationExpired = searchParams.get("reservationExpired") === "true";
   const hasUnavailableItems =
     searchParams.get("hasUnavailableItems") === "true";
+  // TASK-352 (c): the «Оплачено після скасування» tile's deep link.
+  const paidAfterCancel = searchParams.get("paidAfterCancel") === "true";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
@@ -223,6 +226,7 @@ export function AdminOrderTable() {
         awaitingPayment: awaitingPayment || undefined,
         reservationExpired: reservationExpired || undefined,
         hasUnavailableItems: hasUnavailableItems || undefined,
+        paidAfterCancel: paidAfterCancel || undefined,
         sortBy,
         sortOrder,
       },
@@ -267,6 +271,7 @@ export function AdminOrderTable() {
         awaitingPayment: awaitingPayment || undefined,
         reservationExpired: reservationExpired || undefined,
         hasUnavailableItems: hasUnavailableItems || undefined,
+        paidAfterCancel: paidAfterCancel || undefined,
       });
       // Rows = lines minus the header, which is only sound because the SERVER
       // now guarantees one order occupies one physical line: `toCsvRow` runs
@@ -385,6 +390,13 @@ export function AdminOrderTable() {
       label: dict.orders.unavailableItemsChip,
       aria: dict.orders.unavailableItemsChipAria,
       Icon: PackageX,
+    },
+    {
+      param: "paidAfterCancel",
+      active: paidAfterCancel,
+      label: dict.orders.paidAfterCancelChip,
+      aria: dict.orders.paidAfterCancelChipAria,
+      Icon: BadgeAlert,
     },
   ];
 

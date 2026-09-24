@@ -832,6 +832,15 @@ export class OrderRepository {
       });
     }
     if (query.hasUnavailableItems) and.push(unavailableItemsWhere());
+    // TASK-352 (c): «Оплачено після скасування» — the same predicate as the
+    // dashboard tile (`DashboardRepository.paidAfterCancelOrderWhere`).
+    if (query.paidAfterCancel) {
+      and.push({
+        status: OrderStatus.CANCELLED,
+        paymentStatus: PaymentStatus.PAID,
+        statusHistory: { some: { note: OrderHistoryNote.PAID_AFTER_CANCEL } },
+      });
+    }
 
     if (and.length > 0) where.AND = and;
 

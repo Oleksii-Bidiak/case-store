@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   MailOutboxStatus,
+  OrderHistoryNote,
   OrderStatus,
   PaymentStatus,
   Prisma,
@@ -247,6 +248,27 @@ export class DashboardRepository {
   }
 
   /**
+   * «Оплачено після скасування» (TASK-352 (c), decision B-11 №3): a late
+   * provider success on an order the TTL worker had already cancelled. TASK-619
+   * records the money (PAID) and leaves the order CANCELLED with the history
+   * note PAID_AFTER_CANCEL; nothing else happens automatically — no refund, no
+   * revive. This predicate is how the operator finds such orders.
+   *
+   * Clears itself when the operator acts: a revive moves the order out of
+   * CANCELLED, a refund moves the payment out of PAID. Restated (not imported)
+   * by the order list's `paidAfterCancel` filter, the tile's deep-link target —
+   * the same reason as {@link unrealizedOrderWhere}.
+   */
+  private paidAfterCancelOrderWhere(): Prisma.OrderWhereInput {
+    return {
+      deletedAt: null,
+      status: OrderStatus.CANCELLED,
+      paymentStatus: PaymentStatus.PAID,
+      statusHistory: { some: { note: OrderHistoryNote.PAID_AFTER_CANCEL } },
+    };
+  }
+
+  /**
    * Unrealized (pending-payment) revenue: sum of `Order.total` for orders that
    * are still active but not yet paid — `paymentStatus != PAID` AND `status NOT
    * IN (CANCELLED, REFUNDED)`. This is the receivable pipeline, the complement to
@@ -340,6 +362,9 @@ export class DashboardRepository {
    *                         counter here that nothing ELSE in the system reacts to:
    *                         the owner's decision (B-1 §3) is that the buyer is told
    *                         by a person, so this tile is the only notification there is
+   *   - `paidAfterCancel` — late-paid orders still cancelled
+   *                         ({@link paidAfterCancelOrderWhere}, TASK-352): money the
+   *                         shop holds for an order it is not fulfilling
    */
   async getNeedsAction(): Promise<NeedsAction> {
     const [
@@ -350,6 +375,7 @@ export class DashboardRepository {
       pendingOver48h,
       ratingAbuse,
       unavailableItems,
+      paidAfterCancel,
     ] = await Promise.all([
       this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
       this.prisma.review.count({ where: moderationQueueWhere(ReviewTextStatus.PENDING) }),
@@ -358,6 +384,7 @@ export class DashboardRepository {
       this.prisma.order.count({ where: this.pendingOver48hWhere() }),
       this.getRatingAbuseCount(),
       this.prisma.order.count({ where: this.unavailableItemsOrderWhere() }),
+      this.prisma.order.count({ where: this.paidAfterCancelOrderWhere() }),
     ]);
     return {
       newOrders,
@@ -367,6 +394,7 @@ export class DashboardRepository {
       pendingOver48h,
       ratingAbuse,
       unavailableItems,
+      paidAfterCancel,
     };
   }
 

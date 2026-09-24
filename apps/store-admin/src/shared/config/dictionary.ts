@@ -182,6 +182,10 @@ export const dict = {
     // автоматично нічого не надсилається (рішення власника B-1 п.3), тож плитка
     // і є всім сповіщенням.
     needsActionUnavailableItems: "Недоступні позиції",
+    // TASK-352 (рішення B-11 №3): пізня оплата вже скасованого замовлення —
+    // гроші отримано, замовлення скасоване; повернути гроші чи відновити
+    // замовлення вирішує оператор, автоматично не робиться нічого.
+    needsActionPaidAfterCancel: "Оплачено після скасування",
     // Sidebar count-badge aria labels (mirror messages.unreadBadgeAria).
     newOrdersBadgeAria: (n: number) => `${n} нових замовлень`,
     pendingReviewsBadgeAria: (n: number) => `${n} відгуків на модерації`,
@@ -2334,6 +2338,10 @@ export const dict = {
     unavailableItemsChip: "Недоступні позиції",
     unavailableItemsChipAria:
       "Показати лише замовлення, у яких є позиція, якої більше немає в продажу",
+    // TASK-352: ціль плитки «Оплачено після скасування» на дашборді.
+    paidAfterCancelChip: "Оплачено після скасування",
+    paidAfterCancelChipAria:
+      "Показати лише скасовані замовлення, оплата за якими надійшла після скасування",
 
     // --- CSV export (TASK-425) ------------------------------------------------
     exportCsv: "Експорт CSV",

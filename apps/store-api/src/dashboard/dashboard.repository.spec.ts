@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderHistoryNote, OrderStatus, PaymentStatus } from '@prisma/client';
 import { DashboardRepository } from './dashboard.repository';
 import { PrismaService } from '../prisma';
 
@@ -223,6 +223,59 @@ describe('DashboardRepository — the «Недоступні позиції» ti
     const needsAction = await repo.getNeedsAction();
 
     expect(needsAction.unavailableItems).toBe(0);
+  });
+});
+
+/**
+ * TASK-352 (c), decision B-11 №3: a late LiqPay success on an order the TTL
+ * worker already cancelled is recorded as PAID with the history note
+ * PAID_AFTER_CANCEL (TASK-619) — and nothing else happens automatically. This
+ * tile is how the operator finds out: the order is still CANCELLED, the money
+ * is still recorded as PAID, and the decision (revive or refund) is theirs.
+ */
+describe('DashboardRepository — the «Оплачено після скасування» tile (TASK-352)', () => {
+  let repo: DashboardRepository;
+
+  const orderCount = jest.fn().mockResolvedValue(0);
+  const prismaMock = {
+    order: { count: orderCount },
+    review: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
+    mailOutbox: { count: jest.fn().mockResolvedValue(0) },
+  };
+
+  const paidAfterCancelWhere = () =>
+    orderCount.mock.calls
+      .map((call) => call[0].where)
+      .find((where: Record<string, unknown>) => 'statusHistory' in where);
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    orderCount.mockResolvedValue(0);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [DashboardRepository, { provide: PrismaService, useValue: prismaMock }],
+    }).compile();
+    repo = module.get(DashboardRepository);
+  });
+
+  it('counts orders still CANCELLED with the money still PAID and the late-payment note', async () => {
+    await repo.getNeedsAction();
+
+    expect(paidAfterCancelWhere()).toEqual({
+      deletedAt: null,
+      status: OrderStatus.CANCELLED,
+      paymentStatus: PaymentStatus.PAID,
+      statusHistory: { some: { note: OrderHistoryNote.PAID_AFTER_CANCEL } },
+    });
+  });
+
+  it('reports the count', async () => {
+    orderCount.mockImplementation((args: { where: Record<string, unknown> }) =>
+      Promise.resolve('statusHistory' in args.where ? 2 : 0),
+    );
+
+    const needsAction = await repo.getNeedsAction();
+
+    expect(needsAction.paidAfterCancel).toBe(2);
   });
 });
 

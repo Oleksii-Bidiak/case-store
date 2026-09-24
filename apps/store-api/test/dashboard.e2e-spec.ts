@@ -99,6 +99,8 @@ describe('Admin Dashboard (e2e)', () => {
     ratingAbuse: 2,
     // TASK-470: the «Недоступні позиції» aggregate, for the same reason again.
     unavailableItems: 3,
+    // TASK-352: «Оплачено після скасування».
+    paidAfterCancel: 5,
   };
 
   const dashboardRepositoryMock = {
@@ -324,6 +326,7 @@ describe('Admin Dashboard (e2e)', () => {
           pendingOver48h: 1,
           ratingAbuse: 2,
           unavailableItems: 3,
+          paidAfterCancel: 5,
         },
       });
       for (const counter of Object.keys(needsActionFixture)) {
@@ -340,6 +343,7 @@ describe('Admin Dashboard (e2e)', () => {
         pendingOver48h: 0,
         ratingAbuse: 0,
         unavailableItems: 0,
+        paidAfterCancel: 0,
       };
       dashboardRepositoryMock.getNeedsAction.mockResolvedValueOnce(quiet);
 

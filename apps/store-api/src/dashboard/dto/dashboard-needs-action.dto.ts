@@ -61,6 +61,16 @@ export class NeedsActionDto {
     example: 3,
   })
   unavailableItems!: number;
+
+  @ApiProperty({
+    type: Number,
+    description:
+      'Orders paid AFTER they were cancelled — still CANCELLED, payment PAID, history note ' +
+      'PAID_AFTER_CANCEL (a late LiqPay success after the reservation lapsed). The operator ' +
+      'decides: revive the order or refund (TASK-352)',
+    example: 0,
+  })
+  paidAfterCancel!: number;
 }
 
 export class NeedsActionResponse {

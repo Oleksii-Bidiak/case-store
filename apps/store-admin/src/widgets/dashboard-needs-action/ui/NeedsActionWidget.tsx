@@ -53,7 +53,7 @@ function NeedsActionCard({
  * «Потребує дії» — the admin dashboard's needs-action widget (TASK-248). Fetches
  * its own counter payload (independent of the heavy dashboard summary) via the
  * same query key the sidebar badges read, so TanStack Query serves both from one
- * cache entry. Six cards since TASK-446: new orders, reviews awaiting
+ * cache entry. Eight cards since TASK-352 (six since TASK-446): new orders, reviews awaiting
  * moderation, unpaid-in-transit orders, orders stale in PENDING and rating-abuse
  * signals all deep-link into their section; failed mail is an info-only card (no
  * admin destination). Zero-count cards still render (so the owner sees "all
@@ -92,7 +92,9 @@ export function NeedsActionWidget() {
     // The owner's decision (B-1 §3) is that the buyer hears it from a person, so
     // an «Все під контролем» printed over a non-zero count here would be the
     // only notification there is, denying itself.
-    counts.unavailableItems === 0;
+    counts.unavailableItems === 0 &&
+    // TASK-352: money held for an order that is not being fulfilled.
+    counts.paidAfterCancel === 0;
 
   return (
     <section aria-label={dict.dashboard.needsActionHeading}>
@@ -107,7 +109,7 @@ export function NeedsActionWidget() {
         ) : null}
       </div>
 
-      {/* Seven cards since TASK-470. The column count moved 3 → 4 with it: at
+      {/* Eight cards since TASK-352 (4 + 4 at four columns). Seven since TASK-470; the column count moved 3 → 4 with it: at
           three columns the seventh card sat alone on a third row, which is the
           same "reads as an afterthought" problem `lg:grid-cols-5` caused at six.
           Four gives 4 + 3, so no card stands by itself on a wide screen. */}
@@ -153,6 +155,15 @@ export function NeedsActionWidget() {
           label={dict.dashboard.needsActionUnavailableItems}
           count={counts.unavailableItems}
           href="/orders?hasUnavailableItems=true"
+        />
+        {/* TASK-352 (decision B-11 №3): a late payment on an order the
+            reservation TTL already cancelled. Nothing is refunded or revived
+            automatically; the deep link carries the same predicate the tile
+            counts. */}
+        <NeedsActionCard
+          label={dict.dashboard.needsActionPaidAfterCancel}
+          count={counts.paidAfterCancel}
+          href="/orders?paidAfterCancel=true"
         />
         <NeedsActionCard
           label={dict.dashboard.needsActionFailedMails}

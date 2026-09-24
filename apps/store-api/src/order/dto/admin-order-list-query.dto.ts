@@ -295,6 +295,25 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
   })
   @IsBoolean({ message: 'hasUnavailableItems must be true or false' })
   hasUnavailableItems?: boolean;
+
+  @ApiProperty({
+    description:
+      'Filter to orders paid AFTER they were cancelled — still CANCELLED, payment PAID, with the ' +
+      'PAID_AFTER_CANCEL history note (a late LiqPay success after the reservation lapsed). ' +
+      'Deep-link target of the dashboard «Оплачено після скасування» tile and the same ' +
+      'predicate it counts (TASK-352). The operator decides: revive the order or refund.',
+    example: true,
+    required: false,
+  })
+  @IsOptional()
+  @Transform(({ obj, key }: { obj: Record<string, unknown>; key: string }) => {
+    const raw = obj[key];
+    if (raw === true || raw === 'true') return true;
+    if (raw === false || raw === 'false') return false;
+    return undefined;
+  })
+  @IsBoolean({ message: 'paidAfterCancel must be true or false' })
+  paidAfterCancel?: boolean;
 }
 
 /**

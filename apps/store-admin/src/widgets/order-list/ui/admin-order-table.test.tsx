@@ -835,6 +835,8 @@ describe("AdminOrderTable — the derived marks of B-1 (TASK-470/471/472)", () =
       [dict.orders.awaitingPaymentChipAria, "awaitingPayment"],
       [dict.orders.reservationExpiredChipAria, "reservationExpired"],
       [dict.orders.unavailableItemsChipAria, "hasUnavailableItems"],
+      // TASK-352 (c): «Оплачено після скасування».
+      [dict.orders.paidAfterCancelChipAria, "paidAfterCancel"],
     ];
 
     it.each(TOGGLES)(

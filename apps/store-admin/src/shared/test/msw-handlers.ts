@@ -50,6 +50,8 @@ export const handlers = [
         ratingAbuse: 0,
         // TASK-470: the 7th counter, in the default payload for the same reason.
         unavailableItems: 0,
+        // TASK-352: «Оплачено після скасування».
+        paidAfterCancel: 0,
       },
     }),
   ),

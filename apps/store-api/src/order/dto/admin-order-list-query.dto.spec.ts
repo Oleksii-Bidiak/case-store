@@ -172,6 +172,8 @@ describe.each([
   ['awaitingPayment'],
   ['reservationExpired'],
   ['hasUnavailableItems'],
+  // TASK-352 (c): «оплачено після скасування».
+  ['paidAfterCancel'],
 ] as const)('AdminOrderListQueryDto — %s boolean transform (TASK-470/471)', (param) => {
   it(`resolves ?${param}=true to boolean true`, () => {
     expect(toDto({ [param]: 'true' })[param]).toBe(true);

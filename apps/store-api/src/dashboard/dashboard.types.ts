@@ -142,6 +142,11 @@ export interface NeedsAction {
    * they ended.
    */
   unavailableItems: number;
+  /**
+   * Orders paid AFTER they were cancelled (TASK-352): still CANCELLED, payment
+   * PAID, history note PAID_AFTER_CANCEL. The operator revives or refunds.
+   */
+  paidAfterCancel: number;
 }
 
 /**

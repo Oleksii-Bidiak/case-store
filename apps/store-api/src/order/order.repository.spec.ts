@@ -1993,6 +1993,18 @@ describe('OrderRepository', () => {
 
       expect(where.AND).toBeUndefined();
     });
+
+    // TASK-352 (c): the deep-link target of the «Оплачено після скасування»
+    // tile — the same predicate the dashboard counts.
+    it('filters to late-paid orders still cancelled with the money still PAID', async () => {
+      const where = await whereFor({ paidAfterCancel: true });
+
+      expect(where.AND).toContainEqual({
+        status: OrderStatus.CANCELLED,
+        paymentStatus: PaymentStatus.PAID,
+        statusHistory: { some: { note: OrderHistoryNote.PAID_AFTER_CANCEL } },
+      });
+    });
   });
 
   /**

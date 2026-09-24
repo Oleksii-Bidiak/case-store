@@ -12042,6 +12042,16 @@
               "example": true,
               "type": "boolean"
             }
+          },
+          {
+            "name": "paidAfterCancel",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders paid AFTER they were cancelled — still CANCELLED, payment PAID, with the PAID_AFTER_CANCEL history note (a late LiqPay success after the reservation lapsed). Deep-link target of the dashboard «Оплачено після скасування» tile and the same predicate it counts (TASK-352). The operator decides: revive the order or refund.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -12302,6 +12312,16 @@
             "required": false,
             "in": "query",
             "description": "Filter to open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the order lost its reservation to the TTL worker (TASK-470). Deep-link target of the dashboard «Недоступні позиції» tile, and the same predicate it counts.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "paidAfterCancel",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders paid AFTER they were cancelled — still CANCELLED, payment PAID, with the PAID_AFTER_CANCEL history note (a late LiqPay success after the reservation lapsed). Deep-link target of the dashboard «Оплачено після скасування» tile and the same predicate it counts (TASK-352). The operator decides: revive the order or refund.",
             "schema": {
               "example": true,
               "type": "boolean"
@@ -26890,6 +26910,11 @@
             "type": "number",
             "description": "Open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the reservation TTL released the order (TASK-470)",
             "example": 3
+          },
+          "paidAfterCancel": {
+            "type": "number",
+            "description": "Orders paid AFTER they were cancelled — still CANCELLED, payment PAID, history note PAID_AFTER_CANCEL (a late LiqPay success after the reservation lapsed). The operator decides: revive the order or refund (TASK-352)",
+            "example": 0
           }
         },
         "required": [
@@ -26899,7 +26924,8 @@
           "failedMails",
           "pendingOver48h",
           "ratingAbuse",
-          "unavailableItems"
+          "unavailableItems",
+          "paidAfterCancel"
         ]
       },
       "NeedsActionResponse": {
