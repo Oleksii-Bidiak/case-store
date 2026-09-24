@@ -21278,7 +21278,8 @@
           "content": {
             "type": "string",
             "description": "Page body as HTML (Tiptap output)",
-            "example": "<h2>Section</h2><p>Content…</p>"
+            "example": "<h2>Section</h2><p>Content…</p>",
+            "maxLength": 100000
           },
           "slug": {
             "type": "string",
@@ -21367,7 +21368,8 @@
           "content": {
             "type": "string",
             "description": "Page body as HTML (Tiptap output)",
-            "example": "<h2>Section</h2><p>Content…</p>"
+            "example": "<h2>Section</h2><p>Content…</p>",
+            "maxLength": 100000
           },
           "slug": {
             "type": "string",
@@ -21873,7 +21875,8 @@
           "content": {
             "type": "string",
             "description": "Post body as HTML (Tiptap output)",
-            "example": "<h2>Дизайн</h2><p>Текст…</p>"
+            "example": "<h2>Дизайн</h2><p>Текст…</p>",
+            "maxLength": 100000
           },
           "excerpt": {
             "type": "string",
@@ -21988,7 +21991,8 @@
           "content": {
             "type": "string",
             "description": "Post body as HTML (Tiptap output)",
-            "example": "<h2>Дизайн</h2><p>Текст…</p>"
+            "example": "<h2>Дизайн</h2><p>Текст…</p>",
+            "maxLength": 100000
           },
           "excerpt": {
             "type": "string",

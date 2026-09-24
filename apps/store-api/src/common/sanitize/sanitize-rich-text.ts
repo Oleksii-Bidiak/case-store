@@ -11,7 +11,8 @@ import sanitizeHtml from 'sanitize-html';
  * `<script>`, `<style>`, `<iframe>`, and every `on*` inline event handler, plus
  * any tag/attribute we do not explicitly permit. Links are forced to
  * `rel="noopener noreferrer nofollow"` and restricted to safe schemes; images
- * are restricted to `http`/`https`/`data` sources; table cells keep `colspan`
+ * are restricted to `http`/`https` sources and base64 raster `data:` images
+ * (never `data:text/html` or `data:image/svg+xml`); table cells keep `colspan`
  * and `rowspan` (structure, not presentation) and nothing else.
  */
 const RICH_TEXT_POLICY: sanitizeHtml.IOptions = {
@@ -75,10 +76,44 @@ const RICH_TEXT_POLICY: sanitizeHtml.IOptions = {
       },
     }),
   },
+  // An `<img>` whose source did not pass {@link isAllowedImageSrc} is dropped
+  // WHOLE. Leaving it with the src stripped would store a sourceless image —
+  // an empty box on the page, and no content anyone can edit back.
+  exclusiveFilter: (frame) => frame.tag === 'img' && !isAllowedImageSrc(frame.attribs.src),
   // Drop the CONTENTS of these tags too, not just the tags themselves, so a
   // stripped <script>alert(1)</script> leaves no dangling text payload behind.
   nonTextTags: ['script', 'style', 'textarea', 'noscript'],
 };
+
+/**
+ * The only `data:` images that survive (TASK-571): a base64 raster in one of
+ * the formats a browser renders as an inert picture. `image/svg+xml` is out on
+ * purpose — it is a document, not a picture — as is every non-image type, and
+ * a non-base64 payload (which could smuggle markup) is out as well.
+ */
+const DATA_IMAGE_SRC = /^data:image\/(?:png|jpe?g|gif|webp|avif);base64,[a-z0-9+/]*={0,2}$/i;
+
+/**
+ * Browsers drop ASCII whitespace and control characters inside a URL before
+ * reading its scheme, so `da\nta:` is `data:` to them. sanitize-html strips the
+ * same range before its own scheme check; the classification below has to see
+ * the URL the way both of them do.
+ */
+const URL_INVISIBLES = /[\x00-\x20]+/g;
+
+/**
+ * Whether an `<img>` source (already scheme-checked by sanitize-html) may stay.
+ */
+function isAllowedImageSrc(src: string | undefined): boolean {
+  if (!src) {
+    return false;
+  }
+  const normalized = src.replace(URL_INVISIBLES, '');
+  if (/^data:/i.test(normalized)) {
+    return DATA_IMAGE_SRC.test(normalized);
+  }
+  return true;
+}
 
 /**
  * Sanitize untrusted rich-text HTML down to the {@link RICH_TEXT_POLICY}

@@ -92,12 +92,57 @@ describe('sanitizeRichText', () => {
     expect(sanitizeRichText('<a href="mailto:x@a.co">a</a>')).toContain('href="mailto:x@a.co"');
   });
 
-  it('allows data: URIs on images but not on links', () => {
-    const img = sanitizeRichText('<img src="data:image/png;base64,AAAA" alt="a" />');
-    expect(img).toContain('data:image/png;base64,AAAA');
+  /**
+   * TASK-571 — `allowedSchemesByTag.img` used to admit ANY `data:` URI, so
+   * `data:text/html` and `data:image/svg+xml` reached the database verbatim.
+   * Only a base64 raster image survives now; everything else loses the whole
+   * `<img>` (an image with no source is not content).
+   */
+  describe('data: URIs on images (TASK-571)', () => {
+    for (const mime of ['png', 'jpeg', 'jpg', 'gif', 'webp', 'avif']) {
+      it(`keeps data:image/${mime};base64`, () => {
+        const html = `<img src="data:image/${mime};base64,iVBORw0KGgo=" alt="a" />`;
 
-    const link = sanitizeRichText('<a href="data:text/html,<b>x</b>">a</a>');
-    expect(link).not.toContain('data:text/html');
+        expect(sanitizeRichText(html)).toBe(html);
+      });
+    }
+
+    it('accepts the mime type in any case', () => {
+      expect(sanitizeRichText('<img src="data:IMAGE/PNG;base64,AAAA" />')).toContain(
+        'data:IMAGE/PNG;base64,AAAA',
+      );
+    });
+
+    it('strips data:text/html', () => {
+      const result = sanitizeRichText(
+        '<p>x</p><img src="data:text/html,<script>alert(1)</script>" />',
+      );
+
+      expect(result).toBe('<p>x</p>');
+    });
+
+    it('strips data:image/svg+xml, base64 or not', () => {
+      expect(sanitizeRichText('<img src="data:image/svg+xml;base64,PHN2Zz4=" alt="a" />')).toBe('');
+      expect(sanitizeRichText('<img src="data:image/svg+xml,<svg></svg>" />')).toBe('');
+    });
+
+    it('strips a raster data: URI that is not base64', () => {
+      expect(sanitizeRichText('<img src="data:image/png,rawbytes" />')).toBe('');
+    });
+
+    it('strips a data: URI whose payload is not base64', () => {
+      expect(sanitizeRichText('<img src="data:image/png;base64,<b>x</b>" />')).toBe('');
+    });
+
+    it('sees through whitespace a browser would drop from the scheme', () => {
+      expect(sanitizeRichText('<img src="da\nta:text/html,x" />')).toBe('');
+    });
+
+    it('never allows data: on links', () => {
+      const link = sanitizeRichText('<a href="data:text/html,<b>x</b>">a</a>');
+
+      expect(link).not.toContain('data:');
+    });
   });
 
   it('strips <style> and <iframe> entirely', () => {
