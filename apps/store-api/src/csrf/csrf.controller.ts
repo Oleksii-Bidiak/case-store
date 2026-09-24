@@ -1,13 +1,23 @@
 import { Controller, Get, Res } from '@nestjs/common';
 import type { Response } from 'express';
-import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiProperty, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CsrfService } from './csrf.service';
+
+/** The CSRF token the client echoes in the `x-csrf-token` header. */
+class CsrfToken {
+  @ApiProperty({ example: 'a1b2c3…', description: 'Echo this in the x-csrf-token header' })
+  csrfToken!: string;
+}
 
 /**
  * Response envelope for the CSRF token endpoint.
+ *
+ * `@ApiProperty` is what puts `data` into the contract (TASK-825): without it
+ * Orval typed this response `{ [key: string]: unknown }`.
  */
 class CsrfTokenResponseEnvelope {
-  data!: { csrfToken: string };
+  @ApiProperty({ type: CsrfToken })
+  data!: CsrfToken;
 }
 
 @ApiTags('Security')
@@ -32,7 +42,7 @@ export class CsrfController {
     type: CsrfTokenResponseEnvelope,
   })
   getToken(@Res({ passthrough: true }) response: Response): {
-    data: { csrfToken: string };
+    data: CsrfToken;
   } {
     const csrfToken = this.csrfService.issueToken(response);
     return { data: { csrfToken } };

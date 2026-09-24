@@ -22,7 +22,6 @@ import {
   ApiExcludeEndpoint,
   ApiExtraModels,
   ApiProperty,
-  getSchemaPath,
 } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { AuthService } from './auth.service';
@@ -53,17 +52,30 @@ import { GuestStateMergeService } from './guest-state-merge.service';
 import { PermissionService, type EffectivePermissions } from './permissions';
 
 /**
- * Response envelope for auth operations.
+ * Response envelope for register / login / refresh.
+ *
+ * `@ApiProperty` is what makes it a contract (TASK-825): without it the class
+ * reached Swagger with no properties at all, and Orval typed every one of these
+ * responses as `{ [key: string]: unknown }`.
  */
 class AuthResponseEnvelope {
-  data!: { accessToken: string };
+  @ApiProperty({ type: AuthTokens })
+  data!: AuthTokens;
+}
+
+/** A human-readable acknowledgement. */
+class MessageResponse {
+  @ApiProperty({ example: 'Logged out' })
+  message!: string;
 }
 
 /**
- * Response envelope for message operations.
+ * Response envelope for routes that answer with a message only (TASK-825 — see
+ * {@link AuthResponseEnvelope} for why the decorator matters).
  */
 class MessageResponseEnvelope {
-  data!: { message: string };
+  @ApiProperty({ type: MessageResponse })
+  data!: MessageResponse;
 }
 
 /**
@@ -123,16 +135,11 @@ class PermissionsResponseEnvelope {
   data!: EffectivePermissionsEntity;
 }
 
-/**
- * Type aliases for controller return types.
- */
-type AuthResponse = { accessToken: string };
-type MessageResponse = { message: string };
-
 @ApiTags('Auth')
 @ApiExtraModels(
   AuthTokens,
   AuthResponseEnvelope,
+  MessageResponse,
   MessageResponseEnvelope,
   EffectivePermissionsEntity,
   PermissionsResponseEnvelope,
@@ -167,12 +174,7 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: 'User registered successfully',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(AuthResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(AuthTokens) } } },
-      ],
-    },
+    type: AuthResponseEnvelope,
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
@@ -180,7 +182,7 @@ export class AuthController {
     @Body() dto: RegisterDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ data: AuthResponse }> {
+  ): Promise<{ data: AuthTokens }> {
     const tokens = await this.authService.register(dto);
 
     this.setRefreshCookie(response, tokens.refreshToken);
@@ -211,19 +213,14 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Login successful',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(AuthResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(AuthTokens) } } },
-      ],
-    },
+    type: AuthResponseEnvelope,
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body() dto: LoginDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ data: AuthResponse }> {
+  ): Promise<{ data: AuthTokens }> {
     const tokens = await this.authService.login(dto.email, dto.password);
 
     this.setRefreshCookie(response, tokens.refreshToken);
@@ -371,12 +368,7 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Token refreshed successfully',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(AuthResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(AuthTokens) } } },
-      ],
-    },
+    type: AuthResponseEnvelope,
   })
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
   async refresh(
@@ -385,7 +377,7 @@ export class AuthController {
     // here was never read (TASK-815).
     @CurrentUser('refreshToken') refreshToken: string,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ data: AuthResponse }> {
+  ): Promise<{ data: AuthTokens }> {
     const tokens = await this.authService.refreshToken(refreshToken);
 
     this.setRefreshCookie(response, tokens.refreshToken);
