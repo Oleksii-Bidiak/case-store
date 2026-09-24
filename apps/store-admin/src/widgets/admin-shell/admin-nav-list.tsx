@@ -33,7 +33,14 @@ import {
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAdminContactUnreadCount } from "@/entities/contact";
-import { useAdminDashboardControllerGetNeedsAction } from "@/entities/dashboard";
+import {
+  OrderEntityStatus,
+  useAdminOrderControllerFindAll,
+} from "@/entities/order";
+import {
+  AdminReviewControllerListStatus,
+  useAdminReviewControllerList,
+} from "@/entities/review";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { Badge } from "@/shared/ui";
@@ -305,7 +312,8 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
   const { can, canAll, isOwner } = useAuth();
 
   const canReadMessages = can(PERM.messagesRead);
-  const canReadAnalytics = can(PERM.analyticsRead);
+  const canReadOrders = can(PERM.ordersRead);
+  const canModerateReviews = can(PERM.reviewsModerate);
 
   // Unread (NEW) contact-message count for the sidebar badge. Refetches on
   // window focus so the badge stays roughly current as messages arrive.
@@ -314,14 +322,32 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
   });
   const unread = unreadData?.data?.unread ?? 0;
 
-  // Needs-action counters (TASK-248) — same shared query key the dashboard
-  // widget reads, so both refetch from one cache entry. Drives the count badges
-  // next to «Замовлення» (new orders) and «Відгуки» (reviews awaiting moderation).
-  const { data: needsActionData } = useAdminDashboardControllerGetNeedsAction({
-    query: { enabled: canReadAnalytics },
-  });
-  const newOrders = needsActionData?.data?.newOrders ?? 0;
-  const pendingReviews = needsActionData?.data?.pendingReviews ?? 0;
+  // Count badges next to «Замовлення» (new orders) and «Відгуки» (reviews
+  // awaiting moderation), TASK-248.
+  //
+  // TASK-722: each is gated on the right of ITS section, not on
+  // `analytics:read`. They used to come from the dashboard's needs-action
+  // endpoint, which sits wholly behind analytics — so an order operator without
+  // the dashboard never saw that new orders had arrived. `RequirePermission`
+  // cannot express "any of", so rather than widen that endpoint the counts are
+  // read as `meta.total` of the sections' own lists, one row each:
+  //  - orders: `status=PENDING` is `{ status: PENDING, deletedAt: null }`, the
+  //    dashboard's `newOrders` predicate;
+  //  - reviews: `status=pending` runs through the same
+  //    `moderationQueueWhere(PENDING)` as the dashboard's `pendingReviews`, so
+  //    the badge and the queue it leads to cannot disagree.
+  // Every write that moves either number already invalidates these list keys
+  // by prefix (status changes, moderation), so the badges refresh with them.
+  const { data: pendingOrdersData } = useAdminOrderControllerFindAll(
+    { status: OrderEntityStatus.PENDING, limit: 1 },
+    { query: { enabled: canReadOrders } },
+  );
+  const { data: pendingReviewsData } = useAdminReviewControllerList(
+    { status: AdminReviewControllerListStatus.pending, limit: 1 },
+    { query: { enabled: canModerateReviews } },
+  );
+  const newOrders = pendingOrdersData?.meta?.total ?? 0;
+  const pendingReviews = pendingReviewsData?.meta?.total ?? 0;
 
   const isVisible = (item: NavItem): boolean => {
     if (item.ownerOnly) return isOwner;
