@@ -2,6 +2,7 @@ import { ExceptionFilter, Catch, ArgumentsHost, HttpException, HttpStatus } from
 import * as Sentry from '@sentry/nestjs';
 import { PinoLogger } from 'nestjs-pino';
 import { Request, Response } from 'express';
+import { translatePrismaError } from './prisma-error.translator';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -9,10 +10,31 @@ export class HttpExceptionFilter implements ExceptionFilter {
     this.logger.setContext(HttpExceptionFilter.name);
   }
 
-  catch(exception: unknown, host: ArgumentsHost) {
+  catch(thrown: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
+
+    // TASK-574: a Prisma failure that is really the client's (unique clash,
+    // vanished row, bad input) becomes the 4xx it is. Done HERE, in the
+    // catch-all, and not only in PrismaExceptionFilter: main.ts registers this
+    // filter after every APP_FILTER, and Nest tries the last-registered first,
+    // so this is the one that actually sees the error in production. The
+    // original is logged for the operator; the client gets a stable code only.
+    const translated = translatePrismaError(thrown);
+    if (translated) {
+      this.logger.warn(
+        {
+          event: 'prisma.errorTranslated',
+          prismaCode: (thrown as { code?: string }).code,
+          meta: (thrown as { meta?: unknown }).meta,
+          status: translated.getStatus(),
+          path: request.url,
+        },
+        'Prisma error answered as a client error',
+      );
+    }
+    const exception: unknown = translated ?? thrown;
 
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';

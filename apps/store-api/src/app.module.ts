@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
@@ -61,7 +61,7 @@ import {
   ThrottlerHealthModule,
   ThrottlerRedisHealth,
 } from './throttler';
-import { HttpExceptionFilter } from './common/filters';
+import { HttpExceptionFilter, PrismaExceptionFilter } from './common/filters';
 import { LoggingInterceptor } from './common/interceptors';
 import { validateEnv } from './config/env.validation';
 import { buildPinoHttpOptions } from './config/pino.config';
@@ -308,6 +308,13 @@ import { buildPinoHttpOptions } from './config/pino.config';
     // `Test.createTestingModule`, which never runs main.ts — an audit trail that
     // exists in production but not in the e2e suite is one no test can defend.
     { provide: APP_INTERCEPTOR, useClass: AuditInterceptor },
+    // Prisma failures that are the client's (unique clash, vanished row, bad
+    // input) answer 409/404/400 instead of 500 (TASK-574). APP_FILTER rather
+    // than main.ts for the same reason as the audit interceptor above: the e2e
+    // suites build AppModule without main.ts. Ordering against main.ts's
+    // catch-all HttpExceptionFilter does not matter — that filter translates
+    // Prisma errors through the same function (see prisma-exception.filter.ts).
+    { provide: APP_FILTER, useClass: PrismaExceptionFilter },
   ],
 })
 export class AppModule {}

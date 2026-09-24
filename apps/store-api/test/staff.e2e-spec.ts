@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
+import { Prisma } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { AuthService } from '../src/auth/auth.service';
@@ -630,6 +631,41 @@ describe('Staff (e2e)', () => {
       expect(staffRepositoryMock.transferOwnership).toHaveBeenCalledWith(owner.id, adminRow.id);
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(owner.id);
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(adminRow.id);
+    });
+
+    // TASK-574 (closes TASK-636): two simultaneous transfers from the same owner
+    // collide on the partial unique "one owner" index. The loser's transaction
+    // rolls back with P2002 — the invariant holds — and it must answer 409, not
+    // the HTTP 500 it used to, on the most sensitive route in the admin.
+    it('answers the losing one of two simultaneous transfers with 409, not 500', async () => {
+      const uniqueClash = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`is_owner`)',
+        { code: 'P2002', clientVersion: '7.9.1', meta: { target: ['is_owner'] } },
+      );
+      staffRepositoryMock.transferOwnership
+        .mockResolvedValueOnce({
+          outgoing: { ...ownerRow, isOwner: false },
+          incoming: { ...adminRow, isOwner: true },
+        })
+        .mockRejectedValueOnce(uniqueClash);
+
+      const send = () =>
+        request(app.getHttpServer())
+          .post(url)
+          .set('Authorization', auth(owner))
+          .send({ password: PASSWORD });
+
+      const responses = await Promise.all([send(), send()]);
+      const statuses = responses.map((r) => r.status).sort();
+
+      expect(statuses).toEqual([200, 409]);
+      const conflict = responses.find((r) => r.status === 409)!;
+      expect(conflict.body).toMatchObject({
+        statusCode: 409,
+        error: 'UNIQUE_CONSTRAINT_VIOLATION',
+      });
+      // No schema internals in the body.
+      expect(JSON.stringify(conflict.body)).not.toContain('is_owner');
     });
 
     it('is 403 for a DEPUTY ADMIN — this is the reserve, not a permission', async () => {
