@@ -488,15 +488,6 @@ export class EnvironmentVariables {
   @IsString()
   EMAIL_VERIFICATION_TOKEN_EXPIRATION?: string;
 
-  // How long the RBAC guard caches a role's effective permissions (TASK-334).
-  // Optional; PermissionService defaults it. This is the knob that decides how
-  // long a revoked permission can still be honoured, so it is worth being able to
-  // set — and worth failing at boot rather than silently becoming NaN.
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  RBAC_PERMISSION_CACHE_TTL_SECONDS?: number;
-
   // ─── Meilisearch full-text search (TASK-075) ────────────────────────────────
   // ALL optional: the app boots without a search engine. When MEILI_HOST /
   // MEILI_MASTER_KEY are absent the search endpoints transparently fall back to
