@@ -284,11 +284,14 @@ export class DiscountService {
 
     // Validate the effective (post-merge) definition so a partial update can't
     // produce an out-of-range percent or an inverted start/expiry window.
+    // `undefined` = not sent (keep the stored value); `null` = cleared — so a
+    // cleared date must not fall back to the stored one (TASK-798: `??` did,
+    // and clearing the start date failed on a date that was no longer there).
     this.assertValidDefinition(
       dto.type ?? existing.type,
       dto.value ?? Number(existing.value),
-      dto.startsAt ?? existing.startsAt?.toISOString(),
-      dto.expiresAt ?? existing.expiresAt?.toISOString(),
+      dto.startsAt !== undefined ? dto.startsAt : existing.startsAt?.toISOString(),
+      dto.expiresAt !== undefined ? dto.expiresAt : existing.expiresAt?.toISOString(),
     );
 
     if (dto.code && dto.code !== existing.code) {

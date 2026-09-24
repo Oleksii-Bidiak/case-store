@@ -479,3 +479,74 @@ describe('DiscountService.redeem — concurrent redemptions (TOCTOU)', () => {
     expect(redemptions).toHaveLength(2);
   });
 });
+
+// ─── TASK-798: update() — "not sent" vs "cleared" ────────────────────────────
+
+describe('DiscountService.update — undefined leaves a field, null clears it (TASK-798)', () => {
+  let service: DiscountService;
+
+  const existing = makeDiscount({
+    minSpend: new Prisma.Decimal('500'),
+    maxRedemptions: 100,
+    perUserLimit: 1,
+    startsAt: new Date('2026-10-01T00:00:00.000Z'),
+    expiresAt: new Date('2026-12-31T00:00:00.000Z'),
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscountService(repositoryMock as never, cartServiceMock as never);
+    repositoryMock.findById.mockResolvedValue(existing);
+    repositoryMock.update.mockImplementation((_id: string, input: Partial<Discount>) =>
+      Promise.resolve({ ...existing, ...input }),
+    );
+  });
+
+  const nullableFields = [
+    'minSpend',
+    'maxRedemptions',
+    'perUserLimit',
+    'startsAt',
+    'expiresAt',
+  ] as const;
+
+  it.each(nullableFields)('%s: omitted → not written', async (field) => {
+    await service.update('d1', { isActive: true });
+
+    const input = repositoryMock.update.mock.calls[0][1] as Record<string, unknown>;
+    expect(input).not.toHaveProperty(field);
+  });
+
+  it.each(nullableFields)('%s: null → written as null', async (field) => {
+    await service.update('d1', { [field]: null } as never);
+
+    const input = repositoryMock.update.mock.calls[0][1] as Record<string, unknown>;
+    expect(input).toHaveProperty(field, null);
+  });
+
+  it('clearing startsAt does not validate against the stored start date', async () => {
+    // The stored start (2026-10-01) is AFTER the new expiry; the operator is
+    // clearing it in the same request, so there is no window to invert.
+    await expect(
+      service.update('d1', { startsAt: null, expiresAt: '2026-09-01T00:00:00.000Z' } as never),
+    ).resolves.toBeDefined();
+
+    expect(repositoryMock.update).toHaveBeenCalledWith(
+      'd1',
+      expect.objectContaining({ startsAt: null, expiresAt: new Date('2026-09-01T00:00:00.000Z') }),
+    );
+  });
+
+  it('clearing expiresAt does not validate against the stored expiry', async () => {
+    await expect(
+      service.update('d1', { expiresAt: null, startsAt: '2027-02-01T00:00:00.000Z' } as never),
+    ).resolves.toBeDefined();
+  });
+
+  it('an omitted startsAt still validates the new expiry against the stored start', async () => {
+    await expect(service.update('d1', { expiresAt: '2026-09-01T00:00:00.000Z' })).rejects.toThrow(
+      'startsAt must be before expiresAt',
+    );
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+});
