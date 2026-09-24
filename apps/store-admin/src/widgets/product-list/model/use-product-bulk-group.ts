@@ -3,9 +3,8 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getProductControllerAdminFindAllQueryKey } from "@/entities/product";
-// Straight from the generated client, as `admin-product-table.tsx` already does
-// for `useCategoryControllerGetRootCategories`: the hook has exactly one caller,
-// so re-exporting it through the product entity would add a hop and nothing else.
+// Straight from the generated client: the hook has exactly one caller, so
+// re-exporting it through the product entity would add a hop and nothing else.
 import { useProductControllerSetGroupMany } from "@/shared/api";
 import { useAnnouncer } from "@/shared/ui";
 import { dict } from "@/shared/config";
