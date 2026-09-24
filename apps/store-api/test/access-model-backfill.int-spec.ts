@@ -419,4 +419,95 @@ describe('the single-owner invariant (TASK-474) — integration', () => {
       expect(counts).toEqual({ first: 1, second: 1 });
     });
   });
+
+  /**
+   * The media backfill, per person (TASK-614): the SHIPPED file executed against
+   * real rows, in a transaction that is always rolled back. The unit pin in
+   * `permission.catalog.spec.ts` can say which keys the SQL names; only running
+   * it can say whom it reaches.
+   */
+  describe('the per-person media backfill (TASK-614), replayed against real Postgres', () => {
+    class Rollback extends Error {}
+
+    function readShipped(suffix: string): string[] {
+      const root = resolve(__dirname, '../prisma/migrations');
+      const dir = readdirSync(root).find((entry) => entry.endsWith(suffix));
+      if (!dir) {
+        throw new Error(`No *${suffix} migration under ${root}.`);
+      }
+      return readFileSync(join(root, dir, 'migration.sql'), 'utf8')
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('--'))
+        .join('\n')
+        .split(';')
+        .map((statement) => statement.trim())
+        .filter((statement) => statement.length > 0);
+    }
+
+    it('follows a content-write grant with the picker, and reaches nobody else', async () => {
+      const statements = readShipped('_backfill_media_permissions_per_user');
+      let result: { editor: string[]; clerk: string[]; template: string[]; again: number };
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          const editor = await tx.user.create({
+            data: { email: email('media-editor'), passwordHash: 'x', role: UserRole.MANAGER },
+          });
+          const clerk = await tx.user.create({
+            data: { email: email('media-clerk'), passwordHash: 'x', role: UserRole.MANAGER },
+          });
+          await tx.userPermission.createMany({
+            data: [
+              { userId: editor.id, permission: 'banners:write' },
+              { userId: clerk.id, permission: 'orders:write' },
+            ],
+          });
+          const template = await tx.permissionTemplate.create({
+            data: {
+              name: `t614-${suffix}`,
+              items: { create: [{ permission: 'products:write' }] },
+            },
+          });
+
+          for (const statement of statements) {
+            await tx.$executeRawUnsafe(statement);
+          }
+          const held = async (userId: string) =>
+            (
+              await tx.userPermission.findMany({
+                where: { userId },
+                orderBy: { permission: 'asc' },
+              })
+            ).map((row) => row.permission);
+          const editorRows = await held(editor.id);
+
+          // Idempotent: a second run adds nothing.
+          for (const statement of statements) {
+            await tx.$executeRawUnsafe(statement);
+          }
+
+          result = {
+            editor: editorRows,
+            clerk: await held(clerk.id),
+            template: (
+              await tx.permissionTemplateItem.findMany({
+                where: { templateId: template.id },
+                orderBy: { permission: 'asc' },
+              })
+            ).map((item) => item.permission),
+            again: (await held(editor.id)).length,
+          };
+          throw new Rollback();
+        });
+      } catch (error) {
+        if (!(error instanceof Rollback)) throw error;
+      }
+
+      expect(result!.editor).toEqual(['banners:write', 'media:read', 'media:write']);
+      // `orders:write` is not a content-write key: no picker, no reach added.
+      expect(result!.clerk).toEqual(['orders:write']);
+      expect(result!.template).toEqual(['media:read', 'media:write', 'products:write']);
+      expect(result!.again).toBe(3);
+    });
+  });
 });

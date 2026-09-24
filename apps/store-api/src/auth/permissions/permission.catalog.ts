@@ -338,6 +338,13 @@ export function isGrantablePermission(value: string): value is Permission {
  * against the runtime query which read it, until TASK-475 removed both the query
  * and the `role_permissions` table; the statement still replays in migration
  * order on a fresh database, so the SQL half of the assertion stays.
+ *
+ * PER PERSON SINCE TASK-614. That role-based statement inserted zero rows on
+ * every database measured — the matrix held one row for the whole shop — and
+ * after plan 181 every content-write grant is a `user_permissions` row nothing
+ * looked at. `…_backfill_media_permissions_per_user` is the same eligibility,
+ * unchanged and still conditional (owner's decision 2026-09-15), read and written
+ * on the person and on templates. Both files are pinned against this list.
  */
 export const MEDIA_BACKFILL_SOURCE_PERMISSIONS = [
   'products:write',

@@ -862,3 +862,60 @@ describe('returns permission backfill migration, per person (plan 180 × 181)', 
     expect(statement).not.toContain('MANAGER');
   });
 });
+
+/**
+ * The media backfill, per person (TASK-614, plan 192).
+ *
+ * `…_backfill_media_permissions` wrote to `role_permissions` and, measured on
+ * every database anyone had, inserted nothing: the matrix held one row for the
+ * whole shop. After plan 181 content-write grants are rows on PEOPLE, and nothing
+ * followed them with the media picker. This file is the per-person half, shaped
+ * exactly like the returns one above — and pinned the same way, so its keys and
+ * the catalogue cannot drift apart.
+ */
+describe('media permission backfill migration, per person (TASK-614)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_backfill_media_permissions_per_user'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_backfill_media_permissions_per_user migration under ${MIGRATIONS_ROOT}. ` +
+          'Without it the media backfill only ever read the role matrix plan 181 dropped, ' +
+          'so nobody granted a content-write key on the staff screen gets the picker.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  const statement = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('grants exactly the media keys, read off exactly the declared sources', () => {
+    for (const key of [...MEDIA_PERMISSIONS, ...MEDIA_BACKFILL_SOURCE_PERMISSIONS]) {
+      expect(statement).toContain(`'${key}'`);
+    }
+    const quoted = new Set(statement.match(/'[a-z]+:[a-z]+'/g) ?? []);
+    const allowed = new Set(
+      [...MEDIA_PERMISSIONS, ...MEDIA_BACKFILL_SOURCE_PERMISSIONS].map((key) => `'${key}'`),
+    );
+    expect([...quoted].filter((token) => !allowed.has(token))).toEqual([]);
+  });
+
+  it('grants to a PERSON and to TEMPLATES, never to a role', () => {
+    expect(statement).toContain('"user_permissions"');
+    expect(statement).toContain('"permission_template_items"');
+    expect(statement).not.toContain('role_permissions');
+    expect(statement).not.toContain('"allowed"');
+    expect(statement).not.toContain('ADMIN');
+    expect(statement).not.toContain('MANAGER');
+  });
+
+  it('is idempotent in BOTH halves, so a restore-then-migrate cannot fail', () => {
+    expect(statement.match(/ON CONFLICT[\s\S]*?DO NOTHING/g) ?? []).toHaveLength(2);
+  });
+});
