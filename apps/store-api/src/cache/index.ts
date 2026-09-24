@@ -2,7 +2,10 @@ export { RedisCacheModule } from './cache.module';
 export { CacheService } from './cache.service';
 export {
   brandListCategoryKey,
+  buildFilterableSpecsKey,
   buildProductListKey,
+  FILTERABLE_SPECS_PREFIX,
+  type FilterableSpecsKeyParams,
   productDetailIdKey,
   productDetailSlugKey,
   BRAND_LIST_PREFIX,

@@ -1,5 +1,7 @@
 import {
+  buildFilterableSpecsKey,
   buildProductListKey,
+  FILTERABLE_SPECS_PREFIX,
   productDetailIdKey,
   productDetailSlugKey,
   PRODUCT_LIST_PREFIX,
@@ -223,6 +225,75 @@ describe('cache-key.util', () => {
 
     it('builds an id detail key', () => {
       expect(productDetailIdKey('uuid-123')).toBe('product:detail:id:uuid-123');
+    });
+  });
+
+  // TASK-708: the public facet endpoint is cached like the listing it
+  // describes. Its counts are relative to the whole filter set, so a key that
+  // dropped any axis would serve one slice's counts for another — «Силікон (12)»
+  // on a page of 3.
+  describe('buildFilterableSpecsKey', () => {
+    it('lives under the product-list prefix, so every listing purge clears it too', () => {
+      expect(FILTERABLE_SPECS_PREFIX.startsWith(`${PRODUCT_LIST_PREFIX}:`)).toBe(true);
+      expect(
+        buildFilterableSpecsKey({ categoryId: 'c1' }).startsWith(`${FILTERABLE_SPECS_PREFIX}:`),
+      ).toBe(true);
+    });
+
+    it('can never equal a listing key (listing keys always open with page=)', () => {
+      const facets = buildFilterableSpecsKey({ categoryId: 'c1' });
+      expect(facets.startsWith(`${PRODUCT_LIST_PREFIX}:page=`)).toBe(false);
+    });
+
+    it('keys two categories apart', () => {
+      expect(buildFilterableSpecsKey({ categoryId: 'c1' })).not.toBe(
+        buildFilterableSpecsKey({ categoryId: 'c2' }),
+      );
+    });
+
+    it('keys every narrowing axis apart — no foreign counts', () => {
+      const base = { categoryId: 'c1' };
+      const variants = [
+        base,
+        { ...base, brand: 'apple' },
+        { ...base, device: 'iphone-15' },
+        { ...base, minPrice: 10 },
+        { ...base, maxPrice: 10 },
+        { ...base, search: 'чохол' },
+        { ...base, specs: 'material:Силікон' },
+        { ...base, specs: 'material:TPU' },
+        { ...base, inStock: true },
+        { ...base, onSale: true },
+      ];
+      const keys = variants.map((params) => buildFilterableSpecsKey(params));
+
+      expect(new Set(keys).size).toBe(variants.length);
+    });
+
+    it('does not let a min bound pose as a max bound', () => {
+      expect(buildFilterableSpecsKey({ categoryId: 'c1', minPrice: 10 })).not.toBe(
+        buildFilterableSpecsKey({ categoryId: 'c1', maxPrice: 10 }),
+      );
+    });
+
+    it('collapses equivalent spellings onto one key', () => {
+      expect(
+        buildFilterableSpecsKey({ categoryId: 'c1', specs: 'material:TPU,Силікон;form:Книжка' }),
+      ).toBe(
+        buildFilterableSpecsKey({ categoryId: 'c1', specs: 'form:Книжка;material:Силікон,TPU' }),
+      );
+      expect(buildFilterableSpecsKey({ categoryId: 'c1', inStock: false, onSale: false })).toBe(
+        buildFilterableSpecsKey({ categoryId: 'c1' }),
+      );
+      expect(buildFilterableSpecsKey({ categoryId: 'c1', search: '' })).toBe(
+        buildFilterableSpecsKey({ categoryId: 'c1' }),
+      );
+    });
+
+    it('escapes a forged segment separator in shopper text', () => {
+      expect(buildFilterableSpecsKey({ categoryId: 'c1', search: 'x|inStock=true' })).not.toBe(
+        buildFilterableSpecsKey({ categoryId: 'c1', search: 'x', inStock: true }),
+      );
     });
   });
 });

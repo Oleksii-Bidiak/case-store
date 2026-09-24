@@ -11,8 +11,18 @@ import {
 } from './attribute-definition.repository';
 import { FACETABLE_TYPES, isFacetableType } from './attribute-definition.constants';
 import { CategoryRepository } from '../category';
-import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
-import { parseSpecFilters } from '../product/dto/product-list-query.dto';
+import { ConfigService } from '@nestjs/config';
+import {
+  CatalogueFilterResolver,
+  ResolvedCatalogueFilters,
+} from '../catalog-filter/catalogue-filter.resolver';
+import {
+  parseSpecFilters,
+  serializeSpecFilters,
+  SpecFacetFilter,
+} from '../product/dto/product-list-query.dto';
+import { CacheService } from '../cache/cache.service';
+import { buildFilterableSpecsKey, FILTERABLE_SPECS_PREFIX } from '../cache/cache-key.util';
 import { reorderErrorToHttp } from '../common/reorder';
 import { AttributeDefinitionEntity, FilterableSpecEntity } from './entities';
 import {
@@ -21,6 +31,9 @@ import {
   ReorderAttributeDefinitionsDto,
   FilterableSpecsQueryDto,
 } from './dto';
+
+/** Same default as the listing cache (`ProductService`), so the two age together. */
+const DEFAULT_CACHE_TTL_SECONDS = 300;
 
 /**
  * Business logic for per-category structured-spec templates (TASK-191).
@@ -36,7 +49,15 @@ export class AttributeDefinitionService {
     // Slug → id for the facet endpoint's `?brand=&device=` (TASK-420/489).
     // Provided, not imported as a module, exactly as `ProductModule` does it.
     private readonly catalogueFilters: CatalogueFilterResolver,
-  ) {}
+    // Facet-count cache (TASK-708). `RedisCacheModule` is global.
+    private readonly cache: CacheService,
+    config: ConfigService,
+  ) {
+    this.cacheTtlSeconds =
+      config.get<number>('REDIS_CACHE_TTL_SECONDS') ?? DEFAULT_CACHE_TTL_SECONDS;
+  }
+
+  private readonly cacheTtlSeconds: number;
 
   /** List a category's OWN templates (not inherited ones), for the admin editor. */
   async findByCategory(categoryId: string): Promise<AttributeDefinitionEntity[]> {
@@ -94,18 +115,58 @@ export class AttributeDefinitionService {
     categoryId: string,
     query: FilterableSpecsQueryDto = {},
   ): Promise<FilterableSpecEntity[]> {
+    // Slug → id, the same resolution the listing does (TASK-420): the
+    // repositories below never learn what a slug is. Resolved BEFORE the cache
+    // read, exactly like `ProductService.findAll`, because the cache key is
+    // keyed on the canonical slug this produces (TASK-708).
+    const filters = await this.catalogueFilters.resolve({
+      brand: query.brand,
+      device: query.device,
+    });
+    const specFilters = parseSpecFilters(query.specs);
+
+    // Cache-aside (TASK-708): `1 + 1 + N(selected facets)` live queries per
+    // catalogue render otherwise. The key carries every axis the counts depend
+    // on, so two categories or two filter sets never read each other's counts;
+    // it lives under the listing prefix, so every write that purges the
+    // listing purges these counts too (see `FILTERABLE_SPECS_PREFIX`).
+    const cacheKey = buildFilterableSpecsKey({
+      categoryId,
+      brand: filters.brandKey,
+      device: filters.deviceKey,
+      minPrice: query.minPrice,
+      maxPrice: query.maxPrice,
+      search: query.search,
+      // Keyed on what is APPLIED, as the listing is: malformed chunks and
+      // anything past the caps drop out before they can fragment the key.
+      specs: serializeSpecFilters(specFilters),
+      inStock: query.inStock,
+      onSale: query.onSale,
+    });
+    const cached = await this.cache.get<FilterableSpecEntity[]>(cacheKey);
+    if (cached !== null && cached !== undefined) {
+      return cached;
+    }
+
+    const facets = await this.countFilterableSpecs(categoryId, query, filters, specFilters);
+    await this.cache.set(cacheKey, facets, this.cacheTtlSeconds);
+    return facets;
+  }
+
+  /** The uncached half of {@link getFilterableSpecs}. */
+  private async countFilterableSpecs(
+    categoryId: string,
+    query: FilterableSpecsQueryDto,
+    filters: ResolvedCatalogueFilters,
+    specFilters: SpecFacetFilter[],
+  ): Promise<FilterableSpecEntity[]> {
     const effective = await this.repository.findEffectiveForCategory(categoryId);
     const filterable = effective.filter((def) => def.isFilterable && isFacetableType(def.type));
     if (filterable.length === 0) {
       return [];
     }
 
-    const [subtreeIds, filters] = await Promise.all([
-      this.categoryRepository.findSubtreeIds(categoryId),
-      // Slug → id, the same resolution the listing does (TASK-420): the
-      // repositories below never learn what a slug is.
-      this.catalogueFilters.resolve({ brand: query.brand, device: query.device }),
-    ]);
+    const subtreeIds = await this.categoryRepository.findSubtreeIds(categoryId);
 
     const valuesByKey = await this.repository.findValueCountsByKey(
       filterable.map((def) => def.key),
@@ -116,7 +177,7 @@ export class AttributeDefinitionService {
         minPrice: query.minPrice,
         maxPrice: query.maxPrice,
         search: query.search,
-        specFilters: parseSpecFilters(query.specs),
+        specFilters,
         inStock: query.inStock,
         onSale: query.onSale,
         // The public visibility rules, spelled the way `ProductService.findAll`
@@ -164,6 +225,7 @@ export class AttributeDefinitionService {
       sortOrder: dto.sortOrder,
     };
     const created = await this.repository.create(input);
+    await this.purgeFacetCache();
     return AttributeDefinitionEntity.fromPrisma(created);
   }
 
@@ -204,6 +266,7 @@ export class AttributeDefinitionService {
       // When switching away from SELECT, clear stale options; otherwise pass through.
       options: dto.type !== undefined && dto.type !== AttributeType.SELECT ? null : dto.options,
     });
+    await this.purgeFacetCache();
     return AttributeDefinitionEntity.fromPrisma(updated);
   }
 
@@ -214,6 +277,7 @@ export class AttributeDefinitionService {
       throw new NotFoundException('Characteristic not found');
     }
     await this.repository.delete(id);
+    await this.purgeFacetCache();
     return { id };
   }
 
@@ -239,7 +303,21 @@ export class AttributeDefinitionService {
       throw reorderErrorToHttp(error);
     }
 
+    // The facet sidebar renders in template order.
+    await this.purgeFacetCache();
     return defs.map((def) => AttributeDefinitionEntity.fromPrisma(def));
+  }
+
+  /**
+   * Drop every cached facet response (TASK-708). A template write changes
+   * which facets a category offers, under which label and in which order —
+   * across the whole subtree that inherits it — so a targeted eviction would
+   * have to know every descendant category and every filter set; the prefix is
+   * the honest scope. Everything else that moves a count (stock, prices, spec
+   * values, visibility) already purges the listing prefix this one nests under.
+   */
+  private async purgeFacetCache(): Promise<void> {
+    await this.cache.delByPrefix(FILTERABLE_SPECS_PREFIX);
   }
 
   /**

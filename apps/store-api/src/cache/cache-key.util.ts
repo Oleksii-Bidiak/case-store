@@ -119,7 +119,7 @@ const KEY_FIELDS: ReadonlyArray<keyof ProductListKeyParams> = [
 ];
 
 /** Boolean filters that narrow only when `true` (see {@link buildProductListKey}). */
-const ON_ONLY_FIELDS: ReadonlySet<keyof ProductListKeyParams> = new Set(['onSale', 'inStock']);
+const ON_ONLY_FIELDS: ReadonlySet<string> = new Set(['onSale', 'inStock']);
 
 /**
  * Normalize a serialized spec-facet param to ONE canonical string.
@@ -193,10 +193,20 @@ function encodeSegment(value: string): string {
  * - `onSale: false` / `inStock: false` are treated as absent (TASK-541).
  */
 export function buildProductListKey(params: ProductListKeyParams): string {
+  return `${PRODUCT_LIST_PREFIX}:${serializeSegments(params, KEY_FIELDS)}`;
+}
+
+/**
+ * The shared serializer behind every catalogue-slice key: fixed field order,
+ * absent / empty / ON-only-`false` values dropped, specs canonicalized, shopper
+ * text escaped. One implementation, so the listing and the facet key cannot
+ * disagree about which two spellings are the same slice.
+ */
+function serializeSegments<T extends object>(params: T, fields: ReadonlyArray<keyof T>): string {
   const segments: string[] = [];
 
-  for (const field of KEY_FIELDS) {
-    const value = params[field];
+  for (const field of fields) {
+    const value = params[field] as unknown;
 
     if (value === undefined || value === null) continue;
     if (field === 'search' && value === '') continue;
@@ -205,7 +215,7 @@ export function buildProductListKey(params: ProductListKeyParams): string {
     // must share its entry (TASK-541) — otherwise a hand-written `=false` URL
     // splits one listing's hit rate in two. `isActive` is NOT one of them:
     // `false` there is a real, different slice.
-    if (ON_ONLY_FIELDS.has(field) && value === false) continue;
+    if (ON_ONLY_FIELDS.has(field as string) && value === false) continue;
 
     if (field === 'specs') {
       const canonical = canonicalizeSpecs(String(value));
@@ -216,8 +226,69 @@ export function buildProductListKey(params: ProductListKeyParams): string {
       continue;
     }
 
-    segments.push(`${field}=${encodeSegment(String(value))}`);
+    segments.push(`${String(field)}=${encodeSegment(String(value))}`);
   }
 
-  return `${PRODUCT_LIST_PREFIX}:${segments.join('|')}`;
+  return segments.join('|');
+}
+
+/**
+ * Prefix of the public facet-count cache (`GET /categories/:id/filterable-specs`,
+ * TASK-708).
+ *
+ * Deliberately NESTED under {@link PRODUCT_LIST_PREFIX}: facet counts are a
+ * function of exactly the rows the listing reads — stock, prices, spec values,
+ * visibility, compatibility — so every write that already purges the listing
+ * (`ProductService`, `CategoryService`, order/return stock moves, image writes)
+ * must purge the counts as well, and a nested prefix makes that true for all of
+ * them without touching one. The one extra writer is the admin spec-template
+ * CRUD (`AttributeDefinitionService`), which purges this prefix itself.
+ *
+ * It cannot collide with a listing entry: every listing key opens with
+ * `page=` (the page is always serialized), this one with `facets:`.
+ */
+export const FILTERABLE_SPECS_PREFIX = `${PRODUCT_LIST_PREFIX}:facets`;
+
+/**
+ * Everything that changes a facet-count response. Mirrors
+ * `FilterableSpecsQueryDto` plus the path category, with the taxonomy axes
+ * keyed by canonical SLUG exactly as in {@link ProductListKeyParams} (TASK-420).
+ */
+export interface FilterableSpecsKeyParams {
+  /**
+   * The path category. Keyed by its id because the route takes nothing else —
+   * there is one spelling per category, so the id IS the canonical form.
+   */
+  categoryId: string;
+  /** Canonical brand SLUG (or `!unknown`). */
+  brand?: string;
+  /** Canonical device-model SLUG (or `!unknown`). */
+  device?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  search?: string;
+  /** The APPLIED facets, re-serialized from `parseSpecFilters`. */
+  specs?: string;
+  onSale?: boolean;
+  inStock?: boolean;
+}
+
+const FILTERABLE_SPECS_KEY_FIELDS: ReadonlyArray<keyof FilterableSpecsKeyParams> = [
+  'categoryId',
+  'brand',
+  'device',
+  'minPrice',
+  'maxPrice',
+  'search',
+  'specs',
+  'onSale',
+  'inStock',
+];
+
+/**
+ * Deterministic cache key for one facet-count response (TASK-708). The same
+ * normalization as the listing key — see {@link serializeSegments}.
+ */
+export function buildFilterableSpecsKey(params: FilterableSpecsKeyParams): string {
+  return `${FILTERABLE_SPECS_PREFIX}:${serializeSegments(params, FILTERABLE_SPECS_KEY_FIELDS)}`;
 }

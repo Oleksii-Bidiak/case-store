@@ -5,6 +5,8 @@ import { AttributeDefinitionService } from './attribute-definition.service';
 import { AttributeDefinitionRepository } from './attribute-definition.repository';
 import { CategoryRepository } from '../category';
 import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
+import { ConfigService } from '@nestjs/config';
+import { CacheService, FILTERABLE_SPECS_PREFIX } from '../cache';
 import {
   ReorderDuplicateIdError,
   ReorderNotFoundError,
@@ -26,17 +28,21 @@ describe('AttributeDefinitionService', () => {
   };
   const categoryRepository = { findById: jest.fn(), findSubtreeIds: jest.fn() };
   const catalogueFilters = { resolve: jest.fn() };
+  const cache = { get: jest.fn(), set: jest.fn(), delByPrefix: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     categoryRepository.findById.mockResolvedValue({ id: 'cat' });
     catalogueFilters.resolve.mockResolvedValue({});
+    cache.get.mockResolvedValue(null);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AttributeDefinitionService,
         { provide: AttributeDefinitionRepository, useValue: repo },
         { provide: CategoryRepository, useValue: categoryRepository },
         { provide: CatalogueFilterResolver, useValue: catalogueFilters },
+        { provide: CacheService, useValue: cache },
+        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(undefined) } },
       ],
     }).compile();
     service = module.get(AttributeDefinitionService);
@@ -512,6 +518,141 @@ describe('AttributeDefinitionService', () => {
       repo.reorder.mockRejectedValue(new Error('connection reset'));
 
       await expect(service.reorder('cat', { orderedIds: [a] })).rejects.toThrow('connection reset');
+    });
+  });
+
+  // ─── facet cache (TASK-708) ───────────────────────────────────────────────
+
+  describe('getFilterableSpecs — cache-aside (TASK-708)', () => {
+    const materialDef = {
+      id: 'd-material',
+      categoryId: 'cat',
+      key: 'material',
+      label: 'Матеріал',
+      type: AttributeType.SELECT,
+      unit: null,
+      options: ['Силікон'],
+      isFilterable: true,
+      sortOrder: 0,
+    };
+
+    beforeEach(() => {
+      repo.findEffectiveForCategory.mockResolvedValue([materialDef]);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([['material', [{ value: 'Силікон', count: 4 }]]]),
+      );
+    });
+
+    it('serves a hit without touching a repository', async () => {
+      const cached = [{ definition: { key: 'material' }, values: [{ value: 'TPU', count: 1 }] }];
+      cache.get.mockResolvedValue(cached);
+
+      expect(await service.getFilterableSpecs('cat')).toBe(cached);
+      expect(repo.findEffectiveForCategory).not.toHaveBeenCalled();
+      expect(repo.findValueCountsByKey).not.toHaveBeenCalled();
+    });
+
+    it('serves a cached EMPTY list as a hit too (an empty sidebar is an answer)', async () => {
+      cache.get.mockResolvedValue([]);
+
+      expect(await service.getFilterableSpecs('cat')).toEqual([]);
+      expect(repo.findEffectiveForCategory).not.toHaveBeenCalled();
+    });
+
+    it('writes a miss under the facet prefix', async () => {
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(cache.set).toHaveBeenCalledTimes(1);
+      const [key, value, ttl] = cache.set.mock.calls[0];
+      expect(key.startsWith(`${FILTERABLE_SPECS_PREFIX}:`)).toBe(true);
+      expect(value).toBe(result);
+      expect(ttl).toBeGreaterThan(0);
+    });
+
+    it('keys on the canonical slug the resolver read back, not on what was typed', async () => {
+      catalogueFilters.resolve.mockResolvedValue({
+        brandId: 'brand-uuid',
+        brandKey: 'apple',
+        deviceModelId: 'dev-uuid',
+        deviceKey: 'iphone-15',
+      });
+
+      await service.getFilterableSpecs('cat', { brand: 'APPLE-typed', device: 'whatever' });
+
+      const key: string = cache.get.mock.calls[0][0];
+      expect(key).toContain('brand=apple');
+      expect(key).toContain('device=iphone-15');
+      expect(key).not.toContain('APPLE-typed');
+      expect(key).not.toContain('brand-uuid');
+    });
+
+    it('never reads one category’s or one filter set’s counts for another', async () => {
+      await service.getFilterableSpecs('cat-a');
+      await service.getFilterableSpecs('cat-b');
+      await service.getFilterableSpecs('cat-a', { specs: 'material:Силікон' });
+      await service.getFilterableSpecs('cat-a', { inStock: true });
+      await service.getFilterableSpecs('cat-a', { search: 'чохол' });
+
+      const keys = cache.get.mock.calls.map(([key]) => key);
+      expect(new Set(keys).size).toBe(keys.length);
+    });
+
+    it('keys on the APPLIED facets — a malformed chunk shares the clean request’s entry', async () => {
+      await service.getFilterableSpecs('cat', { specs: 'material:Силікон' });
+      await service.getFilterableSpecs('cat', { specs: 'material:Силікон;garbage' });
+
+      expect(cache.get.mock.calls[0][0]).toBe(cache.get.mock.calls[1][0]);
+    });
+
+    it.each([
+      [
+        'create',
+        async () => {
+          repo.findByCategoryAndKey.mockResolvedValue(null);
+          repo.create.mockResolvedValue({ ...materialDef });
+          await service.create('cat', {
+            key: 'material',
+            label: 'Матеріал',
+            type: AttributeType.SELECT,
+            options: ['Силікон'],
+          });
+        },
+      ],
+      [
+        'update',
+        async () => {
+          repo.findById.mockResolvedValue({ ...materialDef });
+          repo.update.mockResolvedValue({ ...materialDef, label: 'Матеріал корпусу' });
+          await service.update('d-material', { label: 'Матеріал корпусу' });
+        },
+      ],
+      [
+        'delete',
+        async () => {
+          repo.findById.mockResolvedValue({ ...materialDef });
+          repo.delete.mockResolvedValue({ id: 'd-material' });
+          await service.delete('d-material');
+        },
+      ],
+      [
+        'reorder',
+        async () => {
+          repo.reorder.mockResolvedValue([{ ...materialDef }]);
+          await service.reorder('cat', { orderedIds: ['d-material'] });
+        },
+      ],
+    ])('purges the facet cache after %s', async (_name, run) => {
+      await run();
+
+      expect(cache.delByPrefix).toHaveBeenCalledWith(FILTERABLE_SPECS_PREFIX);
+    });
+
+    it('does not purge when a write is refused', async () => {
+      repo.findById.mockResolvedValue(null);
+
+      await expect(service.delete('ghost')).rejects.toBeInstanceOf(NotFoundException);
+      expect(cache.delByPrefix).not.toHaveBeenCalled();
     });
   });
 });
