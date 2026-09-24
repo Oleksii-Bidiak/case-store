@@ -1,6 +1,6 @@
 import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
 import { CartItemEntity } from './cart-item.entity';
-import { toCents, centsToString } from '../../addon-service';
+import { toCents, centsToString, lineTotalCents } from '../../addon-service';
 import type { ResolvedAddon } from '../../addon-service';
 
 /**
@@ -173,11 +173,9 @@ export class CartEntity {
     let itemCount = 0;
 
     for (const item of items) {
-      const priceStr = item.product.price.toString();
-
-      // Convert "XX.YY" to cents to avoid floating-point errors
-      const priceCents = Math.round(parseFloat(priceStr) * 100);
-      subtotalCents += priceCents * item.quantity;
+      // Integer cents via the canonical helper (TASK-807) — the same arithmetic
+      // the discount preview and the order use, so one basket is one number.
+      subtotalCents += lineTotalCents(item.product.price, item.quantity);
       itemCount += item.quantity;
 
       const available = resolvedAddons.get(item.productId) ?? [];
@@ -189,13 +187,8 @@ export class CartEntity {
       }
     }
 
-    // Convert back from cents to decimal string "XX.YY"
-    const dollars = Math.floor(subtotalCents / 100);
-    const cents = subtotalCents % 100;
-    const subtotal = `${dollars}.${cents.toString().padStart(2, '0')}`;
-
     return {
-      subtotal,
+      subtotal: centsToString(subtotalCents),
       itemCount,
       uniqueItems: items.length,
       addonsTotal: centsToString(addonsCents),
