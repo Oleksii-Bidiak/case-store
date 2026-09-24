@@ -40,6 +40,12 @@ describe('Fail-closed route classification', () => {
       // guard on submission cannot help with.
       ['PATCH /api/reviews/:id', ReviewUpdateController.prototype.update],
       ['POST /api/orders', OrderController.prototype.createOrder],
+      // TASK-483 / TASK-606. Both answer a question about somebody else's order
+      // to an unauthenticated caller; with the limiter gone each is a guessing
+      // oracle. The guest-token route is the one GET on this list — its path
+      // segment is the credential.
+      ['POST /api/orders/lookup', OrderController.prototype.lookupOrder],
+      ['GET /api/orders/guest/:token', OrderController.prototype.getGuestOrder],
       ['POST /api/newsletter/subscribe', NewsletterController.prototype.subscribe],
       ['POST /api/newsletter/unsubscribe', NewsletterController.prototype.unsubscribe],
     ])('%s', (_route, handler) => {

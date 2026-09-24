@@ -10,6 +10,11 @@ import {
   ThrottlerErrorCode,
   ThrottlerStorageUnavailableError,
 } from '../src/throttler';
+import { OrderController } from '../src/order/order.controller';
+import { OrderService } from '../src/order/order.service';
+import { JwtAuthGuard } from '../src/auth';
+import { OptionalJwtAuthGuard } from '../src/cart/guards';
+import { CartIdentityInterceptor } from '../src/cart/interceptors';
 
 /**
  * E2E for TASK-401 — what the API answers over real HTTP when the rate-limit
@@ -27,8 +32,8 @@ import {
  * ## Why this suite builds its own tiny app
  *
  * What is being asserted is the guard's split — the same class production
- * registers as `APP_GUARD`, the same `@FailClosedThrottle()` decorator the eight
- * real routes carry, and a storage that fails the way a dead Redis fails.
+ * registers as `APP_GUARD`, the same `@FailClosedThrottle()` decorator the real
+ * routes carry, and a storage that fails the way a dead Redis fails.
  * Booting AppModule would add a database, auth and a mail outbox to a question
  * none of them participate in. WHICH real routes carry the decorator is pinned
  * separately, and without HTTP, in `src/throttler/fail-closed-routes.spec.ts` —
@@ -110,5 +115,95 @@ describe('Rate limiting fails closed on public writes (e2e)', () => {
     await request(app.getHttpServer()).get('/products').expect(200);
     await request(app.getHttpServer()).get('/products').expect(200);
     await request(app.getHttpServer()).get('/products').expect(200);
+  });
+});
+
+/**
+ * TASK-606 — the guest-order token route, over real HTTP, on the REAL controller.
+ *
+ * `GET /api/orders/guest/:token` is the one read that opts into fail-closed: the
+ * path segment is the credential, so a limiter that silently fails open turns the
+ * route into an unlimited guessing oracle. A probe route would stay green with
+ * the decorator deleted from `order.controller.ts`, so this block mounts the real
+ * `OrderController` and stubs only what sits behind it. The service stub resolves
+ * an order for ANY token — if the guard ever let a request through, the test would
+ * see a 200 rather than a 503.
+ *
+ * `POST /api/orders/lookup` (TASK-483) rides along: it is the pattern this route
+ * now follows, and it had no HTTP-level test of its own.
+ */
+describe('Guest order routes fail closed when the limiter is down (e2e, TASK-606)', () => {
+  let app: INestApplication;
+  const orderService = {
+    getGuestOrder: jest.fn().mockResolvedValue({ id: 'order-1' }),
+    lookupOrders: jest.fn().mockResolvedValue([{ id: 'order-1' }]),
+  };
+
+  @Module({
+    imports: [
+      ThrottlerModule.forRoot({
+        throttlers: [{ ttl: 60_000, limit: 5 }],
+        storage: unreachableStorage,
+      }),
+    ],
+    controllers: [OrderController],
+    providers: [
+      { provide: APP_GUARD, useClass: ClientIpThrottlerGuard },
+      { provide: OrderService, useValue: orderService },
+    ],
+  })
+  class RealOrderRoutesModule {}
+
+  const passThrough = { canActivate: () => true };
+
+  beforeAll(async () => {
+    const moduleFixture = await Test.createTestingModule({ imports: [RealOrderRoutesModule] })
+      // Only the authenticated / cart routes carry these; neither route under
+      // test does. Overriding them keeps JWT and config out of a limiter test.
+      .overrideGuard(JwtAuthGuard)
+      .useValue(passThrough)
+      .overrideGuard(OptionalJwtAuthGuard)
+      .useValue(passThrough)
+      .overrideInterceptor(CartIdentityInterceptor)
+      .useValue({ intercept: (_ctx: unknown, next: { handle: () => unknown }) => next.handle() })
+      .compile();
+
+    app = moduleFixture.createNestApplication();
+    await app.init();
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  beforeEach(() => {
+    orderService.getGuestOrder.mockClear();
+    orderService.lookupOrders.mockClear();
+  });
+
+  it('GET /orders/guest/:token answers 503, never the order', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/orders/guest/any-guess-at-all')
+      .expect(503);
+
+    expect(response.body.error).toBe(ThrottlerErrorCode.STORAGE_UNAVAILABLE);
+    expect(orderService.getGuestOrder).not.toHaveBeenCalled();
+  });
+
+  it('keeps refusing repeated guesses — no request slips through uncounted', async () => {
+    for (let i = 0; i < 3; i++) {
+      await request(app.getHttpServer()).get(`/orders/guest/guess-${i}`).expect(503);
+    }
+    expect(orderService.getGuestOrder).not.toHaveBeenCalled();
+  });
+
+  it('POST /orders/lookup answers 503 as well', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/orders/lookup')
+      .send({ orderNumber: 'ABCD1234', phone: '+380501234567' })
+      .expect(503);
+
+    expect(response.body.error).toBe(ThrottlerErrorCode.STORAGE_UNAVAILABLE);
+    expect(orderService.lookupOrders).not.toHaveBeenCalled();
   });
 });

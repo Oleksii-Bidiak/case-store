@@ -232,9 +232,17 @@ export class OrderController {
    *
    * Rate-limited hard: this is the one route where a valid guess would hand over
    * somebody else's order.
+   *
+   * ── Why a GET is fail-CLOSED here (TASK-606) ──────────────────────────────
+   * `@FailClosedThrottle` is normally kept off reads, but this read IS a
+   * credential check: the path segment is the secret. With Redis down and the
+   * throttle failing open, the route would answer an unlimited stream of
+   * guesses — the same oracle `POST /orders/lookup` below refuses to become.
+   * A guest who cannot open their order during a Redis blip is the lesser harm.
    */
   @Get('guest/:token')
   @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @FailClosedThrottle()
   @ApiOperation({ summary: 'Get a guest order by its emailed token', operationId: 'getGuestOrder' })
   @ApiParam({ name: 'token', description: 'Opaque access token from the confirmation email' })
   @ApiResponse({
