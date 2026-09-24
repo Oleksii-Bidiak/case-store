@@ -192,6 +192,26 @@ describe('the catalogue facet set (TASK-488 / B-10)', () => {
     });
   });
 
+  describe("«Вихідний роз'єм» carries only what the card says (TASK-701 / B-11)", () => {
+    it('fills charger-output on the four confirmed chargers and nowhere else', () => {
+      // Owner decision B-11: a value inferred from the description («ноутбук
+      // отримає 65 Вт, отже USB-C») is erased, not kept — the catalogue must not
+      // claim anything the product card does not say. What stays is named by the
+      // title, spelled out in the description, or implied by the charger TYPE.
+      const filled = Object.fromEntries(
+        cataloguePositions()
+          .filter((position) => position.entry.specs?.['charger-output'] !== undefined)
+          .map((position) => [position.entry.slug, position.entry.specs?.['charger-output']]),
+      );
+      expect(filled).toEqual({
+        'charger-anker-20w': 'USB-C',
+        'charger-baseus-gan-65w': 'USB-C + USB-A',
+        'wireless-charger-belkin-magsafe': 'Бездротовий',
+        'wireless-charger-baseus-3in1': 'Бездротовий',
+      });
+    });
+  });
+
   describe('the three facets B-10 added outright', () => {
     it.each([
       ['chargers', 'charger-output'],

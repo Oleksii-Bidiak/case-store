@@ -99,9 +99,8 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Мережева',
       ports: 4,
       technology: 'GaN',
-      // Conservative: «ноутбук отримає 65 Вт» is only possible over USB-C PD.
-      // The entry names no second port type, so none is claimed here.
-      'charger-output': 'USB-C',
+      // No `charger-output` (B-11): the card never names a port type — the value
+      // used to be inferred from «ноутбук отримає 65 Вт», and inference is not data.
     },
     variants: [
       {
@@ -126,8 +125,8 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Мережева',
       ports: 2,
       technology: 'Quick Charge',
-      // Power Delivery AND Quick Charge on two ports — PD is USB-C, QC is USB-A.
-      'charger-output': 'USB-C + USB-A',
+      // No `charger-output` (B-11): «PD і QC» was read as «USB-C + USB-A», but
+      // the card never names the ports.
     },
     variants: [
       { name: 'Мережевий зарядний пристрій Hoco 30 Вт', price: 399, stock: 64, attributes: {} },
@@ -147,7 +146,7 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Автомобільна',
       ports: 2,
       technology: 'Power Delivery',
-      'charger-output': 'USB-C',
+      // No `charger-output` (B-11): «два порти» without their type.
     },
     variants: [
       {
@@ -182,8 +181,8 @@ export const chargers: CatalogueEntry[] = [
       'charger-type': 'Автомобільна',
       ports: 2,
       technology: 'Power Delivery',
-      // The bundled cable named in the title is USB-C.
-      'charger-output': 'USB-C',
+      // No `charger-output` (B-11): the USB-C in the title is the bundled CABLE,
+      // not the charger's socket, so it says nothing about the output port.
     },
     variants: [
       {
