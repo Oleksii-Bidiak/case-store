@@ -62,6 +62,20 @@ describe('CartEntity money (TASK-807)', () => {
     expect(cart.totals.uniqueItems).toBe(3);
   });
 
+  it('never carries the guest token, even when the source row has one (it travels only in the HttpOnly cookie)', () => {
+    const cart = CartEntity.fromPrisma({
+      id: 'cart-1',
+      userId: null,
+      token: 'secret-guest-token',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+      items: [],
+    } as Parameters<typeof CartEntity.fromPrisma>[0]);
+
+    expect(cart).not.toHaveProperty('token');
+    expect(JSON.stringify(cart)).not.toContain('secret-guest-token');
+  });
+
   it('an empty cart totals to 0.00', () => {
     const cart = cartOf([]);
 

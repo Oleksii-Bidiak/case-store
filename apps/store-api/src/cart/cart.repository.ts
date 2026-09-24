@@ -175,17 +175,6 @@ export class CartRepository {
   }
 
   /**
-   * Find a cart by its ID, including all items with product/variant details.
-   * Returns null if the cart does not exist.
-   */
-  findById(cartId: string): Promise<CartWithItems | null> {
-    return this.prisma.cart.findUnique({
-      where: { id: cartId },
-      include: CART_ITEMS_INCLUDE,
-    }) as Promise<CartWithItems | null>;
-  }
-
-  /**
    * Find an existing cart for the given identity, or create one if it doesn't
    * exist. A user identity upserts by `userId`; a token identity upserts by
    * `token`. Uses upsert to avoid race conditions between find and create.
@@ -403,17 +392,6 @@ export class CartRepository {
   async clearItems(cartId: string): Promise<void> {
     await this.prisma.cartItem.deleteMany({
       where: { cartId },
-    });
-  }
-
-  /**
-   * Find a specific cart item by cart ID and product (position) ID.
-   * Used by the service to check if an item already exists before adding.
-   * Returns null if the item is not found.
-   */
-  findItem(cartId: string, productId: string): Promise<CartItem | null> {
-    return this.prisma.cartItem.findUnique({
-      where: { cartId_productId: { cartId, productId } },
     });
   }
 

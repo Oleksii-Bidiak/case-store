@@ -10,7 +10,6 @@ const prismaMock = {
     deleteMany: jest.fn(),
   },
   cartItem: {
-    findUnique: jest.fn(),
     upsert: jest.fn(),
     update: jest.fn(),
     delete: jest.fn(),
@@ -106,30 +105,6 @@ describe('CartRepository', () => {
       prismaMock.cart.findUnique.mockResolvedValue(null);
 
       const result = await repository.findByUserId('nonexistent-user');
-
-      expect(result).toBeNull();
-    });
-  });
-
-  // ─── findById ────────────────────────────────────────────────────────────────
-
-  describe('findById', () => {
-    it('should return cart with items when found', async () => {
-      prismaMock.cart.findUnique.mockResolvedValue(mockCartWithItems);
-
-      const result = await repository.findById('cart-uuid-1');
-
-      expect(result).toEqual(mockCartWithItems);
-      expect(prismaMock.cart.findUnique).toHaveBeenCalledWith({
-        where: { id: 'cart-uuid-1' },
-        include: expect.objectContaining({ items: expect.any(Object) }),
-      });
-    });
-
-    it('should return null when cart not found', async () => {
-      prismaMock.cart.findUnique.mockResolvedValue(null);
-
-      const result = await repository.findById('nonexistent-cart');
 
       expect(result).toBeNull();
     });
@@ -365,42 +340,6 @@ describe('CartRepository', () => {
       expect(prismaMock.cartItem.deleteMany).toHaveBeenCalledWith({
         where: { cartId: 'cart-uuid-1' },
       });
-    });
-  });
-
-  // ─── findItem ────────────────────────────────────────────────────────────────
-
-  describe('findItem', () => {
-    it('should find a cart item by cart and product (position) ID', async () => {
-      const existingItem = {
-        id: 'item-uuid-1',
-        cartId: 'cart-uuid-1',
-        productId: 'product-uuid-1',
-        quantity: 2,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      prismaMock.cartItem.findUnique.mockResolvedValue(existingItem);
-
-      const result = await repository.findItem('cart-uuid-1', 'product-uuid-1');
-
-      expect(result).toEqual(existingItem);
-      expect(prismaMock.cartItem.findUnique).toHaveBeenCalledWith({
-        where: {
-          cartId_productId: {
-            cartId: 'cart-uuid-1',
-            productId: 'product-uuid-1',
-          },
-        },
-      });
-    });
-
-    it('should return null when item not found', async () => {
-      prismaMock.cartItem.findUnique.mockResolvedValue(null);
-
-      const result = await repository.findItem('cart-uuid-1', 'nonexistent-product');
-
-      expect(result).toBeNull();
     });
   });
 

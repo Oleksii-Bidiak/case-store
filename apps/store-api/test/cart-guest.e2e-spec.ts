@@ -53,7 +53,6 @@ describe('Cart — guest & merge (e2e)', () => {
   const cartRepositoryMock = {
     findByUserId: jest.fn(),
     findByToken: jest.fn(),
-    findById: jest.fn(),
     findOrCreate: jest.fn(),
     assignCartToUser: jest.fn(),
     mergeGuestCartIntoUser: jest.fn(),
@@ -61,7 +60,6 @@ describe('Cart — guest & merge (e2e)', () => {
     updateItem: jest.fn(),
     removeItem: jest.fn(),
     clearItems: jest.fn(),
-    findItem: jest.fn(),
     findProductForCartValidation: jest.fn(),
   };
 

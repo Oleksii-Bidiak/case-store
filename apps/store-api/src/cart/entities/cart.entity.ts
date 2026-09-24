@@ -1,4 +1,4 @@
-import { ApiHideProperty, ApiProperty } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { CartItemEntity } from './cart-item.entity';
 import { toCents, centsToString, lineTotalCents } from '../../addon-service';
 import type { ResolvedAddon } from '../../addon-service';
@@ -61,13 +61,6 @@ export class CartEntity {
   })
   userId!: string | null;
 
-  /**
-   * Guest cart token. Never exposed in the JSON response — it travels
-   * exclusively via the HttpOnly `cartToken` cookie.
-   */
-  @ApiHideProperty()
-  token?: string | null;
-
   @ApiProperty({
     description: 'Items in the cart',
     type: [CartItemEntity],
@@ -98,7 +91,6 @@ export class CartEntity {
     cart: {
       id: string;
       userId: string | null;
-      token?: string | null;
       createdAt: Date;
       updatedAt: Date;
       items: Array<{

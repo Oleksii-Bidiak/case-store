@@ -42,6 +42,11 @@ describe('CartRepository (integration)', () => {
   // cart-add-concurrency.int-spec.ts); these repository tests only need the write.
   const allowAll = (): void => undefined;
 
+  // Read a cart back by id straight from the DB — the repository has no such
+  // lookup (its `findById` had no production caller and was removed, TASK-815).
+  const cartById = (id: string) =>
+    prisma.cart.findUnique({ where: { id }, include: { items: true } });
+
   beforeAll(async () => {
     // Hard safety net: never run destructive integration tests against a
     // database that is not clearly a test database.
@@ -206,12 +211,12 @@ describe('CartRepository (integration)', () => {
     const cart = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
 
     await repo.addItem({ cartId: cart.id, productId, quantity: 2 }, allowAll);
-    let updated = await repo.findById(cart.id);
+    let updated = await cartById(cart.id);
     expect(updated?.items).toHaveLength(1);
     expect(updated?.items[0].quantity).toBe(2);
 
     await repo.addItem({ cartId: cart.id, productId, quantity: 3 }, allowAll);
-    updated = await repo.findById(cart.id);
+    updated = await cartById(cart.id);
     expect(updated?.items).toHaveLength(1);
     expect(updated?.items[0].quantity).toBe(5);
   });
@@ -261,7 +266,7 @@ describe('CartRepository (integration)', () => {
       ],
     });
 
-    const merged = await repo.findById(userCart.id);
+    const merged = await cartById(userCart.id);
     expect(merged?.items).toHaveLength(2);
     const productLine = merged?.items.find((i) => i.productId === productId);
     expect(productLine?.quantity).toBe(4);
@@ -291,7 +296,7 @@ describe('CartRepository (integration)', () => {
 
     // Transaction rolled back: the valid line was NOT written and the guest
     // cart was NOT deleted.
-    const after = await repo.findById(userCart.id);
+    const after = await cartById(userCart.id);
     expect(after?.items).toHaveLength(1);
     expect(after?.items[0].productId).toBe(productId);
     expect(await repo.findByToken(token)).not.toBeNull();
