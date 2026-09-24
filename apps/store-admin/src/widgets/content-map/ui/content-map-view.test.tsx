@@ -312,4 +312,27 @@ describe("ContentMapView — counts (TASK-264-B)", () => {
       await screen.findByText(dict.contentMap.catalogNote),
     ).toBeInTheDocument();
   });
+
+  // TASK-719: the map used to send the operator to «Налаштування → Контакти» and
+  // «Налаштування → SEO» — there is no «Налаштування» item in the sidebar. Every
+  // target must start with a real sidebar label, and a `→ Tab` suffix must name
+  // a real tab of the Pages screen.
+  it("names only sidebar items (and Pages tabs) that exist", () => {
+    const sidebar = new Set<string>(Object.values(dict.nav));
+    const pageTabs = new Set<string>([
+      dict.pages.tabLegal,
+      dict.pages.tabInfo,
+      dict.pages.tabHub,
+    ]);
+
+    for (const zone of Object.values(dict.contentMap.zones)) {
+      const [section, tab, ...rest] = zone.target.split(" → ");
+      expect(rest).toEqual([]);
+      expect(sidebar).toContain(section);
+      if (tab !== undefined) {
+        expect(section).toBe(dict.nav.pages);
+        expect(pageTabs).toContain(tab);
+      }
+    }
+  });
 });
