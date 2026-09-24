@@ -149,6 +149,35 @@ describe("PaymentStatusSelect (TASK-151, TASK-431)", () => {
     expect(
       await screen.findByText(dict.orderStatus.paymentTransitionsHint),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.orderStatus.paymentTransitionsHintFullRefund),
+    ).toBeInTheDocument();
+  });
+
+  it("does not tell the operator to cancel when the full refund is already offered", async () => {
+    // TASK-842: on a cancelled order REFUNDED is in the list — "cancel first"
+    // would be advice about something already done.
+    stubTransitions("PARTIALLY_REFUNDED", ["REFUNDED"]);
+    renderSelect();
+
+    expect(
+      await screen.findByText(dict.orderStatus.paymentTransitionsHint),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.paymentTransitionsHintFullRefund),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not mention a refund while no money has arrived", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
+    renderSelect();
+
+    expect(
+      await screen.findByText(dict.orderStatus.paymentTransitionsHint),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.paymentTransitionsHintFullRefund),
+    ).not.toBeInTheDocument();
   });
 
   it("shows an error line when the option list cannot be read", async () => {

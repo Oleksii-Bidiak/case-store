@@ -8,7 +8,10 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
-import { orderStatusLabel } from "@/entities/order";
+import {
+  orderStatusLabel,
+  useAdminOrderControllerGetAllowedPaymentTransitions,
+} from "@/entities/order";
 import { OrderStatusSelect } from "./order-status-select";
 
 jest.mock("sonner", () => ({
@@ -707,5 +710,67 @@ describe("OrderStatusSelect — orders:write gate (TASK-715)", () => {
         name: dict.orderStatus.updateAria,
       }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-842: the payment picker's option list depends on the ORDER status —
+ * cancelling a partly refunded order is exactly what makes «Кошти повернено»
+ * legal. The Orval keys are flat strings, so invalidating the order itself does
+ * not reach the payment-transitions query by prefix; this pins the explicit
+ * invalidation. The probe reads the same entity hook the payment picker reads,
+ * so no feature imports another.
+ */
+function PaymentOptionsProbe({ orderId }: { orderId: string }) {
+  const { data } = useAdminOrderControllerGetAllowedPaymentTransitions(orderId);
+  return <p data-testid="payment-options">{data?.data.allowed.join(",")}</p>;
+}
+
+describe("OrderStatusSelect — payment options follow the order (TASK-842)", () => {
+  it("refetches the payment options after cancelling, so the full refund appears", async () => {
+    stubTransitions(["CANCELLED"]);
+    let cancelled = false;
+    let paymentReads = 0;
+    server.use(
+      http.get(
+        "*/api/admin/orders/:orderId/allowed-payment-transitions",
+        () => {
+          paymentReads += 1;
+          return HttpResponse.json({
+            data: {
+              current: "PARTIALLY_REFUNDED",
+              allowed: cancelled ? ["REFUNDED"] : [],
+            },
+          });
+        },
+      ),
+    );
+    stubStatusPatch(() => {
+      cancelled = true;
+      return HttpResponse.json({ data: { id: ORDER_ID } });
+    });
+
+    renderWithProviders(
+      <WithAuth permissions={["orders:write", "returns:read", "returns:write"]}>
+        <OrderStatusSelect orderId={ORDER_ID} />
+        <PaymentOptionsProbe orderId={ORDER_ID} />
+      </WithAuth>,
+    );
+    await waitFor(() => expect(paymentReads).toBe(1));
+    expect(screen.getByTestId("payment-options")).toHaveTextContent("");
+
+    await openPicker();
+    await userEvent.click(
+      await screen.findByRole("option", {
+        name: orderStatusLabel("CANCELLED"),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("payment-options")).toHaveTextContent(
+        "REFUNDED",
+      ),
+    );
+    expect(paymentReads).toBe(2);
   });
 });

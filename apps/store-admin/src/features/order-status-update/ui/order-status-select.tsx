@@ -6,6 +6,7 @@ import { toast } from "@/shared/ui/toast";
 import {
   getAdminOrderControllerFindAllQueryKey,
   getAdminOrderControllerFindByIdQueryKey,
+  getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
   orderStatusLabel,
@@ -232,6 +233,18 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
             queryKey:
               getAdminOrderControllerGetAllowedTransitionsQueryKey(orderId),
           });
+          // TASK-842: the legal PAYMENT moves depend on the order status too —
+          // cancelling a partly refunded order is exactly what unlocks «Кошти
+          // повернено». The Orval keys are flat strings, so invalidating
+          // `findById` does not reach this one by prefix; without it the payment
+          // picker kept its pre-cancel answer for the whole staleTime and told
+          // the operator to cancel an order that was already cancelled.
+          void queryClient.invalidateQueries({
+            queryKey:
+              getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey(
+                orderId,
+              ),
+          });
           void queryClient.invalidateQueries({
             queryKey: getAdminOrderControllerGetHistoryQueryKey(orderId),
           });
@@ -254,6 +267,14 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
             });
             void queryClient.invalidateQueries({
               queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
+            });
+            // The order moved under us — its payment options may have moved
+            // with it (TASK-842).
+            void queryClient.invalidateQueries({
+              queryKey:
+                getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey(
+                  orderId,
+                ),
             });
             toast.error(message);
             return;
@@ -332,6 +353,10 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
     });
     void queryClient.invalidateQueries({
       queryKey: getAdminOrderControllerFindByIdQueryKey(orderId),
+    });
+    void queryClient.invalidateQueries({
+      queryKey:
+        getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey(orderId),
     });
     void queryClient.invalidateQueries({
       queryKey: getAdminOrderControllerGetHistoryQueryKey(orderId),

@@ -91,6 +91,13 @@ function PaymentStatusSelectControl({
   const updatePaymentStatus = useAdminOrderControllerUpdatePaymentStatus();
 
   const { allowed, current } = toPaymentTransitionOptions(transitions.data);
+  // The money arrived, but the full refund is not on offer — the one case where
+  // "cancel the order first" is the operator's next step (TASK-842). On a
+  // cancelled order REFUNDED is in the list, and the advice would be stale.
+  const fullRefundWithheld =
+    !allowed.includes(OrderEntityPaymentStatus.REFUNDED) &&
+    (current === OrderEntityPaymentStatus.PAID ||
+      current === OrderEntityPaymentStatus.PARTIALLY_REFUNDED);
 
   const handleChange = (value: string) => {
     updatePaymentStatus.mutate(
@@ -204,6 +211,11 @@ function PaymentStatusSelectControl({
       <p className="text-xs text-muted-foreground">
         {dict.orderStatus.paymentTransitionsHint}
       </p>
+      {fullRefundWithheld ? (
+        <p className="text-xs text-muted-foreground">
+          {dict.orderStatus.paymentTransitionsHintFullRefund}
+        </p>
+      ) : null}
     </div>
   );
 }

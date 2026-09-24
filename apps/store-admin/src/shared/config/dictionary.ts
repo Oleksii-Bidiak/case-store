@@ -2550,10 +2550,12 @@ export const dict = {
     paymentTransitionsLoadError:
       "Не вдалося отримати список статусів оплати. Оновіть сторінку.",
     noPaymentTransitions: "Статус оплати змінити неможливо",
-    // Says the quiet part out loud: a full refund is missing from the list on
-    // purpose while the order is live, and the operator's next step is named.
+    // Always under the picker. The "why is the full refund missing" half lives in
+    // `paymentTransitionsHintFullRefund` (TASK-842) and shows only when it IS
+    // missing — on a cancelled order it is in the list, and telling the operator
+    // to cancel first would be advice about something already done.
     paymentTransitionsHint:
-      "Доступні лише переходи, дозволені для поточного статусу оплати. Повне повернення коштів можливе після скасування замовлення.",
+      "Доступні лише переходи, дозволені для поточного статусу оплати.",
 
     // --- Server-driven transitions (TASK-332) ---------------------------------
     transitionsLoading: "Завантаження доступних статусів…",
@@ -2621,6 +2623,9 @@ export const dict = {
     // Без `returns:read` лінк вів би на відмову — тому лише текст.
     noPaymentTransitionsReturnsNoAccess:
       "Заявки на повернення — у розділі «Повернення»; щоб їх бачити, потрібне право на перегляд повернень.",
+    // Лише коли «Кошти повернено» немає в списку, а гроші надходили (TASK-842).
+    paymentTransitionsHintFullRefund:
+      "Повне повернення коштів можливе після скасування замовлення.",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
