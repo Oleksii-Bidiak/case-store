@@ -4,12 +4,20 @@ export {
   ReviewSubmissionThrottle,
   REVIEW_SUBMISSION_THROTTLE_KEY,
 } from './review-submission-throttle.decorator';
+export {
+  OrderLookupThrottle,
+  ORDER_LOOKUP_NUMBER_THROTTLER,
+  ORDER_LOOKUP_THROTTLE_KEY,
+} from './order-lookup-throttle.decorator';
 export { RedisThrottlerStorage } from './redis-throttler-storage';
 export {
   authorFromAccessToken,
   buildThrottlerOptions,
+  createOrderNumberTracker,
   createReviewAuthorTracker,
+  orderNumberFingerprint,
   verifyThrottlerRedis,
+  type OrderNumberFingerprint,
   type ReviewAuthorFromToken,
 } from './throttler.config';
 export { ThrottlerHealthModule } from './throttler-health.module';

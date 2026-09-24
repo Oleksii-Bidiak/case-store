@@ -5,11 +5,14 @@ import type { ThrottlerModuleOptions, ThrottlerOptions } from '@nestjs/throttler
 import {
   authorFromAccessToken,
   buildThrottlerOptions,
+  createOrderNumberTracker,
   createReviewAuthorTracker,
+  orderNumberFingerprint,
   verifyThrottlerRedis,
   type PingableRedis,
 } from './throttler.config';
 import { REVIEW_SUBMISSION_THROTTLE_KEY } from './review-submission-throttle.decorator';
+import { ORDER_LOOKUP_THROTTLE_KEY } from './order-lookup-throttle.decorator';
 import type { ThrottlerRedisHealth } from './throttler-redis-health';
 
 function makeHealth() {
@@ -151,7 +154,12 @@ describe('review submission is capped per ACCOUNT and per ADDRESS (TASK-588)', (
     // into `generateKey` — so neither can spend the other's quota.
     const throttlers = namedThrottlers(options);
 
-    expect(Object.keys(throttlers).sort()).toEqual(['default', 'reviewsAccount', 'reviewsIp']);
+    expect(Object.keys(throttlers).sort()).toEqual([
+      'default',
+      'orderLookupNumber',
+      'reviewsAccount',
+      'reviewsIp',
+    ]);
     expect(throttlers.reviewsAccount).toMatchObject({ limit: 5, ttl: 60 * 60 * 1000 });
     expect(throttlers.reviewsIp).toMatchObject({ limit: 20, ttl: 24 * 60 * 60 * 1000 });
   });
@@ -255,5 +263,96 @@ describe('createReviewAuthorTracker (TASK-598)', () => {
 
   it('refuses to invent a tracker when neither an author nor an address is known', async () => {
     await expect(track({})).rejects.toThrow(/tracker/i);
+  });
+});
+
+// ─── TASK-624: the per-order-number lookup bucket ────────────────────────────
+
+describe('order lookup is capped per ORDER NUMBER as well as per address (TASK-624)', () => {
+  let options: ThrottlerModuleOptions;
+
+  beforeEach(async () => {
+    options = await buildThrottlerOptions(configWithout(), makeHealth());
+  });
+
+  it('registers a named bucket of ten an hour with a tracker of its own', () => {
+    const throttlers = namedThrottlers(options);
+
+    expect(throttlers.orderLookupNumber).toMatchObject({ limit: 10, ttl: 60 * 60 * 1000 });
+    // Its own tracker: inheriting the guard's per-IP one would make it a second
+    // copy of the per-IP cap, which is exactly what a botnet steps around.
+    expect(typeof throttlers.orderLookupNumber.getTracker).toBe('function');
+  });
+
+  it('applies ONLY to the lookup route, and the review buckets stay off it', () => {
+    const throttlers = namedThrottlers(options);
+    const plain = () => undefined;
+    const lookup = () => undefined;
+    Reflect.defineMetadata(ORDER_LOOKUP_THROTTLE_KEY, true, lookup);
+
+    // Without the gate, ten requests an hour would cap every route in the shop.
+    expect(throttlers.orderLookupNumber.skipIf?.(contextFor(plain))).toBe(true);
+    expect(throttlers.orderLookupNumber.skipIf?.(contextFor(lookup))).toBe(false);
+
+    for (const name of ['reviewsAccount', 'reviewsIp']) {
+      expect(throttlers[name].skipIf?.(contextFor(lookup))).toBe(true);
+    }
+  });
+});
+
+describe('createOrderNumberTracker (TASK-624)', () => {
+  const fingerprint = orderNumberFingerprint(TEST_JWT_SECRET);
+  const track = createOrderNumberTracker(fingerprint);
+
+  it('counts the ORDER, so a fresh address buys no fresh quota', async () => {
+    const first = await track({ body: { number: '94f5f971' }, ip: '203.0.113.7' });
+    const second = await track({ body: { number: '94f5f971' }, ip: '198.51.100.4' });
+
+    expect(first).toBe(second);
+    expect(first).toMatch(/^order:[0-9a-f]{16}$/);
+  });
+
+  it('normalises the way the DTO does — guards run before pipes', async () => {
+    // Three spellings of one order must be one bucket, or an attacker gets three.
+    const spellings = ['#94F5F971', '94f5 f971', '№94F5F971 '];
+    const trackers = await Promise.all(
+      spellings.map((number) => track({ body: { number }, ip: '203.0.113.7' })),
+    );
+
+    expect(new Set(trackers).size).toBe(1);
+    expect(trackers[0]).toBe(`order:${fingerprint('94f5f971')}`);
+  });
+
+  it('gives two orders two buckets', async () => {
+    const first = await track({ body: { number: '94f5f971' }, ip: '203.0.113.7' });
+    const second = await track({ body: { number: '00000001' }, ip: '203.0.113.7' });
+
+    expect(first).not.toBe(second);
+  });
+
+  it('never carries the raw number, and depends on the server secret', async () => {
+    // The tracker IS what gets logged on a lockout. An unkeyed hash of a 2^32
+    // input space would be reversible in minutes, so it is keyed.
+    const tracker = await track({ body: { number: '94f5f971' }, ip: '203.0.113.7' });
+
+    expect(tracker).not.toContain('94f5f971');
+    expect(orderNumberFingerprint('another-secret')('94f5f971')).not.toBe(fingerprint('94f5f971'));
+  });
+
+  it('falls back to the address for a body that names no order — never to a constant', async () => {
+    // A constant would let one garbage request from anyone lock the form for all.
+    await expect(track({ body: { number: '94f' }, ip: '203.0.113.7' })).resolves.toBe(
+      'ip:203.0.113.7',
+    );
+    await expect(track({ body: { number: 42 }, ip: '203.0.113.8' })).resolves.toBe(
+      'ip:203.0.113.8',
+    );
+    await expect(track({ socket: { remoteAddress: '198.51.100.9' } })).resolves.toBe(
+      'ip:198.51.100.9',
+    );
+  });
+
+  it('refuses to invent a tracker when neither a number nor an address is known', async () => {
+    await expect(track({ body: {} })).rejects.toThrow(/tracker/i);
   });
 });

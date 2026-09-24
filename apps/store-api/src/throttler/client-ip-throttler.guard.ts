@@ -1,6 +1,10 @@
-import { Injectable, type ExecutionContext } from '@nestjs/common';
-import { ThrottlerGuard, type ThrottlerRequest } from '@nestjs/throttler';
+import { Injectable, Logger, type ExecutionContext } from '@nestjs/common';
+import { ThrottlerException, ThrottlerGuard, type ThrottlerRequest } from '@nestjs/throttler';
 import { FAIL_CLOSED_THROTTLE_KEY } from './fail-closed-throttle.decorator';
+import {
+  ORDER_LOOKUP_NUMBER_THROTTLER,
+  ORDER_TRACKER_PREFIX,
+} from './order-lookup-throttle.decorator';
 import {
   rateLimitStorageUnavailableError,
   ThrottlerStorageUnavailableError,
@@ -12,6 +16,12 @@ interface TrackedRequest {
   ips?: string[];
   socket?: { remoteAddress?: string };
 }
+
+/**
+ * Module-level rather than a field: the guard's unit tests build it with
+ * `Object.create(prototype)`, which skips field initialisers.
+ */
+const logger = new Logger('ClientIpThrottlerGuard');
 
 /**
  * ThrottlerGuard that states, in code, which address the rate limiter counts.
@@ -65,6 +75,11 @@ export class ClientIpThrottlerGuard extends ThrottlerGuard {
     try {
       return await super.handleRequest(requestProps);
     } catch (error) {
+      if (error instanceof ThrottlerException) {
+        await this.reportOrderLookupLockout(requestProps);
+        throw error;
+      }
+
       // Anything else — including the library's own ThrottlerException for a
       // client that really is over the limit — keeps propagating untouched.
       if (!(error instanceof ThrottlerStorageUnavailableError)) {
@@ -80,6 +95,44 @@ export class ClientIpThrottlerGuard extends ThrottlerGuard {
       // here would produce one log entry per request for as long as it lasts.
       return true;
     }
+  }
+
+  /**
+   * Say so when the per-order-number bucket refuses a lookup (TASK-624).
+   *
+   * Per-IP 429s are routine and stay silent. THIS one means a single order has
+   * been asked about more than its hourly budget allows — from however many
+   * addresses — which is the shape of someone walking phone numbers against a
+   * number found on a waybill. `order.lookup_miss` is logged without the number
+   * on purpose, so without this line there was nothing to correlate.
+   *
+   * `target` is the tracker itself: an HMAC fingerprint of the order number
+   * (see `orderNumberFingerprint`), stable across addresses and meaningless
+   * without the server secret. The raw number is never written down. A tracker
+   * that fell back to the address (malformed number — no order to protect) is
+   * not reported.
+   */
+  private async reportOrderLookupLockout(requestProps: ThrottlerRequest): Promise<void> {
+    const { context, throttler, getTracker, limit, ttl } = requestProps;
+    if (throttler.name !== ORDER_LOOKUP_NUMBER_THROTTLER) {
+      return;
+    }
+
+    const req = context.switchToHttp().getRequest<Record<string, unknown>>();
+    const tracker = await getTracker(req, context);
+    if (!tracker.startsWith(ORDER_TRACKER_PREFIX)) {
+      return;
+    }
+
+    logger.warn(
+      {
+        event: 'order.lookup_throttled',
+        target: tracker.slice(ORDER_TRACKER_PREFIX.length),
+        limit,
+        windowMs: ttl,
+      },
+      'Order lookup refused: one order number exceeded its hourly lookup budget',
+    );
   }
 
   /** Route-level (or controller-level) opt-in written by {@link FailClosedThrottle}. */

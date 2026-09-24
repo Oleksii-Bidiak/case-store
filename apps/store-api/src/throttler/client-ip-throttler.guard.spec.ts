@@ -1,4 +1,4 @@
-import { HttpStatus, type ExecutionContext } from '@nestjs/common';
+import { HttpStatus, Logger, type ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { HttpException } from '@nestjs/common';
 import {
@@ -8,6 +8,7 @@ import {
 } from '@nestjs/throttler';
 import { ClientIpThrottlerGuard } from './client-ip-throttler.guard';
 import { FailClosedThrottle } from './fail-closed-throttle.decorator';
+import { ORDER_LOOKUP_NUMBER_THROTTLER } from './order-lookup-throttle.decorator';
 import { ThrottlerErrorCode, ThrottlerStorageUnavailableError } from './throttler.errors';
 
 /**
@@ -149,6 +150,90 @@ describe('ClientIpThrottlerGuard when the rate-limit store is unavailable', () =
     await expect(
       guard.canActivate(contextFor(ProbeController.prototype.publicWrite)),
     ).rejects.toBeInstanceOf(ThrottlerException);
+  });
+
+  // TASK-624: the per-order-number bucket is the one refusal worth a log line —
+  // it means one order was asked about from many places. The per-IP 429s beside
+  // it are routine and stay silent.
+  describe('logging an order-lookup lockout (TASK-624)', () => {
+    const blockedStorage = (): ThrottlerStorage => ({
+      increment: jest.fn().mockResolvedValue({
+        totalHits: 11,
+        timeToExpire: 30,
+        isBlocked: true,
+        timeToBlockExpire: 60,
+      }),
+    });
+
+    const buildWith = async (
+      throttlers: ThrottlerModuleOptions,
+      storage: ThrottlerStorage,
+    ): Promise<ClientIpThrottlerGuard> => {
+      const guard = new ClientIpThrottlerGuard(throttlers, storage, new Reflector());
+      await guard.onModuleInit();
+      return guard;
+    };
+
+    let warn: jest.SpyInstance;
+    beforeEach(() => {
+      warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    });
+    afterEach(() => warn.mockRestore());
+
+    it('logs the fingerprint — never the number — when the per-number bucket refuses', async () => {
+      const guard = await buildWith(
+        {
+          throttlers: [
+            {
+              name: ORDER_LOOKUP_NUMBER_THROTTLER,
+              ttl: 3_600_000,
+              limit: 10,
+              getTracker: () => 'order:0123456789abcdef',
+            },
+          ],
+        },
+        blockedStorage(),
+      );
+
+      await expect(
+        guard.canActivate(contextFor(ProbeController.prototype.publicWrite)),
+      ).rejects.toBeInstanceOf(ThrottlerException);
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toEqual({
+        event: 'order.lookup_throttled',
+        target: '0123456789abcdef',
+        limit: 10,
+        windowMs: 3_600_000,
+      });
+    });
+
+    it('stays silent for a per-IP refusal and for the address fallback', async () => {
+      const perIp = await buildWith({ throttlers: [{ ttl: 60_000, limit: 5 }] }, blockedStorage());
+      await expect(
+        perIp.canActivate(contextFor(ProbeController.prototype.publicWrite)),
+      ).rejects.toBeInstanceOf(ThrottlerException);
+
+      // A malformed number counts by address: there is no order to report.
+      const fallback = await buildWith(
+        {
+          throttlers: [
+            {
+              name: ORDER_LOOKUP_NUMBER_THROTTLER,
+              ttl: 3_600_000,
+              limit: 10,
+              getTracker: () => 'ip:203.0.113.7',
+            },
+          ],
+        },
+        blockedStorage(),
+      );
+      await expect(
+        fallback.canActivate(contextFor(ProbeController.prototype.publicWrite)),
+      ).rejects.toBeInstanceOf(ThrottlerException);
+
+      expect(warn).not.toHaveBeenCalled();
+    });
   });
 
   // A bug in the storage (a typo, a bad reply shape) is not a rate-limit outage
