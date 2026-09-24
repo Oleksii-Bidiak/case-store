@@ -168,6 +168,12 @@ export class CartRepository {
    * Find an existing cart for the given identity, or create one if it doesn't
    * exist. A user identity upserts by `userId`; a token identity upserts by
    * `token`. Uses upsert to avoid race conditions between find and create.
+   *
+   * Only write paths call this (a read never creates a cart, TASK-776), and it
+   * touches `updatedAt` on an existing cart: the guest-cart cleanup deletes
+   * empty carts by `updatedAt`, so a cart about to receive a line must look
+   * fresh, or a sweep landing between this call and the line write would
+   * delete it under the shopper.
    */
   findOrCreate(identity: ResolvedCartIdentity): Promise<CartWithItems> {
     const where =
@@ -177,10 +183,22 @@ export class CartRepository {
 
     return this.prisma.cart.upsert({
       where,
-      update: {},
+      update: { updatedAt: new Date() },
       create,
       include: CART_ITEMS_INCLUDE,
     }) as Promise<CartWithItems>;
+  }
+
+  /**
+   * Delete guest carts (no owner) that hold no lines and were last touched
+   * before `cutoff` (TASK-776). Returns the number of carts removed. A cart with
+   * even one line is never touched, and neither is any user's cart.
+   */
+  async deleteStaleEmptyGuestCarts(cutoff: Date): Promise<number> {
+    const { count } = await this.prisma.cart.deleteMany({
+      where: { userId: null, updatedAt: { lt: cutoff }, items: { none: {} } },
+    });
+    return count;
   }
 
   /**

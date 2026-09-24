@@ -25,10 +25,18 @@ export class CartService {
   ) {}
 
   /**
-   * Get the current cart for the identity. Creates an empty cart if none exists.
+   * Get the current cart for the identity.
+   *
+   * A read never writes (TASK-776): when the identity has no cart yet, an empty,
+   * UNSAVED cart is returned. The header badge reads the cart on every
+   * storefront page, so creating one here left an empty row behind for every
+   * visitor and every crawler. The row is created by the first `addToCart`.
    */
   async getCart(identity: ResolvedCartIdentity): Promise<CartEntity> {
-    const cart = await this.cartRepository.findOrCreate(identity);
+    const cart = await this.resolveCart(identity);
+    if (!cart) {
+      return CartEntity.empty(identity.type === 'user' ? identity.userId : null);
+    }
     return this.toEntity(cart);
   }
 

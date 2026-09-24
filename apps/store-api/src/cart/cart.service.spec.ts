@@ -284,7 +284,7 @@ describe('CartService', () => {
 
   describe('getCart', () => {
     it('should return cart with items and calculated totals', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithVariantItem);
+      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithVariantItem);
 
       const result = await service.getCart(userIdentity);
 
@@ -296,11 +296,11 @@ describe('CartService', () => {
       expect(result.totals.subtotal).toBe('59.98'); // 29.99 × 2
       expect(result.totals.itemCount).toBe(2);
       expect(result.totals.uniqueItems).toBe(1);
-      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith(userIdentity);
+      expect(cartRepositoryMock.findByUserId).toHaveBeenCalledWith('user-uuid-1');
     });
 
     it('should return empty cart with zero totals when no items', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
+      cartRepositoryMock.findByUserId.mockResolvedValue(mockEmptyCart);
 
       const result = await service.getCart(userIdentity);
 
@@ -311,7 +311,7 @@ describe('CartService', () => {
     });
 
     it('should calculate totals correctly for multiple items', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithMultipleItems);
+      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithMultipleItems);
 
       const result = await service.getCart(userIdentity);
 
@@ -322,7 +322,7 @@ describe('CartService', () => {
     });
 
     it('should use product price when no variant exists', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithNoVariantItem);
+      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithNoVariantItem);
 
       const result = await service.getCart(userIdentity);
 
@@ -331,7 +331,7 @@ describe('CartService', () => {
     });
 
     it('should use variant price when variant exists', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithVariantItem);
+      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithVariantItem);
 
       const result = await service.getCart(userIdentity);
 
@@ -340,12 +340,62 @@ describe('CartService', () => {
     });
 
     it('should resolve a guest cart for a token identity', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockGuestCart);
+      cartRepositoryMock.findByToken.mockResolvedValue(mockGuestCart);
 
       const result = await service.getCart(tokenIdentity);
 
       expect(result.userId).toBeNull();
-      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith(tokenIdentity);
+      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith('guest-token-1');
+    });
+    // TASK-776: a read must never write. The header badge fetches the cart on
+    // every storefront page, so an upsert here left one empty row per visitor
+    // (and per crawler) forever.
+    describe('when the identity has no cart yet (TASK-776)', () => {
+      const writeMethods = [
+        'findOrCreate',
+        'addItem',
+        'updateItem',
+        'removeItem',
+        'clearItems',
+        'assignCartToUser',
+        'mergeGuestCartIntoUser',
+        'setItemAddon',
+        'unsetItemAddon',
+      ] as const;
+
+      it('returns an empty, unsaved guest cart and calls no write method', async () => {
+        cartRepositoryMock.findByToken.mockResolvedValue(null);
+
+        const result = await service.getCart(tokenIdentity);
+
+        expect(result).toBeInstanceOf(CartEntity);
+        expect(result.userId).toBeNull();
+        expect(result.items).toEqual([]);
+        expect(result.totals).toEqual({
+          subtotal: '0.00',
+          itemCount: 0,
+          uniqueItems: 0,
+          addonsTotal: '0.00',
+        });
+        expect(typeof result.id).toBe('string');
+        expect(result.createdAt).toBeInstanceOf(Date);
+        expect(result.updatedAt).toBeInstanceOf(Date);
+        for (const method of writeMethods) {
+          expect(cartRepositoryMock[method]).not.toHaveBeenCalled();
+        }
+      });
+
+      it('returns an empty, unsaved cart owned by the user for a user identity', async () => {
+        cartRepositoryMock.findByUserId.mockResolvedValue(null);
+
+        const result = await service.getCart(userIdentity);
+
+        expect(result.userId).toBe('user-uuid-1');
+        expect(result.items).toEqual([]);
+        for (const method of writeMethods) {
+          expect(cartRepositoryMock[method]).not.toHaveBeenCalled();
+        }
+      });
     });
   });
 
@@ -597,7 +647,9 @@ describe('CartService', () => {
         ...mockCartWithVariantItem,
         items: [{ ...mockCartWithVariantItem.items[0], quantity: 5 }],
       };
-      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithVariantItem);
+      cartRepositoryMock.findByUserId
+        .mockResolvedValueOnce(mockCartWithVariantItem)
+        .mockResolvedValueOnce(updatedCart);
       cartRepositoryMock.updateItem.mockResolvedValue({
         id: 'item-uuid-1',
         cartId: 'cart-uuid-1',
@@ -607,7 +659,6 @@ describe('CartService', () => {
         createdAt: now,
         updatedAt: now,
       });
-      cartRepositoryMock.findOrCreate.mockResolvedValue(updatedCart);
 
       const result = await service.updateItem(userIdentity, 'item-uuid-1', updateDto);
 
@@ -623,7 +674,6 @@ describe('CartService', () => {
         token: 'guest-token-1',
       });
       cartRepositoryMock.updateItem.mockResolvedValue({});
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithVariantItem);
 
       await service.updateItem(tokenIdentity, 'item-uuid-1', updateDto);
 
@@ -655,9 +705,10 @@ describe('CartService', () => {
     });
 
     it('should remove item when quantity is set to 0', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithVariantItem);
+      cartRepositoryMock.findByUserId
+        .mockResolvedValueOnce(mockCartWithVariantItem)
+        .mockResolvedValueOnce(mockEmptyCart);
       cartRepositoryMock.removeItem.mockResolvedValue(undefined);
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
 
       const result = await service.updateItem(userIdentity, 'item-uuid-1', { quantity: 0 });
 
@@ -678,13 +729,14 @@ describe('CartService', () => {
 
   describe('removeItem', () => {
     it('should remove item and return updated cart', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithMultipleItems);
       cartRepositoryMock.removeItem.mockResolvedValue(undefined);
       const afterRemoval: CartWithItems = {
         ...mockCartWithMultipleItems,
         items: [mockCartWithMultipleItems.items[1]],
       };
-      cartRepositoryMock.findOrCreate.mockResolvedValue(afterRemoval);
+      cartRepositoryMock.findByUserId
+        .mockResolvedValueOnce(mockCartWithMultipleItems)
+        .mockResolvedValueOnce(afterRemoval);
 
       const result = await service.removeItem(userIdentity, 'item-uuid-1');
 
@@ -714,9 +766,10 @@ describe('CartService', () => {
 
   describe('clearCart', () => {
     it('should clear all items and return empty cart', async () => {
-      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithMultipleItems);
+      cartRepositoryMock.findByUserId
+        .mockResolvedValueOnce(mockCartWithMultipleItems)
+        .mockResolvedValueOnce(mockEmptyCart);
       cartRepositoryMock.clearItems.mockResolvedValue(undefined);
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockEmptyCart);
 
       const result = await service.clearCart(userIdentity);
 
@@ -935,7 +988,7 @@ describe('CartService', () => {
 
     describe('addonsTotal (cases 15–19)', () => {
       it('case 15 — no selected add-ons → addonsTotal is "0.00"', async () => {
-        cartRepositoryMock.findOrCreate.mockResolvedValue(twoLineCart);
+        cartRepositoryMock.findByUserId.mockResolvedValue(twoLineCart);
         addonResolverMock.resolveForProducts.mockResolvedValue(
           resolvedFor({ 'product-uuid-1': [warrantyAddon], 'product-uuid-2': [] }),
         );
@@ -950,7 +1003,7 @@ describe('CartService', () => {
 
       it('case 16 — one selected add-on is charged FLAT, not multiplied by line quantity', async () => {
         // Line 1 has quantity 2 — the warranty must still be charged once.
-        cartRepositoryMock.findOrCreate.mockResolvedValue({
+        cartRepositoryMock.findByUserId.mockResolvedValue({
           ...twoLineCart,
           items: [
             { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-warranty' }] },
@@ -969,7 +1022,7 @@ describe('CartService', () => {
       });
 
       it('case 17 — two add-ons selected on the SAME line sum together', async () => {
-        cartRepositoryMock.findOrCreate.mockResolvedValue({
+        cartRepositoryMock.findByUserId.mockResolvedValue({
           ...twoLineCart,
           items: [
             {
@@ -989,7 +1042,7 @@ describe('CartService', () => {
       });
 
       it('case 18 — the same add-on on TWO lines is counted once per line', async () => {
-        cartRepositoryMock.findOrCreate.mockResolvedValue({
+        cartRepositoryMock.findByUserId.mockResolvedValue({
           ...twoLineCart,
           items: [
             { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-warranty' }] },
@@ -1006,7 +1059,7 @@ describe('CartService', () => {
       });
 
       it('case 19 — subtotal is unaffected by add-ons: they are separate CartTotals fields', async () => {
-        cartRepositoryMock.findOrCreate.mockResolvedValue({
+        cartRepositoryMock.findByUserId.mockResolvedValue({
           ...twoLineCart,
           items: [
             { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-warranty' }] },
@@ -1025,7 +1078,7 @@ describe('CartService', () => {
       });
 
       it('uses the EFFECTIVE (overridden) price the resolver returned, not the catalog price', async () => {
-        cartRepositoryMock.findOrCreate.mockResolvedValue({
+        cartRepositoryMock.findByUserId.mockResolvedValue({
           ...twoLineCart,
           items: [
             { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-insurance' }] },
@@ -1045,7 +1098,7 @@ describe('CartService', () => {
       });
 
       it('drops a STALE selection (no longer resolved) from both the read and the total', async () => {
-        cartRepositoryMock.findOrCreate.mockResolvedValue({
+        cartRepositoryMock.findByUserId.mockResolvedValue({
           ...twoLineCart,
           items: [
             { ...twoLineCart.items[0], addons: [{ addonServiceId: 'svc-retired' }] },
@@ -1063,8 +1116,6 @@ describe('CartService', () => {
       });
 
       it('resolves the whole cart in ONE batched call (no N+1)', async () => {
-        cartRepositoryMock.findOrCreate.mockResolvedValue(twoLineCart);
-
         await service.getCart(userIdentity);
 
         expect(addonResolverMock.resolveForProducts).toHaveBeenCalledTimes(1);
@@ -1075,7 +1126,6 @@ describe('CartService', () => {
     describe('toggleAddon (cases 20–21)', () => {
       beforeEach(() => {
         cartRepositoryMock.findByUserId.mockResolvedValue(twoLineCart);
-        cartRepositoryMock.findOrCreate.mockResolvedValue(twoLineCart);
       });
 
       it("case 20 — rejects an add-on that is NOT in the line's resolved set, writing nothing", async () => {
@@ -1215,7 +1265,7 @@ describe('CartService', () => {
           },
         ],
       };
-      cartRepositoryMock.findOrCreate.mockResolvedValue(cartWithWholePrice);
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithWholePrice);
 
       const result = await service.getCart(userIdentity);
 
@@ -1224,7 +1274,7 @@ describe('CartService', () => {
     });
 
     it('should handle single item with quantity 1', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(mockCartWithNoVariantItem);
+      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithNoVariantItem);
 
       const result = await service.getCart(userIdentity);
 
@@ -1263,7 +1313,7 @@ describe('CartService', () => {
           },
         ],
       };
-      cartRepositoryMock.findOrCreate.mockResolvedValue(cartWithPosition);
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithPosition);
 
       const result = await service.getCart(userIdentity);
 

@@ -48,7 +48,8 @@ export class CartTotals {
  */
 export class CartEntity {
   @ApiProperty({
-    description: 'Cart unique identifier',
+    description:
+      'Cart unique identifier. An empty string while the cart has not been saved yet — a read never creates one (TASK-776); the first added item does.',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   id!: string;
@@ -132,6 +133,17 @@ export class CartEntity {
     entity.createdAt = cart.createdAt;
     entity.updatedAt = cart.updatedAt;
     return entity;
+  }
+
+  /**
+   * An empty cart that has not been persisted (TASK-776) — what `GET /cart`
+   * answers for an identity that never added anything. It carries the same
+   * shape as a stored cart so the contract does not change; `id` is an empty
+   * string because no row exists yet.
+   */
+  static empty(userId: string | null): CartEntity {
+    const now = new Date();
+    return CartEntity.fromPrisma({ id: '', userId, createdAt: now, updatedAt: now, items: [] });
   }
 
   /**

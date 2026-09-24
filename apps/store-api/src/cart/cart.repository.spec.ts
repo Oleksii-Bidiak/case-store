@@ -7,6 +7,7 @@ const prismaMock = {
   cart: {
     findUnique: jest.fn(),
     upsert: jest.fn(),
+    deleteMany: jest.fn(),
   },
   cartItem: {
     findUnique: jest.fn(),
@@ -150,7 +151,27 @@ describe('CartRepository', () => {
     });
   });
 
+  // ─── deleteStaleEmptyGuestCarts (TASK-776) ─────────────────────────────────
+
+  describe('deleteStaleEmptyGuestCarts', () => {
+    it('deletes only guest carts with no lines that were last touched before the cutoff', async () => {
+      prismaMock.cart.deleteMany.mockResolvedValue({ count: 4 });
+      const cutoff = new Date('2026-09-23T03:30:00.000Z');
+
+      const deleted = await repository.deleteStaleEmptyGuestCarts(cutoff);
+
+      expect(deleted).toBe(4);
+      expect(prismaMock.cart.deleteMany).toHaveBeenCalledWith({
+        where: { userId: null, updatedAt: { lt: cutoff }, items: { none: {} } },
+      });
+    });
+  });
+
   describe('findOrCreate', () => {
+    // The cleanup cron deletes empty guest carts by `updatedAt`, so a cart that
+    // is about to receive a line must be touched first — otherwise a sweep that
+    // lands between findOrCreate and addItem deletes it under the shopper.
+
     it('should upsert by userId for a user identity', async () => {
       prismaMock.cart.upsert.mockResolvedValue(mockCartWithItems);
 
@@ -159,7 +180,7 @@ describe('CartRepository', () => {
       expect(result).toEqual(mockCartWithItems);
       expect(prismaMock.cart.upsert).toHaveBeenCalledWith({
         where: { userId: 'user-uuid-1' },
-        update: {},
+        update: { updatedAt: expect.any(Date) },
         create: { userId: 'user-uuid-1' },
         include: expect.objectContaining({ items: expect.any(Object) }),
       });
@@ -173,7 +194,7 @@ describe('CartRepository', () => {
       expect(result).toEqual(emptyCart);
       expect(prismaMock.cart.upsert).toHaveBeenCalledWith({
         where: { token: 'guest-token-1' },
-        update: {},
+        update: { updatedAt: expect.any(Date) },
         create: { token: 'guest-token-1' },
         include: expect.objectContaining({ items: expect.any(Object) }),
       });

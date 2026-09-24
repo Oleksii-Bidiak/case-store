@@ -252,9 +252,36 @@ describe('CartController (e2e)', () => {
   // ─── GET /api/cart ────────────────────────────────────────────────────────
 
   describe('GET /api/cart', () => {
+    // TASK-776: a read never writes. A user with no cart row gets an empty,
+    // unsaved cart back — and not one repository write method is called.
+    it('should return 200 with an empty cart and write nothing when the user has no cart yet', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      cartRepositoryMock.findByUserId.mockResolvedValue(null);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/cart')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expectCartShape(response.body);
+      expect(response.body.data.userId).toBe(userA.id);
+      expect(response.body.data.items).toHaveLength(0);
+      for (const method of [
+        'findOrCreate',
+        'addItem',
+        'updateItem',
+        'removeItem',
+        'clearItems',
+        'assignCartToUser',
+        'mergeGuestCartIntoUser',
+      ] as const) {
+        expect(cartRepositoryMock[method]).not.toHaveBeenCalled();
+      }
+    });
+
     it('should return 200 with an empty cart when no items exist', async () => {
       const token = generateAccessToken(userA.id, userA.role);
-      cartRepositoryMock.findOrCreate.mockResolvedValue(emptyCart(userA.id));
+      cartRepositoryMock.findByUserId.mockResolvedValue(emptyCart(userA.id));
 
       const response = await request(app.getHttpServer())
         .get('/api/cart')
@@ -282,7 +309,7 @@ describe('CartController (e2e)', () => {
         ...testCartItem,
         product: { ...testProduct, isActive: true, category: { isActive: false } },
       };
-      cartRepositoryMock.findOrCreate.mockResolvedValue(
+      cartRepositoryMock.findByUserId.mockResolvedValue(
         makeCartWithItems(userA.id, [withdrawnItem] as CartWithItems['items']),
       );
 
@@ -431,9 +458,10 @@ describe('CartController (e2e)', () => {
       const token = generateAccessToken(userA.id, userA.role);
       const updatedCart = makeCartWithItems(userA.id, [{ ...testCartItem, quantity: 3 }]);
 
-      cartRepositoryMock.findByUserId.mockResolvedValue(makeCartWithItems(userA.id));
+      cartRepositoryMock.findByUserId
+        .mockResolvedValueOnce(makeCartWithItems(userA.id))
+        .mockResolvedValueOnce(updatedCart);
       cartRepositoryMock.updateItem.mockResolvedValue({ ...testCartItem, quantity: 3 });
-      cartRepositoryMock.findOrCreate.mockResolvedValue(updatedCart);
 
       const response = await request(app.getHttpServer())
         .patch('/api/cart/items/item-e2e-1')
@@ -474,9 +502,10 @@ describe('CartController (e2e)', () => {
     it('should remove an item and return 200 with the updated cart', async () => {
       const token = generateAccessToken(userA.id, userA.role);
 
-      cartRepositoryMock.findByUserId.mockResolvedValue(makeCartWithItems(userA.id));
+      cartRepositoryMock.findByUserId
+        .mockResolvedValueOnce(makeCartWithItems(userA.id))
+        .mockResolvedValueOnce(emptyCart(userA.id));
       cartRepositoryMock.removeItem.mockResolvedValue(undefined);
-      cartRepositoryMock.findOrCreate.mockResolvedValue(emptyCart(userA.id));
 
       const response = await request(app.getHttpServer())
         .delete('/api/cart/items/item-e2e-1')
@@ -509,9 +538,10 @@ describe('CartController (e2e)', () => {
     it('should clear all items and return 200 with an empty cart', async () => {
       const token = generateAccessToken(userA.id, userA.role);
 
-      cartRepositoryMock.findByUserId.mockResolvedValue(makeCartWithItems(userA.id));
+      cartRepositoryMock.findByUserId
+        .mockResolvedValueOnce(makeCartWithItems(userA.id))
+        .mockResolvedValueOnce(emptyCart(userA.id));
       cartRepositoryMock.clearItems.mockResolvedValue(undefined);
-      cartRepositoryMock.findOrCreate.mockResolvedValue(emptyCart(userA.id));
 
       const response = await request(app.getHttpServer())
         .delete('/api/cart')
@@ -533,14 +563,8 @@ describe('CartController (e2e)', () => {
 
   describe('Optional auth', () => {
     it('should fall back to a guest cart (200) when the Bearer token is invalid, not 401', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue({
-        id: 'guest-cart-e2e',
-        userId: null,
-        token: 'guest-token-e2e',
-        createdAt: new Date('2026-01-01T00:00:00.000Z'),
-        updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-        items: [],
-      });
+      // A fresh guest token has no cart row yet — the read answers an empty one.
+      cartRepositoryMock.findByToken.mockResolvedValue(null);
 
       const response = await request(app.getHttpServer())
         .get('/api/cart')

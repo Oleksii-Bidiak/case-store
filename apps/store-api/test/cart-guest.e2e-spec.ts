@@ -216,7 +216,8 @@ describe('Cart — guest & merge (e2e)', () => {
 
   describe('Guest cart — no cookie', () => {
     it('GET /api/cart with no JWT and no cookie → 200 empty cart and issues an HttpOnly cartToken cookie', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(makeGuestCart([]));
+      // A freshly minted token has no cart row (TASK-776: reads never create one).
+      cartRepositoryMock.findByToken.mockResolvedValue(null);
 
       const res = await request(app.getHttpServer()).get('/api/cart').expect(200);
 
@@ -229,10 +230,30 @@ describe('Cart — guest & merge (e2e)', () => {
       expect(setCookie).toContain('cartToken=');
       expect(setCookie).toMatch(/HttpOnly/i);
 
-      // The interceptor resolved a token-based identity (a freshly minted UUID).
-      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ type: 'token' }),
-      );
+      // The interceptor resolved a token-based identity (a freshly minted UUID),
+      // and the cart was only LOOKED UP by it.
+      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith(expect.any(String));
+    });
+
+    // TASK-776: the header badge reads the cart on every storefront page. Before
+    // this, each read upserted a row, so every visitor and crawler left an empty
+    // cart behind forever. A read must reach no repository write at all.
+    it('GET /api/cart for a guest without a cart calls no repository write method', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(null);
+
+      await request(app.getHttpServer()).get('/api/cart').expect(200);
+
+      for (const method of [
+        'findOrCreate',
+        'assignCartToUser',
+        'mergeGuestCartIntoUser',
+        'addItem',
+        'updateItem',
+        'removeItem',
+        'clearItems',
+      ] as const) {
+        expect(cartRepositoryMock[method]).not.toHaveBeenCalled();
+      }
     });
   });
 
@@ -265,7 +286,7 @@ describe('Cart — guest & merge (e2e)', () => {
     });
 
     it('GET /api/cart returns the same guest cart for the cookie token', async () => {
-      cartRepositoryMock.findOrCreate.mockResolvedValue(makeGuestCart([guestCartItem]));
+      cartRepositoryMock.findByToken.mockResolvedValue(makeGuestCart([guestCartItem]));
 
       const res = await request(app.getHttpServer())
         .get('/api/cart')
@@ -273,18 +294,14 @@ describe('Cart — guest & merge (e2e)', () => {
         .expect(200);
 
       expect(res.body.data.items).toHaveLength(1);
-      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith({
-        type: 'token',
-        token: GUEST_TOKEN,
-      });
+      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith(GUEST_TOKEN);
     });
 
     it('PATCH /api/cart/items/:itemId → 200 and updates the quantity in the guest cart', async () => {
-      cartRepositoryMock.findByToken.mockResolvedValue(makeGuestCart([guestCartItem]));
+      cartRepositoryMock.findByToken
+        .mockResolvedValueOnce(makeGuestCart([guestCartItem]))
+        .mockResolvedValueOnce(makeGuestCart([{ ...guestCartItem, quantity: 3 }]));
       cartRepositoryMock.updateItem.mockResolvedValue({ ...guestCartItem, quantity: 3 });
-      cartRepositoryMock.findOrCreate.mockResolvedValue(
-        makeGuestCart([{ ...guestCartItem, quantity: 3 }]),
-      );
 
       const res = await request(app.getHttpServer())
         .patch('/api/cart/items/guest-item-1')
@@ -298,9 +315,10 @@ describe('Cart — guest & merge (e2e)', () => {
     });
 
     it('DELETE /api/cart/items/:itemId → 200 and removes the item from the guest cart', async () => {
-      cartRepositoryMock.findByToken.mockResolvedValue(makeGuestCart([guestCartItem]));
+      cartRepositoryMock.findByToken
+        .mockResolvedValueOnce(makeGuestCart([guestCartItem]))
+        .mockResolvedValueOnce(makeGuestCart([]));
       cartRepositoryMock.removeItem.mockResolvedValue(undefined);
-      cartRepositoryMock.findOrCreate.mockResolvedValue(makeGuestCart([]));
 
       const res = await request(app.getHttpServer())
         .delete('/api/cart/items/guest-item-1')
@@ -312,9 +330,10 @@ describe('Cart — guest & merge (e2e)', () => {
     });
 
     it('DELETE /api/cart → 200 and clears the guest cart', async () => {
-      cartRepositoryMock.findByToken.mockResolvedValue(makeGuestCart([guestCartItem]));
+      cartRepositoryMock.findByToken
+        .mockResolvedValueOnce(makeGuestCart([guestCartItem]))
+        .mockResolvedValueOnce(makeGuestCart([]));
       cartRepositoryMock.clearItems.mockResolvedValue(undefined);
-      cartRepositoryMock.findOrCreate.mockResolvedValue(makeGuestCart([]));
 
       const res = await request(app.getHttpServer())
         .delete('/api/cart')
@@ -326,9 +345,9 @@ describe('Cart — guest & merge (e2e)', () => {
     });
 
     it('GET /api/cart with an unknown/forged cartToken yields a fresh empty cart (200), never 500 or another user data', async () => {
-      // findOrCreate upserts by token, so an unknown token resolves to its own
-      // empty cart — a forged token can never surface someone else's cart.
-      cartRepositoryMock.findOrCreate.mockResolvedValue(makeGuestCart([]));
+      // Lookup is by token only, so an unknown token finds nothing and reads back
+      // an empty cart — a forged token can never surface someone else's cart.
+      cartRepositoryMock.findByToken.mockResolvedValue(null);
 
       const res = await request(app.getHttpServer())
         .get('/api/cart')
@@ -337,10 +356,8 @@ describe('Cart — guest & merge (e2e)', () => {
 
       expect(res.body.data.userId).toBeNull();
       expect(res.body.data.items).toHaveLength(0);
-      expect(cartRepositoryMock.findOrCreate).toHaveBeenCalledWith({
-        type: 'token',
-        token: 'forged-unknown-token',
-      });
+      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith('forged-unknown-token');
+      expect(cartRepositoryMock.findOrCreate).not.toHaveBeenCalled();
     });
   });
 
