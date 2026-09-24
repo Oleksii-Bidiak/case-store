@@ -149,9 +149,14 @@ function AdminProductTableView() {
   // down, so the name lookup has to cover the whole tree — the root list this
   // used to read answered «—» for nearly every row. The admin tree (all
   // statuses, the same cache entry the product form and card read) needs
-  // `categories:write`; a manager without it reads the public tree instead,
-  // which covers every depth too but only ACTIVE categories — a product on a
-  // hidden category shows «—» for them, which is also what the storefront sees.
+  // `categories:write`; a manager without it reads the public tree instead.
+  // That one is a nested read of the root plus three levels below it
+  // (`findCategoryTree` in store-api's category.repository.ts) — levels 1–4,
+  // which is exactly the structural cap (`MAX_CATEGORY_TREE_LEVELS = 4`), so
+  // every category the tree editor can produce is in it. Only a pre-cap
+  // level-5 leftover would be missing and show «—». It also holds only ACTIVE
+  // categories — a product on a hidden category shows «—» for such a manager,
+  // which is also what the storefront sees.
   const { can } = useAuth();
   const canReadAdminTree = can(PERM.categoriesWrite);
   const adminTreeQuery = useCategoryControllerGetAdminTree({
