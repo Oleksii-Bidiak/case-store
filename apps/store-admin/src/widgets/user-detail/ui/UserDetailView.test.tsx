@@ -639,6 +639,26 @@ describe("UserDetailView (customer card, TASK-252)", () => {
       expect(screen.getAllByText("Olena Shevchenko")).not.toHaveLength(0);
     });
 
+    it("shows the account status as text, with no ban button (TASK-716)", async () => {
+      // Deactivation is `customers:write` on the API. A reader keeps the status
+      // line — it answers «why can't she log in?» — but the button that could
+      // only ever end in a 403 is not rendered at all.
+      managerHolding(PERM.customersRead);
+      trapCardRequests();
+      mockProfile();
+
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      expect(
+        await screen.findByText(dict.users.accountActive),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", {
+          name: dict.userBan.deactivateUserAria,
+        }),
+      ).not.toBeInTheDocument();
+    });
+
     it("hides every block the card paid for, and says why instead", async () => {
       managerHolding(PERM.customersRead);
       trapCardRequests();
