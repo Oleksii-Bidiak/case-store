@@ -13,4 +13,8 @@ export {
   DashboardSummaryResponse,
 } from './dashboard-summary.dto';
 
-export { NeedsActionDto, NeedsActionResponse } from './dashboard-needs-action.dto';
+export {
+  NeedsActionDto,
+  NeedsActionResponse,
+  RatingAbuseSignalsDto,
+} from './dashboard-needs-action.dto';

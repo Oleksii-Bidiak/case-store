@@ -198,6 +198,28 @@ describe('ReviewRepository — findForModeration search', () => {
     expect(issuedWhere().textStatus).toBe('APPROVED');
   });
 
+  // TASK-601: the rating-abuse card opens the series the signal counted, and
+  // that series is mostly star-only — rows none of the three piles show.
+  it('drops the text arms for status=all and narrows by product and address', async () => {
+    await repo.findForModeration('all', 1, 20, undefined, {
+      productId: 'product-1',
+      createdIp: '203.0.113.42',
+    });
+
+    expect(issuedWhere()).toEqual({
+      hiddenAt: null,
+      productId: 'product-1',
+      createdIp: '203.0.113.42',
+    });
+    expect(reviewCount).toHaveBeenCalledWith({ where: issuedWhere() });
+  });
+
+  it('narrows a text pile by product too, keeping the text arms', async () => {
+    await repo.findForModeration('pending', 1, 20, undefined, { productId: 'product-1' });
+
+    expect(issuedWhere()).toEqual({ textStatus: 'PENDING', ...QUEUE_ARMS, productId: 'product-1' });
+  });
+
   it('keeps the queue exactly as it was when visibility is absent', async () => {
     // The dashboard badge counts `moderationQueueWhere(PENDING)` with no second
     // argument; the default list must stay that same set of rows.

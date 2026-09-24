@@ -6681,7 +6681,8 @@
               "enum": [
                 "pending",
                 "approved",
-                "rejected"
+                "rejected",
+                "all"
               ]
             }
           },
@@ -6692,6 +6693,26 @@
             "description": "Filter by the moderator’s account-wide hide (TASK-596): `visible` — authors nobody has withdrawn (the queue, default); `hidden` — rows of withdrawn accounts only; `all` — both",
             "schema": {
               "$ref": "#/components/schemas/ReviewAuthorVisibility"
+            }
+          },
+          {
+            "name": "productId",
+            "required": false,
+            "in": "query",
+            "description": "Only reviews of this product (TASK-601) — what the rating-abuse card links to for a burst of ratings on one product",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdIp",
+            "required": false,
+            "in": "query",
+            "description": "Only reviews submitted from this address (TASK-601) — what the rating-abuse card links to for a run of 1★ from one IP. Rows written before addresses were recorded never match",
+            "schema": {
+              "example": "203.0.113.42",
+              "type": "string"
             }
           },
           {
@@ -19938,6 +19959,12 @@
               }
             ]
           },
+          "createdIp": {
+            "type": "string",
+            "description": "Address the review was submitted from; null when unknown (rows older than the column). Admin projection only",
+            "nullable": true,
+            "example": "203.0.113.42"
+          },
           "userEmail": {
             "type": "string",
             "description": "Author email address",
@@ -19967,6 +19994,7 @@
           "ratingVisible",
           "hiddenAt",
           "hiddenReason",
+          "createdIp",
           "userEmail",
           "productName",
           "productSku"
@@ -26921,6 +26949,35 @@
           "operations"
         ]
       },
+      "RatingAbuseSignalsDto": {
+        "type": "object",
+        "properties": {
+          "productIds": {
+            "description": "Products with more than 10 ratings in the last hour",
+            "example": [
+              "3f2b8c1e-0d6a-4d7e-9b1a-2c4e6f8a0b1c"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdIps": {
+            "description": "Addresses behind 3 or more 1★ ratings in the last 24 hours, not counting rows on the products listed above (one abuser on one product is one situation, not two)",
+            "example": [
+              "203.0.113.42"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "productIds",
+          "createdIps"
+        ]
+      },
       "NeedsActionDto": {
         "type": "object",
         "properties": {
@@ -26954,6 +27011,14 @@
             "description": "Things that look like rating abuse: products with more than 10 ratings in the last hour, plus IP addresses behind 3 or more 1★ ratings in the last 24 hours",
             "example": 2
           },
+          "ratingAbuseSignals": {
+            "description": "The flagged rating-abuse situations by name (TASK-601) — what the card links to. `ratingAbuse` is the sum of the two list lengths",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RatingAbuseSignalsDto"
+              }
+            ]
+          },
           "unavailableItems": {
             "type": "number",
             "description": "Open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the reservation TTL released the order (TASK-470)",
@@ -26972,6 +27037,7 @@
           "failedMails",
           "pendingOver48h",
           "ratingAbuse",
+          "ratingAbuseSignals",
           "unavailableItems",
           "paidAfterCancel"
         ]

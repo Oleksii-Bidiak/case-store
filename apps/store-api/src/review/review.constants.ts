@@ -87,7 +87,18 @@ export function moderationQueueWhere(
   status: ReviewTextStatus,
   visibility: AuthorVisibilityFilter = 'visible',
 ): Prisma.ReviewWhereInput {
-  return { textStatus: status, ...AUTHOR_VISIBILITY_WHERE[visibility], ...HAS_TEXT_TO_MODERATE };
+  return { textStatus: status, ...authorVisibilityWhere(visibility), ...HAS_TEXT_TO_MODERATE };
+}
+
+/**
+ * The visibility arm alone, as a fresh object the caller may extend — what the
+ * moderation list uses when it drops the text arms to show the whole record
+ * (`status = all`, TASK-601).
+ */
+export function authorVisibilityWhere(
+  visibility: AuthorVisibilityFilter = 'visible',
+): Prisma.ReviewWhereInput {
+  return { ...AUTHOR_VISIBILITY_WHERE[visibility] };
 }
 
 /**

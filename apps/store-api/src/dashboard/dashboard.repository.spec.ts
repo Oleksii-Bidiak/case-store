@@ -131,6 +131,30 @@ describe('DashboardRepository — the rating-abuse signal (TASK-589)', () => {
     const needsAction = await repo.getNeedsAction();
 
     expect(needsAction.ratingAbuse).toBe(3);
+    // TASK-601: and names them, so the card can open the series itself.
+    expect(needsAction.ratingAbuseSignals).toEqual({
+      productIds: ['p-1', 'p-2'],
+      createdIps: ['203.0.113.7'],
+    });
+  });
+
+  it('does not count an address again for 1★ rows inside a flagged burst', async () => {
+    // TASK-601: one abuser, eleven 1★ on one product, one hour — one situation.
+    // The address query skips the burst products; what it finds elsewhere is
+    // its own situation.
+    reviewGroupBy.mockImplementation((args: { by: string[] }) =>
+      Promise.resolve(args.by[0] === 'productId' ? [{ productId: 'p-burst' }] : []),
+    );
+
+    await repo.getNeedsAction();
+
+    expect(groupByFor('createdIp').where.productId).toEqual({ notIn: ['p-burst'] });
+  });
+
+  it('puts no product arm on the address query when nothing bursts', async () => {
+    await repo.getNeedsAction();
+
+    expect(groupByFor('createdIp').where).not.toHaveProperty('productId');
   });
 
   it('is zero — not absent — when nothing is flagged', async () => {
@@ -139,6 +163,7 @@ describe('DashboardRepository — the rating-abuse signal (TASK-589)', () => {
     const needsAction = await repo.getNeedsAction();
 
     expect(needsAction.ratingAbuse).toBe(0);
+    expect(needsAction.ratingAbuseSignals).toEqual({ productIds: [], createdIps: [] });
   });
 });
 

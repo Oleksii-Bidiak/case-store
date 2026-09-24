@@ -6,6 +6,7 @@ import {
   COUNTS_TOWARD_RATING,
   HAS_TEXT_TO_MODERATE,
   moderationQueueWhere,
+  authorVisibilityWhere,
   type AuthorVisibilityFilter,
 } from './review.constants';
 
@@ -13,8 +14,11 @@ import {
  * Which pile of the moderation queue to show. Maps 1:1 onto {@link ReviewTextStatus}
  * — the queue is about TEXTS, and since TASK-585 `rejected` is a population rather
  * than a hole where deleted rows used to be.
+ *
+ * `all` (TASK-601) is not a pile: it is every row, star-only ratings included —
+ * see {@link ReviewRepository.findForModeration}.
  */
-export type ReviewModerationFilter = 'pending' | 'approved' | 'rejected';
+export type ReviewModerationFilter = 'pending' | 'approved' | 'rejected' | 'all';
 
 /**
  * The moderation list's narrowing filters beyond the text pile and the search
@@ -24,10 +28,14 @@ export type ReviewModerationFilter = 'pending' | 'approved' | 'rejected';
 export interface ModerationListFilters {
   /** By the moderator's account-wide hide (TASK-596). */
   visibility?: AuthorVisibilityFilter;
+  /** One product's reviews — a rating burst (TASK-601). */
+  productId?: string;
+  /** One address's reviews — a run of 1★ (TASK-601). */
+  createdIp?: string;
 }
 
-/** Queue filter → the stored text status it selects. */
-const MODERATION_FILTER_STATUS: Record<ReviewModerationFilter, ReviewTextStatus> = {
+/** Queue pile → the stored text status it selects. */
+const MODERATION_FILTER_STATUS: Record<Exclude<ReviewModerationFilter, 'all'>, ReviewTextStatus> = {
   pending: ReviewTextStatus.PENDING,
   approved: ReviewTextStatus.APPROVED,
   rejected: ReviewTextStatus.REJECTED,
@@ -368,10 +376,20 @@ export class ReviewRepository {
     filters: ModerationListFilters = {},
   ): Promise<PaginatedModerationResult> {
     const skip = (page - 1) * limit;
-    const where: Prisma.ReviewWhereInput = moderationQueueWhere(
-      MODERATION_FILTER_STATUS[status],
-      filters.visibility,
-    );
+    // `all` drops the TEXT arms — the verdict and "there is a sentence" — because
+    // the rows a rating-abuse signal counts are mostly star-only, and a list that
+    // kept those arms would open empty on exactly the series it was linked to
+    // (TASK-601). The visibility arm stays: the signal skips withdrawn rows too.
+    const where: Prisma.ReviewWhereInput =
+      status === 'all'
+        ? authorVisibilityWhere(filters.visibility)
+        : moderationQueueWhere(MODERATION_FILTER_STATUS[status], filters.visibility);
+    if (filters.productId) {
+      where.productId = filters.productId;
+    }
+    if (filters.createdIp) {
+      where.createdIp = filters.createdIp;
+    }
 
     // TASK-423: free-text search over the three things the queue actually
     // displays — the review text, who wrote it, and what it is about. The arms

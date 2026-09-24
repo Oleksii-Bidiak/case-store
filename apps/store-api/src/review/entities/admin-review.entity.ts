@@ -72,6 +72,24 @@ export class AdminReviewEntity extends ReviewEntity {
   })
   hiddenReason!: ReviewHiddenReason | null;
 
+  /**
+   * The address the review was submitted from (TASK-601), null when unknown —
+   * every row written before TASK-588 recorded it.
+   *
+   * ADMIN PROJECTION ONLY. It exists so the operator can see a run of 1★ from
+   * one address and filter the list by it; the public and own-review entities
+   * never carry it.
+   */
+  @ApiProperty({
+    description:
+      'Address the review was submitted from; null when unknown (rows older than the column). ' +
+      'Admin projection only',
+    type: String,
+    nullable: true,
+    example: '203.0.113.42',
+  })
+  createdIp!: string | null;
+
   @ApiProperty({ description: 'Author email address', example: 'olena@example.com' })
   userEmail!: string;
 
@@ -110,6 +128,7 @@ export class AdminReviewEntity extends ReviewEntity {
     entity.ratingVisible = row.ratingVisible;
     entity.hiddenAt = row.hiddenAt;
     entity.hiddenReason = row.hiddenReason;
+    entity.createdIp = row.createdIp;
     entity.createdAt = row.createdAt;
     // What the shop already answered (TASK-587) — the panel needs it to show a
     // "replied" state instead of offering a fresh answer that would overwrite it.

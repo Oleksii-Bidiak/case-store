@@ -599,6 +599,51 @@ describe('ReviewController (e2e)', () => {
       expect(response.body.data[0].hiddenReason).toBe('MODERATOR');
     });
 
+    // TASK-601: the rating-abuse card's link — the whole record for one product
+    // or one address, star-only rows included.
+    it('opens a series by product and address with status=all', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({ comment: null, createdIp: '203.0.113.42' }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get(
+          '/api/admin/reviews?status=all&productId=0b7c8f4e-2d1a-4c3b-9e5f-6a7b8c9d0e1f' +
+            '&createdIp=203.0.113.42',
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const [status, , , , filters] = reviewRepositoryMock.findForModeration.mock.calls[0];
+      expect(status).toBe('all');
+      expect(filters).toMatchObject({
+        productId: '0b7c8f4e-2d1a-4c3b-9e5f-6a7b8c9d0e1f',
+        createdIp: '203.0.113.42',
+      });
+      expect(response.body.data[0].createdIp).toBe('203.0.113.42');
+    });
+
+    it('rejects a malformed productId or createdIp with 400', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      for (const query of ['productId=not-a-uuid', 'createdIp=999.1.1.1']) {
+        await request(app.getHttpServer())
+          .get(`/api/admin/reviews?${query}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(400);
+      }
+
+      expect(reviewRepositoryMock.findForModeration).not.toHaveBeenCalled();
+    });
+
     it('rejects an unknown visibility with 400', async () => {
       const token = generateAccessToken(admin.id, admin.role);
 

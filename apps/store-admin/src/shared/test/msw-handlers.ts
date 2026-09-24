@@ -48,6 +48,8 @@ export const handlers = [
         // NeedsActionWidget incidentally, so a counter missing here renders as
         // `undefined` in every one of them instead of failing in just this one.
         ratingAbuse: 0,
+        // TASK-601: what `ratingAbuse` counted, by name — empty when it is 0.
+        ratingAbuseSignals: { productIds: [], createdIps: [] },
         // TASK-470: the 7th counter, in the default payload for the same reason.
         unavailableItems: 0,
         // TASK-352: «Оплачено після скасування».

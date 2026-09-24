@@ -396,7 +396,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
-        { visibility: undefined },
+        { visibility: undefined, productId: undefined, createdIp: undefined },
       );
       expect(result.data[0].userEmail).toBe('olena@example.com');
       expect(result.data[0].productName).toBe('iPhone 15 Pro Case');
@@ -436,7 +436,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
-        { visibility: undefined },
+        { visibility: undefined, productId: undefined, createdIp: undefined },
       );
     });
 
@@ -453,7 +453,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
-        { visibility: undefined },
+        { visibility: undefined, productId: undefined, createdIp: undefined },
       );
     });
 
@@ -514,7 +514,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
-        { visibility: 'all' },
+        { visibility: 'all', productId: undefined, createdIp: undefined },
       );
     });
 
@@ -531,8 +531,35 @@ describe('ReviewService', () => {
         3,
         100,
         'чохол',
-        { visibility: undefined },
+        { visibility: undefined, productId: undefined, createdIp: undefined },
       );
+    });
+
+    // TASK-601: the rating-abuse card links here with the series named.
+    it('forwards status=all with the product and address filters, and exposes createdIp', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({ createdIp: '203.0.113.42', comment: null }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getReviewsForModeration({
+        status: ReviewModerationStatus.ALL,
+        productId: PRODUCT_ID,
+        createdIp: '203.0.113.42',
+      });
+
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith('all', 1, 20, undefined, {
+        visibility: undefined,
+        productId: PRODUCT_ID,
+        createdIp: '203.0.113.42',
+      });
+      expect(result.data[0].createdIp).toBe('203.0.113.42');
     });
   });
 
