@@ -271,6 +271,9 @@ export class ReviewService {
       page,
       limit,
       query.search,
+      // Passed through as-is: absent means the queue's own default (`visible`),
+      // decided once in `moderationQueueWhere` rather than again here.
+      { visibility: query.visibility },
     );
 
     return {

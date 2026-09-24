@@ -6,6 +6,7 @@ import {
   COUNTS_TOWARD_RATING,
   HAS_TEXT_TO_MODERATE,
   moderationQueueWhere,
+  type AuthorVisibilityFilter,
 } from './review.constants';
 
 /**
@@ -14,6 +15,16 @@ import {
  * than a hole where deleted rows used to be.
  */
 export type ReviewModerationFilter = 'pending' | 'approved' | 'rejected';
+
+/**
+ * The moderation list's narrowing filters beyond the text pile and the search
+ * term. Every field is optional and absent means "no narrowing" — except
+ * `visibility`, whose absence means the queue's own default, `visible`.
+ */
+export interface ModerationListFilters {
+  /** By the moderator's account-wide hide (TASK-596). */
+  visibility?: AuthorVisibilityFilter;
+}
 
 /** Queue filter → the stored text status it selects. */
 const MODERATION_FILTER_STATUS: Record<ReviewModerationFilter, ReviewTextStatus> = {
@@ -345,16 +356,22 @@ export class ReviewRepository {
    *
    * {@link HAS_TEXT_TO_MODERATE} is the same non-empty test the public list uses,
    * and `hiddenAt` goes with it: a withdrawn account's sentences are not waiting
-   * for a verdict, they are withdrawn.
+   * for a verdict, they are withdrawn — by DEFAULT. Since TASK-596 the caller may
+   * ask for the withdrawn pile (`visibility: 'hidden'`) or for both, which is how
+   * the panel reaches a hidden account's rows to restore them.
    */
   async findForModeration(
     status: ReviewModerationFilter,
     page: number,
     limit: number,
     search?: string,
+    filters: ModerationListFilters = {},
   ): Promise<PaginatedModerationResult> {
     const skip = (page - 1) * limit;
-    const where: Prisma.ReviewWhereInput = moderationQueueWhere(MODERATION_FILTER_STATUS[status]);
+    const where: Prisma.ReviewWhereInput = moderationQueueWhere(
+      MODERATION_FILTER_STATUS[status],
+      filters.visibility,
+    );
 
     // TASK-423: free-text search over the three things the queue actually
     // displays — the review text, who wrote it, and what it is about. The arms

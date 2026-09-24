@@ -4,7 +4,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { Prisma, Review, ReviewHiddenReason, ReviewReply, ReviewTextStatus } from '@prisma/client';
 import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
 import { ReviewService } from './review.service';
-import { ReviewModerationStatus } from './dto';
+import { ReviewAuthorVisibility, ReviewModerationStatus } from './dto';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -396,6 +396,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
+        { visibility: undefined },
       );
       expect(result.data[0].userEmail).toBe('olena@example.com');
       expect(result.data[0].productName).toBe('iPhone 15 Pro Case');
@@ -435,6 +436,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
+        { visibility: undefined },
       );
     });
 
@@ -451,6 +453,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
+        { visibility: undefined },
       );
     });
 
@@ -477,6 +480,44 @@ describe('ReviewService', () => {
       expect(result.data[0]).not.toHaveProperty('isActive');
     });
 
+    // TASK-596: `ratingVisible = false` alone cannot tell "a moderator withdrew
+    // this account" from "the address is not confirmed yet"; the row has to say.
+    it('exposes when and why the author was withdrawn', async () => {
+      const hiddenAt = new Date('2026-09-20T10:00:00.000Z');
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({ hiddenAt, hiddenReason: ReviewHiddenReason.MODERATOR }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+          {
+            ...makeReview({ id: 'review-uuid-2' }),
+            user: { email: 'petro@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 2,
+      });
+
+      const result = await service.getReviewsForModeration({
+        visibility: ReviewAuthorVisibility.ALL,
+      });
+
+      expect(result.data[0].hiddenAt).toEqual(hiddenAt);
+      expect(result.data[0].hiddenReason).toBe(ReviewHiddenReason.MODERATOR);
+      // Unconfirmed, not withdrawn: the other half of the distinction.
+      expect(result.data[1].hiddenAt).toBeNull();
+      expect(result.data[1].hiddenReason).toBeNull();
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'pending',
+        1,
+        20,
+        undefined,
+        { visibility: 'all' },
+      );
+    });
+
     // TASK-423: the queue had no search at all. A term that reached the service
     // but not the repository would render a full, unfiltered queue — which looks
     // like "nothing matched my typo" rather than "the filter was dropped".
@@ -490,6 +531,7 @@ describe('ReviewService', () => {
         3,
         100,
         'чохол',
+        { visibility: undefined },
       );
     });
   });

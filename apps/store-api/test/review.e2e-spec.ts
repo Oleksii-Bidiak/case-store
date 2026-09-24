@@ -568,6 +568,47 @@ describe('ReviewController (e2e)', () => {
       expect(response.body.data[0]).toHaveProperty('userEmail', 'olena@example.com');
       expect(response.body.data[0]).toHaveProperty('productName', 'iPhone 15 Pro Case');
     });
+
+    // TASK-596: the withdrawn pile, and the two fields that say why a row's stars
+    // do not count.
+    it('lists withdrawn authors with when and why they were hidden', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({
+              hiddenAt: new Date('2026-09-20T10:00:00.000Z'),
+              hiddenReason: 'MODERATOR',
+            }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/reviews?visibility=hidden')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(reviewRepositoryMock.findForModeration.mock.calls[0][4]).toEqual({
+        visibility: 'hidden',
+      });
+      expect(response.body.data[0].hiddenAt).toBe('2026-09-20T10:00:00.000Z');
+      expect(response.body.data[0].hiddenReason).toBe('MODERATOR');
+    });
+
+    it('rejects an unknown visibility with 400', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/reviews?visibility=banned')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(reviewRepositoryMock.findForModeration).not.toHaveBeenCalled();
+    });
   });
 
   // ─── PATCH /api/admin/reviews/:id/approve ─────────────────────────────────────

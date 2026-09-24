@@ -17,6 +17,22 @@ export enum ReviewModerationStatus {
 }
 
 /**
+ * Moderation-list filter by the moderator's account-wide hide (TASK-596).
+ *
+ * `visible` is the queue as it always was, and stays the default so the list and
+ * the dashboard badge above it keep counting the same rows. `hidden` reaches the
+ * rows of withdrawn accounts — until this filter the panel had no way to list
+ * them, and a row with `ratingVisible = false` could mean either "a moderator hid
+ * this account" or "the author has not confirmed their address", which call for
+ * different actions.
+ */
+export enum ReviewAuthorVisibility {
+  VISIBLE = 'visible',
+  HIDDEN = 'hidden',
+  ALL = 'all',
+}
+
+/**
  * Query parameters for the admin moderation queue. Defaults to the pending
  * queue, which is the admin's primary working view.
  */
@@ -30,6 +46,19 @@ export class AdminReviewQueryDto {
   @IsOptional()
   @IsEnum(ReviewModerationStatus)
   status?: ReviewModerationStatus;
+
+  @ApiProperty({
+    description:
+      'Filter by the moderator’s account-wide hide (TASK-596): `visible` — authors nobody has ' +
+      'withdrawn (the queue, default); `hidden` — rows of withdrawn accounts only; `all` — both',
+    enum: ReviewAuthorVisibility,
+    enumName: 'ReviewAuthorVisibility',
+    required: false,
+    default: ReviewAuthorVisibility.VISIBLE,
+  })
+  @IsOptional()
+  @IsEnum(ReviewAuthorVisibility)
+  visibility?: ReviewAuthorVisibility;
 
   @ApiProperty({ description: 'Page number (1-based)', required: false, default: 1, minimum: 1 })
   @IsOptional()

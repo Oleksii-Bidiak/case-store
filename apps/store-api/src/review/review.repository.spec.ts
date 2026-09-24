@@ -177,6 +177,34 @@ describe('ReviewRepository — findForModeration search', () => {
     expect(issuedWhere().OR).toBeUndefined();
     expect(reviewFindMany.mock.calls[0][0]).toMatchObject({ skip: 50, take: 50 });
   });
+
+  // TASK-596: the withdrawn pile, which no filter could reach before.
+  it('lists only withdrawn authors for visibility=hidden, with the count in step', async () => {
+    await repo.findForModeration('pending', 1, 20, undefined, { visibility: 'hidden' });
+
+    expect(issuedWhere()).toEqual({
+      textStatus: 'PENDING',
+      hiddenAt: { not: null },
+      comment: { not: null },
+      NOT: { comment: '' },
+    });
+    expect(reviewCount).toHaveBeenCalledWith({ where: issuedWhere() });
+  });
+
+  it('drops the hide arm entirely for visibility=all', async () => {
+    await repo.findForModeration('approved', 1, 20, undefined, { visibility: 'all' });
+
+    expect(issuedWhere()).not.toHaveProperty('hiddenAt');
+    expect(issuedWhere().textStatus).toBe('APPROVED');
+  });
+
+  it('keeps the queue exactly as it was when visibility is absent', async () => {
+    // The dashboard badge counts `moderationQueueWhere(PENDING)` with no second
+    // argument; the default list must stay that same set of rows.
+    await repo.findForModeration('pending', 1, 20, undefined, {});
+
+    expect(issuedWhere()).toEqual({ textStatus: 'PENDING', ...QUEUE_ARMS });
+  });
 });
 
 /**

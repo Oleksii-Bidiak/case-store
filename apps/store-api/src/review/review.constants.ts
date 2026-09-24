@@ -83,6 +83,28 @@ export const HAS_TEXT_TO_MODERATE = {
  * clauses drifted the badge said 50 over a list of none. Whoever narrows one
  * narrows both.
  */
-export function moderationQueueWhere(status: ReviewTextStatus): Prisma.ReviewWhereInput {
-  return { textStatus: status, ...AUTHOR_NOT_HIDDEN, ...HAS_TEXT_TO_MODERATE };
+export function moderationQueueWhere(
+  status: ReviewTextStatus,
+  visibility: AuthorVisibilityFilter = 'visible',
+): Prisma.ReviewWhereInput {
+  return { textStatus: status, ...AUTHOR_VISIBILITY_WHERE[visibility], ...HAS_TEXT_TO_MODERATE };
 }
+
+/**
+ * Which authors the moderation list shows, by the moderator's account-wide lever
+ * (TASK-596).
+ *
+ * `visible` is the queue as it always was and the default everywhere — the
+ * dashboard badge calls {@link moderationQueueWhere} without this argument and
+ * must keep counting exactly what the default list shows. `hidden` is the pile
+ * the panel could not reach before: with `ratingVisible = false` alone it could
+ * not tell "a moderator withdrew this account" from "the address is not
+ * confirmed yet", and the actions on the two are different.
+ */
+export type AuthorVisibilityFilter = 'visible' | 'hidden' | 'all';
+
+const AUTHOR_VISIBILITY_WHERE: Record<AuthorVisibilityFilter, Prisma.ReviewWhereInput> = {
+  visible: AUTHOR_NOT_HIDDEN,
+  hidden: { hiddenAt: { not: null } },
+  all: {},
+};
