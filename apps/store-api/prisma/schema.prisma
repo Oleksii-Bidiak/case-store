@@ -294,6 +294,13 @@ model User {
   /// first `UPDATE` run by hand; enforced here it cannot be broken at all — and
   /// ownership transfer is the one operation where "two owners for 200ms" would
   /// mean two people who can each lock the other out.
+  ///
+  /// NEVER A UNIQUE SELECTOR (TASK-634). The `@@unique` below makes `isOwner` a
+  /// valid `UserWhereUniqueInput`, so `update({ where: { isOwner: false } })`
+  /// type-checks — and only the `true` side is unique. On the `false` side it
+  /// matches every other account. Find the owner with `findFirst` and write by
+  /// `id`; ESLint (`no-restricted-syntax` in `apps/store-api/eslint.config.js`)
+  /// refuses the unique-selector form.
   isOwner             Boolean   @default(false) @map("is_owner")
 
   cart                    Cart?
@@ -325,6 +332,7 @@ model User {
   /// Not "returns of this user's orders": that is reached through `Return.order`.
   openedReturns           Return[]                 @relation("ReturnCreatedBy")
 
+  // Partial: unique for `true` only. Not a lookup key — see `isOwner` (TASK-634).
   @@unique([isOwner], where: { isOwner: true }, map: "users_single_owner_key")
   @@index([deletedAt])
   // TASK-625: the public order lookup matches an account order by `user.phone`.
