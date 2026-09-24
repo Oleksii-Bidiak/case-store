@@ -10,7 +10,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { randomBytes, randomUUID } from 'crypto';
 import { OAuthProvider, User, UserRole } from '@prisma/client';
 import { AuthRepository, CreateUserInput } from './auth.repository';
-import { AuthTokens } from './entities';
+import type { IssuedSession } from './entities';
 import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
@@ -145,7 +145,7 @@ export class AuthService {
    * Register a new user.
    * Checks email uniqueness, hashes password, creates user, returns token pair.
    */
-  async register(dto: RegisterDto): Promise<AuthTokens> {
+  async register(dto: RegisterDto): Promise<IssuedSession> {
     // Check if email is already taken
     const existingUser = await this.authRepository.findByEmail(dto.email);
     if (existingUser) {
@@ -185,7 +185,7 @@ export class AuthService {
    * before doing any hashing work would make it measurably faster than the
    * found-user branch (which pays for `argon2.verify`), i.e. a timing oracle.
    */
-  async login(email: string, password: string): Promise<AuthTokens> {
+  async login(email: string, password: string): Promise<IssuedSession> {
     const user = await this.authRepository.findByEmail(email);
 
     // `!user.passwordHash` (TASK-168): a Google-only account has no password —
@@ -297,7 +297,7 @@ export class AuthService {
    * 5. The role gate ({@link assertStorefrontRole}) runs strictly AFTER the lock
    *    check and strictly BEFORE linking or token issuance (TASK-314).
    */
-  async loginWithGoogleProfile(profile: GoogleOAuthProfile): Promise<AuthTokens> {
+  async loginWithGoogleProfile(profile: GoogleOAuthProfile): Promise<IssuedSession> {
     if (!profile.email || !profile.emailVerified) {
       throw new UnauthorizedException(GOOGLE_EMAIL_UNVERIFIED_MESSAGE);
     }
@@ -399,7 +399,7 @@ export class AuthService {
    * The account check mirrors `login()` exactly (TASK-314): a session must never
    * outlive the account it belongs to.
    */
-  async refreshToken(oldToken: string): Promise<AuthTokens> {
+  async refreshToken(oldToken: string): Promise<IssuedSession> {
     // Find the refresh token in the database
     const storedToken = await this.authRepository.findRefreshToken(oldToken);
     if (!storedToken) {
@@ -700,8 +700,11 @@ export class AuthService {
    * Generate an access/refresh token pair.
    * Access token uses JWT_SECRET, refresh token uses JWT_REFRESH_SECRET.
    * The refresh token is persisted in the database for tracking and rotation.
+   *
+   * Returns the owning `userId` with the pair (TASK-792), so callers never have
+   * to decode a token this service has just minted to learn whose it is.
    */
-  async generateTokenPair(userId: string, role: string): Promise<AuthTokens> {
+  async generateTokenPair(userId: string, role: string): Promise<IssuedSession> {
     const { tokens, refreshExpiresAt } = this.signTokenPair(userId, role);
     await this.authRepository.saveRefreshToken(userId, tokens.refreshToken, refreshExpiresAt);
     return tokens;
@@ -716,7 +719,7 @@ export class AuthService {
   private signTokenPair(
     userId: string,
     role: string,
-  ): { tokens: AuthTokens; refreshExpiresAt: Date } {
+  ): { tokens: IssuedSession; refreshExpiresAt: Date } {
     // Sign access token with JWT_SECRET
     const accessToken = this.jwtService.sign(
       { sub: userId, role },
@@ -760,10 +763,7 @@ export class AuthService {
 
     const refreshExpiresAt = new Date(Date.now() + this.refreshTokenTtlMs);
 
-    const tokens = new AuthTokens();
-    tokens.accessToken = accessToken;
-    tokens.refreshToken = refreshToken;
-    return { tokens, refreshExpiresAt };
+    return { tokens: { userId, accessToken, refreshToken }, refreshExpiresAt };
   }
 
   /**

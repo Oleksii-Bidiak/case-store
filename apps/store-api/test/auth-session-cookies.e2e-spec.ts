@@ -8,6 +8,8 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
+import { CartService } from '../src/cart/cart.service';
+import { WishlistService } from '../src/wishlist/wishlist.service';
 
 /**
  * The session cookies a sign-in leaves in the browser (TASK-789).
@@ -26,6 +28,8 @@ const THIRTY_DAYS_SECONDS = 30 * 24 * 60 * 60; // 2592000
 
 describe('Auth session cookies (e2e)', () => {
   let app: INestApplication;
+  let cartService: CartService;
+  let wishlistService: WishlistService;
   const previous = process.env.JWT_REFRESH_EXPIRATION;
 
   const USER_ID = 'user-cookie-1';
@@ -78,6 +82,8 @@ describe('Auth session cookies (e2e)', () => {
       })
       .compile();
 
+    cartService = moduleFixture.get(CartService);
+    wishlistService = moduleFixture.get(WishlistService);
     app = moduleFixture.createNestApplication();
     app.use(cookieParser());
     app.useGlobalPipes(
@@ -102,6 +108,7 @@ describe('Auth session cookies (e2e)', () => {
   });
 
   beforeEach(async () => {
+    jest.restoreAllMocks();
     jest.clearAllMocks();
     authRepositoryMock.findByEmail.mockResolvedValue({
       id: USER_ID,
@@ -148,6 +155,84 @@ describe('Auth session cookies (e2e)', () => {
       ];
       const ttlSeconds = Math.round((expiresAt.getTime() - before) / 1000);
       expect(Math.abs(ttlSeconds - THIRTY_DAYS_SECONDS)).toBeLessThanOrEqual(5);
+    });
+  });
+
+  describe('guest cookies are cleared only after a successful merge (TASK-792)', () => {
+    const guestCookies = 'cartToken=guest-cart-tok; wishlistToken=guest-wish-tok';
+
+    it('clears both guest cookies when both merges succeed, merging into the signed-in user', async () => {
+      const cartMerge = jest.spyOn(cartService, 'mergeGuestCart').mockResolvedValue();
+      const wishMerge = jest.spyOn(wishlistService, 'mergeGuestWishlist').mockResolvedValue();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .set('Cookie', guestCookies)
+        .send(credentials)
+        .expect(200);
+
+      expect(cartMerge).toHaveBeenCalledWith('guest-cart-tok', USER_ID);
+      expect(wishMerge).toHaveBeenCalledWith('guest-wish-tok', USER_ID);
+      expect(cookieLine(res, 'cartToken')).toMatch(/^cartToken=;.*Max-Age=0/i);
+      expect(cookieLine(res, 'wishlistToken')).toMatch(/^wishlistToken=;.*Max-Age=0/i);
+    });
+
+    it('keeps the cart cookie when the cart merge fails, and still clears the merged wishlist', async () => {
+      jest.spyOn(cartService, 'mergeGuestCart').mockRejectedValue(new Error('merge failure'));
+      jest.spyOn(wishlistService, 'mergeGuestWishlist').mockResolvedValue();
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .set('Cookie', guestCookies)
+        .send(credentials)
+        .expect(200);
+
+      // Sign-in is never blocked by a merge.
+      expect(res.body.data.accessToken).toBeDefined();
+      expect(cookieLine(res, 'cartToken')).toBeUndefined();
+      expect(cookieLine(res, 'wishlistToken')).toMatch(/Max-Age=0/i);
+    });
+
+    it('keeps both guest cookies when both merges fail', async () => {
+      jest.spyOn(cartService, 'mergeGuestCart').mockRejectedValue(new Error('merge failure'));
+      jest
+        .spyOn(wishlistService, 'mergeGuestWishlist')
+        .mockRejectedValue(new Error('merge failure'));
+
+      const res = await request(app.getHttpServer())
+        .post('/api/auth/login')
+        .set('Cookie', guestCookies)
+        .send(credentials)
+        .expect(200);
+
+      expect(cookieLine(res, 'cartToken')).toBeUndefined();
+      expect(cookieLine(res, 'wishlistToken')).toBeUndefined();
+      // The session itself is still issued.
+      expect(cookieLine(res, 'refreshToken')).toContain(`Max-Age=${THIRTY_DAYS_SECONDS}`);
+    });
+
+    it('merges into the id of a freshly registered account', async () => {
+      authRepositoryMock.findByEmail.mockResolvedValue(null);
+      authRepositoryMock.createUser.mockResolvedValue({
+        id: 'user-new-1',
+        email: 'new-cookie@example.com',
+        role: 'CUSTOMER',
+      });
+      const cartMerge = jest.spyOn(cartService, 'mergeGuestCart').mockResolvedValue();
+      jest.spyOn(wishlistService, 'mergeGuestWishlist').mockResolvedValue();
+
+      await request(app.getHttpServer())
+        .post('/api/auth/register')
+        .set('Cookie', guestCookies)
+        .send({
+          email: 'new-cookie@example.com',
+          password: 'TestP@ss123',
+          firstName: 'New',
+          lastName: 'Cookie',
+        })
+        .expect(201);
+
+      expect(cartMerge).toHaveBeenCalledWith('guest-cart-tok', 'user-new-1');
     });
   });
 });

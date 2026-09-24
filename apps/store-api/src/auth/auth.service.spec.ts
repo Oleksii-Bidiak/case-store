@@ -6,7 +6,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { OAuthProvider } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
-import { AuthTokens } from './entities';
+import type { IssuedSession } from './entities';
 import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
@@ -181,7 +181,8 @@ describe('AuthService', () => {
 
       const result = await service.register(registerDto);
 
-      expect(result).toBeInstanceOf(AuthTokens);
+      // TASK-792: the owner travels with the pair.
+      expect(result.userId).toBe(mockUser.id);
       expect(result.accessToken).toBe('access-token-value');
       expect(result.refreshToken).toBe('refresh-token-value');
 
@@ -250,7 +251,8 @@ describe('AuthService', () => {
 
       const result = await service.login(loginEmail, loginPassword);
 
-      expect(result).toBeInstanceOf(AuthTokens);
+      // TASK-792: the owner travels with the pair.
+      expect(result.userId).toBe(mockUser.id);
       expect(result.accessToken).toBe('access-token-value');
       expect(result.refreshToken).toBe('refresh-token-value');
       expect(argon2.verify).toHaveBeenCalledWith(mockUser.passwordHash, loginPassword);
@@ -642,9 +644,11 @@ describe('AuthService', () => {
     let generateTokenPairSpy: jest.SpyInstance;
 
     beforeEach(() => {
-      const tokens = new AuthTokens();
-      tokens.accessToken = 'access-token-value';
-      tokens.refreshToken = 'refresh-token-value';
+      const tokens: IssuedSession = {
+        userId: mockUser.id,
+        accessToken: 'access-token-value',
+        refreshToken: 'refresh-token-value',
+      };
       generateTokenPairSpy = jest.spyOn(service, 'generateTokenPair').mockResolvedValue(tokens);
     });
 
@@ -964,7 +968,8 @@ describe('AuthService', () => {
 
       const result = await service.refreshToken('refresh-token-value');
 
-      expect(result).toBeInstanceOf(AuthTokens);
+      // TASK-792: the owner travels with the pair.
+      expect(result.userId).toBe(mockUser.id);
       expect(result.accessToken).toBe('new-access-token');
       expect(result.refreshToken).toBe('new-refresh-token');
 

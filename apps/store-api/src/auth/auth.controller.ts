@@ -10,7 +10,6 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { FailClosedThrottle } from '../throttler';
@@ -147,7 +146,6 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-    private readonly jwtService: JwtService,
     private readonly guestStateMerge: GuestStateMergeService,
     private readonly permissionService: PermissionService,
     private readonly emailVerificationService: EmailVerificationService,
@@ -186,7 +184,7 @@ export class AuthController {
     const tokens = await this.authService.register(dto);
 
     this.setRefreshCookie(response, tokens.refreshToken);
-    await this.mergeGuestState(request, response, tokens.accessToken);
+    await this.mergeGuestState(request, response, tokens.userId);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -229,7 +227,7 @@ export class AuthController {
     const tokens = await this.authService.login(dto.email, dto.password);
 
     this.setRefreshCookie(response, tokens.refreshToken);
-    await this.mergeGuestState(request, response, tokens.accessToken);
+    await this.mergeGuestState(request, response, tokens.userId);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -590,7 +588,7 @@ export class AuthController {
       const tokens = await this.authService.loginWithGoogleProfile(profile);
 
       this.setRefreshCookie(response, tokens.refreshToken);
-      await this.mergeGuestState(request, response, tokens.accessToken);
+      await this.mergeGuestState(request, response, tokens.userId);
 
       response.redirect(302, `${storeClientUrl}${profile.redirect}`);
     } catch {
@@ -633,22 +631,20 @@ export class AuthController {
    *
    * Each guest cookie is expired with the options its own interceptor SET it
    * with, so the clear cannot drift from the set.
+   *
+   * `userId` comes from AuthService with the tokens (TASK-792) — not from
+   * decoding the access token just minted, which is how an empty decode used to
+   * clear the guest cookies without merging anything.
    */
   private async mergeGuestState(
     request: Request,
     response: Response,
-    accessToken: string,
+    userId: string,
   ): Promise<void> {
     const cartToken: string | undefined = request.cookies?.[CART_TOKEN_COOKIE];
     const wishlistToken: string | undefined = request.cookies?.[WISHLIST_TOKEN_COOKIE];
 
     if (!cartToken && !wishlistToken) {
-      return;
-    }
-
-    const payload = this.jwtService.decode(accessToken) as { sub?: string } | null;
-    const userId = payload?.sub;
-    if (!userId) {
       return;
     }
 
