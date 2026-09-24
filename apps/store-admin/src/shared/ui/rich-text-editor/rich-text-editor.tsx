@@ -673,9 +673,15 @@ export function RichTextEditor({
   return (
     <div
       className={cn(
-        "rounded-md border border-input bg-transparent shadow-xs transition-[color,box-shadow] dark:bg-input/30",
+        "rounded-md border border-input transition-[color,box-shadow]",
         "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50",
-        disabled && "pointer-events-none cursor-not-allowed opacity-50",
+        // Disabled is painted with the `disabled` tokens, never faded
+        // (TASK-735): `opacity-50` took the muted toolbar and placeholder to
+        // ≈2:1. The dark `bg-input/30` is dropped rather than out-ranked — a
+        // plain `bg-disabled` would lose to the `dark:` media rule.
+        disabled
+          ? "pointer-events-none cursor-not-allowed bg-disabled text-disabled-foreground"
+          : "bg-transparent shadow-xs dark:bg-input/30",
         className,
       )}
       data-slot="rich-text-editor"
@@ -716,7 +722,10 @@ export function RichTextEditor({
                     "inline-flex h-7 items-center justify-center rounded-sm text-muted-foreground transition-colors",
                     Icon ? "w-7" : "px-2 text-xs whitespace-nowrap",
                     "hover:bg-accent hover:text-accent-foreground",
-                    "disabled:pointer-events-none disabled:opacity-50",
+                    // The grey fill marks the button inactive: its enabled
+                    // `muted-foreground` is only 4.34:1 on `bg-disabled`, so
+                    // the text steps to `disabled-foreground` (TASK-735).
+                    "disabled:pointer-events-none disabled:bg-disabled disabled:text-disabled-foreground",
                     active && "bg-accent text-accent-foreground",
                   )}
                 >
@@ -822,7 +831,13 @@ export function RichTextEditor({
 
       <div className="relative">
         {showPlaceholder && (
-          <p className="pointer-events-none absolute left-3 top-2 text-sm text-muted-foreground">
+          <p
+            className={cn(
+              "pointer-events-none absolute left-3 top-2 text-sm",
+              // `muted-foreground` is 4.34:1 on the disabled fill.
+              disabled ? "text-disabled-foreground" : "text-muted-foreground",
+            )}
+          >
             {placeholder}
           </p>
         )}
