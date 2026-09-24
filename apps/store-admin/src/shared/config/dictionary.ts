@@ -1770,6 +1770,15 @@ export const dict = {
     toastActivated: "Бренд активовано",
     toastDeactivated: "Бренд приховано",
     toastStatusFailed: "Не вдалося змінити статус бренду",
+    // TASK-831: the brand's uuid, shown on its edit page so an old
+    // `?brandId=<uuid>` link can be checked without database access.
+    idLabel: "ID бренду",
+    idHint:
+      "Внутрішній ідентифікатор. Знадобиться, щоб перевірити старе посилання виду ?brandId=… або назвати бренд розробнику.",
+    copyId: "Скопіювати ID",
+    copyIdDone: "Скопійовано",
+    copyIdFailed: "Не вдалося скопіювати — виділіть ID вручну",
+    copyIdAria: "Скопіювати ID бренду",
   },
 
   brandForm: {

@@ -19,6 +19,7 @@ import {
   type BrandEntity,
 } from "@/entities/brand";
 import { dict } from "@/shared/config";
+import { CopyButton } from "@/shared/ui";
 
 interface EditBrandViewProps {
   brandId: string;
@@ -82,6 +83,8 @@ export function EditBrandView({ brandId }: EditBrandViewProps) {
         </h2>
       </div>
 
+      {brand ? <BrandIdRow id={brand.id} /> : null}
+
       {isLoading ? (
         <div className="flex max-w-2xl flex-col gap-5">
           {Array.from({ length: 4 }).map((_, index) => (
@@ -105,6 +108,42 @@ export function EditBrandView({ brandId }: EditBrandViewProps) {
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The brand's uuid as selectable text plus a copy button (TASK-831).
+ *
+ * The storefront still honours pre-TASK-420 `?brandId=<uuid>` links by
+ * redirecting them to `?brand=<slug>`; without this row an operator had no way
+ * to get the uuid short of database access. The text stays visible and
+ * `select-all` because `CopyButton` can fail (insecure origin), and the manual
+ * selection is the fallback it tells the operator to use.
+ */
+function BrandIdRow({ id }: { id: string }) {
+  const d = dict.brands;
+  return (
+    <section className="flex max-w-2xl flex-col gap-2 rounded-md border border-border p-3">
+      <p id="brand-id-label" className="text-xs font-medium text-foreground">
+        {d.idLabel}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <code
+          aria-labelledby="brand-id-label"
+          className="rounded-md bg-muted px-2 py-1.5 font-mono text-xs break-all text-foreground select-all"
+        >
+          {id}
+        </code>
+        <CopyButton
+          value={id}
+          label={d.copyId}
+          copiedLabel={d.copyIdDone}
+          failedLabel={d.copyIdFailed}
+          ariaLabel={d.copyIdAria}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">{d.idHint}</p>
+    </section>
   );
 }
 
