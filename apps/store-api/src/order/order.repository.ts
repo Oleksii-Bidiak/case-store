@@ -38,6 +38,7 @@ import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto'
 import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { staleOrderError } from './order.errors';
 import { centsToString, sumLineCents, toCents } from '../addon-service/money.util';
+import { kyivDayRange } from './kyiv-day';
 // TASK-771: a revive that cannot re-claim its promo slot fails with the same
 // stable codes the checkout uses, so the admin sees the reason it already knows.
 import { DiscountErrorCode, conflictDiscount } from '../discount/discount.errors';
@@ -732,9 +733,12 @@ export class OrderRepository {
    * came from — and a CSV gives no hint that it is the one lying.
    */
   private buildAdminWhere(query: AdminOrderListQueryDto): Prisma.OrderWhereInput {
+    // TASK-787: whole Kyiv calendar days — from the start of `dateFrom`'s day to
+    // the end of `dateTo`'s (exclusive next midnight). `new Date(dateTo)` was UTC
+    // midnight, so `dateFrom = dateTo = today` matched nothing.
     const createdAt: Prisma.DateTimeFilter = {};
-    if (query.dateFrom) createdAt.gte = new Date(query.dateFrom);
-    if (query.dateTo) createdAt.lte = new Date(query.dateTo);
+    if (query.dateFrom) createdAt.gte = kyivDayRange(query.dateFrom).start;
+    if (query.dateTo) createdAt.lt = kyivDayRange(query.dateTo).end;
 
     const where: Prisma.OrderWhereInput = {
       deletedAt: null,
@@ -782,11 +786,18 @@ export class OrderRepository {
       where.OR = or;
     }
 
+    // Every filter and preset below is one arm of `AND`, never an assignment to
+    // `where.status` / `where.paymentStatus`: two filters writing the same key
+    // silently swallow each other (TASK-579 — the `unpaidInTransit` preset used to
+    // overwrite `?status=`), and a filter that is visibly on screen but absent
+    // from the query is the worst of the possible outcomes. Prisma ANDs a
+    // top-level `AND` with the top-level fields and with `OR`, so this composes
+    // with the search too.
+    const and: Prisma.OrderWhereInput[] = [];
+
     // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same
     // compound condition as DashboardRepository's unrealized-revenue figure, so
-    // the tile's count and the rows behind the click are the same set. Additive:
-    // composes with the userId/date-range conditions above; only applied when the
-    // flag is explicitly true.
+    // the tile's count and the rows behind the click are the same set.
     //
     // `PARTIALLY_REFUNDED` sits with `PAID` rather than on the unpaid side
     // (review of plan 180) — it is only reachable FROM `PAID`, so the money did
@@ -794,22 +805,14 @@ export class OrderRepository {
     // `DashboardRepository.unrealizedOrderWhere` for why this differs from the
     // «Борг» mark below, which deliberately casts a wider net.
     if (query.unpaidInTransit) {
-      where.paymentStatus = {
-        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
-      };
-      where.status = { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] };
+      and.push({
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+      });
     }
 
     // TASK-425: the filters an operator actually reaches for — payment status,
     // payment method, and "has this been sitting too long".
-    //
-    // They go into `AND` rather than onto `where` directly because the
-    // `unpaidInTransit` preset above OWNS `where.paymentStatus` and
-    // `where.status`: assigning here would let one filter silently swallow the
-    // other, and a filter that is visibly on screen but absent from the query is
-    // the worst of the possible outcomes. Prisma ANDs a top-level `AND` with the
-    // top-level fields and with `OR`, so this composes with the search too.
-    const and: Prisma.OrderWhereInput[] = [];
     if (query.paymentStatus) and.push({ paymentStatus: query.paymentStatus });
     if (query.paymentMethod) and.push({ paymentMethod: query.paymentMethod });
     if (query.pendingOverdue) {
@@ -821,10 +824,7 @@ export class OrderRepository {
         createdAt: { lt: new Date(Date.now() - PENDING_STALE_HOURS * 60 * 60 * 1000) },
       });
     }
-    // TASK-470 / 471: the derived-mark filters. Same `AND` array and the same
-    // reason as TASK-425's — `unpaidInTransit` above owns `where.status` and
-    // `where.paymentStatus` outright, and a filter the operator can see on screen
-    // but that never reached the query is the worst possible outcome.
+    // TASK-470 / 471: the derived-mark filters, in the same `AND` array.
     //
     // Each condition is written here EXACTLY as the B-1 catalogue states it, and
     // `orderDerivedLabels()` in the admin panel states it again for the row it

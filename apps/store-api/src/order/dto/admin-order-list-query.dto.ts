@@ -90,7 +90,8 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
   search?: string;
 
   @ApiProperty({
-    description: 'Include orders created on or after this ISO date',
+    description:
+      'Include orders created on or after the START of this calendar day in Kyiv (Europe/Kyiv)',
     required: false,
     example: '2026-01-01',
   })
@@ -99,7 +100,8 @@ export class AdminOrderListQueryDto extends OmitType(OrderListQueryDto, ['status
   dateFrom?: string;
 
   @ApiProperty({
-    description: 'Include orders created on or before this ISO date',
+    description:
+      'Include orders created on or before the END of this calendar day in Kyiv (Europe/Kyiv) — dateFrom = dateTo = a day returns that whole day',
     required: false,
     example: '2026-12-31',
   })

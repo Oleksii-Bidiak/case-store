@@ -1456,21 +1456,25 @@ describe('OrderRepository', () => {
   });
 
   describe('findAll — unpaidInTransit filter (TASK-248)', () => {
-    it('merges the active-but-unpaid compound condition when unpaidInTransit is true', async () => {
+    // "money we still expect" AND status NOT IN (CANCELLED, REFUNDED).
+    // PARTIALLY_REFUNDED sits with PAID: it is only reachable FROM PAID, so the
+    // money arrived and the shop is owed nothing.
+    const UNPAID_IN_TRANSIT = {
+      paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+      status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+    };
+
+    it('adds the active-but-unpaid compound condition when unpaidInTransit is true', async () => {
       prismaMock.$transaction.mockResolvedValue([0, []]);
 
       await repository.findAll({ unpaidInTransit: true });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      // "money we still expect" AND status NOT IN (CANCELLED, REFUNDED).
-      // PARTIALLY_REFUNDED sits with PAID: it is only reachable FROM PAID, so
-      // the money arrived and the shop is owed nothing.
-      expect(where.paymentStatus).toEqual({
-        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
-      });
-      expect(where.status).toEqual({
-        notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
-      });
+      // TASK-579: the preset is one more AND arm, never an owner of
+      // `where.status` / `where.paymentStatus`.
+      expect(where.AND).toContainEqual(UNPAID_IN_TRANSIT);
+      expect(where.status).toBeUndefined();
+      expect(where.paymentStatus).toBeUndefined();
       // Still excludes soft-deleted orders.
       expect(where.deletedAt).toBeNull();
     });
@@ -1481,7 +1485,7 @@ describe('OrderRepository', () => {
       await repository.findAll({ unpaidInTransit: true });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      expect(where.paymentStatus.notIn).toContain(PaymentStatus.PARTIALLY_REFUNDED);
+      expect(where.AND[0].paymentStatus.notIn).toContain(PaymentStatus.PARTIALLY_REFUNDED);
     });
 
     it('composes the unpaidInTransit filter with the created-at date range', async () => {
@@ -1490,13 +1494,31 @@ describe('OrderRepository', () => {
       await repository.findAll({ unpaidInTransit: true, dateFrom: '2026-01-01' });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      expect(where.paymentStatus).toEqual({
-        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
-      });
-      expect(where.status).toEqual({
-        notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
-      });
-      expect(where.createdAt).toEqual({ gte: new Date('2026-01-01') });
+      expect(where.AND).toContainEqual(UNPAID_IN_TRANSIT);
+      // From the START of the Kyiv day (EET, UTC+2), not UTC midnight (TASK-787).
+      expect(where.createdAt).toEqual({ gte: new Date('2025-12-31T22:00:00.000Z') });
+    });
+
+    it('intersects with ?status= instead of overwriting it (TASK-579)', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ unpaidInTransit: true, status: [OrderStatus.PENDING] });
+
+      const where = prismaMock.order.count.mock.calls[0][0].where;
+      // Both conditions reach the query: PENDING AND not cancelled/refunded AND unpaid.
+      expect(where.status).toEqual({ in: [OrderStatus.PENDING] });
+      expect(where.AND).toContainEqual(UNPAID_IN_TRANSIT);
+    });
+
+    it('intersects with ?paymentStatus= too', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ unpaidInTransit: true, paymentStatus: PaymentStatus.PENDING });
+
+      const where = prismaMock.order.count.mock.calls[0][0].where;
+      expect(where.AND).toEqual(
+        expect.arrayContaining([UNPAID_IN_TRANSIT, { paymentStatus: PaymentStatus.PENDING }]),
+      );
     });
 
     it('does not add the payment/status compound condition when the flag is absent', async () => {
@@ -1507,6 +1529,7 @@ describe('OrderRepository', () => {
       const where = prismaMock.order.count.mock.calls[0][0].where;
       expect(where.paymentStatus).toBeUndefined();
       expect(where.status).toBeUndefined();
+      expect(where.AND).toBeUndefined();
     });
 
     // ── TASK-336: free-text search across account AND guest orders ────────────
@@ -1639,6 +1662,47 @@ describe('OrderRepository', () => {
     });
   });
 
+  describe('findAll / findAllForExport — created-at range is whole Kyiv days (TASK-787)', () => {
+    const kyivToday = (): string =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+
+    it('dateFrom = dateTo = today covers an order placed right now', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+      const today = kyivToday();
+
+      await repository.findAll({ dateFrom: today, dateTo: today });
+
+      const { createdAt } = prismaMock.order.count.mock.calls[0][0].where;
+      const now = new Date();
+      // Was { gte: T00:00Z, lte: T00:00Z } — an empty window, total: 0.
+      expect(createdAt.gte.getTime()).toBeLessThanOrEqual(now.getTime());
+      expect(createdAt.lt.getTime()).toBeGreaterThan(now.getTime());
+      expect(createdAt).not.toHaveProperty('lte');
+    });
+
+    it('bounds a range by the start of the first and the end of the last Kyiv day', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ dateFrom: '2026-09-01', dateTo: '2026-09-24' });
+
+      expect(prismaMock.order.count.mock.calls[0][0].where.createdAt).toEqual({
+        gte: new Date('2026-08-31T21:00:00.000Z'),
+        lt: new Date('2026-09-24T21:00:00.000Z'),
+      });
+    });
+
+    it('feeds the CSV export the same range', async () => {
+      prismaMock.order.findMany.mockResolvedValue([]);
+
+      await repository.findAllForExport({ dateFrom: '2026-09-24', dateTo: '2026-09-24' }, 100);
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].where.createdAt).toEqual({
+        gte: new Date('2026-09-23T21:00:00.000Z'),
+        lt: new Date('2026-09-24T21:00:00.000Z'),
+      });
+    });
+  });
+
   // ── TASK-425: the queue filters ──────────────────────────────────────────
   // Payment status, payment method, and "waiting too long". The first two are
   // ordinary equality filters; the third shares the DASHBOARD's threshold, which
@@ -1665,15 +1729,16 @@ describe('OrderRepository', () => {
     });
 
     it('keeps an explicit payment status alongside the unpaidInTransit preset', async () => {
-      // The preset OWNS `where.paymentStatus`; the explicit filter lives in AND.
-      // Assigning both to the same key would have made one silently vanish.
+      // Both live in AND (TASK-579). Assigning both to the same key would have
+      // made one silently vanish.
       const where = await whereFor({
         unpaidInTransit: true,
         paymentStatus: PaymentStatus.PENDING,
       });
 
-      expect(where.paymentStatus).toEqual({
-        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      expect(where.AND).toContainEqual({
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
       });
       expect(where.AND).toContainEqual({ paymentStatus: PaymentStatus.PENDING });
     });
@@ -1881,12 +1946,14 @@ describe('OrderRepository', () => {
     });
 
     it('survives the unpaidInTransit preset instead of being overwritten by it', async () => {
-      // TASK-579's failure mode, asserted rather than assumed: the preset owns
-      // `where.status` outright, so a mark condition written onto `where` would
-      // vanish here without a sound.
+      // TASK-579's failure mode, asserted rather than assumed: preset and mark
+      // are both AND arms, so neither can overwrite the other.
       const where = await whereFor({ unpaidInTransit: true, hasDebt: true });
 
-      expect(where.status).toEqual({ notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] });
+      expect(where.AND).toContainEqual({
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+      });
       expect(where.AND).toContainEqual({
         status: OrderStatus.DELIVERED,
         paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
