@@ -26,11 +26,21 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
+  OPERATOR_NOTES_MAX_LENGTH,
   canRestock,
-  resolveReturnSchema,
+  createResolveReturnSchema,
   resolveValuesToDto,
+  returnedValueOf,
   type ResolveReturnFormValues,
 } from "../model/resolve-schema";
+
+/** The API's TASK-785 refusal codes, carried in the 400 body's `error`. */
+const REFUND_CEILING_MESSAGES: Record<string, () => string> = {
+  RETURN_REFUND_EXCEEDS_RETURNED_VALUE: () =>
+    dict.returns.resolveRefundExceedsReturnedValue(),
+  RETURN_REFUND_EXCEEDS_ORDER_BALANCE: () =>
+    dict.returns.resolveRefundExceedsOrderBalance(),
+};
 
 interface ReturnResolveFormProps {
   rma: ReturnEntity;
@@ -60,7 +70,13 @@ export function ReturnResolveForm({ rma }: ReturnResolveFormProps) {
   const allowed = allowedReturnTransitions(rma.status);
 
   const form = useForm<ResolveReturnFormValues>({
-    resolver: zodResolver(resolveReturnSchema),
+    // TASK-785: the API's refund ceiling, mirrored from the lines this card
+    // already holds. The order-balance ceiling needs the order total and the
+    // order's other returns, which this form is not given; the server still
+    // enforces it, and its 400 is put under the amount field (see onError).
+    resolver: zodResolver(
+      createResolveReturnSchema({ returnedValue: returnedValueOf(rma.items) }),
+    ),
     // forms.md Rule 2a — the entity id is stable for the life of this page, and
     // `keepDirtyValues` protects a half-written note from a background refetch.
     values: {
@@ -117,6 +133,21 @@ export function ReturnResolveForm({ rma }: ReturnResolveFormProps) {
               queryKey: getAdminReturnControllerFindByIdQueryKey(rma.id),
             });
             toast.error(dict.returns.resolveConflict);
+            return;
+          }
+          const code = (error as { response?: { data?: { error?: unknown } } })
+            ?.response?.data?.error;
+          const ceiling =
+            typeof code === "string"
+              ? REFUND_CEILING_MESSAGES[code]
+              : undefined;
+          if (status === 400 && ceiling) {
+            // Under the amount, not in a toast: that number is what is wrong.
+            form.setError(
+              "refundedAmount",
+              { type: "server", message: ceiling() },
+              { shouldFocus: true },
+            );
             return;
           }
           if (status === 400) {
@@ -190,11 +221,16 @@ export function ReturnResolveForm({ rma }: ReturnResolveFormProps) {
         <Label htmlFor="return-operator-notes">
           {dict.returns.operatorNotes}
         </Label>
+        {/* TASK-794: the DTO's limit, stopped at the keyboard and explained if
+            it is ever reached another way — a bare `max()` used to block the
+            submit with nothing on screen. */}
         <Textarea
           id="return-operator-notes"
           rows={3}
+          maxLength={OPERATOR_NOTES_MAX_LENGTH}
           placeholder={dict.returns.operatorNotesPlaceholder}
           aria-describedby="return-operator-notes-hint"
+          aria-invalid={form.formState.errors.operatorNotes ? true : undefined}
           {...form.register("operatorNotes")}
         />
         <p
@@ -203,6 +239,11 @@ export function ReturnResolveForm({ rma }: ReturnResolveFormProps) {
         >
           {dict.returns.operatorNotesHint}
         </p>
+        {form.formState.errors.operatorNotes ? (
+          <p role="alert" className="text-xs text-destructive">
+            {form.formState.errors.operatorNotes.message}
+          </p>
+        ) : null}
       </div>
 
       {restockAvailable ? (

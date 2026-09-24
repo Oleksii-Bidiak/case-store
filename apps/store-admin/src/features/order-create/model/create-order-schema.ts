@@ -8,6 +8,11 @@ import { isValidInternationalPhone } from "@/shared/lib/phone";
 
 const t = dict.orderCreate;
 
+/** `CreateManualOrderDto.notes` — `@MaxLength(500)`. */
+export const NOTES_MAX_LENGTH = 500;
+/** `CreateManualOrderDto.internalNotes` — `@MaxLength(2000)`. */
+export const INTERNAL_NOTES_MAX_LENGTH = 2000;
+
 /** A line the operator has picked, carrying enough to render it back. */
 export interface DraftLine {
   readonly productId: string;
@@ -115,8 +120,13 @@ export const createOrderSchema = z
     npWarehouseRef: z.string().trim(),
 
     paymentMethod: z.string().min(1),
-    notes: z.string().trim().max(500),
-    internalNotes: z.string().trim().max(2000),
+    // TASK-794: the messages are what the form renders under each field — a
+    // bare `max()` blocked the submit with nothing on screen to say why.
+    notes: z.string().trim().max(NOTES_MAX_LENGTH, t.notesTooLong),
+    internalNotes: z
+      .string()
+      .trim()
+      .max(INTERNAL_NOTES_MAX_LENGTH, t.internalNotesTooLong),
   })
   // The contact block is validated only in the mode that uses it, so switching
   // to «за телефоном» does not leave a stale account error on screen.
