@@ -14,6 +14,8 @@ import {
   type UpdateOrderPaymentStatusDto,
 } from "@/entities/order";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import {
   Select,
   SelectContent,
@@ -68,8 +70,19 @@ interface PaymentStatusSelectProps {
  * against a version of the order that no longer existed and the server refused it
  * as stale — an operator alone in a single tab was told somebody else had just
  * changed the order, when the somebody else was their own previous click.
+ *
+ * Not rendered at all without `orders:write` (TASK-715) — the PATCH behind it
+ * answers 403 to anyone else.
  */
 export function PaymentStatusSelect({ orderId }: PaymentStatusSelectProps) {
+  const { can } = useAuth();
+  if (!can(PERM.ordersWrite)) return null;
+  return <PaymentStatusSelectControl orderId={orderId} />;
+}
+
+function PaymentStatusSelectControl({
+  orderId,
+}: Pick<PaymentStatusSelectProps, "orderId">) {
   const queryClient = useQueryClient();
   const transitions =
     useAdminOrderControllerGetAllowedPaymentTransitions(orderId);

@@ -91,8 +91,19 @@ const RETURNABLE_STATUSES: readonly string[] = [
  *  - The conflict notice STAYS on screen. It is rendered as a live region rather
  *    than only a toast, because "your change did not save" is not something to
  *    show for four seconds and then take away.
+ *
+ * Not rendered at all without `orders:write` (TASK-715): the PATCH answers 403
+ * to anyone else, and a picker that offers moves only to have each one refused
+ * with a misleading "somebody changed this order" toast teaches the operator to
+ * distrust the panel. The server stays the barrier; this just stops lying.
  */
 export function OrderStatusSelect({ orderId }: OrderStatusSelectProps) {
+  const { can } = useAuth();
+  if (!can(PERM.ordersWrite)) return null;
+  return <OrderStatusSelectControl orderId={orderId} />;
+}
+
+function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
   const queryClient = useQueryClient();
   const { can } = useAuth();
   const transitions = useAdminOrderControllerGetAllowedTransitions(orderId);

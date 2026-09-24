@@ -44,6 +44,12 @@ const LEGACY_ORDER = {
   trackingNumber: LEGACY_TRACKING,
 } as unknown as OrderEntity;
 
+/**
+ * TASK-715: the editor exists only for a session holding `orders:write`; every
+ * behavioural test below renders one. The read-only branch has its own describe.
+ */
+const WRITER = { permissions: ["orders:read", "orders:write"] };
+
 beforeEach(() => {
   (sonnerToast.error as jest.Mock).mockClear();
   (sonnerToast.success as jest.Mock).mockClear();
@@ -118,7 +124,10 @@ describe("OrderDetailsForm — cache invalidation (TASK-400)", () => {
     });
     const invalidate = jest.spyOn(queryClient, "invalidateQueries");
 
-    renderWithProviders(<OrderDetailsForm order={ORDER} />, { queryClient });
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, {
+      queryClient,
+      auth: WRITER,
+    });
     await saveWaybill();
 
     await waitFor(() =>
@@ -150,7 +159,7 @@ describe("OrderDetailsForm — cache invalidation (TASK-400)", () => {
       }),
     );
 
-    renderWithProviders(<OrderDetailsForm order={ORDER} />);
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
     await saveWaybill();
 
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -175,7 +184,9 @@ describe("OrderDetailsForm — an order carrying a legacy waybill", () => {
     const bodies: Array<Record<string, unknown>> = [];
     capturePatch(bodies);
 
-    renderWithProviders(<OrderDetailsForm order={LEGACY_ORDER} />);
+    renderWithProviders(<OrderDetailsForm order={LEGACY_ORDER} />, {
+      auth: WRITER,
+    });
 
     await userEvent.type(
       screen.getByLabelText(dict.orders.internalNotes),
@@ -197,7 +208,9 @@ describe("OrderDetailsForm — an order carrying a legacy waybill", () => {
   });
 
   it("shows the legacy value rather than marking the form invalid on load", () => {
-    renderWithProviders(<OrderDetailsForm order={LEGACY_ORDER} />);
+    renderWithProviders(<OrderDetailsForm order={LEGACY_ORDER} />, {
+      auth: WRITER,
+    });
 
     expect(screen.getByLabelText(dict.orders.trackingNumber)).toHaveValue(
       LEGACY_TRACKING,
@@ -211,7 +224,9 @@ describe("OrderDetailsForm — an order carrying a legacy waybill", () => {
     const bodies: Array<Record<string, unknown>> = [];
     capturePatch(bodies);
 
-    renderWithProviders(<OrderDetailsForm order={LEGACY_ORDER} />);
+    renderWithProviders(<OrderDetailsForm order={LEGACY_ORDER} />, {
+      auth: WRITER,
+    });
 
     await userEvent.clear(screen.getByLabelText(dict.orders.trackingNumber));
     await userEvent.type(
@@ -245,7 +260,7 @@ describe("OrderDetailsForm — a rejected save says which field and which rule",
       },
     });
 
-    renderWithProviders(<OrderDetailsForm order={ORDER} />);
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
     await saveWaybill();
 
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -278,7 +293,7 @@ describe("OrderDetailsForm — a rejected save says which field and which rule",
       body: { statusCode: 500, message: "Internal server error" },
     });
 
-    renderWithProviders(<OrderDetailsForm order={ORDER} />);
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
     await saveWaybill();
 
     await waitFor(() =>
@@ -287,5 +302,49 @@ describe("OrderDetailsForm — a rejected save says which field and which rule",
         expect.anything(),
       ),
     );
+  });
+});
+
+/**
+ * TASK-715 — the PATCH needs `orders:write`. A reader without it used to get the
+ * inputs and «Зберегти», and every save answered 403 with a toast blaming a
+ * concurrent edit. Now: the values as text, no inputs, no button.
+ */
+describe("OrderDetailsForm — without orders:write (TASK-715)", () => {
+  const READER = { permissions: ["orders:read"] };
+
+  it("shows the waybill and internal notes as text, with no inputs and no save", () => {
+    const order = {
+      ...ORDER,
+      trackingNumber: WAYBILL,
+      internalNotes: "Передзвонити після 18:00",
+    } as unknown as OrderEntity;
+
+    renderWithProviders(<OrderDetailsForm order={order} />, { auth: READER });
+
+    expect(screen.getByText(WAYBILL)).toBeInTheDocument();
+    expect(screen.getByText("Передзвонити після 18:00")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.orders.detailsSave }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("says «not set» for empty values instead of leaving a blank", () => {
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: READER });
+
+    expect(screen.getAllByText(dict.orders.detailsValueEmpty)).toHaveLength(2);
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+
+  it("renders the editor for a session that holds the right", () => {
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
+
+    expect(
+      screen.getByLabelText(dict.orders.trackingNumber),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.orders.detailsSave }),
+    ).toBeInTheDocument();
   });
 });

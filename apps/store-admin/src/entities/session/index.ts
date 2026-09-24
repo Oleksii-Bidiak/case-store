@@ -2,6 +2,8 @@
 export { AuthProvider } from "./model/auth.context";
 export type { AuthContextValue } from "./model/auth.context";
 export { useAuth } from "./model/use-auth";
+// TASK-639: one clean refusal for a section the session has no right to.
+export { PermissionGate } from "./ui/permission-gate";
 
 export {
   useAuthControllerLogin,

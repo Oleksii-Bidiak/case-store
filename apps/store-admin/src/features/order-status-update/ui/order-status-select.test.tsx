@@ -679,3 +679,33 @@ describe("OrderStatusSelect — returns lookup follows returns:read (TASK-630)",
     expect(patch.bodies).toHaveLength(0);
   });
 });
+
+/**
+ * TASK-715 — `PATCH /admin/orders/:id/status` needs `orders:write`. A reader got
+ * the picker, and every move came back as a 403 reported as "somebody else
+ * changed this order" (AD-ORD-34). The picker is now absent for them.
+ */
+describe("OrderStatusSelect — orders:write gate (TASK-715)", () => {
+  it("renders nothing for a session that may only read orders", () => {
+    stubTransitions(["DELIVERED"]);
+
+    const { container } = renderSelect({ permissions: ["orders:read"] });
+
+    expect(
+      screen.queryByRole("combobox", { name: dict.orderStatus.updateAria }),
+    ).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the picker for a session holding orders:write", async () => {
+    stubTransitions(["DELIVERED"]);
+
+    renderSelect({ permissions: ["orders:read", "orders:write"] });
+
+    expect(
+      await screen.findByRole("combobox", {
+        name: dict.orderStatus.updateAria,
+      }),
+    ).toBeInTheDocument();
+  });
+});

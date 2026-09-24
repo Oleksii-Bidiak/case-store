@@ -109,7 +109,10 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
       ),
     );
 
-    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+    // TASK-715: both controls need `orders:write`.
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
+    });
 
     // Two separate comboboxes: order status + payment status. The order-status
     // one waits on its own `allowed-transitions` read (TASK-332), so it is
@@ -677,5 +680,69 @@ describe("OrderDetailView — the derived marks of B-1 (TASK-470/471/472)", () =
     expect(
       screen.queryByText(dict.orders.markItemUnavailable),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-715 — a manager holding `orders:read` but not `orders:write`.
+ *
+ * Every control on the card writes through an `orders:write` endpoint, so each
+ * one used to be a 403 with a toast that blamed "somebody else" (AD-ORD-34).
+ * The rule of the wave: such controls are ABSENT, not disabled — and where the
+ * status control stood, one line says the card is read-only on purpose.
+ */
+describe("OrderDetailView — read-only without orders:write (TASK-715)", () => {
+  function serve() {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({
+          data: {
+            ...makeOrder(null),
+            trackingNumber: "59000000000000",
+            internalNotes: "Передзвонити",
+          },
+        }),
+      ),
+    );
+  }
+
+  it("shows no control that changes the order to a reader", async () => {
+    serve();
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read"] },
+    });
+
+    expect(await screen.findByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orders.updateStatus),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.updatePaymentStatus),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.orders.addressEdit }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: dict.orders.detailsSave }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    // What the reader came for is still there, as text.
+    expect(screen.getByText("59000000000000")).toBeInTheDocument();
+    expect(screen.getByText("Передзвонити")).toBeInTheDocument();
+    expect(screen.getByText("Kyiv")).toBeInTheDocument();
+  });
+
+  it("gives a writer the address edit and no read-only line", async () => {
+    serve();
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
+    });
+
+    expect(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(dict.orders.updateStatus)).toBeInTheDocument();
+    expect(screen.queryByText(dict.common.viewOnly)).not.toBeInTheDocument();
   });
 });

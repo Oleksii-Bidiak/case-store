@@ -13,6 +13,8 @@ import {
   paymentStatusLabel,
   useAdminOrderControllerFindById,
 } from "@/entities/order";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import { OrderStatusSelect } from "@/features/order-status-update";
 import { PaymentStatusSelect } from "@/features/order-payment-update";
 import { OrderDetailsForm } from "@/features/order-details-form";
@@ -61,6 +63,8 @@ interface AddressFields {
  */
 export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   const router = useRouter();
+  const { can } = useAuth();
+  const canWriteOrders = can(PERM.ordersWrite);
   const { data, dataUpdatedAt, isLoading, isError, error } =
     useAdminOrderControllerFindById(orderId);
 
@@ -166,15 +170,24 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               )}
             </p>
             <Separator />
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-foreground">
-                {dict.orders.updateStatus}
-              </span>
-              {/* TASK-332: the picker takes only the id. The legal moves AND the
-                  optimistic-lock token both come from the server, so passing a
-                  status down would just be a second, staler copy of it. */}
-              <OrderStatusSelect orderId={order.id} />
-            </div>
+            {/* TASK-715: without `orders:write` neither the picker nor its
+                label is rendered — every move would be a 403. One line says the
+                absence is deliberate, so the card does not read as broken. */}
+            {canWriteOrders ? (
+              <div className="flex flex-col gap-2">
+                <span className="text-sm font-medium text-foreground">
+                  {dict.orders.updateStatus}
+                </span>
+                {/* TASK-332: the picker takes only the id. The legal moves AND the
+                    optimistic-lock token both come from the server, so passing a
+                    status down would just be a second, staler copy of it. */}
+                <OrderStatusSelect orderId={order.id} />
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                {dict.common.viewOnly}
+              </p>
+            )}
           </section>
 
           {/* TASK-330-C: everything about money for this order in one card. */}
@@ -206,16 +219,22 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 )}
               />
             ) : null}
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <span className="text-sm font-medium text-foreground">
-                {dict.orderStatus.updatePaymentStatus}
-              </span>
-              <PaymentStatusSelect
-                orderId={order.id}
-                currentPaymentStatus={order.paymentStatus}
-              />
-            </div>
+            {/* TASK-715: the payment control and its label need `orders:write`;
+                the money above it is still shown to a reader. */}
+            {canWriteOrders ? (
+              <>
+                <Separator />
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium text-foreground">
+                    {dict.orderStatus.updatePaymentStatus}
+                  </span>
+                  <PaymentStatusSelect
+                    orderId={order.id}
+                    currentPaymentStatus={order.paymentStatus}
+                  />
+                </div>
+              </>
+            ) : null}
             {/* An honest blank rather than a card that implies there were no
                 payment attempts. The method, the attempt history and the refund
                 button need `Order.paymentMethod` on the entity plus the admin

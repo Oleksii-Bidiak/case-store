@@ -58,10 +58,16 @@ function stubPatch(status = 200, body?: unknown) {
   );
 }
 
+/**
+ * TASK-715: the control exists only for a session holding `orders:write`, so
+ * every behavioural test renders one. The refusal is its own describe below.
+ */
+const WRITER = { permissions: ["orders:read", "orders:write"] };
+
 function renderSelect(queryClient?: QueryClient) {
   return renderWithProviders(
     <PaymentStatusSelect orderId={ORDER_ID} />,
-    queryClient ? { queryClient } : {},
+    queryClient ? { queryClient, auth: WRITER } : { auth: WRITER },
   );
 }
 
@@ -313,5 +319,39 @@ describe("PaymentStatusSelect (TASK-151, TASK-431)", () => {
         queryKey: getAdminOrderControllerGetHistoryQueryKey(ORDER_ID),
       }),
     );
+  });
+});
+
+/**
+ * TASK-715 — `PATCH /admin/orders/:id/payment-status` needs `orders:write`. The
+ * picker is not rendered for anyone else (not disabled — absent).
+ */
+describe("PaymentStatusSelect — without orders:write (TASK-715)", () => {
+  it("renders nothing for a session that may only read orders", () => {
+    stubTransitions("PAID", ["PARTIALLY_REFUNDED"]);
+
+    const { container } = renderWithProviders(
+      <PaymentStatusSelect orderId={ORDER_ID} />,
+      { auth: { permissions: ["orders:read"] } },
+    );
+
+    expect(
+      screen.queryByRole("combobox", {
+        name: dict.orderStatus.paymentUpdateAria,
+      }),
+    ).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the picker for a session holding orders:write", async () => {
+    stubTransitions("PAID", ["PARTIALLY_REFUNDED"]);
+
+    renderSelect();
+
+    expect(
+      await screen.findByRole("combobox", {
+        name: dict.orderStatus.paymentUpdateAria,
+      }),
+    ).toBeInTheDocument();
   });
 });
