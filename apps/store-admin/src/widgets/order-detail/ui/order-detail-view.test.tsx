@@ -746,3 +746,57 @@ describe("OrderDetailView — read-only without orders:write (TASK-715)", () => 
     expect(screen.queryByText(dict.common.viewOnly)).not.toBeInTheDocument();
   });
 });
+
+/** TASK-724 — the card shows the order's returns to whoever may read them. */
+describe("OrderDetailView — returns on the card (TASK-724)", () => {
+  function serve() {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: makeOrder(null, { status: "DELIVERED" }) }),
+      ),
+      http.get("*/api/admin/orders/:orderId/returns", () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: "ret00001-aaaa",
+              orderId: "order-uuid-12345678",
+              status: "REQUESTED",
+              reason: null,
+              requestedAt: "2026-09-01T10:00:00.000Z",
+              resolvedAt: null,
+              restockedAt: null,
+              refundedAmount: null,
+              createdByUserId: "user-uuid-87654321",
+              items: [],
+            },
+          ],
+        }),
+      ),
+    );
+  }
+
+  it("links each return from the card for a session with returns:read", async () => {
+    serve();
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read", "returns:read"] },
+    });
+
+    expect(
+      await screen.findByRole("link", {
+        name: dict.returns.title("ret00001"),
+      }),
+    ).toHaveAttribute("href", "/returns/ret00001-aaaa");
+  });
+
+  it("has no returns section without returns:read", async () => {
+    serve();
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read"] },
+    });
+
+    await screen.findByText(dict.orders.summary);
+    expect(
+      screen.queryByRole("heading", { name: dict.orders.returnsForOrder }),
+    ).not.toBeInTheDocument();
+  });
+});

@@ -35,6 +35,7 @@ import {
 import { dict } from "@/shared/config";
 import { formatCurrency, formatDateTime, formatTime } from "@/shared/lib";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
+import { OrderReturnsSection } from "./order-returns-section";
 import { OrderTimeline } from "./order-timeline";
 
 interface OrderDetailViewProps {
@@ -244,6 +245,11 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
               {dict.orders.paymentAttemptsUnavailable}
             </p>
           </section>
+
+          {/* TASK-724: the order's return requests, each linked to its page —
+              beside the money, because a return is where money goes back.
+              Absent without `returns:read`. */}
+          <OrderReturnsSection orderId={order.id} orderUserId={order.userId} />
 
           {/* TASK-335 / 336: waybill + operator-only notes. */}
           <section className="flex flex-col gap-3 rounded-md border border-border p-4">
