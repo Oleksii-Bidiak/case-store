@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { EmailVerificationService } from './email-verification.service';
 import { AuthController } from './auth.controller';
 import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
+import { GuestStateMergeService } from './guest-state-merge.service';
 import { JwtAccessStrategy, JwtRefreshStrategy, GoogleStrategy } from './strategies';
 import { GoogleAuthGuard } from './guards';
 import { GoogleOAuthStateStore } from './oauth/google-oauth-state.store';
@@ -52,6 +53,8 @@ import { WishlistModule } from '../wishlist/wishlist.module';
     AuthService,
     EmailVerificationService,
     RefreshTokenCleanupService,
+    // Merges a guest cart + wishlist on sign-in (TASK-824, moved out of the controller).
+    GuestStateMergeService,
     JwtAccessStrategy,
     JwtRefreshStrategy,
     // Google OAuth (TASK-168). GoogleStrategy always constructs (inert

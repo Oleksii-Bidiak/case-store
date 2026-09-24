@@ -8,7 +8,6 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
@@ -41,10 +40,17 @@ import { GoogleAuthGuard } from './guards';
 import { CurrentUser } from './decorators';
 import { AuthTokens } from './entities';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
-import { CartService } from '../cart/cart.service';
-import { CART_TOKEN_COOKIE } from '../cart/cart-identity.types';
-import { WishlistService } from '../wishlist/wishlist.service';
-import { WISHLIST_TOKEN_COOKIE } from '../wishlist/wishlist-identity.types';
+import { CART_TOKEN_COOKIE, buildCartTokenCookieOptions } from '../cart/cart-identity.types';
+import {
+  WISHLIST_TOKEN_COOKIE,
+  buildWishlistTokenCookieOptions,
+} from '../wishlist/wishlist-identity.types';
+import {
+  REFRESH_TOKEN_COOKIE,
+  buildRefreshCookieOptions,
+  expiredCookieOptions,
+} from './auth-cookies';
+import { GuestStateMergeService } from './guest-state-merge.service';
 import { PermissionService, type EffectivePermissions } from './permissions';
 
 /**
@@ -138,14 +144,11 @@ type MessageResponse = { message: string };
 )
 @Controller('auth')
 export class AuthController {
-  private readonly logger = new Logger(AuthController.name);
-
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
     private readonly jwtService: JwtService,
-    private readonly cartService: CartService,
-    private readonly wishlistService: WishlistService,
+    private readonly guestStateMerge: GuestStateMergeService,
     private readonly permissionService: PermissionService,
     private readonly emailVerificationService: EmailVerificationService,
   ) {}
@@ -183,8 +186,7 @@ export class AuthController {
     const tokens = await this.authService.register(dto);
 
     this.setRefreshCookie(response, tokens.refreshToken);
-    await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
-    await this.mergeGuestWishlistIfPresent(request, response, tokens.accessToken);
+    await this.mergeGuestState(request, response, tokens.accessToken);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -227,8 +229,7 @@ export class AuthController {
     const tokens = await this.authService.login(dto.email, dto.password);
 
     this.setRefreshCookie(response, tokens.refreshToken);
-    await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
-    await this.mergeGuestWishlistIfPresent(request, response, tokens.accessToken);
+    await this.mergeGuestState(request, response, tokens.accessToken);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -589,8 +590,7 @@ export class AuthController {
       const tokens = await this.authService.loginWithGoogleProfile(profile);
 
       this.setRefreshCookie(response, tokens.refreshToken);
-      await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
-      await this.mergeGuestWishlistIfPresent(request, response, tokens.accessToken);
+      await this.mergeGuestState(request, response, tokens.accessToken);
 
       response.redirect(302, `${storeClientUrl}${profile.redirect}`);
     } catch {
@@ -601,136 +601,81 @@ export class AuthController {
   }
 
   /**
-   * Set the refresh token as an HttpOnly cookie on the response.
-   * Cookie is scoped to /api/auth/refresh path so it's only sent on refresh requests.
+   * Set the refresh token as an HttpOnly cookie on the response, scoped to the
+   * one route that reads it.
    */
   private setRefreshCookie(response: Response, refreshToken: string): void {
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-
-    response.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-      path: '/api/auth/refresh',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-    });
+    response.cookie(
+      REFRESH_TOKEN_COOKIE,
+      refreshToken,
+      buildRefreshCookieOptions(this.isProduction(), 7 * 24 * 60 * 60 * 1000),
+    );
   }
 
-  /**
-   * Clear the refresh token cookie by setting it with an expired maxAge.
-   */
+  /** Expire the refresh cookie with the same attributes it was set with. */
   private clearRefreshCookie(response: Response): void {
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-
-    response.cookie('refreshToken', '', {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-      path: '/api/auth/refresh',
-      maxAge: 0,
-    });
+    response.cookie(
+      REFRESH_TOKEN_COOKIE,
+      '',
+      expiredCookieOptions(buildRefreshCookieOptions(this.isProduction(), 0)),
+    );
   }
 
   /**
-   * If the request carries a guest `cartToken` cookie, merge that guest cart
-   * into the authenticated user's cart and clear the cookie. The user ID is
-   * read from the freshly-signed access token's `sub` claim.
+   * Hand the request's guest cart and wishlist to {@link GuestStateMergeService}
+   * and drop the cookie of each collection that actually merged (TASK-824).
    *
-   * A merge failure must never block authentication — errors are logged and
-   * swallowed. The guest cookie is cleared ONLY after a successful merge, so a
-   * transient failure leaves the guest cart intact and the merge can be retried
-   * on the next authenticated request.
+   * Only the HTTP half lives here — reading the cookies and clearing them. The
+   * merge itself, and the rule that a failure never blocks sign-in, belong to
+   * the service. A cookie is cleared ONLY for a merge that succeeded, so a
+   * failed merge leaves the guest token in the browser for the next sign-in.
+   *
+   * Each guest cookie is expired with the options its own interceptor SET it
+   * with, so the clear cannot drift from the set.
    */
-  private async mergeGuestCartIfPresent(
+  private async mergeGuestState(
     request: Request,
     response: Response,
     accessToken: string,
   ): Promise<void> {
     const cartToken: string | undefined = request.cookies?.[CART_TOKEN_COOKIE];
-
-    if (!cartToken) {
-      return;
-    }
-
-    try {
-      const payload = this.jwtService.decode(accessToken) as { sub?: string } | null;
-      const userId = payload?.sub;
-
-      if (userId) {
-        await this.cartService.mergeGuestCart(cartToken, userId);
-      }
-
-      // Clear the guest cookie only on success — never in a finally block —
-      // so a failed merge does not discard the guest cart token.
-      this.clearCartTokenCookie(response);
-    } catch (error) {
-      this.logger.error('Guest cart merge on authentication failed', error as Error);
-    }
-  }
-
-  /**
-   * Clear the guest cart token cookie after a successful merge.
-   */
-  private clearCartTokenCookie(response: Response): void {
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-
-    response.cookie(CART_TOKEN_COOKIE, '', {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-      path: '/api',
-      maxAge: 0,
-    });
-  }
-
-  /**
-   * If the request carries a guest `wishlistToken` cookie, merge that guest
-   * wishlist into the authenticated user's wishlist and clear the cookie. The
-   * user ID is read from the freshly-signed access token's `sub` claim.
-   *
-   * Sibling of {@link mergeGuestCartIfPresent} — same defensive contract: a
-   * merge failure must never block authentication (errors are logged and
-   * swallowed), and the guest cookie is cleared ONLY after a successful merge so
-   * a transient failure leaves the guest wishlist intact for a later retry.
-   */
-  private async mergeGuestWishlistIfPresent(
-    request: Request,
-    response: Response,
-    accessToken: string,
-  ): Promise<void> {
     const wishlistToken: string | undefined = request.cookies?.[WISHLIST_TOKEN_COOKIE];
 
-    if (!wishlistToken) {
+    if (!cartToken && !wishlistToken) {
       return;
     }
 
-    try {
-      const payload = this.jwtService.decode(accessToken) as { sub?: string } | null;
-      const userId = payload?.sub;
+    const payload = this.jwtService.decode(accessToken) as { sub?: string } | null;
+    const userId = payload?.sub;
+    if (!userId) {
+      return;
+    }
 
-      if (userId) {
-        await this.wishlistService.mergeGuestWishlist(wishlistToken, userId);
-      }
+    const { cartMerged, wishlistMerged } = await this.guestStateMerge.mergeInto(userId, {
+      cartToken,
+      wishlistToken,
+    });
 
-      // Clear the guest cookie only on success — never in a finally block.
-      this.clearWishlistTokenCookie(response);
-    } catch (error) {
-      this.logger.error('Guest wishlist merge on authentication failed', error as Error);
+    if (cartMerged) {
+      response.cookie(
+        CART_TOKEN_COOKIE,
+        '',
+        expiredCookieOptions(buildCartTokenCookieOptions(this.isProduction())),
+      );
+    }
+
+    if (wishlistMerged) {
+      response.cookie(
+        WISHLIST_TOKEN_COOKIE,
+        '',
+        expiredCookieOptions(buildWishlistTokenCookieOptions(this.isProduction())),
+      );
     }
   }
 
-  /**
-   * Clear the guest wishlist token cookie after a successful merge.
-   */
-  private clearWishlistTokenCookie(response: Response): void {
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-
-    response.cookie(WISHLIST_TOKEN_COOKIE, '', {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-      path: '/api',
-      maxAge: 0,
-    });
+  // A method, not a getter: route-discovery specs walk the prototype and would
+  // invoke a getter on an instance-less prototype.
+  private isProduction(): boolean {
+    return this.configService.get<string>('NODE_ENV') === 'production';
   }
 }

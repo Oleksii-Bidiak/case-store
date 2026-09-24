@@ -5,8 +5,7 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthTokens } from './entities';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
-import { CartService } from '../cart/cart.service';
-import { WishlistService } from '../wishlist/wishlist.service';
+import { GuestStateMergeService } from './guest-state-merge.service';
 
 /**
  * TASK-168 (plan 153 §Migration step 7).
@@ -52,15 +51,15 @@ describe('AuthController — google oauth callback', () => {
     };
 
     const jwtServiceMock = { decode: jest.fn() };
-    const cartServiceMock = { mergeGuestCart: jest.fn() };
-    const wishlistServiceMock = { mergeGuestWishlist: jest.fn() };
+    const guestStateMergeMock = {
+      mergeInto: jest.fn().mockResolvedValue({ cartMerged: false, wishlistMerged: false }),
+    };
 
     controller = new AuthController(
       authService as unknown as AuthService,
       configMock as unknown as ConfigService,
       jwtServiceMock as unknown as JwtService,
-      cartServiceMock as unknown as CartService,
-      wishlistServiceMock as unknown as WishlistService,
+      guestStateMergeMock as unknown as GuestStateMergeService,
     );
   });
 
