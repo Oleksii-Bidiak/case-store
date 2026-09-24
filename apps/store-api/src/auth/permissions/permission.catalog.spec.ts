@@ -608,6 +608,46 @@ describe('access model migration (TASK-474)', () => {
 });
 
 /**
+ * The empty «Менеджер (як було)» (TASK-635, plan 192).
+ *
+ * The access-model migration above creates the template unconditionally, so on
+ * every shop whose role matrix was never filled it came out EMPTY — and applying
+ * a template replaces a person's set, so applying it strips them bare. The
+ * applied migration cannot be edited; a later one removes the template, and only
+ * where it holds nothing.
+ */
+describe('removing the empty manager template (TASK-635)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const statement = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_drop_empty_manager_as_was_template'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_drop_empty_manager_as_was_template migration under ${MIGRATIONS_ROOT}.`,
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n');
+  })();
+
+  it('targets the template by exactly the name the code uses', () => {
+    expect(statement).toContain(`'${MANAGER_BACKFILL_TEMPLATE_NAME}'`);
+  });
+
+  it('deletes only a template with no items — a filled one is a shop’s real history', () => {
+    expect(statement).toMatch(/DELETE FROM "permission_templates"/);
+    expect(statement).toMatch(/NOT EXISTS\s*\(\s*SELECT 1\s+FROM "permission_template_items"/);
+    // Nothing else is deleted: no items, no people's rows.
+    expect(statement).not.toContain('DELETE FROM "permission_template_items"');
+    expect(statement).not.toContain('user_permissions');
+  });
+});
+
+/**
  * The customer-card split (TASK-479, plan 181, invariant 7).
  *
  * `customers:read` used to buy two purchases at once: the list plus the contact
@@ -738,11 +778,12 @@ describe('customers:card permission backfill migration (TASK-479)', () => {
     // everybody who already works here and misses everybody hired afterwards —
     // two groups with different access from the same tick.
     //
-    // «Менеджер (як було)» is the concrete case: the TASK-474 migration created
-    // it one migration before this key existed, and `docs/admin-guide.md` tells
-    // the owner it holds exactly what the MANAGER role used to. Without the
-    // second statement that sentence is false in the same release that created
-    // the template.
+    // «Менеджер (як було)» is the concrete case where it exists: the TASK-474
+    // migration created it one migration before this key existed, and
+    // `docs/admin-guide.md` tells the owner it holds what the MANAGER role used
+    // to. Without the second statement that sentence is false in the same
+    // release that created the template. (Where the role matrix was empty the
+    // template came out empty and TASK-635 removes it — see below.)
     expect(statement).toContain('"permission_template_items"');
     expect(statement).toContain('"template_id"');
     // Both halves idempotent, not just the first.

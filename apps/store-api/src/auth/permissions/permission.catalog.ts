@@ -432,6 +432,14 @@ export const CUSTOMERS_CARD_PERMISSIONS = [
  * delete it. The constant exists only so the migration's SQL and the code that
  * looks the template up spell the name identically; `permission.catalog.spec.ts`
  * asserts the migration uses exactly this literal.
+ *
+ * ONLY WHERE THERE WAS SOMETHING TO KEEP (TASK-635). The migration creates the
+ * template unconditionally, so wherever the role matrix was never filled — every
+ * fresh install, and every database measured — it came out EMPTY, and applying
+ * it (which REPLACES a person's set) stripped them bare. A later migration,
+ * `…_drop_empty_manager_as_was_template`, removes it when it holds no items; a
+ * shop whose MANAGER role actually had grants keeps its template with them. So
+ * on a fresh install this template does not exist, and code must not assume it.
  */
 export const MANAGER_BACKFILL_TEMPLATE_NAME = 'Менеджер (як було)';
 

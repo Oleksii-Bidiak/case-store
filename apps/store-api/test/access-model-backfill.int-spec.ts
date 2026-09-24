@@ -316,10 +316,11 @@ describe('the single-owner invariant (TASK-474) — integration', () => {
             },
           });
 
-        // «Менеджер (як було)» may already exist in this database from a real
-        // migration run, so the template is asserted on the DELTA rather than on
-        // its absolute contents: what these statements ADD is the property under
-        // test, and it is the only part of it this fixture controls.
+        // «Менеджер (як було)» may or may not exist in this database — a real
+        // migration run creates it and, where it came out empty, TASK-635's
+        // migration removes it again — so the template is asserted on the DELTA
+        // rather than on its absolute contents: what these statements ADD is the
+        // property under test, and it is the only part of it this fixture controls.
         const templateBefore = await tx.permissionTemplateItem.findMany({
           where: { template: { name: MANAGER_BACKFILL_TEMPLATE_NAME } },
           select: { permission: true },
@@ -374,7 +375,8 @@ describe('the single-owner invariant (TASK-474) — integration', () => {
       expect(granted.shopper).toEqual([]);
 
       // The same set kept under a name, so the shape of the job survives the move
-      // off roles — this is «Менеджер (як було)» in AD-STAFF-11.
+      // off roles — this is «Менеджер (як було)» in AD-STAFF-11. Non-empty here,
+      // so TASK-635's clean-up (tested below) would keep it.
       // Exact on the DELTA: the revoked key and the other role's key must not
       // come along either, and an exact set is what catches both directions.
       expect(granted.templateAdded).toEqual(['orders:read', 'orders:write']);
@@ -508,6 +510,55 @@ describe('the single-owner invariant (TASK-474) — integration', () => {
       expect(result!.clerk).toEqual(['orders:write']);
       expect(result!.template).toEqual(['media:read', 'media:write', 'products:write']);
       expect(result!.again).toBe(3);
+    });
+
+    /**
+     * TASK-635: the shipped clean-up removes «Менеджер (як було)» only where it
+     * holds nothing. Both sides of that, against real rows, rolled back.
+     */
+    it('removes the empty manager template and keeps a filled one', async () => {
+      const statements = readShipped('_drop_empty_manager_as_was_template');
+      let outcome: { emptyLeft: number; filledLeft: number; filledItems: number };
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          // Start from a known state whatever a real migration run left behind.
+          await tx.permissionTemplate.deleteMany({
+            where: { name: MANAGER_BACKFILL_TEMPLATE_NAME },
+          });
+
+          await tx.permissionTemplate.create({ data: { name: MANAGER_BACKFILL_TEMPLATE_NAME } });
+          for (const statement of statements) {
+            await tx.$executeRawUnsafe(statement);
+          }
+          const emptyLeft = await tx.permissionTemplate.count({
+            where: { name: MANAGER_BACKFILL_TEMPLATE_NAME },
+          });
+
+          const filled = await tx.permissionTemplate.create({
+            data: {
+              name: MANAGER_BACKFILL_TEMPLATE_NAME,
+              items: { create: [{ permission: 'orders:read' }] },
+            },
+          });
+          for (const statement of statements) {
+            await tx.$executeRawUnsafe(statement);
+          }
+
+          outcome = {
+            emptyLeft,
+            filledLeft: await tx.permissionTemplate.count({ where: { id: filled.id } }),
+            filledItems: await tx.permissionTemplateItem.count({
+              where: { templateId: filled.id },
+            }),
+          };
+          throw new Rollback();
+        });
+      } catch (error) {
+        if (!(error instanceof Rollback)) throw error;
+      }
+
+      expect(outcome!).toEqual({ emptyLeft: 0, filledLeft: 1, filledItems: 1 });
     });
   });
 });
