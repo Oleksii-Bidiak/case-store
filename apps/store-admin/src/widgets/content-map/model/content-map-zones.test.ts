@@ -132,6 +132,15 @@ describe("content-map zone config (TASK-264-A)", () => {
     }
   });
 
+  // TASK-721: the zone promised an address the Contacts form has no field for.
+  it("promises only what the Contacts form edits", () => {
+    const source = dict.contentMap.zones.siteContact.source;
+    expect(source).not.toMatch(/адрес/i);
+    expect(source).toMatch(/телефон/);
+    expect(source).toMatch(/пошта/);
+    expect(source).toMatch(/години роботи/);
+  });
+
   it("titles the page with the sidebar item's name", () => {
     expect(dict.contentMap.heading).toBe(dict.nav.contentMap);
     expect(dict.contentMap.metaTitle.startsWith(dict.nav.contentMap)).toBe(

@@ -3949,7 +3949,10 @@ export const dict = {
         appliesTo: "Сторінка «Блог»",
       },
       siteContact: {
-        source: "Контакти (телефон, адреса, соцмережі)",
+        // TASK-721: lists what the Contacts form actually edits — there is no
+        // address field (SiteContactSettings has none; see TASK-873).
+        source:
+          "Контакти (телефон, пошта, години роботи, месенджери й Instagram)",
         target: "Контакти",
         appliesTo: "Футер кожної сторінки та сторінка «Контакти»",
       },
