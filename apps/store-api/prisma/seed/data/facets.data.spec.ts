@@ -4,6 +4,8 @@ import {
   AXIS_BACKED_SPECS,
   colorOfPosition,
   definitionsByRootCategory,
+  inertFacets,
+  narrowsNothing,
   type AttributeDefinitionSeed,
 } from './attributes.data';
 
@@ -189,6 +191,25 @@ describe('the catalogue facet set (TASK-488 / B-10)', () => {
 
     it('covers every declared root', () => {
       expect(Object.keys(EXPECTED).sort()).toEqual(Object.keys(definitionsByRootCategory).sort());
+    });
+  });
+
+  describe('a facet that narrows nothing is not offered (TASK-700)', () => {
+    it('calls a facet inert only when EVERY position carries the SAME value', () => {
+      expect(narrowsNothing(['Лише чохол', 'Лише чохол'])).toBe(true);
+      // A second value splits the catalogue — the facet earns its slot back.
+      expect(narrowsNothing(['Лише чохол', 'Чохол + захисне скло'])).toBe(false);
+      // One value, but not on every position: ticking it still hides the rest
+      // (a hydrogel film has no «9H»), so the facet does narrow.
+      expect(narrowsNothing(['9H', undefined])).toBe(false);
+      expect(narrowsNothing([])).toBe(false);
+    });
+
+    it("finds exactly «Комплектація» inert in today's catalogue", () => {
+      // All twelve cases ship «Лише чохол». «Твердість» is single-valued too,
+      // but films carry none, so its «9H» checkbox is a real filter — the rule
+      // is about narrowing, not about counting values.
+      expect([...inertFacets()].sort()).toEqual(['cases:bundle']);
     });
   });
 

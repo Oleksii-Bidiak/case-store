@@ -242,6 +242,32 @@ describe('seedAttributeDefinitions — the colour bridge (TASK-487)', () => {
       ).toBeGreaterThan(1);
     });
 
+    it('writes «Комплектація» unflagged while every case ships alone (TASK-700)', () => {
+      // Both branches of the upsert: `create` for a fresh database, `update`
+      // for one seeded before — the stale `true` there is the facet that
+      // pretended to filter.
+      const bundle = upserts.find(
+        (args) =>
+          args.where.categoryId_key.categoryId === 'cat:cases' &&
+          args.where.categoryId_key.key === 'bundle',
+      );
+      expect(bundle?.create.isFilterable).toBe(false);
+      expect(bundle?.update.isFilterable).toBe(false);
+      // The values stay: they are true, and the PDP still lists them.
+      expect(created.some((row) => row.definitionId === 'def:cat:cases:bundle')).toBe(true);
+      // Nothing else was demoted along with it.
+      const demoted = upserts
+        .filter((args) => {
+          const root = args.where.categoryId_key.categoryId.slice('cat:'.length);
+          const declared = definitionsByRootCategory[root]?.find(
+            (def) => def.key === args.where.categoryId_key.key,
+          );
+          return declared?.isFilterable === true && args.create.isFilterable === false;
+        })
+        .map((args) => `${args.where.categoryId_key.categoryId}.${args.where.categoryId_key.key}`);
+      expect(demoted).toEqual(['cat:cases.bundle']);
+    });
+
     it('keeps «Твердість» a bare class now that «Особливості» carries the rest', () => {
       const hardness = created.filter(
         (row) => row.definitionId === 'def:cat:screen-protectors:hardness',
