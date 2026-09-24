@@ -222,8 +222,9 @@ export class ImageProcessor {
    * Sniff format AND dimensions from a buffer's own bytes in one metadata read,
    * or null when it is not a decodable image (TASK-441).
    *
-   * Exists for the animated-GIF passthrough, the one path that stores client
-   * bytes verbatim: it needs the format gate {@link detectFormat} provides AND
+   * Exists for the animated-GIF path, the one path sharp never re-encodes (its
+   * bytes are only rebuilt by `stripGifMetadata`, TASK-587): it needs the
+   * format gate {@link detectFormat} provides AND
    * the dimensions the media library records, and reading the header twice to
    * get them would be two chances to disagree.
    */
