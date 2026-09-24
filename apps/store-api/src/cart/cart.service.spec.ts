@@ -1248,6 +1248,11 @@ describe('CartService', () => {
       });
 
       it('resolves the whole cart in ONE batched call (no N+1)', async () => {
+        cartRepositoryMock.findByUserId.mockResolvedValue(twoLineCart);
+        addonResolverMock.resolveForProducts.mockResolvedValue(
+          resolvedFor({ 'product-uuid-1': [warrantyAddon], 'product-uuid-2': [] }),
+        );
+
         await service.getCart(userIdentity);
 
         expect(addonResolverMock.resolveForProducts).toHaveBeenCalledTimes(1);
