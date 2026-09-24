@@ -2336,5 +2336,87 @@ describe('OrderController (e2e)', () => {
         {},
       );
     });
+
+    // ─── TASK-786: one edit, one guarded write ──────────────────────────────
+    const newAddress = {
+      firstName: 'Олена',
+      lastName: 'Коваль',
+      phone: '+380501234567',
+      city: 'Львів',
+      postalCode: '79000',
+      address1: 'вул. Городоцька, 1',
+    };
+
+    it('writes the address and the waybill in one call, under the caller’s version (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      const version = new Date('2026-07-28T10:15:30.000Z');
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PROCESSING, updatedAt: version, trackingNumber: null }),
+      );
+      orderRepositoryMock.updateDetails.mockResolvedValue(makeOrder());
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          shippingAddress: newAddress,
+          trackingNumber: '20450000000001',
+          expectedUpdatedAt: version.toISOString(),
+        })
+        .expect(200);
+
+      // Was: updateShippingAddress(…, lock) THEN updateDetails(…, {}) — the
+      // second half without the version check.
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledTimes(1);
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-e2e-1',
+        expect.objectContaining({
+          shippingAddress: expect.objectContaining({ city: 'Львів' }),
+          trackingNumber: '20450000000001',
+        }),
+        { expectedUpdatedAt: version },
+      );
+    });
+
+    it('409 on a stale version when another operator already entered a waybill — nothing written', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      // The row moved on since the form was loaded: somebody else saved THEIR
+      // waybill at 10:20; this operator's form is from 10:15.
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.PROCESSING,
+          trackingNumber: '20450000000999',
+          updatedAt: new Date('2026-07-28T10:20:00.000Z'),
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          shippingAddress: newAddress,
+          trackingNumber: '20450000000001',
+          expectedUpdatedAt: '2026-07-28T10:15:30.000Z',
+        })
+        .expect(409);
+
+      expect(res.body.error).toBe('ORDER_STALE');
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+
+    it('409 for an address edit on a shipped order — the waybill in the same request is not written either', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, trackingNumber: null }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: newAddress, trackingNumber: '20450000000001' })
+        .expect(409);
+
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
   });
 });

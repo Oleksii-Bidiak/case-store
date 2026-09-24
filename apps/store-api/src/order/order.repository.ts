@@ -39,6 +39,7 @@ import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { staleOrderError } from './order.errors';
 import { centsToString, sumLineCents, toCents } from '../addon-service/money.util';
 import { kyivDayRange } from './kyiv-day';
+import { PRE_SHIPMENT_STATUSES } from './order.constants';
 // TASK-771: a revive that cannot re-claim its promo slot fails with the same
 // stable codes the checkout uses, so the admin sees the reason it already knows.
 import { DiscountErrorCode, conflictDiscount } from '../discount/discount.errors';
@@ -619,38 +620,6 @@ export class OrderRepository {
     await this.evictProductCaches((order as OrderWithItems).items);
 
     return order as OrderWithItems;
-  }
-
-  /**
-   * Replace an order's delivery address before it ships (TASK-341).
-   *
-   * Address-only: changing WHERE a parcel goes touches no money and no stock, so
-   * it is separable from the line-item edit that does. The caller enforces the
-   * pre-shipment rule; the repository writes the snapshot.
-   */
-  async updateShippingAddress(
-    orderId: string,
-    shippingAddress: AddressDto,
-    options: { expectedUpdatedAt?: Date } = {},
-  ): Promise<OrderWithItems> {
-    const data = { shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue };
-
-    if (options.expectedUpdatedAt) {
-      const { count } = await this.prisma.order.updateMany({
-        where: { id: orderId, updatedAt: options.expectedUpdatedAt },
-        data,
-      });
-      if (count === 0) {
-        throw staleOrderError();
-      }
-    } else {
-      await this.prisma.order.update({ where: { id: orderId }, data });
-    }
-
-    return this.prisma.order.findUniqueOrThrow({
-      where: { id: orderId },
-      include: ADMIN_ORDERS_INCLUDE,
-    }) as Promise<OrderWithItems>;
   }
 
   /**
@@ -1245,19 +1214,41 @@ export class OrderRepository {
    * changes, and stretching it to cover free-text edits would blur what the
    * timeline means.
    *
-   * @throws ConflictException `ORDER_STALE` when `expectedUpdatedAt` no longer
-   *   matches.
+   * TASK-786: the delivery address (TASK-341) is written by the SAME statement.
+   * It used to be a second write, and the controller spent the version token on
+   * whichever ran first, so the waybill half went through unguarded and could
+   * silently overwrite another operator's. One `UPDATE … WHERE` is atomic: every
+   * field lands or none does. An address edit also re-checks the pre-shipment
+   * rule in that WHERE, so a shipment committed after the service's read cannot
+   * be edited.
+   *
+   * @throws ConflictException `ORDER_STALE` when the guarded row no longer
+   *   matches (`expectedUpdatedAt`, or the order left the pre-shipment statuses
+   *   under an address edit).
    */
   async updateDetails(
     orderId: string,
-    fields: { trackingNumber?: string | null; internalNotes?: string | null },
+    fields: {
+      trackingNumber?: string | null;
+      internalNotes?: string | null;
+      shippingAddress?: AddressDto;
+    },
     options: { expectedUpdatedAt?: Date } = {},
   ): Promise<OrderWithItems> {
-    const data: Prisma.OrderUpdateInput = {};
+    const data: Prisma.OrderUpdateManyMutationInput = {};
+    if (fields.shippingAddress !== undefined) {
+      data.shippingAddress = fields.shippingAddress as unknown as Prisma.InputJsonValue;
+    }
     if (fields.trackingNumber !== undefined) data.trackingNumber = fields.trackingNumber;
     if (fields.internalNotes !== undefined) data.internalNotes = fields.internalNotes;
 
     const expectedUpdatedAt = options.expectedUpdatedAt;
+    const guard: Prisma.OrderWhereInput = {
+      ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+      ...(fields.shippingAddress !== undefined
+        ? { status: { in: [...PRE_SHIPMENT_STATUSES] } }
+        : {}),
+    };
 
     // A request that changes none of these fields is a read, not a write — and a
     // guarded `updateMany` with an empty `data` would neither express the version
@@ -1269,9 +1260,9 @@ export class OrderRepository {
       }) as Promise<OrderWithItems>;
     }
 
-    if (expectedUpdatedAt) {
+    if (Object.keys(guard).length > 0) {
       const { count } = await this.prisma.order.updateMany({
-        where: { id: orderId, updatedAt: expectedUpdatedAt },
+        where: { id: orderId, ...guard },
         data,
       });
       if (count === 0) {

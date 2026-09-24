@@ -610,34 +610,18 @@ export class AdminOrderController {
     @Param('orderId') orderId: string,
     @Body() dto: UpdateOrderDetailsDto,
   ): Promise<AdminOrderResponseEnvelope> {
-    const lock = {
-      ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
-    };
-
-    // TASK-341: the address edit has its own pre-shipment rule, so it goes
-    // through its own service method rather than being smuggled into the details
-    // write. Applied FIRST: if the order has already shipped the whole request
-    // fails with 409 and nothing at all is written, rather than the operator
-    // getting a half-applied edit whose refused half they have to notice.
-    let addressApplied = false;
-    if (dto.shippingAddress) {
-      await this.orderService.adminUpdateShippingAddress(orderId, dto.shippingAddress, lock);
-      addressApplied = true;
-    }
-
+    // TASK-786: one service call — address, waybill and notes are one edit with
+    // one version check and one write, so it lands whole or not at all.
     const order = await this.orderService.adminUpdateDetails(
       orderId,
       {
         // Only forward keys the caller actually sent: an absent key leaves the
         // field alone, an explicit null clears it.
+        ...(dto.shippingAddress ? { shippingAddress: dto.shippingAddress } : {}),
         ...(dto.trackingNumber !== undefined ? { trackingNumber: dto.trackingNumber } : {}),
         ...(dto.internalNotes !== undefined ? { internalNotes: dto.internalNotes } : {}),
       },
-      // The version token is spent by whichever write goes first. If the address
-      // was just applied, the row's `updatedAt` has already moved on — re-checking
-      // the caller's now-superseded token here would reject this request's own
-      // second half as a concurrent edit by itself.
-      addressApplied ? {} : lock,
+      dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {},
     );
 
     return { data: order };

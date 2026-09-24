@@ -1007,12 +1007,25 @@ export class OrderService {
    * emails the customer — and merging them would make "fix a typo in the ТТН"
    * capable of moving the order.
    *
+   * The delivery address (TASK-341) is one more field of the same edit
+   * (TASK-786): one call, one version check, one conditional write in the
+   * repository — so an address + waybill save either lands whole or not at all,
+   * and the waybill half can no longer slip past the version check. The
+   * address keeps its own rule: pre-shipment only. Once the parcel is with the
+   * courier the waybill's address is the one that counts, and editing the order
+   * would only make the record disagree with reality.
+   *
    * @throws NotFoundException when the order does not exist.
-   * @throws ConflictException `ORDER_STALE` on a concurrent edit.
+   * @throws ConflictException `ORDER_STALE` on a concurrent edit, or when the
+   *   address is edited on an order that has already shipped.
    */
   async adminUpdateDetails(
     orderId: string,
-    fields: { trackingNumber?: string | null; internalNotes?: string | null },
+    fields: {
+      trackingNumber?: string | null;
+      internalNotes?: string | null;
+      shippingAddress?: AddressDto;
+    },
     options: { expectedUpdatedAt?: Date } = {},
   ): Promise<OrderEntity> {
     const existing = await this.orderRepository.findById(orderId);
@@ -1022,6 +1035,12 @@ export class OrderService {
     }
 
     this.assertFresh(existing, options.expectedUpdatedAt);
+
+    if (fields.shippingAddress !== undefined && !PRE_SHIPMENT_STATUSES.has(existing.status)) {
+      throw new ConflictException(
+        'The delivery address can only be changed before the order ships',
+      );
+    }
 
     // A waybill appearing on an order that ALREADY shipped is the second half of
     // the common workflow: the operator marks the parcel gone, then the courier
@@ -1258,49 +1277,6 @@ export class OrderService {
     );
 
     return { url, issuedAt };
-  }
-
-  /**
-   * Admin — correct an order's delivery address before it ships (TASK-341).
-   *
-   * Pre-shipment only. Once the parcel is with the courier, the address on the
-   * waybill is the one that counts; editing the order afterwards would not move
-   * the parcel, it would only make the record disagree with reality — and the
-   * record is what support reads when the customer calls.
-   *
-   * @throws ConflictException when the order has already shipped.
-   */
-  async adminUpdateShippingAddress(
-    orderId: string,
-    shippingAddress: AddressDto,
-    options: { expectedUpdatedAt?: Date } = {},
-  ): Promise<OrderEntity> {
-    const existing = await this.orderRepository.findById(orderId);
-
-    if (!existing) {
-      throw new NotFoundException('Order not found');
-    }
-
-    this.assertFresh(existing, options.expectedUpdatedAt);
-
-    if (!PRE_SHIPMENT_STATUSES.has(existing.status)) {
-      throw new ConflictException(
-        'The delivery address can only be changed before the order ships',
-      );
-    }
-
-    const order = await this.orderRepository.updateShippingAddress(
-      orderId,
-      shippingAddress,
-      options,
-    );
-
-    this.logger.info(
-      { event: 'order.address_updated', orderId },
-      'Delivery address corrected before shipment',
-    );
-
-    return OrderEntity.fromPrisma(order, { includeInternal: true });
   }
 
   /**

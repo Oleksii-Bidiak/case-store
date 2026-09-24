@@ -82,6 +82,8 @@ const prismaMock = {
     update: jest.fn(),
     // TASK-485: claiming guest orders onto a freshly-verified account.
     updateMany: jest.fn(),
+    // TASK-786: the admin details write re-reads the row it just wrote.
+    findUniqueOrThrow: jest.fn(),
   },
   // TASK-251: history read path.
   orderStatusHistory: {
@@ -2039,6 +2041,83 @@ describe('OrderRepository', () => {
       await expect(repository.claimGuestOrders('user-uuid-1', 'guest@example.com')).resolves.toBe(
         2,
       );
+    });
+  });
+
+  // ─── TASK-786: the admin details edit is ONE conditional write ──────────────
+
+  describe('updateDetails', () => {
+    const address = { firstName: 'Олена', lastName: 'Коваль', city: 'Львів' } as never;
+    const version = new Date('2026-07-28T10:15:30.000Z');
+
+    beforeEach(() => {
+      prismaMock.order.findUniqueOrThrow.mockResolvedValue({ id: 'order-1' });
+    });
+
+    it('writes the address, waybill and notes in one statement guarded by version and pre-shipment status', async () => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.updateDetails(
+        'order-1',
+        { shippingAddress: address, trackingNumber: '20450000000001', internalNotes: 'x' },
+        { expectedUpdatedAt: version },
+      );
+
+      expect(prismaMock.order.updateMany).toHaveBeenCalledTimes(1);
+      expect(prismaMock.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'order-1',
+          updatedAt: version,
+          // The service checked this on its read; the WHERE re-checks it at
+          // write time, so a shipment committed in between cannot be edited.
+          status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING] },
+        },
+        data: {
+          shippingAddress: address,
+          trackingNumber: '20450000000001',
+          internalNotes: 'x',
+        },
+      });
+      expect(prismaMock.order.update).not.toHaveBeenCalled();
+    });
+
+    it('throws ORDER_STALE and writes nothing when the guarded row moved on', async () => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        repository.updateDetails(
+          'order-1',
+          { shippingAddress: address, trackingNumber: '20450000000001' },
+          { expectedUpdatedAt: version },
+        ),
+      ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
+      expect(prismaMock.order.findUniqueOrThrow).not.toHaveBeenCalled();
+    });
+
+    it('guards an address edit by status even without a version token', async () => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.updateDetails('order-1', { shippingAddress: address });
+
+      expect(prismaMock.order.updateMany.mock.calls[0][0].where).toEqual({
+        id: 'order-1',
+        status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING] },
+      });
+    });
+
+    it('does not restrict a waybill-only edit by status', async () => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.updateDetails(
+        'order-1',
+        { trackingNumber: '20450000000001' },
+        { expectedUpdatedAt: version },
+      );
+
+      expect(prismaMock.order.updateMany.mock.calls[0][0].where).toEqual({
+        id: 'order-1',
+        updatedAt: version,
+      });
     });
   });
 });

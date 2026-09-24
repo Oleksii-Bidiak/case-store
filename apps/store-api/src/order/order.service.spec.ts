@@ -187,7 +187,6 @@ const orderRepositoryMock = {
   // TASK-341: operator-created orders + pre-shipment address correction.
   findOrderableProducts: jest.fn(),
   createManual: jest.fn(),
-  updateShippingAddress: jest.fn(),
   claimGuestOrders: jest.fn(),
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
@@ -2122,11 +2121,13 @@ describe('OrderService', () => {
 
   // ─── Pre-shipment address correction (TASK-341) ──────────────────────────────
 
-  describe('adminUpdateShippingAddress', () => {
+  // TASK-786: the address is one more field of the same admin edit — one
+  // service call, one conditional write, one version check.
+  describe('adminUpdateDetails — shipping address', () => {
     const newAddress = { ...address, city: 'Львів' };
 
     beforeEach(() => {
-      orderRepositoryMock.updateShippingAddress.mockResolvedValue(makeOrder());
+      orderRepositoryMock.updateDetails.mockResolvedValue(makeOrder());
     });
 
     it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
@@ -2134,50 +2135,82 @@ describe('OrderService', () => {
       async (status) => {
         orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
 
-        await service.adminUpdateShippingAddress('order-uuid-1', newAddress);
+        await service.adminUpdateDetails('order-uuid-1', { shippingAddress: newAddress });
 
-        expect(orderRepositoryMock.updateShippingAddress).toHaveBeenCalledWith(
+        expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
           'order-uuid-1',
-          newAddress,
+          { shippingAddress: newAddress },
           expect.anything(),
         );
       },
     );
 
     it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED])(
-      'refuses once the parcel is with the courier (%s)',
+      'refuses once the parcel is with the courier (%s) — and writes nothing else either',
       async (status) => {
         orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
 
         // Editing the order would not move the parcel — it would only make the
         // record disagree with reality, and the record is what support reads.
+        // The waybill in the same request is refused with it: no half-applied edit.
         await expect(
-          service.adminUpdateShippingAddress('order-uuid-1', newAddress),
+          service.adminUpdateDetails('order-uuid-1', {
+            shippingAddress: newAddress,
+            trackingNumber: '20450000000001',
+          }),
         ).rejects.toThrow(ConflictException);
-        expect(orderRepositoryMock.updateShippingAddress).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
       },
     );
 
-    it('rejects a stale edit before touching the address', async () => {
+    it('writes the address and the waybill in ONE guarded write with the caller’s version', async () => {
+      const expectedUpdatedAt = new Date('2026-07-28T10:15:30.000Z');
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PROCESSING, updatedAt: expectedUpdatedAt }),
+      );
+
+      await service.adminUpdateDetails(
+        'order-uuid-1',
+        { shippingAddress: newAddress, trackingNumber: '20450000000001', internalNotes: 'x' },
+        { expectedUpdatedAt },
+      );
+
+      // Was two calls — the address with the lock, then the waybill WITHOUT it,
+      // so a concurrent operator's waybill was silently overwritten.
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledTimes(1);
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-uuid-1',
+        { shippingAddress: newAddress, trackingNumber: '20450000000001', internalNotes: 'x' },
+        { expectedUpdatedAt },
+      );
+    });
+
+    it('rejects a stale edit before touching anything', async () => {
       orderRepositoryMock.findById.mockResolvedValue(
         makeOrder({ status: OrderStatus.PENDING, updatedAt: new Date('2026-07-28T10:20:00.000Z') }),
       );
 
       await expect(
-        service.adminUpdateShippingAddress('order-uuid-1', newAddress, {
-          expectedUpdatedAt: new Date('2026-07-28T10:15:30.000Z'),
-        }),
+        service.adminUpdateDetails(
+          'order-uuid-1',
+          { shippingAddress: newAddress, trackingNumber: '20450000000001' },
+          { expectedUpdatedAt: new Date('2026-07-28T10:15:30.000Z') },
+        ),
       ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
 
-      expect(orderRepositoryMock.updateShippingAddress).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
     });
 
-    it('throws NotFoundException when the order does not exist', async () => {
-      orderRepositoryMock.findById.mockResolvedValue(null);
-
-      await expect(service.adminUpdateShippingAddress('missing', newAddress)).rejects.toThrow(
-        NotFoundException,
+    it('sends the shipment notice only after the write succeeded', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, trackingNumber: null }),
       );
+      orderRepositoryMock.updateDetails.mockRejectedValue(new ConflictException('stale'));
+
+      await expect(
+        service.adminUpdateDetails('order-uuid-1', { trackingNumber: '20450000000001' }),
+      ).rejects.toThrow(ConflictException);
+      expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
     });
   });
 
