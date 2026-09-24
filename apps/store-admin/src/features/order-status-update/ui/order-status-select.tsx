@@ -91,8 +91,19 @@ const RETURNABLE_STATUSES: readonly string[] = [
  *  - The conflict notice STAYS on screen. It is rendered as a live region rather
  *    than only a toast, because "your change did not save" is not something to
  *    show for four seconds and then take away.
+ *
+ * Not rendered at all without `orders:write` (TASK-715): the PATCH answers 403
+ * to anyone else, and a picker that offers moves only to have each one refused
+ * with a misleading "somebody changed this order" toast teaches the operator to
+ * distrust the panel. The server stays the barrier; this just stops lying.
  */
 export function OrderStatusSelect({ orderId }: OrderStatusSelectProps) {
+  const { can } = useAuth();
+  if (!can(PERM.ordersWrite)) return null;
+  return <OrderStatusSelectControl orderId={orderId} />;
+}
+
+function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
   const queryClient = useQueryClient();
   const { can } = useAuth();
   const transitions = useAdminOrderControllerGetAllowedTransitions(orderId);
@@ -105,14 +116,20 @@ export function OrderStatusSelect({ orderId }: OrderStatusSelectProps) {
   const { data: orderData } = useAdminOrderControllerFindById(orderId);
   const order = orderData?.data;
 
-  // TASK-469: "has anyone opened a return on this order?" — asked only by an
-  // operator who could actually create one. Without `returns:write` the dialog
-  // would have nothing to offer, so the request is not issued at all rather than
-  // being a guaranteed 403 on every order card.
-  const canOpenReturns = can(PERM.returnsWrite);
+  // TASK-469: "has anyone opened a return on this order?". The endpoint is a
+  // READ (`returns:read`, the whole `AdminOrderReturnController`), so the request
+  // is gated on the read right — gating it on `returns:write` (TASK-630) fired a
+  // guaranteed 403 on every order card of an operator who could write returns
+  // but not list them. The same query key feeds the card's returns section
+  // (TASK-724), so React Query issues it once for both.
+  //
+  // Offering to OPEN a return still needs both: the list, to know there is none
+  // yet (read), and the create call (write).
+  const canReadReturns = can(PERM.returnsRead);
+  const canOpenReturns = canReadReturns && can(PERM.returnsWrite);
   const { data: returnsData } = useAdminOrderReturnControllerFindForOrder(
     orderId,
-    { query: { enabled: canOpenReturns } },
+    { query: { enabled: canReadReturns } },
   );
   const createReturn = useAdminOrderReturnControllerCreate();
 

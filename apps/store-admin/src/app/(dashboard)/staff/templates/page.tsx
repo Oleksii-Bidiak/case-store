@@ -5,6 +5,8 @@ import {
   PermissionTemplatesSkeleton,
   PermissionTemplatesView,
 } from "@/widgets";
+import { PERM } from "@/entities/permission";
+import { PermissionGate } from "@/entities/session";
 import { dict } from "@/shared/config";
 
 /**
@@ -32,9 +34,16 @@ export default function PermissionTemplatesPage() {
         {dict.staff.back}
       </Link>
 
-      <Suspense fallback={<PermissionTemplatesSkeleton />}>
-        <PermissionTemplatesView />
-      </Suspense>
+      {/* TASK-639: one refusal instead of the view's failed queries. */}
+      <PermissionGate
+        permission={PERM.staffRead}
+        title={dict.staff.forbidden}
+        hint={dict.staff.forbiddenHint}
+      >
+        <Suspense fallback={<PermissionTemplatesSkeleton />}>
+          <PermissionTemplatesView />
+        </Suspense>
+      </PermissionGate>
     </div>
   );
 }

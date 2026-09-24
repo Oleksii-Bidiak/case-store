@@ -11,6 +11,7 @@ import {
   useUserControllerActivateUser,
   useUserControllerDeactivateUser,
 } from "@/entities/user";
+import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 
 interface UserBanToggleProps {
@@ -31,16 +32,22 @@ interface UserBanToggleProps {
  *
  * The action is disabled for the currently authenticated admin to prevent
  * accidental self-ban (UI-only guard — see plan 029 Risks).
+ *
+ * Not rendered at all without `customers:write` (TASK-716): both endpoints
+ * behind it answer 403 to anyone else, and the account status it would change
+ * is already stated in words right above it on the card.
  */
 export function UserBanToggle({ userId, isActive }: UserBanToggleProps) {
   const queryClient = useQueryClient();
-  const { userId: currentUserId } = useAuth();
+  const { userId: currentUserId, can } = useAuth();
   const activate = useUserControllerActivateUser();
   const deactivate = useUserControllerDeactivateUser();
 
   const isSelf = currentUserId === userId;
   const isPending = activate.isPending || deactivate.isPending;
   const mutation = isActive ? deactivate : activate;
+
+  if (!can(PERM.customersWrite)) return null;
 
   const handleToggle = () => {
     if (isPending) return;

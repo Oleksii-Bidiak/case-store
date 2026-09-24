@@ -123,14 +123,18 @@ describe("AdminShell — mobile nav drawer", () => {
       http.get("*/api/contact/admin/unread-count", () =>
         HttpResponse.json({ data: { unread: 2 } }),
       ),
-      http.get("*/api/admin/dashboard/needs-action", () =>
+      // TASK-722: the Orders / Reviews badges read each section's own list
+      // total, not the analytics-only needs-action endpoint.
+      http.get("*/api/admin/orders", () =>
         HttpResponse.json({
-          data: {
-            newOrders: 5,
-            pendingReviews: 1,
-            unpaidInTransit: 0,
-            failedMails: 0,
-          },
+          data: [],
+          meta: { total: 5, page: 1, limit: 1, totalPages: 5 },
+        }),
+      ),
+      http.get("*/api/admin/reviews", () =>
+        HttpResponse.json({
+          data: [],
+          meta: { total: 1, page: 1, limit: 1, totalPages: 1 },
         }),
       ),
     );

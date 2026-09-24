@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import { PERM } from "@/entities/permission";
-import { useAuth } from "@/entities/session";
+import { PermissionGate } from "@/entities/session";
 import { dict } from "@/shared/config";
 
 /**
@@ -23,41 +23,18 @@ import { dict } from "@/shared/config";
  * instead of a page of failed requests — the difference between "ask the owner to
  * tick a box" and "the panel is broken".
  *
- * `arePermissionsLoading` is checked before the refusal, not after: the grant set
- * arrives on its own request, so rendering the refusal first would flash "no
- * access" at every operator who genuinely has it.
+ * Since TASK-639 the refusal itself is the shared `PermissionGate` — the same
+ * box `/staff*`, `/audit-log` and `/orders/new` show — and this file only names
+ * the right and the words.
  */
 export function ReturnsPermissionGate({ children }: { children: ReactNode }) {
-  const { can, arePermissionsLoading } = useAuth();
-
-  if (arePermissionsLoading) {
-    return (
-      <div
-        role="status"
-        aria-label={dict.common.loading}
-        className="flex min-h-40 items-center justify-center"
-      >
-        <div className="size-6 animate-spin rounded-full border-2 border-muted border-t-primary" />
-        <span className="sr-only">{dict.common.loading}</span>
-      </div>
-    );
-  }
-
-  if (!can(PERM.returnsRead)) {
-    return (
-      <div
-        role="alert"
-        className="flex flex-col gap-2 rounded-md border border-border p-6"
-      >
-        <p className="text-sm font-medium text-foreground">
-          {dict.returns.forbidden}
-        </p>
-        <p className="text-sm text-muted-foreground">
-          {dict.returns.forbiddenHint}
-        </p>
-      </div>
-    );
-  }
-
-  return <>{children}</>;
+  return (
+    <PermissionGate
+      permission={PERM.returnsRead}
+      title={dict.returns.forbidden}
+      hint={dict.returns.forbiddenHint}
+    >
+      {children}
+    </PermissionGate>
+  );
 }

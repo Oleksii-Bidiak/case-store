@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -8,12 +9,15 @@ import {
   getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
+  OrderEntityPaymentStatus,
   paymentStatusLabel,
   useAdminOrderControllerGetAllowedPaymentTransitions,
   useAdminOrderControllerUpdatePaymentStatus,
   type UpdateOrderPaymentStatusDto,
 } from "@/entities/order";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import {
   Select,
   SelectContent,
@@ -68,14 +72,25 @@ interface PaymentStatusSelectProps {
  * against a version of the order that no longer existed and the server refused it
  * as stale — an operator alone in a single tab was told somebody else had just
  * changed the order, when the somebody else was their own previous click.
+ *
+ * Not rendered at all without `orders:write` (TASK-715) — the PATCH behind it
+ * answers 403 to anyone else.
  */
 export function PaymentStatusSelect({ orderId }: PaymentStatusSelectProps) {
+  const { can } = useAuth();
+  if (!can(PERM.ordersWrite)) return null;
+  return <PaymentStatusSelectControl orderId={orderId} />;
+}
+
+function PaymentStatusSelectControl({
+  orderId,
+}: Pick<PaymentStatusSelectProps, "orderId">) {
   const queryClient = useQueryClient();
   const transitions =
     useAdminOrderControllerGetAllowedPaymentTransitions(orderId);
   const updatePaymentStatus = useAdminOrderControllerUpdatePaymentStatus();
 
-  const { allowed } = toPaymentTransitionOptions(transitions.data);
+  const { allowed, current } = toPaymentTransitionOptions(transitions.data);
 
   const handleChange = (value: string) => {
     updatePaymentStatus.mutate(
@@ -162,11 +177,7 @@ export function PaymentStatusSelect({ orderId }: PaymentStatusSelectProps) {
   }
 
   if (allowed.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        {dict.orderStatus.noPaymentTransitions}
-      </p>
-    );
+    return <NoPaymentTransitions orderId={orderId} current={current} />;
   }
 
   return (
@@ -193,6 +204,73 @@ export function PaymentStatusSelect({ orderId }: PaymentStatusSelectProps) {
       <p className="text-xs text-muted-foreground">
         {dict.orderStatus.paymentTransitionsHint}
       </p>
+    </div>
+  );
+}
+
+/**
+ * What an empty picker means, and where the operator goes next (TASK-842).
+ *
+ * "Статус оплати змінити неможливо" on its own was a dead end: on a refunded
+ * order, or on one marked «Частково повернуто 0 грн з N», the control simply
+ * vanished and nothing on the card said why or what to do instead. The reason is
+ * read from the server's own answer — `current` — never re-derived here:
+ *
+ *  - REFUNDED has no onward move at all (terminal in `PAYMENT_TRANSITIONS`);
+ *  - PARTIALLY_REFUNDED has exactly one, REFUNDED, and the server leaves it out
+ *    while the order is still live (`isPaymentTargetReachable`). So an empty
+ *    list at PARTIALLY_REFUNDED always means "close the order first".
+ *
+ * The next step is the order's return requests — that is where the refunded sum
+ * comes from — linked through the queue's own search by the order number the
+ * card shows (the search matches an order-id prefix). Only with `returns:read`:
+ * without it the link would open onto a refusal, so the pointer is given as text.
+ */
+function NoPaymentTransitions({
+  orderId,
+  current,
+}: {
+  orderId: string;
+  current: string | undefined;
+}) {
+  const { can } = useAuth();
+  const canReadReturns = can(PERM.returnsRead);
+
+  const isRefunded = current === OrderEntityPaymentStatus.REFUNDED;
+  const isPartial = current === OrderEntityPaymentStatus.PARTIALLY_REFUNDED;
+  const reasons: string[] = isRefunded
+    ? [dict.orderStatus.noPaymentTransitionsRefunded]
+    : isPartial
+      ? [
+          dict.orderStatus.noPaymentTransitionsPartial,
+          dict.orderStatus.noPaymentTransitionsPartialAmount,
+        ]
+      : [dict.orderStatus.noPaymentTransitionsOther];
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="text-sm font-medium text-foreground">
+        {dict.orderStatus.noPaymentTransitions}
+      </p>
+      {reasons.map((reason) => (
+        <p key={reason} className="text-sm text-muted-foreground">
+          {reason}
+        </p>
+      ))}
+      {isRefunded || isPartial ? (
+        canReadReturns ? (
+          <Link
+            href={`/returns?search=${encodeURIComponent(orderId.slice(0, 8))}`}
+            className="text-sm font-medium text-primary hover:underline"
+          >
+            {dict.orderStatus.noPaymentTransitionsReturnsLink}
+          </Link>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {dict.orderStatus.noPaymentTransitionsReturnsNoAccess}
+          </p>
+        )
+      ) : null}
     </div>
   );
 }
