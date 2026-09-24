@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import type { SpecFacetFilter } from './dto/product-list-query.dto';
+import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 
 /**
  * The narrowing half of a catalogue listing query — everything that decides
@@ -142,9 +143,19 @@ export function buildProductListWhere(
   // — the admin's TASK-427 «Лише видалені» filter). There is deliberately no
   // "both" mode: a mixed page cannot be read without a per-row deleted marker,
   // and the entity has none.
-  const where: Prisma.ProductWhereInput = {
-    deletedAt: params.deleted ? { not: null } : null,
-  };
+  //
+  // The PUBLIC scope — on sale, category on sale, not a tombstone — is taken
+  // whole from `PUBLIC_PRODUCT_WHERE` (TASK-712/781) rather than re-spelled
+  // from the three flags below: every public reader (listing, facet counters,
+  // compat landings, search fallback) passes exactly `isActive: true` +
+  // `categoryActiveOnly: true` without `deleted`, and a second spelling of the
+  // rule is a spelling that drifts. Copied, not shared, so nothing a caller
+  // does to the returned object can reach the constant.
+  const isPublicScope =
+    params.isActive === true && params.categoryActiveOnly === true && !params.deleted;
+  const where: Prisma.ProductWhereInput = isPublicScope
+    ? { ...PUBLIC_PRODUCT_WHERE, category: { ...PUBLIC_PRODUCT_WHERE.category } }
+    : { deletedAt: params.deleted ? { not: null } : null };
 
   // Subtree rollup (TASK-236): the service passes the expanded category id set
   // (self + descendants), matched with `IN (...)` so a parent category returns
@@ -165,7 +176,8 @@ export function buildProductListWhere(
     where.deviceCompat = { some: { deviceModelId: params.deviceModelId } };
   }
 
-  if (params.isActive !== undefined) {
+  // Admin scope only — the public scope already carries it (see above).
+  if (!isPublicScope && params.isActive !== undefined) {
     where.isActive = params.isActive;
   }
 
@@ -186,8 +198,8 @@ export function buildProductListWhere(
   // filter, so it composes with the `categoryIds` subtree rollup above rather
   // than replacing it: a parent-category rollup still returns only the
   // products whose own category is on sale.
-  if (params.categoryActiveOnly) {
-    where.category = { isActive: true };
+  if (!isPublicScope && params.categoryActiveOnly) {
+    where.category = { ...PUBLIC_PRODUCT_WHERE.category };
   }
 
   if (params.minPrice !== undefined || params.maxPrice !== undefined) {
