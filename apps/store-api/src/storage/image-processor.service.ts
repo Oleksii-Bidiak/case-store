@@ -188,6 +188,11 @@ export class ImageProcessor {
     // dimensions cost nothing and cannot disagree with the bytes we store.
     // Measuring them afterwards with a second `sharp(webp).metadata()` would be
     // a second decode AND a second source of truth.
+    //
+    // `limitInputPixels` is passed explicitly, never left to sharp's default: this
+    // is the only place untrusted bytes get fully decoded, so it is the only guard
+    // against a decompression bomb (a small file that decodes huge, which no byte
+    // cap can catch). See MAX_INPUT_PIXELS for why the number is what it is.
     const { data: webp, info } = await sharp(buffer, { limitInputPixels: MAX_INPUT_PIXELS })
       .rotate()
       .resize({

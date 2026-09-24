@@ -13,6 +13,8 @@ import { MediaRepository, MediaUsageRepository } from '../src/media';
 import { ImageProcessor, STORAGE_SERVICE } from '../src/storage';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
+import { HttpExceptionFilter } from '../src/common/filters';
+import { IMAGE_MULTER_MAX_BYTES, MAX_FILES_PER_UPLOAD } from '../src/uploads';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
@@ -131,6 +133,10 @@ describe('ProductImageController (e2e)', () => {
         transformOptions: { enableImplicitConversion: true },
       }),
     );
+    // The filter `main.ts` installs, so the transport-limit tests below assert the
+    // status AND the body the deployed app sends, not the framework's default
+    // envelope.
+    app.useGlobalFilters(moduleFixture.get(HttpExceptionFilter));
     app.setGlobalPrefix('api', { exclude: ['health'] });
     await app.init();
   });
@@ -293,6 +299,113 @@ describe('ProductImageController (e2e)', () => {
           contentType: 'text/plain',
         })
         .expect(400);
+    });
+  });
+
+  // ─── Multer transport limits (TASK-583) ───────────────────────────────────
+  //
+  // Both Multer limits used to be documented from reading Nest's
+  // `transformException`, never from a request. These run one: whatever the
+  // running app answers is what the admin panel's error mapping has to handle,
+  // and a Nest/Multer bump that changes it must fail here, not in front of an
+  // operator. The repositories, the processor and the storage stay untouched in
+  // every Multer refusal — the interceptor runs before the handler, so a call to
+  // any of them would mean the limit did not fire where we think it does.
+
+  describe('POST /api/products/:id/images — Multer transport limits', () => {
+    function mockSuccessfulUpload(): void {
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.getMaxSortOrder.mockResolvedValue(-1);
+      imageRepositoryMock.bulkCreate.mockResolvedValue(undefined);
+      storageMock.save.mockResolvedValue('products/generated.webp');
+      imageProcessorMock.process.mockResolvedValue({
+        webp: Buffer.from('optimized-webp'),
+        blurDataUrl: 'data:image/webp;base64,BLUR',
+      });
+    }
+
+    function expectHandlerNeverRan(): void {
+      expect(productRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(imageProcessorMock.process).not.toHaveBeenCalled();
+      expect(imageRepositoryMock.bulkCreate).not.toHaveBeenCalled();
+      expect(storageMock.save).not.toHaveBeenCalled();
+    }
+
+    function galleryUpload(fileCount: number) {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      let req = request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images`)
+        .set('Authorization', `Bearer ${token}`);
+      for (let i = 0; i < fileCount; i++) {
+        req = req.attach('files', Buffer.from(`image-${i}`), {
+          filename: `p${i}.jpg`,
+          contentType: 'image/jpeg',
+        });
+      }
+      return req;
+    }
+
+    it('lets a file of exactly the hard cap reach the service, which refuses it with its own 413', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      mockSuccessfulUpload();
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('files', Buffer.alloc(IMAGE_MULTER_MAX_BYTES, 1), {
+          filename: 'cap.jpg',
+          contentType: 'image/jpeg',
+        })
+        .expect(413);
+
+      // The explainable business refusal, not Multer's — the whole reason the
+      // hard cap sits above MAX_IMAGE_BYTES.
+      expect(response.body.message).not.toBe('File too large');
+      expect(productRepositoryMock.findById).toHaveBeenCalled();
+      expect(storageMock.save).not.toHaveBeenCalled();
+    });
+
+    it('answers 413 "File too large" from Multer for one byte over the hard cap', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      mockSuccessfulUpload();
+
+      const response = await request(app.getHttpServer())
+        .post(`/api/products/${PRODUCT_ID}/images`)
+        .set('Authorization', `Bearer ${token}`)
+        .attach('files', Buffer.alloc(IMAGE_MULTER_MAX_BYTES + 1, 1), {
+          filename: 'huge.jpg',
+          contentType: 'image/jpeg',
+        })
+        .expect(413);
+
+      expect(response.body).toMatchObject({
+        statusCode: 413,
+        error: 'Payload Too Large',
+        message: 'File too large',
+      });
+      expectHandlerNeverRan();
+    });
+
+    it(`accepts exactly ${MAX_FILES_PER_UPLOAD} files in one request`, async () => {
+      mockSuccessfulUpload();
+
+      const response = await galleryUpload(MAX_FILES_PER_UPLOAD).expect(201);
+
+      expect(response.body.data).toHaveLength(MAX_FILES_PER_UPLOAD);
+      expect(storageMock.save).toHaveBeenCalledTimes(MAX_FILES_PER_UPLOAD);
+    });
+
+    it(`answers 400 "Too many files" from Multer for ${MAX_FILES_PER_UPLOAD + 1} files`, async () => {
+      mockSuccessfulUpload();
+
+      const response = await galleryUpload(MAX_FILES_PER_UPLOAD + 1).expect(400);
+
+      expect(response.body).toMatchObject({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Too many files',
+      });
+      expectHandlerNeverRan();
     });
   });
 
