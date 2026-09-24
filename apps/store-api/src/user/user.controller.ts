@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Post,
   Patch,
   Delete,
   Param,
@@ -10,7 +11,9 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -32,6 +35,8 @@ import {
   type PermissionActor,
 } from '../auth/permissions';
 import { CurrentUser } from '../auth/decorators';
+import { OperatorEmailChangeDto } from '../auth/dto/email-change.dto';
+import { AuditService, RecordsOwnAudit } from '../audit';
 import {
   UserEntity,
   UserAdminCardEntity,
@@ -119,7 +124,11 @@ type UserAdminCardResponse = { data: UserAdminCardEntity };
 )
 @Controller('users')
 export class UserController {
-  constructor(private readonly userService: UserService) {}
+  constructor(
+    private readonly userService: UserService,
+    // TASK-396: the operator email change writes its own row (see changeEmail).
+    private readonly auditService: AuditService,
+  ) {}
 
   /**
    * GET /api/users/me
@@ -337,6 +346,71 @@ export class UserController {
     const user = await this.userService.activateUser(id, actor);
 
     return { data: user };
+  }
+
+  /**
+   * POST /api/users/:id/email (TASK-396)
+   *
+   * The operator's half of an address change: a customer who lost access to
+   * their inbox asks the shop to move their login to a new one. Owner-only, as
+   * the owner decided on 2026-08-27 — this route hands an account to whoever
+   * reads the new inbox, and the owner is the one who answers for that.
+   *
+   * The new address is NOT marked verified: a verification link goes to it, and
+   * every session ends. `reason` is required and lands in the audit row with the
+   * address before and after — the only written trace of a change made on
+   * somebody's word.
+   *
+   * `@RecordsOwnAudit()` because the interesting half of the row — the address
+   * BEFORE — is not in the request body, so the generic interceptor could never
+   * record it.
+   */
+  @Post(':id/email')
+  @UseGuards(PermissionGuard)
+  @OwnerOnly()
+  @RecordsOwnAudit()
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: "Change a customer's sign-in email (owner-only; the new address must be verified)",
+    operationId: 'changeUserEmail',
+  })
+  @ApiParam({ name: 'id', description: 'User UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Address changed, left unverified; verification link sent; sessions ended',
+    type: UserResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid address, missing reason, or the same address' })
+  @ApiResponse({ status: 403, description: 'Forbidden — owner-only, or your own account' })
+  @ApiResponse({ status: 404, description: 'No customer with this id' })
+  @ApiResponse({ status: 409, description: 'The address belongs to another account' })
+  async changeEmail(
+    @Param('id') id: string,
+    @Body() dto: OperatorEmailChangeDto,
+    @CurrentActor() actor: PermissionActor,
+    @Req() request: Request,
+  ): Promise<UserResponse> {
+    const change = await this.userService.changeEmail(id, dto.newEmail, actor);
+
+    await this.auditService.record({
+      actorId: actor.id,
+      actorEmail: actor.email,
+      actorRole: actor.role,
+      action: 'user.changeEmail',
+      entityType: 'user',
+      entityId: change.user.id,
+      summary: `Email клієнта: ${change.previousEmail} → ${change.user.email}. Причина: ${dto.reason}`,
+      diff: {
+        email: { from: change.previousEmail, to: change.user.email },
+        emailVerified: { from: change.wasVerified, to: false },
+        reason: dto.reason,
+      },
+      ip: request.ip ?? null,
+      userAgent: request.headers['user-agent'] ?? null,
+    });
+
+    return { data: change.user };
   }
 
   /**

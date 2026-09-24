@@ -31,6 +31,8 @@ import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmEmailVerificationDto } from './dto/confirm-email-verification.dto';
+import { EmailChangeTokenDto, RequestEmailChangeDto } from './dto/email-change.dto';
+import { EmailChangeService } from './email-change.service';
 import { EmailVerificationService } from './email-verification.service';
 import { JwtRefreshGuard } from './guards';
 import { JwtAuthGuard } from './guards';
@@ -156,6 +158,7 @@ export class AuthController {
     private readonly guestStateMerge: GuestStateMergeService,
     private readonly permissionService: PermissionService,
     private readonly emailVerificationService: EmailVerificationService,
+    private readonly emailChangeService: EmailChangeService,
   ) {}
 
   /**
@@ -484,6 +487,111 @@ export class AuthController {
 
     return {
       data: { message: 'Email address verified.', claimedOrders },
+    };
+  }
+
+  /**
+   * POST /api/auth/email-change/request (TASK-396)
+   *
+   * Ask to sign in with a different address. Requires the current password; the
+   * login does NOT change here — a link goes to the new address, and a warning
+   * with a revert link goes to the current one.
+   */
+  @Post('email-change/request')
+  @HttpCode(HttpStatus.OK)
+  // Every accepted call sends TWO real emails, and it checks a password.
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Request a change of the sign-in email (requires the current password)',
+    operationId: 'requestEmailChange',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Confirmation link sent to the new address; notice sent to the current one',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid address, or the address you already have' })
+  @ApiResponse({ status: 401, description: 'Not signed in, or the current password is wrong' })
+  @ApiResponse({ status: 409, description: 'The address belongs to another account' })
+  async requestEmailChange(
+    @CurrentUser('id') userId: string,
+    @Body() dto: RequestEmailChangeDto,
+  ): Promise<{ data: MessageResponse }> {
+    await this.emailChangeService.requestChange(userId, dto.newEmail, dto.currentPassword);
+
+    return {
+      data: {
+        message: 'A confirmation link has been sent to the new address.',
+      },
+    };
+  }
+
+  /**
+   * POST /api/auth/email-change/confirm (TASK-396)
+   *
+   * Apply the change from the link in the NEW inbox. Public — the click carries
+   * no session. Every session ends, so the refresh cookie is cleared too.
+   */
+  @Post('email-change/confirm')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // An unauthenticated write that changes a login: fail closed (TASK-493 rule).
+  @FailClosedThrottle()
+  @ApiOperation({
+    summary: 'Confirm a change of the sign-in email with the emailed token',
+    operationId: 'confirmEmailChange',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The new address is the login; all sessions were signed out',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid, used, expired or superseded link' })
+  @ApiResponse({ status: 409, description: 'The address was registered by someone else meanwhile' })
+  async confirmEmailChange(
+    @Body() dto: EmailChangeTokenDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ data: MessageResponse }> {
+    await this.emailChangeService.confirmChange(dto.token);
+
+    this.clearRefreshCookie(response);
+
+    return { data: { message: 'Email address changed. Please sign in again.' } };
+  }
+
+  /**
+   * POST /api/auth/email-change/revert (TASK-396)
+   *
+   * "This wasn't me" — from the link in the OLD inbox. Cancels a pending change
+   * or restores the old address, and signs every session out. Public.
+   */
+  @Post('email-change/revert')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @FailClosedThrottle()
+  @ApiOperation({
+    summary: 'Undo a change of the sign-in email from the link sent to the old address',
+    operationId: 'revertEmailChange',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The old address is the login again; all sessions were signed out',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid, used or expired link' })
+  @ApiResponse({ status: 409, description: 'The old address now belongs to another account' })
+  async revertEmailChange(
+    @Body() dto: EmailChangeTokenDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ data: MessageResponse }> {
+    await this.emailChangeService.revertChange(dto.token);
+
+    this.clearRefreshCookie(response);
+
+    return {
+      data: { message: 'The change was undone and every session signed out.' },
     };
   }
 

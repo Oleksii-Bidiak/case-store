@@ -24,6 +24,12 @@ import {
   buildOrderShippedEmail,
   type OrderShippedMailPayload,
 } from './templates/order-shipped.template';
+import {
+  buildEmailChangeConfirmEmail,
+  buildEmailChangeNoticeEmail,
+  type EmailChangeConfirmMailPayload,
+  type EmailChangeNoticeMailPayload,
+} from './templates/email-change.template';
 
 /** Parameters accepted by {@link MailService.sendOrderConfirmation}. */
 export interface SendOrderConfirmationParams {
@@ -186,6 +192,48 @@ export class MailService {
     }
 
     const template = buildEmailVerificationEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Send the "confirm your new address" letter to the NEW address (TASK-396).
+   * Same contract as the other payload senders.
+   */
+  async sendEmailChangeConfirmPayload(payload: EmailChangeConfirmMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping address-change confirm to ${payload.to}`);
+      return;
+    }
+
+    const template = buildEmailChangeConfirmEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Send the "someone asked to change your login" warning, with its revert link,
+   * to the OLD address (TASK-396). Same contract as the other payload senders.
+   */
+  async sendEmailChangeNoticePayload(payload: EmailChangeNoticeMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping address-change notice to ${payload.to}`);
+      return;
+    }
+
+    const template = buildEmailChangeNoticeEmail(payload);
 
     await this.getTransporter().sendMail({
       from: this.from,

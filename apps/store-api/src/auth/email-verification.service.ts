@@ -3,6 +3,7 @@ import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
+import { EmailTokenPurpose } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
@@ -128,6 +129,11 @@ export class EmailVerificationService {
 
     const isInvalid =
       !stored ||
+      // TASK-396: an address-change link proves a DIFFERENT address from the
+      // account's current one by design, so this route would refuse it below
+      // anyway — and burn it on the way out. Refused up front instead, untouched,
+      // so a link pasted into the wrong page still works on the right one.
+      stored.purpose !== EmailTokenPurpose.VERIFY ||
       Boolean(stored.usedAt) ||
       stored.expiresAt < new Date() ||
       !stored.user.isActive ||

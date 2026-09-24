@@ -18,6 +18,7 @@ import { AuthController } from '../src/auth/auth.controller';
 import { AuthService } from '../src/auth/auth.service';
 import { EmailVerificationService } from '../src/auth/email-verification.service';
 import { GuestStateMergeService } from '../src/auth/guest-state-merge.service';
+import { EmailChangeService } from '../src/auth/email-change.service';
 import { GoogleAuthGuard, JwtRefreshGuard } from '../src/auth/guards';
 import { PermissionService } from '../src/auth/permissions';
 import { OptionalJwtAuthGuard } from '../src/cart/guards';
@@ -256,6 +257,8 @@ describe('Auth token-confirm routes fail closed when the limiter is down (e2e, T
       { provide: ConfigService, useValue: { get: (_key: string, fallback?: unknown) => fallback } },
       // TASK-824: the guest merge moved out of the controller into this service.
       { provide: GuestStateMergeService, useValue: {} },
+      // TASK-396: the address-change routes live on the same controller.
+      { provide: EmailChangeService, useValue: {} },
       { provide: PermissionService, useValue: {} },
     ],
   })

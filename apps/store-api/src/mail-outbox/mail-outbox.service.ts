@@ -9,9 +9,15 @@ import type { PasswordResetMailPayload } from '../mail/templates/password-reset.
 import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
 import type { EmailVerificationMailPayload } from '../mail/templates/email-verification.template';
 import type { OrderShippedMailPayload } from '../mail/templates/order-shipped.template';
+import type {
+  EmailChangeConfirmMailPayload,
+  EmailChangeNoticeMailPayload,
+} from '../mail/templates/email-change.template';
 import { Clock, MAIL_OUTBOX_CLOCK } from './mail-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
+  EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
+  EMAIL_CHANGE_NOTICE_MAIL_TYPE,
   EMAIL_VERIFICATION_MAIL_TYPE,
   ORDER_CONFIRMATION_MAIL_TYPE,
   ORDER_SHIPPED_MAIL_TYPE,
@@ -140,6 +146,42 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: EMAIL_VERIFICATION_MAIL_TYPE,
+        recipient: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Enqueue the letter that proves a NEW address (TASK-396). The recipient is the
+   * address being proven, carried in the payload — for the same reason as
+   * {@link enqueueEmailVerification}: never re-derived from the user row.
+   */
+  async enqueueEmailChangeConfirm(
+    payload: EmailChangeConfirmMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
+        recipient: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Enqueue the warning, with its revert link, to the OLD address (TASK-396).
+   */
+  async enqueueEmailChangeNotice(
+    payload: EmailChangeNoticeMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: EMAIL_CHANGE_NOTICE_MAIL_TYPE,
         recipient: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
@@ -300,6 +342,16 @@ export class MailOutboxService {
       case EMAIL_VERIFICATION_MAIL_TYPE:
         await this.mailService.sendEmailVerificationPayload(
           row.payload as unknown as EmailVerificationMailPayload,
+        );
+        return;
+      case EMAIL_CHANGE_CONFIRM_MAIL_TYPE:
+        await this.mailService.sendEmailChangeConfirmPayload(
+          row.payload as unknown as EmailChangeConfirmMailPayload,
+        );
+        return;
+      case EMAIL_CHANGE_NOTICE_MAIL_TYPE:
+        await this.mailService.sendEmailChangeNoticePayload(
+          row.payload as unknown as EmailChangeNoticeMailPayload,
         );
         return;
       default:

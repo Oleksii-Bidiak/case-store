@@ -4,6 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
 import { EmailVerificationService } from './email-verification.service';
+import { EmailChangeService } from './email-change.service';
 import { AuthController } from './auth.controller';
 import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
 import { GuestStateMergeService } from './guest-state-merge.service';
@@ -52,6 +53,8 @@ import { WishlistModule } from '../wishlist/wishlist.module';
     AuthRepository,
     AuthService,
     EmailVerificationService,
+    // Changing the sign-in address (TASK-396).
+    EmailChangeService,
     RefreshTokenCleanupService,
     // Merges a guest cart + wishlist on sign-in (TASK-824, moved out of the controller).
     GuestStateMergeService,
@@ -64,6 +67,7 @@ import { WishlistModule } from '../wishlist/wishlist.module';
     GoogleStrategy,
     GoogleAuthGuard,
   ],
-  exports: [AuthRepository, AuthService, EmailVerificationService],
+  // EmailChangeService is exported for the operator route on UserController.
+  exports: [AuthRepository, AuthService, EmailVerificationService, EmailChangeService],
 })
 export class AuthModule {}

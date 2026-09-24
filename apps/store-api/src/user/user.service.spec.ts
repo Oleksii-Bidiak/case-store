@@ -8,6 +8,7 @@ import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { AuthRepository } from '../auth/auth.repository';
 
 import { ReviewService } from '../review/review.service';
+import { EmailChangeService } from '../auth/email-change.service';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,11 @@ const reviewServiceMock = {
   unhideAuthor: jest.fn(),
 };
 
+// TASK-396: the operator's address change delegates the change itself here.
+const emailChangeServiceMock = {
+  changeByOperator: jest.fn(),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('UserService', () => {
@@ -90,6 +96,7 @@ describe('UserService', () => {
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: AuthRepository, useValue: authRepositoryMock },
         { provide: ReviewService, useValue: reviewServiceMock },
+        { provide: EmailChangeService, useValue: emailChangeServiceMock },
       ],
     }).compile();
 
@@ -623,6 +630,43 @@ describe('UserService', () => {
   });
 
   // ─── deleteUser (soft-delete, TASK-104) ──────────────────────────────────────
+
+  // ─── changeEmail — the operator's half (TASK-396) ─────────────────────────
+
+  describe('changeEmail', () => {
+    it('delegates to EmailChangeService and reports the address before the change', async () => {
+      const verified = { ...mockUser, emailVerifiedAt: new Date() };
+      repository.findCustomerById
+        .mockResolvedValueOnce(verified)
+        .mockResolvedValueOnce({ ...verified, email: 'new@example.com', emailVerifiedAt: null });
+
+      const result = await service.changeEmail('user-uuid-1', 'new@example.com', adminActor);
+
+      expect(emailChangeServiceMock.changeByOperator).toHaveBeenCalledWith(
+        verified,
+        'new@example.com',
+      );
+      expect(result.previousEmail).toBe(mockUser.email);
+      expect(result.wasVerified).toBe(true);
+      expect(result.user.email).toBe('new@example.com');
+    });
+
+    it('refuses your own account — that goes through your own profile, with your password', async () => {
+      await expect(
+        service.changeEmail('admin-uuid-1', 'new@example.com', adminActor),
+      ).rejects.toThrow(ForbiddenException);
+      expect(emailChangeServiceMock.changeByOperator).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for a missing or non-customer id, changing nothing', async () => {
+      repository.findCustomerById.mockResolvedValue(null);
+
+      await expect(service.changeEmail('staff-1', 'new@example.com', adminActor)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(emailChangeServiceMock.changeByOperator).not.toHaveBeenCalled();
+    });
+  });
 
   describe('deleteUser', () => {
     it('should soft-delete with a mangled email, preserve the original, and revoke tokens', async () => {

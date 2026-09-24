@@ -33,6 +33,18 @@ export const ACCOUNT_LOCKED_MAIL_TYPE = 'account-locked';
 export const EMAIL_VERIFICATION_MAIL_TYPE = 'email-verification';
 
 /**
+ * `MailOutbox.type` for the letter that proves a NEW address before it becomes
+ * the login (TASK-396). Recipient = the new address, carried in the payload.
+ */
+export const EMAIL_CHANGE_CONFIRM_MAIL_TYPE = 'email-change-confirm';
+
+/**
+ * `MailOutbox.type` for the warning, with a revert link, sent to the OLD address
+ * when a change is requested (TASK-396).
+ */
+export const EMAIL_CHANGE_NOTICE_MAIL_TYPE = 'email-change-notice';
+
+/**
  * `MailOutbox.type` value for the "your order has shipped" notice (TASK-335).
  *
  * Until it existed, a parcel left the warehouse and the customer found out by

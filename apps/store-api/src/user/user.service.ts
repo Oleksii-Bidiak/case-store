@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
 import { AuthRepository } from '../auth/auth.repository';
+import { EmailChangeService } from '../auth/email-change.service';
 import { ReviewService } from '../review/review.service';
 import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
@@ -41,6 +42,8 @@ export class UserService {
     private readonly userRepository: UserRepository,
     private readonly authRepository: AuthRepository,
     private readonly reviewService: ReviewService,
+    // TASK-396: the operator's half of changing a customer's sign-in address.
+    private readonly emailChangeService: EmailChangeService,
   ) {}
 
   /**
@@ -258,6 +261,50 @@ export class UserService {
     await this.reviewService.hideAuthor(id);
 
     return UserEntity.fromPrisma(deactivatedUser);
+  }
+
+  /**
+   * Change a customer's sign-in address on the operator's side (TASK-396) — the
+   * customer lost access to their inbox and asked the shop for help.
+   *
+   * Same target rules as its neighbours: a customer only (a staff id is 404), and
+   * never yourself — your own address changes through your own account, with
+   * your password and a link to the new inbox. The new address is NOT marked
+   * verified; {@link EmailChangeService.changeByOperator} sends it a
+   * verification link and ends every session.
+   *
+   * @returns the updated customer and what the address was before, for the
+   *   audit row the controller writes.
+   */
+  async changeEmail(
+    id: string,
+    newEmail: string,
+    actor: PermissionActor,
+  ): Promise<{ user: UserEntity; previousEmail: string; wasVerified: boolean }> {
+    if (id === actor.id) {
+      throw new ForbiddenException('Change your own address from your account');
+    }
+
+    const user = await this.userRepository.findCustomerById(id);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    assertMayManage(actor, user);
+
+    await this.emailChangeService.changeByOperator(user, newEmail);
+
+    const updated = await this.userRepository.findCustomerById(id);
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      user: UserEntity.fromPrisma(updated),
+      previousEmail: user.email,
+      wasVerified: Boolean(user.emailVerifiedAt),
+    };
   }
 
   /**
