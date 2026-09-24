@@ -709,7 +709,7 @@ describe('Staff (e2e)', () => {
       expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
     });
 
-    it('is 401 on a wrong password, and nothing at all happens', async () => {
+    it('is 401 on a wrong password, moves nothing, and logs the refused attempt', async () => {
       authServiceMock.verifyOwnPassword.mockRejectedValue(
         new UnauthorizedException('Invalid credentials'),
       );
@@ -725,6 +725,31 @@ describe('Staff (e2e)', () => {
 
       expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
       expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+
+      // TASK-637: «хтось намагався віддати мій магазин і не вгадав пароль» is
+      // what the action log is for. One row, the same action key as a success,
+      // marked as refused — and without the password that was typed.
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledTimes(1);
+      const { data } = prismaServiceMock.auditLog.create.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.action).toBe('staff.transferOwnership');
+      expect(data.actorId).toBe(owner.id);
+      expect(data.entityId).toBe(adminRow.id);
+      expect(data.diff).toEqual({ outcome: { from: null, to: 'rejected' } });
+      expect(String(data.summary)).toContain('відхилено');
+      expect(JSON.stringify(data)).not.toContain('not-my-password');
+    });
+
+    it('logs nothing for a refusal that is about the request, not the password', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(account(managerRow));
+
+      await request(app.getHttpServer())
+        .post(`/api/admin/staff/${managerRow.id}/transfer-ownership`)
+        .set('Authorization', auth(owner))
+        .send({ password: PASSWORD })
+        .expect(400);
+
       expect(prismaServiceMock.auditLog.create).not.toHaveBeenCalled();
     });
 
