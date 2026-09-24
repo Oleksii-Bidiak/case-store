@@ -16,8 +16,21 @@ import type { PermissionActor } from '../auth/permissions/permission.repository'
  *  read would bury the writes nobody can otherwise explain. */
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-/** Route params, in preference order, that name the thing being acted on. */
-const ENTITY_ID_PARAMS = ['id', 'orderId', 'productId', 'imageId', 'categoryId', 'slug'];
+/**
+ * Route params, in preference order, that name the thing being acted on — and
+ * WHICH entity each one names. `null` = the route's own entity (a bare `:id` or
+ * `:slug` always is). A named param may belong to a parent instead:
+ * `POST /admin/orders/:orderId/returns` creates a return under an order, and
+ * there the order id is not the id of the thing created (TASK-628).
+ */
+const ENTITY_ID_PARAMS: ReadonlyArray<readonly [param: string, entity: string | null]> = [
+  ['id', null],
+  ['orderId', 'order'],
+  ['productId', 'product'],
+  ['imageId', 'productImage'],
+  ['categoryId', 'category'],
+  ['slug', null],
+];
 
 interface AuditableRequest extends Request {
   user?: { id?: string };
@@ -62,7 +75,8 @@ export class AuditInterceptor implements NestInterceptor {
     const diff = bodyToDiff(request.body);
     const entityType = entityTypeFromController(context.getClass().name);
     const action = `${entityType}.${context.getHandler().name}`;
-    const paramEntityId = pickEntityId(request.params);
+    const param = pickEntityParam(request.params);
+    const isCreate = request.method === 'POST';
     const summary = `${request.method} ${request.originalUrl ?? request.url}`;
 
     return next.handle().pipe(
@@ -78,7 +92,7 @@ export class AuditInterceptor implements NestInterceptor {
             actorRole: actor?.role ?? null,
             action,
             entityType,
-            entityId: paramEntityId ?? entityIdFromResponse(response),
+            entityId: resolveEntityId(entityType, isCreate, param, response),
             summary,
             diff,
             ip: request.ip ?? null,
@@ -128,9 +142,11 @@ export class AuditInterceptor implements NestInterceptor {
  * Keep this map tiny. It exists for name collisions, not for taste: if a
  * controller really does own its own entity, let the derivation name it.
  */
-const ENTITY_TYPE_BY_CONTROLLER: Readonly<Record<string, string>> = Object.freeze({
-  AdminOrderReturnController: 'return',
-});
+const ENTITY_TYPE_BY_CONTROLLER: ReadonlyMap<string, string> = new Map([
+  // A Map, not an object literal: a lookup on `{}` walks Object.prototype, so a
+  // class named `constructor` would "find" Object itself (TASK-628).
+  ['AdminOrderReturnController', 'return'],
+]);
 
 /**
  * `AdminBannersController` → `banners`, `UserController` → `user`.
@@ -141,7 +157,7 @@ const ENTITY_TYPE_BY_CONTROLLER: Readonly<Record<string, string>> = Object.freez
  * The exception above is per CLASS, not per route, so it keeps that property.
  */
 export function entityTypeFromController(className: string): string {
-  const override = ENTITY_TYPE_BY_CONTROLLER[className];
+  const override = ENTITY_TYPE_BY_CONTROLLER.get(className);
   if (override !== undefined) {
     return override;
   }
@@ -149,18 +165,54 @@ export function entityTypeFromController(className: string): string {
   return stripped.length > 0 ? stripped[0].toLowerCase() + stripped.slice(1) : className;
 }
 
+interface EntityParam {
+  value: string;
+  /** The entity the param names; `null` = the route's own entity. */
+  entity: string | null;
+}
+
 /** The route param naming the affected entity, if the route has one. */
-function pickEntityId(params: Record<string, string | string[]> | undefined): string | null {
+function pickEntityParam(
+  params: Record<string, string | string[]> | undefined,
+): EntityParam | null {
   if (!params) {
     return null;
   }
-  for (const key of ENTITY_ID_PARAMS) {
-    const value = params[key];
+  for (const [key, entity] of ENTITY_ID_PARAMS) {
+    const value = Object.prototype.hasOwnProperty.call(params, key) ? params[key] : undefined;
     if (typeof value === 'string' && value.length > 0) {
-      return value;
+      return { value, entity };
     }
   }
   return null;
+}
+
+/**
+ * The id the audit row is keyed by (TASK-628).
+ *
+ * The path id wins when it names the audited entity itself — a PATCH of
+ * `/admin/orders/:orderId` is about that order. But a CREATE under a parent
+ * (`POST /admin/orders/:orderId/returns`) makes a new entity whose id only the
+ * response knows; keying that row by the parent put `entityType: 'return'` next
+ * to an ORDER id, and the return's creation could not be found by its id.
+ */
+function resolveEntityId(
+  entityType: string,
+  isCreate: boolean,
+  param: EntityParam | null,
+  response: unknown,
+): string | null {
+  const namesAuditedEntity = param !== null && (param.entity ?? entityType) === entityType;
+  if (param && namesAuditedEntity) {
+    return param.value;
+  }
+  if (isCreate) {
+    const created = entityIdFromResponse(response);
+    if (created !== null) {
+      return created;
+    }
+  }
+  return param?.value ?? entityIdFromResponse(response);
 }
 
 /**
