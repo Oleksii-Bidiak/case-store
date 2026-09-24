@@ -896,6 +896,46 @@
         ]
       }
     },
+    "/api/addon-services/admin/resolved-for-product/{productId}": {
+      "get": {
+        "operationId": "addonServiceControllerAdminResolveForProduct",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "description": "Product UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved add-ons",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvedAddonListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Product not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Resolve the add-on services applicable to any non-deleted product (admin)",
+        "tags": [
+          "AddonServices"
+        ]
+      }
+    },
     "/api/addon-services/admin/{id}": {
       "get": {
         "operationId": "addonServiceControllerFindById",

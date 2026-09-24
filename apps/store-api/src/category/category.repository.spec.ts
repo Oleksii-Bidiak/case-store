@@ -4,6 +4,7 @@ import { CategoryRepository } from './category.repository';
 import { CategoryNotFoundError } from './category.errors';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
+import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
 
 /**
  * Unit tests for the recursive traversal helpers added in TASK-236
@@ -566,6 +567,24 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
 
         expect(result!.productCount).toBe(0);
         expect(result!.subtreeProductCount).toBe(19);
+      });
+
+      // TASK-781: the number must equal what the listing below it shows — so a
+      // product in a deactivated CHILD of the subtree, or a soft-deleted one, is
+      // not counted. Both counts go through the one shared predicate.
+      it('counts only publicly visible products, both directly and across the subtree', async () => {
+        findUnique.mockResolvedValue({ id: 'root', name: 'Root' });
+        queryRaw.mockResolvedValue([{ id: 'root' }, { id: 'child' }]);
+        productCount.mockResolvedValue(0);
+
+        await repo.findWithProductCount('root');
+
+        expect(productCount).toHaveBeenNthCalledWith(1, {
+          where: { categoryId: 'root', ...PUBLIC_PRODUCT_WHERE },
+        });
+        expect(productCount).toHaveBeenNthCalledWith(2, {
+          where: { categoryId: { in: ['root', 'child'] }, ...PUBLIC_PRODUCT_WHERE },
+        });
       });
 
       // A leaf's subtree is itself, so the second count would be the first one

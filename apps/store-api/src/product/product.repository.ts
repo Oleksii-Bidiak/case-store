@@ -11,6 +11,7 @@ import {
 import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
 import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 import { COLOR_SPEC_KEY, isColorAxis, withColorAxis } from '../common/color-axis';
+import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 
 /**
  * Interactive-transaction budget for the bulk colour write (TASK-487). See the
@@ -351,6 +352,22 @@ export class ProductRepository {
   }
 
   /**
+   * Find a product by id as a SHOPPER may see it (TASK-781): on sale, not
+   * deleted, in an active category — {@link PUBLIC_PRODUCT_WHERE}. A draft, a
+   * withdrawn product or one in a hidden category resolves to null, exactly like
+   * an id that never existed, so a public route built on it cannot be used as an
+   * existence oracle for hidden positions (nor leak their prices).
+   *
+   * {@link findById} stays the admin read: it returns drafts on purpose.
+   */
+  findPublicById(id: string): Promise<(Product & { brand: ProductBrandSummary | null }) | null> {
+    return this.prisma.product.findFirst({
+      where: { id, ...PUBLIC_PRODUCT_WHERE },
+      include: { brand: { select: BRAND_SUMMARY_SELECT } },
+    });
+  }
+
+  /**
    * Find a product by slug.
    * Returns the product record or null if not found. Excludes soft-deleted rows.
    */
@@ -380,17 +397,21 @@ export class ProductRepository {
    *   Either way the public PDP surfaces a 404 (TASK-145). Pass `false` to bypass
    *   both filters for staff preview of withdrawn products (TASK-155);
    *   soft-deleted rows remain excluded regardless.
+   *
+   * The sibling positions are ALWAYS filtered by {@link PUBLIC_PRODUCT_WHERE},
+   * preview or not (TASK-782): the variant switcher links to them, and a sibling
+   * whose category was withdrawn is a link to a 404. The preview shows what the
+   * storefront will show, so it gets the same list.
    */
   async findBySlugWithRelations(
     slug: string,
     options?: { activeOnly?: boolean },
   ): Promise<ProductWithRelations['product'] | null> {
     const product = await this.prisma.product.findFirst({
-      where: {
-        slug,
-        deletedAt: null,
-        ...((options?.activeOnly ?? true) ? { isActive: true, category: { isActive: true } } : {}),
-      },
+      where:
+        (options?.activeOnly ?? true)
+          ? { slug, ...PUBLIC_PRODUCT_WHERE }
+          : { slug, deletedAt: null },
       include: {
         category: {
           select: { id: true, name: true, slug: true },
@@ -403,7 +424,7 @@ export class ProductRepository {
               select: { name: true, sortOrder: true },
             },
             positions: {
-              where: { isActive: true, deletedAt: null },
+              where: PUBLIC_PRODUCT_WHERE,
               orderBy: { positionOrder: 'asc' },
               select: {
                 id: true,
@@ -791,7 +812,7 @@ export class ProductRepository {
       return new Map();
     }
     const rows = await this.prisma.product.findMany({
-      where: { groupId: { in: groupIds }, isActive: true, deletedAt: null },
+      where: { groupId: { in: groupIds }, ...PUBLIC_PRODUCT_WHERE },
       orderBy: { positionOrder: 'asc' },
       select: {
         id: true,
@@ -836,12 +857,7 @@ export class ProductRepository {
       return [];
     }
     const products = await this.prisma.product.findMany({
-      where: {
-        id: { in: ids },
-        isActive: true,
-        deletedAt: null,
-        category: { isActive: true },
-      },
+      where: { id: { in: ids }, ...PUBLIC_PRODUCT_WHERE },
       include: { brand: { select: BRAND_SUMMARY_SELECT } },
     });
 
@@ -909,7 +925,7 @@ export class ProductRepository {
    */
   async findOneForIndex(id: string): Promise<ProductIndexSource | null> {
     const product = await this.prisma.product.findFirst({
-      where: { id, isActive: true, deletedAt: null, category: { isActive: true } },
+      where: { id, ...PUBLIC_PRODUCT_WHERE },
       include: {
         category: { select: { name: true } },
         brand: { select: { name: true } },
@@ -934,7 +950,7 @@ export class ProductRepository {
    */
   async findManyForIndex(skip: number, take: number): Promise<{ items: ProductIndexSource[] }> {
     const rows = await this.prisma.product.findMany({
-      where: { isActive: true, deletedAt: null, category: { isActive: true } },
+      where: PUBLIC_PRODUCT_WHERE,
       orderBy: { createdAt: 'asc' },
       skip,
       take,

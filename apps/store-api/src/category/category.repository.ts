@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma';
 import { Category, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { SlugRedirectRepository } from '../slug-redirect';
+import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
 import { AdminCategoryTreeNodeEntity, AdminCategoryTreeRow } from './entities';
 import {
   CategorySnapshotRow,
@@ -732,6 +733,11 @@ export class CategoryRepository {
    * caller picks the one it means. A leaf resolves its subtree to just itself, in
    * which case the second count is skipped — that is the overwhelmingly common
    * case and it costs exactly what it always did, plus the one recursive CTE.
+   *
+   * Both counts use {@link PUBLIC_PRODUCT_WHERE} (TASK-781), so the number equals
+   * what the listing under it shows: soft-deleted products and — the case the
+   * old `isActive`-only count missed — products filed in a DEACTIVATED child of
+   * this subtree are not counted, because the listing does not show them either.
    */
   async findWithProductCount(id: string): Promise<CategoryWithCountResult | null> {
     const category = await this.prisma.category.findUnique({
@@ -743,7 +749,7 @@ export class CategoryRepository {
     }
 
     const [productCount, subtreeIds] = await Promise.all([
-      this.prisma.product.count({ where: { categoryId: id, isActive: true } }),
+      this.prisma.product.count({ where: { categoryId: id, ...PUBLIC_PRODUCT_WHERE } }),
       this.findSubtreeIds(id),
     ]);
 
@@ -751,7 +757,7 @@ export class CategoryRepository {
       subtreeIds.length <= 1
         ? productCount
         : await this.prisma.product.count({
-            where: { categoryId: { in: subtreeIds }, isActive: true },
+            where: { categoryId: { in: subtreeIds }, ...PUBLIC_PRODUCT_WHERE },
           });
 
     return { category, productCount, subtreeProductCount };

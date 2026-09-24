@@ -278,7 +278,7 @@ function stubEditPage() {
     http.get(`*/api/products/${NEW_ID}/images`, () =>
       HttpResponse.json({ data: [] }),
     ),
-    http.get(`*/api/addon-services/resolved-for-product/${NEW_ID}`, () =>
+    http.get(`*/api/addon-services/admin/resolved-for-product/${NEW_ID}`, () =>
       HttpResponse.json({ data: [] }),
     ),
     http.get(`*/api/addon-services/deltas/product/${NEW_ID}`, () =>

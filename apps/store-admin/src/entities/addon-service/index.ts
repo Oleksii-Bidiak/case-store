@@ -26,11 +26,11 @@ export {
   getAddonServiceControllerGetCategoryTemplateQueryKey,
   getAddonServiceControllerResolveCategoryTemplateQueryKey,
   // Product deltas
-  useAddonServiceControllerResolveForProduct,
+  useAddonServiceControllerAdminResolveForProduct,
   useAddonServiceControllerGetProductDeltas,
   useAddonServiceControllerSetProductDelta,
   useAddonServiceControllerClearProductDelta,
-  getAddonServiceControllerResolveForProductQueryKey,
+  getAddonServiceControllerAdminResolveForProductQueryKey,
   getAddonServiceControllerGetProductDeltasQueryKey,
 } from "@/shared/api";
 
