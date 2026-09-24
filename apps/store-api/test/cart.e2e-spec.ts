@@ -499,6 +499,10 @@ describe('CartController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ quantity: 0 })
         .expect(400);
+
+      // A 0 never reaches the service — it is not a hidden "remove" (TASK-780).
+      expect(cartRepositoryMock.removeItem).not.toHaveBeenCalled();
+      expect(cartRepositoryMock.updateItem).not.toHaveBeenCalled();
     });
 
     it('should return 404 when the item does not exist in the cart', async () => {

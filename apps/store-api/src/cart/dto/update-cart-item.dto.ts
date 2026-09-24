@@ -5,8 +5,8 @@ import { Type } from 'class-transformer';
 /**
  * DTO for updating a cart item's quantity.
  *
- * quantity must be between 1 and 99.
- * If the service receives quantity = 0, it will remove the item instead.
+ * quantity must be between 1 and 99 — a 0 is a 400, never a removal (removing a
+ * line is DELETE /api/cart/items/:itemId, TASK-780).
  */
 export class UpdateCartItemDto {
   @ApiProperty({

@@ -763,18 +763,6 @@ describe('CartService', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should remove item when quantity is set to 0', async () => {
-      cartRepositoryMock.findByUserId
-        .mockResolvedValueOnce(mockCartWithVariantItem)
-        .mockResolvedValueOnce(mockEmptyCart);
-      cartRepositoryMock.removeItem.mockResolvedValue(undefined);
-
-      const result = await service.updateItem(userIdentity, 'item-uuid-1', { quantity: 0 });
-
-      expect(cartRepositoryMock.removeItem).toHaveBeenCalledWith('item-uuid-1');
-      expect(result.items).toHaveLength(0);
-    });
-
     it('should throw NotFoundException when cart does not exist', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(null);
 

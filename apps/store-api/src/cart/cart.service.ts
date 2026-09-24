@@ -164,8 +164,11 @@ export class CartService {
    * Business rules:
    * - The cart must exist (NotFoundException if not)
    * - The item must exist in the cart (NotFoundException if not)
-   * - If quantity is 0, remove the item instead of updating
-   * - If quantity > 0, validate stock and max quantity
+   * - The line must stay purchasable at the new quantity (active, in stock,
+   *   within MAX_QUANTITY — `assertLinePurchasable`)
+   *
+   * The quantity is always ≥ 1: `UpdateCartItemDto` is `@Min(1)`, so a 0 is a
+   * 400 from the ValidationPipe. Removing a line is `DELETE /cart/items/:id`.
    */
   async updateItem(
     identity: ResolvedCartIdentity,
@@ -182,12 +185,6 @@ export class CartService {
 
     if (!cartItem) {
       throw new NotFoundException('Cart item not found');
-    }
-
-    // If quantity is 0, remove the item
-    if (dto.quantity === 0) {
-      await this.cartRepository.removeItem(itemId);
-      return this.getCart(identity);
     }
 
     this.assertLinePurchasable(cartItem.product, dto.quantity);

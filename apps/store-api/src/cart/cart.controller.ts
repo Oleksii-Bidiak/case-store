@@ -97,7 +97,8 @@ export class CartController {
   /**
    * PATCH /api/cart/items/:itemId
    *
-   * Update a cart item's quantity. If quantity is 0, the item is removed.
+   * Update a cart item's quantity (1–99). A 0 is rejected with 400 by the DTO;
+   * removing a line is DELETE /api/cart/items/:itemId.
    */
   @Patch('items/:itemId')
   @ApiOperation({ summary: 'Update cart item quantity', operationId: 'updateCartItem' })
