@@ -105,14 +105,20 @@ export function OrderStatusSelect({ orderId }: OrderStatusSelectProps) {
   const { data: orderData } = useAdminOrderControllerFindById(orderId);
   const order = orderData?.data;
 
-  // TASK-469: "has anyone opened a return on this order?" — asked only by an
-  // operator who could actually create one. Without `returns:write` the dialog
-  // would have nothing to offer, so the request is not issued at all rather than
-  // being a guaranteed 403 on every order card.
-  const canOpenReturns = can(PERM.returnsWrite);
+  // TASK-469: "has anyone opened a return on this order?". The endpoint is a
+  // READ (`returns:read`, the whole `AdminOrderReturnController`), so the request
+  // is gated on the read right — gating it on `returns:write` (TASK-630) fired a
+  // guaranteed 403 on every order card of an operator who could write returns
+  // but not list them. The same query key feeds the card's returns section
+  // (TASK-724), so React Query issues it once for both.
+  //
+  // Offering to OPEN a return still needs both: the list, to know there is none
+  // yet (read), and the create call (write).
+  const canReadReturns = can(PERM.returnsRead);
+  const canOpenReturns = canReadReturns && can(PERM.returnsWrite);
   const { data: returnsData } = useAdminOrderReturnControllerFindForOrder(
     orderId,
-    { query: { enabled: canOpenReturns } },
+    { query: { enabled: canReadReturns } },
   );
   const createReturn = useAdminOrderReturnControllerCreate();
 
