@@ -79,6 +79,15 @@ apps/store-client/.ds-sync-css/
 # build/ above would swallow the sync build inputs (compile-css, shims, tsconfig)
 !.design-sync/build/
 .design-sync/build/.generated/
+# Admin design system (TASK-847): same layout under .design-sync-admin/; the
+# converter runs from the .ds-sync-admin/ home (junction .design-sync -> ../.design-sync-admin)
+.ds-sync-admin/
+.design-sync-admin/.cache/
+.design-sync-admin/learnings/
+.design-sync-admin/node_modules
+apps/store-admin/.ds-sync-css/
+!.design-sync-admin/build/
+.design-sync-admin/build/.generated/
 
 # Supplier catalogue source files (TASK-360). Real business data belongs to the
 # client, changes daily, and has nothing to do with a code revision — it is
