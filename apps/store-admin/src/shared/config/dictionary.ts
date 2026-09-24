@@ -3870,8 +3870,10 @@ export const dict = {
   // count + shown/hidden marker. Copy is written at the category level ("N
   // active items exist here"), reusing the FAQ "Показується"/"Приховано" wording.
   contentMap: {
-    metaTitle: "Карта контенту — Адмін",
-    heading: "Карта контенту",
+    // TASK-720: the heading repeats the sidebar item (nav.contentMap) — the page
+    // used to be called «Карта контенту» under a menu item with another name.
+    metaTitle: "Де що на сайті — Адмін",
+    heading: "Де що на сайті",
     subheading:
       "Що де показується на сайті — і в якому розділі це редагувати. Оберіть блок, щоб перейти прямо до потрібного розділу.",
     loadError: "Не вдалося порахувати",
@@ -3894,14 +3896,16 @@ export const dict = {
       // AD-CNT-26 (TASK-429): /promo — окрема сторінка вітрини, як і блог.
       promo: "Сторінка «Акції»",
     },
+    // TASK-720: banner zones use the placement names of the Banners screen
+    // (banners.placements / bannerForm.placements) — one slot, one name.
     zones: {
       announcementBar: {
-        source: "Стрічка оголошень зверху",
+        source: "Смуга оголошень",
         target: "Банери",
         appliesTo: "Кожна сторінка (шапка)",
       },
       heroSlide: {
-        source: "Hero-слайдер",
+        source: "Головний слайдер",
         target: "Банери",
         appliesTo: "Головна",
       },
@@ -3911,7 +3915,7 @@ export const dict = {
         appliesTo: "Головна",
       },
       promoBanner: {
-        source: "Широкий промо-банер",
+        source: "Промо-банер",
         target: "Банери",
         appliesTo: "Головна",
       },
@@ -4062,9 +4066,11 @@ export const dict = {
     colSource: "Джерело",
     colPlacement: "Місце на сайті",
     colStatus: "Статус",
+    // TASK-720: the same words as carouselForm.placementOptions and its hint — the
+    // list and the form used to name one place two ways.
     placementLabels: {
-      HOME_TABS: "Таб у «Популярному»",
-      HOME_RAILS: "Окремий рейл",
+      HOME_TABS: "Таб у секції «Популярне»",
+      HOME_RAILS: "Окремий рейл нижче",
     },
     sourceLabels: {
       BESTSELLING: "Хіти продажів",
