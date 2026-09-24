@@ -695,11 +695,25 @@ describe('UserService', () => {
       expect(result).toBeInstanceOf(UserEntity);
     });
 
+    // TASK-603: deleting is the stronger action and must not do less than a ban.
+    it('withdraws the deleted account’s reviews for good (reason DELETED)', async () => {
+      repository.findCustomerById.mockResolvedValue(mockUser);
+      repository.softDelete.mockResolvedValue({ ...mockUser, deletedAt: new Date() });
+
+      await service.deleteUser('user-uuid-1', adminActor);
+
+      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith(
+        'user-uuid-1',
+        ReviewHiddenReason.DELETED,
+      );
+    });
+
     it('should throw ForbiddenException when an admin deletes their own account', async () => {
       await expect(service.deleteUser('admin-uuid-1', adminActor)).rejects.toThrow(
         ForbiddenException,
       );
       expect(repository.softDelete).not.toHaveBeenCalled();
+      expect(reviewServiceMock.hideAuthor).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when the user does not exist', async () => {

@@ -315,7 +315,9 @@ export class UserService {
    * (prefixing `deleted:<id>:`) to free the address for re-registration, and
    * preserves the original in `originalEmail` for audit. All refresh tokens are
    * revoked so existing sessions cannot outlive the deletion. The row is kept so
-   * the user's historical orders still resolve.
+   * the user's historical orders still resolve. Their reviews are withdrawn with
+   * reason DELETED (TASK-603) — texts off the storefront, stars out of every
+   * average — exactly as a ban withdraws them, but for good.
    *
    * Customer-scoped since TASK-476: deleting a service account is a personnel
    * decision and belongs on `/api/admin/staff`, where the level rule decides who
@@ -346,6 +348,12 @@ export class UserService {
 
     // Kill every active session for the deleted user.
     await this.authRepository.revokeAllUserTokens(id);
+
+    // …and withdraw what they wrote (TASK-603). Deleting is the stronger action
+    // and used to do LESS than a ban: the account was gone while its texts stayed
+    // on the storefront and its stars in every average. DELETED outranks both
+    // other reasons, so no un-ban or moderator restore can bring these back.
+    await this.reviewService.hideAuthor(id, ReviewHiddenReason.DELETED);
 
     return UserEntity.fromPrisma(deleted);
   }

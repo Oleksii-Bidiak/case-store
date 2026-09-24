@@ -499,6 +499,11 @@ describe('Staff (e2e)', () => {
         managerRow.email,
       );
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('target-manager');
+      // TASK-603: deleting withdraws the account's reviews, for good.
+      expect(reviewRepositoryStub.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'target-manager', hiddenAt: null },
+        data: { hiddenAt: expect.any(Date), hiddenReason: 'DELETED' },
+      });
     });
 
     it('is 403 on another ADMIN and on the OWNER', async () => {

@@ -332,8 +332,9 @@ export class StaffService {
    *
    * Stamps `deletedAt`, sets `isActive = false`, mangles the unique email
    * (`deleted:<id>:`) to free the address for re-registration, preserves the
-   * original for audit, and revokes every session. The row survives so the
-   * person's historical actions still resolve.
+   * original for audit, revokes every session and withdraws the account's
+   * reviews with reason DELETED (TASK-603). The row survives so the person's
+   * historical actions still resolve.
    */
   async remove(id: string, actor: PermissionActor): Promise<void> {
     if (id === actor.id) {
@@ -346,6 +347,10 @@ export class StaffService {
     const mangledEmail = `deleted:${account.user.id}:${account.user.email}`;
     await this.userRepository.softDelete(id, mangledEmail, account.user.email);
     await this.authRepository.revokeAllUserTokens(id);
+    // The same withdrawal as Door 3's switch-off, for good (TASK-603): deleting
+    // must not do less than deactivating. A staff account can have written
+    // reviews as a customer before it was promoted.
+    await this.reviewService.hideAuthor(id, ReviewHiddenReason.DELETED);
   }
 
   /**

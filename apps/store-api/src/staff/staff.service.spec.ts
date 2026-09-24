@@ -516,6 +516,11 @@ describe('StaffService', () => {
         managerRow.email,
       );
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(managerRow.id);
+      // TASK-603: the same withdrawal as switching the account off, for good.
+      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith(
+        managerRow.id,
+        ReviewHiddenReason.DELETED,
+      );
     });
 
     it('refuses an admin deleting ANOTHER ADMIN', async () => {

@@ -840,6 +840,47 @@ describe('UserController (e2e)', () => {
     });
   });
 
+  // ─── DELETE /api/users/:id (owner) ──────────────────────────────────────────
+
+  describe('DELETE /api/users/:id', () => {
+    // TASK-603: deleting used to do LESS than a ban — the account was gone while
+    // its texts stayed on the storefront and its stars in every average.
+    it('withdraws the deleted customer’s reviews with reason DELETED', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      userRepositoryMock.findCustomerById.mockResolvedValue({ ...testUser, id: 'user-to-delete' });
+      userRepositoryMock.softDelete.mockResolvedValue({
+        ...testUser,
+        id: 'user-to-delete',
+        isActive: false,
+        deletedAt: new Date(),
+      });
+
+      await request(app.getHttpServer())
+        .delete('/api/users/user-to-delete')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      const writes = prismaServiceMock.review.updateMany.mock.calls.map(
+        (call: [{ where: Record<string, unknown>; data: Record<string, unknown> }]) => call[0],
+      );
+      // Stars out of every average…
+      expect(writes).toContainEqual({
+        where: { userId: 'user-to-delete' },
+        data: { ratingVisible: false },
+      });
+      // …texts off the storefront, for a reason nothing can lift…
+      expect(writes).toContainEqual({
+        where: { userId: 'user-to-delete', hiddenAt: null },
+        data: { hiddenAt: expect.any(Date), hiddenReason: 'DELETED' },
+      });
+      // …including rows a ban or a moderator already hid.
+      expect(writes).toContainEqual({
+        where: { userId: 'user-to-delete', hiddenReason: { in: ['BAN', 'MODERATOR'] } },
+        data: { hiddenReason: 'DELETED' },
+      });
+    });
+  });
+
   // ─── The customer scope of this controller (TASK-476) ───────────────────────
 
   describe('what this controller is NOT any more', () => {

@@ -191,6 +191,37 @@ describe('Review hidden reason (integration, TASK-599)', () => {
     }
   });
 
+  // TASK-603: soft-deleting an account withdraws its contribution for good.
+  it('takes a deleted account off the storefront and out of the average, past every restore', async () => {
+    const userId = await authorWithReviews('deleted');
+    const before = await service.getApprovedReviews(productIds[0], {});
+    expect(before.data.map((r) => r.comment)).toContain('deleted text');
+    const countBefore = before.aggregate.ratingCount;
+
+    // A moderator had already hidden it — DELETED must outrank that too.
+    await service.hideAuthor(userId, ReviewHiddenReason.MODERATOR);
+    // What `UserService.deleteUser` does: tombstone the row, then withdraw.
+    await prisma.user.update({
+      where: { id: userId },
+      data: { deletedAt: new Date(), isActive: false },
+    });
+    await service.hideAuthor(userId, ReviewHiddenReason.DELETED);
+
+    const after = await service.getApprovedReviews(productIds[0], {});
+    expect(after.data.map((r) => r.comment)).not.toContain('deleted text');
+    // Exactly this author's star left the average; nothing else moved.
+    expect(after.aggregate.ratingCount).toBe(countBefore - 1);
+
+    // Neither lever brings it back.
+    await expect(service.unhideAuthor(userId, ReviewHiddenReason.BAN)).resolves.toBe(0);
+    await expect(service.unhideAuthor(userId, ReviewHiddenReason.MODERATOR)).resolves.toBe(0);
+    for (const row of await rows(userId)) {
+      expect(row.hiddenReason).toBe(ReviewHiddenReason.DELETED);
+      expect(row.hiddenAt).not.toBeNull();
+      expect(row.ratingVisible).toBe(false);
+    }
+  });
+
   it('refuses a row that is hidden without a reason (CHECK constraint)', async () => {
     const userId = await authorWithReviews('check-constraint');
 
