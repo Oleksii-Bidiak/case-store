@@ -58,6 +58,12 @@ describe("EditBrandView — brand id (TASK-831)", () => {
     expect(idText).toHaveClass("select-all");
     expect(idText).toHaveClass("font-mono");
     expect(screen.getByText(dict.brands.idLabel)).toBeInTheDocument();
+    // The label names a group that holds the uuid — not the <code> itself,
+    // whose implicit role cannot carry a name.
+    expect(
+      screen.getByRole("group", { name: dict.brands.idLabel }),
+    ).toContainElement(idText);
+    expect(idText).not.toHaveAttribute("aria-labelledby");
   });
 
   it("copies the uuid to the clipboard and confirms it", async () => {
