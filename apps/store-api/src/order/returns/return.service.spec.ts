@@ -93,13 +93,31 @@ const pinoLoggerMock = {
   error: jest.fn(),
 };
 
+/**
+ * The returns already opened against the order, as the repository reads them
+ * INSIDE its locked transaction and hands them to the service's check
+ * (TASK-784). The mock mirrors that contract: run the check against this ledger,
+ * and insert only if it did not throw.
+ */
+let ledger: ReturnWithItems[] = [];
+/** What the mocked repository actually wrote — only requests that passed the check. */
+let inserted: unknown[] = [];
+
 describe('ReturnService (TASK-340)', () => {
   let service: ReturnService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    ledger = [];
+    inserted = [];
     returnRepositoryMock.findByOrderId.mockResolvedValue([]);
-    returnRepositoryMock.create.mockResolvedValue(makeReturn());
+    returnRepositoryMock.create.mockImplementation(
+      async (params: unknown, assertClaimable?: (rows: ReturnWithItems[]) => void) => {
+        assertClaimable?.(ledger);
+        inserted.push(params);
+        return makeReturn();
+      },
+    );
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -126,6 +144,7 @@ describe('ReturnService (TASK-340)', () => {
       expect(result).toBeInstanceOf(ReturnEntity);
       expect(returnRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ orderId: ORDER_ID, items: dto.items }),
+        expect.any(Function),
       );
     });
 
@@ -139,6 +158,7 @@ describe('ReturnService (TASK-340)', () => {
 
       expect(returnRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ createdByUserId: USER_ID }),
+        expect.any(Function),
       );
     });
 
@@ -205,11 +225,35 @@ describe('ReturnService (TASK-340)', () => {
     // Otherwise a buyer could return the same unit repeatedly, one request at a
     // time, and be credited for each.
 
+    // TASK-784: a ledger read before the insert, in a separate statement, let two
+    // concurrent requests both see "0 claimed" and both insert. The ledger is now
+    // read by the repository under a lock on the order row, and the cap is run
+    // against THAT read — the service must not decide from one of its own.
+    it("runs the cap inside the repository's locked write, not against its own earlier read", async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await service.createReturn(USER_ID, ORDER_ID, dto);
+
+      expect(returnRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: ORDER_ID }),
+        expect.any(Function),
+      );
+      expect(returnRepositoryMock.findByOrderId).not.toHaveBeenCalled();
+    });
+
+    it('refuses when the locked ledger shows the last unit was claimed meanwhile', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      // What the loser of a race sees once the winner has committed.
+      ledger = [makeReturn({ items: [{ ...makeReturn().items[0], quantity: 3 }] })];
+
+      await expect(
+        service.createReturn(USER_ID, ORDER_ID, { items: [{ orderItemId: LINE_ID, quantity: 1 }] }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
     it('counts units already claimed by earlier returns', async () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder());
-      returnRepositoryMock.findByOrderId.mockResolvedValue([
-        makeReturn({ items: [{ ...makeReturn().items[0], quantity: 2 }] }),
-      ]);
+      ledger = [makeReturn({ items: [{ ...makeReturn().items[0], quantity: 2 }] })];
 
       // Two already claimed of three bought — one remains.
       await expect(
@@ -223,12 +267,12 @@ describe('ReturnService (TASK-340)', () => {
 
     it('releases the units of a REJECTED return (the shop said no; nothing came back)', async () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder());
-      returnRepositoryMock.findByOrderId.mockResolvedValue([
+      ledger = [
         makeReturn({
           status: ReturnStatus.REJECTED,
           items: [{ ...makeReturn().items[0], quantity: 3 }],
         }),
-      ]);
+      ];
 
       await expect(
         service.createReturn(USER_ID, ORDER_ID, { items: [{ orderItemId: LINE_ID, quantity: 3 }] }),
@@ -239,9 +283,7 @@ describe('ReturnService (TASK-340)', () => {
       'keeps the units of a %s return claimed',
       async (status) => {
         orderRepositoryMock.findById.mockResolvedValue(makeOrder());
-        returnRepositoryMock.findByOrderId.mockResolvedValue([
-          makeReturn({ status, items: [{ ...makeReturn().items[0], quantity: 3 }] }),
-        ]);
+        ledger = [makeReturn({ status, items: [{ ...makeReturn().items[0], quantity: 3 }] })];
 
         await expect(
           service.createReturn(USER_ID, ORDER_ID, {
@@ -269,6 +311,7 @@ describe('ReturnService (TASK-340)', () => {
       );
       expect(returnRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ orderId: ORDER_ID, createdByUserId: OPERATOR_ID }),
+        expect.any(Function),
       );
     });
 
@@ -279,6 +322,7 @@ describe('ReturnService (TASK-340)', () => {
 
       expect(returnRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ createdByUserId: OPERATOR_ID }),
+        expect.any(Function),
       );
     });
 
@@ -316,11 +360,21 @@ describe('ReturnService (TASK-340)', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it("runs the same cap inside the repository's locked write (TASK-784)", async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder({ userId: null }));
+
+      await service.adminCreateReturn(OPERATOR_ID, ORDER_ID, dto);
+
+      expect(returnRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ orderId: ORDER_ID }),
+        expect.any(Function),
+      );
+      expect(returnRepositoryMock.findByOrderId).not.toHaveBeenCalled();
+    });
+
     it('refuses more units than remain returnable', async () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder());
-      returnRepositoryMock.findByOrderId.mockResolvedValue([
-        makeReturn({ items: [{ ...makeReturn().items[0], quantity: 2 }] }),
-      ]);
+      ledger = [makeReturn({ items: [{ ...makeReturn().items[0], quantity: 2 }] })];
 
       await expect(
         service.adminCreateReturn(OPERATOR_ID, ORDER_ID, {
@@ -348,7 +402,9 @@ describe('ReturnService (TASK-340)', () => {
           ],
         }),
       ).rejects.toThrow(BadRequestException);
-      expect(returnRepositoryMock.create).not.toHaveBeenCalled();
+      // The check now runs inside the repository's transaction, so `create` is
+      // entered — what matters is that nothing was written (TASK-784).
+      expect(inserted).toHaveLength(0);
     });
 
     it('still accepts a repeated line whose SUM fits inside what was bought', async () => {

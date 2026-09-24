@@ -11,7 +11,7 @@ import { normalizeUaPhone, phoneDigits } from '../../common/validators';
 import { ProductIndexer } from '../../search/product-indexer';
 import { RETURN_SORT_FIELDS } from './dto';
 import type { ReturnSortField } from './dto';
-import type { CreateReturnParams, ReturnWithItems } from './return.types';
+import type { AssertReturnClaimable, CreateReturnParams, ReturnWithItems } from './return.types';
 
 /**
  * Shared include for return reads: the lines, each with the order line it points
@@ -96,9 +96,47 @@ export class ReturnRepository {
     private readonly productIndexer: ProductIndexer,
   ) {}
 
-  /** Open a return request with its lines in one write (TASK-340). */
-  async create(params: CreateReturnParams): Promise<ReturnWithItems> {
-    return this.prisma.return.create({
+  /**
+   * Open a return request with its lines, checking the "no more than was bought"
+   * cap in the SAME transaction as the insert (TASK-340, TASK-784).
+   *
+   * ── Why the order row is locked ─────────────────────────────────────────────
+   * The cap is a sum over every live return of the order, and a sum cannot be
+   * guarded by a unique key or a CHECK. It used to be read before the insert as a
+   * separate statement, so two concurrent "Подати заявку" clicks on the last unit
+   * both read "0 claimed", both inserted, and resolving each with `restock`
+   * credited the shop a unit it never got back.
+   *
+   * `SELECT … FOR UPDATE` on the order serialises every return opened against
+   * it: the second request blocks on the first's row lock and, under READ
+   * COMMITTED, its ledger read (a new statement) sees the first's committed
+   * return. The check then refuses it. Returns against other orders never wait.
+   *
+   * @param assertClaimable the service's rule, run against the locked ledger;
+   *   throwing rolls the transaction back before anything is written.
+   */
+  async create(
+    params: CreateReturnParams,
+    assertClaimable: AssertReturnClaimable,
+  ): Promise<ReturnWithItems> {
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM orders WHERE id = ${params.orderId} FOR UPDATE`;
+
+      const ledger = await tx.return.findMany({
+        where: { orderId: params.orderId },
+        select: { status: true, items: { select: { orderItemId: true, quantity: true } } },
+      });
+      assertClaimable(ledger);
+
+      return this.insertReturn(tx, params);
+    });
+  }
+
+  private insertReturn(
+    tx: Prisma.TransactionClient,
+    params: CreateReturnParams,
+  ): Promise<ReturnWithItems> {
+    return tx.return.create({
       data: {
         orderId: params.orderId,
         reason: params.reason ?? null,

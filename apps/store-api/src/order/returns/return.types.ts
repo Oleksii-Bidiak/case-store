@@ -56,6 +56,22 @@ export interface ReturnWithItems {
   };
 }
 
+/**
+ * One earlier return as the claim check sees it (TASK-784): its status, because a
+ * REJECTED return releases its units, and how many of each order line it holds.
+ */
+export interface ReturnClaimRow {
+  status: ReturnStatus;
+  items: Array<{ orderItemId: string; quantity: number }>;
+}
+
+/**
+ * The service's "no more than was bought" rule, run by the repository INSIDE the
+ * transaction that inserts the return, against a ledger read under a lock on the
+ * order row (TASK-784). Throwing aborts the insert.
+ */
+export type AssertReturnClaimable = (ledger: ReturnClaimRow[]) => void;
+
 /** What the service hands the repository to open a return (TASK-340). */
 export interface CreateReturnParams {
   orderId: string;

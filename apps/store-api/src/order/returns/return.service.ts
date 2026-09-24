@@ -11,7 +11,7 @@ import { OrderRepository } from '../order.repository';
 import { ReturnEntity } from './entities';
 import { RESTOCK_ON_STATUS, canTransitionReturn } from './return-state-machine';
 import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
-import type { ReturnWithItems } from './return.types';
+import type { AssertReturnClaimable, ReturnClaimRow, ReturnWithItems } from './return.types';
 
 const DEFAULT_PAGE = 1;
 /** The one admin page size (TASK-423) — was 10, which no admin table uses now. */
@@ -64,17 +64,20 @@ export class ReturnService {
       throw new NotFoundException('Order not found');
     }
 
-    await this.assertLinesAreReturnable(order, dto);
+    const assertClaimable = this.assertLinesAreReturnable(order, dto);
 
-    const created = await this.returnRepository.create({
-      orderId,
-      ...(dto.reason ? { reason: dto.reason } : {}),
-      createdByUserId: userId,
-      items: dto.items.map((item) => ({
-        orderItemId: item.orderItemId,
-        quantity: item.quantity,
-      })),
-    });
+    const created = await this.returnRepository.create(
+      {
+        orderId,
+        ...(dto.reason ? { reason: dto.reason } : {}),
+        createdByUserId: userId,
+        items: dto.items.map((item) => ({
+          orderItemId: item.orderItemId,
+          quantity: item.quantity,
+        })),
+      },
+      assertClaimable,
+    );
 
     this.logger.info(
       { event: 'return.requested', returnId: created.id, orderId, userId },
@@ -116,17 +119,20 @@ export class ReturnService {
       throw new NotFoundException('Order not found');
     }
 
-    await this.assertLinesAreReturnable(order, dto);
+    const assertClaimable = this.assertLinesAreReturnable(order, dto);
 
-    const created = await this.returnRepository.create({
-      orderId,
-      ...(dto.reason ? { reason: dto.reason } : {}),
-      createdByUserId: actorUserId,
-      items: dto.items.map((item) => ({
-        orderItemId: item.orderItemId,
-        quantity: item.quantity,
-      })),
-    });
+    const created = await this.returnRepository.create(
+      {
+        orderId,
+        ...(dto.reason ? { reason: dto.reason } : {}),
+        createdByUserId: actorUserId,
+        items: dto.items.map((item) => ({
+          orderItemId: item.orderItemId,
+          quantity: item.quantity,
+        })),
+      },
+      assertClaimable,
+    );
 
     this.logger.info(
       {
@@ -270,12 +276,19 @@ export class ReturnService {
    * admin path would keep accepting returns the customer path refuses, and the
    * first sign of it would be stock credited back for goods nobody bought.
    *
-   * @throws BadRequestException on any of the three.
+   * The first two are checked here and now. The third depends on every other
+   * return of the order, so it is RETURNED as a closure for the repository to run
+   * inside the transaction that inserts, against a ledger read under a lock on
+   * the order row (TASK-784). Checked here, against a read of our own, it let two
+   * concurrent requests for the last unit both see "0 claimed" and both succeed.
+   *
+   * @throws BadRequestException on either of the first two; the returned check
+   *   throws it on the third.
    */
-  private async assertLinesAreReturnable(
+  private assertLinesAreReturnable(
     order: { id: string; status: OrderStatus; items: Array<{ id: string; quantity: number }> },
     dto: CreateReturnDto,
-  ): Promise<void> {
+  ): AssertReturnClaimable {
     if (!RETURNABLE_ORDER_STATUSES.has(order.status)) {
       throw new BadRequestException(
         'Only shipped or delivered orders can be returned — cancel the order instead',
@@ -310,38 +323,39 @@ export class ReturnService {
       );
     }
 
-    const alreadyClaimed = await this.countClaimedUnits(order.id);
-    for (const [orderItemId, requested] of requestedByLineId) {
-      const ordered = orderedByLineId.get(orderItemId) as number;
-      const claimed = alreadyClaimed.get(orderItemId) ?? 0;
-      if (claimed + requested > ordered) {
-        throw new BadRequestException(
-          `Cannot return ${requested} of that item — ${ordered - claimed} remain returnable`,
-        );
+    return (ledger) => {
+      const alreadyClaimed = countClaimedUnits(ledger);
+      for (const [orderItemId, requested] of requestedByLineId) {
+        const ordered = orderedByLineId.get(orderItemId) as number;
+        const claimed = alreadyClaimed.get(orderItemId) ?? 0;
+        if (claimed + requested > ordered) {
+          throw new BadRequestException(
+            `Cannot return ${requested} of that item — ${ordered - claimed} remain returnable`,
+          );
+        }
       }
+    };
+  }
+}
+
+/**
+ * How many units of each order line are already spoken for by earlier returns.
+ *
+ * A REJECTED return releases its claim — the shop said no, the units never came
+ * back, and the customer may legitimately try again with a better reason. Every
+ * other status still holds them.
+ */
+function countClaimedUnits(ledger: ReturnClaimRow[]): Map<string, number> {
+  const claimed = new Map<string, number>();
+
+  for (const row of ledger) {
+    if (DEAD_RETURN_STATUSES.has(row.status)) continue;
+    for (const item of row.items) {
+      claimed.set(item.orderItemId, (claimed.get(item.orderItemId) ?? 0) + item.quantity);
     }
   }
 
-  /**
-   * How many units of each order line are already spoken for by earlier returns.
-   *
-   * A REJECTED return releases its claim — the shop said no, the units never came
-   * back, and the customer may legitimately try again with a better reason. Every
-   * other status still holds them.
-   */
-  private async countClaimedUnits(orderId: string): Promise<Map<string, number>> {
-    const existing = await this.returnRepository.findByOrderId(orderId);
-    const claimed = new Map<string, number>();
-
-    for (const row of existing) {
-      if (DEAD_RETURN_STATUSES.has(row.status)) continue;
-      for (const item of row.items) {
-        claimed.set(item.orderItemId, (claimed.get(item.orderItemId) ?? 0) + item.quantity);
-      }
-    }
-
-    return claimed;
-  }
+  return claimed;
 }
 
 /** Re-exported for the module's public surface. */
