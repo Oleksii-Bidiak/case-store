@@ -1,7 +1,11 @@
 "use client";
 
 import { useMemo } from "react";
-import { useAuth, useGetMyPermissions } from "@/entities/session";
+import {
+  MY_PERMISSIONS_QUERY,
+  useAuth,
+  useGetMyPermissions,
+} from "@/entities/session";
 import type { PermissionEntryEntity } from "@/shared/api";
 import { roleLabel } from "@/entities/user";
 import { AdminPasswordChangeForm } from "@/features/admin-password-change";
@@ -40,7 +44,7 @@ export function AdminProfileView() {
   // held; `entries` only names it — so a label never shows for a key the
   // session does not hold, and a key without a label still shows as the key.
   const { data: permissionsData } = useGetMyPermissions({
-    query: { enabled: accessToken !== null, staleTime: 30_000 },
+    query: { ...MY_PERMISSIONS_QUERY, enabled: accessToken !== null },
   });
   const labelled = useMemo(
     () => labelPermissions(permissions, permissionsData?.data?.entries),
