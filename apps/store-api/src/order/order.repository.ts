@@ -1454,7 +1454,7 @@ export class OrderRepository {
         },
       });
 
-      const orderData: Prisma.OrderUpdateInput = {};
+      const orderData: Prisma.OrderUpdateManyMutationInput = {};
       if (plan.paymentStatusChange) orderData.paymentStatus = plan.paymentStatusChange.to;
       if (plan.statusChange) orderData.status = plan.statusChange.to;
       if (plan.paidAt !== undefined) orderData.paidAt = plan.paidAt;
@@ -1464,7 +1464,25 @@ export class OrderRepository {
       if (plan.clearReservation) orderData.reservationExpiresAt = null;
 
       if (Object.keys(orderData).length > 0) {
-        await tx.order.update({ where: { id: plan.orderId }, data: orderData });
+        // Conditional on the statuses the plan was decided against: the read was
+        // not locked, and a TTL cancel may have committed since (stock returned,
+        // `restockedAt` stamped). Writing CONFIRMED/PAID over it would re-open the
+        // oversell TASK-619 closed. Zero rows → throw, the whole transaction rolls
+        // back, the payment module releases its idempotency claim, and the
+        // provider's retry is planned again against the fresh row.
+        const { count } = await tx.order.updateMany({
+          where: {
+            id: plan.orderId,
+            status: plan.expected.status,
+            paymentStatus: plan.expected.paymentStatus,
+          },
+          data: orderData,
+        });
+        if (count === 0) {
+          throw new ConflictException(
+            'The order changed while the payment event was being applied; retry',
+          );
+        }
       }
 
       if (plan.paymentStatusChange) {

@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { OrderStatus, PaymentStatus } from '@prisma/client';
+import { OrderStatus, PaymentAttemptStatus, PaymentStatus } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
 import { CacheService } from '../src/cache';
@@ -105,6 +105,7 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
     // id — Prisma drops `{ id: undefined }` and would delete every row.
     if (!prisma) return;
     if (userId) {
+      await prisma.payment.deleteMany({ where: { order: { userId } } });
       await prisma.orderStatusHistory.deleteMany({ where: { order: { userId } } });
       await prisma.orderItem.deleteMany({ where: { order: { userId } } });
       await prisma.order.deleteMany({ where: { userId } });
@@ -196,5 +197,63 @@ describe('OrderRepository.cancelAndRestock — concurrency (integration)', () =>
 
     const history = await prisma.orderStatusHistory.findMany({ where: { orderId } });
     expect(history).toHaveLength(1);
+  });
+
+  // ─── applyPaymentOutcome vs a TTL cancel (TASK-619 under a race) ───────────
+  // OrderService plans a `success` from an unlocked read. If the reservation
+  // worker's cancel commits between that read and this write, the cancel must
+  // win: the order stays CANCELLED with its stock returned, and nothing of the
+  // payment plan lands — the provider's retry is re-planned on the fresh row,
+  // where it becomes PAID_AFTER_CANCEL.
+
+  async function openAttempt(orderId: string): Promise<string> {
+    const payment = await prisma.payment.create({
+      data: { orderId, provider: 'liqpay', amount: 300 },
+    });
+    return payment.id;
+  }
+
+  /** What OrderService plans for a `success` on an order it read as PENDING. */
+  const successPlanFor = (orderId: string, paymentId: string) => ({
+    paymentId,
+    orderId,
+    expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
+    attemptStatus: PaymentAttemptStatus.SUCCEEDED,
+    settledAt: new Date(),
+    paymentStatusChange: { from: PaymentStatus.PENDING, to: PaymentStatus.PAID },
+    paidAt: new Date(),
+    clearReservation: true,
+    statusChange: { from: OrderStatus.PENDING, to: OrderStatus.CONFIRMED },
+  });
+
+  it('does not overwrite a cancel that committed after the payment plan was decided', async () => {
+    const orderId = await placeOrder();
+    const paymentId = await openAttempt(orderId);
+    const plan = successPlanFor(orderId, paymentId);
+
+    await repo.cancelAndRestock(orderId, userId);
+
+    await expect(repo.applyPaymentOutcome(plan)).rejects.toBeInstanceOf(ConflictException);
+
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.status).toBe(OrderStatus.CANCELLED);
+    expect(order.paymentStatus).toBe(PaymentStatus.PENDING);
+    expect(order.restockedAt).not.toBeNull();
+    expect(await stockNow()).toBe(INITIAL_STOCK);
+    // Rolled back as a whole: the attempt row is not settled either.
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+    expect(payment.status).toBe(PaymentAttemptStatus.PENDING);
+  });
+
+  it('applies the payment plan when nothing moved in between', async () => {
+    const orderId = await placeOrder();
+    const paymentId = await openAttempt(orderId);
+
+    await repo.applyPaymentOutcome(successPlanFor(orderId, paymentId));
+
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: orderId } });
+    expect(order.status).toBe(OrderStatus.CONFIRMED);
+    expect(order.paymentStatus).toBe(PaymentStatus.PAID);
+    expect(await stockNow()).toBe(INITIAL_STOCK - ORDERED_QTY);
   });
 });

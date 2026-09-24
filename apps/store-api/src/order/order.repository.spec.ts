@@ -1129,6 +1129,7 @@ describe('OrderRepository', () => {
     const seedTx = () => {
       const tx = makeTx();
       tx.order.findUniqueOrThrow.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
       return tx;
     };
@@ -1136,6 +1137,7 @@ describe('OrderRepository', () => {
     const successPlan = {
       paymentId: 'payment-1',
       orderId: 'order-1',
+      expected: { status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
       attemptStatus: PaymentAttemptStatus.SUCCEEDED,
       providerPaymentId: 'liqpay-9001',
       settledAt: new Date('2026-07-28T10:30:00.000Z'),
@@ -1160,13 +1162,13 @@ describe('OrderRepository', () => {
       });
     });
 
-    it('moves payment status, order status, paidAt and the reservation in ONE order update', async () => {
+    it('moves payment status, order status, paidAt and the reservation in ONE conditional order update', async () => {
       const tx = seedTx();
 
       await repository.applyPaymentOutcome(successPlan);
 
-      expect(tx.order.update).toHaveBeenCalledWith({
-        where: { id: 'order-1' },
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING },
         data: {
           paymentStatus: PaymentStatus.PAID,
           status: OrderStatus.CONFIRMED,
@@ -1212,6 +1214,7 @@ describe('OrderRepository', () => {
       await repository.applyPaymentOutcome({
         paymentId: 'payment-1',
         orderId: 'order-1',
+        expected: { status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.PENDING },
         attemptStatus: PaymentAttemptStatus.SUCCEEDED,
         settledAt: successPlan.settledAt,
         paymentStatusChange: {
@@ -1234,7 +1237,7 @@ describe('OrderRepository', () => {
           changedBy: null,
         },
       });
-      const orderData = (tx.order.update.mock.calls[0][0] as { data: Record<string, unknown> })
+      const orderData = (tx.order.updateMany.mock.calls[0][0] as { data: Record<string, unknown> })
         .data;
       expect(orderData).not.toHaveProperty('status');
       expect(orderData).not.toHaveProperty('restockedAt');
@@ -1263,18 +1266,31 @@ describe('OrderRepository', () => {
       await repository.applyPaymentOutcome({
         paymentId: 'payment-1',
         orderId: 'order-1',
+        expected: { status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID },
         attemptStatus: PaymentAttemptStatus.FAILED,
         failureCode: '4159',
         failureMessage: 'Card declined',
       });
 
       expect(tx.payment.update).toHaveBeenCalled();
-      expect(tx.order.update).not.toHaveBeenCalled();
+      expect(tx.order.updateMany).not.toHaveBeenCalled();
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+    });
+
+    // The plan was decided on an unlocked read. A TTL cancel that committed in
+    // between must win: zero rows matched → throw, so the transaction (attempt
+    // row and history included) rolls back and the provider's retry re-plans.
+    it('refuses to write when the order moved since the plan was decided', async () => {
+      const tx = seedTx();
+      tx.order.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(repository.applyPaymentOutcome(successPlan)).rejects.toThrow(ConflictException);
       expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
     });
 
     it('rolls back everything when a write inside the transaction rejects', async () => {
       const tx = makeTx();
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
       tx.orderStatusHistory.create.mockRejectedValue(new Error('history insert failed'));
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
 

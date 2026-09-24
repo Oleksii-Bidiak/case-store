@@ -2899,6 +2899,19 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
     });
 
+    // The read is unlocked; the repository writes only if these still hold, so a
+    // TTL cancel committed in between is not overwritten (TASK-619 under a race).
+    it('hands the repository the statuses the plan was decided against', async () => {
+      seed(makePayment({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING }));
+
+      await service.applyPaymentEvent(makeEvent());
+
+      expect(lastPlan().expected).toEqual({
+        status: OrderStatus.PENDING,
+        paymentStatus: PaymentStatus.PENDING,
+      });
+    });
+
     // ── Rule 2: verify the money before believing it ──────────────────────────
 
     describe('amount verification', () => {

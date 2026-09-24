@@ -1819,6 +1819,7 @@ export class OrderService {
     const base = {
       paymentId: payment.id,
       orderId: order.id,
+      expected: { status: order.status, paymentStatus: order.paymentStatus },
       ...(event.providerPaymentId ? { providerPaymentId: event.providerPaymentId } : {}),
     };
 

@@ -340,6 +340,13 @@ export interface PaymentWithOrderRow {
 export interface PaymentApplyPlan {
   paymentId: string;
   orderId: string;
+  /**
+   * The order statuses this plan was decided against. The read that produced
+   * them is not locked, so the repository writes the order only if both still
+   * hold — a TTL cancel that committed in between (restock done, `restockedAt`
+   * stamped) must not be overwritten by a CONFIRMED/PAID that assumed PENDING.
+   */
+  expected: { status: OrderStatus; paymentStatus: PaymentStatus };
   /** New lifecycle state of THIS attempt. */
   attemptStatus: PaymentAttemptStatus;
   /** The provider's own id, learned from the callback; '' when it sent none. */
