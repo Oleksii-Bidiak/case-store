@@ -152,8 +152,17 @@ test.describe("manual theme switch", () => {
     await page.emulateMedia({ colorScheme: "dark" });
     await page.goto("/products");
 
-    const filterSearch = page.getByLabel("Пошук", { exact: true }).first();
+    // The catalogue's filter field, not the header search. Both are named
+    // «Пошук товарів» (the filter's `aria-label` overrides its visible «Пошук»
+    // `<label>`, which is why `getByLabel('Пошук')` never matched — TASK-752),
+    // but the header one is a `role="combobox"`, so the `searchbox` role alone
+    // tells them apart. Strict on purpose: a second match should fail loudly.
+    const filterSearch = page.getByRole("searchbox", {
+      name: "Пошук товарів",
+      exact: true,
+    });
     await expect(filterSearch).toBeVisible();
+    await expect(filterSearch).toHaveAttribute("id", "filter-search");
 
     const backgroundOf = () =>
       filterSearch.evaluate((el) => getComputedStyle(el).backgroundColor);
