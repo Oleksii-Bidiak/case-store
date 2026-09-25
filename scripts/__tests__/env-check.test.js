@@ -219,6 +219,62 @@ test("an EXCEPTIONS entry keyed NAME@workflow suppresses the drift", (t) => {
   assert.equal(result.skipped.length, 1);
 });
 
+test("an EXCEPTIONS entry that suppresses nothing is itself drift", (t) => {
+  const root = makeRepo(t);
+  const result = envCheck.audit({
+    root,
+    vars: VARS,
+    exceptions: { "GONE@code": { reason: "fixed long ago", task: "TASK-000" } },
+  });
+  assert.deepEqual([...result.drift.keys()], ["(exceptions)"]);
+  assert.match(messages(result, "(exceptions)")[0], /GONE@code suppressed nothing/);
+});
+
+test("a code-only variable excused @code is still caught once compose wires it (TASK-526 shape)", (t) => {
+  const root = makeRepo(t);
+  const src = path.join(root, "apps/store-client/src/flag.ts");
+  fs.mkdirSync(path.dirname(src), { recursive: true });
+  fs.writeFileSync(
+    src,
+    'export const FLAG = process.env.NEXT_PUBLIC_FLAG === "true";\n',
+  );
+  const exceptions = {
+    "NEXT_PUBLIC_FLAG@code": { reason: "code-only on purpose", task: "TASK-526" },
+  };
+
+  // Read by code, not in the table: excused, and only that.
+  let result = envCheck.audit({ root, vars: VARS, exceptions });
+  assert.deepEqual([...result.drift.keys()], []);
+  assert.deepEqual(
+    result.skipped.map((s) => s.key),
+    ["NEXT_PUBLIC_FLAG@code"],
+  );
+
+  // Someone threads it through compose without re-adding the row: red again.
+  edit(root, "docker-compose.prod.yml", (s) =>
+    s.replace(
+      "        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}\n\n",
+      "        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}\n        NEXT_PUBLIC_FLAG: ${NEXT_PUBLIC_FLAG:-}\n\n",
+    ),
+  );
+  result = envCheck.audit({ root, vars: VARS, exceptions });
+  assert.ok(result.drift.has("NEXT_PUBLIC_FLAG"));
+  assert.ok(
+    messages(result, "NEXT_PUBLIC_FLAG").some((m) => m.startsWith("[table]")),
+  );
+});
+
+test("the real repo: NEXT_PUBLIC_FEATURE_STUBS is excluded from VARS with a reason (TASK-526)", () => {
+  assert.equal(
+    envCheck.VARS.some((v) => v.name === "NEXT_PUBLIC_FEATURE_STUBS"),
+    false,
+  );
+  const entry = envCheck.EXCEPTIONS["NEXT_PUBLIC_FEATURE_STUBS@code"];
+  assert.ok(entry, "expected an @code exception");
+  assert.equal(entry.task, "TASK-526");
+  assert.match(entry.reason, /TASK-085\/TASK-178/);
+});
+
 test("parseWorkflowBuildSteps: step boundaries, block scalars, job names", () => {
   const text = fs
     .readFileSync(path.join(FIXTURE, "workflows/deploy.yml"), "utf8")

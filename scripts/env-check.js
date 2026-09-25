@@ -137,10 +137,20 @@ const CODE_ROOTS = [
  * Known drift that is accepted for now. Keyed `VAR@check`, and every entry needs
  * a reason and a task — same discipline as scripts/audit-gate.js. Empty is the
  * correct steady state: an exception here means a source and this table disagree
- * on purpose, which should be rare and always temporary.
+ * on purpose, which should be rare and always temporary. An entry that no longer
+ * suppresses anything is itself reported as drift, so a fixed hole cannot leave
+ * a stale licence behind.
  */
 const EXCEPTIONS = {
-  // 'FOO@example': { reason: '…', task: 'TASK-000' },
+  // Read by the storefront (shared/config/site.ts) and deliberately NOT in VARS.
+  // `@code` covers only check 6 — the code scan — so the moment anyone wires the
+  // flag into compose, the operator template or env.validation.ts, those checks
+  // still fail with "missing from VARS" and force the row back into the table.
+  "NEXT_PUBLIC_FEATURE_STUBS@code": {
+    reason:
+      "storefront stubs flag, excluded from the table on purpose: the three stub controls (compare / buy in one click / the account 'Comparison' section) are hidden, and the only value an operator may set today is none at all — so it has no compose, build-arg, Dockerfile or operator-template wiring and no row in the operator matrix. TASK-085/TASK-178 wire it through compose, the Dockerfile and the template and re-add the VARS row when they switch the stubs on",
+    task: "TASK-526",
+  },
 };
 
 /**
@@ -1396,26 +1406,10 @@ const VARS = [
     howTo:
       "`true` — і лише після того, як у store-api задані справжні GOOGLE_CLIENT_ID/_SECRET. Порожньо (сховано) — правильний стан, доки OAuth-клієнт у Google Cloud Console не створений.",
   },
-  {
-    name: "NEXT_PUBLIC_FEATURE_STUBS",
-    group: "frontend",
-    need: "optional",
-    compose: "none",
-    services: [],
-    buildArgs: [],
-    example: false,
-    validated: "absent",
-    code: "used",
-    effect:
-      "Не `true` (тобто в будь-якому нормальному розгортанні) → вітрина ховає три контроли, за якими ще немає функції: «Порівняти» і «Купити в 1 клік» у картці товару та розділ «Порівняння» в кабінеті. Раніше вони показувалися завжди і на кожен клік відповідали тостом «скоро» — покупець читав це як зламаний магазин. Розмітку не видалено: TASK-085 і TASK-178 при розпаркуванні вмикають прапорець і замінюють заглушки справжньою функцією. Build-time.",
-    howTo:
-      "Не задавати. `true` — лише на демостенді, де свідомо показують, що саме в роботі.",
-    gap: {
-      reason:
-        "code-only for now: the flag is deliberately not threaded through compose, the Dockerfile build args or the operator example, because the only value an operator should ever set is the absent one — TASK-085/TASK-178 do that plumbing when they switch the stubs on",
-      task: "TASK-526",
-    },
-  },
+  // NEXT_PUBLIC_FEATURE_STUBS is deliberately NOT a row here — see its
+  // EXCEPTIONS entry (TASK-526). A row would put it in the operator matrix,
+  // i.e. tell the operator about a variable whose only correct value is unset
+  // and which no container build could receive anyway.
   {
     name: "SERVER_FETCH_TIMEOUT_MS",
     group: "frontend",
@@ -2356,13 +2350,16 @@ function audit({ root = ROOT, vars = VARS, exceptions = EXCEPTIONS } = {}) {
     }
   }
 
-  // 6. application source.
+  // 6. application source. "Read by code but missing from VARS" is keyed `@code`
+  //    rather than `@table` (TASK-526): an EXCEPTIONS entry for a code-only
+  //    variable must not also silence the compose/example/validation checks,
+  //    which report their own "missing from VARS" as `@table`.
   for (const [name, files] of code) {
     const v = byName.get(name);
     if (!v) {
       add(
         name,
-        "table",
+        "code",
         `read by ${[...files].slice(0, 2).join(", ")} but missing from VARS`,
       );
     } else if (v.code === "unused") {
@@ -2410,6 +2407,21 @@ function audit({ root = ROOT, vars = VARS, exceptions = EXCEPTIONS } = {}) {
       "docs",
       `the matrix block in ${DOC_PATH} is stale — run \`node scripts/env-check.js --docs --write\``,
     );
+  }
+
+  // 9. Stale EXCEPTIONS — an entry that suppressed nothing on this run is a
+  //    licence for drift that no longer exists, waiting to hide the next one.
+  //    Added directly, not via add(): an exception cannot excuse itself.
+  const used = new Set(skipped.map((s) => s.key));
+  for (const key of Object.keys(exceptions)) {
+    if (!used.has(key)) {
+      if (!drift.has("(exceptions)")) drift.set("(exceptions)", []);
+      drift
+        .get("(exceptions)")
+        .push(
+          `[exceptions] ${key} suppressed nothing — the drift it excused is gone; delete the entry (${exceptions[key].task ?? "no task"})`,
+        );
+    }
   }
 
   return {
