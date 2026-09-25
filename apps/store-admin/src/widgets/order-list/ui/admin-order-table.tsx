@@ -33,6 +33,8 @@ import {
   adminOrderControllerExport,
   OrderEntityPaymentMethod,
 } from "@/shared/api";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import {
@@ -152,6 +154,8 @@ const CUSTOM_TAB = "__custom__";
  */
 export function AdminOrderTable() {
   const searchParams = useSearchParams();
+  const { can } = useAuth();
+  const canCreateOrders = can(PERM.ordersWrite);
 
   const statusParam = searchParams.get("status") ?? "";
   // TASK-336: free-text search over order number / email / phone — what an
@@ -508,10 +512,14 @@ export function AdminOrderTable() {
                 )}
                 {dict.orders.exportCsv}
               </Button>
-              {/* TASK-341: a phone order starts here. */}
-              <Button asChild>
-                <Link href="/orders/new">{dict.orders.createCta}</Link>
-              </Button>
+              {/* TASK-341: a phone order starts here. TASK-715: only for a
+                  session that may create one — `POST /admin/orders` answers 403
+                  to anyone else, after the whole form has been filled in. */}
+              {canCreateOrders ? (
+                <Button asChild>
+                  <Link href="/orders/new">{dict.orders.createCta}</Link>
+                </Button>
+              ) : null}
             </div>
           }
         />

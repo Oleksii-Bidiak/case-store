@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { AuditLogSkeleton, AuditLogView } from "@/widgets";
+import { PERM } from "@/entities/permission";
+import { PermissionGate } from "@/entities/session";
 import { dict } from "@/shared/config";
 
 /**
@@ -33,9 +35,18 @@ export default function AuditLogPage() {
           string, and `useSearchParams` opts a client component out of static
           prerendering unless it sits behind a boundary. Same shape as the users
           and subscribers pages. */}
-      <Suspense fallback={<AuditLogSkeleton />}>
-        <AuditLogView />
-      </Suspense>
+      {/* TASK-639: `audit:read`, not merely `isStaff` — one refusal that
+          says who reads the log, instead of the view's own 403 banners. The
+          heading stays outside so the refusal is labelled. */}
+      <PermissionGate
+        permission={PERM.auditRead}
+        title={dict.auditLog.forbidden}
+        hint={dict.auditLog.forbiddenHint}
+      >
+        <Suspense fallback={<AuditLogSkeleton />}>
+          <AuditLogView />
+        </Suspense>
+      </PermissionGate>
     </div>
   );
 }

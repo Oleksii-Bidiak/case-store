@@ -146,6 +146,19 @@ export function CategoryForm({
       setValue("image", url, { shouldDirty: true, shouldValidate: true }),
   });
 
+  // TASK-728: the social-card image gets the same three paths as the tile
+  // above — a file, a library pick, a link — through the same route (the form's
+  // own `categories:write`), and is written through `setValue` for the same
+  // reason. Its own mutation instance, so one field's spinner never shows on
+  // the other.
+  const ogImageValue = useWatch({ control, name: "ogImage" }) ?? "";
+  const ogImageUpload = useImageUploadField({
+    upload: useUploadsControllerUploadCategoryImage(),
+    copy: dict.seoFields.ogImageUpload,
+    onUploaded: (url) =>
+      setValue("ogImage", url, { shouldDirty: true, shouldValidate: true }),
+  });
+
   const nameValue = useWatch({ control, name: "name" }) ?? "";
   const descriptionValue = useWatch({ control, name: "description" }) ?? "";
   const metaTitleValue = useWatch({ control, name: "metaTitle" }) ?? "";
@@ -364,20 +377,33 @@ export function CategoryForm({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="category-og-image">{dict.seoFields.ogImage}</Label>
-        <Input
+        <ContentImageField
           id="category-og-image"
-          placeholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
-          {...register("ogImage")}
+          label={dict.seoFields.ogImage}
+          urlPlaceholder={dict.seoFields.ogImagePlaceholder(STOREFRONT_HOST)}
+          copy={dict.seoFields.ogImageUpload}
+          value={ogImageValue}
+          urlInput={register("ogImage")}
+          onRemove={() =>
+            setValue("ogImage", "", { shouldDirty: true, shouldValidate: true })
+          }
+          fieldError={errors.ogImage?.message}
+          picker={
+            <MediaPicker
+              ariaLabel={dict.seoFields.ogImagePickerAria}
+              onPick={(asset) =>
+                setValue("ogImage", asset.url, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+            />
+          }
+          {...ogImageUpload}
         />
         <p className="text-sm text-muted-foreground">
           {dict.seoFields.ogImageHint}
         </p>
-        {errors.ogImage && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.ogImage.message}
-          </p>
-        )}
       </div>
 
       <SeoSnippetPreview

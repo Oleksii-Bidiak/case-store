@@ -32,9 +32,9 @@ export type CarouselPlacementValue = (typeof CAROUSEL_PLACEMENT)[number];
 /**
  * Validation schema for the admin carousel form.
  *
- * Mirrors `bannerSchema`'s conventions: numeric fields (`itemLimit`,
- * `sortOrder`) are modelled as strings on the INPUT side (bound to text/number
- * inputs) and transformed to numbers on the OUTPUT side; `status = SCHEDULED`
+ * Mirrors `bannerSchema`'s conventions: the numeric field (`itemLimit`) is
+ * modelled as a string on the INPUT side (bound to a text/number input) and
+ * transformed to a number on the OUTPUT side; `status = SCHEDULED`
  * requires a `scheduledAt` datetime. One extra conditional rule on top of the
  * banner precedent: `source = CATEGORY` requires a selected `categoryId`
  * (mirrors the backend DTO's `@ValidateIf`).
@@ -64,24 +64,9 @@ export const carouselSchema = z
       )
       .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
-    /**
-     * TASK-428: NO LONGER RENDERED and NO LONGER SUBMITTED — the order is set by
-     * dragging rows inside a placement in the carousel list, and a new carousel is
-     * appended to its placement bucket by the server.
-     *
-     * The key survives in the INPUT shape only because `widgets/carousel-form-view`
-     * still seeds it (`sortOrder: String(carousel.sortOrder)`) and that widget is owned
-     * elsewhere; dropping it here would break that object literal's excess-property
-     * check. Nothing registers this field and `carouselFormValuesToCreateDto` no longer
-     * sends it, so the value is inert. Delete it together with the mapper line in
-     * `widgets/carousel-form-view`.
-     */
-    sortOrder: z
-      .string()
-      .trim()
-      .optional()
-      .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), e.sortInt)
-      .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
+    // No `sortOrder` (TASK-428, removed from the schema by TASK-729): the order is
+    // set by dragging rows inside a placement in the carousel list, and a new
+    // carousel is appended to its placement bucket by the server.
 
     status: z.enum(CAROUSEL_STATUS),
 

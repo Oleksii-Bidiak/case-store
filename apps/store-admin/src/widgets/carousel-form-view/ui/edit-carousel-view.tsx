@@ -170,7 +170,6 @@ function mapCarouselToFormValues(
     placement: carousel.placement,
     categoryId: carousel.categoryId ?? "",
     itemLimit: String(carousel.itemLimit),
-    sortOrder: String(carousel.sortOrder),
     status: carousel.status,
     // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant,
     // in KYIV time. The local `toDateTimeLocal` this replaces read the BROWSER's

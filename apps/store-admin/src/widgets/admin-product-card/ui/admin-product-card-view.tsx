@@ -7,8 +7,8 @@ import {
   useProductImageControllerList,
 } from "@/entities/product";
 import {
+  categoryNamesById,
   useCategoryControllerGetAdminTree,
-  type AdminCategoryTreeNodeEntity,
 } from "@/entities/category";
 import { useProductGroupControllerFindById } from "@/entities/product-group";
 import { useAddonServiceControllerResolveForProduct } from "@/entities/addon-service";
@@ -115,7 +115,7 @@ export function AdminProductCardView({ productId }: AdminProductCardViewProps) {
   const specs = product.specs ?? [];
   const compat = product.compatibleDeviceModels ?? [];
   const categoryName =
-    findCategoryName(categoriesQuery.data?.data ?? [], product.categoryId) ??
+    categoryNamesById(categoriesQuery.data?.data).get(product.categoryId) ??
     d.cardEmptyValue;
 
   return (
@@ -375,21 +375,4 @@ function Field({
       <dd className="text-right font-medium text-foreground">{children}</dd>
     </div>
   );
-}
-
-/** Depth-first lookup of a category name in the admin tree. */
-function findCategoryName(
-  nodes: AdminCategoryTreeNodeEntity[],
-  categoryId: string,
-): string | null {
-  for (const node of nodes) {
-    if (node.id === categoryId) {
-      return node.name;
-    }
-    const found = findCategoryName(node.children ?? [], categoryId);
-    if (found) {
-      return found;
-    }
-  }
-  return null;
 }

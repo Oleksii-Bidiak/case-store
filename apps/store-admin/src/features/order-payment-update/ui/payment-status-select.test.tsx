@@ -13,7 +13,6 @@ import {
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
 } from "@/entities/order";
-import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { PaymentStatusSelect } from "./payment-status-select";
 
 const toastSuccess = jest.fn();
@@ -60,19 +59,21 @@ function stubPatch(status = 200, body?: unknown) {
 }
 
 /**
- * Inside a session: the picker asks `can('payments:correct')` before offering
- * the correction of a mistaken REFUNDED mark (TASK-620). The default session
- * is a manager with `orders:write` only — every pre-620 test's world.
+ * TASK-715: the control exists only for a session holding `orders:write`, so
+ * every behavioural test renders one. The refusal is its own describe below.
+ * TASK-620: the picker also asks `can('payments:correct')` before offering the
+ * correction of a mistaken REFUNDED mark, so a test can widen the session.
  */
+const WRITER = { permissions: ["orders:read", "orders:write"] };
+
 function renderSelect(
   queryClient?: QueryClient,
-  permissions: string[] = ["orders:write"],
+  permissions: string[] = WRITER.permissions,
 ) {
+  const auth = { permissions };
   return renderWithProviders(
-    <WithAuth permissions={permissions}>
-      <PaymentStatusSelect orderId={ORDER_ID} />
-    </WithAuth>,
-    queryClient ? { queryClient } : {},
+    <PaymentStatusSelect orderId={ORDER_ID} />,
+    queryClient ? { queryClient, auth } : { auth },
   );
 }
 
@@ -154,6 +155,35 @@ describe("PaymentStatusSelect (TASK-151, TASK-431)", () => {
     expect(
       await screen.findByText(dict.orderStatus.paymentTransitionsHint),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.orderStatus.paymentTransitionsHintFullRefund),
+    ).toBeInTheDocument();
+  });
+
+  it("does not tell the operator to cancel when the full refund is already offered", async () => {
+    // TASK-842: on a cancelled order REFUNDED is in the list — "cancel first"
+    // would be advice about something already done.
+    stubTransitions("PARTIALLY_REFUNDED", ["REFUNDED"]);
+    renderSelect();
+
+    expect(
+      await screen.findByText(dict.orderStatus.paymentTransitionsHint),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.paymentTransitionsHintFullRefund),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not mention a refund while no money has arrived", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
+    renderSelect();
+
+    expect(
+      await screen.findByText(dict.orderStatus.paymentTransitionsHint),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.paymentTransitionsHintFullRefund),
+    ).not.toBeInTheDocument();
   });
 
   it("shows an error line when the option list cannot be read", async () => {
@@ -447,5 +477,110 @@ describe("PaymentStatusSelect — correcting a mistaken REFUNDED (TASK-620)", ()
         dict.orderStatus.conflict.ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND,
       ),
     );
+  });
+});
+
+/**
+ * TASK-715 — `PATCH /admin/orders/:id/payment-status` needs `orders:write`. The
+ * picker is not rendered for anyone else (not disabled — absent).
+ */
+describe("PaymentStatusSelect — without orders:write (TASK-715)", () => {
+  it("renders nothing for a session that may only read orders", () => {
+    stubTransitions("PAID", ["PARTIALLY_REFUNDED"]);
+
+    const { container } = renderWithProviders(
+      <PaymentStatusSelect orderId={ORDER_ID} />,
+      { auth: { permissions: ["orders:read"] } },
+    );
+
+    expect(
+      screen.queryByRole("combobox", {
+        name: dict.orderStatus.paymentUpdateAria,
+      }),
+    ).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the picker for a session holding orders:write", async () => {
+    stubTransitions("PAID", ["PARTIALLY_REFUNDED"]);
+
+    renderSelect();
+
+    expect(
+      await screen.findByRole("combobox", {
+        name: dict.orderStatus.paymentUpdateAria,
+      }),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-842 (AD-ORD-35) — an empty picker used to be one grey line and nothing
+ * else. On a refunded order, or one showing «Частково повернуто 0 грн з N», the
+ * operator had no idea why the control was gone or what to do next.
+ */
+describe("PaymentStatusSelect — why nothing can change, and what next (TASK-842)", () => {
+  const RETURNS_READER = {
+    permissions: ["orders:read", "orders:write", "returns:read"],
+  };
+  const renderAs = (auth: { permissions: string[] }) =>
+    renderWithProviders(<PaymentStatusSelect orderId={ORDER_ID} />, { auth });
+  const returnsLink = () =>
+    screen.queryByRole("link", {
+      name: dict.orderStatus.noPaymentTransitionsReturnsLink,
+    });
+
+  it("explains a full refund as the end state and links to the order's returns", async () => {
+    // Cancelled order, money fully returned: REFUNDED has no onward move.
+    stubTransitions("REFUNDED", []);
+    renderAs(RETURNS_READER);
+
+    expect(
+      await screen.findByText(dict.orderStatus.noPaymentTransitionsRefunded),
+    ).toBeInTheDocument();
+    expect(returnsLink()).toHaveAttribute("href", "/returns?search=order-uu");
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+  });
+
+  it("on a live order «Частково повернуто 0 грн» says to close the order first and where the sum comes from", async () => {
+    // The server drops REFUNDED while the order is not cancelled/refunded, so
+    // PARTIALLY_REFUNDED is left with nothing.
+    stubTransitions("PARTIALLY_REFUNDED", []);
+    renderAs(RETURNS_READER);
+
+    expect(
+      await screen.findByText(dict.orderStatus.noPaymentTransitionsPartial),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.orderStatus.noPaymentTransitionsPartialAmount),
+    ).toBeInTheDocument();
+    expect(returnsLink()).toHaveAttribute("href", "/returns?search=order-uu");
+  });
+
+  it("gives the pointer as text, not a link, without returns:read", async () => {
+    stubTransitions("PARTIALLY_REFUNDED", []);
+    renderAs(WRITER);
+
+    expect(
+      await screen.findByText(dict.orderStatus.noPaymentTransitionsPartial),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.orderStatus.noPaymentTransitionsReturnsNoAccess),
+    ).toBeInTheDocument();
+    expect(returnsLink()).not.toBeInTheDocument();
+  });
+
+  it("on a cancelled, partly refunded order offers the full refund instead of a dead end", async () => {
+    // Order CANCELLED → the cross-rule lets REFUNDED through.
+    stubTransitions("PARTIALLY_REFUNDED", ["REFUNDED"]);
+    renderAs(RETURNS_READER);
+    await openSelect();
+
+    expect(
+      screen.getByRole("option", { name: "Кошти повернено" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.noPaymentTransitions),
+    ).not.toBeInTheDocument();
   });
 });

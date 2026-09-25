@@ -17,6 +17,8 @@ import {
   orderConflictMessage,
   type ApiErrorLike,
 } from "@/features/order-status-update";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import { Button, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
@@ -50,8 +52,18 @@ const FIELDS = [
  *
  * Writes through the same optimistic lock as every other order edit, so a
  * colleague's concurrent change is refused rather than silently overwritten.
+ *
+ * Not rendered at all without `orders:write` (TASK-715): the address itself is
+ * already on the card above this control, and «Змінити адресу» would only open
+ * a form whose save answers 403.
  */
 export function OrderAddressForm({ order }: OrderAddressFormProps) {
+  const { can } = useAuth();
+  if (!can(PERM.ordersWrite)) return null;
+  return <OrderAddressEditor order={order} />;
+}
+
+function OrderAddressEditor({ order }: OrderAddressFormProps) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const updateDetails = useAdminOrderControllerUpdateDetails();

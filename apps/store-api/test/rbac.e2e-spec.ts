@@ -539,7 +539,25 @@ describe('RBAC guards (e2e)', () => {
         isOwner: false,
         isAdmin: false,
         permissions: ['products:read', 'products:write'],
+        // TASK-725: the profile screen reads labels, not keys.
+        entries: [
+          { key: 'products:read', label: 'Переглядати товари' },
+          { key: 'products:write', label: 'Редагувати товари й ціни' },
+        ],
       });
+    });
+
+    it('labels a deputy admin’s non-grantable keys too (TASK-725)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/auth/me/permissions')
+        .set('Authorization', `Bearer ${token(deputy.id, deputy.role)}`)
+        .expect(200);
+
+      expect(response.body.data.entries).toContainEqual({
+        key: 'staff:read',
+        label: 'Переглядати службові акаунти',
+      });
+      expect(response.body.data.entries).toHaveLength(response.body.data.permissions.length);
     });
 
     it('reports a customer as holding nothing', async () => {
@@ -553,6 +571,7 @@ describe('RBAC guards (e2e)', () => {
         isOwner: false,
         isAdmin: false,
         permissions: [],
+        entries: [],
       });
     });
 

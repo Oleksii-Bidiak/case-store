@@ -933,3 +933,49 @@ describe("AdminOrderTable — the derived marks of B-1 (TASK-470/471/472)", () =
     });
   });
 });
+
+/**
+ * TASK-715 — «Створити замовлення» leads to a form whose submit is
+ * `POST /admin/orders`, behind `orders:write`. A reader used to fill the whole
+ * form in and only then get a 403; now the link is simply not there.
+ */
+describe("AdminOrderTable — create CTA needs orders:write (TASK-715)", () => {
+  function serveOne() {
+    server.use(
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({
+          data: [makeOrderRow(null)],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+    );
+  }
+
+  it("is not rendered for a session that may only read orders", async () => {
+    serveOne();
+    renderWithProviders(<AdminOrderTable />, {
+      auth: { permissions: ["orders:read"] },
+    });
+
+    await screen.findByText("user-uui…");
+    expect(
+      screen.queryByRole("link", { name: dict.orders.createCta }),
+    ).not.toBeInTheDocument();
+    // Reading is not writing: the export is a GET and stays.
+    expect(
+      screen.getByRole("button", { name: dict.orders.exportCsv }),
+    ).toBeInTheDocument();
+  });
+
+  it("links to /orders/new for a session holding orders:write", async () => {
+    serveOne();
+    renderWithProviders(<AdminOrderTable />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
+    });
+
+    await screen.findByText("user-uui…");
+    expect(
+      screen.getByRole("link", { name: dict.orders.createCta }),
+    ).toHaveAttribute("href", "/orders/new");
+  });
+});

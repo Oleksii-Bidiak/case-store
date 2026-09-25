@@ -51,9 +51,12 @@ function NeedsActionCard({
 
 /**
  * «Потребує дії» — the admin dashboard's needs-action widget (TASK-248). Fetches
- * its own counter payload (independent of the heavy dashboard summary) via the
- * same query key the sidebar badges read, so TanStack Query serves both from one
- * cache entry. Eight cards since TASK-352 (six since TASK-446): new orders, reviews awaiting
+ * its own counter payload (independent of the heavy dashboard summary) from the
+ * analytics-gated needs-action endpoint. The sidebar badges no longer share this
+ * cache entry: since TASK-722 they read `meta.total` of the orders / reviews
+ * lists under each section's own right, with the same predicates, so the two
+ * numbers agree without one depending on the other. Eight cards since TASK-352 (six since
+ * TASK-446): new orders, reviews awaiting
  * moderation, unpaid-in-transit orders, orders stale in PENDING and rating-abuse
  * signals all deep-link into their section; failed mail is an info-only card (no
  * admin destination). Zero-count cards still render (so the owner sees "all

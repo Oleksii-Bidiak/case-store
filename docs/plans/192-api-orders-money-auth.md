@@ -99,7 +99,7 @@ npm run generate:api && npm run test -w apps/store-admin -- --runInBand && npm r
 - **788 доведено до кінця й поглинуло 932.** Відправка без підтвердженої оплати пише в
   `OrderStatusHistory` примітку `SHIPPED_UNPAID` (`52c49551`); `note` тепер у
   `OrderStatusHistoryEntity` і Swagger, таймлайн адмінки підписує `SHIPPED_UNPAID` і
-  `PAID_AFTER_CANCEL` (`783f176d`) — окремо 932 не робили. Чеки AD-ORD-42, AD-ORD-57.
+  `PAID_AFTER_CANCEL` (`783f176d`) — окремо 932 не робили. Чеки AD-ORD-42, AD-ORD-60.
 - **627 — режим замість видалення умови.** `ORDER_RESERVATION_EXPIRY=cancel|release`, дефолт
   `cancel` (поведінка як була). `release` повертає стік без скасування замовлення; пізня оплата
   резервує знову, а за нестачі лишає «Позиція недоступна» — тож четверта умова стала досяжною,

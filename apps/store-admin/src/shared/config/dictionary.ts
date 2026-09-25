@@ -145,8 +145,6 @@ export const dict = {
     date: "Дата",
     lowStock: "Низький запас",
     product: "Товар",
-    variant: "Варіант",
-    sku: "Артикул",
     stock: "Вільний залишок",
     soldOut: "Розпродано",
     stockHint:
@@ -251,14 +249,11 @@ export const dict = {
     saving: "Збереження…",
     saveChanges: "Зберегти зміни",
     cancel: "Скасувати",
-    create: "Створити",
     edit: "Редагувати",
     delete: "Видалити",
     close: "Закрити",
-    back: "Назад",
     loading: "Завантаження…",
     actions: "Дії",
-    search: "Пошук",
     view: "Переглянути",
     previous: "Попередня",
     next: "Наступна",
@@ -268,13 +263,8 @@ export const dict = {
     activate: "Активувати",
     deactivate: "Деактивувати",
     signOut: "Вийти",
-    yes: "Так",
-    no: "Ні",
     // Table column sorting (TASK-147).
     sortByAria: (col: string) => `Сортувати за: ${col}`,
-    sortAsc: "за зростанням",
-    sortDesc: "за спаданням",
-    sortNone: "не відсортовано",
 
     // Shared table chrome: toolbar, refresh, row selection (TASK-353).
     // Lives in `common` because every admin table uses the same strings —
@@ -285,7 +275,6 @@ export const dict = {
       refreshed: "Дані оновлено",
       refreshAria: "Оновити дані таблиці",
       searchPlaceholder: "Пошук…",
-      selectRow: (name: string) => `Вибрати „${name}“`,
       selectAll: "Вибрати всі рядки на сторінці",
       selectedCount: (count: number) => `Вибрано: ${count}`,
       clearSelection: "Зняти вибір",
@@ -301,7 +290,6 @@ export const dict = {
       // it inventing its own copy — which is how the panel ended up with four
       // different search behaviours in the first place.
       searchLabel: "Пошук",
-      searchHint: "Escape очищає пошук",
       clearFilterAria: (filter: string, value: string) =>
         `Прибрати фільтр «${filter}: ${value}»`,
       clearAllFilters: "Скинути фільтри",
@@ -310,6 +298,10 @@ export const dict = {
       // are what emptied the table: the operator needs the cause, not the fact.
       emptyFiltered: "За поточними фільтрами нічого не знайдено",
     },
+    // Хвиля 191: дія без права не рендериться (не сіра кнопка). Цей рядок стоїть
+    // там, де без неї лишилося б порожнє місце, — щоб відсутність контролу
+    // читалась як «так задумано», а не як поломка.
+    viewOnly: "Ви можете переглядати, але не змінювати.",
   },
 
   // --- Products (TASK-115) ----------------------------------------------------
@@ -444,7 +436,6 @@ export const dict = {
     filterStock: "Фільтр за залишком",
     filterStockAll: "Будь-який залишок",
     filterStockOut: "Немає в наявності",
-    toastCreated: "Товар створено",
     // TASK-361: creation now yields a hidden draft and lands on the edit page.
     // TASK-442: фото, характеристики, сумісність і послуги тепер заповнюються
     // ще до першого збереження, тож на редагуванні лишається сама публікація.
@@ -494,7 +485,6 @@ export const dict = {
       `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
     // Staff preview of deactivated products (TASK-155)
     previewLink: "Переглянути",
-    previewHeading: "Перегляд товару",
     previewBack: "← Назад",
     previewEditLink: "Редагувати товар",
     previewLoadError: "Не вдалося завантажити товар для перегляду.",
@@ -632,9 +622,14 @@ export const dict = {
     refDeviceModels: "Моделі пристроїв",
     refAttributes: "Характеристики",
     refGroups: "Групи варіантів",
+    // TASK-727: a «Текст» characteristic cannot be a filter (TASK-488) — the old
+    // hint promised it could, without saying the type has to change first.
     refHint:
-      "Створимо ті, яких ще немає. Характеристики додаємо як текстові — зробити " +
-      "їх фільтрами можна пізніше, у налаштуваннях категорії.",
+      "Створимо ті, яких ще немає. Колір одразу стає фільтром; решту характеристик " +
+      "додаємо з типом «Текст» — такий тип не може бути фільтром. Щоб зробити " +
+      "характеристику фільтром, відкрийте " +
+      "«Категорії» → категорію → «Характеристики», змініть тип на «Вибір зі списку» " +
+      "(і перелічіть значення) або «Так/Ні» та увімкніть «Використовувати як фільтр каталогу».",
 
     // Rows
     createsHeading: (n: number) => `Нові товари (${n})`,
@@ -653,10 +648,6 @@ export const dict = {
       "Це поле хтось правив в адмінці. За замовчуванням переможе файл — зніміть " +
       "галочку, щоб зберегти вашу правку.",
     uncheckConflicts: "Зняти всі ручні правки",
-    checkAll: "Позначити все",
-    colField: "Поле",
-    colFrom: "Зараз",
-    colTo: "Стане",
     showMore: (n: number) => `Показати ще ${n}`,
 
     // Apply
@@ -683,10 +674,6 @@ export const dict = {
     // History
     historyHeading: "Попередні імпорти",
     historyEmpty: "Імпортів ще не було.",
-    colFile: "Файл",
-    colStatus: "Статус",
-    colWhen: "Коли",
-    colWho: "Хто",
     status: {
       PARSED: "Очікує підтвердження",
       APPLYING: "Записується",
@@ -762,7 +749,6 @@ export const dict = {
     attrValueAria: (i: number) => `Значення атрибута ${i}`,
     removeAttrAria: (i: number) => `Видалити атрибут ${i}`,
     addAttribute: "Додати атрибут",
-    active: "Активний (показувати в магазині)",
     metaTitle: "SEO-заголовок (meta title)",
     metaTitlePlaceholder: "Залиште порожнім, щоб використати назву товару",
     metaTitleHint:
@@ -771,7 +757,6 @@ export const dict = {
     metaDescriptionPlaceholder: "Короткий опис товару для пошукових систем",
     metaDescriptionHint:
       "Короткий текст під заголовком у результатах пошуку. Залиште порожнім — і він згенерується автоматично з опису товару.",
-    submit: "Зберегти товар",
     errors: {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
@@ -798,7 +783,6 @@ export const dict = {
     // be scrolled through — so they became comboboxes.
     comboboxPlaceholder: "Почніть вводити назву…",
     comboboxEmpty: "Нічого не знайдено",
-    comboboxClear: "Очистити вибір",
   },
 
   // --- Categories (TASK-115) --------------------------------------------------
@@ -834,7 +818,6 @@ export const dict = {
     empty: "Категорій ще немає. Створіть свою першу категорію.",
     colName: "Назва",
     colSlug: "Slug",
-    colParent: "Батьківська",
     colProducts: "Товари",
     // TASK-408: the column shows the SUBTREE total, because that is what the
     // storefront category page lists. The direct count is spelled out beside it —
@@ -843,7 +826,6 @@ export const dict = {
       "Скільки товарів показує вітрина на сторінці категорії — разом з усіма підкатегоріями. " +
       "У дужках — скільки лежить безпосередньо в самій категорії.",
     productsDirect: (count: number) => `безпосередньо ${count}`,
-    colSort: "Порядок",
     colStatus: "Статус",
     root: "Коренева",
     back: "← Назад до категорій",
@@ -1019,7 +1001,6 @@ export const dict = {
     colStatus: "Статус",
     statusActive: "Активний",
     statusInactive: "Прихований",
-    edit: "Редагувати",
     activate: "Активувати",
     deactivate: "Приховати",
     backToBrands: "← Назад до брендів",
@@ -1046,11 +1027,6 @@ export const dict = {
     allBrands: "Усі бренди",
     filterStatusAria: "Фільтр за статусом",
     allStatuses: "Усі статуси",
-    // The list also shows brands that are hidden themselves, so the operator can
-    // still reach their models.
-    brandsSearchPlaceholder: "Пошук за назвою бренду…",
-    brandsSearchLabel: "Пошук брендів пристроїв",
-    brandsEmptyMatch: (q: string) => `Немає брендів за запитом «${q}».`,
   },
 
   deviceBrandForm: {
@@ -1117,7 +1093,6 @@ export const dict = {
     applyToGroup: "Застосувати до всіх позицій групи",
     applyToGroupHint:
       "Скопіювати цей набір сумісності на кожну позицію тієї ж групи.",
-    saveFirst: "Спершу збережіть товар, щоб керувати сумісністю.",
     // TASK-442 — на сторінці створення набір уже можна відмітити; він поїде на
     // сервер одразу після створення товару, окремої кнопки тут немає.
     stagedHint: "Збережеться разом із товаром.",
@@ -1126,6 +1101,9 @@ export const dict = {
     toastGroupApplied: (count: number) =>
       `Сумісність застосовано до ${count} позицій`,
     toastGroupFailed: "Не вдалося застосувати сумісність до групи",
+    // TASK-726: the save button said the block's title («Сумісні пристрої»)
+    // instead of the action — mirrors productSpecs.save.
+    save: "Зберегти сумісність",
   },
 
   // --- Product structured-spec values editor (TASK-191) -----------------------
@@ -1142,7 +1120,6 @@ export const dict = {
     // TASK-442 — те саме поле на сторінці створення: окремої кнопки немає,
     // значення поїдуть на сервер одразу після створення товару.
     stagedHint: "Збережеться разом із товаром.",
-    booleanYes: "Так",
     selectPlaceholder: "— не вибрано —",
     toastSaved: "Характеристики збережено",
     toastError: "Не вдалося зберегти характеристики.",
@@ -1228,12 +1205,10 @@ export const dict = {
     colStatus: "Статус",
     typePercent: "Відсоток",
     typeFixed: "Фіксована",
-    statusActive: "Активний",
     statusInactive: "Неактивний",
     deactivate: "Деактивувати",
     deactivating: "Деактивація…",
     noExpiry: "—",
-    unlimited: "∞",
     redeemedOf: (used: number, max: number | null) =>
       max === null ? `${used}` : `${used} / ${max}`,
     back: "← Назад до промокодів",
@@ -1288,15 +1263,9 @@ export const dict = {
     add: "Додати сторінку",
     loadError: "Не вдалося завантажити сторінки. Спробуйте ще раз.",
     empty: "Сторінок ще немає. Створіть свою першу сторінку.",
-    // TASK-357: the table used to ask for `limit: 100` and show no page
-    // controls — page 101 simply did not exist for the operator.
-    searchPlaceholder: "Пошук за заголовком або slug…",
-    searchAria: "Пошук сторінок",
-    emptyMatch: (q: string) => `Немає сторінок за запитом «${q}».`,
     colTitle: "Заголовок",
     colSlug: "Slug",
     colStatus: "Статус",
-    colCreated: "Створено",
     statusPublished: "Опубліковано",
     statusDraft: "Чернетка",
     // TASK-430: this table read `isActive` — a MIRROR of `status == PUBLISHED` —
@@ -1384,7 +1353,6 @@ export const dict = {
       excerptMax: "Короткий опис має містити не більше 500 символів",
       metaTitleMax: "SEO заголовок має містити не більше 255 символів",
       metaDescriptionMax: "SEO опис має містити не більше 500 символів",
-      sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої сторінки",
       // TASK-435 — a hub row whose slug names no hub renders nowhere.
       hubSlugRequired: "Оберіть розділ, для якого задаються мета-теги",
@@ -1778,6 +1746,15 @@ export const dict = {
     toastActivated: "Бренд активовано",
     toastDeactivated: "Бренд приховано",
     toastStatusFailed: "Не вдалося змінити статус бренду",
+    // TASK-831: the brand's uuid, shown on its edit page so an old
+    // `?brandId=<uuid>` link can be checked without database access.
+    idLabel: "ID бренду",
+    idHint:
+      "Внутрішній ідентифікатор. Знадобиться, щоб перевірити старе посилання виду ?brandId=… або назвати бренд розробнику.",
+    copyId: "Скопіювати ID",
+    copyIdDone: "Скопійовано",
+    copyIdFailed: "Не вдалося скопіювати — виділіть ID вручну",
+    copyIdAria: "Скопіювати ID бренду",
   },
 
   brandForm: {
@@ -1947,7 +1924,7 @@ export const dict = {
     metaTitle: "SEO — Адмін",
     heading: "SEO-налаштування",
     subheading:
-      "Глобальні параметри для пошукових систем: заголовки, описи, зображення для соцмереж і видимість сайту.",
+      "Глобальні параметри для пошукових систем: назва магазину, заголовки, описи й зображення для соцмереж.",
     loadError: "Не вдалося завантажити SEO-налаштування. Спробуйте ще раз.",
     toastUpdated: "SEO-налаштування оновлено",
     toastUpdateFailed: "Не вдалося оновити SEO-налаштування",
@@ -1997,9 +1974,6 @@ export const dict = {
       "https://facebook.com/ваша-сторінка\nhttps://youtube.com/@ваш-канал",
     additionalSameAsLinksHint:
       "Посилання на офіційні сторінки магазину в інших мережах (Facebook, YouTube, LinkedIn тощо) — по одному в рядку. Це показує пошуковим системам, що це офіційні профілі вашого бренду.",
-    noindexSite: "Приховати сайт від пошукових систем",
-    noindexSiteHint:
-      "Повністю приховує весь сайт від Google та інших пошукових систем. Вмикайте лише на тестовому сайті. УВАГА: якщо увімкнути на робочому магазині — сайт зникне з пошуку Google.",
     submit: "Зберегти SEO-налаштування",
     errors: {
       urlInvalid: "Вкажіть коректний URL (https://…)",
@@ -2073,9 +2047,6 @@ export const dict = {
     statusInactive: "Приховано",
     activate: "Показати",
     deactivate: "Приховати",
-    searchPlaceholder: "Пошук за текстом запитання…",
-    searchAria: "Пошук запитань",
-    emptyMatch: (q: string) => `Немає запитань за запитом «${q}».`,
     loadError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
     loadOneError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
     empty: "Запитань ще немає. Додайте перше запитання.",
@@ -2155,7 +2126,6 @@ export const dict = {
     rowAria: (id: string) => `Замовлення ${id}`,
     back: "← Назад до замовлень",
     title: (id: string) => `Замовлення #${id}`,
-    payment: (s: string) => `Оплата: ${s}`,
     timeline: (created: string, updated: string) =>
       `Створено ${created} · Оновлено ${updated}`,
     updateStatus: "Змінити статус",
@@ -2355,6 +2325,21 @@ export const dict = {
     exportTruncated: (exported: number, total: number) =>
       `Експортовано лише ${exported} із ${total} замовл. — файл обмежено. Звузьте фільтри (дата, статус), щоб отримати решту.`,
     exportError: "Не вдалося сформувати CSV. Спробуйте ще раз.",
+
+    // --- Без права `orders:write` (TASK-715) ----------------------------------
+    // Кнопок зміни немає зовсім; `/orders/new`, набраний руками, дає одну
+    // відмову замість форми, що впаде 403 на «Створити».
+    createForbidden: "У вас немає права створювати замовлення.",
+    createForbiddenHint:
+      "Попросіть власника додати право «Змінювати статуси та ТТН» у розділі «Персонал» — на картці співробітника.",
+    // ТТН і внутрішні нотатки без права редагування показуються текстом.
+    detailsValueEmpty: "Не вказано",
+
+    // --- Заявки на повернення на картці замовлення (TASK-724) -----------------
+    // Заголовок секції — `returnsForOrder`; тут лише стани списку.
+    returnsForOrderEmpty: "Заявок на повернення по цьому замовленню немає.",
+    returnsForOrderLoadError: "Не вдалося завантажити заявки на повернення.",
+    returnsForOrderRequestedAt: (date: string) => `подано ${date}`,
   },
 
   reviews: {
@@ -2511,7 +2496,6 @@ export const dict = {
     fieldTopic: "Тема",
     fieldOrderRef: "Замовлення",
     fieldMessage: "Повідомлення",
-    fieldStatus: "Статус",
     fieldAdminNote: "Внутрішня примітка",
     adminNotePlaceholder: "Примітка для команди (не бачить клієнт)…",
     markRead: "Позначити прочитаним",
@@ -2521,7 +2505,6 @@ export const dict = {
     receivedAt: (date: string) => `Отримано ${date}`,
     updateSuccess: "Повідомлення оновлено.",
     updateError: "Не вдалося оновити повідомлення. Спробуйте ще раз.",
-    close: "Закрити",
     // IN_PROGRESS status + inbox→profile link (TASK-256)
     filterInProgress: "В роботі",
     statusInProgress: "В роботі",
@@ -2593,10 +2576,12 @@ export const dict = {
     paymentCorrectConfirm: "Виправити",
     paymentCorrectCancel: "Скасувати",
     paymentCorrectToast: "Мітку оплати виправлено",
-    // Says the quiet part out loud: a full refund is missing from the list on
-    // purpose while the order is live, and the operator's next step is named.
+    // Always under the picker. The "why is the full refund missing" half lives in
+    // `paymentTransitionsHintFullRefund` (TASK-842) and shows only when it IS
+    // missing — on a cancelled order it is in the list, and telling the operator
+    // to cancel first would be advice about something already done.
     paymentTransitionsHint:
-      "Доступні лише переходи, дозволені для поточного статусу оплати. Повне повернення коштів можливе після скасування замовлення.",
+      "Доступні лише переходи, дозволені для поточного статусу оплати.",
 
     // --- Server-driven transitions (TASK-332) ---------------------------------
     transitionsLoading: "Завантаження доступних статусів…",
@@ -2659,6 +2644,27 @@ export const dict = {
     conflictUnknown:
       "Замовлення змінилося, і зміну не збережено. Оновіть сторінку й спробуйте ще раз.",
     reloadCta: "Оновити",
+
+    // --- Чому статус оплати не змінити і що робити далі (TASK-842) ------------
+    // Під `noPaymentTransitions` — причина й наступний крок, а не порожнеча.
+    // Причину визначає сам статус оплати з відповіді сервера: REFUNDED не має
+    // переходів узагалі, а з PARTIALLY_REFUNDED сервер прибирає «Кошти повернено»,
+    // поки замовлення не скасоване й не повернене.
+    noPaymentTransitionsRefunded:
+      "Усі кошти вже повернено покупцеві — це кінцевий стан оплати, змінювати тут більше нічого. Що саме повернули і за яким рішенням — у заявці на повернення.",
+    noPaymentTransitionsPartial:
+      "Частину коштів уже позначено поверненою. «Кошти повернено» можна поставити лише скасованому замовленню або замовленню зі статусом «Повернення коштів» — спершу змініть статус замовлення вище.",
+    noPaymentTransitionsPartialAmount:
+      "Сума «Повернуто» рахується з рішень у заявках на повернення. Якщо там 0 грн, заявки немає або в ній ще не збережено рішення із сумою — відкрийте заявку по цьому замовленню.",
+    noPaymentTransitionsOther:
+      "Для поточного статусу оплати немає дозволених переходів.",
+    noPaymentTransitionsReturnsLink: "Заявки на повернення цього замовлення",
+    // Без `returns:read` лінк вів би на відмову — тому лише текст.
+    noPaymentTransitionsReturnsNoAccess:
+      "Заявки на повернення — у розділі «Повернення»; щоб їх бачити, потрібне право на перегляд повернень.",
+    // Лише коли «Кошти повернено» немає в списку, а гроші надходили (TASK-842).
+    paymentTransitionsHintFullRefund:
+      "Повне повернення коштів можливе після скасування замовлення.",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
@@ -2808,7 +2814,7 @@ export const dict = {
     // співробітник відкривав чужі повернення, набравши адресу руками.
     forbidden: "У вас немає доступу до розділу повернень.",
     forbiddenHint:
-      "Попросіть власника додати право «Переглядати повернення» у розділі «Права доступу».",
+      "Попросіть власника видати вам право «Переглядати повернення» — він робить це в розділі «Персонал» → ваша картка → вкладка «Права».",
 
     // --- Заявка від оператора (TASK-469) --------------------------------------
     // Гість і телефонний покупець акаунта не мають, тож покупецька форма для них
@@ -2857,7 +2863,6 @@ export const dict = {
     addressCity: "Місто",
     addressAddress1: "Відділення / адреса",
     addressPostalCode: "Індекс",
-    addressCountry: "Країна",
     addressRequired: "Обовʼязкове поле.",
 
     itemsHeading: "Позиції",
@@ -2867,7 +2872,6 @@ export const dict = {
     itemsNoResults: "Товарів не знайдено.",
     itemsAdd: "Додати",
     itemsAddAria: (name: string) => `Додати «${name}» до замовлення`,
-    itemsRemove: "Прибрати",
     itemsRemoveAria: (name: string) => `Прибрати «${name}» із замовлення`,
     itemsQtyAria: (name: string) => `Кількість «${name}»`,
     itemsEmpty: "Додайте хоча б один товар.",
@@ -3380,6 +3384,13 @@ export const dict = {
     transferWrongPassword: "Пароль не підійшов. Спробуйте ще раз.",
     transferSessionsHint:
       "Після передачі сесії обох акаунтів завершаться — вам доведеться увійти знову.",
+
+    // --- Доступ до розділу (TASK-639) -----------------------------------------
+    // `staff:read` не видається окремою галочкою (`grantable: false`): персонал
+    // — справа власника й заступників, і текст так і каже, замість «попросіть».
+    forbidden: "У вас немає доступу до розділу «Персонал».",
+    forbiddenHint:
+      "Службові акаунти й права бачать лише власник магазину та його заступники (адміністратори). Окремо це право не видається.",
   },
 
   // --- Action log (TASK-318) --------------------------------------------------
@@ -3407,7 +3418,6 @@ export const dict = {
     diffToggle: "Що змінилося",
     diffFrom: "Було",
     diffTo: "Стало",
-    noDiff: "Деталі змін не записані.",
 
     // TASK-423 — the entity filter's options, and the panel's names for the raw
     // `entityType` values the interceptor writes (a controller's class name,
@@ -3610,6 +3620,13 @@ export const dict = {
     filterActorOther: (id: string) => `Співробітник ${id.slice(0, 8)}…`,
     filterRoleAria: "Фільтр за роллю",
     filterRoleAll: "Усі ролі",
+
+    // --- Доступ до розділу (TASK-639) -----------------------------------------
+    // `audit:read` не видається окремою галочкою (`grantable: false`), тож
+    // «попросіть власника» було б порадою в нікуди — кажемо, хто його має.
+    forbidden: "У вас немає доступу до журналу дій.",
+    forbiddenHint:
+      "Журнал дій бачать лише власник магазину та його заступники (адміністратори). Окремо це право не видається.",
   },
 
   // --- Own admin profile (TASK-317) -------------------------------------------
@@ -3933,8 +3950,10 @@ export const dict = {
   // count + shown/hidden marker. Copy is written at the category level ("N
   // active items exist here"), reusing the FAQ "Показується"/"Приховано" wording.
   contentMap: {
-    metaTitle: "Карта контенту — Адмін",
-    heading: "Карта контенту",
+    // TASK-720: the heading repeats the sidebar item (nav.contentMap) — the page
+    // used to be called «Карта контенту» under a menu item with another name.
+    metaTitle: "Де що на сайті — Адмін",
+    heading: "Де що на сайті",
     subheading:
       "Що де показується на сайті — і в якому розділі це редагувати. Оберіть блок, щоб перейти прямо до потрібного розділу.",
     loadError: "Не вдалося порахувати",
@@ -3947,7 +3966,7 @@ export const dict = {
     appliesToLabel: "Де видно:",
     // The static, non-clickable note covering catalog/PDP product content.
     catalogNote:
-      "Назви, ціни, зображення й категорії товарів редагуються в розділах «Товари» та «Категорії» у верхньому меню.",
+      "Назви, ціни, зображення й категорії товарів редагуються в розділах «Товари» та «Категорії» у меню зліва.",
     groups: {
       global: "Глобально — на кожній сторінці",
       home: "Головна сторінка",
@@ -3957,14 +3976,16 @@ export const dict = {
       // AD-CNT-26 (TASK-429): /promo — окрема сторінка вітрини, як і блог.
       promo: "Сторінка «Акції»",
     },
+    // TASK-720: banner zones use the placement names of the Banners screen
+    // (banners.placements / bannerForm.placements) — one slot, one name.
     zones: {
       announcementBar: {
-        source: "Стрічка оголошень зверху",
+        source: "Смуга оголошень",
         target: "Банери",
         appliesTo: "Кожна сторінка (шапка)",
       },
       heroSlide: {
-        source: "Hero-слайдер",
+        source: "Головний слайдер",
         target: "Банери",
         appliesTo: "Головна",
       },
@@ -3974,7 +3995,7 @@ export const dict = {
         appliesTo: "Головна",
       },
       promoBanner: {
-        source: "Широкий промо-банер",
+        source: "Промо-банер",
         target: "Банери",
         appliesTo: "Головна",
       },
@@ -4008,15 +4029,18 @@ export const dict = {
         appliesTo: "Сторінка «Блог»",
       },
       siteContact: {
-        source: "Контакти (телефон, адреса, соцмережі)",
-        target: "Налаштування → Контакти",
+        // TASK-721: lists what the Contacts form actually edits — there is no
+        // address field (SiteContactSettings has none; see TASK-873).
+        source:
+          "Контакти (телефон, пошта, години роботи, месенджери й Instagram)",
+        target: "Контакти",
         appliesTo: "Футер кожної сторінки та сторінка «Контакти»",
       },
       seoSettings: {
         // TASK-433 put the store name behind this same screen, and "where do I
         // change the name?" is exactly the question this map exists to answer.
         source: "Назва магазину, meta-заголовки та SEO за замовчуванням",
-        target: "Налаштування → SEO",
+        target: "SEO",
         appliesTo:
           "Кожна сторінка: назва у вкладці браузера й у прев'ю посилань, решта — невидимо (title, meta, robots)",
       },
@@ -4094,8 +4118,11 @@ export const dict = {
       "Рекомендуємо заповнити заголовок і опис сайту за замовчуванням нижче.",
     // noindex — the one genuinely urgent, RED state.
     noindexWarningTitle: "Сайт прихований від пошукових систем!",
+    // TASK-718: the toggle this used to point at was removed (TASK-307) — the flag
+    // is an emergency switch set in the database, so the advice is "call the
+    // developer", not an action the operator cannot perform here.
     noindexWarningBody:
-      "Зараз увесь магазин не показується в Google та інших пошукових системах. Якщо це робочий сайт — вимкніть «Приховати сайт від пошукових систем» нижче, інакше клієнти не знайдуть вас у пошуку.",
+      "Зараз увесь магазин не показується в Google та інших пошукових системах. Це аварійний перемикач, який вмикають у базі даних, а не в адмінці, — тут його не зняти. Якщо це робочий магазин, негайно зверніться до розробника, інакше клієнти не знайдуть вас у пошуку.",
     noindexOkLabel: "Сайт видимий для пошукових систем.",
     // Outbound eyeball links to what the storefront actually serves.
     linksHeading: "Перевірити службові файли сайту",
@@ -4115,16 +4142,15 @@ export const dict = {
     add: "Додати карусель",
     loadError: "Не вдалося завантажити каруселі. Спробуйте ще раз.",
     empty: "Каруселей ще немає. Створіть свою першу карусель.",
-    searchPlaceholder: "Пошук за заголовком…",
-    searchAria: "Пошук каруселей",
-    emptyMatch: (q: string) => `Немає каруселей за запитом «${q}».`,
     colTitle: "Заголовок",
     colSource: "Джерело",
     colPlacement: "Місце на сайті",
     colStatus: "Статус",
+    // TASK-720: the same words as carouselForm.placementOptions and its hint — the
+    // list and the form used to name one place two ways.
     placementLabels: {
-      HOME_TABS: "Таб у «Популярному»",
-      HOME_RAILS: "Окремий рейл",
+      HOME_TABS: "Таб у секції «Популярне»",
+      HOME_RAILS: "Окремий рейл нижче",
     },
     sourceLabels: {
       BESTSELLING: "Хіти продажів",
@@ -4202,7 +4228,6 @@ export const dict = {
       titleMax: "Заголовок має містити не більше 255 символів",
       categoryRequired: "Оберіть категорію для джерела «Категорія»",
       itemLimitRange: "Кількість товарів має бути цілим числом від 1 до 24",
-      sortInt: "Порядок сортування має бути невід'ємним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої каруселі",
     },
   },
@@ -4436,17 +4461,38 @@ export const dict = {
     keywordsPlaceholder: "чохол, magsafe, ударостійкий",
     keywordsHint:
       "Через кому. Це НЕ мета-тег keywords для Google — його пошукові системи ігнорують ще з 2009 року, і ми його не виводимо. Це внутрішні теги: слова, якими товар шукають у магазині та за якими його впізнають AI-асистенти, якщо їх немає в назві й описі.",
-    keywordsCount: (n: number) => `Тегів: ${n}`,
     ogImage: "Картинка для соцмереж (OG)",
     ogImagePlaceholder: (host: string) => `https://${host}/og/сторінка.jpg`,
     ogImageHint:
-      "Показується, коли посиланням діляться у Facebook, Telegram чи Viber. Розмір 1200×630. Якщо порожньо — береться власне зображення сторінки, потім загальна картинка з «Налаштування → SEO».",
+      "Показується, коли посиланням діляться у Facebook, Telegram чи Viber. Розмір 1200×630. Якщо порожньо — береться власне зображення сторінки, потім загальна картинка з розділу «SEO».",
     errors: {
       keywordsCount: (max: number) => `Не більше ${max} тегів`,
       keywordLength: (max: number) =>
         `Один тег має містити не більше ${max} символів`,
       ogImageUrl: "Вкажіть коректний URL картинки (http:// або https://)",
     },
+    // TASK-728: the OG field takes a FILE and a media-library pick as well as a
+    // link — the same three paths the neighbouring image fields offer.
+    ogImageUpload: {
+      alt: "Картинка для соцмереж",
+      empty: "Картинку ще не задано — соцмережі візьмуть автоматичну.",
+      upload: "Завантажити файл",
+      replace: "Замінити файл",
+      remove: "Прибрати",
+      removeTitle: "Прибрати картинку для соцмереж?",
+      removeDescription:
+        "Поле очиститься, і після збереження соцмережі покажуть автоматичну картинку. Сам файл залишиться у сховищі.",
+      hint: "JPEG, PNG, WebP або GIF — до 20 МБ, найкраще 1200×630. Або виберіть із медіатеки чи вставте посилання в поле нижче.",
+      toastUploaded: "Картинку завантажено — не забудьте зберегти зміни",
+      errorTooLarge:
+        "Файл завеликий — максимум 20 МБ. Стисніть зображення і спробуйте ще раз.",
+      errorUnsupportedType:
+        "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
+      errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
+    },
+    // Starts with the visible «З медіатеки» (WCAG 2.5.3 label in name); tells
+    // it apart from the other picker in the same form.
+    ogImagePickerAria: "З медіатеки — картинка для соцмереж",
   },
 } as const;
 

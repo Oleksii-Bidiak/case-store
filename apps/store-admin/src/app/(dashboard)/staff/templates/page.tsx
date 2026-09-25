@@ -5,6 +5,8 @@ import {
   PermissionTemplatesSkeleton,
   PermissionTemplatesView,
 } from "@/widgets";
+import { PERM } from "@/entities/permission";
+import { PermissionGate } from "@/entities/session";
 import { dict } from "@/shared/config";
 
 /**
@@ -25,16 +27,27 @@ export const metadata: Metadata = {
 export default function PermissionTemplatesPage() {
   return (
     <div className="flex flex-col gap-6">
-      <Link
-        href="/staff"
-        className="text-sm text-muted-foreground hover:text-foreground"
-      >
-        {dict.staff.back}
-      </Link>
+      {/* Silent, like the /staff header buttons: «назад до Персоналу» would
+          only lead a refused manager to a second refusal. */}
+      <PermissionGate permission={PERM.staffRead} fallback={null}>
+        <Link
+          href="/staff"
+          className="text-sm text-muted-foreground hover:text-foreground"
+        >
+          {dict.staff.back}
+        </Link>
+      </PermissionGate>
 
-      <Suspense fallback={<PermissionTemplatesSkeleton />}>
-        <PermissionTemplatesView />
-      </Suspense>
+      {/* TASK-639: one refusal instead of the view's failed queries. */}
+      <PermissionGate
+        permission={PERM.staffRead}
+        title={dict.staff.forbidden}
+        hint={dict.staff.forbiddenHint}
+      >
+        <Suspense fallback={<PermissionTemplatesSkeleton />}>
+          <PermissionTemplatesView />
+        </Suspense>
+      </PermissionGate>
     </div>
   );
 }

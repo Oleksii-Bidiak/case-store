@@ -14346,6 +14346,23 @@
           "data"
         ]
       },
+      "PermissionEntryEntity": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "orders:read"
+          },
+          "label": {
+            "type": "string",
+            "example": "Переглядати замовлення"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
+      },
       "EffectivePermissionsEntity": {
         "type": "object",
         "properties": {
@@ -14377,13 +14394,21 @@
             "items": {
               "type": "string"
             }
+          },
+          "entries": {
+            "description": "The same keys with their Ukrainian catalogue labels, in catalogue (zone) order — for the caller’s own profile screen (TASK-725). A key missing from the catalogue is labelled with the key itself.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionEntryEntity"
+            }
           }
         },
         "required": [
           "role",
           "isOwner",
           "isAdmin",
-          "permissions"
+          "permissions",
+          "entries"
         ]
       },
       "PermissionsResponseEnvelope": {

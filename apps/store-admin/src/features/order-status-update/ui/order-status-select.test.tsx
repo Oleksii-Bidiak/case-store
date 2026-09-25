@@ -8,7 +8,10 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
-import { orderStatusLabel } from "@/entities/order";
+import {
+  orderStatusLabel,
+  useAdminOrderControllerGetAllowedPaymentTransitions,
+} from "@/entities/order";
 import { OrderStatusSelect } from "./order-status-select";
 
 jest.mock("sonner", () => ({
@@ -81,14 +84,17 @@ function stubOrderReturns(count: number) {
 }
 
 /**
- * Render the picker inside a session context — it asks `can('returns:write')`
- * before offering to open a return, so there has to be a session to ask.
+ * Render the picker inside a session context — it asks `can('returns:read')`
+ * before looking for returns and `can('returns:write')` before offering to open
+ * one, so there has to be a session to ask.
  */
 function renderSelect(
   options: { permissions?: string[]; isOwner?: boolean } = {},
 ) {
-  const { permissions = ["orders:write", "returns:write"], isOwner = false } =
-    options;
+  const {
+    permissions = ["orders:write", "returns:read", "returns:write"],
+    isOwner = false,
+  } = options;
   return renderWithProviders(
     <WithAuth isOwner={isOwner} permissions={permissions}>
       <OrderStatusSelect orderId={ORDER_ID} />
@@ -598,5 +604,179 @@ describe("OrderStatusSelect — refunding with no return on file (TASK-469)", ()
     expect(
       screen.queryByText(dict.returns.createDialogTitle),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-630 — the "is there a return already?" lookup is a READ.
+ *
+ * `GET /admin/orders/:id/returns` sits behind `returns:read` for the whole
+ * controller. Gating it on `returns:write` meant an operator holding only the
+ * write right got a 403 on every order card, and one holding only the read
+ * right never had it asked for them at all.
+ */
+describe("OrderStatusSelect — returns lookup follows returns:read (TASK-630)", () => {
+  /** Count the lookups actually sent — the thing a 403 would be answering. */
+  function countReturnLookups(): { count: number } {
+    const counter = { count: 0 };
+    server.use(
+      http.get("*/api/admin/orders/:orderId/returns", () => {
+        counter.count += 1;
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+    return counter;
+  }
+
+  const pickRefunded = async () => {
+    await openPicker();
+    await userEvent.click(
+      await screen.findByRole("option", { name: orderStatusLabel("REFUNDED") }),
+    );
+  };
+
+  it("never asks with returns:write alone — no 403, and no dialog", async () => {
+    stubTransitions(["REFUNDED"]);
+    const lookups = countReturnLookups();
+    const patch = stubStatusPatch(() =>
+      HttpResponse.json({ data: { id: ORDER_ID } }),
+    );
+
+    renderSelect({ permissions: ["orders:write", "returns:write"] });
+    await pickRefunded();
+
+    await waitFor(() => expect(patch.bodies).toHaveLength(1));
+    expect(lookups.count).toBe(0);
+    expect(
+      screen.queryByText(dict.returns.createDialogTitle),
+    ).not.toBeInTheDocument();
+  });
+
+  it("asks with returns:read, but offers no return it could not create", async () => {
+    stubTransitions(["REFUNDED"]);
+    const lookups = countReturnLookups();
+    const patch = stubStatusPatch(() =>
+      HttpResponse.json({ data: { id: ORDER_ID } }),
+    );
+
+    renderSelect({ permissions: ["orders:write", "returns:read"] });
+    await waitFor(() => expect(lookups.count).toBeGreaterThan(0));
+    await pickRefunded();
+
+    await waitFor(() => expect(patch.bodies).toHaveLength(1));
+    expect(
+      screen.queryByText(dict.returns.createDialogTitle),
+    ).not.toBeInTheDocument();
+  });
+
+  it("warns about a refund with no return when the operator can read AND write", async () => {
+    stubTransitions(["REFUNDED"]);
+    const lookups = countReturnLookups();
+    const patch = stubStatusPatch(() =>
+      HttpResponse.json({ data: { id: ORDER_ID } }),
+    );
+
+    renderSelect({
+      permissions: ["orders:write", "returns:read", "returns:write"],
+    });
+    await waitFor(() => expect(lookups.count).toBeGreaterThan(0));
+    await pickRefunded();
+
+    expect(
+      await screen.findByText(dict.returns.createDialogTitle),
+    ).toBeInTheDocument();
+    expect(patch.bodies).toHaveLength(0);
+  });
+});
+
+/**
+ * TASK-715 — `PATCH /admin/orders/:id/status` needs `orders:write`. A reader got
+ * the picker, and every move came back as a 403 reported as "somebody else
+ * changed this order" (AD-ORD-34). The picker is now absent for them.
+ */
+describe("OrderStatusSelect — orders:write gate (TASK-715)", () => {
+  it("renders nothing for a session that may only read orders", () => {
+    stubTransitions(["DELIVERED"]);
+
+    const { container } = renderSelect({ permissions: ["orders:read"] });
+
+    expect(
+      screen.queryByRole("combobox", { name: dict.orderStatus.updateAria }),
+    ).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("renders the picker for a session holding orders:write", async () => {
+    stubTransitions(["DELIVERED"]);
+
+    renderSelect({ permissions: ["orders:read", "orders:write"] });
+
+    expect(
+      await screen.findByRole("combobox", {
+        name: dict.orderStatus.updateAria,
+      }),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-842: the payment picker's option list depends on the ORDER status —
+ * cancelling a partly refunded order is exactly what makes «Кошти повернено»
+ * legal. The Orval keys are flat strings, so invalidating the order itself does
+ * not reach the payment-transitions query by prefix; this pins the explicit
+ * invalidation. The probe reads the same entity hook the payment picker reads,
+ * so no feature imports another.
+ */
+function PaymentOptionsProbe({ orderId }: { orderId: string }) {
+  const { data } = useAdminOrderControllerGetAllowedPaymentTransitions(orderId);
+  return <p data-testid="payment-options">{data?.data.allowed.join(",")}</p>;
+}
+
+describe("OrderStatusSelect — payment options follow the order (TASK-842)", () => {
+  it("refetches the payment options after cancelling, so the full refund appears", async () => {
+    stubTransitions(["CANCELLED"]);
+    let cancelled = false;
+    let paymentReads = 0;
+    server.use(
+      http.get(
+        "*/api/admin/orders/:orderId/allowed-payment-transitions",
+        () => {
+          paymentReads += 1;
+          return HttpResponse.json({
+            data: {
+              current: "PARTIALLY_REFUNDED",
+              allowed: cancelled ? ["REFUNDED"] : [],
+            },
+          });
+        },
+      ),
+    );
+    stubStatusPatch(() => {
+      cancelled = true;
+      return HttpResponse.json({ data: { id: ORDER_ID } });
+    });
+
+    renderWithProviders(
+      <WithAuth permissions={["orders:write", "returns:read", "returns:write"]}>
+        <OrderStatusSelect orderId={ORDER_ID} />
+        <PaymentOptionsProbe orderId={ORDER_ID} />
+      </WithAuth>,
+    );
+    await waitFor(() => expect(paymentReads).toBe(1));
+    expect(screen.getByTestId("payment-options")).toHaveTextContent("");
+
+    await openPicker();
+    await userEvent.click(
+      await screen.findByRole("option", {
+        name: orderStatusLabel("CANCELLED"),
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("payment-options")).toHaveTextContent(
+        "REFUNDED",
+      ),
+    );
+    expect(paymentReads).toBe(2);
   });
 });
