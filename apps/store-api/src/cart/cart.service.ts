@@ -187,9 +187,18 @@ export class CartService {
       throw new NotFoundException('Cart item not found');
     }
 
+    // Early refusal on the cart read above; the authoritative check runs again
+    // inside the repository's locked write, on a fresh product (TASK-779).
     this.assertLinePurchasable(cartItem.product, dto.quantity);
 
-    await this.cartRepository.updateItem(itemId, { quantity: dto.quantity });
+    const updated = await this.cartRepository.updateItem(
+      { cartId: cart.id, itemId, quantity: dto.quantity },
+      (fresh, freshQuantity) => this.assertLinePurchasable(fresh, freshQuantity),
+    );
+
+    if (!updated) {
+      throw new NotFoundException('Cart item not found');
+    }
 
     return this.getCart(identity);
   }
@@ -356,7 +365,9 @@ export class CartService {
   /**
    * The one purchasability rule for a cart line (TASK-778), checked against the
    * RESULTING line quantity BEFORE any DB write — by `addToCart` (existing qty +
-   * incoming) and by `updateItem` (the new absolute qty) alike. Checks active
+   * incoming) and by `updateItem` (the new absolute qty) alike: once as an early
+   * refusal on the cart the service read, then again inside the repository's
+   * locked write on a fresh product read (TASK-779). Checks active
    * status (the product's AND its category's), stock availability, and the
    * per-item maximum. Before TASK-778 the update path skipped the active check,
    * so "+" on a withdrawn line answered 200 while an add of it answered 400.

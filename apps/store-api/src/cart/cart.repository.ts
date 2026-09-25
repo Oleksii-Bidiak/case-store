@@ -14,9 +14,13 @@ export interface AddToCartInput {
 }
 
 /**
- * Input for updating a cart item's quantity.
+ * Input for updating a cart item's quantity. The line is addressed within its
+ * cart, so an item id from another cart never matches.
  */
 export interface UpdateCartItemInput {
+  cartId: string;
+  itemId: string;
+  /** The new absolute quantity of the line. */
   quantity: number;
 }
 
@@ -367,13 +371,38 @@ export class CartRepository {
   }
 
   /**
-   * Update a cart item's quantity.
-   * Returns the updated cart item record.
+   * Set a cart line's quantity. Returns the updated line, or `null` when the
+   * line is no longer in the cart.
+   *
+   * The same atomic check-then-write as `addItem` (TASK-779): the cart row is
+   * locked first, the line's product is read inside that lock and handed to
+   * `assertPurchasable` with the new quantity; if it throws, nothing is written.
+   * Before this the update checked the cart the service had read earlier, so
+   * stock that shrank in between was never seen.
    */
-  updateItem(itemId: string, input: UpdateCartItemInput): Promise<CartItem> {
-    return this.prisma.cartItem.update({
-      where: { id: itemId },
-      data: { quantity: input.quantity },
+  async updateItem(
+    input: UpdateCartItemInput,
+    assertPurchasable: (product: PurchasableProduct, resultingQuantity: number) => void,
+  ): Promise<CartItem | null> {
+    const { cartId, itemId, quantity } = input;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM carts WHERE id = ${cartId} FOR UPDATE`;
+
+      const line = await tx.cartItem.findFirst({
+        where: { id: itemId, cartId },
+        select: { product: { select: PURCHASABLE_PRODUCT_SELECT } },
+      });
+      if (!line) {
+        return null;
+      }
+
+      assertPurchasable(line.product, quantity);
+
+      return tx.cartItem.update({
+        where: { id: itemId },
+        data: { quantity },
+      });
     });
   }
 

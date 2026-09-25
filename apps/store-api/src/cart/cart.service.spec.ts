@@ -704,7 +704,37 @@ describe('CartService', () => {
 
       expect(result).toBeInstanceOf(CartEntity);
       expect(result.items[0].quantity).toBe(5);
-      expect(cartRepositoryMock.updateItem).toHaveBeenCalledWith('item-uuid-1', { quantity: 5 });
+      expect(cartRepositoryMock.updateItem).toHaveBeenCalledWith(
+        { cartId: mockCartWithSaleItem.id, itemId: 'item-uuid-1', quantity: 5 },
+        expect.any(Function),
+      );
+    });
+
+    // TASK-779: the early check runs on the cart read before the write; the
+    // authoritative one runs inside the repository's locked write on a FRESH
+    // product read. The service hands it the same rule an add uses.
+    it('re-checks the fresh product inside the locked write with the same rule', async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithSaleItem);
+      cartRepositoryMock.updateItem.mockImplementation((_input, guard) => {
+        guard(
+          { name: 'iPhone 15 Pro Case', stock: 2, isActive: true, category: { isActive: true } },
+          5,
+        );
+        return Promise.resolve(updatedItemRow);
+      });
+
+      await expect(service.updateItem(userIdentity, 'item-uuid-1', updateDto)).rejects.toThrow(
+        'Requested quantity (5) exceeds available stock (2) for "iPhone 15 Pro Case"',
+      );
+    });
+
+    it('throws NotFoundException when the line disappeared before the locked write', async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithSaleItem);
+      cartRepositoryMock.updateItem.mockResolvedValue(null);
+
+      await expect(service.updateItem(userIdentity, 'item-uuid-1', updateDto)).rejects.toThrow(
+        new NotFoundException('Cart item not found'),
+      );
     });
 
     it('should resolve a guest cart by token for update', async () => {

@@ -310,7 +310,10 @@ describe('Cart — guest & merge (e2e)', () => {
 
       expect(res.body.data.items[0].quantity).toBe(3);
       expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith(GUEST_TOKEN);
-      expect(cartRepositoryMock.updateItem).toHaveBeenCalledWith('guest-item-1', { quantity: 3 });
+      expect(cartRepositoryMock.updateItem).toHaveBeenCalledWith(
+        { cartId: 'guest-cart-e2e-1', itemId: 'guest-item-1', quantity: 3 },
+        expect.any(Function),
+      );
     });
 
     it('DELETE /api/cart/items/:itemId → 200 and removes the item from the guest cart', async () => {

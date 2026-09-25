@@ -1,4 +1,9 @@
-import { CartRepository, AddToCartInput, CartWithItems } from './cart.repository';
+import {
+  CartRepository,
+  AddToCartInput,
+  CartWithItems,
+  UpdateCartItemInput,
+} from './cart.repository';
 import { PrismaService } from '../prisma';
 
 // ─── Mock PrismaService ──────────────────────────────────────────────────────
@@ -303,24 +308,97 @@ describe('CartRepository', () => {
   // ─── updateItem ──────────────────────────────────────────────────────────────
 
   describe('updateItem', () => {
-    it('should update item quantity and return the updated record', async () => {
-      const updatedItem = {
-        id: 'item-uuid-1',
-        cartId: 'cart-uuid-1',
-        productId: 'product-uuid-1',
-        quantity: 5,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      prismaMock.cartItem.update.mockResolvedValue(updatedItem);
+    const input: UpdateCartItemInput = {
+      cartId: 'cart-uuid-1',
+      itemId: 'item-uuid-1',
+      quantity: 5,
+    };
 
-      const result = await repository.updateItem('item-uuid-1', { quantity: 5 });
+    const purchasable = {
+      name: 'iPhone 15 Pro Case',
+      stock: 50,
+      isActive: true,
+      category: { isActive: true },
+    };
+
+    const updatedItem = {
+      id: 'item-uuid-1',
+      cartId: 'cart-uuid-1',
+      productId: 'product-uuid-1',
+      quantity: 5,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const makeTx = ({ line = { product: purchasable } as unknown } = {}) => ({
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 'cart-uuid-1' }]),
+      cartItem: {
+        findFirst: jest.fn().mockResolvedValue(line),
+        update: jest.fn().mockResolvedValue(updatedItem),
+      },
+    });
+
+    const useTx = (txMock: unknown) =>
+      prismaMock.$transaction.mockImplementation(async (cb: (tx: any) => Promise<any>) =>
+        cb(txMock),
+      );
+
+    // The same guarantee as addItem (TASK-779): the quantity check and the write
+    // see the same product. The service's early check runs on a cart read taken
+    // before the write, so stock that shrank in between must be caught here.
+    it('locks the cart row, then checks the FRESH product before writing', async () => {
+      const txMock = makeTx();
+      useTx(txMock);
+      const guard = jest.fn();
+
+      const result = await repository.updateItem(input, guard);
 
       expect(result).toEqual(updatedItem);
-      expect(prismaMock.cartItem.update).toHaveBeenCalledWith({
+      const sql = (txMock.$queryRaw.mock.calls[0][0] as TemplateStringsArray).join('?');
+      expect(sql).toMatch(/FROM carts\s+WHERE id = \?\s+FOR UPDATE/);
+      expect(txMock.$queryRaw.mock.calls[0][1]).toBe('cart-uuid-1');
+      // The line is looked up within THIS cart, so an item id from another cart
+      // never matches.
+      expect(txMock.cartItem.findFirst).toHaveBeenCalledWith({
+        where: { id: 'item-uuid-1', cartId: 'cart-uuid-1' },
+        select: { product: { select: expect.objectContaining({ stock: true }) } },
+      });
+      // The new quantity is absolute — no existing quantity is added to it.
+      expect(guard).toHaveBeenCalledWith(purchasable, 5);
+      expect(txMock.cartItem.update).toHaveBeenCalledWith({
         where: { id: 'item-uuid-1' },
         data: { quantity: 5 },
       });
+      const lockOrder = txMock.$queryRaw.mock.invocationCallOrder[0];
+      expect(lockOrder).toBeLessThan(txMock.cartItem.findFirst.mock.invocationCallOrder[0]);
+      expect(guard.mock.invocationCallOrder[0]).toBeLessThan(
+        txMock.cartItem.update.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('writes nothing and propagates the rejection when the guard refuses', async () => {
+      const txMock = makeTx();
+      useTx(txMock);
+      const refusal = new Error('exceeds stock');
+
+      await expect(
+        repository.updateItem(input, () => {
+          throw refusal;
+        }),
+      ).rejects.toBe(refusal);
+
+      expect(txMock.cartItem.update).not.toHaveBeenCalled();
+    });
+
+    it('returns null and writes nothing when the line is gone from the cart', async () => {
+      const txMock = makeTx({ line: null });
+      useTx(txMock);
+      const guard = jest.fn();
+
+      await expect(repository.updateItem(input, guard)).resolves.toBeNull();
+
+      expect(guard).not.toHaveBeenCalled();
+      expect(txMock.cartItem.update).not.toHaveBeenCalled();
     });
   });
 

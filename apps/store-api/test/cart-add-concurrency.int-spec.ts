@@ -130,4 +130,33 @@ describe('CartService.addToCart — concurrency (integration, TASK-779)', () => 
     expect(line?.quantity).toBe(1);
     expect(results.every((r) => r.status === 'rejected')).toBe(true);
   });
+
+  // The same gap on PATCH: `updateItem` checked the quantity against the cart it
+  // had read BEFORE the write, then wrote with a bare update. Stock that shrank
+  // in between (a checkout, an admin edit) slipped through. The cart read below is
+  // made stale on purpose — it still says stock 5 while the database says 1 — so
+  // only a check inside the write, on a fresh product, can refuse it.
+  it('a quantity update checks the FRESH stock inside the write, not the cart it read before', async () => {
+    const identity: ResolvedCartIdentity = { type: 'token', token: `conc-${randomUUID()}` };
+    await service.addToCart(identity, { productId, quantity: 1 });
+
+    const repository = app.get(CartRepository);
+    const staleCart = await repository.findByToken(identity.token);
+    const staleLine = staleCart!.items[0];
+    const findByToken = jest.spyOn(repository, 'findByToken').mockResolvedValueOnce({
+      ...staleCart!,
+      items: [{ ...staleLine, product: { ...staleLine.product, stock: 5 } }],
+    });
+
+    try {
+      await expect(service.updateItem(identity, staleLine.id, { quantity: 3 })).rejects.toThrow(
+        BadRequestException,
+      );
+    } finally {
+      findByToken.mockRestore();
+    }
+
+    const line = await prisma.cartItem.findUnique({ where: { id: staleLine.id } });
+    expect(line?.quantity).toBe(1);
+  });
 });

@@ -473,7 +473,10 @@ describe('CartController (e2e)', () => {
 
       expectCartShape(response.body);
       expect(response.body.data.items[0].quantity).toBe(3);
-      expect(cartRepositoryMock.updateItem).toHaveBeenCalledWith('item-e2e-1', { quantity: 3 });
+      expect(cartRepositoryMock.updateItem).toHaveBeenCalledWith(
+        expect.objectContaining({ itemId: 'item-e2e-1', quantity: 3 }),
+        expect.any(Function),
+      );
     });
 
     // TASK-778: "+" on a withdrawn line is refused exactly as POST /cart/items is.
