@@ -11,7 +11,10 @@
  * GitHub's workflow runner) never mistake them for real ones; COPY_AS maps them
  * back to the paths env-check reads.
  *
- * Run: node --test scripts/__tests__/
+ * Run: node --test "scripts/__tests__/*.test.js"
+ * (the glob, not the bare directory: a bare `scripts/__tests__/` argument is not
+ * expanded to the files in it — on Node 24.15.0 the run exits 1 with
+ * MODULE_NOT_FOUND — which is why the env-drift job in ci.yml uses the glob).
  */
 const test = require("node:test");
 const assert = require("node:assert/strict");
@@ -425,6 +428,46 @@ test("parseWorkflowBuildSteps: build-args on a later step never leak into an ear
       ["b", "(unnamed step)", "apps/store-admin/Dockerfile", ["Y"]],
     ],
   );
+});
+
+test("parseWorkflowBuildSteps: commented job keys and other spellings of the Dockerfile path", () => {
+  const text = [
+    "jobs:",
+    "  deploy-staging: # builds the staging images",
+    "    steps:",
+    "      - name: client",
+    "        with:",
+    "          file: ${{ github.workspace }}/apps/store-client/Dockerfile",
+    "  deploy-production:   # and the prod ones",
+    "    steps:",
+    "      - name: admin",
+    "        with:",
+    "          file: './apps/store-admin/Dockerfile' # quoted",
+    "",
+  ].join("\n");
+  const steps = envCheck.parseWorkflowBuildSteps(text);
+  assert.deepEqual(
+    steps.map((s) => [s.job, s.step, s.file]),
+    [
+      ["deploy-staging", "client", "apps/store-client/Dockerfile"],
+      ["deploy-production", "admin", "apps/store-admin/Dockerfile"],
+    ],
+  );
+});
+
+test("a step naming its Dockerfile via github.workspace is still checked", (t) => {
+  const root = makeRepo(t);
+  edit(root, WORKFLOW, (s) =>
+    s
+      .replace(
+        'file: "apps/store-admin/Dockerfile"',
+        "file: ${{ github.workspace }}/apps/store-admin/Dockerfile",
+      )
+      .replace(/(build-args: \|-\n(?:.*\n)*?)\s+SENTRY_AUTH_TOKEN=.*\n/, "$1"),
+  );
+  const result = envCheck.audit({ root, vars: VARS, exceptions: {} });
+  assert.deepEqual([...result.drift.keys()], ["SENTRY_AUTH_TOKEN"]);
+  assert.match(messages(result, "SENTRY_AUTH_TOKEN")[0], /^\[workflow\].*store-admin/);
 });
 
 test("the CLI module does not run its main when required", () => {

@@ -1928,16 +1928,16 @@ function parseWorkflowBuildSteps(text) {
     }
     if (!inJobs) continue;
 
-    // A job id is the first key level under `jobs:`, whatever its indent width.
-    if (!step && job === null && /^\s+[A-Za-z0-9_-]+:\s*$/.test(raw)) {
-      job = { name: raw.trim().slice(0, -1), indent };
+    // A job id is the first key level under `jobs:`, whatever its indent width;
+    // a trailing comment (`deploy-staging: # …`) does not make it something else.
+    const jobKey = raw.match(/^\s+([A-Za-z0-9_-]+):\s*(?:#.*)?$/);
+    if (!step && job === null && jobKey) {
+      job = { name: jobKey[1], indent };
       continue;
     }
     if (job && indent <= job.indent) {
       flush();
-      job = /^\s+[A-Za-z0-9_-]+:\s*$/.test(raw)
-        ? { name: raw.trim().slice(0, -1), indent }
-        : null;
+      job = jobKey ? { name: jobKey[1], indent } : null;
       continue;
     }
 
@@ -1966,9 +1966,16 @@ function parseWorkflowBuildSteps(text) {
     const name = body.match(/^name:\s*(.+?)\s*$/);
     if (name && step.step === null) step.step = name[1].replace(/^["']|["']$/g, "");
 
-    const file = body.match(/^file:\s*["']?([^"'\s#]+)["']?\s*(?:#.*)?$/);
+    // The Dockerfile path, normalised to repo-relative: `./apps/…` and
+    // `${{ github.workspace }}/apps/…` name the same file as `apps/…`, and a step
+    // spelled either way must still be matched by check 3c, not skipped.
+    const file = body.match(
+      /^file:\s*(?:"([^"]*)"|'([^']*)'|([^\s#][^#]*?))\s*(?:#.*)?$/,
+    );
     if (file) {
-      step.file = file[1].replace(/^\.\//, "");
+      step.file = (file[1] ?? file[2] ?? file[3])
+        .replace(/^\$\{\{\s*github\.workspace\s*\}\}\//, "")
+        .replace(/^\.\//, "");
       step.line = i + 1;
     }
 
