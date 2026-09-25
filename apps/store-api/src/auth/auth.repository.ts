@@ -6,6 +6,7 @@ import {
   RefreshToken,
   PasswordResetToken,
   EmailVerificationToken,
+  EmailTokenPurpose,
   OAuthAccount,
   OAuthProvider,
   UserRole,
@@ -230,9 +231,19 @@ export class AuthRepository {
     email: string,
     rawToken: string,
     expiresAt: Date,
+    // TASK-396: what the click does, and — for the two address-change purposes —
+    // the account's address at the moment of issue. Omitted = a plain VERIFY link.
+    options: { purpose?: EmailTokenPurpose; previousEmail?: string } = {},
   ): Promise<EmailVerificationToken> {
     return this.prisma.emailVerificationToken.create({
-      data: { token: this.hashToken(rawToken), userId, email, expiresAt },
+      data: {
+        token: this.hashToken(rawToken),
+        userId,
+        email,
+        expiresAt,
+        purpose: options.purpose ?? EmailTokenPurpose.VERIFY,
+        previousEmail: options.previousEmail ?? null,
+      },
     });
   }
 
@@ -258,11 +269,140 @@ export class AuthRepository {
    * a side effect, the reason a link for an old address stops working the
    * moment a new one is requested.
    */
-  async invalidateActiveEmailVerificationTokens(userId: string): Promise<void> {
+  async invalidateActiveEmailVerificationTokens(
+    userId: string,
+    // TASK-396: scoped by purpose. Asking to verify the current address must not
+    // cancel a pending address change — and above all must not burn the revert
+    // link sitting in the old inbox, which is the account holder's only way
+    // back if the change was not theirs.
+    purposes: EmailTokenPurpose[] = [EmailTokenPurpose.VERIFY],
+  ): Promise<void> {
     await this.prisma.emailVerificationToken.updateMany({
-      where: { userId, usedAt: null, expiresAt: { gt: new Date() } },
+      where: { userId, purpose: { in: purposes }, usedAt: null, expiresAt: { gt: new Date() } },
       data: { usedAt: new Date() },
     });
+  }
+
+  // ─── Address change (TASK-396) ─────────────────────────────────────────────
+  //
+  // Each of the three writes below changes the LOGIN, so each is one transaction
+  // that also ends every session: an address change that committed while the old
+  // sessions lived on would leave whoever held them signed in to an account whose
+  // recovery channel just moved.
+
+  /**
+   * Apply a confirmed address change: the new address becomes the login and is
+   * proven (the click came from its inbox), the confirming link is spent, every
+   * other still-live VERIFY / EMAIL_CHANGE link dies with the address it was
+   * about, and every refresh token is revoked.
+   *
+   * The revert link in the OLD inbox is deliberately left alive: undoing a
+   * change the account holder did not make is precisely what it is for.
+   *
+   * Ratings waiting on a verified address are released exactly as
+   * {@link markEmailVerified} does (TASK-588), for the same reason.
+   *
+   * A concurrent registration of the same address loses on the unique index and
+   * throws P2002 — the caller maps it to 409.
+   */
+  async applyEmailChange(params: {
+    userId: string;
+    tokenId: string;
+    newEmail: string;
+    verifiedAt: Date;
+  }): Promise<void> {
+    const { userId, tokenId, newEmail, verifiedAt } = params;
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { email: newEmail, emailVerifiedAt: verifiedAt },
+      }),
+      this.prisma.review.updateMany({
+        where: { userId, hiddenAt: null },
+        data: { ratingVisible: true },
+      }),
+      this.prisma.emailVerificationToken.update({
+        where: { id: tokenId },
+        data: { usedAt: verifiedAt },
+      }),
+      this.prisma.emailVerificationToken.updateMany({
+        where: {
+          userId,
+          purpose: { in: [EmailTokenPurpose.VERIFY, EmailTokenPurpose.EMAIL_CHANGE] },
+          usedAt: null,
+        },
+        data: { usedAt: verifiedAt },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId, isRevoked: false },
+        data: { isRevoked: true },
+      }),
+    ]);
+  }
+
+  /**
+   * Undo an address change from the old inbox: the old address is the login
+   * again — and proven, since the click came from it — every pending or spare
+   * link of all three purposes dies, and every session ends.
+   */
+  async revertEmailChange(params: {
+    userId: string;
+    tokenId: string;
+    restoreEmail: string;
+    verifiedAt: Date;
+  }): Promise<void> {
+    const { userId, tokenId, restoreEmail, verifiedAt } = params;
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { email: restoreEmail, emailVerifiedAt: verifiedAt },
+      }),
+      this.prisma.review.updateMany({
+        where: { userId, hiddenAt: null },
+        data: { ratingVisible: true },
+      }),
+      this.prisma.emailVerificationToken.update({
+        where: { id: tokenId },
+        data: { usedAt: verifiedAt },
+      }),
+      this.prisma.emailVerificationToken.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: verifiedAt },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId, isRevoked: false },
+        data: { isRevoked: true },
+      }),
+    ]);
+  }
+
+  /**
+   * The operator's half: set a new address WITHOUT marking it proven. Every link
+   * of every purpose dies (each is about an address the account no longer has),
+   * and every session ends — the login just changed under whoever held one.
+   *
+   * `emailVerifiedAt` goes back to null: "verified = proven by a click", and an
+   * operator typing an address in proves nothing about who reads that inbox.
+   */
+  async setUnverifiedEmail(userId: string, newEmail: string): Promise<void> {
+    const now = new Date();
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { email: newEmail, emailVerifiedAt: null },
+      }),
+      this.prisma.emailVerificationToken.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: now },
+      }),
+      this.prisma.refreshToken.updateMany({
+        where: { userId, isRevoked: false },
+        data: { isRevoked: true },
+      }),
+    ]);
   }
 
   /**

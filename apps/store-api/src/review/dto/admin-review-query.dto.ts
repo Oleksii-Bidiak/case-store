@@ -1,6 +1,16 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsEnum, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsIP,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 /**
  * Moderation-queue filter — the TEXT's status, one value per
@@ -14,6 +24,31 @@ export enum ReviewModerationStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
+  /**
+   * Every row whatever its text verdict, STAR-ONLY RATINGS INCLUDED (TASK-601).
+   *
+   * Not a queue but the record: the three piles above are about texts, and a
+   * star-only rating — the usual shape of rating abuse — is in none of them. The
+   * `ratingAbuse` dashboard card opens this, narrowed by `productId` or
+   * `createdIp`, so the operator lands on the very series the signal counted.
+   */
+  ALL = 'all',
+}
+
+/**
+ * Moderation-list filter by the moderator's account-wide hide (TASK-596).
+ *
+ * `visible` is the queue as it always was, and stays the default so the list and
+ * the dashboard badge above it keep counting the same rows. `hidden` reaches the
+ * rows of withdrawn accounts — until this filter the panel had no way to list
+ * them, and a row with `ratingVisible = false` could mean either "a moderator hid
+ * this account" or "the author has not confirmed their address", which call for
+ * different actions.
+ */
+export enum ReviewAuthorVisibility {
+  VISIBLE = 'visible',
+  HIDDEN = 'hidden',
+  ALL = 'all',
 }
 
 /**
@@ -30,6 +65,41 @@ export class AdminReviewQueryDto {
   @IsOptional()
   @IsEnum(ReviewModerationStatus)
   status?: ReviewModerationStatus;
+
+  @ApiProperty({
+    description:
+      'Filter by the moderator’s account-wide hide (TASK-596): `visible` — authors nobody has ' +
+      'withdrawn (the queue, default); `hidden` — rows of withdrawn accounts only; `all` — both',
+    enum: ReviewAuthorVisibility,
+    enumName: 'ReviewAuthorVisibility',
+    required: false,
+    default: ReviewAuthorVisibility.VISIBLE,
+  })
+  @IsOptional()
+  @IsEnum(ReviewAuthorVisibility)
+  visibility?: ReviewAuthorVisibility;
+
+  @ApiProperty({
+    description:
+      'Only reviews of this product (TASK-601) — what the rating-abuse card links to for a ' +
+      'burst of ratings on one product',
+    required: false,
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID()
+  productId?: string;
+
+  @ApiProperty({
+    description:
+      'Only reviews submitted from this address (TASK-601) — what the rating-abuse card links ' +
+      'to for a run of 1★ from one IP. Rows written before addresses were recorded never match',
+    required: false,
+    example: '203.0.113.42',
+  })
+  @IsOptional()
+  @IsIP()
+  createdIp?: string;
 
   @ApiProperty({ description: 'Page number (1-based)', required: false, default: 1, minimum: 1 })
   @IsOptional()

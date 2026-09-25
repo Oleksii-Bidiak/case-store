@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { toTwoDecimals } from '../../addon-service';
+import { centsToString, lineTotalCents, toTwoDecimals } from '../../addon-service';
 import type { OrderItemRow } from '../order.types';
 
 /**
@@ -123,12 +123,8 @@ export class OrderItemEntity {
     const priceStr = row.price.toString();
     entity.price = priceStr;
 
-    // Calculate line total using cents arithmetic to avoid float errors.
-    const priceCents = Math.round(parseFloat(priceStr) * 100);
-    const lineTotalCents = priceCents * row.quantity;
-    const dollars = Math.floor(lineTotalCents / 100);
-    const cents = lineTotalCents % 100;
-    entity.lineTotal = `${dollars}.${cents.toString().padStart(2, '0')}`;
+    // Line total in integer cents — the shared rule from money.util (TASK-807).
+    entity.lineTotal = centsToString(lineTotalCents(priceStr, row.quantity));
 
     entity.addons = (row.addons ?? []).map((addon) => OrderItemAddonEntity.fromPrisma(addon));
 

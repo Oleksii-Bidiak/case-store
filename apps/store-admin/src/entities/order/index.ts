@@ -22,6 +22,8 @@ export {
   // with no query twin on purpose — the server keeps only the token's hash, so
   // "read the current link" is a question nothing can answer.
   useAdminOrderControllerIssueAccessLink,
+  // TASK-620: lift an operator's mistaken «Кошти повернено» (payments:correct).
+  useAdminOrderControllerCorrectPaymentStatus,
   getAdminOrderControllerFindAllQueryKey,
   getAdminOrderControllerFindByIdQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
@@ -38,6 +40,8 @@ export {
   OrderStatusHistoryEntityChangeType,
   // TASK-341: how the customer will pay on an operator-created order.
   CreateManualOrderDtoPaymentMethod,
+  // TASK-620: the two states a mistaken REFUNDED mark may be corrected to.
+  PaymentCorrectionTarget,
 } from "@/shared/api";
 
 export type {
@@ -46,6 +50,7 @@ export type {
   OrderStatusHistoryEntity,
   UpdateOrderStatusDto,
   UpdateOrderPaymentStatusDto,
+  CorrectPaymentStatusDto,
   UpdateOrderDetailsDto,
   CreateManualOrderDto,
   ManualOrderItemDto,
@@ -80,4 +85,8 @@ export { isPreShipmentStatus } from "./is-pre-shipment-status";
 export { orderDerivedMarks, minutesUntil } from "./order-marks";
 export type { OrderMark, OrderMarkKind, OrderMarkSource } from "./order-marks";
 
-export { historyActorLabel, historyChangeLabel } from "./history-label";
+export {
+  historyActorLabel,
+  historyChangeLabel,
+  historyNoteLabel,
+} from "./history-label";

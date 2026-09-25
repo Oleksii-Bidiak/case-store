@@ -10,9 +10,10 @@ import { PinoLogger } from 'nestjs-pino';
 import { randomBytes, randomUUID } from 'crypto';
 import { OAuthProvider, User, UserRole } from '@prisma/client';
 import { AuthRepository, CreateUserInput } from './auth.repository';
-import { AuthTokens } from './entities';
+import type { IssuedSession } from './entities';
 import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
+import { humanizeDuration, parseDurationToMs } from './duration.util';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
 import { hashPassword, verifyPassword } from '../common/security';
 import {
@@ -89,6 +90,17 @@ export class AuthService {
   private readonly jwtRefreshSecret: string;
   private readonly jwtExpiration: string;
   private readonly jwtRefreshExpiration: string;
+
+  /**
+   * Lifetime of a refresh token in milliseconds, from `JWT_REFRESH_EXPIRATION`.
+   *
+   * Public because the refresh COOKIE must live exactly as long as the token it
+   * carries (TASK-789). The controller used to hard-code seven days: set the env
+   * to `30d` and shoppers were signed out on day eight with no trace in any log;
+   * set it to `1d` and the browser kept a dead cookie for six more days. One
+   * number, read once, used for the token's `expiresAt` and the cookie's Max-Age.
+   */
+  readonly refreshTokenTtlMs: number;
   private readonly passwordResetExpiration: string;
   private readonly storeClientUrl: string;
   private readonly accountLockedNoticeWindowHours: number;
@@ -111,6 +123,12 @@ export class AuthService {
       'PASSWORD_RESET_TOKEN_EXPIRATION',
       '1h',
     );
+    // Parsed once here so an unreadable duration fails the boot (DI builds this
+    // service at start-up), not the first login or reset request (TASK-790).
+    // env.validation.ts already refuses one; this covers any path around it.
+    parseDurationToMs(this.jwtExpiration);
+    parseDurationToMs(this.passwordResetExpiration);
+    this.refreshTokenTtlMs = parseDurationToMs(this.jwtRefreshExpiration);
     this.storeClientUrl = this.configService.get<string>(
       'STORE_CLIENT_URL',
       'http://localhost:3000',
@@ -127,7 +145,7 @@ export class AuthService {
    * Register a new user.
    * Checks email uniqueness, hashes password, creates user, returns token pair.
    */
-  async register(dto: RegisterDto): Promise<AuthTokens> {
+  async register(dto: RegisterDto): Promise<IssuedSession> {
     // Check if email is already taken
     const existingUser = await this.authRepository.findByEmail(dto.email);
     if (existingUser) {
@@ -167,7 +185,7 @@ export class AuthService {
    * before doing any hashing work would make it measurably faster than the
    * found-user branch (which pays for `argon2.verify`), i.e. a timing oracle.
    */
-  async login(email: string, password: string): Promise<AuthTokens> {
+  async login(email: string, password: string): Promise<IssuedSession> {
     const user = await this.authRepository.findByEmail(email);
 
     // `!user.passwordHash` (TASK-168): a Google-only account has no password —
@@ -279,7 +297,7 @@ export class AuthService {
    * 5. The role gate ({@link assertStorefrontRole}) runs strictly AFTER the lock
    *    check and strictly BEFORE linking or token issuance (TASK-314).
    */
-  async loginWithGoogleProfile(profile: GoogleOAuthProfile): Promise<AuthTokens> {
+  async loginWithGoogleProfile(profile: GoogleOAuthProfile): Promise<IssuedSession> {
     if (!profile.email || !profile.emailVerified) {
       throw new UnauthorizedException(GOOGLE_EMAIL_UNVERIFIED_MESSAGE);
     }
@@ -381,7 +399,7 @@ export class AuthService {
    * The account check mirrors `login()` exactly (TASK-314): a session must never
    * outlive the account it belongs to.
    */
-  async refreshToken(oldToken: string): Promise<AuthTokens> {
+  async refreshToken(oldToken: string): Promise<IssuedSession> {
     // Find the refresh token in the database
     const storedToken = await this.authRepository.findRefreshToken(oldToken);
     if (!storedToken) {
@@ -470,7 +488,7 @@ export class AuthService {
 
     // Opaque (non-JWT) token: used once, synchronously, against the DB anyway.
     const rawToken = randomBytes(PASSWORD_RESET_TOKEN_BYTES).toString('hex');
-    const expiresAt = new Date(Date.now() + this.parseExpirationToMs(this.passwordResetExpiration));
+    const expiresAt = new Date(Date.now() + parseDurationToMs(this.passwordResetExpiration));
 
     await this.authRepository.savePasswordResetToken(user.id, rawToken, expiresAt);
 
@@ -478,7 +496,7 @@ export class AuthService {
     await this.mailOutboxService.enqueuePasswordReset({
       to: user.email,
       resetUrl,
-      expiresInHuman: this.formatExpirationHuman(this.passwordResetExpiration),
+      expiresInHuman: humanizeDuration(this.passwordResetExpiration),
     });
 
     // Critical business event — never log the raw token or the reset URL.
@@ -682,8 +700,11 @@ export class AuthService {
    * Generate an access/refresh token pair.
    * Access token uses JWT_SECRET, refresh token uses JWT_REFRESH_SECRET.
    * The refresh token is persisted in the database for tracking and rotation.
+   *
+   * Returns the owning `userId` with the pair (TASK-792), so callers never have
+   * to decode a token this service has just minted to learn whose it is.
    */
-  async generateTokenPair(userId: string, role: string): Promise<AuthTokens> {
+  async generateTokenPair(userId: string, role: string): Promise<IssuedSession> {
     const { tokens, refreshExpiresAt } = this.signTokenPair(userId, role);
     await this.authRepository.saveRefreshToken(userId, tokens.refreshToken, refreshExpiresAt);
     return tokens;
@@ -698,7 +719,7 @@ export class AuthService {
   private signTokenPair(
     userId: string,
     role: string,
-  ): { tokens: AuthTokens; refreshExpiresAt: Date } {
+  ): { tokens: IssuedSession; refreshExpiresAt: Date } {
     // Sign access token with JWT_SECRET
     const accessToken = this.jwtService.sign(
       { sub: userId, role },
@@ -740,13 +761,9 @@ export class AuthService {
       },
     );
 
-    const refreshExpirationMs = this.parseExpirationToMs(this.jwtRefreshExpiration);
-    const refreshExpiresAt = new Date(Date.now() + refreshExpirationMs);
+    const refreshExpiresAt = new Date(Date.now() + this.refreshTokenTtlMs);
 
-    const tokens = new AuthTokens();
-    tokens.accessToken = accessToken;
-    tokens.refreshToken = refreshToken;
-    return { tokens, refreshExpiresAt };
+    return { tokens: { userId, accessToken, refreshToken }, refreshExpiresAt };
   }
 
   /**
@@ -836,65 +853,5 @@ export class AuthService {
    */
   private async burnTimingCost(): Promise<void> {
     await hashPassword(DUMMY_TIMING_PASSWORD);
-  }
-
-  /**
-   * Parse a duration string like "7d", "15m", "2h" into milliseconds.
-   */
-  private parseExpirationToMs(expiration: string): number {
-    const match = expiration.match(/^(\d+)([smhd])$/);
-    if (!match) {
-      // Default to 7 days if format is unexpected
-      return 7 * 24 * 60 * 60 * 1000;
-    }
-
-    const value = parseInt(match[1], 10);
-    const unit = match[2];
-
-    switch (unit) {
-      case 's':
-        return value * 1000;
-      case 'm':
-        return value * 60 * 1000;
-      case 'h':
-        return value * 60 * 60 * 1000;
-      case 'd':
-        return value * 24 * 60 * 60 * 1000;
-      default:
-        return 7 * 24 * 60 * 60 * 1000;
-    }
-  }
-
-  /**
-   * Render a duration string like "1h"/"30m" into Ukrainian email copy
-   * ("1 годину", "30 хвилин"), applying Ukrainian plural rules. Falls back to
-   * the raw string if the format is unexpected.
-   */
-  private formatExpirationHuman(expiration: string): string {
-    const match = expiration.match(/^(\d+)([smhd])$/);
-    if (!match) {
-      return expiration;
-    }
-
-    const value = parseInt(match[1], 10);
-    // [one, few, many] forms per Ukrainian pluralization.
-    const forms: Record<string, [string, string, string]> = {
-      s: ['секунду', 'секунди', 'секунд'],
-      m: ['хвилину', 'хвилини', 'хвилин'],
-      h: ['годину', 'години', 'годин'],
-      d: ['день', 'дні', 'днів'],
-    };
-    const [one, few, many] = forms[match[2]];
-
-    const mod10 = value % 10;
-    const mod100 = value % 100;
-    let word = many;
-    if (mod10 === 1 && mod100 !== 11) {
-      word = one;
-    } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
-      word = few;
-    }
-
-    return `${value} ${word}`;
   }
 }

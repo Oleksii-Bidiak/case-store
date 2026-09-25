@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ReviewRepository } from './review.repository';
+import { ReviewHiddenReason } from '@prisma/client';
+import { ReviewRepository, strongerReason } from './review.repository';
 import { PrismaService } from '../prisma';
 
 /**
@@ -175,6 +176,56 @@ describe('ReviewRepository — findForModeration search', () => {
 
     expect(issuedWhere().OR).toBeUndefined();
     expect(reviewFindMany.mock.calls[0][0]).toMatchObject({ skip: 50, take: 50 });
+  });
+
+  // TASK-596: the withdrawn pile, which no filter could reach before.
+  it('lists only withdrawn authors for visibility=hidden, with the count in step', async () => {
+    await repo.findForModeration('pending', 1, 20, undefined, { visibility: 'hidden' });
+
+    expect(issuedWhere()).toEqual({
+      textStatus: 'PENDING',
+      hiddenAt: { not: null },
+      comment: { not: null },
+      NOT: { comment: '' },
+    });
+    expect(reviewCount).toHaveBeenCalledWith({ where: issuedWhere() });
+  });
+
+  it('drops the hide arm entirely for visibility=all', async () => {
+    await repo.findForModeration('approved', 1, 20, undefined, { visibility: 'all' });
+
+    expect(issuedWhere()).not.toHaveProperty('hiddenAt');
+    expect(issuedWhere().textStatus).toBe('APPROVED');
+  });
+
+  // TASK-601: the rating-abuse card opens the series the signal counted, and
+  // that series is mostly star-only — rows none of the three piles show.
+  it('drops the text arms for status=all and narrows by product and address', async () => {
+    await repo.findForModeration('all', 1, 20, undefined, {
+      productId: 'product-1',
+      createdIp: '203.0.113.42',
+    });
+
+    expect(issuedWhere()).toEqual({
+      hiddenAt: null,
+      productId: 'product-1',
+      createdIp: '203.0.113.42',
+    });
+    expect(reviewCount).toHaveBeenCalledWith({ where: issuedWhere() });
+  });
+
+  it('narrows a text pile by product too, keeping the text arms', async () => {
+    await repo.findForModeration('pending', 1, 20, undefined, { productId: 'product-1' });
+
+    expect(issuedWhere()).toEqual({ textStatus: 'PENDING', ...QUEUE_ARMS, productId: 'product-1' });
+  });
+
+  it('keeps the queue exactly as it was when visibility is absent', async () => {
+    // The dashboard badge counts `moderationQueueWhere(PENDING)` with no second
+    // argument; the default list must stay that same set of rows.
+    await repo.findForModeration('pending', 1, 20, undefined, {});
+
+    expect(issuedWhere()).toEqual({ textStatus: 'PENDING', ...QUEUE_ARMS });
   });
 });
 
@@ -539,6 +590,7 @@ describe('ReviewRepository — what a submission records (TASK-588)', () => {
         createdIp: '203.0.113.42',
         // Null unless the service says the author is already withdrawn (TASK-598).
         hiddenAt: null,
+        hiddenReason: null,
         textStatus: 'PENDING',
       },
     });
@@ -591,15 +643,21 @@ describe('ReviewRepository — what a submission records (TASK-588)', () => {
  * other is the failure that looks completely normal on screen — the reviews
  * vanish and the product's score does not budge.
  */
-describe('ReviewRepository — hiding a whole account (TASK-589)', () => {
+describe('ReviewRepository — hiding a whole account (TASK-589, reasons TASK-599)', () => {
   let repo: ReviewRepository;
 
   const reviewUpdateMany = jest.fn();
+  const reviewFindMany = jest.fn();
+  const userFindUnique = jest.fn();
 
   const prismaMock = {
     order: { findMany: jest.fn() },
     orderItem: { findFirst: jest.fn() },
-    review: { updateMany: reviewUpdateMany },
+    review: { updateMany: reviewUpdateMany, findMany: reviewFindMany },
+    user: { findUnique: userFindUnique },
+    // The hide runs three statements in one transaction; the callback receives
+    // the same mock as its `tx`, so every statement lands in `reviewUpdateMany`.
+    $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prismaMock)),
   };
 
   beforeEach(async () => {
@@ -611,32 +669,48 @@ describe('ReviewRepository — hiding a whole account (TASK-589)', () => {
     repo = module.get(ReviewRepository);
   });
 
-  it('stamps every row of the account and stops its ratings counting', async () => {
-    const written = await repo.hideAuthorReviews('abuser-1');
+  it('takes every row out of the averages and stamps the visible ones with the reason', async () => {
+    const written = await repo.hideAuthorReviews('abuser-1', ReviewHiddenReason.MODERATOR);
 
-    expect(reviewUpdateMany).toHaveBeenCalledTimes(1);
-    const args = reviewUpdateMany.mock.calls[0][0];
-    expect(args.where).toEqual({ userId: 'abuser-1' });
-    expect(args.data.ratingVisible).toBe(false);
-    expect(args.data.hiddenAt).toBeInstanceOf(Date);
+    const [stars, stamp] = reviewUpdateMany.mock.calls.map((call) => call[0]);
+    expect(stars).toEqual({ where: { userId: 'abuser-1' }, data: { ratingVisible: false } });
+    expect(stamp.where).toEqual({ userId: 'abuser-1', hiddenAt: null });
+    expect(stamp.data.hiddenAt).toBeInstanceOf(Date);
+    expect(stamp.data.hiddenReason).toBe(ReviewHiddenReason.MODERATOR);
     expect(written).toBe(4);
   });
 
   it('takes rows that were already hidden too, rather than only the visible ones', async () => {
-    // Re-hiding must be idempotent: a filter like `hiddenAt: null` here would
-    // leave a row whose stars were somehow flipped back on still counting, and
-    // the operator would have clicked "hide" twice to no effect.
-    await repo.hideAuthorReviews('abuser-1');
+    // Re-hiding must be idempotent: a filter like `hiddenAt: null` on the STARS
+    // statement would leave a row whose stars were somehow flipped back on still
+    // counting, and the operator would have clicked "hide" twice to no effect.
+    await repo.hideAuthorReviews('abuser-1', ReviewHiddenReason.BAN);
 
     expect(reviewUpdateMany.mock.calls[0][0].where).not.toHaveProperty('hiddenAt');
   });
 
-  it('restores the account with the rating visibility the caller decided on', async () => {
-    await repo.restoreAuthorReviews('forgiven-1', true);
+  it('upgrades a weaker reason but never downgrades a stronger one', async () => {
+    // A moderator hiding a banned account: the ban's rows become MODERATOR, so
+    // the later un-ban cannot lift them.
+    await repo.hideAuthorReviews('abuser-1', ReviewHiddenReason.MODERATOR);
+    expect(reviewUpdateMany.mock.calls[2][0]).toEqual({
+      where: { userId: 'abuser-1', hiddenReason: { in: [ReviewHiddenReason.BAN] } },
+      data: { hiddenReason: ReviewHiddenReason.MODERATOR },
+    });
+
+    // A ban of a moderated account: BAN is the weakest reason, so there is
+    // nothing it may overwrite — no third statement at all.
+    reviewUpdateMany.mockClear();
+    await repo.hideAuthorReviews('abuser-1', ReviewHiddenReason.BAN);
+    expect(reviewUpdateMany).toHaveBeenCalledTimes(2);
+  });
+
+  it('restores only the rows the named decision hid', async () => {
+    await repo.restoreAuthorReviews('forgiven-1', ReviewHiddenReason.BAN, true);
 
     expect(reviewUpdateMany).toHaveBeenCalledWith({
-      where: { userId: 'forgiven-1' },
-      data: { hiddenAt: null, ratingVisible: true },
+      where: { userId: 'forgiven-1', hiddenReason: ReviewHiddenReason.BAN },
+      data: { hiddenAt: null, hiddenReason: null, ratingVisible: true },
     });
   });
 
@@ -644,11 +718,47 @@ describe('ReviewRepository — hiding a whole account (TASK-589)', () => {
     // Un-hiding is not a licence to skip the email gate: the caller may hand back
     // `false` for an author who has still never confirmed their address, and this
     // must write exactly that rather than "restored, therefore visible".
-    await repo.restoreAuthorReviews('unconfirmed-1', false);
+    await repo.restoreAuthorReviews('unconfirmed-1', ReviewHiddenReason.MODERATOR, false);
 
     expect(reviewUpdateMany.mock.calls[0][0].data).toEqual({
       hiddenAt: null,
+      hiddenReason: null,
       ratingVisible: false,
     });
+  });
+
+  it('reports the strongest reason holding an author down', async () => {
+    reviewFindMany.mockResolvedValue([
+      { hiddenReason: ReviewHiddenReason.BAN },
+      { hiddenReason: ReviewHiddenReason.MODERATOR },
+    ]);
+    await expect(repo.findAuthorHiddenReason('u')).resolves.toBe(ReviewHiddenReason.MODERATOR);
+
+    reviewFindMany.mockResolvedValue([]);
+    await expect(repo.findAuthorHiddenReason('u')).resolves.toBeNull();
+  });
+
+  it('reads the account hold as DELETED over BAN over none', async () => {
+    userFindUnique.mockResolvedValue({ isActive: false, deletedAt: new Date() });
+    await expect(repo.findAccountHoldReason('u')).resolves.toBe(ReviewHiddenReason.DELETED);
+    userFindUnique.mockResolvedValue({ isActive: false, deletedAt: null });
+    await expect(repo.findAccountHoldReason('u')).resolves.toBe(ReviewHiddenReason.BAN);
+    userFindUnique.mockResolvedValue({ isActive: true, deletedAt: null });
+    await expect(repo.findAccountHoldReason('u')).resolves.toBeNull();
+    userFindUnique.mockResolvedValue(null);
+    await expect(repo.findAccountHoldReason('u')).resolves.toBeNull();
+  });
+});
+
+describe('strongerReason (TASK-599)', () => {
+  it('ranks DELETED over MODERATOR over BAN, and anything over null', () => {
+    expect(strongerReason(ReviewHiddenReason.BAN, ReviewHiddenReason.MODERATOR)).toBe(
+      ReviewHiddenReason.MODERATOR,
+    );
+    expect(strongerReason(ReviewHiddenReason.DELETED, ReviewHiddenReason.MODERATOR)).toBe(
+      ReviewHiddenReason.DELETED,
+    );
+    expect(strongerReason(null, ReviewHiddenReason.BAN)).toBe(ReviewHiddenReason.BAN);
+    expect(strongerReason(null, null)).toBeNull();
   });
 });

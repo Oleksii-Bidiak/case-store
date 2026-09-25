@@ -484,7 +484,8 @@ const VARS = [
     validated: "optional",
     code: "used",
     effect: "Дефолт `15m` — час життя access-токена.",
-    howTo: "`15m`.",
+    howTo:
+      "`15m`. Формат `<число><s|m|h|d>`; голе число на кшталт `60` — API не стартує (TASK-790).",
   },
   {
     name: "JWT_REFRESH_EXPIRATION",
@@ -496,8 +497,10 @@ const VARS = [
     example: true,
     validated: "optional",
     code: "used",
-    effect: "Дефолт `7d` — скільки клієнт лишається залогіненим.",
-    howTo: "`7d`.",
+    effect:
+      "Дефолт `7d` — скільки клієнт лишається залогіненим; з неї ж рахується Max-Age refresh-куки (TASK-789).",
+    howTo:
+      "`7d`. Формат `<число><s|m|h|d>`; голе число на кшталт `60` — API не стартує (TASK-790).",
   },
   {
     name: "CORS_ORIGINS",
@@ -930,6 +933,27 @@ const VARS = [
     howTo: "Рішення власника (TASK-352).",
   },
   {
+    name: "ORDER_RESERVATION_EXPIRY",
+    group: "payments",
+    need: "optional",
+    compose: "none",
+    services: [],
+    buildArgs: [],
+    example: false,
+    validated: "optional",
+    // Reader: payment/payment-reconcile.worker.ts (TASK-627).
+    code: "used",
+    effect:
+      "Порожній → `cancel`: на дедлайні резерву неоплачене онлайн-замовлення скасовується, стік повертається, покупцю йде лист «оплату не отримано». `release`: повертається лише стік, замовлення лишається відкритим і з'являється в «Позиція недоступна»; пізня оплата резервує товар знову, а якщо його вже немає — оплата зараховується, рішення за оператором. Будь-що інше — API не стартує. `ORDER_AUTOCANCEL_UNPAID=false` вимикає обидва режими.",
+    howTo:
+      "Рішення власника (TASK-627). Щоб увімкнути `release` на сервері, спершу прокинути змінну в compose і приклад (див. gap).",
+    gap: {
+      reason:
+        "not threaded through docker-compose.prod/staging or .env.production.example yet: the default (`cancel`) is the pre-TASK-627 behaviour, so nothing is lost until the owner chooses `release` — that switch adds `ORDER_RESERVATION_EXPIRY: ${ORDER_RESERVATION_EXPIRY:-cancel}` to both compose files and the example line (agents cannot edit .env* files)",
+      task: "TASK-627",
+    },
+  },
+  {
     name: "GUEST_ORDER_TOKEN_TTL_DAYS",
     group: "payments",
     need: "optional",
@@ -986,7 +1010,8 @@ const VARS = [
     code: "used",
     effect:
       "Порожній → дефолт сервісу. Скільки живе посилання з листа підтвердження адреси (TASK-342).",
-    howTo: "Формат тривалості, як у JWT_EXPIRATION (напр. `24h`).",
+    howTo:
+      "Формат тривалості, як у JWT_EXPIRATION: `<число><s|m|h|d>` (напр. `24h`); інакше API не стартує.",
   },
   {
     name: "NEXT_PUBLIC_PAYMENT_METHODS",
@@ -1610,7 +1635,8 @@ const VARS = [
     validated: "optional",
     code: "used",
     effect: "Дефолт `1h` — скільки живе посилання «відновити пароль».",
-    howTo: "Напр. `1h`.",
+    howTo:
+      "Напр. `1h`. Формат `<число><s|m|h|d>`; `60` без одиниці — API не стартує, а не «тиждень» як раніше (TASK-790).",
   },
   {
     name: "PUBLISHING_CRON",

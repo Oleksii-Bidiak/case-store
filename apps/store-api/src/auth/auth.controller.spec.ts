@@ -1,12 +1,10 @@
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import { AuthTokens } from './entities';
+import type { IssuedSession } from './entities';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
-import { CartService } from '../cart/cart.service';
-import { WishlistService } from '../wishlist/wishlist.service';
+import { GuestStateMergeService } from './guest-state-merge.service';
 
 /**
  * TASK-168 (plan 153 §Migration step 7).
@@ -19,7 +17,7 @@ import { WishlistService } from '../wishlist/wishlist.service';
  */
 describe('AuthController — google oauth callback', () => {
   let controller: AuthController;
-  let authService: { loginWithGoogleProfile: jest.Mock };
+  let authService: { loginWithGoogleProfile: jest.Mock; refreshTokenTtlMs: number };
 
   const testConfig: Record<string, string> = {
     STORE_CLIENT_URL: 'http://localhost:3000',
@@ -45,29 +43,31 @@ describe('AuthController — google oauth callback', () => {
   beforeEach(() => {
     authService = {
       loginWithGoogleProfile: jest.fn(),
+      // 30 days — anything but the old hard-coded seven (TASK-789).
+      refreshTokenTtlMs: 30 * 24 * 60 * 60 * 1000,
     };
 
     const configMock = {
       get: jest.fn((key: string, defaultValue?: string) => testConfig[key] ?? defaultValue),
     };
 
-    const jwtServiceMock = { decode: jest.fn() };
-    const cartServiceMock = { mergeGuestCart: jest.fn() };
-    const wishlistServiceMock = { mergeGuestWishlist: jest.fn() };
+    const guestStateMergeMock = {
+      mergeInto: jest.fn().mockResolvedValue({ cartMerged: false, wishlistMerged: false }),
+    };
 
     controller = new AuthController(
       authService as unknown as AuthService,
       configMock as unknown as ConfigService,
-      jwtServiceMock as unknown as JwtService,
-      cartServiceMock as unknown as CartService,
-      wishlistServiceMock as unknown as WishlistService,
+      guestStateMergeMock as unknown as GuestStateMergeService,
     );
   });
 
   it('redirects to the state-carried target with the refresh cookie set on success', async () => {
-    const tokens = new AuthTokens();
-    tokens.accessToken = 'access-token-value';
-    tokens.refreshToken = 'refresh-token-value';
+    const tokens: IssuedSession = {
+      userId: 'user-google-1',
+      accessToken: 'access-token-value',
+      refreshToken: 'refresh-token-value',
+    };
     authService.loginWithGoogleProfile.mockResolvedValue(tokens);
 
     const response = makeResponse();
@@ -84,7 +84,12 @@ describe('AuthController — google oauth callback', () => {
     expect(response.cookie).toHaveBeenCalledWith(
       'refreshToken',
       'refresh-token-value',
-      expect.objectContaining({ httpOnly: true, path: '/api/auth/refresh' }),
+      expect.objectContaining({
+        httpOnly: true,
+        path: '/api/auth/refresh',
+        // Max-Age is the refresh token's configured lifetime (TASK-789).
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+      }),
     );
 
     // Success redirect — and NO token anywhere in the URL.
@@ -119,5 +124,96 @@ describe('AuthController — google oauth callback', () => {
 
     expect(response.redirect).toHaveBeenCalledWith(302, 'http://localhost:3000/login?oauthError=1');
     expect(response.cookie).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * TASK-792: the guest cookies are dropped ONLY for a merge that succeeded, and
+ * the user the guest state merges into is the one AuthService reports — the
+ * controller no longer decodes a token to find out.
+ */
+describe('AuthController — guest state on login', () => {
+  const session: IssuedSession = {
+    userId: 'user-from-service',
+    accessToken: 'opaque-access-token',
+    refreshToken: 'refresh-token-value',
+  };
+
+  let authService: { login: jest.Mock; refreshTokenTtlMs: number };
+  let guestStateMerge: { mergeInto: jest.Mock };
+  let controller: AuthController;
+
+  const makeResponse = () => ({ cookie: jest.fn() });
+  const withCookies = (cookies: Record<string, string>) => ({ cookies }) as unknown as Request;
+  const cookieNames = (response: { cookie: jest.Mock }) =>
+    response.cookie.mock.calls.map(([name]: [string]) => name);
+
+  beforeEach(() => {
+    authService = {
+      login: jest.fn().mockResolvedValue(session),
+      refreshTokenTtlMs: 7 * 24 * 60 * 60 * 1000,
+    };
+    guestStateMerge = { mergeInto: jest.fn() };
+    controller = new AuthController(
+      authService as unknown as AuthService,
+      { get: jest.fn() } as unknown as ConfigService,
+      guestStateMerge as unknown as GuestStateMergeService,
+    );
+  });
+
+  it('merges into the userId returned by the service, not one decoded from a token', async () => {
+    guestStateMerge.mergeInto.mockResolvedValue({ cartMerged: true, wishlistMerged: true });
+
+    await controller.login(
+      { email: 'a@example.com', password: 'x' },
+      withCookies({ cartToken: 'cart-tok', wishlistToken: 'wish-tok' }),
+      makeResponse() as unknown as Response,
+    );
+
+    expect(guestStateMerge.mergeInto).toHaveBeenCalledWith('user-from-service', {
+      cartToken: 'cart-tok',
+      wishlistToken: 'wish-tok',
+    });
+  });
+
+  it('clears both guest cookies after both merges succeed', async () => {
+    guestStateMerge.mergeInto.mockResolvedValue({ cartMerged: true, wishlistMerged: true });
+    const response = makeResponse();
+
+    await controller.login(
+      { email: 'a@example.com', password: 'x' },
+      withCookies({ cartToken: 'cart-tok', wishlistToken: 'wish-tok' }),
+      response as unknown as Response,
+    );
+
+    expect(cookieNames(response)).toEqual(['refreshToken', 'cartToken', 'wishlistToken']);
+    expect(response.cookie).toHaveBeenCalledWith(
+      'cartToken',
+      '',
+      expect.objectContaining({ maxAge: 0, path: '/api' }),
+    );
+  });
+
+  it('keeps the cart cookie when the cart merge failed, and still clears the merged wishlist', async () => {
+    guestStateMerge.mergeInto.mockResolvedValue({ cartMerged: false, wishlistMerged: true });
+    const response = makeResponse();
+
+    await controller.login(
+      { email: 'a@example.com', password: 'x' },
+      withCookies({ cartToken: 'cart-tok', wishlistToken: 'wish-tok' }),
+      response as unknown as Response,
+    );
+
+    expect(cookieNames(response)).toEqual(['refreshToken', 'wishlistToken']);
+  });
+
+  it('does not call the merge at all without guest cookies', async () => {
+    await controller.login(
+      { email: 'a@example.com', password: 'x' },
+      withCookies({}),
+      makeResponse() as unknown as Response,
+    );
+
+    expect(guestStateMerge.mergeInto).not.toHaveBeenCalled();
   });
 });

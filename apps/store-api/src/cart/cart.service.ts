@@ -25,17 +25,25 @@ export class CartService {
   ) {}
 
   /**
-   * Get the current cart for the identity. Creates an empty cart if none exists.
+   * Get the current cart for the identity.
+   *
+   * A read never writes (TASK-776): when the identity has no cart yet, an empty,
+   * UNSAVED cart is returned. The header badge reads the cart on every
+   * storefront page, so creating one here left an empty row behind for every
+   * visitor and every crawler. The row is created by the first `addToCart`.
    */
   async getCart(identity: ResolvedCartIdentity): Promise<CartEntity> {
-    const cart = await this.cartRepository.findOrCreate(identity);
+    const cart = await this.resolveCart(identity);
+    if (!cart) {
+      return CartEntity.empty(identity.type === 'user' ? identity.userId : null);
+    }
     return this.toEntity(cart);
   }
 
   /**
    * Select or deselect an add-on service on a cart line (TASK-174).
    *
-   * Validate-before-write, mirroring `validateAddition`: the add-on must be in
+   * Validate-before-write, mirroring `assertLinePurchasable`: the add-on must be in
    * the line's RESOLVED set (i.e. it comes from the product's category template
    * or an ADD delta, is not REMOVEd, and its catalog row is active) — otherwise a
    * 400, and nothing is persisted. Both directions are idempotent: selecting
@@ -89,7 +97,8 @@ export class CartService {
    * historical bug was validating after the write, leaving a "ghost" item that
    * reappeared on reload). Validation runs against the *resulting* quantity
    * (`existing line qty + incoming qty`) to match the repository's increment
-   * semantics.
+   * semantics — first as a cheap early refusal on the loaded cart, then
+   * authoritatively inside the repository's locked write (TASK-779).
    */
   async addToCart(identity: ResolvedCartIdentity, dto: AddToCartDto): Promise<CartEntity> {
     const cart = await this.cartRepository.findOrCreate(identity);
@@ -108,7 +117,7 @@ export class CartService {
       throw new NotFoundException('Product not found');
     }
 
-    this.validateAddition(product, resultingQuantity);
+    this.assertLinePurchasable(product, resultingQuantity);
 
     const input: AddToCartInput = {
       cartId: cart.id,
@@ -116,7 +125,16 @@ export class CartService {
       quantity: dto.quantity,
     };
 
-    const updated = await this.cartRepository.addItem(input);
+    // The check above ran on a read taken outside the write, so a concurrent add
+    // can slip past it. The authoritative check runs again INSIDE the locked write
+    // transaction, on the fresh line quantity (TASK-779).
+    const updated = await this.cartRepository.addItem(input, (fresh, freshQuantity) =>
+      this.assertLinePurchasable(fresh, freshQuantity),
+    );
+
+    if (!updated) {
+      throw new NotFoundException('Product not found');
+    }
 
     return this.toEntity(updated);
   }
@@ -146,8 +164,11 @@ export class CartService {
    * Business rules:
    * - The cart must exist (NotFoundException if not)
    * - The item must exist in the cart (NotFoundException if not)
-   * - If quantity is 0, remove the item instead of updating
-   * - If quantity > 0, validate stock and max quantity
+   * - The line must stay purchasable at the new quantity (active, in stock,
+   *   within MAX_QUANTITY — `assertLinePurchasable`)
+   *
+   * The quantity is always ≥ 1: `UpdateCartItemDto` is `@Min(1)`, so a 0 is a
+   * 400 from the ValidationPipe. Removing a line is `DELETE /cart/items/:id`.
    */
   async updateItem(
     identity: ResolvedCartIdentity,
@@ -166,25 +187,18 @@ export class CartService {
       throw new NotFoundException('Cart item not found');
     }
 
-    // If quantity is 0, remove the item
-    if (dto.quantity === 0) {
-      await this.cartRepository.removeItem(itemId);
-      return this.getCart(identity);
-    }
+    // Early refusal on the cart read above; the authoritative check runs again
+    // inside the repository's locked write, on a fresh product (TASK-779).
+    this.assertLinePurchasable(cartItem.product, dto.quantity);
 
-    // Validate max quantity
-    if (dto.quantity > MAX_QUANTITY) {
-      throw new BadRequestException(`Quantity cannot exceed ${MAX_QUANTITY}`);
-    }
+    const updated = await this.cartRepository.updateItem(
+      { cartId: cart.id, itemId, quantity: dto.quantity },
+      (fresh, freshQuantity) => this.assertLinePurchasable(fresh, freshQuantity),
+    );
 
-    // Validate stock availability against the position's stock.
-    if (dto.quantity > cartItem.product.stock) {
-      throw new BadRequestException(
-        `Requested quantity (${dto.quantity}) exceeds available stock (${cartItem.product.stock})`,
-      );
+    if (!updated) {
+      throw new NotFoundException('Cart item not found');
     }
-
-    await this.cartRepository.updateItem(itemId, { quantity: dto.quantity });
 
     return this.getCart(identity);
   }
@@ -227,9 +241,10 @@ export class CartService {
 
   /**
    * Merge a guest cart (identified by token) into the user's cart on login or
-   * registration. Quantities of matching items are summed and clamped to
-   * MAX_QUANTITY (and to variant stock where applicable). The guest cart is
-   * deleted afterwards. A no-op when the guest cart is missing or empty.
+   * registration. A product in both carts keeps the larger of the two
+   * quantities, capped at MAX_QUANTITY (see `mergedQuantity`, TASK-777); stock
+   * is not applied during the merge. The guest cart is deleted afterwards. A
+   * no-op when the guest cart is missing or empty.
    *
    * This must never throw in a way that blocks authentication — the caller
    * wraps it defensively.
@@ -272,27 +287,21 @@ export class CartService {
       })),
     );
 
-    // Compute the final (summed + clamped) quantity for each guest line before
-    // touching the database, so the transactional write is a pure data apply.
-    const lines: MergeCartLine[] = guestCart.items
-      .map((guestItem) => {
-        const existing = userCart.items.find((item) => item.productId === guestItem.productId);
+    // Compute the final quantity for each guest line before touching the
+    // database, so the transactional write is a pure data apply.
+    const lines: MergeCartLine[] = guestCart.items.map((guestItem) => {
+      const existing = userCart.items.find((item) => item.productId === guestItem.productId);
 
-        const summed = (existing?.quantity ?? 0) + guestItem.quantity;
-        // Clamp to MAX_QUANTITY and the position's available stock.
-        const quantity = Math.min(MAX_QUANTITY, summed, guestItem.product.stock);
-
-        return {
-          productId: guestItem.productId,
-          quantity,
-          addonServiceIds: this.mergeAddonSelections(
-            guestItem.addons,
-            existing?.addons ?? [],
-            resolvedAddons.get(guestItem.product.id) ?? [],
-          ),
-        };
-      })
-      .filter((line) => line.quantity > 0);
+      return {
+        productId: guestItem.productId,
+        quantity: this.mergedQuantity(existing?.quantity ?? 0, guestItem.quantity),
+        addonServiceIds: this.mergeAddonSelections(
+          guestItem.addons,
+          existing?.addons ?? [],
+          resolvedAddons.get(guestItem.product.id) ?? [],
+        ),
+      };
+    });
 
     // Apply all lines and delete the guest cart atomically.
     await this.cartRepository.mergeGuestCartIntoUser({
@@ -300,6 +309,21 @@ export class CartService {
       guestCartId: guestCart.id,
       lines,
     });
+  }
+
+  /**
+   * Guest→user quantity rule (TASK-777): the merged line keeps the LARGER of the
+   * two quantities, capped at MAX_QUANTITY — one rule for every branch.
+   *
+   * Not the sum: the same item in both carts is usually the same intent recorded
+   * twice (added on the phone as a guest, and earlier on the laptop), so summing
+   * doubles it. And stock is deliberately NOT applied here: clamping to stock
+   * used to turn 10 into 2 on login without a word, while a zero-stock line was
+   * skipped and left the user's 10 alone — two rules at once. Stock is checked
+   * where it is for any line: the cart read's `maxQty` and the checkout.
+   */
+  private mergedQuantity(userQuantity: number, guestQuantity: number): number {
+    return Math.min(MAX_QUANTITY, Math.max(userQuantity, guestQuantity));
   }
 
   /**
@@ -339,13 +363,18 @@ export class CartService {
   }
 
   /**
-   * Validate an add-to-cart request against the resulting line quantity, BEFORE
-   * any DB write. Checks active status (the product's AND its category's), stock
-   * availability, and the per-item maximum.
+   * The one purchasability rule for a cart line (TASK-778), checked against the
+   * RESULTING line quantity BEFORE any DB write — by `addToCart` (existing qty +
+   * incoming) and by `updateItem` (the new absolute qty) alike: once as an early
+   * refusal on the cart the service read, then again inside the repository's
+   * locked write on a fresh product read (TASK-779). Checks active
+   * status (the product's AND its category's), stock availability, and the
+   * per-item maximum. Before TASK-778 the update path skipped the active check,
+   * so "+" on a withdrawn line answered 200 while an add of it answered 400.
    *
    * @throws BadRequestException if any rule fails
    */
-  private validateAddition(
+  private assertLinePurchasable(
     product: { name: string; stock: number; isActive: boolean; category: { isActive: boolean } },
     resultingQuantity: number,
   ): void {

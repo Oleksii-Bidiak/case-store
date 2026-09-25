@@ -39,6 +39,9 @@ describe('Fail-closed route classification', () => {
       // TASK-493 (B-11): for uniformity, not brute force — the token is 256-bit.
       ['POST /api/auth/password-reset/confirm', AuthController.prototype.confirmPasswordReset],
       ['POST /api/auth/email/verify/confirm', AuthController.prototype.confirmEmailVerification],
+      // TASK-396: both change the login from a link, with no session.
+      ['POST /api/auth/email-change/confirm', AuthController.prototype.confirmEmailChange],
+      ['POST /api/auth/email-change/revert', AuthController.prototype.revertEmailChange],
       ['POST /api/products/:productId/reviews', ReviewController.prototype.submit],
       // TASK-586. Editing a review re-queues its text for moderation, so an
       // uncapped PATCH floods exactly the same backlog as an uncapped POST — and

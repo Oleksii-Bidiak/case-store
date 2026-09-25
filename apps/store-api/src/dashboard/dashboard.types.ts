@@ -131,6 +131,12 @@ export interface NeedsAction {
    */
   ratingAbuse: number;
   /**
+   * WHAT is flagged (TASK-601) — `ratingAbuse` is the sum of these two lists'
+   * lengths, and each situation appears once: an address is listed only for 1★
+   * rows outside the products already flagged for a burst.
+   */
+  ratingAbuseSignals: RatingAbuseSignals;
+  /**
    * Open orders holding at least one line that can no longer be supplied
    * (TASK-470): the product is deleted, unpublished or oversold, or the TTL
    * worker released the order's reservation. The aggregate of the
@@ -142,6 +148,11 @@ export interface NeedsAction {
    * they ended.
    */
   unavailableItems: number;
+  /**
+   * Orders paid AFTER they were cancelled (TASK-352): still CANCELLED, payment
+   * PAID, history note PAID_AFTER_CANCEL. The operator revives or refunds.
+   */
+  paidAfterCancel: number;
 }
 
 /**
@@ -171,6 +182,17 @@ export const RATING_BURST_WINDOW_HOURS = 1;
 export const RATING_BURST_THRESHOLD = 10;
 export const ONE_STAR_RUN_WINDOW_HOURS = 24;
 export const ONE_STAR_RUN_THRESHOLD = 3;
+
+/**
+ * The flagged rating-abuse situations by name (TASK-601), sorted for a stable
+ * wire order. Plain mirror of `RatingAbuseSignalsDto`.
+ */
+export interface RatingAbuseSignals {
+  /** Products with a burst — more than {@link RATING_BURST_THRESHOLD} ratings in the window. */
+  productIds: string[];
+  /** Addresses with a run of 1★ outside the burst products above. */
+  createdIps: string[];
+}
 
 /** Rolling window (in days) used for all time-series metrics. */
 export const DASHBOARD_WINDOW_DAYS = 30;

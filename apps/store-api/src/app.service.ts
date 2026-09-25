@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PrismaService } from './prisma/prisma.service';
+import { AppRepository } from './app.repository';
 import { ThrottlerRedisHealth, type ThrottlerStoreStatus } from './throttler';
 
 /**
@@ -33,7 +33,8 @@ export class AppService {
   private readonly logger = new Logger(AppService.name);
 
   constructor(
-    private readonly prisma: PrismaService,
+    // TASK-822: the ping goes through a repository like every other query.
+    private readonly appRepository: AppRepository,
     private readonly throttlerRedis: ThrottlerRedisHealth,
   ) {}
 
@@ -74,7 +75,7 @@ export class AppService {
 
     try {
       await Promise.race([
-        this.prisma.$queryRaw`SELECT 1`,
+        this.appRepository.ping(),
         new Promise((_, reject) => {
           timer = setTimeout(
             () => reject(new Error(`database ping exceeded ${DB_PING_TIMEOUT_MS}ms`)),

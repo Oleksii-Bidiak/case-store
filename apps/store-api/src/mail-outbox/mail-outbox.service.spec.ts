@@ -68,6 +68,10 @@ const mailServiceMock = {
   sendOrderConfirmationPayload: jest.fn(),
   sendPasswordResetPayload: jest.fn(),
   sendAccountLockedPayload: jest.fn(),
+  sendEmailChangeConfirmPayload: jest.fn(),
+  sendEmailChangeNoticePayload: jest.fn(),
+  // TASK-352 (b): «оплату не отримано».
+  sendOrderPaymentExpiredPayload: jest.fn(),
 };
 
 const loggerMock = {
@@ -225,6 +229,90 @@ describe('MailOutboxService', () => {
 
       expect(mailServiceMock.sendAccountLockedPayload).toHaveBeenCalledWith(payload);
       expect(repositoryMock.markSent).toHaveBeenCalledWith('al-1', NOW);
+      expect(result).toEqual({ sent: 1, retried: 0, failed: 0 });
+    });
+  });
+
+  // ─── TASK-396: address-change letters ─────────────────────────────────────────
+
+  describe('address-change letters (TASK-396)', () => {
+    it('enqueues the confirm letter to the NEW address and the notice to the OLD one', async () => {
+      await service.enqueueEmailChangeConfirm({
+        to: 'new@example.com',
+        confirmUrl: 'http://localhost:3000/confirm-email-change?token=a',
+        expiresInHuman: '24 години',
+      });
+      await service.enqueueEmailChangeNotice({
+        to: 'old@example.com',
+        newEmail: 'new@example.com',
+        revertUrl: 'http://localhost:3000/revert-email-change?token=b',
+        revertExpiresInHuman: '7 днів',
+      });
+
+      expect(repositoryMock.enqueue).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ type: 'email-change-confirm', recipient: 'new@example.com' }),
+        undefined,
+      );
+      expect(repositoryMock.enqueue).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ type: 'email-change-notice', recipient: 'old@example.com' }),
+        undefined,
+      );
+    });
+
+    it.each([
+      ['email-change-confirm', 'sendEmailChangeConfirmPayload'],
+      ['email-change-notice', 'sendEmailChangeNoticePayload'],
+    ] as const)('routes a %s row to %s', async (type, sender) => {
+      const payload = { to: 'x@example.com' };
+      repositoryMock.claimDue.mockResolvedValue([
+        makeRow({ id: 'ec-1', type, payload: payload as unknown as MailOutbox['payload'] }),
+      ]);
+      mailServiceMock[sender].mockResolvedValue(undefined);
+
+      const result = await service.dispatchDue();
+
+      expect(mailServiceMock[sender]).toHaveBeenCalledWith(payload);
+      expect(result).toEqual({ sent: 1, retried: 0, failed: 0 });
+    });
+  });
+
+  // ─── «оплату не отримано» (TASK-352 (b)) ──────────────────────────────────────
+
+  describe('order-payment-expired letter (TASK-352)', () => {
+    const payload = {
+      to: 'buyer@example.com',
+      order: { id: 'order-1', items: [{ name: 'Скло', quantity: 1 }] },
+      reorderUrl: 'https://shop.test/catalog',
+    };
+
+    it('enqueues an order-payment-expired row to the buyer', async () => {
+      await service.enqueueOrderPaymentExpired(payload);
+
+      expect(repositoryMock.enqueue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'order-payment-expired',
+          recipient: 'buyer@example.com',
+          payload,
+        }),
+        undefined,
+      );
+    });
+
+    it('routes an order-payment-expired row to sendOrderPaymentExpiredPayload', async () => {
+      repositoryMock.claimDue.mockResolvedValue([
+        makeRow({
+          id: 'pe-1',
+          type: 'order-payment-expired',
+          payload: payload as unknown as MailOutbox['payload'],
+        }),
+      ]);
+      mailServiceMock.sendOrderPaymentExpiredPayload.mockResolvedValue(undefined);
+
+      const result = await service.dispatchDue();
+
+      expect(mailServiceMock.sendOrderPaymentExpiredPayload).toHaveBeenCalledWith(payload);
       expect(result).toEqual({ sent: 1, retried: 0, failed: 0 });
     });
   });

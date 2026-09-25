@@ -206,7 +206,10 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
     applyStatus(value);
   };
 
-  function applyStatus(value: string) {
+  function applyStatus(
+    value: string,
+    options: { confirmUnpaidShipment?: boolean } = {},
+  ) {
     updateStatus.mutate(
       {
         orderId,
@@ -217,6 +220,11 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
           // (edge case E-11). Omitted only if the option list has not loaded —
           // in which case there is nothing selectable anyway.
           ...(expectedUpdatedAt ? { expectedUpdatedAt } : {}),
+          // TASK-788: the operator's «Все одно відправити». The server writes
+          // the history note from the payment state; this states the intent.
+          ...(options.confirmUnpaidShipment
+            ? { confirmUnpaidShipment: true }
+            : {}),
         },
       },
       {
@@ -289,7 +297,7 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
   const handleUnpaidShipConfirm = () => {
     const target = unpaidShipTarget;
     setUnpaidShipTarget(null);
-    if (target) applyStatus(target);
+    if (target) applyStatus(target, { confirmUnpaidShipment: true });
   };
 
   /**

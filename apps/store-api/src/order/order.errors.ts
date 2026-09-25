@@ -46,6 +46,13 @@ export const OrderErrorCode = {
    * order rather than reviving one the shop has settled.
    */
   REVIVE_REFUNDED_PAYMENT: 'ORDER_REVIVE_REFUNDED_PAYMENT',
+  /**
+   * A REFUNDED mark the PROVIDER reported (or no REFUNDED mark on record at
+   * all) was asked to be corrected (TASK-620, decision B-11 №7). Only an
+   * operator's own mistaken mark may be lifted: a provider `reversed` is a fact
+   * about where the money is, and correcting it would make the ledger lie.
+   */
+  PAYMENT_CORRECTION_PROVIDER_REFUND: 'ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND',
 } as const;
 
 export type OrderErrorCode = (typeof OrderErrorCode)[keyof typeof OrderErrorCode];
@@ -120,6 +127,21 @@ export function reviveRefundedPaymentError(to: OrderStatus): ConflictException {
     message:
       `This order cannot become ${to}: its payment is recorded as fully REFUNDED. ` +
       'The money is back with the customer — create a new order instead.',
+  });
+}
+
+/**
+ * 409 for correcting a REFUNDED mark that no operator set (TASK-620).
+ *
+ * The LiqPay `reversed` callback writes REFUNDED with `changedBy = null`; that
+ * mark is the provider telling us the money went back, and nobody lifts it.
+ */
+export function paymentCorrectionProviderRefundError(): ConflictException {
+  return new ConflictException({
+    error: OrderErrorCode.PAYMENT_CORRECTION_PROVIDER_REFUND,
+    message:
+      'This REFUNDED mark was not set by an operator (the payment provider reported it), ' +
+      'so it cannot be corrected',
   });
 }
 

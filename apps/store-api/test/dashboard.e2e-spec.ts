@@ -97,8 +97,12 @@ describe('Admin Dashboard (e2e)', () => {
     // is what the admin widget reads, and a counter the repository computes but
     // the response drops is a tile that is permanently, silently empty.
     ratingAbuse: 2,
+    // TASK-601: what the two flagged things ARE, so the card can link to them.
+    ratingAbuseSignals: { productIds: ['p-burst'], createdIps: ['203.0.113.42'] },
     // TASK-470: the «Недоступні позиції» aggregate, for the same reason again.
     unavailableItems: 3,
+    // TASK-352: «Оплачено після скасування».
+    paidAfterCancel: 5,
   };
 
   const dashboardRepositoryMock = {
@@ -323,10 +327,14 @@ describe('Admin Dashboard (e2e)', () => {
           failedMails: 1,
           pendingOver48h: 1,
           ratingAbuse: 2,
+          ratingAbuseSignals: { productIds: ['p-burst'], createdIps: ['203.0.113.42'] },
           unavailableItems: 3,
+          paidAfterCancel: 5,
         },
       });
-      for (const counter of Object.keys(needsActionFixture)) {
+      for (const counter of Object.keys(needsActionFixture).filter(
+        (key) => key !== 'ratingAbuseSignals',
+      )) {
         expect(typeof response.body.data[counter]).toBe('number');
       }
     });
@@ -339,7 +347,9 @@ describe('Admin Dashboard (e2e)', () => {
         failedMails: 0,
         pendingOver48h: 0,
         ratingAbuse: 0,
+        ratingAbuseSignals: { productIds: [], createdIps: [] },
         unavailableItems: 0,
+        paidAfterCancel: 0,
       };
       dashboardRepositoryMock.getNeedsAction.mockResolvedValueOnce(quiet);
 

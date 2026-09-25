@@ -180,6 +180,10 @@ export const dict = {
     // автоматично нічого не надсилається (рішення власника B-1 п.3), тож плитка
     // і є всім сповіщенням.
     needsActionUnavailableItems: "Недоступні позиції",
+    // TASK-352 (рішення B-11 №3): пізня оплата вже скасованого замовлення —
+    // гроші отримано, замовлення скасоване; повернути гроші чи відновити
+    // замовлення вирішує оператор, автоматично не робиться нічого.
+    needsActionPaidAfterCancel: "Оплачено після скасування",
     // Sidebar count-badge aria labels (mirror messages.unreadBadgeAria).
     newOrdersBadgeAria: (n: number) => `${n} нових замовлень`,
     pendingReviewsBadgeAria: (n: number) => `${n} відгуків на модерації`,
@@ -1233,6 +1237,10 @@ export const dict = {
     expiresAt: "Діє до",
     optional: "(необов'язково)",
     active: "Активний",
+    // TASK-731 (рішення B-11): a new code is private until published here.
+    showOnPromoPage: "Показувати на сторінці «Акції»",
+    showOnPromoPageHint:
+      "Без позначки код приватний: його немає на сторінці «Акції» вітрини, але він працює, якщо покупець введе його вручну.",
     submit: "Зберегти промокод",
     errors: {
       codeRequired: "Вкажіть код",
@@ -2279,7 +2287,9 @@ export const dict = {
     // (B-1 п.3) — вибір «замінити / повернути гроші / зачекати» робить людина.
     markItemUnavailable: "Позиція недоступна",
     markItemUnavailableHint:
-      "Товару цієї позиції більше немає в продажу — знято з публікації, видалено, перепродано або замовлення втратило резерв. Зв'яжіться з покупцем і запропонуйте заміну, повернення коштів або очікування постачання.",
+      // TASK-627: «втратило резерв» буває лише в режимі ORDER_RESERVATION_EXPIRY=release —
+      // час на оплату сплив, товар повернуто в продаж, а замовлення лишилось відкритим.
+      "Товару цієї позиції більше немає в продажу — знято з публікації, видалено, перепродано або час на оплату сплив і товар повернуто в продаж, а замовлення лишилось відкритим. Якщо покупець оплатить, система спробує зарезервувати товар знову; якщо товару вже немає — оплата зарахується, а мітка лишиться. Зв'яжіться з покупцем і запропонуйте заміну, повернення коштів або очікування постачання.",
 
     // Фільтри-перемикачі під ті самі мітки. Перемикачі, а не пункти списку:
     // жодна з цих умов не є значенням однієї колонки — це предикати сервера, і
@@ -2300,6 +2310,10 @@ export const dict = {
     unavailableItemsChip: "Недоступні позиції",
     unavailableItemsChipAria:
       "Показати лише замовлення, у яких є позиція, якої більше немає в продажу",
+    // TASK-352: ціль плитки «Оплачено після скасування» на дашборді.
+    paidAfterCancelChip: "Оплачено після скасування",
+    paidAfterCancelChipAria:
+      "Показати лише скасовані замовлення, оплата за якими надійшла після скасування",
 
     // --- CSV export (TASK-425) ------------------------------------------------
     exportCsv: "Експорт CSV",
@@ -2550,6 +2564,18 @@ export const dict = {
     paymentTransitionsLoadError:
       "Не вдалося отримати список статусів оплати. Оновіть сторінку.",
     noPaymentTransitions: "Статус оплати змінити неможливо",
+    // --- Виправлення помилкової мітки «Кошти повернено» (TASK-620, B-11 №7) ---
+    // Окрема дія, а не пункт списку: REFUNDED лишається кінцевим для фактів;
+    // виправити можна лише мітку, яку поставив оператор, з обов'язковою причиною.
+    paymentCorrectAction: "Виправити помилкову мітку «Кошти повернено»",
+    paymentCorrectTitle: "Виправити помилкову мітку «Кошти повернено»",
+    paymentCorrectDescription:
+      "Лише якщо мітку поставили помилково вручну. Якщо гроші повернула платіжна система, мітку виправити не можна. Причина потрапить у журнал дій.",
+    paymentCorrectTargetLegend: "Яким має бути статус оплати",
+    paymentCorrectReason: "Причина виправлення",
+    paymentCorrectConfirm: "Виправити",
+    paymentCorrectCancel: "Скасувати",
+    paymentCorrectToast: "Мітку оплати виправлено",
     // Always under the picker. The "why is the full refund missing" half lives in
     // `paymentTransitionsHintFullRefund` (TASK-842) and shows only when it IS
     // missing — on a cancelled order it is in the list, and telling the operator
@@ -2577,6 +2603,15 @@ export const dict = {
     unpaidShipAmount: "До сплати",
     unpaidShipConfirm: "Все одно відправити",
     unpaidShipCancel: "Не відправляти",
+    // Підпис примітки SHIPPED_UNPAID на рядку історії (TASK-788): сервер
+    // ставить її сам, коли оператор відправляє онлайн-замовлення з оплатою
+    // PENDING/FAILED; таймлайн показує цей рядок під переходом.
+    unpaidShipHistoryNote:
+      "Відправлено без підтвердженої онлайн-оплати — підтверджено оператором.",
+    // Підпис примітки PAID_AFTER_CANCEL (TASK-619 / TASK-932): оплата прийшла,
+    // коли замовлення вже скасоване; рішення за оператором.
+    paidAfterCancelHistoryNote:
+      "Оплата надійшла після скасування — відновіть замовлення або поверніть кошти.",
 
     // One string per stable 409 code from `order.errors.ts`. The client never
     // echoes a raw backend message: these codes are the contract, the wording is
@@ -2601,6 +2636,10 @@ export const dict = {
       // «виправте статус оплати» було б порадою в нікуди.
       ORDER_REVIVE_REFUNDED_PAYMENT:
         "Гроші за цим замовленням уже повернуті покупцеві, тож повернути його в роботу не можна. Створіть нове замовлення.",
+      // TASK-620: мітку «Кошти повернено» поставила платіжна система (LiqPay
+      // reversed), а не оператор — це факт про гроші, його не виправляють.
+      ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND:
+        "Цю мітку поставила платіжна система: гроші справді повернуто покупцеві. Виправити її не можна.",
     },
     conflictUnknown:
       "Замовлення змінилося, і зміну не збережено. Оновіть сторінку й спробуйте ще раз.",
@@ -3047,6 +3086,27 @@ export const dict = {
     deleteToastFailed: "Не вдалося видалити акаунт",
     deleteSelf: "Не можна видалити власний акаунт.",
 
+    // --- Operator email change (TASK-396) -------------------------------------
+    // The customer lost their inbox and asked for help. Owner-only. The copy has
+    // to say the three things the operator would otherwise assume wrongly: the
+    // new address is NOT confirmed by this, the customer is signed out
+    // everywhere, and the reason is written into the journal.
+    changeEmailOpen: "Змінити email",
+    changeEmailHeading: "Змінити email для входу",
+    changeEmailDescription: (email: string) =>
+      `Зараз клієнт входить з адресою ${email}. Нова адреса стане адресою для входу одразу, але НЕ буде підтвердженою: на неї піде лист із посиланням. Усі сеанси клієнта буде завершено.`,
+    changeEmailNew: "Нова адреса",
+    changeEmailReason: "Причина звернення",
+    changeEmailReasonHint:
+      "Хто звернувся і як ви переконалися, що це власник акаунта. Запишеться в журнал дій.",
+    changeEmailSubmit: "Змінити email",
+    changeEmailToastDone:
+      "Email змінено — на нову адресу надіслано лист для підтвердження",
+    changeEmailToastFailed: "Не вдалося змінити email",
+    changeEmailInvalid: "Вкажіть коректну адресу",
+    changeEmailSame: "Це вже поточна адреса клієнта",
+    changeEmailReasonRequired: "Опишіть причину — щонайменше 5 символів",
+
     // `lastAdminRefusal` stood here until TASK-480, unreferenced since TASK-476:
     // «останній адміністратор» stopped being the invariant the API defends. What
     // it defends now is stronger and differently worded — the owner exists
@@ -3450,7 +3510,13 @@ export const dict = {
       // саме це має бути видно у журналі.
       attach: "прикріплено зображення",
       cancel: "скасовано",
+      // TASK-396. Власник перевів вхід клієнта на нову пошту на його прохання.
+      // У «Змінах» — адреса до й після та причина звернення; нова адреса ще не
+      // підтверджена, лист із підтвердженням пішов на неї.
+      changeEmail: "змінено email для входу",
       clearProductDelta: "скинуто винятки для товару",
+      // TASK-620: lifting an operator's mistaken «Кошти повернено».
+      correctPaymentStatus: "виправлено помилкову мітку «Кошти повернено»",
       create: "створено",
       createBrand: "створено бренд",
       createCategory: "створено категорію",

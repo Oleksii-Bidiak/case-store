@@ -6,7 +6,7 @@ import {
   allowedTransitions,
   canTransition,
   canTransitionPayment,
-  isTerminalStatus,
+  canCorrectPayment,
 } from './order-state-machine';
 
 const ALL_STATUSES = Object.values(OrderStatus);
@@ -182,22 +182,6 @@ describe('order-state-machine (TASK-332)', () => {
     });
   });
 
-  describe('isTerminalStatus', () => {
-    it.each([OrderStatus.CANCELLED, OrderStatus.REFUNDED])('reports %s as terminal', (status) => {
-      expect(isTerminalStatus(status)).toBe(true);
-    });
-
-    it.each([
-      OrderStatus.PENDING,
-      OrderStatus.CONFIRMED,
-      OrderStatus.PROCESSING,
-      OrderStatus.SHIPPED,
-      OrderStatus.DELIVERED,
-    ])('reports %s as live', (status) => {
-      expect(isTerminalStatus(status)).toBe(false);
-    });
-  });
-
   // ─── Reachability ───────────────────────────────────────────────────────────
   // A guard against a future edit that strands a status: every status must be
   // reachable from PENDING (where every order starts).
@@ -352,5 +336,31 @@ describe('payment-state-machine (TASK-431)', () => {
     }
 
     expect([...seen].sort()).toEqual([...ALL_PAYMENT_STATUSES].sort());
+  });
+
+  // TASK-620: the correction of a mistaken mark is a SEPARATE rule — rule 4
+  // (REFUNDED is terminal) stays true for every fact-driven writer.
+  describe('canCorrectPayment (TASK-620)', () => {
+    it.each([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED])(
+      'lets a REFUNDED mark be corrected to %s',
+      (to) => {
+        expect(canCorrectPayment(PaymentStatus.REFUNDED, to)).toBe(true);
+      },
+    );
+
+    it('corrects nothing else', () => {
+      for (const from of ALL_PAYMENT_STATUSES) {
+        for (const to of ALL_PAYMENT_STATUSES) {
+          const expected =
+            from === PaymentStatus.REFUNDED &&
+            (to === PaymentStatus.PAID || to === PaymentStatus.PARTIALLY_REFUNDED);
+          expect(canCorrectPayment(from, to)).toBe(expected);
+        }
+      }
+    });
+
+    it('leaves REFUNDED terminal in the fact table', () => {
+      expect(PAYMENT_TRANSITIONS[PaymentStatus.REFUNDED]).toEqual([]);
+    });
   });
 });

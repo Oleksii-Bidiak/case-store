@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { ReviewHiddenReason, UserRole } from '@prisma/client';
 import { UserRepository, UpdateUserInput } from './user.repository';
 import { UserService } from './user.service';
 import { UserEntity, UserAdminCardEntity } from './entities';
@@ -8,6 +8,7 @@ import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { AuthRepository } from '../auth/auth.repository';
 
 import { ReviewService } from '../review/review.service';
+import { EmailChangeService } from '../auth/email-change.service';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -75,6 +76,11 @@ const reviewServiceMock = {
   unhideAuthor: jest.fn(),
 };
 
+// TASK-396: the operator's address change delegates the change itself here.
+const emailChangeServiceMock = {
+  changeByOperator: jest.fn(),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('UserService', () => {
@@ -90,6 +96,7 @@ describe('UserService', () => {
         { provide: UserRepository, useValue: userRepositoryMock },
         { provide: AuthRepository, useValue: authRepositoryMock },
         { provide: ReviewService, useValue: reviewServiceMock },
+        { provide: EmailChangeService, useValue: emailChangeServiceMock },
       ],
     }).compile();
 
@@ -569,7 +576,10 @@ describe('UserService', () => {
 
       await service.deactivateUser('user-uuid-2', adminActor);
 
-      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith('user-uuid-2');
+      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith(
+        'user-uuid-2',
+        ReviewHiddenReason.BAN,
+      );
     });
 
     it('does not touch the reviews of an account it refused to ban', async () => {
@@ -618,11 +628,52 @@ describe('UserService', () => {
 
       await service.activateUser('user-uuid-2', adminActor);
 
-      expect(reviewServiceMock.unhideAuthor).toHaveBeenCalledWith('user-uuid-2');
+      // BAN, and only BAN (TASK-599): an un-ban must not lift what a moderator hid.
+      expect(reviewServiceMock.unhideAuthor).toHaveBeenCalledWith(
+        'user-uuid-2',
+        ReviewHiddenReason.BAN,
+      );
     });
   });
 
   // ─── deleteUser (soft-delete, TASK-104) ──────────────────────────────────────
+
+  // ─── changeEmail — the operator's half (TASK-396) ─────────────────────────
+
+  describe('changeEmail', () => {
+    it('delegates to EmailChangeService and reports the address before the change', async () => {
+      const verified = { ...mockUser, emailVerifiedAt: new Date() };
+      repository.findCustomerById
+        .mockResolvedValueOnce(verified)
+        .mockResolvedValueOnce({ ...verified, email: 'new@example.com', emailVerifiedAt: null });
+
+      const result = await service.changeEmail('user-uuid-1', 'new@example.com', adminActor);
+
+      expect(emailChangeServiceMock.changeByOperator).toHaveBeenCalledWith(
+        verified,
+        'new@example.com',
+      );
+      expect(result.previousEmail).toBe(mockUser.email);
+      expect(result.wasVerified).toBe(true);
+      expect(result.user.email).toBe('new@example.com');
+    });
+
+    it('refuses your own account — that goes through your own profile, with your password', async () => {
+      await expect(
+        service.changeEmail('admin-uuid-1', 'new@example.com', adminActor),
+      ).rejects.toThrow(ForbiddenException);
+      expect(emailChangeServiceMock.changeByOperator).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for a missing or non-customer id, changing nothing', async () => {
+      repository.findCustomerById.mockResolvedValue(null);
+
+      await expect(service.changeEmail('staff-1', 'new@example.com', adminActor)).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(emailChangeServiceMock.changeByOperator).not.toHaveBeenCalled();
+    });
+  });
 
   describe('deleteUser', () => {
     it('should soft-delete with a mangled email, preserve the original, and revoke tokens', async () => {
@@ -644,11 +695,25 @@ describe('UserService', () => {
       expect(result).toBeInstanceOf(UserEntity);
     });
 
+    // TASK-603: deleting is the stronger action and must not do less than a ban.
+    it('withdraws the deleted account’s reviews for good (reason DELETED)', async () => {
+      repository.findCustomerById.mockResolvedValue(mockUser);
+      repository.softDelete.mockResolvedValue({ ...mockUser, deletedAt: new Date() });
+
+      await service.deleteUser('user-uuid-1', adminActor);
+
+      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith(
+        'user-uuid-1',
+        ReviewHiddenReason.DELETED,
+      );
+    });
+
     it('should throw ForbiddenException when an admin deletes their own account', async () => {
       await expect(service.deleteUser('admin-uuid-1', adminActor)).rejects.toThrow(
         ForbiddenException,
       );
       expect(repository.softDelete).not.toHaveBeenCalled();
+      expect(reviewServiceMock.hideAuthor).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when the user does not exist', async () => {

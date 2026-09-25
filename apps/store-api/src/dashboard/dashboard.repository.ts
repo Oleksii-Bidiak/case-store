@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import {
   MailOutboxStatus,
+  OrderHistoryNote,
   OrderStatus,
   PaymentStatus,
   Prisma,
@@ -23,6 +24,7 @@ import {
   type DashboardSummary,
   type LowStockProduct,
   type NeedsAction,
+  type RatingAbuseSignals,
   type OrderStatusCount,
   type TopProduct,
 } from './dashboard.types';
@@ -223,6 +225,12 @@ export class DashboardRepository {
    * list's `hasUnavailableItems` filter is the deep-link target of this tile, so
    * the number and the rows it opens have to agree condition for condition.
    *
+   * The fourth (`restockedAt` on a live order) fires only with
+   * ORDER_RESERVATION_EXPIRY=release (TASK-627): the worker then returns an
+   * unpaid order's units and keeps the order open, and a late payment that finds
+   * them sold leaves the mark set. In the default `cancel` mode `restockedAt`
+   * only ever arrives together with CANCELLED, which is excluded below.
+   *
    * CANCELLED and REFUNDED orders are excluded: their stock returned because the
    * order ENDED, and counting them would make the tile a permanent, growing
    * number nobody can ever clear.
@@ -243,6 +251,27 @@ export class DashboardRepository {
         },
         { restockedAt: { not: null } },
       ],
+    };
+  }
+
+  /**
+   * «Оплачено після скасування» (TASK-352 (c), decision B-11 №3): a late
+   * provider success on an order the TTL worker had already cancelled. TASK-619
+   * records the money (PAID) and leaves the order CANCELLED with the history
+   * note PAID_AFTER_CANCEL; nothing else happens automatically — no refund, no
+   * revive. This predicate is how the operator finds such orders.
+   *
+   * Clears itself when the operator acts: a revive moves the order out of
+   * CANCELLED, a refund moves the payment out of PAID. Restated (not imported)
+   * by the order list's `paidAfterCancel` filter, the tile's deep-link target —
+   * the same reason as {@link unrealizedOrderWhere}.
+   */
+  private paidAfterCancelOrderWhere(): Prisma.OrderWhereInput {
+    return {
+      deletedAt: null,
+      status: OrderStatus.CANCELLED,
+      paymentStatus: PaymentStatus.PAID,
+      statusHistory: { some: { note: OrderHistoryNote.PAID_AFTER_CANCEL } },
     };
   }
 
@@ -334,12 +363,17 @@ export class DashboardRepository {
    *                         TASK-598, because star-only rows are written PENDING too
    *   - `unpaidInTransit` — active-but-unpaid orders ({@link unrealizedOrderWhere})
    *   - `failedMails`     — outbox rows permanently failed (`status = FAILED`)
-   *   - `ratingAbuse`     — bursts and one-star runs ({@link getRatingAbuseCount})
+   *   - `ratingAbuse`     — bursts and one-star runs, each situation once
+   *                         ({@link getRatingAbuseSignals}); `ratingAbuseSignals`
+   *                         names them so the card can link to the series (TASK-601)
    *   - `unavailableItems`— open orders with a line that can no longer be supplied
    *                         ({@link unavailableItemsOrderWhere}, TASK-470). The one
    *                         counter here that nothing ELSE in the system reacts to:
    *                         the owner's decision (B-1 §3) is that the buyer is told
    *                         by a person, so this tile is the only notification there is
+   *   - `paidAfterCancel` — late-paid orders still cancelled
+   *                         ({@link paidAfterCancelOrderWhere}, TASK-352): money the
+   *                         shop holds for an order it is not fulfilling
    */
   async getNeedsAction(): Promise<NeedsAction> {
     const [
@@ -348,16 +382,18 @@ export class DashboardRepository {
       unpaidInTransit,
       failedMails,
       pendingOver48h,
-      ratingAbuse,
+      ratingAbuseSignals,
       unavailableItems,
+      paidAfterCancel,
     ] = await Promise.all([
       this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
       this.prisma.review.count({ where: moderationQueueWhere(ReviewTextStatus.PENDING) }),
       this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
       this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
       this.prisma.order.count({ where: this.pendingOver48hWhere() }),
-      this.getRatingAbuseCount(),
+      this.getRatingAbuseSignals(),
       this.prisma.order.count({ where: this.unavailableItemsOrderWhere() }),
+      this.prisma.order.count({ where: this.paidAfterCancelOrderWhere() }),
     ]);
     return {
       newOrders,
@@ -365,17 +401,22 @@ export class DashboardRepository {
       unpaidInTransit,
       failedMails,
       pendingOver48h,
-      ratingAbuse,
+      ratingAbuse: ratingAbuseSignals.productIds.length + ratingAbuseSignals.createdIps.length,
+      ratingAbuseSignals,
       unavailableItems,
+      paidAfterCancel,
     };
   }
 
   /**
-   * How many things currently look like rating abuse (TASK-589) — the owner's
-   * decision 7: «>10 оцінок на один товар за годину, або серія 1★ з однієї IP».
+   * What currently looks like rating abuse (TASK-589) — the owner's decision 7:
+   * «>10 оцінок на один товар за годину, або серія 1★ з однієї IP».
    *
-   * Two `groupBy … having` queries, and the value is a count of FLAGGED THINGS —
-   * distinct products plus distinct addresses — not of reviews. The widget's job
+   * Two `groupBy … having` queries naming FLAGGED THINGS — distinct products and
+   * distinct addresses — not reviews; `ratingAbuse` is how many there are.
+   * Named rather than only counted since TASK-601, so the dashboard card can
+   * open the very series (`/reviews?status=all&productId=…` or `&createdIp=…`)
+   * instead of a moderation queue the star-only rows are not even in. The widget's job
    * is to say how many situations are worth opening, and a review count would
    * read as an emergency the first time one product legitimately went viral.
    *
@@ -395,29 +436,45 @@ export class DashboardRepository {
    * later — and an operator who clicks through twice and finds nothing to do stops
    * clicking. A counter no action can clear is worse than no counter.
    */
-  private async getRatingAbuseCount(): Promise<number> {
-    const [burstProducts, oneStarAddresses] = await Promise.all([
-      this.prisma.review.groupBy({
-        by: ['productId'],
-        where: {
-          hiddenAt: null,
-          createdAt: { gte: this.hoursAgo(RATING_BURST_WINDOW_HOURS) },
-        },
-        having: { productId: { _count: { gt: RATING_BURST_THRESHOLD } } },
-      }),
-      this.prisma.review.groupBy({
-        by: ['createdIp'],
-        where: {
-          rating: 1,
-          hiddenAt: null,
-          createdIp: { not: null },
-          createdAt: { gte: this.hoursAgo(ONE_STAR_RUN_WINDOW_HOURS) },
-        },
-        having: { createdIp: { _count: { gte: ONE_STAR_RUN_THRESHOLD } } },
-      }),
-    ]);
+  private async getRatingAbuseSignals(): Promise<RatingAbuseSignals> {
+    const burstProducts = await this.prisma.review.groupBy({
+      by: ['productId'],
+      where: {
+        hiddenAt: null,
+        createdAt: { gte: this.hoursAgo(RATING_BURST_WINDOW_HOURS) },
+      },
+      having: { productId: { _count: { gt: RATING_BURST_THRESHOLD } } },
+    });
+    const productIds = burstProducts.map((row) => row.productId).sort();
 
-    return burstProducts.length + oneStarAddresses.length;
+    // ## One situation is counted once (TASK-601)
+    //
+    // A single abuser firing eleven 1★ at one product in an hour used to be TWO
+    // flagged things — the product (a burst) and the address (a run) — so the
+    // card read 2 where there was one person to deal with, and opening either
+    // link led to the same rows. The address query therefore runs AFTER the
+    // burst query and skips the rows already inside a flagged product: an
+    // address is its own situation only if it reaches the run threshold
+    // elsewhere. Sequential rather than `Promise.all` because the second query
+    // depends on the first; both are index reads (TASK-600).
+    const oneStarAddresses = await this.prisma.review.groupBy({
+      by: ['createdIp'],
+      where: {
+        rating: 1,
+        hiddenAt: null,
+        createdIp: { not: null },
+        createdAt: { gte: this.hoursAgo(ONE_STAR_RUN_WINDOW_HOURS) },
+        ...(productIds.length > 0 ? { productId: { notIn: productIds } } : {}),
+      },
+      having: { createdIp: { _count: { gte: ONE_STAR_RUN_THRESHOLD } } },
+    });
+    // flatMap, not a cast: the `where` already excludes nulls, but groupBy's
+    // return type does not narrow from a filter.
+    const createdIps = oneStarAddresses
+      .flatMap((row) => (row.createdIp === null ? [] : [row.createdIp]))
+      .sort();
+
+    return { productIds, createdIps };
   }
 
   /** The instant `hours` ago — the left edge of a rolling abuse window. */

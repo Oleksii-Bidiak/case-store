@@ -15,6 +15,7 @@ import {
   ApiCookieAuth,
   ApiParam,
   ApiExtraModels,
+  ApiProperty,
   getSchemaPath,
 } from '@nestjs/swagger';
 import { WishlistService } from './wishlist.service';
@@ -30,6 +31,9 @@ import { WishlistEntity, WishlistItemEntity } from './entities';
  * All wishlist endpoints return the full wishlist with its saved products.
  */
 class WishlistResponseEnvelope {
+  // Without @ApiProperty the envelope reached Swagger with no properties and
+  // Orval typed it `{ [key: string]: unknown }` (TASK-825).
+  @ApiProperty({ type: WishlistEntity })
   data!: WishlistEntity;
 }
 

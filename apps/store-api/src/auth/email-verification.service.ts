@@ -3,7 +3,9 @@ import { ModuleRef } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { randomBytes } from 'crypto';
+import { EmailTokenPurpose } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
+import { humanizeDuration, parseDurationToMs } from './duration.util';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
 import {
   GUEST_ORDER_CLAIM_PORT,
@@ -62,6 +64,10 @@ export class EmailVerificationService {
       'EMAIL_VERIFICATION_TOKEN_EXPIRATION',
       DEFAULT_EXPIRATION,
     );
+    // Fail the boot, not the first verification request, on an unreadable value
+    // (TASK-790). There is no fallback any more — the old one was 24 hours here
+    // and 7 days in AuthService.
+    parseDurationToMs(this.expiration);
     this.storeClientUrl = this.config.get<string>('STORE_CLIENT_URL', 'http://localhost:3000');
   }
 
@@ -85,14 +91,14 @@ export class EmailVerificationService {
     await this.authRepository.invalidateActiveEmailVerificationTokens(user.id);
 
     const rawToken = randomBytes(VERIFICATION_TOKEN_BYTES).toString('hex');
-    const expiresAt = new Date(Date.now() + this.parseExpirationToMs(this.expiration));
+    const expiresAt = new Date(Date.now() + parseDurationToMs(this.expiration));
 
     await this.authRepository.saveEmailVerificationToken(user.id, user.email, rawToken, expiresAt);
 
     await this.mailOutboxService.enqueueEmailVerification({
       to: user.email,
       verifyUrl: `${this.storeClientUrl}/verify-email?token=${rawToken}`,
-      expiresInHuman: this.formatExpirationHuman(this.expiration),
+      expiresInHuman: humanizeDuration(this.expiration),
     });
 
     // Never log the raw token or the link.
@@ -123,6 +129,11 @@ export class EmailVerificationService {
 
     const isInvalid =
       !stored ||
+      // TASK-396: an address-change link proves a DIFFERENT address from the
+      // account's current one by design, so this route would refuse it below
+      // anyway — and burn it on the way out. Refused up front instead, untouched,
+      // so a link pasted into the wrong page still works on the right one.
+      stored.purpose !== EmailTokenPurpose.VERIFY ||
       Boolean(stored.usedAt) ||
       stored.expiresAt < new Date() ||
       !stored.user.isActive ||
@@ -198,51 +209,5 @@ export class EmailVerificationService {
       );
       return 0;
     }
-  }
-
-  /** Parse "24h" / "30m" into milliseconds; falls back to 24h. */
-  private parseExpirationToMs(expiration: string): number {
-    const match = expiration.match(/^(\d+)([smhd])$/);
-    if (!match) {
-      return 24 * 60 * 60 * 1000;
-    }
-
-    const value = parseInt(match[1], 10);
-    const unitMs: Record<string, number> = {
-      s: 1000,
-      m: 60 * 1000,
-      h: 60 * 60 * 1000,
-      d: 24 * 60 * 60 * 1000,
-    };
-
-    return value * unitMs[match[2]];
-  }
-
-  /** Render "24h" into Ukrainian email copy ("24 години"). */
-  private formatExpirationHuman(expiration: string): string {
-    const match = expiration.match(/^(\d+)([smhd])$/);
-    if (!match) {
-      return expiration;
-    }
-
-    const value = parseInt(match[1], 10);
-    const forms: Record<string, [string, string, string]> = {
-      s: ['секунду', 'секунди', 'секунд'],
-      m: ['хвилину', 'хвилини', 'хвилин'],
-      h: ['годину', 'години', 'годин'],
-      d: ['день', 'дні', 'днів'],
-    };
-    const [one, few, many] = forms[match[2]];
-
-    const mod10 = value % 10;
-    const mod100 = value % 100;
-    let word = many;
-    if (mod10 === 1 && mod100 !== 11) {
-      word = one;
-    } else if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
-      word = few;
-    }
-
-    return `${value} ${word}`;
   }
 }

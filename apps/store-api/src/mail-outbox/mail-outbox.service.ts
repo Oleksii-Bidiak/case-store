@@ -9,12 +9,20 @@ import type { PasswordResetMailPayload } from '../mail/templates/password-reset.
 import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
 import type { EmailVerificationMailPayload } from '../mail/templates/email-verification.template';
 import type { OrderShippedMailPayload } from '../mail/templates/order-shipped.template';
+import type { OrderPaymentExpiredMailPayload } from '../mail/templates/order-payment-expired.template';
+import type {
+  EmailChangeConfirmMailPayload,
+  EmailChangeNoticeMailPayload,
+} from '../mail/templates/email-change.template';
 import { Clock, MAIL_OUTBOX_CLOCK } from './mail-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
+  EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
+  EMAIL_CHANGE_NOTICE_MAIL_TYPE,
   EMAIL_VERIFICATION_MAIL_TYPE,
   ORDER_CONFIRMATION_MAIL_TYPE,
   ORDER_SHIPPED_MAIL_TYPE,
+  ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
   type DispatchResult,
 } from './mail-outbox.types';
@@ -148,6 +156,42 @@ export class MailOutboxService {
   }
 
   /**
+   * Enqueue the letter that proves a NEW address (TASK-396). The recipient is the
+   * address being proven, carried in the payload — for the same reason as
+   * {@link enqueueEmailVerification}: never re-derived from the user row.
+   */
+  async enqueueEmailChangeConfirm(
+    payload: EmailChangeConfirmMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
+        recipient: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Enqueue the warning, with its revert link, to the OLD address (TASK-396).
+   */
+  async enqueueEmailChangeNotice(
+    payload: EmailChangeNoticeMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: EMAIL_CHANGE_NOTICE_MAIL_TYPE,
+        recipient: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
    * Enqueue the "your order has shipped" notice (TASK-335).
    *
    * Takes an optional `tx` like its siblings so a caller that ships an order and
@@ -161,6 +205,25 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ORDER_SHIPPED_MAIL_TYPE,
+        recipient: payload.to,
+        payload: payload as unknown as Prisma.InputJsonValue,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * Enqueue «оплату не отримано» (TASK-352 (b)) — after the reconcile worker's
+   * cancellation of an unpaid online order has committed. The caller enqueues
+   * only on a cancel that really happened; this method does not second-guess it.
+   */
+  async enqueueOrderPaymentExpired(
+    payload: OrderPaymentExpiredMailPayload,
+    tx?: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.repository.enqueue(
+      {
+        type: ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
         recipient: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
@@ -292,6 +355,11 @@ export class MailOutboxService {
           row.payload as unknown as OrderShippedMailPayload,
         );
         return;
+      case ORDER_PAYMENT_EXPIRED_MAIL_TYPE:
+        await this.mailService.sendOrderPaymentExpiredPayload(
+          row.payload as unknown as OrderPaymentExpiredMailPayload,
+        );
+        return;
       case ACCOUNT_LOCKED_MAIL_TYPE:
         await this.mailService.sendAccountLockedPayload(
           row.payload as unknown as AccountLockedMailPayload,
@@ -300,6 +368,16 @@ export class MailOutboxService {
       case EMAIL_VERIFICATION_MAIL_TYPE:
         await this.mailService.sendEmailVerificationPayload(
           row.payload as unknown as EmailVerificationMailPayload,
+        );
+        return;
+      case EMAIL_CHANGE_CONFIRM_MAIL_TYPE:
+        await this.mailService.sendEmailChangeConfirmPayload(
+          row.payload as unknown as EmailChangeConfirmMailPayload,
+        );
+        return;
+      case EMAIL_CHANGE_NOTICE_MAIL_TYPE:
+        await this.mailService.sendEmailChangeNoticePayload(
+          row.payload as unknown as EmailChangeNoticeMailPayload,
         );
         return;
       default:

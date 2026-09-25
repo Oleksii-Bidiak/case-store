@@ -1,6 +1,7 @@
 import { plainToInstance } from 'class-transformer';
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
@@ -13,6 +14,7 @@ import {
   validateSync,
 } from 'class-validator';
 import { IsOriginList } from '../common/validators/is-origin-list.decorator';
+import { DURATION_PATTERN } from '../auth/duration.util';
 
 /**
  * An exact origin: scheme + host + optional port. No path, no trailing slash —
@@ -20,6 +22,15 @@ import { IsOriginList } from '../common/validators/is-origin-list.decorator';
  * slash produces `//login`, and a path prefix produces a URL nobody serves.
  */
 const ORIGIN = /^https?:\/\/[a-z0-9.-]+(:\d+)?$/i;
+
+/** The boot-time message for a duration variable that does not parse (TASK-790). */
+function durationMessage(name: string): string {
+  return (
+    `${name} must be a whole number followed by a unit — s, m, h or d ` +
+    '(e.g. "15m", "1h", "7d"). A bare number such as "60" is refused: whether it ' +
+    'meant seconds or minutes would have to be guessed.'
+  );
+}
 
 /**
  * Supported runtime environments.
@@ -62,18 +73,32 @@ export class EnvironmentVariables {
   @MinLength(32, { message: 'JWT_REFRESH_SECRET must be at least 32 characters' })
   JWT_REFRESH_SECRET!: string;
 
+  // ─── Durations (TASK-790) ──────────────────────────────────────────────────
+  // Every *_EXPIRATION here is `<integer><s|m|h|d>` and nothing else. They used
+  // to be `@IsString()` only, and the parser behind them turned anything it did
+  // not recognise into a silent default — so `PASSWORD_RESET_TOKEN_EXPIRATION=60`
+  // (meant as "an hour") booted fine and made a single-use link live for a WEEK.
+  // An unparseable duration now stops the API at start-up, with the variable
+  // named in the error; the parser itself (auth/duration.util.ts) throws too.
+
+  // Access-token lifetime. Optional — defaults to 15m.
   @IsOptional()
   @IsString()
+  @Matches(DURATION_PATTERN, { message: durationMessage('JWT_EXPIRATION') })
   JWT_EXPIRATION?: string;
 
+  // Refresh-token lifetime AND the refresh cookie's Max-Age (TASK-789).
+  // Optional — defaults to 7d.
   @IsOptional()
   @IsString()
+  @Matches(DURATION_PATTERN, { message: durationMessage('JWT_REFRESH_EXPIRATION') })
   JWT_REFRESH_EXPIRATION?: string;
 
   // How long a password-reset link stays usable. Optional — defaults to 1h in
   // AuthService.
   @IsOptional()
   @IsString()
+  @Matches(DURATION_PATTERN, { message: durationMessage('PASSWORD_RESET_TOKEN_EXPIRATION') })
   PASSWORD_RESET_TOKEN_EXPIRATION?: string;
 
   // REQUIRED in production, and its format is checked. Previously optional and
@@ -454,6 +479,15 @@ export class EnvironmentVariables {
   @IsString()
   ORDER_AUTOCANCEL_UNPAID?: string;
 
+  // What the deadline DOES (TASK-627): `cancel` (default) cancels the order and
+  // returns its stock; `release` returns the stock only and keeps the order open
+  // for a later payment. ORDER_AUTOCANCEL_UNPAID=false still switches both off.
+  @IsOptional()
+  @IsIn(['cancel', 'release'], {
+    message: 'ORDER_RESERVATION_EXPIRY must be "cancel" or "release"',
+  })
+  ORDER_RESERVATION_EXPIRY?: 'cancel' | 'release';
+
   // How long a guest's order-status link stays valid (TASK-338) — the only way a
   // guest reaches their own order once the cart cookie is gone.
   @IsOptional()
@@ -486,6 +520,7 @@ export class EnvironmentVariables {
   // otherwise become NaN at runtime instead of failing at boot.
   @IsOptional()
   @IsString()
+  @Matches(DURATION_PATTERN, { message: durationMessage('EMAIL_VERIFICATION_TOKEN_EXPIRATION') })
   EMAIL_VERIFICATION_TOKEN_EXPIRATION?: string;
 
   // ─── Meilisearch full-text search (TASK-075) ────────────────────────────────

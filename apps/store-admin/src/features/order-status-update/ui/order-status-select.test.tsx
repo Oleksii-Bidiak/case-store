@@ -342,7 +342,11 @@ describe("OrderStatusSelect — shipping an unpaid online order (TASK-468)", () 
     );
 
     await waitFor(() => expect(patch.bodies).toHaveLength(1));
-    expect(patch.bodies[0]).toMatchObject({ status: "SHIPPED" });
+    // TASK-788: the confirmation travels with the write.
+    expect(patch.bodies[0]).toMatchObject({
+      status: "SHIPPED",
+      confirmUnpaidShipment: true,
+    });
   });
 
   it("writes nothing when the operator backs out", async () => {
@@ -398,6 +402,8 @@ describe("OrderStatusSelect — shipping an unpaid online order (TASK-468)", () 
     expect(
       screen.queryByText(dict.orderStatus.unpaidShipTitle),
     ).not.toBeInTheDocument();
+    // No dialog, no confirmation to send (TASK-788).
+    expect(patch.bodies[0]).not.toHaveProperty("confirmUnpaidShipment");
   });
 });
 

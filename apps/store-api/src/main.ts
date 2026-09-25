@@ -85,7 +85,10 @@ async function bootstrap() {
     }),
   );
 
-  // Global exception filter — consistent error envelope (injected via DI for PinoLogger)
+  // Global exception filter — consistent error envelope (injected via DI for PinoLogger).
+  // Registered AFTER AppModule's APP_FILTER (PrismaExceptionFilter), so Nest tries
+  // this catch-all first; it therefore translates Prisma errors itself, through the
+  // same function, and the two can never disagree about a status (TASK-574).
   const httpExceptionFilter = app.get(HttpExceptionFilter);
   app.useGlobalFilters(httpExceptionFilter);
 

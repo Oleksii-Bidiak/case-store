@@ -2,7 +2,13 @@ import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import type { PinoLogger } from 'nestjs-pino';
 import { CartRepository } from '../src/cart/cart.repository';
+import { CartService } from '../src/cart/cart.service';
+import { GuestCartCleanupService } from '../src/cart/guest-cart-cleanup.service';
+import { GUEST_CART_EMPTY_RETENTION_MS } from '../src/cart/cart.constants';
+import { AddonApplicabilityResolver } from '../src/addon-service';
 import { PrismaService } from '../src/prisma';
 
 /**
@@ -22,6 +28,7 @@ describe('CartRepository (integration)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let repo: CartRepository;
+  let service: CartService;
 
   // Fixtures (real rows the cart items reference via FK).
   let userId: string;
@@ -30,6 +37,15 @@ describe('CartRepository (integration)', () => {
   let categoryId: string;
 
   const MISSING_PRODUCT_ID = '00000000-0000-0000-0000-000000000000';
+
+  // The purchasability rule belongs to CartService (and is exercised in
+  // cart-add-concurrency.int-spec.ts); these repository tests only need the write.
+  const allowAll = (): void => undefined;
+
+  // Read a cart back by id straight from the DB — the repository has no such
+  // lookup (its `findById` had no production caller and was removed, TASK-815).
+  const cartById = (id: string) =>
+    prisma.cart.findUnique({ where: { id }, include: { items: true } });
 
   beforeAll(async () => {
     // Hard safety net: never run destructive integration tests against a
@@ -41,7 +57,19 @@ describe('CartRepository (integration)', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, CartRepository],
+      providers: [
+        PrismaService,
+        CartRepository,
+        CartService,
+        // No add-on catalogue here — the cart's DB behaviour is what is under test.
+        {
+          provide: AddonApplicabilityResolver,
+          useValue: {
+            resolveForProducts: () => Promise.resolve(new Map()),
+            resolveForProduct: () => Promise.resolve([]),
+          },
+        },
+      ],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -49,6 +77,7 @@ describe('CartRepository (integration)', () => {
 
     prisma = moduleRef.get(PrismaService);
     repo = moduleRef.get(CartRepository);
+    service = moduleRef.get(CartService);
 
     const suffix = randomUUID();
     const category = await prisma.category.create({
@@ -115,18 +144,79 @@ describe('CartRepository (integration)', () => {
     expect(await repo.findByToken(`missing-${randomUUID()}`)).toBeNull();
   });
 
+  // ─── Reads never write; empty guest carts are swept (TASK-776) ──────────────
+
+  it('getCart for a guest without a cart leaves the carts table untouched', async () => {
+    const token = `tok-${randomUUID()}`;
+    const before = await prisma.cart.count();
+
+    const cart = await service.getCart({ type: 'token', token });
+    await service.getCart({ type: 'token', token });
+
+    expect(cart.items).toEqual([]);
+    expect(await prisma.cart.count()).toBe(before);
+    expect(await repo.findByToken(token)).toBeNull();
+  });
+
+  it('the cleanup deletes only EMPTY GUEST carts last touched before the retention window', async () => {
+    const stale = new Date(Date.now() - GUEST_CART_EMPTY_RETENTION_MS - 60 * 60 * 1000);
+
+    const emptyOld = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
+    const emptyFresh = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
+    const filledOld = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
+    await repo.addItem({ cartId: filledOld.id, productId, quantity: 1 }, allowAll);
+    const userEmptyOld = await repo.findOrCreate({ type: 'user', userId });
+
+    await prisma.cart.updateMany({
+      where: { id: { in: [emptyOld.id, filledOld.id, userEmptyOld.id] } },
+      data: { updatedAt: stale },
+    });
+    const before = await prisma.cart.count();
+
+    const logger = { setContext: () => undefined, info: () => undefined } as unknown as PinoLogger;
+    const cleanup = new GuestCartCleanupService(
+      repo,
+      { get: () => 'false' } as never,
+      new SchedulerRegistry(),
+      logger,
+    );
+    const deleted = await cleanup.purgeStaleEmptyGuestCarts();
+
+    expect(deleted).toBe(1);
+    expect(await prisma.cart.count()).toBe(before - 1);
+    const survivors = await prisma.cart.findMany({ select: { id: true } });
+    const ids = survivors.map((row) => row.id);
+    expect(ids).not.toContain(emptyOld.id);
+    expect(ids).toEqual(expect.arrayContaining([emptyFresh.id, filledOld.id, userEmptyOld.id]));
+  });
+
+  it('findOrCreate touches updatedAt of an existing cart, so a cart being added to is never swept', async () => {
+    const token = `tok-${randomUUID()}`;
+    const cart = await repo.findOrCreate({ type: 'token', token });
+    const stale = new Date(Date.now() - GUEST_CART_EMPTY_RETENTION_MS - 60 * 60 * 1000);
+    await prisma.cart.update({ where: { id: cart.id }, data: { updatedAt: stale } });
+
+    const touched = await repo.findOrCreate({ type: 'token', token });
+
+    expect(touched.id).toBe(cart.id);
+    expect(touched.updatedAt.getTime()).toBeGreaterThan(stale.getTime());
+    expect(
+      await repo.deleteStaleEmptyGuestCarts(new Date(Date.now() - GUEST_CART_EMPTY_RETENTION_MS)),
+    ).toBe(0);
+  });
+
   // ─── addItem ────────────────────────────────────────────────────────────────
 
   it('addItem creates the line then increments it on the same product', async () => {
     const cart = await repo.findOrCreate({ type: 'token', token: `tok-${randomUUID()}` });
 
-    await repo.addItem({ cartId: cart.id, productId, quantity: 2 });
-    let updated = await repo.findById(cart.id);
+    await repo.addItem({ cartId: cart.id, productId, quantity: 2 }, allowAll);
+    let updated = await cartById(cart.id);
     expect(updated?.items).toHaveLength(1);
     expect(updated?.items[0].quantity).toBe(2);
 
-    await repo.addItem({ cartId: cart.id, productId, quantity: 3 });
-    updated = await repo.findById(cart.id);
+    await repo.addItem({ cartId: cart.id, productId, quantity: 3 }, allowAll);
+    updated = await cartById(cart.id);
     expect(updated?.items).toHaveLength(1);
     expect(updated?.items[0].quantity).toBe(5);
   });
@@ -176,7 +266,7 @@ describe('CartRepository (integration)', () => {
       ],
     });
 
-    const merged = await repo.findById(userCart.id);
+    const merged = await cartById(userCart.id);
     expect(merged?.items).toHaveLength(2);
     const productLine = merged?.items.find((i) => i.productId === productId);
     expect(productLine?.quantity).toBe(4);
@@ -188,7 +278,7 @@ describe('CartRepository (integration)', () => {
   it('mergeGuestCartIntoUser ROLLS BACK on a mid-transaction failure (no partial merge, guest cart kept)', async () => {
     const userCart = await repo.findOrCreate({ type: 'user', userId });
     // Pre-existing user line so we can prove it is untouched after rollback.
-    await repo.addItem({ cartId: userCart.id, productId, quantity: 1 });
+    await repo.addItem({ cartId: userCart.id, productId, quantity: 1 }, allowAll);
 
     const token = `tok-${randomUUID()}`;
     const guest = await repo.findOrCreate({ type: 'token', token });
@@ -206,7 +296,7 @@ describe('CartRepository (integration)', () => {
 
     // Transaction rolled back: the valid line was NOT written and the guest
     // cart was NOT deleted.
-    const after = await repo.findById(userCart.id);
+    const after = await cartById(userCart.id);
     expect(after?.items).toHaveLength(1);
     expect(after?.items[0].productId).toBe(productId);
     expect(await repo.findByToken(token)).not.toBeNull();

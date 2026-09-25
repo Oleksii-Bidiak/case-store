@@ -1738,6 +1738,72 @@ export const dict = {
         "Якщо адресу ще не підтверджено, ми надіслали лист. Перевірте пошту, зокрема теку «Спам».",
       resendError: "Не вдалося надіслати лист. Спробуйте ще раз за хвилину.",
     },
+    // TASK-396 — changing the address you sign in with. The address changes only
+    // after the link in the NEW inbox is clicked; the OLD inbox gets a warning
+    // with a way back. Every line here has to keep saying that, because the
+    // natural assumption — "I pressed save, so it changed" — is wrong on purpose.
+    changeEmail: {
+      open: "Змінити email",
+      heading: "Зміна адреси для входу",
+      intro:
+        "Ми надішлемо посилання на нову адресу. Адреса для входу зміниться лише після того, як ви його відкриєте. На поточну адресу прийде лист із можливістю скасувати зміну.",
+      newEmail: "Нова адреса",
+      currentPassword: "Поточний пароль",
+      submit: "Надіслати посилання",
+      submitting: "Надсилаємо…",
+      cancel: "Скасувати",
+      sentHeading: "Перевірте нову пошту",
+      sentBody: (email: string) =>
+        `Ми надіслали посилання на ${email}. Поки ви його не відкриєте, входьте з поточною адресою. Термін дії посилання вказано в листі.`,
+      sessionsWarning:
+        "Після підтвердження всі сеанси буде завершено — увійдіть знову з новою адресою.",
+      validationEmail: "Вкажіть коректну адресу",
+      validationSame: "Це вже ваша поточна адреса",
+      validationPassword: "Введіть поточний пароль",
+      errorWrongPassword:
+        "Поточний пароль неправильний. Перевірте розкладку та Caps Lock і спробуйте ще раз.",
+      errorTaken: "Ця адреса вже зареєстрована в іншому обліковому записі.",
+      errorTooMany: "Забагато спроб. Спробуйте ще раз за хвилину.",
+    },
+    // /confirm-email-change — the link from the NEW inbox.
+    confirmEmailChange: {
+      heading: "Нова адреса для входу",
+      checking: "Застосовуємо зміну…",
+      successHeading: "Адресу змінено",
+      successBody:
+        "Тепер ви входите з новою адресою. Ми завершили всі сеанси — увійдіть знову.",
+      toLogin: "Увійти",
+      errorMissingToken:
+        "Посилання неповне або пошкоджене. Скористайтеся посиланням з листа ще раз.",
+      errorHeading: "Не вдалося змінити адресу",
+      // One generic 400 from the API for every cause, like verify-email.
+      errorBody:
+        "Посилання недійсне. Таке буває, якщо термін дії минув, ним уже скористалися, зміну скасували з попередньої адреси або ви надіслали новіший запит.",
+      errorTaken:
+        "Поки лист чекав, цю адресу зареєстрував інший обліковий запис. Адресу для входу не змінено — оберіть іншу.",
+      errorNextStep:
+        "Увійдіть із поточною адресою й надішліть новий запит у кабінеті.",
+    },
+    // /revert-email-change — the "this wasn't me" link from the OLD inbox.
+    revertEmailChange: {
+      heading: "Скасування зміни адреси",
+      checking: "Скасовуємо зміну…",
+      successHeading: "Зміну скасовано",
+      successBody:
+        "Адреса для входу — знову ця, з якої ви відкрили лист. Ми завершили всі сеанси на всіх пристроях. Радимо одразу змінити пароль.",
+      toLogin: "Увійти",
+      toForgotPassword: "Змінити пароль",
+      errorMissingToken:
+        "Посилання неповне або пошкоджене. Скористайтеся посиланням з листа ще раз.",
+      errorHeading: "Не вдалося скасувати зміну",
+      errorBody:
+        "Посилання недійсне: термін дії минув або ним уже скористалися.",
+      errorTaken:
+        "Попередню адресу вже зайняв інший обліковий запис, тому повернути її автоматично не вдалося.",
+      errorNextStep:
+        "Напишіть нам — ми допоможемо повернути доступ до облікового запису.",
+      toContact: "Звернутися до підтримки",
+    },
     register: {
       heading: "Створити акаунт",
       email: "Email",
@@ -1839,6 +1905,11 @@ export const dict = {
     resetPasswordDescription: "Установіть новий пароль для вашого акаунту.",
     verifyEmailTitle: "Підтвердження email | CaseStore",
     verifyEmailDescription: "Підтвердіть свою електронну адресу.",
+    // TASK-396 — the two landing pages of an address change.
+    confirmEmailChangeTitle: "Нова адреса для входу | CaseStore",
+    confirmEmailChangeDescription: "Підтвердіть нову адресу для входу.",
+    revertEmailChangeTitle: "Скасування зміни адреси | CaseStore",
+    revertEmailChangeDescription: "Скасуйте зміну адреси для входу.",
     accountTitle: "Мій акаунт | CaseStore",
     accountDescription: "Керуйте профілем та переглядайте свої замовлення.",
     ordersTitle: "Мої замовлення | CaseStore",

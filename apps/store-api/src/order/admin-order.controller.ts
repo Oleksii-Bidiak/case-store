@@ -37,6 +37,7 @@ import {
   AdminOrderListQueryDto,
   UpdateOrderStatusDto,
   UpdateOrderPaymentStatusDto,
+  CorrectPaymentStatusDto,
   UpdateOrderDetailsDto,
   CreateManualOrderDto,
 } from './dto';
@@ -571,6 +572,9 @@ export class AdminOrderController {
       // The DTO carries an ISO string on purpose (see its docblock); this is the
       // single, explicit conversion.
       ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
+      ...(dto.confirmUnpaidShipment !== undefined
+        ? { confirmUnpaidShipment: dto.confirmUnpaidShipment }
+        : {}),
     });
 
     return { data: order };
@@ -610,34 +614,18 @@ export class AdminOrderController {
     @Param('orderId') orderId: string,
     @Body() dto: UpdateOrderDetailsDto,
   ): Promise<AdminOrderResponseEnvelope> {
-    const lock = {
-      ...(dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {}),
-    };
-
-    // TASK-341: the address edit has its own pre-shipment rule, so it goes
-    // through its own service method rather than being smuggled into the details
-    // write. Applied FIRST: if the order has already shipped the whole request
-    // fails with 409 and nothing at all is written, rather than the operator
-    // getting a half-applied edit whose refused half they have to notice.
-    let addressApplied = false;
-    if (dto.shippingAddress) {
-      await this.orderService.adminUpdateShippingAddress(orderId, dto.shippingAddress, lock);
-      addressApplied = true;
-    }
-
+    // TASK-786: one service call — address, waybill and notes are one edit with
+    // one version check and one write, so it lands whole or not at all.
     const order = await this.orderService.adminUpdateDetails(
       orderId,
       {
         // Only forward keys the caller actually sent: an absent key leaves the
         // field alone, an explicit null clears it.
+        ...(dto.shippingAddress ? { shippingAddress: dto.shippingAddress } : {}),
         ...(dto.trackingNumber !== undefined ? { trackingNumber: dto.trackingNumber } : {}),
         ...(dto.internalNotes !== undefined ? { internalNotes: dto.internalNotes } : {}),
       },
-      // The version token is spent by whichever write goes first. If the address
-      // was just applied, the row's `updatedAt` has already moved on — re-checking
-      // the caller's now-superseded token here would reject this request's own
-      // second half as a concurrent edit by itself.
-      addressApplied ? {} : lock,
+      dto.expectedUpdatedAt ? { expectedUpdatedAt: new Date(dto.expectedUpdatedAt) } : {},
     );
 
     return { data: order };
@@ -690,6 +678,59 @@ export class AdminOrderController {
     const order = await this.orderService.adminUpdatePaymentStatus(
       orderId,
       dto.paymentStatus,
+      adminUserId,
+    );
+
+    return { data: order };
+  }
+
+  /**
+   * POST /api/admin/orders/:orderId/payment-correction
+   *
+   * Lift an operator's mistaken «Кошти повернено» back to PAID or
+   * PARTIALLY_REFUNDED (TASK-620, decision B-11 №7). A door of its own, not an
+   * edge in the payment table: REFUNDED stays terminal for every fact-driven
+   * writer. Its own key (`payments:correct`, no backfill), a required reason, and
+   * an action-log row written by the audit interceptor (the body carries the
+   * reason). A REFUNDED the provider reported cannot be lifted.
+   */
+  @Post(':orderId/payment-correction')
+  @RequirePermission('payments:correct')
+  @HttpCode(HttpStatus.OK)
+  @ApiBearerAuth('access-token')
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Correct a mistaken REFUNDED payment mark (admin)',
+    operationId: 'adminOrderControllerCorrectPaymentStatus',
+  })
+  @ApiParam({ name: 'orderId', description: 'Order UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Payment mark corrected',
+    type: AdminOrderResponseEnvelope,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Missing reason, or a target other than PAID / PARTIALLY_REFUNDED',
+  })
+  @ApiResponse({ status: 403, description: 'Forbidden — payments:correct required' })
+  @ApiResponse({ status: 404, description: 'Order not found' })
+  @ApiResponse({
+    status: 409,
+    description:
+      'ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND — the REFUNDED mark was reported by the ' +
+      'payment provider, not set by an operator; or ORDER_PAYMENT_TRANSITION_INVALID — the ' +
+      'payment is not REFUNDED (or changed underneath the write)',
+  })
+  async correctPaymentStatus(
+    @Param('orderId') orderId: string,
+    @Body() dto: CorrectPaymentStatusDto,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<AdminOrderResponseEnvelope> {
+    const order = await this.orderService.adminCorrectRefundedPayment(
+      orderId,
+      dto.paymentStatus,
+      dto.reason,
       adminUserId,
     );
 
