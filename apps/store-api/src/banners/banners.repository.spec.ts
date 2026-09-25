@@ -326,6 +326,114 @@ describe('BannerRepository', () => {
     });
   });
 
+  // ─── updateWithPlacementMove (TASK-580) ────────────────────────────────────
+
+  describe('updateWithPlacementMove', () => {
+    // The defect: a plain `update` wrote `placement` straight through and kept the row's
+    // OLD slot, so a banner moved from HERO_SLIDE slot 0 into PROMO_TILE (0,1,2) became a
+    // SECOND row at 0 and the storefront tiebroke the pair by createdAt — the banner landed
+    // wherever its creation date put it, not where the operator could predict.
+    it('re-appends the moved banner to the END of the TARGET placement (max + 1)', async () => {
+      prismaMock.banner.aggregate.mockResolvedValue({ _max: { sortOrder: 2 } });
+      prismaMock.banner.update.mockResolvedValue({
+        ...mockBanner,
+        placement: BannerPlacement.PROMO_TILE,
+        sortOrder: 3,
+      });
+
+      await repository.updateWithPlacementMove(
+        'banner-uuid-1',
+        { title: 'Renamed', placement: BannerPlacement.PROMO_TILE },
+        BannerPlacement.PROMO_TILE,
+      );
+
+      // The max is read for the TARGET bucket — the source's numbers say nothing about it.
+      expect(prismaMock.banner.aggregate).toHaveBeenCalledWith({
+        where: { placement: BannerPlacement.PROMO_TILE },
+        _max: { sortOrder: true },
+      });
+      expect(prismaMock.banner.update).toHaveBeenCalledWith({
+        where: { id: 'banner-uuid-1' },
+        data: { title: 'Renamed', placement: BannerPlacement.PROMO_TILE, sortOrder: 3 },
+      });
+    });
+
+    // Without the lock a move and a concurrent create (or reorder) both read the same max
+    // and write the same slot — the very collision the re-append is here to prevent.
+    it('takes the TARGET placement lock before reading max, inside one transaction', async () => {
+      prismaMock.banner.aggregate.mockResolvedValue({ _max: { sortOrder: 0 } });
+      prismaMock.banner.update.mockResolvedValue(mockBanner);
+
+      await repository.updateWithPlacementMove(
+        'banner-uuid-1',
+        { placement: BannerPlacement.PROMO_TILE },
+        BannerPlacement.PROMO_TILE,
+      );
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.$executeRaw).toHaveBeenCalledTimes(1);
+      const lockCallOrder = txMock.$executeRaw.mock.invocationCallOrder[0];
+      const maxCallOrder = prismaMock.banner.aggregate.mock.invocationCallOrder[0];
+      expect(lockCallOrder).toBeLessThan(maxCallOrder);
+    });
+
+    it('locks the TARGET placement key, the same one create and reorder take', async () => {
+      prismaMock.banner.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
+      prismaMock.banner.create.mockResolvedValue(mockBanner);
+      prismaMock.banner.update.mockResolvedValue(mockBanner);
+
+      await repository.create({
+        placement: BannerPlacement.PROMO_TILE,
+        title: 'New',
+        status: PublishStatus.DRAFT,
+        publishedAt: null,
+        scheduledAt: null,
+        scheduledUntil: null,
+      });
+      await repository.updateWithPlacementMove(
+        'banner-uuid-1',
+        { placement: BannerPlacement.PROMO_TILE },
+        BannerPlacement.PROMO_TILE,
+      );
+
+      // Same key both times: a move serialises against a create in the SAME bucket.
+      const [createLock, moveLock] = txMock.$executeRaw.mock.calls;
+      expect(moveLock).toEqual(createLock);
+    });
+
+    it('starts an EMPTY target placement at 0', async () => {
+      prismaMock.banner.aggregate.mockResolvedValue({ _max: { sortOrder: null } });
+      prismaMock.banner.update.mockResolvedValue(mockBanner);
+
+      await repository.updateWithPlacementMove(
+        'banner-uuid-1',
+        { placement: BannerPlacement.PROMO_TILE },
+        BannerPlacement.PROMO_TILE,
+      );
+
+      expect(prismaMock.banner.update).toHaveBeenCalledWith({
+        where: { id: 'banner-uuid-1' },
+        data: { placement: BannerPlacement.PROMO_TILE, sortOrder: 0 },
+      });
+    });
+
+    it('honours an explicit sortOrder without reading max (same rule as create)', async () => {
+      prismaMock.banner.update.mockResolvedValue(mockBanner);
+
+      await repository.updateWithPlacementMove(
+        'banner-uuid-1',
+        { placement: BannerPlacement.PROMO_TILE, sortOrder: 9 },
+        BannerPlacement.PROMO_TILE,
+      );
+
+      expect(prismaMock.banner.aggregate).not.toHaveBeenCalled();
+      expect(prismaMock.banner.update).toHaveBeenCalledWith({
+        where: { id: 'banner-uuid-1' },
+        data: { placement: BannerPlacement.PROMO_TILE, sortOrder: 9 },
+      });
+    });
+  });
+
   describe('publish / unpublish', () => {
     it('publish sets status PUBLISHED, stamps publishedAt, clears scheduledAt', async () => {
       prismaMock.banner.update.mockResolvedValue(mockBanner);
