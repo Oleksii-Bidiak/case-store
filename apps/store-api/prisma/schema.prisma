@@ -1211,7 +1211,14 @@ model BlogPost {
   content          String        @db.Text
   coverImageUrl    String?       @map("cover_image_url")
   coverBlurDataUrl String?       @map("cover_blur_data_url")
+  /// Byline as the editor typed it. The repository keeps `authorId` in step on
+  /// every write that sets it (upsert Author by trimmed name), so this string and
+  /// `author.name` never disagree through the API (TASK-554).
   authorName       String        @map("author_name")
+  /// The article's Author — role and bio for the storefront bio card. Null only
+  /// for a blank byline; SetNull so deleting an author never deletes articles.
+  authorId         String?       @map("author_id")
+  author           Author?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
   readingMinutes   Int?          @map("reading_minutes")
   featured         Boolean       @default(false)
   /// Listing visibility (TASK-436). `true` (the default) is the normal post.
@@ -1264,7 +1271,30 @@ model BlogPost {
   @@index([status])
   @@index([slug])
   @@index([categoryId])
+  @@index([authorId])
   @@map("blog_posts")
+}
+
+/// Blog article author (TASK-554). Until now the author was only a string on
+/// the post, and the role + bio the storefront shows under every article were
+/// one invented placeholder in the storefront dictionary — the same "reviewer
+/// for 5 years" under every name. Role and bio now live here, one row per
+/// person, and the API returns them with the post.
+///
+/// `name` is unique because it is the join key the repository links posts by
+/// (the admin form still takes a free-text byline — author CRUD is future work).
+model Author {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  /// Short title under the name, e.g. "Оглядачка аудіотехніки". Null = not shown.
+  role      String?
+  /// One- or two-sentence plain-text bio. Null = not shown.
+  bio       String?    @db.Text
+  posts     BlogPost[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@map("authors")
 }
 
 /// Placement slot a banner renders in on the storefront homepage (TASK-186).
