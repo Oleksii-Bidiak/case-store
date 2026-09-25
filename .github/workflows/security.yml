@@ -155,6 +155,9 @@ jobs:
           # `npm ci` and no build — and no Orval output, which is gitignored
           # generated code and not ours to review.
           build-mode: none
+          # paths-ignore for tests, e2e, load and QA scripts (TASK-766) — they
+          # are not attack surface, and scripts/qa forges headers on purpose.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
