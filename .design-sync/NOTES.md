@@ -9,6 +9,7 @@ Synced surface: `apps/store-client/src/shared/ui` → Claude Design project
 | ---------- | ----------------------- | ---------- | --------------------------------- |
 | 2026-07-01 | `25064fe5`              | 48         | 21 (English copy, empty `.d.ts`)  |
 | 2026-09-19 | `09aaa712`              | 56         | 29 (Ukrainian copy, real `.d.ts`) |
+| 2026-09-25 | `57aa2a97`              | 56         | 29 (re-graded after TASK-735/736) |
 
 Before any design session: `git log <last source commit>..HEAD -- apps/store-client/src/shared/ui apps/store-client/src/app/globals.css`
 — non-empty means the project is behind the code; re-sync first (runbook S7.1).
@@ -91,11 +92,9 @@ to system sans (harmless). Display font (Sora) is used for headings & prices.
 ## Known render warns
 
 - None from validate (56/56 clean).
-- `Input › Invalid` shows no red border — faithful to the site: an unlayered
-  `* { border-color }` in globals.css beats every `border-*` utility (TASK-735).
-  Re-grade the cell after that fix lands.
-- Disabled states (`Select`, `Input`, `Textarea`) are faint — site styling,
-  `disabled:opacity-50` over muted text (TASK-736).
+- 2026-09-25: `Input › Invalid` now shows the red `destructive` border (TASK-735 moved
+  `* { border-color }` into `@layer base`). Disabled cells of Button/Input/Textarea/Select are
+  readable (`bg-disabled` + `text-disabled-foreground`, TASK-736). Both earlier warns are closed.
 
 ## Preview scope
 
@@ -130,11 +129,34 @@ category tile reuses the site's oklch `categoryGradient` formula). 27 subcompone
   `_adherence.oxlintrc.json`, `_ds_bundle.{js,css}`, `_ds_manifest.json`, `styles.css`).
   An upload to the design-system project does NOT refresh it — until 2026-09-19 Pages ran
   the July bundle. After every sync: wait until the DS project's `_ds_manifest.json` is
-  regenerated (open the project once), then `copy_files` those 6 files from the DS project
+  regenerated (the owner must open the project in the browser; the sentinel
+  `_ds_needs_recompile` disappears and the manifest/adherence etags change. Polling alone never
+  triggers it), then `copy_files` those 6 files from the DS project
   into Pages (claude-design MCP, `finalize_plan` + `if_match`), and screenshot every Pages
   `*.dc.html` before/after. Contract changes surface there first: 2026-09-19 the new
   `ProductCard` rendered every mock product «Немає в наявності» because Pages' mock data
   had no `inStock`.
+- **Style-only changes do NOT re-verify anything.** Grades key on the authored previews
+  (`sourceKeys`), so a `globals.css` or `shared/ui` class change reports "56
+  verified-by-upload, 0 changed". When the component sources changed, force a look:
+  `node .ds-sync/package-capture.mjs --out ./ds-bundle --components <changed> --spot-check-components <changed>`.
+  Then Read the sheets, re-write the grades, and eyeball all 4 contact sheets (2026-09-25 did
+  this for Button/Input/Label/Select/Tabs/Textarea).
+- **Validate can crash Chromium on Windows inside the driver** (exit `3221226505` =
+  `0xC0000409`, verdict `ok:false` with build+diff fine). Re-run
+  `node .ds-sync/package-validate.mjs ./ds-bundle` standalone. On 2026-09-25 it then passed, and
+  the next driver run was clean too.
+- **Pages screenshots** live in `docs/images/design-sync/<date>-{before,after}-<Page>.png`
+  (committed; before = pre-copy, after = post-copy + data edits). The script is
+  `.design-sync/.cache/shot-pages.mjs` (gitignored). It reads `<serve base>|<token>` from stdin,
+  and the token comes from one `render_preview` because it is project-scoped. Keep the token out
+  of files. **`curl` on the serve URL is NOT the stored file.** The endpoint inserts the preview
+  runtime (`<style data-omelette-injected>…</style><script data-omelette-injected>…</script>` +
+  `\n\n`, about 20 KB) right after `<head>\n`. Removing exactly that recovers the stored bytes:
+  checked 2026-09-25 against `read_file` (Catalog, byte-identical) and against `list_files`
+  sizes (4 more files). This is how 60–90 KB mock-data edits are built and verified after
+  `write_files`, since `read_file` of such files overflows. Writing a served copy back would
+  bake the runtime into the mockup.
 - **The Claude Design project also holds files this sync does not own**:
   `templates/homepage`, `templates/cart`, `screenshots/`, `uploads/`. Never put them
   in a plan's deletes; their freshness is audited separately (runbook S7.2).
