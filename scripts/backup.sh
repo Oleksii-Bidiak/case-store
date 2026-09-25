@@ -211,6 +211,16 @@ if [[ "$DB_ONLY" == false ]]; then
 
   [[ -s "$UP_FILE" ]] || die "the uploads archive is empty"
 
+  # Prove the archive is READABLE, as `pg_restore --list` does for the dump. The
+  # count below cannot: its `|| true` (needed because grep -c exits 1 on zero
+  # matches) also swallows tar's own failure, so before TASK-738 a garbage file
+  # passed as "ok — 0 file(s)" and a truncated one as "ok — <the files before
+  # the cut>", and the nightly job reported success. Listing the whole archive
+  # makes gzip and tar read it to the end, which is where a cut shows up.
+  log "verifying the uploads archive can be read back…"
+  tar tzf "$UP_FILE" > /dev/null \
+    || die "the uploads archive is unreadable — tar could not list it. NOT a usable backup."
+
   FILES=$(tar tzf "$UP_FILE" | grep -cv '/$' || true)
   log "  ok — $FILES file(s)"
 
