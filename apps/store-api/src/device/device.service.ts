@@ -238,13 +238,21 @@ export class DeviceService {
         throw new NotFoundException('Device brand not found');
       }
     }
-    if (input.slug !== undefined && input.slug !== model.slug) {
-      const existing = await this.deviceRepository.findModelBySlug(input.slug);
+    const slugChanging = input.slug !== undefined && input.slug !== model.slug;
+    if (slugChanging) {
+      const existing = await this.deviceRepository.findModelBySlug(input.slug!);
       if (existing && existing.id !== id) {
         throw new ConflictException('A device model with this slug already exists');
       }
     }
-    await this.deviceRepository.updateModel(id, input);
+    // TASK-699: the model slug is the second segment of the public compatibility
+    // landing `/catalog/<категорія>/<модель>`, so a rename records a 308 in the
+    // SlugRedirect ledger — but only for a model that was visible BEFORE this write
+    // (plan 147 §Design Decision 3, as for categories): a hidden model's URL never
+    // answered. The PRE-write snapshot matters when one call both renames and hides.
+    const slugRename =
+      model.isActive && slugChanging ? { oldSlug: model.slug, newSlug: input.slug! } : undefined;
+    await this.deviceRepository.updateModel(id, input, slugRename);
     const withBrand = await this.deviceRepository.findModelById(id);
     return DeviceModelEntity.fromPrisma(withBrand!);
   }

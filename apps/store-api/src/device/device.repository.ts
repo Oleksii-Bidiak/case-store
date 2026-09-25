@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma';
-import { DeviceBrand, DeviceModel, Prisma } from '@prisma/client';
+import { DeviceBrand, DeviceModel, Prisma, SlugRedirectEntity } from '@prisma/client';
 import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
+import { SlugRedirectRepository } from '../slug-redirect';
 
 /**
  * Advisory-lock namespace for device brands (TASK-295). The prefix is MANDATORY — locks are
@@ -73,6 +74,19 @@ export interface UpdateDeviceModelInput {
   description?: string | null;
 }
 
+/**
+ * Slugs of a model rename being persisted by `updateModel` (TASK-699). When present
+ * the write also records `oldSlug → newSlug` in the SlugRedirect ledger under
+ * `DEVICE_MODEL`, atomically with the model update — so the public compatibility
+ * landing `/catalog/<категорія>/<стара-модель>` answers 308 instead of 404. The
+ * service passes it only when the model was active before the write (plan 147
+ * §Design Decision 3, the same rule as a category rename).
+ */
+export interface DeviceModelSlugRename {
+  oldSlug: string;
+  newSlug: string;
+}
+
 /** A device model row with its brand relation loaded (for labelling). */
 export type DeviceModelWithBrand = DeviceModel & { brand: { name: string } };
 
@@ -113,7 +127,10 @@ export interface PaginatedDeviceBrandsResult {
  */
 @Injectable()
 export class DeviceRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly slugRedirectRepository: SlugRedirectRepository,
+  ) {}
 
   // ─── Device brands ────────────────────────────────────────────────────────
 
@@ -316,7 +333,29 @@ export class DeviceRepository {
     });
   }
 
-  updateModel(id: string, data: UpdateDeviceModelInput): Promise<DeviceModel> {
-    return this.prisma.deviceModel.update({ where: { id }, data });
+  /**
+   * Update a device model. With `slugRename` the update and the `DEVICE_MODEL`
+   * redirect-ledger write commit or roll back together (TASK-699) — a rename that
+   * fails on the unique slug must never leave a redirect to a slug no model holds.
+   * Without it this stays one plain write.
+   */
+  updateModel(
+    id: string,
+    data: UpdateDeviceModelInput,
+    slugRename?: DeviceModelSlugRename,
+  ): Promise<DeviceModel> {
+    if (!slugRename) {
+      return this.prisma.deviceModel.update({ where: { id }, data });
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const model = await tx.deviceModel.update({ where: { id }, data });
+      await this.slugRedirectRepository.recordRename(
+        tx,
+        SlugRedirectEntity.DEVICE_MODEL,
+        slugRename.oldSlug,
+        slugRename.newSlug,
+      );
+      return model;
+    });
   }
 }

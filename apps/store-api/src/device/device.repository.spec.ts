@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { DeviceRepository } from './device.repository';
 import { PrismaService } from '../prisma';
 import { ReorderDuplicateIdError } from '../common/reorder';
+import { SlugRedirectEntity } from '@prisma/client';
+import { SlugRedirectRepository } from '../slug-redirect';
 
 describe('DeviceRepository', () => {
   let repo: DeviceRepository;
@@ -21,8 +23,12 @@ describe('DeviceRepository', () => {
     updateMany: jest.fn(),
   };
 
+  /** Model writes made INSIDE the rename transaction (TASK-699). */
+  const txDeviceModel = { update: jest.fn() };
+
   const txMock = {
     deviceBrand: deviceBrandDelegate,
+    deviceModel: txDeviceModel,
     // `pg_advisory_xact_lock` — taken by `createBrand` and by `reorderBrands`.
     $executeRaw: jest.fn(),
   };
@@ -39,12 +45,73 @@ describe('DeviceRepository', () => {
     $transaction: jest.fn((cb: (tx: typeof txMock) => Promise<unknown>) => cb(txMock)),
   };
 
+  const slugRedirectRepositoryMock = { recordRename: jest.fn() };
+
   beforeEach(async () => {
     jest.clearAllMocks();
     const module: TestingModule = await Test.createTestingModule({
-      providers: [DeviceRepository, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        DeviceRepository,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: SlugRedirectRepository, useValue: slugRedirectRepositoryMock },
+      ],
     }).compile();
     repo = module.get(DeviceRepository);
+  });
+
+  // ─── models: update + slug rename (TASK-699) ──────────────────────────────
+
+  describe('updateModel', () => {
+    it('writes directly — no transaction, no ledger row — when there is no rename', async () => {
+      prismaMock.deviceModel.update.mockResolvedValue({ id: 'model-1' });
+
+      await repo.updateModel('model-1', { name: 'iPhone 15 Pro (2023)' });
+
+      expect(prismaMock.deviceModel.update).toHaveBeenCalledWith({
+        where: { id: 'model-1' },
+        data: { name: 'iPhone 15 Pro (2023)' },
+      });
+      expect(prismaMock.$transaction).not.toHaveBeenCalled();
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
+
+    it('commits the model update and the DEVICE_MODEL ledger row in ONE transaction', async () => {
+      const renamed = { id: 'model-1', slug: 'iphone-15-pro-new' };
+      txDeviceModel.update.mockResolvedValue(renamed);
+
+      const result = await repo.updateModel(
+        'model-1',
+        { slug: 'iphone-15-pro-new' },
+        { oldSlug: 'iphone-15-pro', newSlug: 'iphone-15-pro-new' },
+      );
+
+      expect(result).toBe(renamed);
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(txDeviceModel.update).toHaveBeenCalledWith({
+        where: { id: 'model-1' },
+        data: { slug: 'iphone-15-pro-new' },
+      });
+      expect(prismaMock.deviceModel.update).not.toHaveBeenCalled();
+      expect(slugRedirectRepositoryMock.recordRename).toHaveBeenCalledWith(
+        txMock,
+        SlugRedirectEntity.DEVICE_MODEL,
+        'iphone-15-pro',
+        'iphone-15-pro-new',
+      );
+    });
+
+    it('never records the redirect when the model update itself fails', async () => {
+      txDeviceModel.update.mockRejectedValue(new Error('P2002'));
+
+      await expect(
+        repo.updateModel(
+          'model-1',
+          { slug: 'taken' },
+          { oldSlug: 'iphone-15-pro', newSlug: 'taken' },
+        ),
+      ).rejects.toThrow('P2002');
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+    });
   });
 
   // ─── brands: create + reorder (TASK-295) ──────────────────────────────────

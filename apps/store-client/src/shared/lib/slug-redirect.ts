@@ -1,11 +1,11 @@
 import { slugRedirectControllerLookup } from "@/shared/api/generated/slug-redirect/slug-redirect";
 
-/** Content model discriminator for the slug-redirect ledger (TASK-285). */
+/**
+ * Content model discriminator for the slug-redirect ledger (TASK-285).
+ * `DEVICE_MODEL` (TASK-699) is the second segment of `/catalog/<категорія>/<модель>`.
+ */
 export type SlugRedirectEntityKind =
-  | "PAGE"
-  | "BLOG_POST"
-  | "PRODUCT"
-  | "CATEGORY";
+  "PAGE" | "BLOG_POST" | "PRODUCT" | "CATEGORY" | "DEVICE_MODEL";
 
 /**
  * Resolve a dead (renamed) slug to the entity's current live slug, or null

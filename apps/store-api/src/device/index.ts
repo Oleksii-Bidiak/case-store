@@ -9,6 +9,7 @@ export {
   UpdateDeviceBrandInput,
   CreateDeviceModelInput,
   UpdateDeviceModelInput,
+  DeviceModelSlugRename,
   FindModelsParams,
   PaginatedDeviceModelsResult,
   DeviceModelWithBrand,

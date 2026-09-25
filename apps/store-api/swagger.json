@@ -2016,7 +2016,8 @@
                 "PAGE",
                 "BLOG_POST",
                 "PRODUCT",
-                "CATEGORY"
+                "CATEGORY",
+                "DEVICE_MODEL"
               ]
             }
           },

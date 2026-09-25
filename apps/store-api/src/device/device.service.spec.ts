@@ -176,6 +176,84 @@ describe('DeviceService', () => {
     });
   });
 
+  // TASK-699: `/catalog/<категорія>/<модель>` is a public, indexed address (TASK-490),
+  // so a model slug rename must leave a 308 behind — the same rule as a category
+  // rename (plan 147 §Design Decision 3): only a model that was visible BEFORE the
+  // write had a reachable URL worth redirecting.
+  describe('updateModel (slug rename → redirect ledger, TASK-699)', () => {
+    beforeEach(() => {
+      deviceRepositoryMock.findModelBySlug.mockResolvedValue(null);
+      deviceRepositoryMock.updateModel.mockResolvedValue(mockModel);
+    });
+
+    it('hands the repository the rename when an ACTIVE model changes its slug', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+
+      await service.updateModel('model-1', { slug: 'iphone-15-pro-new' });
+
+      expect(deviceRepositoryMock.updateModel).toHaveBeenCalledWith(
+        'model-1',
+        { slug: 'iphone-15-pro-new' },
+        { oldSlug: 'iphone-15-pro', newSlug: 'iphone-15-pro-new' },
+      );
+    });
+
+    it('still records it when the same write renames AND deactivates the model', async () => {
+      // The PRE-write snapshot decides: the old URL was reachable until this call.
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+
+      await service.updateModel('model-1', { slug: 'iphone-15-pro-new', isActive: false });
+
+      expect(deviceRepositoryMock.updateModel).toHaveBeenCalledWith(
+        'model-1',
+        { slug: 'iphone-15-pro-new', isActive: false },
+        { oldSlug: 'iphone-15-pro', newSlug: 'iphone-15-pro-new' },
+      );
+    });
+
+    it('records nothing for a model that was hidden — its URL never answered', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue({ ...mockModel, isActive: false });
+
+      await service.updateModel('model-1', { slug: 'iphone-15-pro-new' });
+
+      expect(deviceRepositoryMock.updateModel).toHaveBeenCalledWith(
+        'model-1',
+        { slug: 'iphone-15-pro-new' },
+        undefined,
+      );
+    });
+
+    it('records nothing when the slug is absent or unchanged', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+
+      await service.updateModel('model-1', { name: 'iPhone 15 Pro (2023)' });
+      await service.updateModel('model-1', { slug: 'iphone-15-pro' });
+
+      expect(deviceRepositoryMock.updateModel).toHaveBeenNthCalledWith(
+        1,
+        'model-1',
+        { name: 'iPhone 15 Pro (2023)' },
+        undefined,
+      );
+      expect(deviceRepositoryMock.updateModel).toHaveBeenNthCalledWith(
+        2,
+        'model-1',
+        { slug: 'iphone-15-pro' },
+        undefined,
+      );
+    });
+
+    it('rejects a slug another model already holds before writing anything', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+      deviceRepositoryMock.findModelBySlug.mockResolvedValue({ ...mockModel, id: 'model-2' });
+
+      await expect(
+        service.updateModel('model-1', { slug: 'iphone-15-pro-max' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(deviceRepositoryMock.updateModel).not.toHaveBeenCalled();
+    });
+  });
+
   describe('setModelActive', () => {
     it('throws NotFoundException for an unknown model', async () => {
       deviceRepositoryMock.findModelById.mockResolvedValue(null);
