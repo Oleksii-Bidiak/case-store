@@ -65,6 +65,14 @@
  * (matched by its `file: apps/<svc>/Dockerfile`) must pass every build arg the
  * prod compose passes to that service, and nothing the table does not list.
  *
+ * Check 3d rides on the same parse (TASK-737). Once SENTRY_AUTH_TOKEN joined
+ * those lists, a build arg carried a SECRET, and the repository is public:
+ * docker/build-push-action@v6 publishes build-arg values by default in a
+ * `mode=max` provenance attestation on GHCR, in the build-record artifact and in
+ * the job summary. So any workflow build step with a `${{ secrets.* }}` build arg
+ * must set `provenance: mode=min` and step `env:` DOCKER_BUILD_RECORD_UPLOAD and
+ * DOCKER_BUILD_SUMMARY to `false`, or the gate fails.
+ *
  * HOW IT WORKS
  * ------------
  * `VARS` below is the ONE place a variable is described. Every entry declares
@@ -107,6 +115,14 @@ const VALIDATION_FILE = "apps/store-api/src/config/env.validation.ts";
 const DOC_PATH = "docs/deploy/04a-env-matrix.md";
 /** Every `*.yml` / `*.yaml` here is scanned for image-build steps (check 3c). */
 const WORKFLOW_DIR = ".github/workflows";
+/**
+ * build-push-action env switches that must be `false` on any step passing a
+ * `secrets.*` build arg: each default publishes build-arg values (check 3d).
+ */
+const SECRET_BUILD_ENV_OFF = [
+  "DOCKER_BUILD_RECORD_UPLOAD",
+  "DOCKER_BUILD_SUMMARY",
+];
 const DOC_MARKER_START = "<!-- env-matrix:start -->";
 const DOC_MARKER_END = "<!-- env-matrix:end -->";
 
@@ -1869,9 +1885,13 @@ function parseDockerfileBuildVars(text) {
  * Image-build steps of one GitHub Actions workflow: every step that carries a
  * `file:` key (docker/build-push-action's Dockerfile input), with the keys of its
  * `build-args: |` block scalar. Returns
- *   [{ job, step, line, file, args: Set<string> }]
+ *   [{ job, step, line, file, args: Set<string>, secretArgs: Set<string>,
+ *      provenance: string|null, env: Map<string,string> }]
  * — `line` is 1-based (the `file:` line), `args` is empty when the step has no
  * `build-args:` at all, which is itself drift the caller reports.
+ * `secretArgs` are the build args whose value reads `secrets.*`, `provenance`
+ * the step's `provenance:` input and `env` its own `env:` map — what check 3d
+ * needs to tell whether a secret build arg gets published (TASK-737).
  *
  * Indentation-driven, like parseComposeStructure: zero installs. What it relies
  * on is only what YAML itself fixes for block style — a step is a `- ` item, its
@@ -1934,6 +1954,9 @@ function parseWorkflowBuildSteps(text) {
         line: null,
         file: null,
         args: new Set(),
+        secretArgs: new Set(),
+        provenance: null,
+        env: new Map(),
       };
     }
     if (!step) continue;
@@ -1949,26 +1972,51 @@ function parseWorkflowBuildSteps(text) {
       step.line = i + 1;
     }
 
+    const provenance = body.match(/^provenance:\s*(.*?)\s*(?:#.*)?$/);
+    if (provenance) step.provenance = provenance[1].replace(/^["']|["']$/g, "");
+
     const block = body.match(/^build-args:\s*[|>][-+]?\s*(?:#.*)?$/);
     if (block) {
       for (let j = i + 1; j < lines.length; j++) {
         const inner = lines[j];
         if (!inner.trim()) continue;
         if (indentOf(inner) <= indent) break;
-        const kv = inner.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=/);
-        if (kv) step.args.add(kv[1]);
+        const kv = inner.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+        if (kv) {
+          step.args.add(kv[1]);
+          if (/\bsecrets\./.test(kv[2])) step.secretArgs.add(kv[1]);
+        }
+        i = j;
+      }
+    }
+
+    // The step's own `env:` map (flat `KEY: value` children only).
+    if (/^env:\s*(?:#.*)?$/.test(body)) {
+      for (let j = i + 1; j < lines.length; j++) {
+        const inner = lines[j];
+        if (isBlank(inner)) continue;
+        if (indentOf(inner) <= indent) break;
+        const kv = inner.match(
+          /^\s*([A-Za-z_][A-Za-z0-9_]*):\s*(.*?)\s*(?:#.*)?$/,
+        );
+        if (kv) step.env.set(kv[1], kv[2].replace(/^["']|["']$/g, ""));
         i = j;
       }
     }
   }
   flush();
-  return steps.map(({ job: j, step: s, line, file, args }) => ({
-    job: j,
-    step: s ?? "(unnamed step)",
-    line,
-    file,
-    args,
-  }));
+  return steps.map(
+    ({ job: j, step: s, line, file, args, secretArgs, provenance, env }) => ({
+      job: j,
+      step: s ?? "(unnamed step)",
+      line,
+      file,
+      args,
+      secretArgs,
+      provenance,
+      env,
+    }),
+  );
 }
 
 /** Keys of `.env.production.example` (commented-out lines are not keys). */
@@ -2294,6 +2342,38 @@ function audit({ root = ROOT, vars = VARS, exceptions = EXCEPTIONS } = {}) {
           );
         }
       }
+    }
+  }
+
+  // 3d. A build arg whose value is a `secrets.*` expression is PUBLISHED by
+  //     docker/build-push-action@v6 unless the step switches three defaults
+  //     off: the provenance attestation (mode=max records build-arg values), the
+  //     build-record artifact and the job summary (both carry them too). The
+  //     repository is public, so each of those is readable by anyone (TASK-737).
+  //     GitHub's log masking covers the step log only.
+  for (const s of workflowSteps) {
+    if (!s.secretArgs.size) continue;
+    const where = `${s.workflow}:${s.line} (job \`${s.job}\`, step "${s.step}")`;
+    const missing = [];
+    if (!/^(?:mode=min|false)$/.test(s.provenance ?? "")) {
+      missing.push(
+        s.provenance === null
+          ? "`provenance: mode=min` (it has none — the public-repo default is mode=max)"
+          : `\`provenance: mode=min\` (it has \`${s.provenance}\`)`,
+      );
+    }
+    for (const key of SECRET_BUILD_ENV_OFF) {
+      if (!/^false$/i.test(s.env.get(key) ?? "")) {
+        missing.push(`step \`env: ${key}: false\``);
+      }
+    }
+    if (!missing.length) continue;
+    for (const name of s.secretArgs) {
+      add(
+        name,
+        "workflow-secret",
+        `${where} passes it as a build arg from \`secrets.*\` but lacks ${missing.join(", ")} — the value is published with the build (see the TASK-737 comment in ci.yml)`,
+      );
     }
   }
 

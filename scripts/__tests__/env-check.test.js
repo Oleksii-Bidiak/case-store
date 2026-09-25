@@ -192,7 +192,7 @@ test("a build-args list removed entirely reports every compose arg", (t) => {
   const root = makeRepo(t);
   edit(root, WORKFLOW, (s) =>
     s.replace(
-      /(file: apps\/store-client\/Dockerfile\n\s+push: true\n)\s+build-args: \|\n(?:\s+.*\n|\n)*?(\s+tags:)/,
+      /(file: apps\/store-client\/Dockerfile\n\s+push: true\n\s+provenance: mode=min\n)\s+build-args: \|\n(?:\s+.*\n|\n)*?(\s+tags:)/,
       "$1$2",
     ),
   );
@@ -228,6 +228,77 @@ test("an EXCEPTIONS entry that suppresses nothing is itself drift", (t) => {
   });
   assert.deepEqual([...result.drift.keys()], ["(exceptions)"]);
   assert.match(messages(result, "(exceptions)")[0], /GONE@code suppressed nothing/);
+});
+
+// TASK-737: a `secrets.*` build arg in a public repo is published by
+// build-push-action@v6 through three defaults — the mode=max provenance
+// attestation, the build-record artifact and the job summary.
+for (const [label, mutate, expect] of [
+  [
+    "DOCKER_BUILD_RECORD_UPLOAD dropped",
+    (s) => s.replace("          DOCKER_BUILD_RECORD_UPLOAD: false # and on a value\n", ""),
+    /DOCKER_BUILD_RECORD_UPLOAD: false/,
+  ],
+  [
+    "DOCKER_BUILD_SUMMARY set back to true",
+    (s) =>
+      s.replace(
+        "        env: # a trailing comment on the env key\n          DOCKER_BUILD_SUMMARY: false",
+        "        env: # a trailing comment on the env key\n          DOCKER_BUILD_SUMMARY: true",
+      ),
+    /DOCKER_BUILD_SUMMARY: false/,
+  ],
+  [
+    "provenance input removed",
+    (s) => s.replace('          provenance: "mode=min" # quoted\n', ""),
+    /provenance: mode=min` \(it has none/,
+  ],
+  [
+    "provenance switched to mode=max",
+    (s) => s.replace('provenance: "mode=min" # quoted', "provenance: mode=max"),
+    /\(it has `mode=max`\)/,
+  ],
+  [
+    "the whole step env map removed",
+    (s) =>
+      s.replace(
+        "        env: # a trailing comment on the env key\n          DOCKER_BUILD_SUMMARY: false\n          DOCKER_BUILD_RECORD_UPLOAD: false # and on a value\n",
+        "",
+      ),
+    /DOCKER_BUILD_RECORD_UPLOAD: false`, step `env: DOCKER_BUILD_SUMMARY: false/,
+  ],
+]) {
+  test(`a secrets.* build arg on a step that would publish it fails the gate: ${label}`, (t) => {
+    const root = makeRepo(t);
+    edit(root, WORKFLOW, mutate);
+    const result = envCheck.audit({ root, vars: VARS, exceptions: {} });
+    assert.deepEqual([...result.drift.keys()], ["SENTRY_AUTH_TOKEN"]);
+    const msgs = messages(result, "SENTRY_AUTH_TOKEN");
+    assert.equal(msgs.length, 1);
+    assert.match(msgs[0], /^\[workflow-secret\]/);
+    assert.match(msgs[0], /step "Build & push store-admin"/);
+    assert.match(msgs[0], expect);
+  });
+}
+
+test("a vars.* build arg needs none of the secret guards", (t) => {
+  const root = makeRepo(t);
+  // The admin step keeps its args but now takes the token from vars.*: with the
+  // guards gone, nothing in it is a secret, so check 3d has nothing to say.
+  edit(root, WORKFLOW, (s) =>
+    s
+      .replace(
+        "        env: # a trailing comment on the env key\n          DOCKER_BUILD_SUMMARY: false\n          DOCKER_BUILD_RECORD_UPLOAD: false # and on a value\n",
+        "",
+      )
+      .replace('          provenance: "mode=min" # quoted\n', "")
+      .replace(
+        "            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}\n          tags: ghcr",
+        "            SENTRY_AUTH_TOKEN=${{ vars.SENTRY_AUTH_TOKEN }}\n          tags: ghcr",
+      ),
+  );
+  const result = envCheck.audit({ root, vars: VARS, exceptions: {} });
+  assert.deepEqual([...result.drift.keys()], []);
 });
 
 test("a code-only variable excused @code is still caught once compose wires it (TASK-526 shape)", (t) => {
@@ -301,6 +372,28 @@ test("parseWorkflowBuildSteps: step boundaries, block scalars, job names", () =>
   // `line` points at the `file:` line (1-based).
   const lines = text.split(/\r?\n/);
   for (const s of steps) assert.match(lines[s.line - 1], /^\s+file:/);
+  // What check 3d reads: secret-valued args, provenance and the step env map
+  // (quotes and trailing comments stripped, comment lines skipped).
+  assert.deepEqual(
+    steps.map((s) => [
+      [...s.secretArgs],
+      s.provenance,
+      Object.fromEntries(s.env),
+    ]),
+    [
+      [[], null, {}],
+      [
+        ["SENTRY_AUTH_TOKEN"],
+        "mode=min",
+        { DOCKER_BUILD_RECORD_UPLOAD: "false", DOCKER_BUILD_SUMMARY: "false" },
+      ],
+      [
+        ["SENTRY_AUTH_TOKEN"],
+        "mode=min",
+        { DOCKER_BUILD_SUMMARY: "false", DOCKER_BUILD_RECORD_UPLOAD: "false" },
+      ],
+    ],
+  );
 });
 
 test("parseWorkflowBuildSteps: build-args on a later step never leak into an earlier one", () => {

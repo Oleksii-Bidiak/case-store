@@ -33,10 +33,15 @@ jobs:
 
       - name: Build & push store-client
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          # a comment inside the env map is not a key
+          DOCKER_BUILD_SUMMARY: "false"
         with:
           context: .
           file: apps/store-client/Dockerfile
           push: true
+          provenance: mode=min
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.${{ vars.DOMAIN }}
 
@@ -46,10 +51,14 @@ jobs:
 
       - name: Build & push store-admin
         uses: docker/build-push-action@v6
+        env: # a trailing comment on the env key
+          DOCKER_BUILD_SUMMARY: false
+          DOCKER_BUILD_RECORD_UPLOAD: false # and on a value
         with:
           context: .
           file: "apps/store-admin/Dockerfile"
           push: true
+          provenance: "mode=min" # quoted
           build-args: |-
             NEXT_PUBLIC_API_URL=https://api.${{ vars.DOMAIN }}
             SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}

@@ -803,14 +803,28 @@ jobs:
       # SENTRY_AUTH_TOKEN makes @sentry/nextjs skip the upload with a warning (it
       # never fails `next build`, and a failed upload is logged, not thrown).
       #
-      # `provenance: mode=min` is NOT decoration. build-push-action attaches a
-      # `mode=max` provenance attestation by default on a PUBLIC repository, and
-      # max mode records every build-arg VALUE — SENTRY_AUTH_TOKEN included — in
-      # an attestation pushed next to the image. min mode omits build-arg values.
-      # The proper fix is a BuildKit secret mount instead of an ARG; until the
-      # Dockerfiles take one, do not drop this line.
+      # SENTRY_AUTH_TOKEN travels as a build ARG, and this repository is PUBLIC.
+      # docker/build-push-action@v6 publishes build-arg VALUES in THREE places by
+      # default, and all three are closed on every step that carries the token.
+      # None of these lines is decoration — do not drop one:
+      #   1. `provenance: mode=min` — the default on a public repo is a
+      #      `mode=max` provenance attestation pushed to GHCR next to the image,
+      #      and max mode records every build-arg value. min mode omits them.
+      #   2. `DOCKER_BUILD_RECORD_UPLOAD: false` — the post step exports the
+      #      buildx history record (build args with their resolved values) and
+      #      uploads it as a workflow ARTIFACT, which anyone who can read a
+      #      public repo can download.
+      #   3. `DOCKER_BUILD_SUMMARY: false` — the job summary lists the build
+      #      inputs, build-args included; false also skips the record export.
+      # GitHub's log masking hides the secret in the step log, not in these.
+      # The proper fix is a BuildKit secret mount (`secrets:` input +
+      # `RUN --mount=type=secret`) instead of an ARG; until the Dockerfiles take
+      # one, all three lines stay.
       - name: Build & push store-client
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           file: apps/store-client/Dockerfile
@@ -840,6 +854,9 @@ jobs:
 
       - name: Build & push store-admin
         uses: docker/build-push-action@v6
+        env: # keep SENTRY_AUTH_TOKEN out of the public artifact + summary — see store-client
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           file: apps/store-admin/Dockerfile
@@ -1199,12 +1216,15 @@ jobs:
       # shape and was missing from this list entirely until TASK-495: set it to
       # `true` when store-api has real GOOGLE_CLIENT_ID/_SECRET, or the
       # "Sign in with Google" button stays hidden no matter what the API holds.
-      # The Sentry lines and `provenance: mode=min` are TASK-737 — see the
-      # staging block for why the provenance mode must stay min while
-      # SENTRY_AUTH_TOKEN travels as a build arg.
+      # The Sentry lines, `provenance: mode=min` and the two DOCKER_BUILD_* env
+      # lines are TASK-737 — see the staging block for why all three must stay
+      # while SENTRY_AUTH_TOKEN travels as a build arg in a public repo.
       - name: Build & push store-client
         if: steps.need.outputs.client == 'true'
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           file: apps/store-client/Dockerfile
@@ -1233,6 +1253,9 @@ jobs:
       - name: Build & push store-admin
         if: steps.need.outputs.admin == 'true'
         uses: docker/build-push-action@v6
+        env: # keep SENTRY_AUTH_TOKEN out of the public artifact + summary — see staging store-client
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           file: apps/store-admin/Dockerfile
