@@ -75,7 +75,14 @@ export default defineConfig({
   // locally.
   webServer: [
     {
-      command: "npm run start:dev -w apps/store-api",
+      // `start`, not `start:dev`: no file watcher under a running suite
+      // (TASK-753). With `nest start --watch`, tsc's watcher sometimes fires
+      // mid-run with no source change ("File change detected" → "Found 0
+      // errors", nothing emitted). The Nest CLI treats every successful
+      // compile as a reason to kill and respawn the app, so :3001 went
+      // unanswered for ~12 s. A login landing in that window got
+      // ERR_CONNECTION_REFUSED and stayed on /login. Seen in 2 of 5 cold runs.
+      command: "npm run start -w apps/store-api",
       port: API_PORT,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
