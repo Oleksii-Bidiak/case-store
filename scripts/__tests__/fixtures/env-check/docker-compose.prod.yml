@@ -1,0 +1,25 @@
+# Fixture for scripts/__tests__/env-check.test.js — a miniature of the real
+# docker-compose.prod.yml, read by scripts/env-check.js with a three-row table.
+services:
+  store-api:
+    build:
+      context: .
+      dockerfile: apps/store-api/Dockerfile
+    environment:
+      API_SECRET: ${API_SECRET:?API_SECRET must be set}
+
+  store-client:
+    build:
+      context: .
+      dockerfile: apps/store-client/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL must be set}
+        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}
+
+  store-admin:
+    build:
+      context: .
+      dockerfile: apps/store-admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL must be set}
+        SENTRY_AUTH_TOKEN: ${SENTRY_AUTH_TOKEN:-}

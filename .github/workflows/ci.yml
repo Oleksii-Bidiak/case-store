@@ -226,11 +226,17 @@ jobs:
           node-version: 22
       - run: node scripts/check-lockfile-platforms.js
 
-  # Four sources of truth describe the same environment variables — both compose
-  # files, .env.production.example, and env.validation.ts — and nothing used to
-  # compare them. That is how STORE_CLIENT_URL, REVALIDATE_SECRET and GOOGLE_* all
-  # ended up read by code but never delivered in production (TASK-324). Zero deps,
-  # so no `npm ci`.
+  # Five sources of truth describe the same environment variables — both compose
+  # files, .env.production.example, env.validation.ts, the frontend Dockerfiles
+  # and the `build-args:` lists of THIS file's image builds (TASK-494) — plus the
+  # application code that reads them, and nothing used to compare them. That is
+  # how STORE_CLIENT_URL, REVALIDATE_SECRET and GOOGLE_* all ended up read by
+  # code but never delivered in production (TASK-324), and how the Sentry build
+  # args never reached a deployed frontend (TASK-737). Zero deps, so no `npm ci`.
+  #
+  # The unit tests of the zero-dependency scripts run here too (node:test, no
+  # installs). A glob, not a directory: since Node 21 `node --test <dir>` treats
+  # the directory as a module path and fails with MODULE_NOT_FOUND.
   env-drift:
     name: Env Drift Gate
     runs-on: ubuntu-latest
@@ -240,6 +246,8 @@ jobs:
         with:
           node-version: 22
       - run: node scripts/env-check.js --audit
+      - name: Unit tests of the repo scripts
+        run: node --test "scripts/__tests__/*.test.js"
 
   # ──────────────────────────────────────────────────────────────────────────
   # docs-links (TASK-453 wrote the checker, TASK-455 wires it) — every repo path
@@ -784,7 +792,10 @@ jobs:
       # `docker compose up --build`, so a var added there and not here still
       # never reaches a deployed container. Whenever you add an `ARG` to a
       # frontend Dockerfile, add it in BOTH places or decide, in writing, that
-      # empty is correct for this environment (TASK-348).
+      # empty is correct for this environment (TASK-348). Since TASK-494
+      # `scripts/env-check.js --audit` (check 3c) enforces it: every key the
+      # prod compose passes in `build.args` must appear in each matching
+      # `build-args:` list below, and nothing the env table does not know.
       #
       # Sentry (TASK-737): the trace rate and the ORG/PROJECT/AUTH_TOKEN trio were
       # missing here, so deployed frontends traced 0 % and uploaded no source maps
