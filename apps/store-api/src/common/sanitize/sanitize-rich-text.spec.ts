@@ -35,11 +35,102 @@ describe('sanitizeRichText', () => {
   });
 
   it('strips inline event handlers (onerror, onclick, …)', () => {
-    const result = sanitizeRichText('<img src="https://x/y.png" onerror="alert(1)" alt="x" />');
+    const result = sanitizeRichText('<img src="/uploads/y.png" onerror="alert(1)" alt="x" />');
 
     expect(result).not.toContain('onerror');
     expect(result).not.toContain('alert(1)');
-    expect(result).toContain('src="https://x/y.png"');
+    expect(result).toContain('src="/uploads/y.png"');
+  });
+
+  /**
+   * TASK-758 — an `<img>` used to survive with ANY http(s) source, so supplier
+   * HTML from the catalogue import kept pictures hot-linked from vendor hosts.
+   * The storefront CSP `img-src` refuses those hosts, so on the page they are
+   * broken images at best, and `upgrade-insecure-requests` kills every http one.
+   * The allow-list here is the CSP's, from the API side: relative paths ('self'),
+   * the API's own uploads origin (the CSP's API origin) and the operator's extra
+   * hosts (NEXT_PUBLIC_IMAGE_HOSTS on the storefront, IMAGE_HOSTS here, https
+   * only — the CSP emits `https://<host>`), plus the raster data: URIs above.
+   */
+  describe('image sources (TASK-758)', () => {
+    const API = 'https://api.shop.example.com';
+    const CDN = 'cdn.shop.example.com';
+    const opts = { uploadsOrigin: API, imageHosts: [CDN] };
+    const img = (src: string): string => `<img src="${src}" alt="a" />`;
+    const kept = (src: string, options: Parameters<typeof sanitizeRichText>[1] = opts): void => {
+      expect(sanitizeRichText(img(src), options)).toBe(img(src));
+    };
+    const stripped = (
+      src: string,
+      options: Parameters<typeof sanitizeRichText>[1] = opts,
+    ): void => {
+      expect(sanitizeRichText(`<p>a</p>${img(src)}<p>b</p>`, options)).toBe('<p>a</p><p>b</p>');
+    };
+
+    it('keeps a root-relative source', () => kept('/uploads/products/a.png'));
+    it('keeps a path-relative source', () => kept('uploads/products/a.png'));
+    it('keeps the API uploads origin', () => kept(`${API}/uploads/products/a.png`));
+    it('keeps an allow-listed https host', () => kept(`https://${CDN}/a.png`));
+    it('matches the allow-listed host case-insensitively', () =>
+      kept('https://CDN.Shop.Example.com/a.png'));
+
+    it('strips a vendor host', () => stripped('https://vendor.example.net/a.jpg'));
+    it('strips an http vendor host', () => stripped('http://vendor.example.net/a.jpg'));
+    it('strips an allow-listed host over http — the CSP only emits https', () =>
+      stripped(`http://${CDN}/a.png`));
+    it('strips an allow-listed host on another port', () => stripped(`https://${CDN}:8443/a.png`));
+    it('strips a subdomain of an allow-listed host', () => stripped(`https://evil.${CDN}/a.png`));
+    it('strips a host that merely starts with an allow-listed one', () =>
+      stripped(`https://${CDN}.evil.net/a.png`));
+    it('strips an allow-listed host smuggled as userinfo', () =>
+      stripped(`https://${CDN}@evil.net/a.png`));
+    it('strips a protocol-relative source', () => stripped('//vendor.example.net/a.jpg'));
+    it('strips a backslash source a browser reads as protocol-relative', () =>
+      stripped('\\\\vendor.example.net\\a.jpg'));
+    it('strips the uploads host on another scheme', () =>
+      stripped('http://api.shop.example.com/uploads/a.png'));
+
+    it('reads the uploads origin from PUBLIC_BASE_URL by default', () => {
+      process.env.PUBLIC_BASE_URL = API;
+
+      kept(`${API}/uploads/a.png`, {});
+      stripped('http://localhost:3001/uploads/a.png', {});
+    });
+
+    it('falls back to the uploads default the upload service uses when PUBLIC_BASE_URL is unset', () => {
+      kept('http://localhost:3001/uploads/a.png', {});
+    });
+
+    it('reads extra hosts from IMAGE_HOSTS by default, trimmed and case-insensitive', () => {
+      process.env.IMAGE_HOSTS = ' CDN.shop.example.com , images.brand.com ,';
+
+      kept(`https://${CDN}/a.png`, {});
+      kept('https://images.brand.com/a.png', {});
+      stripped('https://vendor.example.net/a.jpg', {});
+    });
+
+    it('allows no extra host when IMAGE_HOSTS is unset', () => {
+      stripped(`https://${CDN}/a.png`, {});
+    });
+
+    it('skips an IMAGE_HOSTS entry the storefront CSP would skip (not a bare hostname)', () => {
+      process.env.IMAGE_HOSTS = `https://${CDN}`;
+
+      stripped(`https://${CDN}/a.png`, {});
+    });
+
+    // Every write path and the seed call it with ONE argument: that call must
+    // read the same deployment values as `{}` does.
+    it('applies the environment allow-list to the one-argument call', () => {
+      process.env.PUBLIC_BASE_URL = API;
+      process.env.IMAGE_HOSTS = CDN;
+
+      expect(sanitizeRichText(img(`${API}/uploads/a.png`))).toBe(img(`${API}/uploads/a.png`));
+      expect(sanitizeRichText(img(`https://${CDN}/a.png`))).toBe(img(`https://${CDN}/a.png`));
+      expect(sanitizeRichText(`<p>a</p>${img('https://vendor.example.net/a.jpg')}`)).toBe(
+        '<p>a</p>',
+      );
+    });
   });
 
   it('strips javascript: URLs from links', () => {

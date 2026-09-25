@@ -12,8 +12,10 @@ import sanitizeHtml from 'sanitize-html';
  * any tag/attribute we do not explicitly permit. Links are forced to
  * `rel="noopener noreferrer"` (plus `nofollow` when they leave the store) and
  * restricted to safe schemes; images
- * are restricted to `http`/`https` sources and base64 raster `data:` images
- * (never `data:text/html` or `data:image/svg+xml`); table cells keep `colspan`
+ * are restricted to the hosts the storefront CSP `img-src` allows — relative
+ * paths, the API's uploads origin and the IMAGE_HOSTS allow-list — and base64
+ * raster `data:` images (never `data:text/html` or `data:image/svg+xml`); an
+ * image from anywhere else is dropped whole; table cells keep `colspan`
  * and `rowspan` (structure, not presentation) and nothing else.
  */
 const RICH_TEXT_POLICY: sanitizeHtml.IOptions = {
@@ -84,11 +86,45 @@ export interface RichTextSanitizeOptions {
    * "unknown", and then every absolute link is treated as external.
    */
   siteOrigin?: string | null;
+  /**
+   * The API's public origin — where uploaded images are served from
+   * (`<origin>/uploads/…`) and the API origin the storefront CSP `img-src`
+   * allows. Default `PUBLIC_BASE_URL`, falling back to `http://localhost:3001`
+   * exactly as the upload service does; `null` allows no uploads origin.
+   */
+  uploadsOrigin?: string | null;
+  /**
+   * Extra bare hostnames an `<img>` may load from over https (TASK-758). Default
+   * the comma-separated `IMAGE_HOSTS`, which mirrors the storefront's
+   * `NEXT_PUBLIC_IMAGE_HOSTS`; unset means none.
+   */
+  imageHosts?: readonly string[];
 }
 
 /** The options with defaults applied, normalised once per call. */
 interface ResolvedSanitizeOptions {
   siteOrigin: string | undefined;
+  uploadsOrigin: string | undefined;
+  imageHosts: ReadonlySet<string>;
+}
+
+/**
+ * Same default the upload service builds image URLs with when PUBLIC_BASE_URL
+ * is unset (image-upload.service.ts), so a local upload survives a local save.
+ */
+const DEFAULT_UPLOADS_ORIGIN = 'http://localhost:3001';
+
+/**
+ * A bare hostname — the storefront CSP's own test for an image host
+ * (content-security-policy.ts `HOSTNAME_RE`). Anything else is skipped there,
+ * so it is skipped here too: a host the CSP never emits must not be allowed.
+ */
+const HOSTNAME_RE = /^[a-z0-9.-]+$/;
+
+function normalizeHosts(hosts: readonly string[]): ReadonlySet<string> {
+  return new Set(
+    hosts.map((host) => host.trim().toLowerCase()).filter((host) => HOSTNAME_RE.test(host)),
+  );
 }
 
 /**
@@ -112,6 +148,12 @@ function resolveOptions(options: RichTextSanitizeOptions | undefined): ResolvedS
     siteOrigin: httpOrigin(
       options?.siteOrigin !== undefined ? options.siteOrigin : process.env.STORE_CLIENT_URL,
     ),
+    uploadsOrigin: httpOrigin(
+      options?.uploadsOrigin !== undefined
+        ? options.uploadsOrigin
+        : (process.env.PUBLIC_BASE_URL ?? DEFAULT_UPLOADS_ORIGIN),
+    ),
+    imageHosts: normalizeHosts(options?.imageHosts ?? (process.env.IMAGE_HOSTS ?? '').split(',')),
   };
 }
 
@@ -174,7 +216,8 @@ function buildPolicy(options: ResolvedSanitizeOptions): sanitizeHtml.IOptions {
     // An `<img>` whose source did not pass {@link isAllowedImageSrc} is dropped
     // WHOLE. Leaving it with the src stripped would store a sourceless image —
     // an empty box on the page, and no content anyone can edit back.
-    exclusiveFilter: (frame) => frame.tag === 'img' && !isAllowedImageSrc(frame.attribs.src),
+    exclusiveFilter: (frame) =>
+      frame.tag === 'img' && !isAllowedImageSrc(frame.attribs.src, options),
   };
 }
 
@@ -196,8 +239,19 @@ const URL_INVISIBLES = /[\x00-\x20]+/g;
 
 /**
  * Whether an `<img>` source (already scheme-checked by sanitize-html) may stay.
+ *
+ * The allow-list is the storefront CSP `img-src`, seen from the API (TASK-758):
+ * a relative path (`'self'`), the API's own origin (uploads), an operator host
+ * from IMAGE_HOSTS over plain https on the default port (the CSP emits exactly
+ * `https://<host>`), or a raster `data:` image. Anything else — a vendor's
+ * hot-linked picture from the catalogue import above all — is an image the
+ * storefront would refuse to load, so it is not stored in the first place.
+ *
+ * The URL is parsed the way a browser does (WHATWG URL, against a placeholder
+ * base), so a protocol-relative `//host`, a backslash `\\host` and a
+ * `https://allowed@evil` userinfo trick all resolve to the host they really hit.
  */
-function isAllowedImageSrc(src: string | undefined): boolean {
+function isAllowedImageSrc(src: string | undefined, options: ResolvedSanitizeOptions): boolean {
   if (!src) {
     return false;
   }
@@ -205,7 +259,25 @@ function isAllowedImageSrc(src: string | undefined): boolean {
   if (/^data:/i.test(normalized)) {
     return DATA_IMAGE_SRC.test(normalized);
   }
-  return true;
+  let url: URL;
+  try {
+    url = new URL(normalized, RELATIVE_BASE);
+  } catch {
+    return false;
+  }
+  if (url.origin === RELATIVE_ORIGIN) {
+    return true;
+  }
+  if (options.uploadsOrigin !== undefined && url.origin === options.uploadsOrigin) {
+    return true;
+  }
+  return (
+    url.protocol === 'https:' &&
+    url.port === '' &&
+    url.username === '' &&
+    url.password === '' &&
+    options.imageHosts.has(url.hostname)
+  );
 }
 
 /**

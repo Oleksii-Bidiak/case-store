@@ -388,3 +388,41 @@ describe('validateEnv — TOTP_ENCRYPTION_KEY treats empty as unset', () => {
     expect(validateEnv({ ...base, TOTP_ENCRYPTION_KEY: key }).TOTP_ENCRYPTION_KEY).toBe(key);
   });
 });
+
+/**
+ * TASK-758 — the API image-host allow-list for rich text. It mirrors the
+ * storefront's NEXT_PUBLIC_IMAGE_HOSTS (compose passes that same value), so it
+ * takes the same shape: bare hostnames, comma-separated. A scheme or a wildcard
+ * is refused at start-up rather than silently matching nothing.
+ */
+describe('validateEnv — IMAGE_HOSTS is a bare hostname list', () => {
+  const base = {
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+  };
+
+  it('is optional', () => {
+    expect(validateEnv({ ...base }).IMAGE_HOSTS).toBeUndefined();
+  });
+
+  // compose writes `${NEXT_PUBLIC_IMAGE_HOSTS:-}`: an empty string, not an absent key.
+  it('accepts an empty string', () => {
+    expect(() => validateEnv({ ...base, IMAGE_HOSTS: '' })).not.toThrow();
+  });
+
+  it('accepts a comma-separated list of bare hostnames', () => {
+    const hosts = 'cdn.mystore.ua, images.brand.com';
+    expect(validateEnv({ ...base, IMAGE_HOSTS: hosts }).IMAGE_HOSTS).toBe(hosts);
+  });
+
+  it.each([
+    ['a scheme', 'https://cdn.mystore.ua'],
+    ['a path', 'cdn.mystore.ua/images'],
+    ['a port', 'cdn.mystore.ua:8443'],
+    ['a wildcard', '*.mystore.ua'],
+  ])('rejects %s', (_what, value) => {
+    expect(() => validateEnv({ ...base, IMAGE_HOSTS: value })).toThrow(/IMAGE_HOSTS/);
+  });
+});
