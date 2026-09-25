@@ -8,7 +8,7 @@ import {
   UNRESOLVED_FILTER_ID,
 } from '../catalog-filter/catalogue-filter.resolver';
 import { PublicProductEntity } from '../product/entities';
-import { MeiliClient } from './meili.client';
+import { MeiliClient, SEARCH_MAX_TOTAL_HITS } from './meili.client';
 import {
   SearchService,
   PRODUCTS_INDEX_SETTINGS,
@@ -522,7 +522,7 @@ describe('SearchService', () => {
     it('hydrates Meili hit ids into product cards, preserving order', async () => {
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-2' }, { id: 'product-1' }] as never,
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       repo.findByIdsForCards.mockResolvedValue([
         makeProduct({ id: 'product-1' }),
@@ -531,15 +531,54 @@ describe('SearchService', () => {
 
       const result = await service.search('case', 1, 20);
 
+      // page/hitsPerPage, not limit/offset (TASK-537): only that mode makes the
+      // engine count EXACTLY, and the storefront draws numbered pages from it.
       expect(meili.search).toHaveBeenCalledWith('case', {
-        limit: 20,
-        offset: 0,
+        page: 1,
+        hitsPerPage: 20,
         filter: ['isActive = true'],
       });
       // Order follows Meili relevance (product-2 first), not the repo order.
       expect(result.data.map((p) => p.id)).toEqual(['product-2', 'product-1']);
       expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('asks the engine for the requested page by number (TASK-537)', async () => {
+      meili.search.mockResolvedValue({ hits: [{ id: 'product-1' }] as never, totalHits: 25 });
+      repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
+
+      const result = await service.search('case', 2, 12);
+
+      expect(meili.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({ page: 2, hitsPerPage: 12 }),
+      );
+      expect(meili.search.mock.calls[0][1]).not.toHaveProperty('offset');
+      expect(meili.search.mock.calls[0][1]).not.toHaveProperty('limit');
+      // Page count comes from the engine's exact total: 25 hits / 12 = 3 pages.
+      expect(result.meta).toEqual({ total: 25, page: 2, limit: 12, totalPages: 3 });
+    });
+
+    it('answers a page past the end from the engine, not from Postgres (TASK-537)', async () => {
+      // The engine matched 25 products, the URL asks for page 9 of 12-per-page.
+      // Falling back on "zero hits" here swapped in Postgres' different result set
+      // and different total under the same URL; the engine has answered — the page
+      // is simply past the end.
+      meili.search.mockResolvedValue({ hits: [], totalHits: 25 });
+
+      const result = await service.search('case', 9, 12);
+
+      expect(repo.findAll).not.toHaveBeenCalled();
+      expect(result.data).toEqual([]);
+      expect(result.meta).toEqual({ total: 25, page: 9, limit: 12, totalPages: 3 });
+    });
+
+    it('caps the deepest reachable page at the index maxTotalHits (TASK-537)', () => {
+      // Meilisearch never counts past `pagination.maxTotalHits`, so the page list
+      // it feeds is bounded by it too. Pinned explicitly rather than inherited, so
+      // raising it is a deliberate settings change that a reindex pushes.
+      expect(PRODUCTS_INDEX_SETTINGS.pagination).toEqual({ maxTotalHits: SEARCH_MAX_TOTAL_HITS });
     });
 
     it('falls back to Postgres when Meili returns null (engine down)', async () => {
@@ -568,7 +607,7 @@ describe('SearchService', () => {
       // The state a freshly deployed server is in: the engine is up and healthy,
       // the index is empty because seeding wrote straight to Postgres. Trusting
       // that answer showed "nothing found" over a full catalogue.
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
 
       const result = await service.search('case', 1, 20);
@@ -598,7 +637,7 @@ describe('SearchService', () => {
       // and with a non-zero `total` — is the stale index talking, not the data.
       meili.search.mockResolvedValue({
         hits: [{ id: 'gone-1' }, { id: 'gone-2' }] as never,
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       repo.findByIdsForCards.mockResolvedValue([] as never);
       repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
@@ -619,7 +658,7 @@ describe('SearchService', () => {
     it('translates every facet into the engine filter expression', async () => {
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-1' }] as never,
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
 
@@ -651,7 +690,7 @@ describe('SearchService', () => {
     it('sends no sort for relevance and a price sort otherwise', async () => {
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-1' }] as never,
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
 
@@ -741,7 +780,7 @@ describe('SearchService', () => {
     beforeEach(() => {
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-1' }] as never,
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
     });
@@ -831,7 +870,7 @@ describe('SearchService', () => {
 
     it('falls through to full text when the code matches nothing', async () => {
       repo.findBySkuIgnoringCase.mockResolvedValue(null);
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
 
       const result = await service.search('RN13PRO-BK2', 1, 20);
@@ -843,7 +882,7 @@ describe('SearchService', () => {
     it('drops the hit when the product is no longer card-visible (withdrawn category)', async () => {
       repo.findBySkuIgnoringCase.mockResolvedValue({ id: 'product-1' } as never);
       repo.findByIdsForCards.mockResolvedValue([] as never);
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [], total: 0 } as never);
 
       const result = await service.search('RN13PRO-BK2', 1, 20);
@@ -853,7 +892,7 @@ describe('SearchService', () => {
     });
 
     it('does not run for an ordinary phrase, a later page, or a filtered query', async () => {
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [], total: 0 } as never);
 
       await service.search('case', 1, 20);
@@ -873,7 +912,7 @@ describe('SearchService', () => {
       // for a withdrawn category never reaches the dropdown (TASK-297).
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-2' }, { id: 'product-1' }] as never,
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       repo.findByIdsForCards.mockResolvedValue([
         makeProduct({ id: 'product-1', name: 'iPhone 15 Case', slug: 'iphone-15-case' }),
@@ -910,7 +949,7 @@ describe('SearchService', () => {
       // it, so it vanishes from the dropdown instead of surfacing a dead PDP link.
       meili.search.mockResolvedValue({
         hits: [{ id: 'live-product' }, { id: 'withdrawn-product' }] as never,
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       repo.findByIdsForCards.mockResolvedValue([
         makeProduct({ id: 'live-product', slug: 'live' }),
@@ -949,7 +988,7 @@ describe('SearchService', () => {
     });
 
     it('falls back to Postgres when the index answers with zero hits (TASK-376)', async () => {
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
 
       const res = await service.suggest('iphone');

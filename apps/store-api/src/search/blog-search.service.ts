@@ -5,6 +5,7 @@ import { BlogRepository, type BlogPostWithCategory } from '../blog/blog.reposito
 import {
   MeiliClient,
   BLOG_POSTS_INDEX,
+  SEARCH_MAX_TOTAL_HITS,
   type BlogPostSearchDocument,
   type IndexSettings,
 } from './meili.client';
@@ -38,14 +39,22 @@ export const BLOG_POSTS_INDEX_SETTINGS: IndexSettings = {
     minWordSizeForTypos: { oneTypo: 4, twoTypos: 8 },
   },
   synonyms: UA_EN_SYNONYMS,
+  // The deepest result the hub's page list can reach (TASK-537).
+  pagination: { maxTotalHits: SEARCH_MAX_TOTAL_HITS },
 };
 
-/** One page of a blog index query. */
+/**
+ * One page of a blog index query. Addressed by page NUMBER, not offset
+ * (TASK-537): the engine only counts exactly in page/hitsPerPage mode, and the
+ * hub draws its numbered page list from that count.
+ */
 export interface BlogSearchQuery {
   q: string;
   /** Restrict to one category slug (the hub's chip row). */
   categorySlug?: string;
-  offset: number;
+  /** 1-based page number. */
+  page: number;
+  /** Posts per page. */
   limit: number;
 }
 
@@ -184,10 +193,16 @@ export class BlogSearchService implements OnModuleInit {
   }
 
   /**
-   * Ranked post ids for a query, or `null` when the engine is unconfigured, the
-   * request failed, or it matched nothing. `null` — not an empty page — is
-   * deliberate for the zero-hit case (TASK-376): an empty or stale index must
-   * fall through to Postgres rather than answer "no articles" over a full blog.
+   * Ranked post ids for one page of a query, with the engine's EXACT total
+   * (TASK-537), or `null` when the engine is unconfigured, the request failed,
+   * or it matched nothing at all. `null` — not an empty page — is deliberate for
+   * the zero-match case (TASK-376): an empty or stale index must fall through to
+   * Postgres rather than answer "no articles" over a full blog.
+   *
+   * Matches but no hits on the requested page is NOT that case: the engine has
+   * answered and the page is past the end, so it comes back as `ids: []` with
+   * the real total — a fallback there would put Postgres' different set and
+   * total under the same URL.
    */
   async search(query: BlogSearchQuery): Promise<BlogSearchHits | null> {
     const q = (query.q ?? '').trim();
@@ -196,15 +211,22 @@ export class BlogSearchService implements OnModuleInit {
     const result = await this.meili.search<BlogPostSearchDocument>(
       q,
       {
-        limit: query.limit,
-        offset: query.offset,
+        page: query.page,
+        hitsPerPage: query.limit,
         filter: buildCategoryFilter(query.categorySlug),
       },
       BLOG_POSTS_INDEX,
     );
-    if (!result || result.hits.length === 0) return null;
+    if (!result) return null;
 
-    return { ids: result.hits.map((hit) => hit.id), total: result.estimatedTotalHits };
+    const ids = result.hits.map((hit) => hit.id);
+    // A page-mode answer always carries `totalHits`; should one ever lack it,
+    // count only what is provably there (never an estimate that overshoots).
+    const total =
+      result.totalHits ?? (ids.length > 0 ? (query.page - 1) * query.limit + ids.length : 0);
+    if (total === 0) return null;
+
+    return { ids, total };
   }
 
   /**

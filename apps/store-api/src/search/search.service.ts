@@ -3,7 +3,12 @@ import { PinoLogger } from 'nestjs-pino';
 import { ProductRepository, ProductIndexSource } from '../product/product.repository';
 import { CategoryRepository } from '../category/category.repository';
 import { PublicProductEntity } from '../product/entities';
-import { MeiliClient, ProductSearchDocument, IndexSettings } from './meili.client';
+import {
+  MeiliClient,
+  ProductSearchDocument,
+  IndexSettings,
+  SEARCH_MAX_TOTAL_HITS,
+} from './meili.client';
 import { UA_EN_SYNONYMS, extractSearchSynonymTerms } from './search-synonyms';
 import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import { SearchSuggestionEntity } from './entities';
@@ -73,6 +78,8 @@ export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
     disableOnAttributes: ['sku'],
   },
   synonyms: UA_EN_SYNONYMS,
+  // The deepest result the `/search` page list can reach (TASK-537).
+  pagination: { maxTotalHits: SEARCH_MAX_TOTAL_HITS },
 };
 
 /**
@@ -344,18 +351,37 @@ export class SearchService implements OnModuleInit {
     if (exact) return exact;
 
     if (this.meili.isConfigured()) {
+      // page/hitsPerPage, not limit/offset (TASK-537): the results page draws a
+      // clickable list of numbered pages from `meta.totalPages`, and only this
+      // mode makes the engine count exactly. The old `estimatedTotalHits` could
+      // overshoot into a page with no hits — which then fell through to Postgres
+      // and showed a different set, with a different total, under that URL.
       const result = await this.meili.search(query, {
-        limit: pageSize,
-        offset: (pageNum - 1) * pageSize,
+        page: pageNum,
+        hitsPerPage: pageSize,
         filter: this.buildMeiliFilter(filters),
         sort: MEILI_SORT[filters.sort ?? 'relevance'],
       });
-      // An EMPTY hit list falls through to Postgres, exactly like an error
-      // (TASK-376). Zero hits is a perfectly valid Meilisearch response, so the
-      // old `if (result)` trusted a stale or still-empty index and answered
-      // "nothing found" over a full catalogue — the state a freshly seeded
-      // server is in, since seeding writes straight to Postgres. The cost is one
-      // extra query in the rare case where there genuinely is no match.
+      // A page-mode answer always carries `totalHits`; should one ever lack it,
+      // count only what is provably there (never an estimate that overshoots).
+      const totalHits =
+        result?.totalHits ??
+        (result && result.hits.length > 0 ? (pageNum - 1) * pageSize + result.hits.length : 0);
+      // An EMPTY hit list with NO matches at all falls through to Postgres,
+      // exactly like an error (TASK-376). Zero hits is a perfectly valid
+      // Meilisearch response, so the old `if (result)` trusted a stale or
+      // still-empty index and answered "nothing found" over a full catalogue —
+      // the state a freshly seeded server is in, since seeding writes straight to
+      // Postgres. The cost is one extra query in the rare case where there
+      // genuinely is no match.
+      //
+      // Matches but no hits on THIS page is different: the engine has answered,
+      // the page is past the end (a stale bookmark, a hand-edited URL, or a page
+      // beyond `maxTotalHits`). Say so with the engine's own total instead of
+      // swapping in Postgres' result set under the same URL.
+      if (result && result.hits.length === 0 && totalHits > 0) {
+        return { data: [], meta: this.buildMeta(totalHits, pageNum, pageSize) };
+      }
       if (result && result.hits.length > 0) {
         const ids = result.hits.map((hit) => hit.id);
         const products = await this.productRepository.findByIdsForCards(ids);
@@ -370,7 +396,7 @@ export class SearchService implements OnModuleInit {
         // catalogue would be a lie told by a stale index, so let Postgres have
         // the query — the same rule the blog path applies.
         if (data.length > 0) {
-          return { data, meta: this.buildMeta(result.estimatedTotalHits, pageNum, pageSize) };
+          return { data, meta: this.buildMeta(totalHits, pageNum, pageSize) };
         }
       }
     }

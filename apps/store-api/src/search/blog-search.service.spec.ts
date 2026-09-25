@@ -1,7 +1,7 @@
 import { PublishStatus } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import { BlogRepository } from '../blog/blog.repository';
-import { MeiliClient, BLOG_POSTS_INDEX } from './meili.client';
+import { MeiliClient, BLOG_POSTS_INDEX, SEARCH_MAX_TOTAL_HITS } from './meili.client';
 import { BlogSearchService, BLOG_POSTS_INDEX_SETTINGS } from './blog-search.service';
 import { PRODUCTS_INDEX_SETTINGS } from './search.service';
 
@@ -196,22 +196,39 @@ describe('BlogSearchService', () => {
     it('returns ranked ids and the engine total, filtered by category slug', async () => {
       meili.search.mockResolvedValue({
         hits: [{ id: 'post-3' }, { id: 'post-1' }] as never,
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
 
       const result = await service.search({
         q: 'павербнак',
         categorySlug: 'guides',
-        offset: 9,
+        page: 2,
         limit: 9,
       });
 
+      // page/hitsPerPage (TASK-537): the only mode in which the engine counts
+      // exactly — the hub draws numbered pages from this total.
       expect(meili.search).toHaveBeenCalledWith(
         'павербнак',
-        { limit: 9, offset: 9, filter: ['categorySlug = "guides"'] },
+        { page: 2, hitsPerPage: 9, filter: ['categorySlug = "guides"'] },
         BLOG_POSTS_INDEX,
       );
       expect(result).toEqual({ ids: ['post-3', 'post-1'], total: 2 });
+    });
+
+    it('reports a page past the end as an empty answer, not as "could not tell you" (TASK-537)', async () => {
+      // The engine matched 12 articles and the URL asks for page 5 of 9-per-page.
+      // `null` would send the hub to Postgres — a different set and a different
+      // total under the same URL.
+      meili.search.mockResolvedValue({ hits: [], totalHits: 12 });
+
+      const result = await service.search({ q: 'iphone', page: 5, limit: 9 });
+
+      expect(result).toEqual({ ids: [], total: 12 });
+    });
+
+    it('caps the deepest reachable page at the index maxTotalHits (TASK-537)', () => {
+      expect(BLOG_POSTS_INDEX_SETTINGS.pagination).toEqual({ maxTotalHits: SEARCH_MAX_TOTAL_HITS });
     });
 
     // The value sits inside a QUOTED filter expression, so a quote in it
@@ -219,34 +236,34 @@ describe('BlogSearchService', () => {
     // lock, because `BlogSearchQuery` is a plain interface a future caller can
     // satisfy without going through that DTO.
     it('drops a category slug that could rewrite the filter expression', async () => {
-      meili.search.mockResolvedValue({ hits: [{ id: 'post-1' }] as never, estimatedTotalHits: 1 });
+      meili.search.mockResolvedValue({ hits: [{ id: 'post-1' }] as never, totalHits: 1 });
 
       await service.search({
         q: 'огляд',
         categorySlug: 'x" OR categorySlug != "zzz',
-        offset: 0,
+        page: 1,
         limit: 9,
       });
 
       expect(meili.search).toHaveBeenCalledWith(
         'огляд',
-        { limit: 9, offset: 0, filter: undefined },
+        { page: 1, hitsPerPage: 9, filter: undefined },
         BLOG_POSTS_INDEX,
       );
     });
 
     it('answers null for a blank query, an unconfigured engine, or zero hits', async () => {
-      expect(await service.search({ q: '   ', offset: 0, limit: 9 })).toBeNull();
+      expect(await service.search({ q: '   ', page: 1, limit: 9 })).toBeNull();
       expect(meili.search).not.toHaveBeenCalled();
 
       meili.isConfigured.mockReturnValue(false);
-      expect(await service.search({ q: 'iphone', offset: 0, limit: 9 })).toBeNull();
+      expect(await service.search({ q: 'iphone', page: 1, limit: 9 })).toBeNull();
 
       // Zero hits is "could not tell you", not "no such article": the index may
       // simply be empty on a freshly seeded server (TASK-376).
       meili.isConfigured.mockReturnValue(true);
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
-      expect(await service.search({ q: 'iphone', offset: 0, limit: 9 })).toBeNull();
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
+      expect(await service.search({ q: 'iphone', page: 1, limit: 9 })).toBeNull();
     });
   });
 

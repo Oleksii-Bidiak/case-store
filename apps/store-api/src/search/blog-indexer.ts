@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { BlogSearchService, type BlogSearchQuery } from './blog-search.service';
 
-/** Ranked post ids for one page of a blog query, plus the engine's own total. */
+/**
+ * Ranked post ids for one page of a blog query, plus the engine's EXACT total
+ * (TASK-537). `ids` is empty when the query matched but the page is past the end.
+ */
 export interface BlogSearchHits {
   ids: string[];
   total: number;

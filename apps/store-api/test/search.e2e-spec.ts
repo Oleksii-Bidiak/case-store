@@ -119,7 +119,7 @@ describe('Search (e2e)', () => {
     indexDocuments: jest.fn(async () => undefined),
     deleteDocument: jest.fn(async () => undefined),
     clearDocuments: jest.fn(async () => undefined),
-    search: jest.fn(async () => ({ hits: [], estimatedTotalHits: 0 })),
+    search: jest.fn(async () => ({ hits: [], totalHits: 0 })),
   };
 
   beforeAll(async () => {
@@ -160,7 +160,7 @@ describe('Search (e2e)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     meiliClientMock.isConfigured.mockReturnValue(true);
-    meiliClientMock.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+    meiliClientMock.search.mockResolvedValue({ hits: [], totalHits: 0 });
     prismaServiceMock.product.findMany.mockResolvedValue([]);
     prismaServiceMock.product.count.mockResolvedValue(0);
     prismaServiceMock.product.findFirst.mockResolvedValue(null);
@@ -172,7 +172,7 @@ describe('Search (e2e)', () => {
     it('hydrates ranked Meili hit ids into product cards', async () => {
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }],
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
 
@@ -187,6 +187,38 @@ describe('Search (e2e)', () => {
       // Public entity never leaks raw stock.
       expect(res.body.data[0]).not.toHaveProperty('stock');
       expect(res.body.meta).toMatchObject({ total: 1, page: 1, limit: 20 });
+    });
+
+    // TASK-537 — the results page draws numbered pages from meta.totalPages, so
+    // the engine is asked by page number (exact totalHits), never limit/offset
+    // (an estimate that overshot into empty pages).
+    it('pages by number and reports the engine exact total', async () => {
+      meiliClientMock.search.mockResolvedValue({ hits: [{ id: 'product-1' }], totalHits: 21 });
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'чохол', page: 2 })
+        .expect(200);
+
+      expect(meiliClientMock.search).toHaveBeenCalledWith(
+        'чохол',
+        expect.objectContaining({ page: 2, hitsPerPage: 20 }),
+      );
+      expect(res.body.meta).toEqual({ total: 21, page: 2, limit: 20, totalPages: 2 });
+    });
+
+    it('answers a page past the end from the engine instead of swapping in Postgres', async () => {
+      meiliClientMock.search.mockResolvedValue({ hits: [], totalHits: 21 });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'чохол', page: 9 })
+        .expect(200);
+
+      expect(res.body.data).toEqual([]);
+      expect(res.body.meta).toEqual({ total: 21, page: 9, limit: 20, totalPages: 2 });
+      expect(prismaServiceMock.product.count).not.toHaveBeenCalled();
     });
   });
 
@@ -230,7 +262,7 @@ describe('Search (e2e)', () => {
     it('accepts the catalogue filter params and narrows the engine query with them', async () => {
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }],
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
 
@@ -269,7 +301,7 @@ describe('Search (e2e)', () => {
     it('accepts the slug-shaped filter params and resolves them to ids', async () => {
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }],
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
 
@@ -405,7 +437,7 @@ describe('Search (e2e)', () => {
       // so a stale hit for a withdrawn category never reaches the dropdown (TASK-297).
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }],
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
 
@@ -432,7 +464,7 @@ describe('Search (e2e)', () => {
       // vanishes from the suggestions instead of linking to a dead PDP.
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }, { id: 'withdrawn-product' }],
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow({ id: 'product-1' })]);
 
