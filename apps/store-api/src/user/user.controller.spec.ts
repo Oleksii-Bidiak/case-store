@@ -68,6 +68,9 @@ describe('UserController — what each route costs (TASK-479)', () => {
 
     expect(doors).toEqual([
       'activateUser: customers:write',
+      // TASK-396: moving a customer's login to a new inbox hands the account to
+      // whoever reads it — owner-only, like deleting the customer.
+      'changeEmail: @OwnerOnly',
       'deactivateUser: customers:write',
       'findAll: customers:read',
       'findById: customers:read',

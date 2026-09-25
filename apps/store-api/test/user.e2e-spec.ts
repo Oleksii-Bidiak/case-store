@@ -74,6 +74,9 @@ describe('UserController (e2e)', () => {
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
+    // Hiding an author is three statements in one transaction since TASK-599;
+    // the callback gets this same mock as its client.
+    $transaction: jest.fn((fn: (tx: unknown) => unknown): unknown => fn(prismaServiceMock)),
     user: {
       findUnique: jest.fn(),
       create: jest.fn(),
@@ -295,6 +298,52 @@ describe('UserController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .send({ email: 'not-an-email' })
         .expect(400);
+    });
+
+    // TASK-799: a garbled phone is refused, not stored as an empty number.
+    it('should return 400 for a phone of dashes and never write it', async () => {
+      const token = generateAccessToken(testUser.id, testUser.role);
+      userRepositoryMock.findById.mockResolvedValue(testUser);
+
+      const response = await request(app.getHttpServer())
+        .put('/api/users/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ phone: '----------' })
+        .expect(400);
+
+      expect(JSON.stringify(response.body)).toContain('9 to 15 digits');
+      expect(userRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('should store a valid phone normalised to digits', async () => {
+      const token = generateAccessToken(testUser.id, testUser.role);
+      userRepositoryMock.findById.mockResolvedValue(testUser);
+      userRepositoryMock.update.mockResolvedValue({ ...testUser, phone: '380501112233' });
+
+      await request(app.getHttpServer())
+        .put('/api/users/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ phone: '050 111 2233' })
+        .expect(200);
+
+      expect(userRepositoryMock.update).toHaveBeenCalledWith(testUser.id, {
+        phone: '380501112233',
+      });
+    });
+
+    it('should remove the phone only on an explicit null', async () => {
+      const token = generateAccessToken(testUser.id, testUser.role);
+      userRepositoryMock.findById.mockResolvedValue(testUser);
+      userRepositoryMock.update.mockResolvedValue({ ...testUser, phone: null });
+
+      const response = await request(app.getHttpServer())
+        .put('/api/users/me')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ phone: null })
+        .expect(200);
+
+      expect(userRepositoryMock.update).toHaveBeenCalledWith(testUser.id, { phone: null });
+      expect(response.body.data.phone).toBeNull();
     });
   });
 
@@ -700,6 +749,12 @@ describe('UserController (e2e)', () => {
       expect(response.body).toHaveProperty('data');
       expect(response.body.data.isActive).toBe(false);
       expect(response.body.data).not.toHaveProperty('passwordHash');
+      // The ban hides what the account wrote, and says it was a BAN (TASK-599) —
+      // so the un-ban can lift exactly this and nothing a moderator did.
+      expect(prismaServiceMock.review.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'user-to-deactivate', hiddenAt: null },
+        data: { hiddenAt: expect.any(Date), hiddenReason: 'BAN' },
+      });
     });
 
     it('should return 404 when deactivating non-existent user', async () => {
@@ -765,6 +820,12 @@ describe('UserController (e2e)', () => {
       expect(response.body).toHaveProperty('data');
       expect(response.body.data.isActive).toBe(true);
       expect(response.body.data).not.toHaveProperty('passwordHash');
+      // TASK-599: the un-ban restores the BAN rows and only those. A review a
+      // moderator hid stays hidden — the where clause is the whole fix.
+      const restores = prismaServiceMock.review.updateMany.mock.calls.map(
+        (call: [{ where: Record<string, unknown> }]) => call[0].where,
+      );
+      expect(restores).toEqual([{ userId: 'user-to-activate', hiddenReason: 'BAN' }]);
     });
 
     it('should return 404 when activating non-existent user', async () => {
@@ -776,6 +837,47 @@ describe('UserController (e2e)', () => {
         .patch('/api/users/nonexistent-id/activate')
         .set('Authorization', `Bearer ${token}`)
         .expect(404);
+    });
+  });
+
+  // ─── DELETE /api/users/:id (owner) ──────────────────────────────────────────
+
+  describe('DELETE /api/users/:id', () => {
+    // TASK-603: deleting used to do LESS than a ban — the account was gone while
+    // its texts stayed on the storefront and its stars in every average.
+    it('withdraws the deleted customer’s reviews with reason DELETED', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      userRepositoryMock.findCustomerById.mockResolvedValue({ ...testUser, id: 'user-to-delete' });
+      userRepositoryMock.softDelete.mockResolvedValue({
+        ...testUser,
+        id: 'user-to-delete',
+        isActive: false,
+        deletedAt: new Date(),
+      });
+
+      await request(app.getHttpServer())
+        .delete('/api/users/user-to-delete')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(204);
+
+      const writes = prismaServiceMock.review.updateMany.mock.calls.map(
+        (call: [{ where: Record<string, unknown>; data: Record<string, unknown> }]) => call[0],
+      );
+      // Stars out of every average…
+      expect(writes).toContainEqual({
+        where: { userId: 'user-to-delete' },
+        data: { ratingVisible: false },
+      });
+      // …texts off the storefront, for a reason nothing can lift…
+      expect(writes).toContainEqual({
+        where: { userId: 'user-to-delete', hiddenAt: null },
+        data: { hiddenAt: expect.any(Date), hiddenReason: 'DELETED' },
+      });
+      // …including rows a ban or a moderator already hid.
+      expect(writes).toContainEqual({
+        where: { userId: 'user-to-delete', hiddenReason: { in: ['BAN', 'MODERATOR'] } },
+        data: { hiddenReason: 'DELETED' },
+      });
     });
   });
 

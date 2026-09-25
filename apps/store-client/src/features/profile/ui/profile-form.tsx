@@ -66,7 +66,10 @@ export function ProfileForm({ user }: ProfileFormProps) {
       data: {
         firstName: values.firstName || undefined,
         lastName: values.lastName || undefined,
-        phone: values.phone || undefined,
+        // An emptied field is a deliberate removal, sent as `null`: the API now
+        // refuses a garbled number with 400 instead of storing it as an empty
+        // one, so "clear" has to be said explicitly (TASK-799).
+        phone: values.phone?.trim() ? values.phone : null,
       },
     });
   };

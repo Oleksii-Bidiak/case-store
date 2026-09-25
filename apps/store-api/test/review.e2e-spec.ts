@@ -59,10 +59,13 @@ describe('ReviewController (e2e)', () => {
     isEmailVerified: jest.fn(),
     // TASK-598: hiding an account has to stop it writing NEW ratings too, not
     // merely withdraw the ones it already wrote.
-    isAuthorHidden: jest.fn().mockResolvedValue(false),
+    findAuthorHiddenReason: jest.fn().mockResolvedValue(null),
     // TASK-589: the one-click account-wide lever.
     hideAuthorReviews: jest.fn(),
     restoreAuthorReviews: jest.fn(),
+    // TASK-599: a moderator's restore asks whether the ACCOUNT still holds the rows.
+    findAccountHoldReason: jest.fn(),
+    relabelAuthorReviews: jest.fn(),
   };
 
   const authRepositoryMock = {
@@ -120,6 +123,7 @@ describe('ReviewController (e2e)', () => {
     ratingVisible: false,
     textStatus: 'PENDING',
     hiddenAt: null,
+    hiddenReason: null,
     createdIp: null,
     createdAt: now,
     updatedAt: now,
@@ -564,6 +568,92 @@ describe('ReviewController (e2e)', () => {
       expect(response.body.data[0]).toHaveProperty('userEmail', 'olena@example.com');
       expect(response.body.data[0]).toHaveProperty('productName', 'iPhone 15 Pro Case');
     });
+
+    // TASK-596: the withdrawn pile, and the two fields that say why a row's stars
+    // do not count.
+    it('lists withdrawn authors with when and why they were hidden', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({
+              hiddenAt: new Date('2026-09-20T10:00:00.000Z'),
+              hiddenReason: 'MODERATOR',
+            }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/reviews?visibility=hidden')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(reviewRepositoryMock.findForModeration.mock.calls[0][4]).toEqual({
+        visibility: 'hidden',
+      });
+      expect(response.body.data[0].hiddenAt).toBe('2026-09-20T10:00:00.000Z');
+      expect(response.body.data[0].hiddenReason).toBe('MODERATOR');
+    });
+
+    // TASK-601: the rating-abuse card's link — the whole record for one product
+    // or one address, star-only rows included.
+    it('opens a series by product and address with status=all', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({ comment: null, createdIp: '203.0.113.42' }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 1,
+      });
+
+      const response = await request(app.getHttpServer())
+        .get(
+          '/api/admin/reviews?status=all&productId=0b7c8f4e-2d1a-4c3b-9e5f-6a7b8c9d0e1f' +
+            '&createdIp=203.0.113.42',
+        )
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      const [status, , , , filters] = reviewRepositoryMock.findForModeration.mock.calls[0];
+      expect(status).toBe('all');
+      expect(filters).toMatchObject({
+        productId: '0b7c8f4e-2d1a-4c3b-9e5f-6a7b8c9d0e1f',
+        createdIp: '203.0.113.42',
+      });
+      expect(response.body.data[0].createdIp).toBe('203.0.113.42');
+    });
+
+    it('rejects a malformed productId or createdIp with 400', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      for (const query of ['productId=not-a-uuid', 'createdIp=999.1.1.1']) {
+        await request(app.getHttpServer())
+          .get(`/api/admin/reviews?${query}`)
+          .set('Authorization', `Bearer ${token}`)
+          .expect(400);
+      }
+
+      expect(reviewRepositoryMock.findForModeration).not.toHaveBeenCalled();
+    });
+
+    it('rejects an unknown visibility with 400', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .get('/api/admin/reviews?visibility=banned')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(reviewRepositoryMock.findForModeration).not.toHaveBeenCalled();
+    });
   });
 
   // ─── PATCH /api/admin/reviews/:id/approve ─────────────────────────────────────
@@ -782,7 +872,7 @@ describe('ReviewController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1');
+      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1', 'MODERATOR');
       // The number the confirmation quotes is what the database wrote, not what
       // the operator assumed — the same rule as bulk moderation.
       expect(response.body.data.updatedCount).toBe(12);
@@ -815,7 +905,7 @@ describe('ReviewController (e2e)', () => {
         .set('Authorization', `Bearer ${token}`)
         .expect(200);
 
-      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1');
+      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1', 'MODERATOR');
     });
   });
 
@@ -836,6 +926,8 @@ describe('ReviewController (e2e)', () => {
     it('gives the account its reviews back, and its ratings only if the address is proven', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
+      // A live account: nothing but the moderator's own verdict holds the rows.
+      reviewRepositoryMock.findAccountHoldReason.mockResolvedValue(null);
       reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(5);
 
       const response = await request(app.getHttpServer())
@@ -845,7 +937,12 @@ describe('ReviewController (e2e)', () => {
 
       // Lifting the moderator's verdict says nothing about the email gate; an
       // un-hide that forced `ratingVisible: true` would be a way around it.
-      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith('forgiven-1', false);
+      // And only the rows a MODERATOR hid (TASK-599) — a ban's rows wait for the un-ban.
+      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith(
+        'forgiven-1',
+        'MODERATOR',
+        false,
+      );
       expect(response.body.data.updatedCount).toBe(5);
     });
   });

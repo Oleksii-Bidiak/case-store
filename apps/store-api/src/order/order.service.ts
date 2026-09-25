@@ -31,15 +31,23 @@ import {
   allowedTransitions,
   canTransition,
   canTransitionPayment,
+  canCorrectPayment,
 } from './order-state-machine';
 import {
   invalidPaymentTransitionError,
+  paymentCorrectionProviderRefundError,
   invalidTransitionError,
   refundRequiresClosedOrderError,
   reviveRefundedPaymentError,
   staleOrderError,
 } from './order.errors';
-import { AddonApplicabilityResolver, toTwoDecimals } from '../addon-service';
+import {
+  AddonApplicabilityResolver,
+  centsToString,
+  sumLineCents,
+  toCents,
+  toTwoDecimals,
+} from '../addon-service';
 // Shared with the newsletter export: one formula-injection guard, so a fix
 // cannot land in one export and miss the other (see the helper's docblock).
 import { escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
@@ -179,6 +187,23 @@ function hashGuestToken(rawToken: string): string {
  */
 function shouldAutoRestock(currentStatus: OrderStatus, targetStatus: OrderStatus): boolean {
   return targetStatus === OrderStatus.CANCELLED && PRE_SHIPMENT_STATUSES.has(currentStatus);
+}
+
+/**
+ * «No money has arrived yet» on an order paid online (TASK-788) — the same test
+ * as the admin panel's «Оплату не підтверджено — відправляти?» dialog
+ * (`order-status-select.tsx`, TASK-468). PENDING/FAILED only: PARTIALLY_REFUNDED
+ * and REFUNDED are reachable solely FROM PAID, so there the money did arrive.
+ */
+function isUnconfirmedOnlinePayment(order: {
+  // Optional on the row type (older fixtures); an absent method is not ONLINE.
+  paymentMethod?: PaymentMethod;
+  paymentStatus: PaymentStatus;
+}): boolean {
+  return (
+    order.paymentMethod === PaymentMethod.ONLINE &&
+    (order.paymentStatus === PaymentStatus.PENDING || order.paymentStatus === PaymentStatus.FAILED)
+  );
 }
 
 /**
@@ -860,12 +885,21 @@ export class OrderService {
    * `expectedUpdatedAt` is optional so system callers with no stale UI to guard
    * against — the payment callback, the reconcile worker — are not forced to
    * invent one.
+   *
+   * TASK-788: a move to SHIPPED of an ONLINE-paid order whose payment is still
+   * PENDING/FAILED writes its STATUS history row with `note = SHIPPED_UNPAID`.
+   * The note is decided from the order's own payment state, never from the
+   * client: a request that skipped the admin's confirmation dialog must not be
+   * able to ship unpaid without a trace, and a confirmation sent for an order
+   * that has meanwhile been paid must not write a false one.
+   * `confirmUnpaidShipment` is the operator's acknowledgment from that dialog;
+   * it is logged with the event, next to what the server actually found.
    */
   async updateStatus(
     orderId: string,
     status: OrderStatus,
     changedBy: string | null,
-    options: { expectedUpdatedAt?: Date } = {},
+    options: { expectedUpdatedAt?: Date; confirmUnpaidShipment?: boolean } = {},
   ): Promise<OrderEntity> {
     const existing = await this.orderRepository.findById(orderId);
 
@@ -910,7 +944,10 @@ export class OrderService {
 
     // TASK-228: reviving an order whose cancellation already credited its stock
     // back (restockedAt set) into a live status must re-reserve that stock, or
-    // a later re-cancel would credit it a second time. Moving between the
+    // a later re-cancel would credit it a second time. TASK-627: the same holds
+    // for a LIVE order whose hold ORDER_RESERVATION_EXPIRY=release gave back —
+    // the operator moving it on (PENDING → CONFIRMED, …) re-takes the units
+    // first, or gets the 409 that says they are gone. Moving between the
     // terminal statuses (CANCELLED ↔ REFUNDED) keeps the flag and touches
     // nothing. The repository re-reserves with the same conditional-decrement
     // guard as order creation, so an impossible revive gets a 409 and the
@@ -932,7 +969,7 @@ export class OrderService {
       );
       this.logger.info(
         { event: 'order.revived_reserved', orderId, from: existing.status, to: status },
-        'Cancelled order revived; stock re-reserved',
+        'Released stock re-reserved as the order moved to a live status',
       );
       return OrderEntity.fromPrisma(revived);
     }
@@ -941,10 +978,11 @@ export class OrderService {
     // evict product caches in one transaction (reuses the customer-cancel path).
     // Post-shipment cancels and refunds are deliberately NOT auto-restocked —
     // the physical return must be received and re-stocked by hand (TASK-124).
-    // The restockedAt guard is belt-and-braces: a live pre-shipment order never
-    // has it set (revive clears it), so it only blocks double credits if a
-    // status was edited outside the service.
-    if (shouldAutoRestock(existing.status, status) && existing.restockedAt === null) {
+    // TASK-627: a live order may now carry `restockedAt` (ORDER_RESERVATION_EXPIRY
+    // =release gave its hold back). It still goes through cancelAndRestock, which
+    // owns the "never credit twice" rule — it credits no stock for a released
+    // hold — and gives the promo slot back as for any other cancel.
+    if (shouldAutoRestock(existing.status, status)) {
       const restocked = await this.orderRepository.cancelAndRestock(orderId, changedBy, {
         expectedUpdatedAt: options.expectedUpdatedAt,
       });
@@ -969,6 +1007,7 @@ export class OrderService {
     // reserved membership unchanged and needs no eviction.
     const crossesPreShipmentBoundary =
       PRE_SHIPMENT_STATUSES.has(existing.status) !== PRE_SHIPMENT_STATUSES.has(status);
+    const shippedUnpaid = status === OrderStatus.SHIPPED && isUnconfirmedOnlinePayment(existing);
     const order = await this.orderRepository.updateStatus(
       orderId,
       existing.status,
@@ -978,8 +1017,24 @@ export class OrderService {
       {
         evictProductStockCaches: crossesPreShipmentBoundary,
         expectedUpdatedAt: options.expectedUpdatedAt,
+        ...(shippedUnpaid ? { note: OrderHistoryNote.SHIPPED_UNPAID } : {}),
       },
     );
+
+    if (shippedUnpaid) {
+      this.logger.info(
+        {
+          event: 'order.shipped_unpaid',
+          orderId,
+          paymentStatus: existing.paymentStatus,
+          // Whether the operator went through the confirmation dialog — the note
+          // is written either way, from the payment state above.
+          confirmedByOperator: options.confirmUnpaidShipment === true,
+          changedBy,
+        },
+        'Order shipped without a confirmed online payment',
+      );
+    }
 
     // TASK-335: the parcel has left the warehouse — tell the customer, with the
     // waybill if the operator has already entered one. If they enter it later,
@@ -1001,12 +1056,25 @@ export class OrderService {
    * emails the customer — and merging them would make "fix a typo in the ТТН"
    * capable of moving the order.
    *
+   * The delivery address (TASK-341) is one more field of the same edit
+   * (TASK-786): one call, one version check, one conditional write in the
+   * repository — so an address + waybill save either lands whole or not at all,
+   * and the waybill half can no longer slip past the version check. The
+   * address keeps its own rule: pre-shipment only. Once the parcel is with the
+   * courier the waybill's address is the one that counts, and editing the order
+   * would only make the record disagree with reality.
+   *
    * @throws NotFoundException when the order does not exist.
-   * @throws ConflictException `ORDER_STALE` on a concurrent edit.
+   * @throws ConflictException `ORDER_STALE` on a concurrent edit, or when the
+   *   address is edited on an order that has already shipped.
    */
   async adminUpdateDetails(
     orderId: string,
-    fields: { trackingNumber?: string | null; internalNotes?: string | null },
+    fields: {
+      trackingNumber?: string | null;
+      internalNotes?: string | null;
+      shippingAddress?: AddressDto;
+    },
     options: { expectedUpdatedAt?: Date } = {},
   ): Promise<OrderEntity> {
     const existing = await this.orderRepository.findById(orderId);
@@ -1016,6 +1084,12 @@ export class OrderService {
     }
 
     this.assertFresh(existing, options.expectedUpdatedAt);
+
+    if (fields.shippingAddress !== undefined && !PRE_SHIPMENT_STATUSES.has(existing.status)) {
+      throw new ConflictException(
+        'The delivery address can only be changed before the order ships',
+      );
+    }
 
     // A waybill appearing on an order that ALREADY shipped is the second half of
     // the common workflow: the operator marks the parcel gone, then the courier
@@ -1255,49 +1329,6 @@ export class OrderService {
   }
 
   /**
-   * Admin — correct an order's delivery address before it ships (TASK-341).
-   *
-   * Pre-shipment only. Once the parcel is with the courier, the address on the
-   * waybill is the one that counts; editing the order afterwards would not move
-   * the parcel, it would only make the record disagree with reality — and the
-   * record is what support reads when the customer calls.
-   *
-   * @throws ConflictException when the order has already shipped.
-   */
-  async adminUpdateShippingAddress(
-    orderId: string,
-    shippingAddress: AddressDto,
-    options: { expectedUpdatedAt?: Date } = {},
-  ): Promise<OrderEntity> {
-    const existing = await this.orderRepository.findById(orderId);
-
-    if (!existing) {
-      throw new NotFoundException('Order not found');
-    }
-
-    this.assertFresh(existing, options.expectedUpdatedAt);
-
-    if (!PRE_SHIPMENT_STATUSES.has(existing.status)) {
-      throw new ConflictException(
-        'The delivery address can only be changed before the order ships',
-      );
-    }
-
-    const order = await this.orderRepository.updateShippingAddress(
-      orderId,
-      shippingAddress,
-      options,
-    );
-
-    this.logger.info(
-      { event: 'order.address_updated', orderId },
-      'Delivery address corrected before shipment',
-    );
-
-    return OrderEntity.fromPrisma(order, { includeInternal: true });
-  }
-
-  /**
    * Tell the customer their parcel is on its way (TASK-335).
    *
    * Enqueued through the existing outbox rather than sent inline, so a flaky SMTP
@@ -1350,6 +1381,86 @@ export class OrderService {
         'Failed to enqueue the shipment notice; the order status change stands',
       );
     }
+  }
+
+  /**
+   * «Оплату не отримано, замовлення скасовано, товар повернуто в продаж»
+   * (TASK-352 (b), decision B-11 №2).
+   *
+   * Called by the payment reconcile worker AFTER its `updateStatus(CANCELLED)`
+   * resolved — so the letter follows a cancellation that really happened, and a
+   * cancel that threw (lost race, already restocked) sends nothing. One letter,
+   * no reminder before the deadline.
+   *
+   * Never throws: the cancellation is committed and the stock is back on sale;
+   * a failed enqueue is logged, not retried by failing the worker's batch.
+   */
+  async notifyPaymentExpired(order: OrderEntity): Promise<void> {
+    try {
+      const recipient = await this.orderRepository.findRecipient(order.id);
+
+      if (!recipient) {
+        this.logger.warn(
+          { event: 'order.payment_expired_notice_no_recipient', orderId: order.id },
+          'Order cancelled for non-payment but no email address is on file — no notice sent',
+        );
+        return;
+      }
+
+      const storeUrl = this.configService.get<string>('STORE_CLIENT_URL')?.replace(/\/+$/, '');
+
+      await this.mailOutbox.enqueueOrderPaymentExpired({
+        to: recipient.email,
+        ...(recipient.name ? { customerName: recipient.name } : {}),
+        order: {
+          id: order.id,
+          items: order.items.map((item) => ({
+            name: item.productName,
+            quantity: item.quantity,
+            ...(storeUrl ? { url: `${storeUrl}/products/${item.productSlug}` } : {}),
+          })),
+        },
+        ...(storeUrl ? { reorderUrl: `${storeUrl}/catalog` } : {}),
+      });
+
+      this.logger.info(
+        { event: 'order.payment_expired_notice_enqueued', orderId: order.id },
+        'Payment-expired notice enqueued',
+      );
+    } catch (err) {
+      this.logger.error(
+        { err, event: 'order.payment_expired_notice_failed', orderId: order.id },
+        'Failed to enqueue the payment-expired notice; the cancellation stands',
+      );
+    }
+  }
+
+  /**
+   * ORDER_RESERVATION_EXPIRY=release (TASK-627): give an overdue unpaid order's
+   * stock back and leave the order itself alive.
+   *
+   * Called by the payment reconcile worker instead of `updateStatus(CANCELLED)`.
+   * The status is not touched, the payment attempts stay open and no letter is
+   * sent; the order carries `restockedAt` from here on, which is what puts it in
+   * «Позиція недоступна». A later payment re-takes the stock (applyPaymentEvent)
+   * and so does an operator moving it on (the revive path of updateStatus).
+   *
+   * @param deadline the moment the worker judged the reservation overdue at —
+   *   the write only lands on an order whose deadline is still at or before it.
+   * @returns `false` when the order was paid or released between the worker's
+   *   read and this write — nothing to do, not an error.
+   */
+  async releaseExpiredReservation(orderId: string, deadline: Date): Promise<boolean> {
+    const released = await this.orderRepository.releaseReservation(orderId, deadline);
+
+    if (released) {
+      this.logger.info(
+        { event: 'order.reservation_released', orderId },
+        'Unpaid order kept open; its reserved stock was returned to sale',
+      );
+    }
+
+    return released;
   }
 
   /**
@@ -1581,6 +1692,81 @@ export class OrderService {
   }
 
   /**
+   * Admin — correct a mistaken REFUNDED mark (TASK-620, decision B-11 №7).
+   *
+   * REFUNDED is terminal for facts ({@link PAYMENT_TRANSITIONS} rule 4) and stays
+   * so: this is a separate door for an operator's typo, with its own rule
+   * ({@link canCorrectPayment}), its own key (`payments:correct`, checked by the
+   * controller) and a mandatory reason (written to the action log by the audit
+   * interceptor together with the request body).
+   *
+   * Only a mark an OPERATOR set may be lifted. The provider's `reversed`
+   * callback writes REFUNDED with `changedBy = null`: that is LiqPay reporting
+   * where the money is, and a correction would make the ledger lie. No mark on
+   * record at all is refused the same way — nothing proves an operator set it.
+   *
+   * The write is conditional on REFUNDED still holding (the same
+   * `expectedFrom` guard every admin payment write uses), so a concurrent change
+   * turns into a 409 rather than a silent overwrite.
+   *
+   * @throws NotFoundException when the order does not exist.
+   * @throws ConflictException `ORDER_PAYMENT_TRANSITION_INVALID` when the payment
+   *   is not REFUNDED or the target is not a legal correction;
+   *   `ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND` when no operator set the mark.
+   */
+  async adminCorrectRefundedPayment(
+    orderId: string,
+    paymentStatus: PaymentStatus,
+    reason: string,
+    changedBy: string,
+  ): Promise<OrderEntity> {
+    const existing = await this.orderRepository.findById(orderId);
+
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (!canCorrectPayment(existing.paymentStatus, paymentStatus)) {
+      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
+    }
+
+    const mark = await this.orderRepository.findLastPaymentMark(orderId, existing.paymentStatus);
+    if (!mark || mark.changedBy === null) {
+      this.logger.warn(
+        { event: 'order.payment_correction_refused_provider_mark', orderId, changedBy },
+        'Refused to correct a REFUNDED mark that no operator set',
+      );
+      throw paymentCorrectionProviderRefundError();
+    }
+
+    const order = await this.orderRepository.updatePaymentStatus(
+      orderId,
+      paymentStatus,
+      changedBy,
+      { expectedFrom: existing.paymentStatus },
+    );
+
+    if (!order) {
+      throw invalidPaymentTransitionError(existing.paymentStatus, paymentStatus);
+    }
+
+    this.logger.info(
+      {
+        event: 'order.payment_mark_corrected',
+        orderId,
+        from: existing.paymentStatus,
+        to: paymentStatus,
+        markSetBy: mark.changedBy,
+        changedBy,
+        reason,
+      },
+      'A mistaken REFUNDED mark was corrected',
+    );
+
+    return OrderEntity.fromPrisma(order);
+  }
+
+  /**
    * Apply a translated payment-provider event to an order (TASK-330).
    *
    * ── SEAM DECLARED AHEAD OF THE IMPLEMENTATION (plan 167, Фаза 0) ─────────────
@@ -1774,7 +1960,11 @@ export class OrderService {
    *   deadline, and moves a still-PENDING order to CONFIRMED. Already PAID → null.
    *   On a CANCELLED order (TASK-619) the money is recorded but the order stays
    *   CANCELLED with no stock moved, and the history row is flagged
-   *   `PAID_AFTER_CANCEL` for the operator to revive or refund.
+   *   `PAID_AFTER_CANCEL` for the operator to revive or refund. On a LIVE order
+   *   whose hold ORDER_RESERVATION_EXPIRY=release gave back (TASK-627) the plan
+   *   carries `stockHold: 'released'` and the stock is re-taken in the same
+   *   write; if it is gone, the money is still recorded and the order stays in
+   *   «Позиція недоступна».
    * - **FAILED** records the failed attempt and marks the order's payment FAILED,
    *   but only while it is still unpaid: a late failure callback for a superseded
    *   attempt must never un-pay a paid order. The order itself is NOT cancelled —
@@ -1878,6 +2068,10 @@ export class OrderService {
           paymentStatusChange: { from: order.paymentStatus, to: PaymentStatus.PAID },
           paidAt: order.paidAt ?? now,
           clearReservation: true,
+          // TASK-627: a live order whose hold ORDER_RESERVATION_EXPIRY=release gave
+          // back is re-reserved by this payment; one still held must still be held
+          // at write time. See PaymentApplyPlan.stockHold.
+          stockHold: order.restockedAt != null ? 'released' : 'held',
           ...(canTransition(order.status, OrderStatus.CONFIRMED)
             ? { statusChange: { from: order.status, to: OrderStatus.CONFIRMED } }
             : {}),
@@ -2119,28 +2313,13 @@ export class OrderService {
 }
 
 /**
- * Parse a decimal money string into integer cents.
- *
- * Used to compare a provider's reported amount against the frozen charge. "100.0"
- * and "100.00" are the same money; a string comparison disagrees, and a float
- * comparison disagrees intermittently, which is worse.
- */
-function toCents(value: string): number {
-  return Math.round(parseFloat(value) * 100);
-}
-
-/**
- * Compute the cart subtotal as a "XX.YY" decimal string using integer-cents
- * arithmetic (mirrors CartEntity/order line-total math). Feeds the authoritative
- * discount recomputation in {@link OrderService.createOrder}.
+ * Compute the cart subtotal as a "XX.YY" decimal string with the one shared
+ * line-total rule (`money.util`, TASK-807) — the same one CartEntity uses for
+ * the subtotal the discount preview shows. Feeds the authoritative discount
+ * recomputation in {@link OrderService.createOrder}.
  */
 function computeSubtotalString(items: CartWithItems['items']): string {
-  const subtotalCents = items.reduce(
-    (cents, item) =>
-      cents + Math.round(parseFloat(item.product.price.toString()) * 100) * item.quantity,
-    0,
+  return centsToString(
+    sumLineCents(items.map((item) => ({ price: item.product.price, quantity: item.quantity }))),
   );
-  const dollars = Math.floor(subtotalCents / 100);
-  const remainder = subtotalCents % 100;
-  return `${dollars}.${remainder.toString().padStart(2, '0')}`;
 }

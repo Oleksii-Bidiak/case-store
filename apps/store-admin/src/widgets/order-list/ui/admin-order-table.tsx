@@ -6,6 +6,7 @@ import {
   Clock3,
   Download,
   Loader2,
+  BadgeAlert,
   PackageX,
   Timer,
   TimerOff,
@@ -32,6 +33,8 @@ import {
   adminOrderControllerExport,
   OrderEntityPaymentMethod,
 } from "@/shared/api";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import {
@@ -151,6 +154,8 @@ const CUSTOM_TAB = "__custom__";
  */
 export function AdminOrderTable() {
   const searchParams = useSearchParams();
+  const { can } = useAuth();
+  const canCreateOrders = can(PERM.ordersWrite);
 
   const statusParam = searchParams.get("status") ?? "";
   // TASK-336: free-text search over order number / email / phone — what an
@@ -176,6 +181,8 @@ export function AdminOrderTable() {
   const reservationExpired = searchParams.get("reservationExpired") === "true";
   const hasUnavailableItems =
     searchParams.get("hasUnavailableItems") === "true";
+  // TASK-352 (c): the «Оплачено після скасування» tile's deep link.
+  const paidAfterCancel = searchParams.get("paidAfterCancel") === "true";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
@@ -223,6 +230,7 @@ export function AdminOrderTable() {
         awaitingPayment: awaitingPayment || undefined,
         reservationExpired: reservationExpired || undefined,
         hasUnavailableItems: hasUnavailableItems || undefined,
+        paidAfterCancel: paidAfterCancel || undefined,
         sortBy,
         sortOrder,
       },
@@ -267,6 +275,7 @@ export function AdminOrderTable() {
         awaitingPayment: awaitingPayment || undefined,
         reservationExpired: reservationExpired || undefined,
         hasUnavailableItems: hasUnavailableItems || undefined,
+        paidAfterCancel: paidAfterCancel || undefined,
       });
       // Rows = lines minus the header, which is only sound because the SERVER
       // now guarantees one order occupies one physical line: `toCsvRow` runs
@@ -386,6 +395,13 @@ export function AdminOrderTable() {
       aria: dict.orders.unavailableItemsChipAria,
       Icon: PackageX,
     },
+    {
+      param: "paidAfterCancel",
+      active: paidAfterCancel,
+      label: dict.orders.paidAfterCancelChip,
+      aria: dict.orders.paidAfterCancelChipAria,
+      Icon: BadgeAlert,
+    },
   ];
 
   // The active preset tab is the one whose value exactly matches the current
@@ -496,10 +512,14 @@ export function AdminOrderTable() {
                 )}
                 {dict.orders.exportCsv}
               </Button>
-              {/* TASK-341: a phone order starts here. */}
-              <Button asChild>
-                <Link href="/orders/new">{dict.orders.createCta}</Link>
-              </Button>
+              {/* TASK-341: a phone order starts here. TASK-715: only for a
+                  session that may create one — `POST /admin/orders` answers 403
+                  to anyone else, after the whole form has been filled in. */}
+              {canCreateOrders ? (
+                <Button asChild>
+                  <Link href="/orders/new">{dict.orders.createCta}</Link>
+                </Button>
+              ) : null}
             </div>
           }
         />

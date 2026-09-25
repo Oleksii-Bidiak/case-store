@@ -141,6 +141,17 @@ function keyboardMoveUp(id: string) {
 /* ──────────────────────────────── the suite ────────────────────────────── */
 
 describe("AdminCarouselTable — rendering", () => {
+  // TASK-720: the list said «Окремий рейл» where the form says «Окремий рейл
+  // нижче» — the section headings must use the form's words for the same place.
+  it("names each placement section exactly as the carousel form does", () => {
+    expect(dict.carousels.placementLabels).toEqual(
+      dict.carouselForm.placementOptions,
+    );
+    for (const label of Object.values(dict.carouselForm.placementOptions)) {
+      expect(dict.carouselForm.placementHint).toContain(`«${label}»`);
+    }
+  });
+
   it("renders carousel rows with source and status badges", async () => {
     mockReorder();
     await renderGrids();

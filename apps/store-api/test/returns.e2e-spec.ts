@@ -9,6 +9,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { RETURN_SORT_FIELDS } from '../src/order/returns/dto';
+import { ReturnService } from '../src/order/returns/return.service';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
@@ -83,6 +84,8 @@ describe('Admin returns queue (e2e)', () => {
     $queryRaw: jest.fn(),
     // The order-scoped return routes read the order first (review of plan 180).
     order: { findFirst: jest.fn() },
+    // TASK-628: the audit row written behind an admin create.
+    auditLog: { create: jest.fn() },
     // The list path uses the ARRAY form of $transaction; awaiting the operations
     // it was handed is what the real client does with that form.
     $transaction: jest.fn(),
@@ -489,6 +492,41 @@ describe('Admin returns queue (e2e)', () => {
       await patch('499.00').expect(200);
 
       expect(prismaServiceMock.return.update).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── Audit key of an operator-opened return (TASK-628) ──────────────────────
+  //
+  // The path names the ORDER; the row is about the RETURN. It used to be keyed
+  // by the order id, so the creation of a return and its resolution
+  // (`/admin/returns/:returnId`) were filed under two different ids.
+
+  describe('POST /api/admin/orders/:orderId/returns — audit row', () => {
+    const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
+    const returnId = '550e8400-e29b-41d4-a716-446655440abc';
+
+    it('records entityType return with the id of the RETURN that was opened', async () => {
+      const created = jest
+        .spyOn(app.get(ReturnService), 'adminCreateReturn')
+        .mockResolvedValue({ id: returnId, orderId } as never);
+
+      await request(app.getHttpServer())
+        .post(`/api/admin/orders/${orderId}/returns`)
+        .set('Authorization', `Bearer ${generateAccessToken(testAdmin.id, 'ADMIN')}`)
+        .send({ items: [{ orderItemId: '550e8400-e29b-41d4-a716-446655440001', quantity: 1 }] })
+        .expect(201);
+
+      // The interceptor writes the row after the response (fire-and-forget).
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          action: 'return.create',
+          entityType: 'return',
+          entityId: returnId,
+        }),
+      });
+      created.mockRestore();
     });
   });
 });

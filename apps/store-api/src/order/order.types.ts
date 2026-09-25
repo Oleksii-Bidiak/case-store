@@ -26,6 +26,8 @@ export interface OrderStatusHistoryRow {
   fromPaymentStatus: PaymentStatus | null;
   toPaymentStatus: PaymentStatus | null;
   changedBy: string | null;
+  /** TASK-619 / TASK-788: a flag the operator lists query; null on an ordinary row. */
+  note: OrderHistoryNote | null;
   changedAt: Date;
 }
 
@@ -324,6 +326,12 @@ export interface PaymentWithOrderRow {
     paymentStatus: PaymentStatus;
     paidAt: Date | null;
     reservationExpiresAt: Date | null;
+    /**
+     * Set when the order's stock hold was given back (TASK-627: on a LIVE order
+     * this is what ORDER_RESERVATION_EXPIRY=release leaves) — a success must
+     * then re-take the stock rather than assume it is held.
+     */
+    restockedAt: Date | null;
   };
 }
 
@@ -405,6 +413,20 @@ export interface PaymentApplyPlan {
    * worker must never see it again.
    */
   clearReservation?: boolean;
+  /**
+   * The order's stock hold as the plan read it (TASK-627) — set on a success
+   * that makes a LIVE order paid, omitted everywhere else.
+   *
+   * - `held` — `restockedAt IS NULL` joins the conditional write, so a release
+   *   (ORDER_RESERVATION_EXPIRY=release) that committed after the read is not
+   *   paid over as if the stock were still held: zero rows, rollback, and the
+   *   retry is re-planned as `released`.
+   * - `released` — `restockedAt IS NOT NULL` joins it instead, and the lines are
+   *   re-reserved in the same transaction with the oversell guard. If any line is
+   *   short, nothing is taken and `restockedAt` stays: the money is recorded, the
+   *   order shows in «Позиція недоступна», and the operator decides.
+   */
+  stockHold?: 'held' | 'released';
   /**
    * Order status move, already validated against the state machine by the
    * service. Absent when the operator has moved the order past the point where

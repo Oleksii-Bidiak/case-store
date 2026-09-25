@@ -24,6 +24,16 @@ import {
   buildOrderShippedEmail,
   type OrderShippedMailPayload,
 } from './templates/order-shipped.template';
+import {
+  buildOrderPaymentExpiredEmail,
+  type OrderPaymentExpiredMailPayload,
+} from './templates/order-payment-expired.template';
+import {
+  buildEmailChangeConfirmEmail,
+  buildEmailChangeNoticeEmail,
+  type EmailChangeConfirmMailPayload,
+  type EmailChangeNoticeMailPayload,
+} from './templates/email-change.template';
 
 /** Parameters accepted by {@link MailService.sendOrderConfirmation}. */
 export interface SendOrderConfirmationParams {
@@ -197,6 +207,48 @@ export class MailService {
   }
 
   /**
+   * Send the "confirm your new address" letter to the NEW address (TASK-396).
+   * Same contract as the other payload senders.
+   */
+  async sendEmailChangeConfirmPayload(payload: EmailChangeConfirmMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping address-change confirm to ${payload.to}`);
+      return;
+    }
+
+    const template = buildEmailChangeConfirmEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Send the "someone asked to change your login" warning, with its revert link,
+   * to the OLD address (TASK-396). Same contract as the other payload senders.
+   */
+  async sendEmailChangeNoticePayload(payload: EmailChangeNoticeMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping address-change notice to ${payload.to}`);
+      return;
+    }
+
+    const template = buildEmailChangeNoticeEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
    * Render and send the "your order has shipped" notice from the JSON-safe payload
    * stored in a `MailOutbox` row (TASK-335). Same contract as the other payload
    * senders: a logged no-op when mail is disabled, throwing on transport failure
@@ -209,6 +261,28 @@ export class MailService {
     }
 
     const template = buildOrderShippedEmail(payload);
+
+    await this.getTransporter().sendMail({
+      from: this.from,
+      to: payload.to,
+      subject: template.subject,
+      html: template.html,
+      text: template.text,
+    });
+  }
+
+  /**
+   * Render and send «оплату не отримано» from its outbox payload (TASK-352 (b)).
+   * Same contract as the other payload senders: a logged no-op when mail is
+   * disabled, throwing on transport failure so the outbox worker retries.
+   */
+  async sendOrderPaymentExpiredPayload(payload: OrderPaymentExpiredMailPayload): Promise<void> {
+    if (!this.enabled) {
+      this.logger.info(`Mail disabled — skipping payment-expired notice to ${payload.to}`);
+      return;
+    }
+
+    const template = buildOrderPaymentExpiredEmail(payload);
 
     await this.getTransporter().sendMail({
       from: this.from,

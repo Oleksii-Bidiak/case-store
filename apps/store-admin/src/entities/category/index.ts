@@ -13,6 +13,7 @@ export {
   useAdminCategoryControllerReorder,
   useAdminCategoryControllerSetStatusMany,
   useCategoryControllerGetAdminTree,
+  useCategoryControllerGetCategoryTree,
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
   getCategoryControllerGetAdminTreeQueryKey,
@@ -23,6 +24,8 @@ export {
   flattenAdminCategoryTree,
   type CategoryTreeItem,
 } from "./lib/flatten-admin-tree";
+
+export { categoryNamesById } from "./lib/category-names";
 
 export type {
   CategoryEntity,

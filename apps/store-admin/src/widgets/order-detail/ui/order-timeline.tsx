@@ -3,6 +3,7 @@
 import {
   historyActorLabel,
   historyChangeLabel,
+  historyNoteLabel,
   useAdminOrderControllerGetHistory,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
@@ -49,20 +50,27 @@ export function OrderTimeline({ orderId, customerUserId }: OrderTimelineProps) {
 
   return (
     <ol className="flex flex-col gap-3">
-      {entries.map((entry) => (
-        <li
-          key={entry.id}
-          className="flex flex-col gap-1 rounded-md border border-border p-3"
-        >
-          <span className="text-sm font-medium text-foreground">
-            {historyChangeLabel(entry)}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {historyActorLabel(entry.changedBy, customerUserId)} ·{" "}
-            {formatDateTime(entry.changedAt)}
-          </span>
-        </li>
-      ))}
+      {entries.map((entry) => {
+        const note = historyNoteLabel(entry);
+        return (
+          <li
+            key={entry.id}
+            className="flex flex-col gap-1 rounded-md border border-border p-3"
+          >
+            <span className="text-sm font-medium text-foreground">
+              {historyChangeLabel(entry)}
+            </span>
+            {/* TASK-932 / TASK-788: the flag that makes this row not ordinary. */}
+            {note && (
+              <span className="text-xs font-medium text-warning">{note}</span>
+            )}
+            <span className="text-xs text-muted-foreground">
+              {historyActorLabel(entry.changedBy, customerUserId)} ·{" "}
+              {formatDateTime(entry.changedAt)}
+            </span>
+          </li>
+        );
+      })}
     </ol>
   );
 }

@@ -2,6 +2,10 @@
 export { AuthProvider } from "./model/auth.context";
 export type { AuthContextValue } from "./model/auth.context";
 export { useAuth } from "./model/use-auth";
+// TASK-725: the one set of observer options for `useGetMyPermissions`.
+export { MY_PERMISSIONS_QUERY } from "./model/my-permissions-query";
+// TASK-639: one clean refusal for a section the session has no right to.
+export { PermissionGate } from "./ui/permission-gate";
 
 export {
   useAuthControllerLogin,

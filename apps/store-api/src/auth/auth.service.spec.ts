@@ -6,7 +6,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { OAuthProvider } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
-import { AuthTokens } from './entities';
+import type { IssuedSession } from './entities';
 import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
@@ -181,7 +181,8 @@ describe('AuthService', () => {
 
       const result = await service.register(registerDto);
 
-      expect(result).toBeInstanceOf(AuthTokens);
+      // TASK-792: the owner travels with the pair.
+      expect(result.userId).toBe(mockUser.id);
       expect(result.accessToken).toBe('access-token-value');
       expect(result.refreshToken).toBe('refresh-token-value');
 
@@ -250,7 +251,8 @@ describe('AuthService', () => {
 
       const result = await service.login(loginEmail, loginPassword);
 
-      expect(result).toBeInstanceOf(AuthTokens);
+      // TASK-792: the owner travels with the pair.
+      expect(result.userId).toBe(mockUser.id);
       expect(result.accessToken).toBe('access-token-value');
       expect(result.refreshToken).toBe('refresh-token-value');
       expect(argon2.verify).toHaveBeenCalledWith(mockUser.passwordHash, loginPassword);
@@ -642,9 +644,11 @@ describe('AuthService', () => {
     let generateTokenPairSpy: jest.SpyInstance;
 
     beforeEach(() => {
-      const tokens = new AuthTokens();
-      tokens.accessToken = 'access-token-value';
-      tokens.refreshToken = 'refresh-token-value';
+      const tokens: IssuedSession = {
+        userId: mockUser.id,
+        accessToken: 'access-token-value',
+        refreshToken: 'refresh-token-value',
+      };
       generateTokenPairSpy = jest.spyOn(service, 'generateTokenPair').mockResolvedValue(tokens);
     });
 
@@ -964,7 +968,8 @@ describe('AuthService', () => {
 
       const result = await service.refreshToken('refresh-token-value');
 
-      expect(result).toBeInstanceOf(AuthTokens);
+      // TASK-792: the owner travels with the pair.
+      expect(result.userId).toBe(mockUser.id);
       expect(result.accessToken).toBe('new-access-token');
       expect(result.refreshToken).toBe('new-refresh-token');
 
@@ -1525,5 +1530,50 @@ describe('AuthService', () => {
       const accessPayload = jwtService.sign.mock.calls[0][0] as Record<string, unknown>;
       expect(accessPayload).toEqual({ sub: 'user-uuid-1', role: 'CUSTOMER' });
     });
+  });
+});
+
+/**
+ * TASK-790: an unreadable duration is a boot failure, never a silent default.
+ * `PASSWORD_RESET_TOKEN_EXPIRATION=60` used to become a seven-day reset link.
+ */
+describe('AuthService — durations have no silent fallback', () => {
+  const build = (overrides: Record<string, string>) => {
+    const config = { ...testConfig, ...overrides };
+    const configService = {
+      get: (key: string, fallback?: string) => config[key] ?? fallback,
+      getOrThrow: (key: string) => config[key],
+    } as unknown as ConfigService;
+    const logger = { setContext: jest.fn() } as unknown as PinoLogger;
+
+    return () =>
+      new AuthService(
+        {} as AuthRepository,
+        {} as JwtService,
+        configService,
+        {} as MailOutboxService,
+        logger,
+      );
+  };
+
+  it.each(['JWT_EXPIRATION', 'JWT_REFRESH_EXPIRATION', 'PASSWORD_RESET_TOKEN_EXPIRATION'])(
+    'refuses to construct with %s = "60"',
+    (name) => {
+      expect(build({ [name]: '60' })).toThrow(/Invalid duration "60"/);
+    },
+  );
+
+  it('constructs with well-formed durations', () => {
+    expect(build({})).not.toThrow();
+  });
+
+  // TASK-789: the refresh cookie's Max-Age is read from here, so it must be the
+  // configured lifetime rather than a constant.
+  it.each([
+    ['7d', 7 * 86_400_000],
+    ['30d', 30 * 86_400_000],
+    ['1d', 86_400_000],
+  ])('exposes JWT_REFRESH_EXPIRATION=%s as refreshTokenTtlMs=%d', (value, ms) => {
+    expect(build({ JWT_REFRESH_EXPIRATION: value })().refreshTokenTtlMs).toBe(ms);
   });
 });

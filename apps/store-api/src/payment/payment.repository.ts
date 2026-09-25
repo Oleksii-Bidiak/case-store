@@ -170,6 +170,9 @@ export class PaymentRepository {
    *  - pre-shipment statuses only — nothing already CONFIRMED-and-shipped,
    *    CANCELLED or REFUNDED;
    *  - `deletedAt: null` — soft-deleted orders are out of scope.
+   *
+   * An order released under ORDER_RESERVATION_EXPIRY=release (TASK-627) has its
+   * deadline lifted by the release itself, so it is never returned twice.
    */
   findExpiredReservations(now: Date, limit: number): Promise<ExpiredReservation[]> {
     return this.prisma.order.findMany({

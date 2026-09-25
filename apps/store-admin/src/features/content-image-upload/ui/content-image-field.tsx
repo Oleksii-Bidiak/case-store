@@ -43,6 +43,15 @@ export interface ContentImageFieldProps {
    * URL box below are still the whole feature.
    */
   picker?: ReactNode;
+  /**
+   * Whether this session may upload through the route the form wired in
+   * (TASK-728). Defaults to true — every content form's upload route needs the
+   * same key as the form itself. The product OG field uploads through the media
+   * library (`media:write`), which a product editor may lack; for them the
+   * uploader is NOT RENDERED (a control that can only answer 403 is not
+   * offered), and the picker slot and the URL box stay the whole field.
+   */
+  canUpload?: boolean;
 }
 
 /**
@@ -74,31 +83,34 @@ export function ContentImageField({
   uploadError,
   fieldError,
   picker,
+  canUpload = true,
 }: ContentImageFieldProps) {
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor={id}>{label}</Label>
 
-      <SingleImageUpload
-        imageUrl={value.trim() ? value : null}
-        accept={CONTENT_IMAGE_ACCEPT}
-        labels={{
-          alt: copy.alt,
-          empty: copy.empty,
-          upload: copy.upload,
-          replace: copy.replace,
-          delete: copy.remove,
-          deleteTitle: copy.removeTitle,
-          deleteDescription: copy.removeDescription,
-          cancel: dict.common.cancel,
-          confirmDelete: copy.remove,
-        }}
-        hint={copy.hint}
-        error={uploadError}
-        isUploading={isUploading}
-        onSelectFile={onSelectFile}
-        onDelete={onRemove}
-      />
+      {canUpload && (
+        <SingleImageUpload
+          imageUrl={value.trim() ? value : null}
+          accept={CONTENT_IMAGE_ACCEPT}
+          labels={{
+            alt: copy.alt,
+            empty: copy.empty,
+            upload: copy.upload,
+            replace: copy.replace,
+            delete: copy.remove,
+            deleteTitle: copy.removeTitle,
+            deleteDescription: copy.removeDescription,
+            cancel: dict.common.cancel,
+            confirmDelete: copy.remove,
+          }}
+          hint={copy.hint}
+          error={uploadError}
+          isUploading={isUploading}
+          onSelectFile={onSelectFile}
+          onDelete={onRemove}
+        />
+      )}
 
       {/* Between the uploader and the URL box, because that is the order the
           three paths rank in: a picture the shop already has, a file on this

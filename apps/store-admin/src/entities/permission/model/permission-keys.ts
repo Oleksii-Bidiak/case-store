@@ -23,6 +23,11 @@ export const PERM = {
   // `orders:write` by the migration that ships with plan 180; see
   // RETURNS_BACKFILL_SOURCE_PERMISSIONS in the API's `permission.catalog.ts`.
   returnsWrite: "returns:write",
+  // TASK-620 (рішення B-11 №7): lifting an operator's mistaken «Кошти
+  // повернено» back to PAID / PARTIALLY_REFUNDED. NO BACKFILL: on deploy only the
+  // owner and admins hold it (by level) — the correction action stays hidden for
+  // every manager until the owner ticks the box.
+  paymentsCorrect: "payments:correct",
 
   productsRead: "products:read",
   productsWrite: "products:write",

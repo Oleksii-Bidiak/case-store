@@ -5,6 +5,7 @@ import {
   PaymentStatus,
   PaymentMethod,
   OrderHistoryChangeType,
+  OrderHistoryNote,
 } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { normalizeUaPhone, phoneDigits } from '../common/validators';
@@ -37,6 +38,9 @@ import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto'
 // the other one, and the chip would then quietly disagree with the tile.
 import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { staleOrderError } from './order.errors';
+import { centsToString, sumLineCents, toCents } from '../addon-service/money.util';
+import { kyivDayRange } from './kyiv-day';
+import { PRE_SHIPMENT_STATUSES } from './order.constants';
 // TASK-771: a revive that cannot re-claim its promo slot fails with the same
 // stable codes the checkout uses, so the admin sees the reason it already knows.
 import { DiscountErrorCode, conflictDiscount } from '../discount/discount.errors';
@@ -167,7 +171,8 @@ function unavailableItemsWhere(): Prisma.OrderWhereInput {
         },
       },
       // The fourth condition: the TTL worker released this order's hold while the
-      // order itself is still expected to be fulfilled.
+      // order itself is still expected to be fulfilled — reachable only with
+      // ORDER_RESERVATION_EXPIRY=release (TASK-627); see OrderEntity.
       { restockedAt: { not: null } },
     ],
   };
@@ -342,11 +347,7 @@ export class OrderRepository {
 
     // Derive the subtotal from the persisted order-item rows themselves (single
     // source of truth) using integer-cents arithmetic to avoid float drift.
-    const subtotalCents = itemData.reduce(
-      (cents, item) => cents + Math.round(item.price.toNumber() * 100) * item.quantity,
-      0,
-    );
-    const subtotal = new Prisma.Decimal(centsToDecimalString(subtotalCents));
+    const subtotal = new Prisma.Decimal(centsToString(sumLineCents(itemData)));
 
     // Shipping cost comes from the Nova Poshta estimate (TASK-080); 0 for
     // free-text/manual orders.
@@ -358,8 +359,8 @@ export class OrderRepository {
     // Flat: an add-on is charged once per line, never multiplied by quantity.
     const addonsCents = [...addonsByCartItemId.values()]
       .flat()
-      .reduce((cents, addon) => cents + Math.round(parseFloat(addon.price) * 100), 0);
-    const addonsTotal = new Prisma.Decimal(centsToDecimalString(addonsCents));
+      .reduce((cents, addon) => cents + toCents(addon.price), 0);
+    const addonsTotal = new Prisma.Decimal(centsToString(addonsCents));
     // ───────────────────────────────────────────────────────────────────────────
 
     // ─── TASK-079 discount block ───────────────────────────────────────────────
@@ -537,11 +538,7 @@ export class OrderRepository {
       price: new Prisma.Decimal(item.price),
     }));
 
-    const subtotalCents = itemData.reduce(
-      (cents, item) => cents + Math.round(item.price.toNumber() * 100) * item.quantity,
-      0,
-    );
-    const subtotal = new Prisma.Decimal(centsToDecimalString(subtotalCents));
+    const subtotal = new Prisma.Decimal(centsToString(sumLineCents(itemData)));
     const shipping = new Prisma.Decimal((params.shippingCost ?? 0).toString());
     const total = subtotal.plus(shipping);
 
@@ -628,38 +625,6 @@ export class OrderRepository {
   }
 
   /**
-   * Replace an order's delivery address before it ships (TASK-341).
-   *
-   * Address-only: changing WHERE a parcel goes touches no money and no stock, so
-   * it is separable from the line-item edit that does. The caller enforces the
-   * pre-shipment rule; the repository writes the snapshot.
-   */
-  async updateShippingAddress(
-    orderId: string,
-    shippingAddress: AddressDto,
-    options: { expectedUpdatedAt?: Date } = {},
-  ): Promise<OrderWithItems> {
-    const data = { shippingAddress: shippingAddress as unknown as Prisma.InputJsonValue };
-
-    if (options.expectedUpdatedAt) {
-      const { count } = await this.prisma.order.updateMany({
-        where: { id: orderId, updatedAt: options.expectedUpdatedAt },
-        data,
-      });
-      if (count === 0) {
-        throw staleOrderError();
-      }
-    } else {
-      await this.prisma.order.update({ where: { id: orderId }, data });
-    }
-
-    return this.prisma.order.findUniqueOrThrow({
-      where: { id: orderId },
-      include: ADMIN_ORDERS_INCLUDE,
-    }) as Promise<OrderWithItems>;
-  }
-
-  /**
    * Find all orders for a user, newest first, with an optional status filter
    * and pagination. Runs the count and page query in a single transaction.
    */
@@ -739,9 +704,12 @@ export class OrderRepository {
    * came from — and a CSV gives no hint that it is the one lying.
    */
   private buildAdminWhere(query: AdminOrderListQueryDto): Prisma.OrderWhereInput {
+    // TASK-787: whole Kyiv calendar days — from the start of `dateFrom`'s day to
+    // the end of `dateTo`'s (exclusive next midnight). `new Date(dateTo)` was UTC
+    // midnight, so `dateFrom = dateTo = today` matched nothing.
     const createdAt: Prisma.DateTimeFilter = {};
-    if (query.dateFrom) createdAt.gte = new Date(query.dateFrom);
-    if (query.dateTo) createdAt.lte = new Date(query.dateTo);
+    if (query.dateFrom) createdAt.gte = kyivDayRange(query.dateFrom).start;
+    if (query.dateTo) createdAt.lt = kyivDayRange(query.dateTo).end;
 
     const where: Prisma.OrderWhereInput = {
       deletedAt: null,
@@ -789,11 +757,18 @@ export class OrderRepository {
       where.OR = or;
     }
 
+    // Every filter and preset below is one arm of `AND`, never an assignment to
+    // `where.status` / `where.paymentStatus`: two filters writing the same key
+    // silently swallow each other (TASK-579 — the `unpaidInTransit` preset used to
+    // overwrite `?status=`), and a filter that is visibly on screen but absent
+    // from the query is the worst of the possible outcomes. Prisma ANDs a
+    // top-level `AND` with the top-level fields and with `OR`, so this composes
+    // with the search too.
+    const and: Prisma.OrderWhereInput[] = [];
+
     // TASK-248: active-but-unpaid ("in-transit") deep-link filter — the same
     // compound condition as DashboardRepository's unrealized-revenue figure, so
-    // the tile's count and the rows behind the click are the same set. Additive:
-    // composes with the userId/date-range conditions above; only applied when the
-    // flag is explicitly true.
+    // the tile's count and the rows behind the click are the same set.
     //
     // `PARTIALLY_REFUNDED` sits with `PAID` rather than on the unpaid side
     // (review of plan 180) — it is only reachable FROM `PAID`, so the money did
@@ -801,22 +776,14 @@ export class OrderRepository {
     // `DashboardRepository.unrealizedOrderWhere` for why this differs from the
     // «Борг» mark below, which deliberately casts a wider net.
     if (query.unpaidInTransit) {
-      where.paymentStatus = {
-        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
-      };
-      where.status = { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] };
+      and.push({
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+      });
     }
 
     // TASK-425: the filters an operator actually reaches for — payment status,
     // payment method, and "has this been sitting too long".
-    //
-    // They go into `AND` rather than onto `where` directly because the
-    // `unpaidInTransit` preset above OWNS `where.paymentStatus` and
-    // `where.status`: assigning here would let one filter silently swallow the
-    // other, and a filter that is visibly on screen but absent from the query is
-    // the worst of the possible outcomes. Prisma ANDs a top-level `AND` with the
-    // top-level fields and with `OR`, so this composes with the search too.
-    const and: Prisma.OrderWhereInput[] = [];
     if (query.paymentStatus) and.push({ paymentStatus: query.paymentStatus });
     if (query.paymentMethod) and.push({ paymentMethod: query.paymentMethod });
     if (query.pendingOverdue) {
@@ -828,10 +795,7 @@ export class OrderRepository {
         createdAt: { lt: new Date(Date.now() - PENDING_STALE_HOURS * 60 * 60 * 1000) },
       });
     }
-    // TASK-470 / 471: the derived-mark filters. Same `AND` array and the same
-    // reason as TASK-425's — `unpaidInTransit` above owns `where.status` and
-    // `where.paymentStatus` outright, and a filter the operator can see on screen
-    // but that never reached the query is the worst possible outcome.
+    // TASK-470 / 471: the derived-mark filters, in the same `AND` array.
     //
     // Each condition is written here EXACTLY as the B-1 catalogue states it, and
     // `orderDerivedLabels()` in the admin panel states it again for the row it
@@ -869,6 +833,15 @@ export class OrderRepository {
       });
     }
     if (query.hasUnavailableItems) and.push(unavailableItemsWhere());
+    // TASK-352 (c): «Оплачено після скасування» — the same predicate as the
+    // dashboard tile (`DashboardRepository.paidAfterCancelOrderWhere`).
+    if (query.paidAfterCancel) {
+      and.push({
+        status: OrderStatus.CANCELLED,
+        paymentStatus: PaymentStatus.PAID,
+        statusHistory: { some: { note: OrderHistoryNote.PAID_AFTER_CANCEL } },
+      });
+    }
 
     if (and.length > 0) where.AND = and;
 
@@ -953,7 +926,12 @@ export class OrderRepository {
     toStatus: OrderStatus,
     paymentStatus: PaymentStatus,
     changedBy: string | null,
-    options: { evictProductStockCaches?: boolean; expectedUpdatedAt?: Date } = {},
+    options: {
+      evictProductStockCaches?: boolean;
+      expectedUpdatedAt?: Date;
+      /** TASK-788: a flag on the history row (e.g. SHIPPED_UNPAID); the service decides. */
+      note?: OrderHistoryNote;
+    } = {},
   ): Promise<OrderWithItems> {
     // TASK-251: converted from a bare update to a $transaction so the status
     // change and its audit-log row commit (or roll back) together. `fromStatus`
@@ -982,6 +960,7 @@ export class OrderRepository {
           fromStatus,
           toStatus,
           changedBy,
+          ...(options.note ? { note: options.note } : {}),
         },
       });
       return tx.order.findUniqueOrThrow({
@@ -1025,6 +1004,11 @@ export class OrderRepository {
    * the WHERE after it commits, matches zero rows, and aborts before touching any
    * product. The loser never increments anything.
    *
+   * TASK-627: a live order whose hold ORDER_RESERVATION_EXPIRY=release already
+   * gave back is cancelled through a second arbiter (`restockedAt IS NOT NULL`
+   * on a pre-shipment status) that credits NO stock — the units are on the shelf
+   * already — but still releases the promo slot and writes the history row.
+   *
    * @throws ConflictException when the stock was already returned, or (TASK-332)
    *   when `expectedUpdatedAt` no longer matches the stored row.
    */
@@ -1054,7 +1038,28 @@ export class OrderRepository {
         data: { status: OrderStatus.CANCELLED, restockedAt: new Date() },
       });
 
-      if (count === 0) {
+      // TASK-627: a LIVE order whose hold ORDER_RESERVATION_EXPIRY=release already
+      // gave back. Its stock is on the shelf, so this cancel credits nothing — but
+      // it is still a cancel (the customer's own used to answer 409 «already
+      // returned»), and the promo slot still goes back. Same row-lock arbiter
+      // shape: `restockedAt IS NOT NULL` on a pre-shipment status, so a second
+      // cancel, or a payment that re-took the stock first, matches nothing.
+      const releasedHold =
+        count === 0
+          ? (
+              await tx.order.updateMany({
+                where: {
+                  id: orderId,
+                  restockedAt: { not: null },
+                  status: { in: [...PRE_SHIPMENT_STATUSES] },
+                  ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+                },
+                data: { status: OrderStatus.CANCELLED },
+              })
+            ).count > 0
+          : false;
+
+      if (count === 0 && !releasedHold) {
         // Two different failures share one zero-row outcome, and the operator
         // needs to be told which: "someone already cancelled this" and "someone
         // edited this while you were deciding" call for different next moves. The
@@ -1065,11 +1070,13 @@ export class OrderRepository {
         throw new ConflictException('This order’s stock has already been returned to inventory');
       }
 
-      for (const item of order.items) {
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: { increment: item.quantity } },
-        });
+      if (!releasedHold) {
+        for (const item of order.items) {
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
       }
 
       // TASK-771: the promo slot goes back with the stock, behind the same arbiter.
@@ -1129,6 +1136,22 @@ export class OrderRepository {
         throw staleOrderError();
       }
 
+      // TASK-627: claim the released hold BEFORE any stock moves. Since a late
+      // payment can now re-take it too (applyPaymentOutcome, `stockHold:
+      // released`), two paths race for the same `restockedAt`; each claims it on
+      // `IS NOT NULL` under the row lock, so the second finds nothing to re-take
+      // and decrements nothing. `status` joins the claim so the history row's
+      // fromStatus is still the truth.
+      const { count: claimed } = await tx.order.updateMany({
+        where: { id: orderId, status: order.status, restockedAt: { not: null } },
+        data: { restockedAt: null },
+      });
+      if (claimed === 0) {
+        throw new ConflictException(
+          'This order’s stock has already been reserved again, or the order changed; reload it',
+        );
+      }
+
       for (const item of order.items) {
         const { count } = await tx.product.updateMany({
           where: { id: item.productId, stock: { gte: item.quantity } },
@@ -1167,6 +1190,97 @@ export class OrderRepository {
     await this.evictProductCaches(updated.items);
 
     return updated;
+  }
+
+  /**
+   * Give an overdue unpaid order's stock back WITHOUT cancelling it
+   * (ORDER_RESERVATION_EXPIRY=release, TASK-627).
+   *
+   * The arbiter is the one {@link cancelAndRestock} uses — `restockedAt IS NULL`
+   * — joined by the reconcile worker's own selection (deadline passed, still
+   * unpaid, pre-shipment, not deleted). It runs as the FIRST write, so it takes
+   * the row lock: a payment committing first leaves nothing to match (it is PAID
+   * and its deadline is lifted), and a second release matches nothing either. The
+   * loser credits no stock and reports `false`.
+   *
+   * What moves: `restockedAt` is stamped (the order now shows in «Позиція
+   * недоступна»), the deadline is lifted (the worker must not pick it up again,
+   * and a new checkout must not hand LiqPay an `expired_date` in the past), and
+   * each line goes back to stock. What does NOT: the status, the payment status,
+   * the payment attempts, the promo slot (the order may still be paid at the
+   * price it was placed at), the status history (no status changed).
+   */
+  async releaseReservation(orderId: string, deadline: Date): Promise<boolean> {
+    const released = await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.order.updateMany({
+        where: {
+          id: orderId,
+          restockedAt: null,
+          reservationExpiresAt: { not: null, lte: deadline },
+          paymentStatus: PaymentStatus.PENDING,
+          status: { in: [...PRE_SHIPMENT_STATUSES] },
+          deletedAt: null,
+        },
+        data: { restockedAt: deadline, reservationExpiresAt: null },
+      });
+      if (count === 0) return null;
+
+      const lines = await tx.orderItem.findMany({
+        where: { orderId },
+        select: { productId: true, quantity: true },
+      });
+      for (const line of lines) {
+        await tx.product.update({
+          where: { id: line.productId },
+          data: { stock: { increment: line.quantity } },
+        });
+      }
+
+      return tx.order.findUniqueOrThrow({ where: { id: orderId }, include: ORDERS_INCLUDE });
+    });
+
+    if (!released) return false;
+
+    // Stock went back on sale — evict exactly as a cancel-restock does.
+    await this.evictProductCaches((released as OrderWithItems).items);
+    return true;
+  }
+
+  /**
+   * Re-take the stock of every line, all or nothing, inside the caller's
+   * transaction (TASK-627: a late payment on a released hold).
+   *
+   * Each line decrements with the creation-time oversell guard. Unlike
+   * {@link reviveAndReserve} a short line does NOT throw — the caller is a
+   * payment, and the money is a fact that must be recorded either way — so the
+   * lines already taken are put back in the same transaction and `false` says
+   * nothing was reserved.
+   */
+  private async tryReserveLines(tx: Prisma.TransactionClient, orderId: string): Promise<boolean> {
+    const lines = await tx.orderItem.findMany({
+      where: { orderId },
+      select: { productId: true, quantity: true },
+    });
+
+    const taken: { productId: string; quantity: number }[] = [];
+    for (const line of lines) {
+      const { count } = await tx.product.updateMany({
+        where: { id: line.productId, stock: { gte: line.quantity } },
+        data: { stock: { decrement: line.quantity } },
+      });
+      if (count === 0) {
+        for (const done of taken) {
+          await tx.product.update({
+            where: { id: done.productId },
+            data: { stock: { increment: done.quantity } },
+          });
+        }
+        return false;
+      }
+      taken.push(line);
+    }
+
+    return true;
   }
 
   /**
@@ -1240,6 +1354,26 @@ export class OrderRepository {
   }
 
   /**
+   * Who set the order's newest `toPaymentStatus = status` mark (TASK-620):
+   * `changedBy` is the operator's id, or null for the provider callback and the
+   * reconcile worker. Null when no such row exists.
+   */
+  findLastPaymentMark(
+    orderId: string,
+    status: PaymentStatus,
+  ): Promise<{ changedBy: string | null } | null> {
+    return this.prisma.orderStatusHistory.findFirst({
+      where: {
+        orderId,
+        changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+        toPaymentStatus: status,
+      },
+      orderBy: { changedAt: 'desc' },
+      select: { changedBy: true },
+    });
+  }
+
+  /**
    * Update the operator-editable, lifecycle-neutral fields of an order
    * (TASK-335 / TASK-336).
    *
@@ -1252,19 +1386,41 @@ export class OrderRepository {
    * changes, and stretching it to cover free-text edits would blur what the
    * timeline means.
    *
-   * @throws ConflictException `ORDER_STALE` when `expectedUpdatedAt` no longer
-   *   matches.
+   * TASK-786: the delivery address (TASK-341) is written by the SAME statement.
+   * It used to be a second write, and the controller spent the version token on
+   * whichever ran first, so the waybill half went through unguarded and could
+   * silently overwrite another operator's. One `UPDATE … WHERE` is atomic: every
+   * field lands or none does. An address edit also re-checks the pre-shipment
+   * rule in that WHERE, so a shipment committed after the service's read cannot
+   * be edited.
+   *
+   * @throws ConflictException `ORDER_STALE` when the guarded row no longer
+   *   matches (`expectedUpdatedAt`, or the order left the pre-shipment statuses
+   *   under an address edit).
    */
   async updateDetails(
     orderId: string,
-    fields: { trackingNumber?: string | null; internalNotes?: string | null },
+    fields: {
+      trackingNumber?: string | null;
+      internalNotes?: string | null;
+      shippingAddress?: AddressDto;
+    },
     options: { expectedUpdatedAt?: Date } = {},
   ): Promise<OrderWithItems> {
-    const data: Prisma.OrderUpdateInput = {};
+    const data: Prisma.OrderUpdateManyMutationInput = {};
+    if (fields.shippingAddress !== undefined) {
+      data.shippingAddress = fields.shippingAddress as unknown as Prisma.InputJsonValue;
+    }
     if (fields.trackingNumber !== undefined) data.trackingNumber = fields.trackingNumber;
     if (fields.internalNotes !== undefined) data.internalNotes = fields.internalNotes;
 
     const expectedUpdatedAt = options.expectedUpdatedAt;
+    const guard: Prisma.OrderWhereInput = {
+      ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}),
+      ...(fields.shippingAddress !== undefined
+        ? { status: { in: [...PRE_SHIPMENT_STATUSES] } }
+        : {}),
+    };
 
     // A request that changes none of these fields is a read, not a write — and a
     // guarded `updateMany` with an empty `data` would neither express the version
@@ -1276,9 +1432,9 @@ export class OrderRepository {
       }) as Promise<OrderWithItems>;
     }
 
-    if (expectedUpdatedAt) {
+    if (Object.keys(guard).length > 0) {
       const { count } = await this.prisma.order.updateMany({
-        where: { id: orderId, updatedAt: expectedUpdatedAt },
+        where: { id: orderId, ...guard },
         data,
       });
       if (count === 0) {
@@ -1421,6 +1577,8 @@ export class OrderRepository {
             paymentStatus: true,
             paidAt: true,
             reservationExpiresAt: true,
+            // TASK-627: whether a success must re-take a released hold.
+            restockedAt: true,
           },
         },
       },
@@ -1442,7 +1600,8 @@ export class OrderRepository {
    * put a lie in the audit trail.
    */
   async applyPaymentOutcome(plan: PaymentApplyPlan): Promise<OrderWithItems> {
-    return (await this.prisma.$transaction(async (tx) => {
+    let stockMoved = false;
+    const applied = (await this.prisma.$transaction(async (tx) => {
       await tx.payment.update({
         where: { id: plan.paymentId },
         data: {
@@ -1470,11 +1629,18 @@ export class OrderRepository {
         // oversell TASK-619 closed. Zero rows → throw, the whole transaction rolls
         // back, the payment module releases its idempotency claim, and the
         // provider's retry is planned again against the fresh row.
+        //
+        // TASK-627: the stock hold joins the same condition. A release
+        // (ORDER_RESERVATION_EXPIRY=release) changes neither status, so without
+        // it a release committed after the read would be paid over as if the
+        // stock were still held — a paid order holding nothing.
         const { count } = await tx.order.updateMany({
           where: {
             id: plan.orderId,
             status: plan.expected.status,
             paymentStatus: plan.expected.paymentStatus,
+            ...(plan.stockHold === 'held' ? { restockedAt: null } : {}),
+            ...(plan.stockHold === 'released' ? { restockedAt: { not: null } } : {}),
           },
           data: orderData,
         });
@@ -1482,6 +1648,15 @@ export class OrderRepository {
           throw new ConflictException(
             'The order changed while the payment event was being applied; retry',
           );
+        }
+
+        // TASK-627: the hold was released — re-take it now, under the row lock the
+        // write above holds. All lines or none: when stock is short the payment is
+        // still recorded and `restockedAt` stays, which is what keeps the order in
+        // «Позиція недоступна» for the operator. Nothing is refunded automatically.
+        if (plan.stockHold === 'released' && (await this.tryReserveLines(tx, plan.orderId))) {
+          await tx.order.update({ where: { id: plan.orderId }, data: { restockedAt: null } });
+          stockMoved = true;
         }
       }
 
@@ -1534,6 +1709,11 @@ export class OrderRepository {
         include: ORDERS_INCLUDE,
       });
     })) as OrderWithItems;
+
+    // A re-reserve changed position stock — evict the same caches as createFromCart.
+    if (stockMoved) await this.evictProductCaches(applied.items);
+
+    return applied;
   }
 
   /**
@@ -1545,19 +1725,6 @@ export class OrderRepository {
       where: { orderId },
       orderBy: { changedAt: 'asc' },
     });
-  }
-
-  /**
-   * Soft-delete an order (TASK-104): stamp `deletedAt` so it is excluded from
-   * every read path. Child `OrderItem` rows are left in place. Orders carry no
-   * unique constraints beyond `id`, so no field mangling is needed.
-   */
-  softDelete(orderId: string): Promise<OrderWithItems> {
-    return this.prisma.order.update({
-      where: { id: orderId },
-      data: { deletedAt: new Date() },
-      include: ORDERS_INCLUDE,
-    }) as Promise<OrderWithItems>;
   }
 
   /**
@@ -1728,13 +1895,4 @@ export class OrderRepository {
       });
     }
   }
-}
-
-/**
- * Convert an integer number of cents to a "XX.YY" decimal string.
- */
-function centsToDecimalString(cents: number): string {
-  const dollars = Math.floor(cents / 100);
-  const remainder = cents % 100;
-  return `${dollars}.${remainder.toString().padStart(2, '0')}`;
 }

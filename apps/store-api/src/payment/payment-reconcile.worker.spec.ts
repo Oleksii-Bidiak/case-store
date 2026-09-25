@@ -36,7 +36,13 @@ const providerMock = {
 };
 
 const paymentServiceMock = { applyEvent: jest.fn() };
-const orderServiceMock = { updateStatus: jest.fn() };
+const orderServiceMock = {
+  updateStatus: jest.fn(),
+  // TASK-352 (b): «оплату не отримано» after a real cancellation.
+  notifyPaymentExpired: jest.fn(),
+  // TASK-627: ORDER_RESERVATION_EXPIRY=release gives the stock back instead.
+  releaseExpiredReservation: jest.fn(),
+};
 const schedulerRegistryMock = { addCronJob: jest.fn() };
 
 function buildWorker(env: Record<string, string | undefined> = {}): PaymentReconcileWorker {
@@ -272,6 +278,118 @@ describe('PaymentReconcileWorker', () => {
         expect.objectContaining({ event: 'payment.reconcile.expire_failed' }),
         expect.any(String),
       );
+    });
+
+    // ── TASK-352 (b): ONE «оплату не отримано» letter, only after a real cancel ──
+    it('sends the letter for the order it actually cancelled', async () => {
+      repositoryMock.findExpiredReservations.mockResolvedValue(expired);
+      const cancelled = { id: 'order-1', status: OrderStatus.CANCELLED };
+      orderServiceMock.updateStatus.mockResolvedValue(cancelled);
+
+      await buildWorker().tick();
+
+      expect(orderServiceMock.notifyPaymentExpired).toHaveBeenCalledTimes(1);
+      expect(orderServiceMock.notifyPaymentExpired).toHaveBeenCalledWith(cancelled);
+    });
+
+    it('sends no letter when the cancellation threw', async () => {
+      repositoryMock.findExpiredReservations.mockResolvedValue(expired);
+      orderServiceMock.updateStatus.mockRejectedValue(new Error('already restocked'));
+
+      await buildWorker().tick();
+
+      expect(orderServiceMock.notifyPaymentExpired).not.toHaveBeenCalled();
+    });
+
+    it('sends no letter when auto-cancel is switched off', async () => {
+      await buildWorker({ ORDER_AUTOCANCEL_UNPAID: 'false' }).tick();
+
+      expect(orderServiceMock.notifyPaymentExpired).not.toHaveBeenCalled();
+    });
+
+    // ── TASK-627: what happens AT the deadline is a setting of its own ──────────
+    // ORDER_AUTOCANCEL_UNPAID still decides whether there is a deadline at all;
+    // ORDER_RESERVATION_EXPIRY decides what the deadline does. `cancel` (the
+    // default) is the behaviour above, unchanged. `release` gives the stock back
+    // and leaves the order alive: no cancel, no expired attempts, no letter.
+    describe('ORDER_RESERVATION_EXPIRY', () => {
+      it('cancels by default — unset means the behaviour before TASK-627', async () => {
+        repositoryMock.findExpiredReservations.mockResolvedValue(expired);
+
+        await buildWorker().tick();
+
+        expect(orderServiceMock.updateStatus).toHaveBeenCalledWith(
+          'order-1',
+          OrderStatus.CANCELLED,
+          null,
+        );
+        expect(orderServiceMock.releaseExpiredReservation).not.toHaveBeenCalled();
+      });
+
+      it('cancels when set to cancel explicitly', async () => {
+        repositoryMock.findExpiredReservations.mockResolvedValue(expired);
+
+        await buildWorker({ ORDER_RESERVATION_EXPIRY: 'cancel' }).tick();
+
+        expect(orderServiceMock.updateStatus).toHaveBeenCalledTimes(1);
+        expect(orderServiceMock.releaseExpiredReservation).not.toHaveBeenCalled();
+      });
+
+      it('release: returns the stock through OrderService and leaves the order alive', async () => {
+        repositoryMock.findExpiredReservations.mockResolvedValue(expired);
+        orderServiceMock.releaseExpiredReservation.mockResolvedValue(true);
+
+        await buildWorker({ ORDER_RESERVATION_EXPIRY: 'release' }).tick();
+
+        expect(orderServiceMock.releaseExpiredReservation).toHaveBeenCalledWith('order-1', NOW);
+        expect(orderServiceMock.updateStatus).not.toHaveBeenCalled();
+      });
+
+      it('release: the payment attempts are NOT expired — the customer may still pay', async () => {
+        repositoryMock.findExpiredReservations.mockResolvedValue(expired);
+        orderServiceMock.releaseExpiredReservation.mockResolvedValue(true);
+
+        await buildWorker({ ORDER_RESERVATION_EXPIRY: 'release' }).tick();
+
+        expect(repositoryMock.markExpiredByOrderId).not.toHaveBeenCalled();
+      });
+
+      it('release: sends no «оплату не отримано» letter — nothing was cancelled', async () => {
+        repositoryMock.findExpiredReservations.mockResolvedValue(expired);
+        orderServiceMock.releaseExpiredReservation.mockResolvedValue(true);
+
+        await buildWorker({ ORDER_RESERVATION_EXPIRY: 'release' }).tick();
+
+        expect(orderServiceMock.notifyPaymentExpired).not.toHaveBeenCalled();
+      });
+
+      it('release: still off when ORDER_AUTOCANCEL_UNPAID=false — no deadline, nothing to do', async () => {
+        await buildWorker({
+          ORDER_AUTOCANCEL_UNPAID: 'false',
+          ORDER_RESERVATION_EXPIRY: 'release',
+        }).tick();
+
+        expect(repositoryMock.findExpiredReservations).not.toHaveBeenCalled();
+        expect(orderServiceMock.releaseExpiredReservation).not.toHaveBeenCalled();
+      });
+
+      it('release: carries on with the batch when one release fails', async () => {
+        repositoryMock.findExpiredReservations.mockResolvedValue([
+          ...expired,
+          { id: 'order-2', status: OrderStatus.PENDING, reservationExpiresAt: NOW },
+        ]);
+        orderServiceMock.releaseExpiredReservation
+          .mockRejectedValueOnce(new Error('db blip'))
+          .mockResolvedValueOnce(true);
+
+        await buildWorker({ ORDER_RESERVATION_EXPIRY: 'release' }).tick();
+
+        expect(orderServiceMock.releaseExpiredReservation).toHaveBeenCalledTimes(2);
+        expect(loggerMock.error).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'payment.reconcile.release_failed' }),
+          expect.any(String),
+        );
+      });
     });
   });
 

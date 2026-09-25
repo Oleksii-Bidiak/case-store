@@ -24,11 +24,6 @@ export type PageKindValue = (typeof PAGE_KIND)[number];
 /**
  * Validation schema for the admin page form.
  *
- * As in the category/product forms, the single numeric field (`sortOrder`) is
- * modelled as a string on the zod INPUT side (bound to a text input) and
- * transformed to a number on the OUTPUT side, so `react-hook-form` registration
- * stays string-only while `onSubmit` receives a parsed number.
- *
  * Publish control (TASK-187): `status` drives visibility; when it is
  * `SCHEDULED` a `scheduledAt` datetime is required (bound to a
  * `datetime-local` input; the empty string means "unset").
@@ -98,22 +93,8 @@ export const pageSchema = z
       .optional()
       .or(z.literal("")),
 
-    /**
-     * TASK-428: NO LONGER RENDERED and NO LONGER SUBMITTED — the order is set by
-     * dragging rows in the page list, and a new page is appended by the server.
-     *
-     * The key survives in the INPUT shape only because `widgets/page-form-view` still
-     * seeds it (`sortOrder: String(page.sortOrder)`) and that widget is owned elsewhere;
-     * dropping it here would break that object literal's excess-property check. Nothing
-     * registers this field and `pageFormValuesToDto` no longer sends it, so the value is
-     * inert. Delete it together with the mapper line in `widgets/page-form-view`.
-     */
-    sortOrder: z
-      .string()
-      .trim()
-      .optional()
-      .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), e.sortInt)
-      .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
+    // No `sortOrder` (TASK-428, removed from the schema by TASK-729): the order is
+    // set by dragging rows in the page list, and a new page is appended by the server.
 
     status: z.enum(PAGE_STATUS),
 

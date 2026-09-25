@@ -186,7 +186,7 @@ export function ProductDeviceCompatManager({
       {productId ? (
         <div className="flex flex-wrap items-center gap-3">
           <Button type="button" onClick={handleSave} disabled={pending}>
-            {update.isPending ? dict.common.saving : dict.productCompat.title}
+            {update.isPending ? dict.common.saving : dict.productCompat.save}
           </Button>
           {groupId && (
             <Button

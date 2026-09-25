@@ -74,6 +74,13 @@ export class DiscountEntity {
   @ApiProperty({ description: 'Whether the code is active', example: true })
   isActive!: boolean;
 
+  @ApiProperty({
+    description:
+      'Whether the code is published on the storefront «Акції» page / GET /discounts/active (TASK-731)',
+    example: true,
+  })
+  showOnPromoPage!: boolean;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2026-06-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -97,6 +104,7 @@ export class DiscountEntity {
     entity.startsAt = discount.startsAt;
     entity.expiresAt = discount.expiresAt;
     entity.isActive = discount.isActive;
+    entity.showOnPromoPage = discount.showOnPromoPage;
     entity.createdAt = discount.createdAt;
     entity.updatedAt = discount.updatedAt;
     return entity;

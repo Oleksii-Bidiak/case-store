@@ -17,6 +17,7 @@ export interface CreateDiscountInput {
   startsAt?: Date | null;
   expiresAt?: Date | null;
   isActive?: boolean;
+  showOnPromoPage?: boolean;
 }
 
 /**
@@ -32,6 +33,7 @@ export interface UpdateDiscountInput {
   startsAt?: Date | null;
   expiresAt?: Date | null;
   isActive?: boolean;
+  showOnPromoPage?: boolean;
 }
 
 /**
@@ -130,11 +132,16 @@ export class DiscountRepository {
    * is applied in the service over this small candidate set. Ordered by
    * `expiresAt ASC` — Postgres's default `NULLS LAST` trails never-expiring
    * codes after the soonest-expiring ones (a reasonable promo default).
+   *
+   * Only codes the operator PUBLISHED (`showOnPromoPage`, TASK-731) are
+   * candidates. The filter lives here, not in the storefront: this feed is a
+   * public API, so a code hidden only in the UI would still leak through it.
    */
   findActiveWindowCandidates(now: Date): Promise<Discount[]> {
     return this.prisma.discount.findMany({
       where: {
         isActive: true,
+        showOnPromoPage: true,
         OR: [{ startsAt: null }, { startsAt: { lte: now } }],
         AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }],
       },
@@ -155,6 +162,7 @@ export class DiscountRepository {
         startsAt: data.startsAt ?? null,
         expiresAt: data.expiresAt ?? null,
         isActive: data.isActive ?? true,
+        showOnPromoPage: data.showOnPromoPage ?? false,
       },
     });
   }

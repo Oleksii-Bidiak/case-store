@@ -136,7 +136,6 @@ function mapPageToFormValues(page: PageEntity): Partial<PageFormInput> {
     metaDescription: page.metaDescription ?? "",
     keywords: formatKeywords(page.keywords),
     ogImage: page.ogImage ?? "",
-    sortOrder: String(page.sortOrder),
     status: page.status,
     // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant,
     // in KYIV time. The local `toDateTimeLocal` this replaces read the BROWSER's

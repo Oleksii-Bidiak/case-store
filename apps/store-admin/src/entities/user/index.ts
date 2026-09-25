@@ -24,6 +24,9 @@ export {
   // in TASK-480, along with the rest of the register. They were parked here only
   // until the `/staff` section existed to own them.
   useDeleteUser,
+  // TASK-396 — `POST /api/users/:id/email`, owner-only: the operator's half of
+  // an address change. The new address is left UNVERIFIED and mailed a link.
+  useChangeUserEmail,
   // Role value object (used for filters and badge mapping).
   UserEntityRole,
   // Customer-notes journal (TASK-430) — staff-only, append-only. There is no

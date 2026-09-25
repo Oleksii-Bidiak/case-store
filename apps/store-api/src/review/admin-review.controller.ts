@@ -20,6 +20,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { ReviewHiddenReason } from '@prisma/client';
 import { ReviewService } from './review.service';
 import { ReviewEntity, AdminReviewEntity, ReviewReplyEntity } from './entities';
 import { AdminReviewQueryDto, BulkReviewModerationDto, CreateReviewReplyDto } from './dto';
@@ -254,7 +255,7 @@ export class AdminReviewController {
   @ApiResponse({ status: 401, description: 'Authentication required' })
   @ApiResponse({ status: 403, description: 'Forbidden — reviews:moderate required' })
   async hideAuthor(@Param('userId') userId: string): Promise<AuthorModerationResponse> {
-    const updatedCount = await this.reviewService.hideAuthor(userId);
+    const updatedCount = await this.reviewService.hideAuthor(userId, ReviewHiddenReason.MODERATOR);
     return { data: { updatedCount } };
   }
 
@@ -263,9 +264,13 @@ export class AdminReviewController {
    *
    * Give an account its contribution back (TASK-589).
    *
-   * NOT a symmetric undo of the ratings. `hiddenAt` is cleared unconditionally,
-   * but whether the stars count again is decided by re-asking the email gate:
-   * `ratingVisible` folds both gates, and this route lifts only the moderator's.
+   * Lifts the MODERATOR's verdict and nothing else (TASK-599): rows a ban hid
+   * stay hidden until the un-ban, and on a banned or deleted account the rows
+   * wait under that account's own reason instead of being published.
+   *
+   * NOT a symmetric undo of the ratings either: whether the stars count again
+   * is decided by re-asking the email gate — `ratingVisible` folds both gates,
+   * and this route lifts only the moderator's.
    * See {@link ReviewService.unhideAuthor}.
    */
   @Post('authors/:userId/unhide')
@@ -285,7 +290,10 @@ export class AdminReviewController {
   @ApiResponse({ status: 401, description: 'Authentication required' })
   @ApiResponse({ status: 403, description: 'Forbidden — reviews:moderate required' })
   async unhideAuthor(@Param('userId') userId: string): Promise<AuthorModerationResponse> {
-    const updatedCount = await this.reviewService.unhideAuthor(userId);
+    const updatedCount = await this.reviewService.unhideAuthor(
+      userId,
+      ReviewHiddenReason.MODERATOR,
+    );
     return { data: { updatedCount } };
   }
 

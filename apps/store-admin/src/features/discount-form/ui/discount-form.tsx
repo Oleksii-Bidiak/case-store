@@ -44,6 +44,7 @@ const EMPTY_VALUES: DiscountFormInput = {
   startsAt: "",
   expiresAt: "",
   isActive: true,
+  showOnPromoPage: false,
 };
 
 /**
@@ -246,6 +247,27 @@ export function DiscountForm({
           {...register("isActive")}
         />
         <Label htmlFor="discount-active">{dict.discountForm.active}</Label>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <input
+            id="discount-show-on-promo-page"
+            type="checkbox"
+            className="size-4 rounded border-border accent-primary"
+            aria-describedby="discount-show-on-promo-page-hint"
+            {...register("showOnPromoPage")}
+          />
+          <Label htmlFor="discount-show-on-promo-page">
+            {dict.discountForm.showOnPromoPage}
+          </Label>
+        </div>
+        <p
+          id="discount-show-on-promo-page-hint"
+          className="text-sm text-muted-foreground"
+        >
+          {dict.discountForm.showOnPromoPageHint}
+        </p>
       </div>
 
       <FormActionsBar>

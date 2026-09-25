@@ -3,8 +3,14 @@ import {
   OrderStatusHistoryEntityChangeType,
   OrderEntityStatus,
   OrderEntityPaymentStatus,
+  OrderStatusHistoryEntityNote,
 } from "@/shared/api";
-import { historyActorLabel, historyChangeLabel } from "./history-label";
+import {
+  historyActorLabel,
+  historyChangeLabel,
+  historyNoteLabel,
+} from "./history-label";
+import { dict } from "@/shared/config";
 
 const ORDER_USER_ID = "user-1";
 
@@ -20,6 +26,7 @@ function makeEntry(
     fromPaymentStatus: null,
     toPaymentStatus: null,
     changedBy: null,
+    note: null,
     changedAt: "2026-07-08T10:00:00.000Z",
     ...overrides,
   };
@@ -66,5 +73,31 @@ describe("historyChangeLabel (TASK-251)", () => {
       }),
     );
     expect(label).toBe("Оплата: Очікує оплати → Оплачено");
+  });
+});
+
+// TASK-932 / TASK-788: the note is the part of the row an operator must not miss.
+describe("historyNoteLabel", () => {
+  it("names a shipment made without a confirmed online payment", () => {
+    expect(
+      historyNoteLabel(
+        makeEntry({ note: OrderStatusHistoryEntityNote.SHIPPED_UNPAID }),
+      ),
+    ).toBe(dict.orderStatus.unpaidShipHistoryNote);
+  });
+
+  it("names a payment that arrived after the order was cancelled", () => {
+    expect(
+      historyNoteLabel(
+        makeEntry({
+          changeType: OrderStatusHistoryEntityChangeType.PAYMENT_STATUS,
+          note: OrderStatusHistoryEntityNote.PAID_AFTER_CANCEL,
+        }),
+      ),
+    ).toBe(dict.orderStatus.paidAfterCancelHistoryNote);
+  });
+
+  it("is null on an ordinary row", () => {
+    expect(historyNoteLabel(makeEntry({ note: null }))).toBeNull();
   });
 });

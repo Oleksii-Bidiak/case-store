@@ -31,6 +31,22 @@ enum UserRole {
   MANAGER
 }
 
+/// What an EmailVerificationToken is for (TASK-396). One table for all three,
+/// because each is the same single-use, hashed-at-rest link that proves control
+/// of one inbox; only what the click DOES differs.
+///
+/// VERIFY              — proves the account's current address (TASK-342).
+/// EMAIL_CHANGE        — proves a NEW address before it becomes the login. Mailed
+///                       to the new address; confirming applies the change.
+/// EMAIL_CHANGE_REVERT — mailed to the OLD address when a change is requested:
+///                       "this wasn't me". Cancels a pending change or restores
+///                       the old address, and signs every session out.
+enum EmailTokenPurpose {
+  VERIFY
+  EMAIL_CHANGE
+  EMAIL_CHANGE_REVERT
+}
+
 /// How the customer chose to pay (TASK-330). Distinct from PaymentStatus, which
 /// says whether money actually moved: an ON_DELIVERY order stays PENDING until the
 /// operator settles it by hand, an ONLINE one until the provider's callback says
@@ -128,8 +144,14 @@ enum OrderHistoryChangeType {
 /// order stays CANCELLED and no stock moves; the operator either revives it (the
 /// normal revive path re-reserves stock) or refunds. Owner decision B-11 №3,
 /// plan 178.
+///
+/// SHIPPED_UNPAID — «відправлено без підтвердженої оплати» (TASK-788): an
+/// operator moved an ONLINE-paid order to SHIPPED while its payment was still
+/// PENDING/FAILED. Allowed (decision B-1: only the impossible is refused), but
+/// recorded on the STATUS row so the decision has a trace.
 enum OrderHistoryNote {
   PAID_AFTER_CANCEL
+  SHIPPED_UNPAID
 }
 
 /// Data type of a structured product characteristic (TASK-191, plan 112).
@@ -197,6 +219,28 @@ enum ReviewTextStatus {
   REJECTED
 }
 
+/// WHY an account's contribution was withdrawn (TASK-599) — the half of
+/// `Review.hiddenAt` that says which decision is holding the row down.
+///
+/// A ban and a moderator's hide used to write the same column, so un-banning
+/// cleared both: a spammer's reviews a moderator had pulled came straight back
+/// on the storefront the day the account was switched on again, without a
+/// trace. Each lever now lifts only what it put down.
+///
+/// Ranked, weakest first, and the order is the rule: a stronger reason is never
+/// overwritten by a weaker one, so banning a moderated account does not turn
+/// the moderator's decision into something an un-ban can undo.
+///  - `BAN`       — the account was switched off; switching it on restores these.
+///  - `MODERATOR` — a moderator withdrew the account's contribution; only a
+///                  moderator's explicit "restore" brings it back.
+///  - `DELETED`   — the account was soft-deleted (TASK-603). Nothing restores a
+///                  deleted account, so nothing restores these.
+enum ReviewHiddenReason {
+  BAN
+  MODERATOR
+  DELETED
+}
+
 // Models
 
 model User {
@@ -250,6 +294,13 @@ model User {
   /// first `UPDATE` run by hand; enforced here it cannot be broken at all — and
   /// ownership transfer is the one operation where "two owners for 200ms" would
   /// mean two people who can each lock the other out.
+  ///
+  /// NEVER A UNIQUE SELECTOR (TASK-634). The `@@unique` below makes `isOwner` a
+  /// valid `UserWhereUniqueInput`, so `update({ where: { isOwner: false } })`
+  /// type-checks — and only the `true` side is unique. On the `false` side it
+  /// matches every other account. Find the owner with `findFirst` and write by
+  /// `id`; ESLint (`no-restricted-syntax` in `apps/store-api/eslint.config.js`)
+  /// refuses the unique-selector form.
   isOwner             Boolean   @default(false) @map("is_owner")
 
   cart                    Cart?
@@ -281,8 +332,11 @@ model User {
   /// Not "returns of this user's orders": that is reached through `Return.order`.
   openedReturns           Return[]                 @relation("ReturnCreatedBy")
 
+  // Partial: unique for `true` only. Not a lookup key — see `isOwner` (TASK-634).
   @@unique([isOwner], where: { isOwner: true }, map: "users_single_owner_key")
   @@index([deletedAt])
+  // TASK-625: the public order lookup matches an account order by `user.phone`.
+  @@index([phone])
   @@map("users")
 }
 
@@ -724,6 +778,8 @@ model Order {
   @@index([paymentStatus])
   @@index([createdAt(sort: Desc)])
   @@index([deletedAt])
+  // TASK-625: the public order lookup matches a guest order by phone equality.
+  @@index([guestPhone])
   @@map("orders")
 }
 
@@ -849,6 +905,13 @@ model Review {
   /// appeal actually asks.
   hiddenAt DateTime? @map("hidden_at")
 
+  /// Which decision set `hiddenAt` (TASK-599). Null exactly when `hiddenAt` is —
+  /// a CHECK constraint in the migration holds the pair together, so a row can
+  /// never be hidden for no reason or carry a reason while visible. Every row
+  /// hidden before this column existed was backfilled `MODERATOR`: the
+  /// conservative reading, because an un-ban then cannot resurrect it.
+  hiddenReason ReviewHiddenReason? @map("hidden_reason")
+
   /// The address the submission came from, kept only for the abuse signals the
   /// owner asked for: a per-IP daily cap, and "a run of 1★ from one address".
   ///
@@ -876,6 +939,13 @@ model Review {
   // Abuse queries only: "how many submissions from this address today". Leads with
   // the address because that is what is known when the question is asked.
   @@index([createdIp, createdAt])
+  // The rating-abuse burst query (TASK-600): `GROUP BY product_id WHERE
+  // hidden_at IS NULL AND created_at >= now() - 1h`. None of the indexes above
+  // leads with `createdAt`, so every "needs action" read — invalidated after each
+  // order and each review — was a sequential scan of the whole table. Partial on
+  // `hiddenAt: null` because that is the query's own predicate, and the withdrawn
+  // rows are exactly the ones it must never touch.
+  @@index([createdAt, productId], where: { hiddenAt: null }, map: "reviews_visible_created_at_product_idx")
   @@map("reviews")
 }
 
@@ -1110,6 +1180,11 @@ model Discount {
   startsAt       DateTime?    @map("starts_at")
   expiresAt      DateTime?    @map("expires_at")
   isActive       Boolean      @default(true) @map("is_active")
+  /// «Показувати на сторінці «Акції»» (TASK-731, рішення B-11). A new code is
+  /// private until the operator publishes it; the public feed
+  /// (`GET /discounts/active`) filters on this in the repository, so an
+  /// unpublished code is invisible in the API too — it still applies by code.
+  showOnPromoPage Boolean     @default(false) @map("show_on_promo_page")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
@@ -2048,10 +2123,21 @@ model EmailVerificationToken {
   token     String    @unique
   userId    String    @map("user_id")
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// The address this link was mailed to — the one a click PROVES.
   email     String
   expiresAt DateTime  @map("expires_at")
   usedAt    DateTime? @map("used_at")
   createdAt DateTime  @default(now()) @map("created_at")
+
+  /// What a click on this link does (TASK-396). Every row that existed before
+  /// the column is a plain verification link, which is what the default says.
+  purpose EmailTokenPurpose @default(VERIFY)
+
+  /// The account's address when the link was issued — set for the two
+  /// address-change purposes. On EMAIL_CHANGE, confirming is refused unless the
+  /// account still has this address (the change was requested FROM it). On
+  /// EMAIL_CHANGE_REVERT, it is the address the click restores.
+  previousEmail String? @map("previous_email")
 
   @@index([userId])
   @@index([expiresAt])

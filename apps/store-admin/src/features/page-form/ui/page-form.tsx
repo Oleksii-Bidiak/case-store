@@ -58,9 +58,9 @@ const EMPTY_VALUES: PageFormInput = {
   metaDescription: "",
   keywords: "",
   ogImage: "",
-  // No `sortOrder` (TASK-428), and none after this merge either: the field is
-  // gone from the form, the schema keeps it optional, and omitting it from the
-  // payload is what makes the server append a new page to the end of the list.
+  // No `sortOrder` (TASK-428): the field is gone from the form and, since
+  // TASK-729, from the schema too; omitting it from the payload is what makes
+  // the server append a new page to the end of the list.
   status: "DRAFT",
   // LEGAL matches the API's own default, so "create page" without touching the
   // picker produces the same row it did before TASK-435.

@@ -8,10 +8,8 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
-  Logger,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { JwtService } from '@nestjs/jwt';
 import { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { FailClosedThrottle } from '../throttler';
@@ -24,7 +22,6 @@ import {
   ApiExcludeEndpoint,
   ApiExtraModels,
   ApiProperty,
-  getSchemaPath,
 } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
 import { AuthService } from './auth.service';
@@ -34,6 +31,8 @@ import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmEmailVerificationDto } from './dto/confirm-email-verification.dto';
+import { EmailChangeTokenDto, RequestEmailChangeDto } from './dto/email-change.dto';
+import { EmailChangeService } from './email-change.service';
 import { EmailVerificationService } from './email-verification.service';
 import { JwtRefreshGuard } from './guards';
 import { JwtAuthGuard } from './guards';
@@ -41,24 +40,44 @@ import { GoogleAuthGuard } from './guards';
 import { CurrentUser } from './decorators';
 import { AuthTokens } from './entities';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
-import { CartService } from '../cart/cart.service';
-import { CART_TOKEN_COOKIE } from '../cart/cart-identity.types';
-import { WishlistService } from '../wishlist/wishlist.service';
-import { WISHLIST_TOKEN_COOKIE } from '../wishlist/wishlist-identity.types';
+import { CART_TOKEN_COOKIE, buildCartTokenCookieOptions } from '../cart/cart-identity.types';
+import {
+  WISHLIST_TOKEN_COOKIE,
+  buildWishlistTokenCookieOptions,
+} from '../wishlist/wishlist-identity.types';
+import {
+  REFRESH_TOKEN_COOKIE,
+  buildRefreshCookieOptions,
+  expiredCookieOptions,
+} from './auth-cookies';
+import { GuestStateMergeService } from './guest-state-merge.service';
 import { PermissionService, type EffectivePermissions } from './permissions';
 
 /**
- * Response envelope for auth operations.
+ * Response envelope for register / login / refresh.
+ *
+ * `@ApiProperty` is what makes it a contract (TASK-825): without it the class
+ * reached Swagger with no properties at all, and Orval typed every one of these
+ * responses as `{ [key: string]: unknown }`.
  */
 class AuthResponseEnvelope {
-  data!: { accessToken: string };
+  @ApiProperty({ type: AuthTokens })
+  data!: AuthTokens;
+}
+
+/** A human-readable acknowledgement. */
+class MessageResponse {
+  @ApiProperty({ example: 'Logged out' })
+  message!: string;
 }
 
 /**
- * Response envelope for message operations.
+ * Response envelope for routes that answer with a message only (TASK-825 — see
+ * {@link AuthResponseEnvelope} for why the decorator matters).
  */
 class MessageResponseEnvelope {
-  data!: { message: string };
+  @ApiProperty({ type: MessageResponse })
+  data!: MessageResponse;
 }
 
 /**
@@ -87,6 +106,15 @@ class EmailVerificationConfirmEnvelope {
   data!: EmailVerificationConfirmed;
 }
 
+/** One held permission with its display label (TASK-725). */
+class PermissionEntryEntity {
+  @ApiProperty({ example: 'orders:read' })
+  key!: string;
+
+  @ApiProperty({ example: 'Переглядати замовлення' })
+  label!: string;
+}
+
 /** Effective-permission payload for `GET /auth/me/permissions` (TASK-334). */
 class EffectivePermissionsEntity {
   @ApiProperty({ enum: UserRole, example: UserRole.MANAGER })
@@ -111,6 +139,15 @@ class EffectivePermissionsEntity {
 
   @ApiProperty({ type: [String], example: ['orders:read', 'products:write'] })
   permissions!: string[];
+
+  @ApiProperty({
+    type: [PermissionEntryEntity],
+    description:
+      'The same keys with their Ukrainian catalogue labels, in catalogue (zone) order — ' +
+      'for the caller’s own profile screen (TASK-725). A key missing from the catalogue ' +
+      'is labelled with the key itself.',
+  })
+  entries!: PermissionEntryEntity[];
 }
 
 class PermissionsResponseEnvelope {
@@ -118,17 +155,13 @@ class PermissionsResponseEnvelope {
   data!: EffectivePermissionsEntity;
 }
 
-/**
- * Type aliases for controller return types.
- */
-type AuthResponse = { accessToken: string };
-type MessageResponse = { message: string };
-
 @ApiTags('Auth')
 @ApiExtraModels(
   AuthTokens,
   AuthResponseEnvelope,
+  MessageResponse,
   MessageResponseEnvelope,
+  PermissionEntryEntity,
   EffectivePermissionsEntity,
   PermissionsResponseEnvelope,
   // TASK-485: the confirm route's own envelope — it reports the guest orders it
@@ -138,16 +171,13 @@ type MessageResponse = { message: string };
 )
 @Controller('auth')
 export class AuthController {
-  private readonly logger = new Logger(AuthController.name);
-
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
-    private readonly jwtService: JwtService,
-    private readonly cartService: CartService,
-    private readonly wishlistService: WishlistService,
+    private readonly guestStateMerge: GuestStateMergeService,
     private readonly permissionService: PermissionService,
     private readonly emailVerificationService: EmailVerificationService,
+    private readonly emailChangeService: EmailChangeService,
   ) {}
 
   /**
@@ -166,12 +196,7 @@ export class AuthController {
   @ApiResponse({
     status: 201,
     description: 'User registered successfully',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(AuthResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(AuthTokens) } } },
-      ],
-    },
+    type: AuthResponseEnvelope,
   })
   @ApiResponse({ status: 400, description: 'Invalid input data' })
   @ApiResponse({ status: 409, description: 'Email already exists' })
@@ -179,12 +204,11 @@ export class AuthController {
     @Body() dto: RegisterDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ data: AuthResponse }> {
+  ): Promise<{ data: AuthTokens }> {
     const tokens = await this.authService.register(dto);
 
     this.setRefreshCookie(response, tokens.refreshToken);
-    await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
-    await this.mergeGuestWishlistIfPresent(request, response, tokens.accessToken);
+    await this.mergeGuestState(request, response, tokens.userId);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -211,24 +235,18 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Login successful',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(AuthResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(AuthTokens) } } },
-      ],
-    },
+    type: AuthResponseEnvelope,
   })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
   async login(
     @Body() dto: LoginDto,
     @Req() request: Request,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ data: AuthResponse }> {
+  ): Promise<{ data: AuthTokens }> {
     const tokens = await this.authService.login(dto.email, dto.password);
 
     this.setRefreshCookie(response, tokens.refreshToken);
-    await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
-    await this.mergeGuestWishlistIfPresent(request, response, tokens.accessToken);
+    await this.mergeGuestState(request, response, tokens.userId);
 
     return {
       data: { accessToken: tokens.accessToken },
@@ -372,19 +390,16 @@ export class AuthController {
   @ApiResponse({
     status: 200,
     description: 'Token refreshed successfully',
-    schema: {
-      allOf: [
-        { $ref: getSchemaPath(AuthResponseEnvelope) },
-        { properties: { data: { $ref: getSchemaPath(AuthTokens) } } },
-      ],
-    },
+    type: AuthResponseEnvelope,
   })
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
   async refresh(
-    @CurrentUser('id') userId: string,
+    // The refresh token alone identifies the session — AuthService resolves
+    // its owner from the stored row. The `@CurrentUser('id')` that used to sit
+    // here was never read (TASK-815).
     @CurrentUser('refreshToken') refreshToken: string,
     @Res({ passthrough: true }) response: Response,
-  ): Promise<{ data: AuthResponse }> {
+  ): Promise<{ data: AuthTokens }> {
     const tokens = await this.authService.refreshToken(refreshToken);
 
     this.setRefreshCookie(response, tokens.refreshToken);
@@ -495,6 +510,111 @@ export class AuthController {
   }
 
   /**
+   * POST /api/auth/email-change/request (TASK-396)
+   *
+   * Ask to sign in with a different address. Requires the current password; the
+   * login does NOT change here — a link goes to the new address, and a warning
+   * with a revert link goes to the current one.
+   */
+  @Post('email-change/request')
+  @HttpCode(HttpStatus.OK)
+  // Every accepted call sends TWO real emails, and it checks a password.
+  @Throttle({ default: { limit: 3, ttl: 60000 } })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Request a change of the sign-in email (requires the current password)',
+    operationId: 'requestEmailChange',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Confirmation link sent to the new address; notice sent to the current one',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid address, or the address you already have' })
+  @ApiResponse({ status: 401, description: 'Not signed in, or the current password is wrong' })
+  @ApiResponse({ status: 409, description: 'The address belongs to another account' })
+  async requestEmailChange(
+    @CurrentUser('id') userId: string,
+    @Body() dto: RequestEmailChangeDto,
+  ): Promise<{ data: MessageResponse }> {
+    await this.emailChangeService.requestChange(userId, dto.newEmail, dto.currentPassword);
+
+    return {
+      data: {
+        message: 'A confirmation link has been sent to the new address.',
+      },
+    };
+  }
+
+  /**
+   * POST /api/auth/email-change/confirm (TASK-396)
+   *
+   * Apply the change from the link in the NEW inbox. Public — the click carries
+   * no session. Every session ends, so the refresh cookie is cleared too.
+   */
+  @Post('email-change/confirm')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // An unauthenticated write that changes a login: fail closed (TASK-493 rule).
+  @FailClosedThrottle()
+  @ApiOperation({
+    summary: 'Confirm a change of the sign-in email with the emailed token',
+    operationId: 'confirmEmailChange',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The new address is the login; all sessions were signed out',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid, used, expired or superseded link' })
+  @ApiResponse({ status: 409, description: 'The address was registered by someone else meanwhile' })
+  async confirmEmailChange(
+    @Body() dto: EmailChangeTokenDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ data: MessageResponse }> {
+    await this.emailChangeService.confirmChange(dto.token);
+
+    this.clearRefreshCookie(response);
+
+    return { data: { message: 'Email address changed. Please sign in again.' } };
+  }
+
+  /**
+   * POST /api/auth/email-change/revert (TASK-396)
+   *
+   * "This wasn't me" — from the link in the OLD inbox. Cancels a pending change
+   * or restores the old address, and signs every session out. Public.
+   */
+  @Post('email-change/revert')
+  @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @FailClosedThrottle()
+  @ApiOperation({
+    summary: 'Undo a change of the sign-in email from the link sent to the old address',
+    operationId: 'revertEmailChange',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'The old address is the login again; all sessions were signed out',
+    type: MessageResponseEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'Invalid, used or expired link' })
+  @ApiResponse({ status: 409, description: 'The old address now belongs to another account' })
+  async revertEmailChange(
+    @Body() dto: EmailChangeTokenDto,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<{ data: MessageResponse }> {
+    await this.emailChangeService.revertChange(dto.token);
+
+    this.clearRefreshCookie(response);
+
+    return {
+      data: { message: 'The change was undone and every session signed out.' },
+    };
+  }
+
+  /**
    * GET /api/auth/me/permissions (TASK-334)
    *
    * What the signed-in caller may actually do — the admin frontend's single
@@ -589,8 +709,7 @@ export class AuthController {
       const tokens = await this.authService.loginWithGoogleProfile(profile);
 
       this.setRefreshCookie(response, tokens.refreshToken);
-      await this.mergeGuestCartIfPresent(request, response, tokens.accessToken);
-      await this.mergeGuestWishlistIfPresent(request, response, tokens.accessToken);
+      await this.mergeGuestState(request, response, tokens.userId);
 
       response.redirect(302, `${storeClientUrl}${profile.redirect}`);
     } catch {
@@ -601,136 +720,80 @@ export class AuthController {
   }
 
   /**
-   * Set the refresh token as an HttpOnly cookie on the response.
-   * Cookie is scoped to /api/auth/refresh path so it's only sent on refresh requests.
+   * Set the refresh token as an HttpOnly cookie on the response, scoped to the
+   * one route that reads it.
    */
   private setRefreshCookie(response: Response, refreshToken: string): void {
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-
-    response.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-      path: '/api/auth/refresh',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
-    });
+    response.cookie(
+      REFRESH_TOKEN_COOKIE,
+      refreshToken,
+      // Max-Age = the token's own lifetime (TASK-789), never a constant.
+      buildRefreshCookieOptions(this.isProduction(), this.authService.refreshTokenTtlMs),
+    );
   }
 
-  /**
-   * Clear the refresh token cookie by setting it with an expired maxAge.
-   */
+  /** Expire the refresh cookie with the same attributes it was set with. */
   private clearRefreshCookie(response: Response): void {
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-
-    response.cookie('refreshToken', '', {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-      path: '/api/auth/refresh',
-      maxAge: 0,
-    });
+    response.cookie(
+      REFRESH_TOKEN_COOKIE,
+      '',
+      expiredCookieOptions(buildRefreshCookieOptions(this.isProduction(), 0)),
+    );
   }
 
   /**
-   * If the request carries a guest `cartToken` cookie, merge that guest cart
-   * into the authenticated user's cart and clear the cookie. The user ID is
-   * read from the freshly-signed access token's `sub` claim.
+   * Hand the request's guest cart and wishlist to {@link GuestStateMergeService}
+   * and drop the cookie of each collection that actually merged (TASK-824).
    *
-   * A merge failure must never block authentication — errors are logged and
-   * swallowed. The guest cookie is cleared ONLY after a successful merge, so a
-   * transient failure leaves the guest cart intact and the merge can be retried
-   * on the next authenticated request.
+   * Only the HTTP half lives here — reading the cookies and clearing them. The
+   * merge itself, and the rule that a failure never blocks sign-in, belong to
+   * the service. A cookie is cleared ONLY for a merge that succeeded, so a
+   * failed merge leaves the guest token in the browser for the next sign-in.
+   *
+   * Each guest cookie is expired with the options its own interceptor SET it
+   * with, so the clear cannot drift from the set.
+   *
+   * `userId` comes from AuthService with the tokens (TASK-792) — not from
+   * decoding the access token just minted, which is how an empty decode used to
+   * clear the guest cookies without merging anything.
    */
-  private async mergeGuestCartIfPresent(
+  private async mergeGuestState(
     request: Request,
     response: Response,
-    accessToken: string,
+    userId: string,
   ): Promise<void> {
     const cartToken: string | undefined = request.cookies?.[CART_TOKEN_COOKIE];
-
-    if (!cartToken) {
-      return;
-    }
-
-    try {
-      const payload = this.jwtService.decode(accessToken) as { sub?: string } | null;
-      const userId = payload?.sub;
-
-      if (userId) {
-        await this.cartService.mergeGuestCart(cartToken, userId);
-      }
-
-      // Clear the guest cookie only on success — never in a finally block —
-      // so a failed merge does not discard the guest cart token.
-      this.clearCartTokenCookie(response);
-    } catch (error) {
-      this.logger.error('Guest cart merge on authentication failed', error as Error);
-    }
-  }
-
-  /**
-   * Clear the guest cart token cookie after a successful merge.
-   */
-  private clearCartTokenCookie(response: Response): void {
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-
-    response.cookie(CART_TOKEN_COOKIE, '', {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-      path: '/api',
-      maxAge: 0,
-    });
-  }
-
-  /**
-   * If the request carries a guest `wishlistToken` cookie, merge that guest
-   * wishlist into the authenticated user's wishlist and clear the cookie. The
-   * user ID is read from the freshly-signed access token's `sub` claim.
-   *
-   * Sibling of {@link mergeGuestCartIfPresent} — same defensive contract: a
-   * merge failure must never block authentication (errors are logged and
-   * swallowed), and the guest cookie is cleared ONLY after a successful merge so
-   * a transient failure leaves the guest wishlist intact for a later retry.
-   */
-  private async mergeGuestWishlistIfPresent(
-    request: Request,
-    response: Response,
-    accessToken: string,
-  ): Promise<void> {
     const wishlistToken: string | undefined = request.cookies?.[WISHLIST_TOKEN_COOKIE];
 
-    if (!wishlistToken) {
+    if (!cartToken && !wishlistToken) {
       return;
     }
 
-    try {
-      const payload = this.jwtService.decode(accessToken) as { sub?: string } | null;
-      const userId = payload?.sub;
+    const { cartMerged, wishlistMerged } = await this.guestStateMerge.mergeInto(userId, {
+      cartToken,
+      wishlistToken,
+    });
 
-      if (userId) {
-        await this.wishlistService.mergeGuestWishlist(wishlistToken, userId);
-      }
+    if (cartMerged) {
+      response.cookie(
+        CART_TOKEN_COOKIE,
+        '',
+        expiredCookieOptions(buildCartTokenCookieOptions(this.isProduction())),
+      );
+    }
 
-      // Clear the guest cookie only on success — never in a finally block.
-      this.clearWishlistTokenCookie(response);
-    } catch (error) {
-      this.logger.error('Guest wishlist merge on authentication failed', error as Error);
+    if (wishlistMerged) {
+      response.cookie(
+        WISHLIST_TOKEN_COOKIE,
+        '',
+        expiredCookieOptions(buildWishlistTokenCookieOptions(this.isProduction())),
+      );
     }
   }
 
-  /**
-   * Clear the guest wishlist token cookie after a successful merge.
-   */
-  private clearWishlistTokenCookie(response: Response): void {
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
-
-    response.cookie(WISHLIST_TOKEN_COOKIE, '', {
-      httpOnly: true,
-      secure: isProduction,
-      sameSite: 'strict',
-      path: '/api',
-      maxAge: 0,
-    });
+  // A method, not a getter: route-discovery specs walk the prototype and would
+  // invoke a getter on an instance-less prototype.
+  private isProduction(): boolean {
+    return this.configService.get<string>('NODE_ENV') === 'production';
   }
 }

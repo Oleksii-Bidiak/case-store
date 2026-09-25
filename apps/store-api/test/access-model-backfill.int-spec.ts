@@ -316,10 +316,11 @@ describe('the single-owner invariant (TASK-474) — integration', () => {
             },
           });
 
-        // «Менеджер (як було)» may already exist in this database from a real
-        // migration run, so the template is asserted on the DELTA rather than on
-        // its absolute contents: what these statements ADD is the property under
-        // test, and it is the only part of it this fixture controls.
+        // «Менеджер (як було)» may or may not exist in this database — a real
+        // migration run creates it and, where it came out empty, TASK-635's
+        // migration removes it again — so the template is asserted on the DELTA
+        // rather than on its absolute contents: what these statements ADD is the
+        // property under test, and it is the only part of it this fixture controls.
         const templateBefore = await tx.permissionTemplateItem.findMany({
           where: { template: { name: MANAGER_BACKFILL_TEMPLATE_NAME } },
           select: { permission: true },
@@ -374,7 +375,8 @@ describe('the single-owner invariant (TASK-474) — integration', () => {
       expect(granted.shopper).toEqual([]);
 
       // The same set kept under a name, so the shape of the job survives the move
-      // off roles — this is «Менеджер (як було)» in AD-STAFF-11.
+      // off roles — this is «Менеджер (як було)» in AD-STAFF-11. Non-empty here,
+      // so TASK-635's clean-up (tested below) would keep it.
       // Exact on the DELTA: the revoked key and the other role's key must not
       // come along either, and an exact set is what catches both directions.
       expect(granted.templateAdded).toEqual(['orders:read', 'orders:write']);
@@ -417,6 +419,146 @@ describe('the single-owner invariant (TASK-474) — integration', () => {
       });
 
       expect(counts).toEqual({ first: 1, second: 1 });
+    });
+  });
+
+  /**
+   * The media backfill, per person (TASK-614): the SHIPPED file executed against
+   * real rows, in a transaction that is always rolled back. The unit pin in
+   * `permission.catalog.spec.ts` can say which keys the SQL names; only running
+   * it can say whom it reaches.
+   */
+  describe('the per-person media backfill (TASK-614), replayed against real Postgres', () => {
+    class Rollback extends Error {}
+
+    function readShipped(suffix: string): string[] {
+      const root = resolve(__dirname, '../prisma/migrations');
+      const dir = readdirSync(root).find((entry) => entry.endsWith(suffix));
+      if (!dir) {
+        throw new Error(`No *${suffix} migration under ${root}.`);
+      }
+      return readFileSync(join(root, dir, 'migration.sql'), 'utf8')
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('--'))
+        .join('\n')
+        .split(';')
+        .map((statement) => statement.trim())
+        .filter((statement) => statement.length > 0);
+    }
+
+    it('follows a content-write grant with the picker, and reaches nobody else', async () => {
+      const statements = readShipped('_backfill_media_permissions_per_user');
+      let result: { editor: string[]; clerk: string[]; template: string[]; again: number };
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          const editor = await tx.user.create({
+            data: { email: email('media-editor'), passwordHash: 'x', role: UserRole.MANAGER },
+          });
+          const clerk = await tx.user.create({
+            data: { email: email('media-clerk'), passwordHash: 'x', role: UserRole.MANAGER },
+          });
+          await tx.userPermission.createMany({
+            data: [
+              { userId: editor.id, permission: 'banners:write' },
+              { userId: clerk.id, permission: 'orders:write' },
+            ],
+          });
+          const template = await tx.permissionTemplate.create({
+            data: {
+              name: `t614-${suffix}`,
+              items: { create: [{ permission: 'products:write' }] },
+            },
+          });
+
+          for (const statement of statements) {
+            await tx.$executeRawUnsafe(statement);
+          }
+          const held = async (userId: string) =>
+            (
+              await tx.userPermission.findMany({
+                where: { userId },
+                orderBy: { permission: 'asc' },
+              })
+            ).map((row) => row.permission);
+          const editorRows = await held(editor.id);
+
+          // Idempotent: a second run adds nothing.
+          for (const statement of statements) {
+            await tx.$executeRawUnsafe(statement);
+          }
+
+          result = {
+            editor: editorRows,
+            clerk: await held(clerk.id),
+            template: (
+              await tx.permissionTemplateItem.findMany({
+                where: { templateId: template.id },
+                orderBy: { permission: 'asc' },
+              })
+            ).map((item) => item.permission),
+            again: (await held(editor.id)).length,
+          };
+          throw new Rollback();
+        });
+      } catch (error) {
+        if (!(error instanceof Rollback)) throw error;
+      }
+
+      expect(result!.editor).toEqual(['banners:write', 'media:read', 'media:write']);
+      // `orders:write` is not a content-write key: no picker, no reach added.
+      expect(result!.clerk).toEqual(['orders:write']);
+      expect(result!.template).toEqual(['media:read', 'media:write', 'products:write']);
+      expect(result!.again).toBe(3);
+    });
+
+    /**
+     * TASK-635: the shipped clean-up removes «Менеджер (як було)» only where it
+     * holds nothing. Both sides of that, against real rows, rolled back.
+     */
+    it('removes the empty manager template and keeps a filled one', async () => {
+      const statements = readShipped('_drop_empty_manager_as_was_template');
+      let outcome: { emptyLeft: number; filledLeft: number; filledItems: number };
+
+      try {
+        await prisma.$transaction(async (tx) => {
+          // Start from a known state whatever a real migration run left behind.
+          await tx.permissionTemplate.deleteMany({
+            where: { name: MANAGER_BACKFILL_TEMPLATE_NAME },
+          });
+
+          await tx.permissionTemplate.create({ data: { name: MANAGER_BACKFILL_TEMPLATE_NAME } });
+          for (const statement of statements) {
+            await tx.$executeRawUnsafe(statement);
+          }
+          const emptyLeft = await tx.permissionTemplate.count({
+            where: { name: MANAGER_BACKFILL_TEMPLATE_NAME },
+          });
+
+          const filled = await tx.permissionTemplate.create({
+            data: {
+              name: MANAGER_BACKFILL_TEMPLATE_NAME,
+              items: { create: [{ permission: 'orders:read' }] },
+            },
+          });
+          for (const statement of statements) {
+            await tx.$executeRawUnsafe(statement);
+          }
+
+          outcome = {
+            emptyLeft,
+            filledLeft: await tx.permissionTemplate.count({ where: { id: filled.id } }),
+            filledItems: await tx.permissionTemplateItem.count({
+              where: { templateId: filled.id },
+            }),
+          };
+          throw new Rollback();
+        });
+      } catch (error) {
+        if (!(error instanceof Rollback)) throw error;
+      }
+
+      expect(outcome!).toEqual({ emptyLeft: 0, filledLeft: 1, filledItems: 1 });
     });
   });
 });

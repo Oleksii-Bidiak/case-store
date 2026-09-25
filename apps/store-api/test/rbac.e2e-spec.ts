@@ -9,6 +9,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository } from '../src/cart/cart.repository';
+import { createCartRepositoryMock } from './cart-repository.mock';
 import { OrderRepository } from '../src/order/order.repository';
 import { ProductService } from '../src/product/product.service';
 import { MailService } from '../src/mail/mail.service';
@@ -122,7 +123,7 @@ describe('RBAC guards (e2e)', () => {
     activate: jest.fn(),
     softDelete: jest.fn(),
   };
-  const cartRepositoryMock = { findByUserId: jest.fn() };
+  const cartRepositoryMock = createCartRepositoryMock();
   const mailServiceMock = { sendOrderConfirmation: jest.fn().mockResolvedValue(undefined) };
   const prismaServiceMock = {
     $connect: jest.fn(),
@@ -538,7 +539,25 @@ describe('RBAC guards (e2e)', () => {
         isOwner: false,
         isAdmin: false,
         permissions: ['products:read', 'products:write'],
+        // TASK-725: the profile screen reads labels, not keys.
+        entries: [
+          { key: 'products:read', label: 'Переглядати товари' },
+          { key: 'products:write', label: 'Редагувати товари й ціни' },
+        ],
       });
+    });
+
+    it('labels a deputy admin’s non-grantable keys too (TASK-725)', async () => {
+      const response = await request(app.getHttpServer())
+        .get('/api/auth/me/permissions')
+        .set('Authorization', `Bearer ${token(deputy.id, deputy.role)}`)
+        .expect(200);
+
+      expect(response.body.data.entries).toContainEqual({
+        key: 'staff:read',
+        label: 'Переглядати службові акаунти',
+      });
+      expect(response.body.data.entries).toHaveLength(response.body.data.permissions.length);
     });
 
     it('reports a customer as holding nothing', async () => {
@@ -552,6 +571,7 @@ describe('RBAC guards (e2e)', () => {
         isOwner: false,
         isAdmin: false,
         permissions: [],
+        entries: [],
       });
     });
 

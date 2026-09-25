@@ -16,6 +16,7 @@ import {
   ApiCookieAuth,
   ApiParam,
   ApiExtraModels,
+  ApiProperty,
   getSchemaPath,
 } from '@nestjs/swagger';
 import { CartService } from './cart.service';
@@ -29,8 +30,13 @@ import { CartEntity, CartTotals } from './entities';
 /**
  * Response envelope for cart operations.
  * All cart endpoints return the full cart with totals.
+ *
+ * `data` carries its own `@ApiProperty` (TASK-825): without it the envelope was
+ * published as an empty object and Orval typed every cart response as
+ * `{ [key: string]: unknown }`.
  */
 class CartResponseEnvelope {
+  @ApiProperty({ type: () => CartEntity })
   data!: CartEntity;
 }
 
@@ -97,7 +103,8 @@ export class CartController {
   /**
    * PATCH /api/cart/items/:itemId
    *
-   * Update a cart item's quantity. If quantity is 0, the item is removed.
+   * Update a cart item's quantity (1–99). A 0 is rejected with 400 by the DTO;
+   * removing a line is DELETE /api/cart/items/:itemId.
    */
   @Patch('items/:itemId')
   @ApiOperation({ summary: 'Update cart item quantity', operationId: 'updateCartItem' })

@@ -11,6 +11,7 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository } from '../src/cart/cart.repository';
+import { createCartRepositoryMock } from './cart-repository.mock';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
@@ -68,19 +69,7 @@ describe('Security hardening (e2e)', () => {
     activate: jest.fn(),
   };
 
-  const cartRepositoryMock = {
-    findByUserId: jest.fn(),
-    findByToken: jest.fn(),
-    findById: jest.fn(),
-    findOrCreate: jest.fn(),
-    assignCartToUser: jest.fn(),
-    mergeGuestCartIntoUser: jest.fn(),
-    addItem: jest.fn(),
-    updateItem: jest.fn(),
-    removeItem: jest.fn(),
-    clearItems: jest.fn(),
-    findItem: jest.fn(),
-  };
+  const cartRepositoryMock = createCartRepositoryMock();
 
   const prismaServiceMock = {
     $connect: jest.fn(),

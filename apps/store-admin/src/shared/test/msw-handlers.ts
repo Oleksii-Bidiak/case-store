@@ -48,8 +48,12 @@ export const handlers = [
         // NeedsActionWidget incidentally, so a counter missing here renders as
         // `undefined` in every one of them instead of failing in just this one.
         ratingAbuse: 0,
+        // TASK-601: what `ratingAbuse` counted, by name — empty when it is 0.
+        ratingAbuseSignals: { productIds: [], createdIps: [] },
         // TASK-470: the 7th counter, in the default payload for the same reason.
         unavailableItems: 0,
+        // TASK-352: «Оплачено після скасування».
+        paidAfterCancel: 0,
       },
     }),
   ),
@@ -107,6 +111,17 @@ export const handlers = [
   // Admin order list — empty page by default; tolerates any `status` CSV so the
   // lifecycle tabs (TASK-250) never hit onUnhandledRequest. Override per-test.
   http.get("*/api/admin/orders", () =>
+    HttpResponse.json({
+      data: [],
+      meta: { total: 0, page: 1, limit: 20, totalPages: 0 },
+    }),
+  ),
+
+  // Admin review moderation queue — empty by default. Since TASK-722 the nav's
+  // «Відгуки» badge reads `meta.total` of `?status=pending&limit=1` from here
+  // (instead of the analytics-only needs-action endpoint), and the nav is
+  // mounted by every shell test. Override per-test.
+  http.get("*/api/admin/reviews", () =>
     HttpResponse.json({
       data: [],
       meta: { total: 0, page: 1, limit: 20, totalPages: 0 },
@@ -216,12 +231,44 @@ export const handlers = [
   // DEPUTY admin, which is `isOwner: false` with `isAdmin: true`.
   http.get("*/api/auth/me/permissions", () =>
     HttpResponse.json({
-      data: { role: "ADMIN", isOwner: true, isAdmin: true, permissions: [] },
+      data: {
+        role: "ADMIN",
+        isOwner: true,
+        isAdmin: true,
+        permissions: [],
+        entries: [],
+      },
     }),
   ),
 
   // CSRF token fetched lazily by the axios instance before mutations.
   http.get("*/api/csrf-token", () =>
     HttpResponse.json({ data: { csrfToken: "test-csrf" } }),
+  ),
+
+  // Applying a permission template (TASK-638): the hiring wizard now calls this
+  // after creating the account, so a suite that walks the wizard to the end
+  // stays off onUnhandledRequest. Echoes an empty template onto the requested
+  // person; suites that care about the result override it.
+  http.post(
+    "*/api/admin/permission-templates/:id/apply",
+    async ({ params, request }) => {
+      const body = (await request.json()) as { userId: string };
+      return HttpResponse.json({
+        data: {
+          template: {
+            id: String(params.id),
+            name: "Template",
+            description: null,
+            permissions: [],
+            createdAt: "2026-09-01T00:00:00.000Z",
+            updatedAt: "2026-09-01T00:00:00.000Z",
+          },
+          userId: body.userId,
+          before: [],
+          after: [],
+        },
+      });
+    },
   ),
 ];

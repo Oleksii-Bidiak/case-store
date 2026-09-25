@@ -25,13 +25,34 @@ import { E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD } from "./seed-e2e";
  * A login per test costs ~2s and gives each context a token only it will use.
  */
 export async function loginAsAdmin(page: Page): Promise<void> {
+  await loginAsStaff(page, {
+    email: E2E_ADMIN_EMAIL,
+    password: E2E_ADMIN_PASSWORD,
+  });
+}
+
+/** Credentials of one seeded staff account (see `seed-e2e.ts`). */
+export interface StaffCredentials {
+  email: string;
+  password: string;
+}
+
+/**
+ * Sign in ANY seeded staff account (TASK-715) — the same flow as
+ * `loginAsAdmin`, for specs that need a narrower session than the admin's,
+ * e.g. the read-only manager whose order card must show no controls.
+ */
+export async function loginAsStaff(
+  page: Page,
+  { email, password }: StaffCredentials,
+): Promise<void> {
   await page.goto("/login");
 
   // Labels are the Ukrainian strings from
   // `apps/store-admin/src/shared/config/dictionary.ts` (`dict.login`); the admin
   // app is not importable from here, so they are matched loosely.
-  await page.getByLabel(/(електронна пошта|email)/i).fill(E2E_ADMIN_EMAIL);
-  await page.getByLabel(/пароль/i).fill(E2E_ADMIN_PASSWORD);
+  await page.getByLabel(/(електронна пошта|email)/i).fill(email);
+  await page.getByLabel(/пароль/i).fill(password);
   await page.getByRole("button", { name: /^увійти$/i }).click();
 
   // A CUSTOMER login is rejected in place with "не має прав адміністратора", so

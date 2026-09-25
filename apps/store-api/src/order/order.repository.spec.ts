@@ -48,6 +48,10 @@ const makeTx = () => ({
   cartItem: {
     deleteMany: jest.fn(),
   },
+  // TASK-627: the lines a released reservation gives back / a late payment re-takes.
+  orderItem: {
+    findMany: jest.fn(),
+  },
   product: {
     updateMany: jest.fn(),
     update: jest.fn(),
@@ -82,10 +86,14 @@ const prismaMock = {
     update: jest.fn(),
     // TASK-485: claiming guest orders onto a freshly-verified account.
     updateMany: jest.fn(),
+    // TASK-786: the admin details write re-reads the row it just wrote.
+    findUniqueOrThrow: jest.fn(),
   },
   // TASK-251: history read path.
   orderStatusHistory: {
     findMany: jest.fn(),
+    // TASK-620: who set the REFUNDED mark a correction would lift.
+    findFirst: jest.fn(),
   },
   // TASK-771: the revive's cap check compares against a field reference.
   discount: {
@@ -569,6 +577,81 @@ describe('OrderRepository', () => {
       );
     });
 
+    // ── TASK-627: cancelling a live order whose hold was already released ──
+    // ORDER_RESERVATION_EXPIRY=release leaves PENDING orders with `restockedAt`
+    // set. Their stock is already back, so the cancel must credit NOTHING — but it
+    // must still happen (the customer's own cancel used to answer 409 «already
+    // returned») and still give the promo slot back.
+    describe('an order whose hold was released (TASK-627)', () => {
+      const seedReleasedTx = ({ won = true }: { won?: boolean } = {}) => {
+        const tx = seedCancelTx();
+        tx.order.updateMany
+          .mockReset()
+          // The held-stock arbiter matches nothing: restockedAt is already set…
+          .mockResolvedValueOnce({ count: 0 })
+          // …the released-hold arbiter decides.
+          .mockResolvedValueOnce({ count: won ? 1 : 0 });
+        return tx;
+      };
+
+      it('cancels it without crediting any stock', async () => {
+        const tx = seedReleasedTx();
+
+        await repository.cancelAndRestock('order-1', 'user-uuid-1');
+
+        expect(tx.order.updateMany).toHaveBeenLastCalledWith({
+          where: {
+            id: 'order-1',
+            restockedAt: { not: null },
+            status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING] },
+          },
+          data: { status: OrderStatus.CANCELLED },
+        });
+        expect(tx.product.update).not.toHaveBeenCalled();
+      });
+
+      it('gives the promo slot back and writes the history row', async () => {
+        const tx = seedReleasedTx();
+        tx.discountRedemption.findUnique.mockResolvedValue({
+          id: 'redemption-1',
+          discountId: 'discount-1',
+        });
+        tx.discountRedemption.deleteMany.mockResolvedValue({ count: 1 });
+
+        await repository.cancelAndRestock('order-1', 'user-uuid-1');
+
+        expect(tx.discountRedemption.deleteMany).toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ toStatus: OrderStatus.CANCELLED }),
+          }),
+        );
+      });
+
+      it('carries the optimistic lock into the released-hold arbiter too', async () => {
+        const tx = seedReleasedTx();
+        const expectedUpdatedAt = new Date('2026-09-24T10:00:00.000Z');
+
+        await repository.cancelAndRestock('order-1', null, { expectedUpdatedAt });
+
+        expect(tx.order.updateMany).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ updatedAt: expectedUpdatedAt }),
+          }),
+        );
+      });
+
+      it('still refuses when neither arbiter matches (already cancelled)', async () => {
+        const tx = seedReleasedTx({ won: false });
+
+        await expect(repository.cancelAndRestock('order-1', null)).rejects.toThrow(
+          ConflictException,
+        );
+        expect(tx.product.update).not.toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+      });
+    });
+
     // ── TASK-771: the promo slot goes back together with the stock ──
     describe('promo redemption release (TASK-771)', () => {
       it('deletes the order’s redemption and decrements redeemedCount by the rows deleted', async () => {
@@ -655,9 +738,41 @@ describe('OrderRepository', () => {
         status: OrderStatus.PENDING,
         items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
       });
+      // TASK-627: the restockedAt arbiter claims the row before any stock moves.
+      tx.order.updateMany.mockResolvedValue({ count: 1 });
       prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
       return tx;
     };
+
+    // TASK-627: two paths now re-take a released hold — this one and a late
+    // payment (applyPaymentOutcome). Each claims the row on `restockedAt IS NOT
+    // NULL` before decrementing, so whichever commits second finds nothing to
+    // re-take and decrements nothing: the stock is never taken twice.
+    it('claims the row on restockedAt IS NOT NULL (and the status it read) before any stock moves', async () => {
+      const tx = seedTx();
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID, null);
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: { id: 'order-1', status: OrderStatus.CANCELLED, restockedAt: { not: null } },
+        data: { restockedAt: null },
+      });
+      expect(tx.order.updateMany.mock.invocationCallOrder[0]).toBeLessThan(
+        tx.product.updateMany.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('re-takes nothing when the hold was already re-taken by someone else (409)', async () => {
+      const tx = seedTx();
+      tx.order.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        repository.reviveAndReserve('order-1', OrderStatus.PENDING, PaymentStatus.PAID, null),
+      ).rejects.toThrow(ConflictException);
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+    });
 
     it('conditionally re-decrements stock per position, sets the new status, and clears restockedAt', async () => {
       const tx = seedTx();
@@ -924,6 +1039,40 @@ describe('OrderRepository', () => {
       // Default (no options) leaves derived-stock caches untouched.
       expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
       expect(cacheMock.del).not.toHaveBeenCalled();
+    });
+
+    it('writes the history row with the note the service decided on (TASK-788)', async () => {
+      const tx = seedTx();
+
+      await repository.updateStatus(
+        'order-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PENDING,
+        'admin-uuid-1',
+        { note: OrderHistoryNote.SHIPPED_UNPAID },
+      );
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          toStatus: OrderStatus.SHIPPED,
+          note: OrderHistoryNote.SHIPPED_UNPAID,
+        }),
+      });
+    });
+
+    it('writes no note on an ordinary move', async () => {
+      const tx = seedTx();
+
+      await repository.updateStatus(
+        'order-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PAID,
+        'admin-uuid-1',
+      );
+
+      expect(tx.orderStatusHistory.create.mock.calls[0][0].data).not.toHaveProperty('note');
     });
 
     // ── TASK-332: optimistic locking on updatedAt (edge case E-11) ──────────────
@@ -1298,6 +1447,211 @@ describe('OrderRepository', () => {
         'history insert failed',
       );
     });
+
+    // ── TASK-627: the stock hold joins the arbiter, and a released one is re-taken ──
+    describe('stockHold (TASK-627)', () => {
+      const LINES = [
+        { productId: 'product-uuid-1', quantity: 2 },
+        { productId: 'product-uuid-2', quantity: 1 },
+      ];
+
+      it('held: pays only an order whose hold is still in place', async () => {
+        const tx = seedTx();
+
+        await repository.applyPaymentOutcome({ ...successPlan, stockHold: 'held' });
+
+        expect(tx.order.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: {
+              id: 'order-1',
+              status: OrderStatus.PENDING,
+              paymentStatus: PaymentStatus.PENDING,
+              restockedAt: null,
+            },
+          }),
+        );
+        expect(tx.product.updateMany).not.toHaveBeenCalled();
+      });
+
+      // The race the int-spec plays for real: a release that committed after the
+      // plan was read. Zero rows → the whole payment rolls back and is re-planned
+      // against the released row, where it becomes a re-reserve.
+      it('held: refuses when a release committed in between', async () => {
+        const tx = seedTx();
+        tx.order.updateMany.mockResolvedValue({ count: 0 });
+
+        await expect(
+          repository.applyPaymentOutcome({ ...successPlan, stockHold: 'held' }),
+        ).rejects.toThrow(ConflictException);
+        expect(tx.product.updateMany).not.toHaveBeenCalled();
+      });
+
+      it('released: re-reserves every line with the oversell guard and clears restockedAt', async () => {
+        const tx = seedTx();
+        tx.orderItem.findMany.mockResolvedValue(LINES);
+        tx.product.updateMany.mockResolvedValue({ count: 1 });
+
+        await repository.applyPaymentOutcome({ ...successPlan, stockHold: 'released' });
+
+        expect(tx.order.updateMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({ restockedAt: { not: null } }),
+          }),
+        );
+        expect(tx.product.updateMany).toHaveBeenCalledWith({
+          where: { id: 'product-uuid-1', stock: { gte: 2 } },
+          data: { stock: { decrement: 2 } },
+        });
+        expect(tx.product.updateMany).toHaveBeenCalledWith({
+          where: { id: 'product-uuid-2', stock: { gte: 1 } },
+          data: { stock: { decrement: 1 } },
+        });
+        expect(tx.order.update).toHaveBeenCalledWith({
+          where: { id: 'order-1' },
+          data: { restockedAt: null },
+        });
+      });
+
+      // The money is a fact and is kept. The stock is not there, so nothing is
+      // half-taken: the lines already decremented are put back, `restockedAt`
+      // stays, and the order shows in «Позиція недоступна» for the operator.
+      it('released + stock gone: records the payment, takes nothing, keeps restockedAt', async () => {
+        const tx = seedTx();
+        tx.orderItem.findMany.mockResolvedValue(LINES);
+        tx.product.updateMany
+          .mockResolvedValueOnce({ count: 1 })
+          .mockResolvedValueOnce({ count: 0 });
+
+        await expect(
+          repository.applyPaymentOutcome({ ...successPlan, stockHold: 'released' }),
+        ).resolves.toBeDefined();
+
+        // The first line's decrement is compensated in the same transaction.
+        expect(tx.product.update).toHaveBeenCalledWith({
+          where: { id: 'product-uuid-1' },
+          data: { stock: { increment: 2 } },
+        });
+        expect(tx.product.update).toHaveBeenCalledTimes(1);
+        expect(tx.order.update).not.toHaveBeenCalled();
+        // The payment still landed.
+        expect(tx.payment.update).toHaveBeenCalled();
+        expect(tx.orderStatusHistory.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({ toPaymentStatus: PaymentStatus.PAID }),
+          }),
+        );
+      });
+
+      it('released: evicts product caches only when stock actually moved', async () => {
+        const tx = seedTx();
+        tx.orderItem.findMany.mockResolvedValue(LINES);
+        tx.product.updateMany.mockResolvedValue({ count: 1 });
+        tx.order.findUniqueOrThrow.mockResolvedValue({
+          id: 'order-1',
+          items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
+        });
+
+        await repository.applyPaymentOutcome({ ...successPlan, stockHold: 'released' });
+
+        expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      });
+
+      it('without a stockHold the write is exactly what it was (no restockedAt clause)', async () => {
+        const tx = seedTx();
+
+        await repository.applyPaymentOutcome(successPlan);
+
+        const where = (tx.order.updateMany.mock.calls[0][0] as { where: Record<string, unknown> })
+          .where;
+        expect(where).not.toHaveProperty('restockedAt');
+        expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  // ─── releaseReservation — ORDER_RESERVATION_EXPIRY=release (TASK-627) ───────
+
+  describe('releaseReservation', () => {
+    const NOW = new Date('2026-09-24T12:00:00.000Z');
+
+    const seedReleaseTx = ({ won = true }: { won?: boolean } = {}) => {
+      const tx = makeTx();
+      tx.order.updateMany.mockResolvedValue({ count: won ? 1 : 0 });
+      tx.orderItem.findMany.mockResolvedValue([
+        { productId: 'product-uuid-1', quantity: 2 },
+        { productId: 'product-uuid-2', quantity: 1 },
+      ]);
+      tx.order.findUniqueOrThrow.mockResolvedValue({
+        id: 'order-1',
+        items: [{ productId: 'product-uuid-1', product: { slug: 'iphone-15-pro-case' } }],
+      });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    };
+
+    // The arbiter is the same one cancelAndRestock uses — `restockedAt IS NULL` —
+    // joined by the worker's own selection, so an order paid (or already
+    // released) since the worker read it matches nothing.
+    it('stamps restockedAt and lifts the deadline behind the restockedAt IS NULL arbiter', async () => {
+      const tx = seedReleaseTx();
+
+      await expect(repository.releaseReservation('order-1', NOW)).resolves.toBe(true);
+
+      expect(tx.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'order-1',
+          restockedAt: null,
+          reservationExpiresAt: { not: null, lte: NOW },
+          paymentStatus: PaymentStatus.PENDING,
+          status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING] },
+          deletedAt: null,
+        },
+        data: { restockedAt: NOW, reservationExpiresAt: null },
+      });
+    });
+
+    it('credits every line back to stock', async () => {
+      const tx = seedReleaseTx();
+
+      await repository.releaseReservation('order-1', NOW);
+
+      expect(tx.product.update).toHaveBeenCalledTimes(2);
+      expect(tx.product.update).toHaveBeenCalledWith({
+        where: { id: 'product-uuid-1' },
+        data: { stock: { increment: 2 } },
+      });
+    });
+
+    it('leaves the order status, the payment attempts and the promo slot alone', async () => {
+      const tx = seedReleaseTx();
+
+      await repository.releaseReservation('order-1', NOW);
+
+      const data = (tx.order.updateMany.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+      expect(data).not.toHaveProperty('status');
+      expect(data).not.toHaveProperty('paymentStatus');
+      expect(tx.payment.update).not.toHaveBeenCalled();
+      expect(tx.discountRedemption.deleteMany).not.toHaveBeenCalled();
+      expect(tx.orderStatusHistory.create).not.toHaveBeenCalled();
+    });
+
+    it('a losing release (paid or released meanwhile) credits nothing and reports false', async () => {
+      const tx = seedReleaseTx({ won: false });
+
+      await expect(repository.releaseReservation('order-1', NOW)).resolves.toBe(false);
+
+      expect(tx.product.update).not.toHaveBeenCalled();
+      expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('evicts product caches after a release', async () => {
+      seedReleaseTx();
+
+      await repository.releaseReservation('order-1', NOW);
+
+      expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_LIST_PREFIX);
+      expect(cacheMock.del).toHaveBeenCalledWith(productDetailIdKey('product-uuid-1'));
+    });
   });
 
   // ─── findHistoryByOrderId — chronological timeline read (TASK-251) ───────────
@@ -1353,16 +1707,6 @@ describe('OrderRepository', () => {
       expect(prismaMock.order.count).toHaveBeenCalledWith({
         where: expect.objectContaining({ deletedAt: null }),
       });
-    });
-
-    it('softDelete stamps deletedAt and leaves child items in place', async () => {
-      prismaMock.order.update.mockResolvedValue({ id: 'order-1', items: [] });
-
-      await repository.softDelete('order-1');
-
-      const updateArgs = prismaMock.order.update.mock.calls[0][0];
-      expect(updateArgs.where).toEqual({ id: 'order-1' });
-      expect(updateArgs.data.deletedAt).toBeInstanceOf(Date);
     });
   });
 
@@ -1456,21 +1800,25 @@ describe('OrderRepository', () => {
   });
 
   describe('findAll — unpaidInTransit filter (TASK-248)', () => {
-    it('merges the active-but-unpaid compound condition when unpaidInTransit is true', async () => {
+    // "money we still expect" AND status NOT IN (CANCELLED, REFUNDED).
+    // PARTIALLY_REFUNDED sits with PAID: it is only reachable FROM PAID, so the
+    // money arrived and the shop is owed nothing.
+    const UNPAID_IN_TRANSIT = {
+      paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+      status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+    };
+
+    it('adds the active-but-unpaid compound condition when unpaidInTransit is true', async () => {
       prismaMock.$transaction.mockResolvedValue([0, []]);
 
       await repository.findAll({ unpaidInTransit: true });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      // "money we still expect" AND status NOT IN (CANCELLED, REFUNDED).
-      // PARTIALLY_REFUNDED sits with PAID: it is only reachable FROM PAID, so
-      // the money arrived and the shop is owed nothing.
-      expect(where.paymentStatus).toEqual({
-        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
-      });
-      expect(where.status).toEqual({
-        notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
-      });
+      // TASK-579: the preset is one more AND arm, never an owner of
+      // `where.status` / `where.paymentStatus`.
+      expect(where.AND).toContainEqual(UNPAID_IN_TRANSIT);
+      expect(where.status).toBeUndefined();
+      expect(where.paymentStatus).toBeUndefined();
       // Still excludes soft-deleted orders.
       expect(where.deletedAt).toBeNull();
     });
@@ -1481,7 +1829,7 @@ describe('OrderRepository', () => {
       await repository.findAll({ unpaidInTransit: true });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      expect(where.paymentStatus.notIn).toContain(PaymentStatus.PARTIALLY_REFUNDED);
+      expect(where.AND[0].paymentStatus.notIn).toContain(PaymentStatus.PARTIALLY_REFUNDED);
     });
 
     it('composes the unpaidInTransit filter with the created-at date range', async () => {
@@ -1490,13 +1838,31 @@ describe('OrderRepository', () => {
       await repository.findAll({ unpaidInTransit: true, dateFrom: '2026-01-01' });
 
       const where = prismaMock.order.count.mock.calls[0][0].where;
-      expect(where.paymentStatus).toEqual({
-        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
-      });
-      expect(where.status).toEqual({
-        notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED],
-      });
-      expect(where.createdAt).toEqual({ gte: new Date('2026-01-01') });
+      expect(where.AND).toContainEqual(UNPAID_IN_TRANSIT);
+      // From the START of the Kyiv day (EET, UTC+2), not UTC midnight (TASK-787).
+      expect(where.createdAt).toEqual({ gte: new Date('2025-12-31T22:00:00.000Z') });
+    });
+
+    it('intersects with ?status= instead of overwriting it (TASK-579)', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ unpaidInTransit: true, status: [OrderStatus.PENDING] });
+
+      const where = prismaMock.order.count.mock.calls[0][0].where;
+      // Both conditions reach the query: PENDING AND not cancelled/refunded AND unpaid.
+      expect(where.status).toEqual({ in: [OrderStatus.PENDING] });
+      expect(where.AND).toContainEqual(UNPAID_IN_TRANSIT);
+    });
+
+    it('intersects with ?paymentStatus= too', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ unpaidInTransit: true, paymentStatus: PaymentStatus.PENDING });
+
+      const where = prismaMock.order.count.mock.calls[0][0].where;
+      expect(where.AND).toEqual(
+        expect.arrayContaining([UNPAID_IN_TRANSIT, { paymentStatus: PaymentStatus.PENDING }]),
+      );
     });
 
     it('does not add the payment/status compound condition when the flag is absent', async () => {
@@ -1507,6 +1873,7 @@ describe('OrderRepository', () => {
       const where = prismaMock.order.count.mock.calls[0][0].where;
       expect(where.paymentStatus).toBeUndefined();
       expect(where.status).toBeUndefined();
+      expect(where.AND).toBeUndefined();
     });
 
     // ── TASK-336: free-text search across account AND guest orders ────────────
@@ -1639,6 +2006,47 @@ describe('OrderRepository', () => {
     });
   });
 
+  describe('findAll / findAllForExport — created-at range is whole Kyiv days (TASK-787)', () => {
+    const kyivToday = (): string =>
+      new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+
+    it('dateFrom = dateTo = today covers an order placed right now', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+      const today = kyivToday();
+
+      await repository.findAll({ dateFrom: today, dateTo: today });
+
+      const { createdAt } = prismaMock.order.count.mock.calls[0][0].where;
+      const now = new Date();
+      // Was { gte: T00:00Z, lte: T00:00Z } — an empty window, total: 0.
+      expect(createdAt.gte.getTime()).toBeLessThanOrEqual(now.getTime());
+      expect(createdAt.lt.getTime()).toBeGreaterThan(now.getTime());
+      expect(createdAt).not.toHaveProperty('lte');
+    });
+
+    it('bounds a range by the start of the first and the end of the last Kyiv day', async () => {
+      prismaMock.$transaction.mockResolvedValue([0, []]);
+
+      await repository.findAll({ dateFrom: '2026-09-01', dateTo: '2026-09-24' });
+
+      expect(prismaMock.order.count.mock.calls[0][0].where.createdAt).toEqual({
+        gte: new Date('2026-08-31T21:00:00.000Z'),
+        lt: new Date('2026-09-24T21:00:00.000Z'),
+      });
+    });
+
+    it('feeds the CSV export the same range', async () => {
+      prismaMock.order.findMany.mockResolvedValue([]);
+
+      await repository.findAllForExport({ dateFrom: '2026-09-24', dateTo: '2026-09-24' }, 100);
+
+      expect(prismaMock.order.findMany.mock.calls[0][0].where.createdAt).toEqual({
+        gte: new Date('2026-09-23T21:00:00.000Z'),
+        lt: new Date('2026-09-24T21:00:00.000Z'),
+      });
+    });
+  });
+
   // ── TASK-425: the queue filters ──────────────────────────────────────────
   // Payment status, payment method, and "waiting too long". The first two are
   // ordinary equality filters; the third shares the DASHBOARD's threshold, which
@@ -1665,15 +2073,16 @@ describe('OrderRepository', () => {
     });
 
     it('keeps an explicit payment status alongside the unpaidInTransit preset', async () => {
-      // The preset OWNS `where.paymentStatus`; the explicit filter lives in AND.
-      // Assigning both to the same key would have made one silently vanish.
+      // Both live in AND (TASK-579). Assigning both to the same key would have
+      // made one silently vanish.
       const where = await whereFor({
         unpaidInTransit: true,
         paymentStatus: PaymentStatus.PENDING,
       });
 
-      expect(where.paymentStatus).toEqual({
-        notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED],
+      expect(where.AND).toContainEqual({
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
       });
       expect(where.AND).toContainEqual({ paymentStatus: PaymentStatus.PENDING });
     });
@@ -1881,12 +2290,14 @@ describe('OrderRepository', () => {
     });
 
     it('survives the unpaidInTransit preset instead of being overwritten by it', async () => {
-      // TASK-579's failure mode, asserted rather than assumed: the preset owns
-      // `where.status` outright, so a mark condition written onto `where` would
-      // vanish here without a sound.
+      // TASK-579's failure mode, asserted rather than assumed: preset and mark
+      // are both AND arms, so neither can overwrite the other.
       const where = await whereFor({ unpaidInTransit: true, hasDebt: true });
 
-      expect(where.status).toEqual({ notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] });
+      expect(where.AND).toContainEqual({
+        paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+        status: { notIn: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] },
+      });
       expect(where.AND).toContainEqual({
         status: OrderStatus.DELIVERED,
         paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] },
@@ -1897,6 +2308,18 @@ describe('OrderRepository', () => {
       const where = await whereFor({});
 
       expect(where.AND).toBeUndefined();
+    });
+
+    // TASK-352 (c): the deep-link target of the «Оплачено після скасування»
+    // tile — the same predicate the dashboard counts.
+    it('filters to late-paid orders still cancelled with the money still PAID', async () => {
+      const where = await whereFor({ paidAfterCancel: true });
+
+      expect(where.AND).toContainEqual({
+        status: OrderStatus.CANCELLED,
+        paymentStatus: PaymentStatus.PAID,
+        statusHistory: { some: { note: OrderHistoryNote.PAID_AFTER_CANCEL } },
+      });
     });
   });
 
@@ -1972,6 +2395,112 @@ describe('OrderRepository', () => {
       await expect(repository.claimGuestOrders('user-uuid-1', 'guest@example.com')).resolves.toBe(
         2,
       );
+    });
+  });
+
+  // ─── TASK-620: who set the latest payment mark ──────────────────────────────
+
+  describe('findLastPaymentMark', () => {
+    it('reads the newest PAYMENT_STATUS row that set the given status', async () => {
+      prismaMock.orderStatusHistory.findFirst.mockResolvedValue({ changedBy: 'admin-7' });
+
+      const mark = await repository.findLastPaymentMark('order-1', PaymentStatus.REFUNDED);
+
+      expect(prismaMock.orderStatusHistory.findFirst).toHaveBeenCalledWith({
+        where: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          toPaymentStatus: PaymentStatus.REFUNDED,
+        },
+        orderBy: { changedAt: 'desc' },
+        select: { changedBy: true },
+      });
+      expect(mark).toEqual({ changedBy: 'admin-7' });
+    });
+
+    it('is null when no such row exists', async () => {
+      prismaMock.orderStatusHistory.findFirst.mockResolvedValue(null);
+
+      await expect(
+        repository.findLastPaymentMark('order-1', PaymentStatus.REFUNDED),
+      ).resolves.toBeNull();
+    });
+  });
+
+  // ─── TASK-786: the admin details edit is ONE conditional write ──────────────
+
+  describe('updateDetails', () => {
+    const address = { firstName: 'Олена', lastName: 'Коваль', city: 'Львів' } as never;
+    const version = new Date('2026-07-28T10:15:30.000Z');
+
+    beforeEach(() => {
+      prismaMock.order.findUniqueOrThrow.mockResolvedValue({ id: 'order-1' });
+    });
+
+    it('writes the address, waybill and notes in one statement guarded by version and pre-shipment status', async () => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.updateDetails(
+        'order-1',
+        { shippingAddress: address, trackingNumber: '20450000000001', internalNotes: 'x' },
+        { expectedUpdatedAt: version },
+      );
+
+      expect(prismaMock.order.updateMany).toHaveBeenCalledTimes(1);
+      expect(prismaMock.order.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'order-1',
+          updatedAt: version,
+          // The service checked this on its read; the WHERE re-checks it at
+          // write time, so a shipment committed in between cannot be edited.
+          status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING] },
+        },
+        data: {
+          shippingAddress: address,
+          trackingNumber: '20450000000001',
+          internalNotes: 'x',
+        },
+      });
+      expect(prismaMock.order.update).not.toHaveBeenCalled();
+    });
+
+    it('throws ORDER_STALE and writes nothing when the guarded row moved on', async () => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        repository.updateDetails(
+          'order-1',
+          { shippingAddress: address, trackingNumber: '20450000000001' },
+          { expectedUpdatedAt: version },
+        ),
+      ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
+      expect(prismaMock.order.findUniqueOrThrow).not.toHaveBeenCalled();
+    });
+
+    it('guards an address edit by status even without a version token', async () => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.updateDetails('order-1', { shippingAddress: address });
+
+      expect(prismaMock.order.updateMany.mock.calls[0][0].where).toEqual({
+        id: 'order-1',
+        status: { in: [OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING] },
+      });
+    });
+
+    it('does not restrict a waybill-only edit by status', async () => {
+      prismaMock.order.updateMany.mockResolvedValue({ count: 1 });
+
+      await repository.updateDetails(
+        'order-1',
+        { trackingNumber: '20450000000001' },
+        { expectedUpdatedAt: version },
+      );
+
+      expect(prismaMock.order.updateMany.mock.calls[0][0].where).toEqual({
+        id: 'order-1',
+        updatedAt: version,
+      });
     });
   });
 });

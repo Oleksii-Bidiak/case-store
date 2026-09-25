@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ReviewTextStatus } from '@prisma/client';
+import { ReviewHiddenReason, ReviewTextStatus } from '@prisma/client';
 import { ReviewEntity } from './review.entity';
 import { ReviewReplyEntity } from './review-reply.entity';
 import type { ReviewModerationRow } from '../review.repository';
@@ -38,6 +38,58 @@ export class AdminReviewEntity extends ReviewEntity {
   })
   ratingVisible!: boolean;
 
+  /**
+   * When this row's author was withdrawn, null when nobody withdrew them
+   * (TASK-596).
+   *
+   * `ratingVisible = false` alone cannot say WHY the stars do not count: the
+   * author's address may be unconfirmed (the customer can fix that) or the
+   * account may be hidden (only a moderator can). The panel needs this to show
+   * «приховано модератором» honestly instead of guessing.
+   */
+  @ApiProperty({
+    description: 'When the author’s contribution was withdrawn; null when it was not',
+    type: String,
+    format: 'date-time',
+    nullable: true,
+    example: null,
+  })
+  hiddenAt!: Date | null;
+
+  /**
+   * Which decision withdrew it (TASK-599): a ban, a moderator, or a deleted
+   * account. Null exactly when `hiddenAt` is.
+   */
+  @ApiProperty({
+    description:
+      'Why the author’s contribution was withdrawn — BAN (account switched off; lifted by the ' +
+      'un-ban), MODERATOR (lifted only by a moderator’s restore), DELETED (account soft-deleted). ' +
+      'Null when not withdrawn',
+    enum: ReviewHiddenReason,
+    enumName: 'ReviewHiddenReason',
+    nullable: true,
+    example: null,
+  })
+  hiddenReason!: ReviewHiddenReason | null;
+
+  /**
+   * The address the review was submitted from (TASK-601), null when unknown —
+   * every row written before TASK-588 recorded it.
+   *
+   * ADMIN PROJECTION ONLY. It exists so the operator can see a run of 1★ from
+   * one address and filter the list by it; the public and own-review entities
+   * never carry it.
+   */
+  @ApiProperty({
+    description:
+      'Address the review was submitted from; null when unknown (rows older than the column). ' +
+      'Admin projection only',
+    type: String,
+    nullable: true,
+    example: '203.0.113.42',
+  })
+  createdIp!: string | null;
+
   @ApiProperty({ description: 'Author email address', example: 'olena@example.com' })
   userEmail!: string;
 
@@ -74,6 +126,9 @@ export class AdminReviewEntity extends ReviewEntity {
     entity.verifiedPurchase = false;
     entity.textStatus = row.textStatus;
     entity.ratingVisible = row.ratingVisible;
+    entity.hiddenAt = row.hiddenAt;
+    entity.hiddenReason = row.hiddenReason;
+    entity.createdIp = row.createdIp;
     entity.createdAt = row.createdAt;
     // What the shop already answered (TASK-587) — the panel needs it to show a
     // "replied" state instead of offering a fresh answer that would overwrite it.

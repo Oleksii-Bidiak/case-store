@@ -1,6 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { Prisma, type Review } from '@prisma/client';
+import { Prisma, ReviewHiddenReason, type Review } from '@prisma/client';
 import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
 import {
   ReviewEntity,
@@ -110,17 +110,18 @@ export class ReviewService {
       throw new ConflictException('You have already reviewed this product');
     }
 
-    const [verifiedPurchase, emailVerified, authorHidden] = await Promise.all([
+    const [verifiedPurchase, emailVerified, hiddenReasonFound] = await Promise.all([
       this.reviewRepository.isVerifiedPurchase(userId, productId),
       this.reviewRepository.isEmailVerified(userId),
-      this.reviewRepository.isAuthorHidden(userId),
+      this.reviewRepository.findAuthorHiddenReason(userId),
     ]);
+    const authorHiddenReason = hiddenReasonFound ?? null;
 
     // Both gates, and the moderator's outranks the author's own (TASK-598). A
     // withdrawn account is not banned and not logged out, so without this arm it
     // simply went on submitting: the thirty ratings a moderator had just pulled
     // came straight back as thirty new ones that counted on arrival.
-    const ratingVisible = emailVerified && !authorHidden;
+    const ratingVisible = emailVerified && authorHiddenReason === null;
 
     let review: Review;
     try {
@@ -134,7 +135,10 @@ export class ReviewService {
         // Stamped so the row is withdrawn on every path the flag governs — the
         // public list, the author's own view, the moderation queue — and not only
         // in the average.
-        hiddenAt: authorHidden ? new Date() : null,
+        hiddenAt: authorHiddenReason ? new Date() : null,
+        // The reason the rest of the account is held under (TASK-599), so this
+        // row is lifted by the same decision as its siblings and no other.
+        hiddenReason: authorHiddenReason,
       });
     } catch (error) {
       // P2002 = unique constraint violation: a concurrent request inserted the
@@ -267,6 +271,13 @@ export class ReviewService {
       page,
       limit,
       query.search,
+      // Passed through as-is: absent means the queue's own default (`visible`),
+      // decided once in `moderationQueueWhere` rather than again here.
+      {
+        visibility: query.visibility,
+        productId: query.productId,
+        createdIp: query.createdIp,
+      },
     );
 
     return {
@@ -381,11 +392,19 @@ export class ReviewService {
    * decision: a ban that leaves the banned person's words on the storefront is
    * not the action the operator thought they were taking.
    *
+   * And when an account is soft-deleted (TASK-603): deletion is the stronger
+   * action, and it used to do less — a deleted account's texts stayed on the
+   * storefront and its stars in the average.
+   *
+   * `reason` says which of those decisions this is (TASK-599), and it is
+   * required rather than defaulted so no caller can forget to choose: each
+   * lever later lifts only what it put down — see {@link unhideAuthor}.
+   *
    * @returns how many reviews were withdrawn.
    */
-  async hideAuthor(userId: string): Promise<number> {
-    const count = await this.reviewRepository.hideAuthorReviews(userId);
-    this.logger.info({ userId, count }, 'Author contribution hidden');
+  async hideAuthor(userId: string, reason: ReviewHiddenReason): Promise<number> {
+    const count = await this.reviewRepository.hideAuthorReviews(userId, reason);
+    this.logger.info({ userId, count, reason }, 'Author contribution hidden');
     return count;
   }
 
@@ -398,12 +417,37 @@ export class ReviewService {
    * never confirmed its address could be handed counting ratings by way of an
    * ordinary un-ban, which no screen in the panel would report.
    *
-   * @returns how many reviews were restored.
+   * ## Only what `reason` put down comes back (TASK-599)
+   *
+   * An un-ban passes `BAN` and restores the rows the ban hid — and nothing a
+   * moderator hid, before or after the ban. Before this, `activateUser` cleared
+   * `hiddenAt` on every row of the account, so switching a banned spammer back
+   * on quietly republished everything a moderator had pulled.
+   *
+   * A moderator's restore passes `MODERATOR`. If the ACCOUNT is itself banned or
+   * deleted at that moment, the rows are not published: they are handed over to
+   * the account's own reason, so the moderator's verdict is lifted and the
+   * reviews come back with the un-ban, not before it. The count returned is then
+   * zero — nothing became visible.
+   *
+   * @returns how many reviews became visible again.
    */
-  async unhideAuthor(userId: string): Promise<number> {
+  async unhideAuthor(userId: string, reason: ReviewHiddenReason): Promise<number> {
+    if (reason === ReviewHiddenReason.MODERATOR) {
+      const hold = await this.reviewRepository.findAccountHoldReason(userId);
+      if (hold !== null) {
+        const handedOver = await this.reviewRepository.relabelAuthorReviews(userId, reason, hold);
+        this.logger.info(
+          { userId, handedOver, hold },
+          'Moderator hide lifted; reviews stay hidden while the account is held',
+        );
+        return 0;
+      }
+    }
+
     const ratingVisible = await this.reviewRepository.isEmailVerified(userId);
-    const count = await this.reviewRepository.restoreAuthorReviews(userId, ratingVisible);
-    this.logger.info({ userId, count, ratingVisible }, 'Author contribution restored');
+    const count = await this.reviewRepository.restoreAuthorReviews(userId, reason, ratingVisible);
+    this.logger.info({ userId, count, ratingVisible, reason }, 'Author contribution restored');
     return count;
   }
 }

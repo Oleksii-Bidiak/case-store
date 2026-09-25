@@ -4,8 +4,10 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { ReviewHiddenReason } from '@prisma/client';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
 import { AuthRepository } from '../auth/auth.repository';
+import { EmailChangeService } from '../auth/email-change.service';
 import { ReviewService } from '../review/review.service';
 import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
@@ -41,6 +43,8 @@ export class UserService {
     private readonly userRepository: UserRepository,
     private readonly authRepository: AuthRepository,
     private readonly reviewService: ReviewService,
+    // TASK-396: the operator's half of changing a customer's sign-in address.
+    private readonly emailChangeService: EmailChangeService,
   ) {}
 
   /**
@@ -255,9 +259,53 @@ export class UserService {
     await this.authRepository.revokeAllUserTokens(id);
 
     // …and take down what they wrote, ratings included (TASK-589).
-    await this.reviewService.hideAuthor(id);
+    await this.reviewService.hideAuthor(id, ReviewHiddenReason.BAN);
 
     return UserEntity.fromPrisma(deactivatedUser);
+  }
+
+  /**
+   * Change a customer's sign-in address on the operator's side (TASK-396) — the
+   * customer lost access to their inbox and asked the shop for help.
+   *
+   * Same target rules as its neighbours: a customer only (a staff id is 404), and
+   * never yourself — your own address changes through your own account, with
+   * your password and a link to the new inbox. The new address is NOT marked
+   * verified; {@link EmailChangeService.changeByOperator} sends it a
+   * verification link and ends every session.
+   *
+   * @returns the updated customer and what the address was before, for the
+   *   audit row the controller writes.
+   */
+  async changeEmail(
+    id: string,
+    newEmail: string,
+    actor: PermissionActor,
+  ): Promise<{ user: UserEntity; previousEmail: string; wasVerified: boolean }> {
+    if (id === actor.id) {
+      throw new ForbiddenException('Change your own address from your account');
+    }
+
+    const user = await this.userRepository.findCustomerById(id);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    assertMayManage(actor, user);
+
+    await this.emailChangeService.changeByOperator(user, newEmail);
+
+    const updated = await this.userRepository.findCustomerById(id);
+    if (!updated) {
+      throw new NotFoundException('User not found');
+    }
+
+    return {
+      user: UserEntity.fromPrisma(updated),
+      previousEmail: user.email,
+      wasVerified: Boolean(user.emailVerifiedAt),
+    };
   }
 
   /**
@@ -267,7 +315,9 @@ export class UserService {
    * (prefixing `deleted:<id>:`) to free the address for re-registration, and
    * preserves the original in `originalEmail` for audit. All refresh tokens are
    * revoked so existing sessions cannot outlive the deletion. The row is kept so
-   * the user's historical orders still resolve.
+   * the user's historical orders still resolve. Their reviews are withdrawn with
+   * reason DELETED (TASK-603) — texts off the storefront, stars out of every
+   * average — exactly as a ban withdraws them, but for good.
    *
    * Customer-scoped since TASK-476: deleting a service account is a personnel
    * decision and belongs on `/api/admin/staff`, where the level rule decides who
@@ -299,6 +349,12 @@ export class UserService {
     // Kill every active session for the deleted user.
     await this.authRepository.revokeAllUserTokens(id);
 
+    // …and withdraw what they wrote (TASK-603). Deleting is the stronger action
+    // and used to do LESS than a ban: the account was gone while its texts stayed
+    // on the storefront and its stars in every average. DELETED outranks both
+    // other reasons, so no un-ban or moderator restore can bring these back.
+    await this.reviewService.hideAuthor(id, ReviewHiddenReason.DELETED);
+
     return UserEntity.fromPrisma(deleted);
   }
 
@@ -326,7 +382,7 @@ export class UserService {
     // The mirror of the ban (TASK-589). Whether the restored account's RATINGS
     // count again is decided by the email gate, not by this call — see
     // ReviewService.unhideAuthor.
-    await this.reviewService.unhideAuthor(id);
+    await this.reviewService.unhideAuthor(id, ReviewHiddenReason.BAN);
 
     return UserEntity.fromPrisma(activatedUser);
   }

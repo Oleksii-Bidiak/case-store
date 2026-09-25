@@ -80,6 +80,54 @@ describe("DiscountForm", () => {
     );
     expect(screen.getByLabelText(dict.discountForm.value)).toHaveValue(50);
   });
+
+  // TASK-731 (рішення B-11): a new code is private until published.
+  it("leaves «Показувати на сторінці «Акції»» off for a new code", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<DiscountForm onSubmit={onSubmit} isPending={false} />);
+
+    const box = screen.getByLabelText(dict.discountForm.showOnPromoPage);
+    expect(box).not.toBeChecked();
+
+    await userEvent.type(screen.getByLabelText(dict.discountForm.code), "vip");
+    await userEvent.type(screen.getByLabelText(dict.discountForm.value), "5");
+    await submitForm();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ showOnPromoPage: false });
+  });
+
+  it("submits showOnPromoPage: true once the operator ticks the box", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<DiscountForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByLabelText(dict.discountForm.code), "pub");
+    await userEvent.type(screen.getByLabelText(dict.discountForm.value), "5");
+    await userEvent.click(
+      screen.getByLabelText(dict.discountForm.showOnPromoPage),
+    );
+    await submitForm();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ showOnPromoPage: true });
+  });
+
+  it("re-seeds the published flag from defaultValues (edit mode)", async () => {
+    renderWithProviders(
+      <DiscountForm
+        id="d-1"
+        defaultValues={{ code: "PUB", value: "5", showOnPromoPage: true }}
+        onSubmit={jest.fn()}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByLabelText(dict.discountForm.showOnPromoPage),
+      ).toBeChecked(),
+    );
+  });
 });
 
 describe("discountFormValuesToDto", () => {
@@ -107,6 +155,14 @@ describe("discountFormValuesToDto", () => {
     expect(dto.minSpend).toBeNull();
     expect(dto.maxRedemptions).toBeNull();
     expect(dto.startsAt).toBeNull();
+  });
+
+  it("forwards showOnPromoPage on create and update (TASK-731)", () => {
+    const values = { ...base, showOnPromoPage: true };
+    expect(discountFormValuesToDto(values).showOnPromoPage).toBe(true);
+    expect(
+      discountFormValuesToDto(values, { isUpdate: true }).showOnPromoPage,
+    ).toBe(true);
   });
 
   it("widens a date-only string to an ISO datetime", () => {
