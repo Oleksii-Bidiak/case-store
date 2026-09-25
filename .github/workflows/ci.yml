@@ -775,7 +775,8 @@ jobs:
       # NEXT_PUBLIC_* are BAKED at build time → these images are tied to the
       # staging domain and can never be promoted to prod (prod builds its own).
       # Values come from the `staging` Environment's variables (public URLs, not
-      # secrets). Optional vars (Sentry/Umami) default to empty via the
+      # secrets — SENTRY_AUTH_TOKEN is the one exception and comes from the
+      # Environment's `secrets.*`). Optional vars (Sentry/Umami) default to empty via the
       # Dockerfile ARGs when the corresponding `vars.*` are unset.
       #
       # THESE LISTS — not docker-compose.prod.yml — are what actually builds the
@@ -784,12 +785,26 @@ jobs:
       # never reaches a deployed container. Whenever you add an `ARG` to a
       # frontend Dockerfile, add it in BOTH places or decide, in writing, that
       # empty is correct for this environment (TASK-348).
+      #
+      # Sentry (TASK-737): the trace rate and the ORG/PROJECT/AUTH_TOKEN trio were
+      # missing here, so deployed frontends traced 0 % and uploaded no source maps
+      # whatever the operator set. All four are optional: an empty
+      # SENTRY_AUTH_TOKEN makes @sentry/nextjs skip the upload with a warning (it
+      # never fails `next build`, and a failed upload is logged, not thrown).
+      #
+      # `provenance: mode=min` is NOT decoration. build-push-action attaches a
+      # `mode=max` provenance attestation by default on a PUBLIC repository, and
+      # max mode records every build-arg VALUE — SENTRY_AUTH_TOKEN included — in
+      # an attestation pushed next to the image. min mode omits build-arg values.
+      # The proper fix is a BuildKit secret mount instead of an ARG; until the
+      # Dockerfiles take one, do not drop this line.
       - name: Build & push store-client
         uses: docker/build-push-action@v6
         with:
           context: .
           file: apps/store-client/Dockerfile
           push: true
+          provenance: mode=min
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.STAGING_DOMAIN }}
@@ -800,8 +815,12 @@ jobs:
             NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=${{ vars.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
+            NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${{ vars.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE || '0' }}
             NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}
             NEXT_PUBLIC_UMAMI_WEBSITE_ID=${{ vars.NEXT_PUBLIC_UMAMI_WEBSITE_ID }}
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: |
             ${{ steps.img.outputs.prefix }}/store-client:${{ steps.img.outputs.tag_sha }}
             ${{ steps.img.outputs.prefix }}/store-client:staging-latest
@@ -814,6 +833,7 @@ jobs:
           context: .
           file: apps/store-admin/Dockerfile
           push: true
+          provenance: mode=min # build-arg values stay out of the attestation — see store-client
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.STAGING_DOMAIN }}
@@ -822,6 +842,10 @@ jobs:
             NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${{ vars.NEXT_PUBLIC_UMAMI_DASHBOARD_URL }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
+            NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${{ vars.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE || '0' }}
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: |
             ${{ steps.img.outputs.prefix }}/store-admin:${{ steps.img.outputs.tag_sha }}
             ${{ steps.img.outputs.prefix }}/store-admin:staging-latest
@@ -1164,6 +1188,9 @@ jobs:
       # shape and was missing from this list entirely until TASK-495: set it to
       # `true` when store-api has real GOOGLE_CLIENT_ID/_SECRET, or the
       # "Sign in with Google" button stays hidden no matter what the API holds.
+      # The Sentry lines and `provenance: mode=min` are TASK-737 — see the
+      # staging block for why the provenance mode must stay min while
+      # SENTRY_AUTH_TOKEN travels as a build arg.
       - name: Build & push store-client
         if: steps.need.outputs.client == 'true'
         uses: docker/build-push-action@v6
@@ -1171,6 +1198,7 @@ jobs:
           context: .
           file: apps/store-client/Dockerfile
           push: true
+          provenance: mode=min
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.PROD_DOMAIN }}
@@ -1181,8 +1209,12 @@ jobs:
             NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=${{ vars.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
+            NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${{ vars.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE || '0' }}
             NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}
             NEXT_PUBLIC_UMAMI_WEBSITE_ID=${{ vars.NEXT_PUBLIC_UMAMI_WEBSITE_ID }}
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: ${{ steps.img.outputs.prefix }}/store-client:${{ steps.img.outputs.tag_client }}
           cache-from: type=gha,scope=store-client
           cache-to: type=gha,mode=max,scope=store-client
@@ -1194,6 +1226,7 @@ jobs:
           context: .
           file: apps/store-admin/Dockerfile
           push: true
+          provenance: mode=min # build-arg values stay out of the attestation — see staging store-client
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.PROD_DOMAIN }}
@@ -1202,6 +1235,10 @@ jobs:
             NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${{ vars.NEXT_PUBLIC_UMAMI_DASHBOARD_URL }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
+            NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${{ vars.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE || '0' }}
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: ${{ steps.img.outputs.prefix }}/store-admin:${{ steps.img.outputs.tag_admin }}
           cache-from: type=gha,scope=store-admin
           cache-to: type=gha,mode=max,scope=store-admin
