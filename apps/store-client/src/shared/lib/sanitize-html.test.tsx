@@ -48,3 +48,30 @@ describe("sanitizeHtml — tables (TASK-548)", () => {
     ).toContain('<td colspan="2" rowspan="3">x</td>');
   });
 });
+
+describe("sanitizeHtml — data: images (TASK-571)", () => {
+  // The CSP `img-src` lets any `data:` through, so this pass — not the CSP —
+  // is what keeps a body stored before TASK-571 from rendering an SVG.
+  it("drops an svg data image", () => {
+    const out = sanitizeHtml(
+      '<p><img src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" alt="x"></p>',
+    );
+    expect(out).not.toContain("data:");
+  });
+
+  it("drops a non-base64 data image, however the scheme is spelled", () => {
+    const out = sanitizeHtml('<img src="DA&#x0A;TA:image/png,abc" alt="x">');
+    expect(out.toLowerCase()).not.toMatch(/d\s*a\s*t\s*a\s*:/);
+  });
+
+  it("keeps a base64 raster data image", () => {
+    const src = "data:image/png;base64,iVBORw0KGgo=";
+    expect(sanitizeHtml(`<img src="${src}" alt="x">`)).toContain(src);
+  });
+
+  it("leaves an ordinary image source to the CSP", () => {
+    expect(
+      sanitizeHtml('<img src="https://cdn.example.com/a.png" alt="x">'),
+    ).toContain('src="https://cdn.example.com/a.png"');
+  });
+});

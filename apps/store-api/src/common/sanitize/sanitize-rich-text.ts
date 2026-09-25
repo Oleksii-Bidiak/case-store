@@ -313,9 +313,13 @@ const URL_INVISIBLES = /[\x00-\x20]+/g;
  * The allow-list is the storefront CSP `img-src`, seen from the API (TASK-758):
  * a relative path (`'self'`), the API's own origin (uploads), an operator host
  * from IMAGE_HOSTS over plain https on the default port (the CSP emits exactly
- * `https://<host>`), or a raster `data:` image. Anything else — a vendor's
+ * `https://<host>`), or a raster `data:` image. Any other host — a vendor's
  * hot-linked picture from the catalogue import above all — is an image the
  * storefront would refuse to load, so it is not stored in the first place.
+ *
+ * `data:` is the one place the CSP is no backstop: its `img-src` allows every
+ * `data:` URI, SVG included. The raster-only rule is held here and, for bodies
+ * stored before it, by the storefront's DOMPurify pass (`sanitize-html.ts`).
  *
  * The URL is parsed the way a browser does (WHATWG URL, against a placeholder
  * base), so a protocol-relative `//host`, a backslash `\\host` and a
