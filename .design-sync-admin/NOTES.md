@@ -14,9 +14,10 @@ The storefront has its own pair (`.design-sync/NOTES.md`); nothing here touches 
 
 ## Sync log (staleness check)
 
-| Date       | Source commit (develop) | Components | Authored previews                                           |
-| ---------- | ----------------------- | ---------- | ----------------------------------------------------------- |
-| 2026-09-24 | `80c9ae05`              | 91         | 37 (Ukrainian copy from the admin dictionary, real `.d.ts`) |
+| Date       | Source commit (develop) | Components | Authored previews                                            |
+| ---------- | ----------------------- | ---------- | ------------------------------------------------------------ |
+| 2026-09-24 | `80c9ae05`              | 91         | 37 (Ukrainian copy from the admin dictionary, real `.d.ts`)  |
+| 2026-09-25 | `629ad274`              | 91         | 37 — style-only resync (TASK-735/775); 12 cards spot-checked |
 
 Before any design session: `git log <last source commit>..HEAD -- apps/store-admin/src/shared/ui apps/store-admin/src/app/globals.css`
 — non-empty means the project is behind the code; re-sync first.
@@ -101,14 +102,10 @@ Same shape as the storefront: **package shape in synth-entry mode**.
 
 - None from validate (91/91 clean, 0 bad/thin). Everything below is faithful to the code —
   re-grade the named cells when the fix lands:
-- **No red border on invalid fields** (Input/Textarea/Combobox/PhoneInput › Invalid): the
-  unlayered `* { border-color: var(--color-border) }` in `apps/store-admin/src/app/globals.css`
-  beats every `border-*` utility, `aria-invalid:border-destructive` included. Same defect as the
-  storefront — **TASK-735** ("чинити обидва"). It also gives every `Badge` a grey 1px border
-  (AdminShell reproduces that on purpose).
-- **TableToolbar stacks vertically at every width** — `table-toolbar.tsx:80` has `flex-col`
-  with no `md:flex-row` (**TASK-775**). The cards show it as it renders.
-- Disabled states faint (`disabled:opacity-50` over muted text) — **TASK-736**.
+- Fixed as of `629ad274` (TASK-735/775): invalid fields get the red border, `Badge` has no grey
+  rim (`border-transparent` now wins — AdminShell follows), TableToolbar is a row from `md`,
+  disabled controls use `--color-disabled*`. Still dimmed by opacity, faithfully:
+  DropdownMenu items (TASK-962), ReorderUndoButton (TASK-963), the RTE image button (TASK-964).
 - TableFilters' fixed-width triggers truncate long labels («Будь-який залишок»); TableSearch
   truncates long placeholders — same in the real lists.
 - RichTextEditor's table buttons look disabled unless the caret is inside a table.
@@ -142,6 +139,9 @@ DropdownMenu/Tooltip are `single` so the open state renders.
 - **dts fork** is a copy of the storefront's; on a converter upgrade diff both against the new `lib/dts.mjs`.
 - **Interaction-driven states** aren't shown: Select/Combobox dropdowns render closed.
 - **Design projects hold their own COPY of the design system** — see "After every sync" below.
+- **A CSS-only change shows `changed: []`** in the resync verdict (render hashes key on sources, not
+  on `globals.css`), so nothing is recaptured. Force it for the cards the change touches:
+  `run.mjs capture A,B --spot-check-components A,B`, Read the sheets, re-write their grades.
 
 ## After every sync — refresh «store-admin — Pages»
 
@@ -198,3 +198,25 @@ counters), `height` (artboard height, default 900/844). Headings use `var(--font
 exact lucide paths (lucide-react 1.27) rendered as CSS masks — regenerate from
 `node_modules/lucide-react/dist/esm/icons/*.mjs` if the nav gains an item.
 Update this file when `admin-nav-list.tsx`, `admin-header.tsx` or the drawer changes.
+
+### Screen artboards (TASK-848 onward)
+
+One file per section (`Login`, `Dashboard`, `Orders`, `Products`, `Categories`, `Staff`,
+`Settings`, `Profile`.dc.html — group «База», base commit `629ad274`, see the registry in
+`docs/plans/189-design-track-cycle-2.md`). Each file is a canvas like AdminShell's showcase:
+the section's screens at 1440 and 390, then the states the code has (loading, empty, error,
+confirm dialogs) at 1440 only, unless 390 lays them out differently. They draw the code **as
+is** — every known defect they reproduce is listed in the file's `<style>` header comment, and
+a mismatch with the code is an artboard bug, not a design proposal. Conventions:
+
+- The screen is plain CSS classes transcribing the Tailwind classes to px + `var(--color-*)`,
+  not bundle utilities: `md:`/`lg:` react to the window, not the artboard. The 390 variant is
+  the same markup with a `.m` modifier that `renderVals()` sets per frame.
+- Content sits in an absolute box over AdminShell's `<main>` (`left:256px;top:64px;padding:24px`,
+  mobile `left:0;padding:16px`); `componentDidMount` measures it (`[data-ov]` height + 64) and
+  feeds the frame height back, dialog frames stay 900/844.
+- Texts are verbatim from `shared/config/dictionary.ts`; data from the seed; money is formatted
+  in the browser with the app's `Intl` options (Chromium prints «грн»).
+- dc pitfalls: never mix a `{{ }}` hole with text in `style` (wrap the icon in a coloured span);
+  `<textarea>{{ x }}</textarea>` renders `[object Object]` — use `value="{{ x }}"`; `.prose`
+  collides with the bundle's typography plugin (65ch) — pick another class name.
