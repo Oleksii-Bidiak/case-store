@@ -906,6 +906,43 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(findManyArgs.where).toEqual(PUBLIC_PRODUCT_WHERE);
     });
 
+    it.each([
+      ['findOneForIndex', 'findFirst'],
+      ['findManyForIndex', 'findMany'],
+    ] as const)(
+      '%s carries the article number into the index source (TASK-522)',
+      async (method, prismaCall) => {
+        const row = {
+          id: 'product-1',
+          name: 'Чохол Spigen',
+          description: null,
+          price: { toString: () => '10' },
+          compareAtPrice: null,
+          slug: 'chokhol-spigen',
+          sku: 'SPG-IP15-CL',
+          categoryId: 'cat-1',
+          brandId: null,
+          stock: 3,
+          isActive: true,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          category: { name: 'Чохли' },
+          brand: null,
+          images: [],
+          deviceCompat: [],
+        };
+        prismaMock.product[prismaCall].mockResolvedValue(
+          (prismaCall === 'findMany' ? [row] : row) as never,
+        );
+
+        const result =
+          method === 'findOneForIndex'
+            ? await repository.findOneForIndex('product-1')
+            : (await repository.findManyForIndex(0, 100)).items[0];
+
+        expect(result?.sku).toBe('SPG-IP15-CL');
+      },
+    );
+
     it('findIdsByCategoryIds still returns the ACTIVE products of a deactivated category', async () => {
       // These ids are the re-index work list, not a visibility query: they are
       // exactly the documents that must be pushed through `indexProduct` so they

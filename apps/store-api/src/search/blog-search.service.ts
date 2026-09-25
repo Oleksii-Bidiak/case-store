@@ -81,6 +81,9 @@ function buildCategoryFilter(categorySlug?: string): string[] | undefined {
 
 @Injectable()
 export class BlogSearchService implements OnModuleInit {
+  /** The full reindex currently running, if any — see {@link reindexAll}. */
+  private reindexInFlight: Promise<number> | null = null;
+
   constructor(
     private readonly meili: MeiliClient,
     private readonly blogRepository: BlogRepository,
@@ -129,8 +132,21 @@ export class BlogSearchService implements OnModuleInit {
    * no longer knows about. Upsert-then-prune, never clear-then-refill, for the
    * reason spelled out on the product reindex (TASK-376): a failure part-way
    * through must not be able to empty a working index.
+   *
+   * Single-flight, like the product reindex (TASK-522): a call made while a
+   * pass is running joins it, so the boot reindex and the reindex script never
+   * run two passes whose prunes race.
    */
-  async reindexAll(): Promise<number> {
+  reindexAll(): Promise<number> {
+    if (!this.reindexInFlight) {
+      this.reindexInFlight = this.runReindex().finally(() => {
+        this.reindexInFlight = null;
+      });
+    }
+    return this.reindexInFlight;
+  }
+
+  private async runReindex(): Promise<number> {
     if (!this.meili.isConfigured()) return 0;
     await this.ensureIndex();
 

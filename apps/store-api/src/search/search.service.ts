@@ -29,9 +29,16 @@ const REINDEX_BATCH = 100;
  * typo tolerance itself covers misspellings («афйон» → «айфон»). Since the
  * catalogue is Ukrainian (TASK-366/367) that injection mostly runs the other way
  * — «Чохол …» gains `case`/`cases` — see `search-synonyms.ts`.
+ *
+ * `sku` (TASK-522) sits right after `name`: under the `attribute` ranking rule
+ * a hit on an article number outranks a mention in a description. It is the one
+ * attribute exempt from typo tolerance — «IP16» is one typo from «IP15», and a
+ * code one character off names a different part (a wrong fit), not a misspelt
+ * word. A settings change only reaches a live index through a reindex:
+ * `npm run search:reindex` (see `src/scripts/search-reindex.ts`).
  */
 export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
-  searchableAttributes: ['name', 'description', 'categoryName', 'brandName', 'searchTerms'],
+  searchableAttributes: ['name', 'sku', 'description', 'categoryName', 'brandName', 'searchTerms'],
   // `price` and `inStock` joined the facets in TASK-417: the results page now
   // carries the catalogue's filter panel, and a price or availability filter has
   // to narrow the ENGINE's answer — filtering the hydrated page afterwards would
@@ -49,6 +56,7 @@ export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
   typoTolerance: {
     enabled: true,
     minWordSizeForTypos: { oneTypo: 4, twoTypos: 8 },
+    disableOnAttributes: ['sku'],
   },
   synonyms: UA_EN_SYNONYMS,
 };
@@ -137,6 +145,9 @@ export interface SearchResults {
  */
 @Injectable()
 export class SearchService implements OnModuleInit {
+  /** The full reindex currently running, if any — see {@link reindexAll}. */
+  private reindexInFlight: Promise<number> | null = null;
+
   constructor(
     private readonly meili: MeiliClient,
     private readonly productRepository: ProductRepository,
@@ -222,8 +233,23 @@ export class SearchService implements OnModuleInit {
    * way to BREAK a working search, which is the opposite of what a repair
    * operation should be able to do. Upsert-then-prune never empties the index:
    * a failure part-way through leaves the previous documents in place.
+   *
+   * Single-flight (TASK-522): a call made while a pass is running joins that
+   * pass instead of starting a second one. The boot reindex, the admin button
+   * and `npm run search:reindex` (which boots its own copy of the app, and with
+   * it a boot reindex) all meet here; two concurrent passes doubled the engine
+   * work and raced their prunes.
    */
-  async reindexAll(): Promise<number> {
+  reindexAll(): Promise<number> {
+    if (!this.reindexInFlight) {
+      this.reindexInFlight = this.runReindex().finally(() => {
+        this.reindexInFlight = null;
+      });
+    }
+    return this.reindexInFlight;
+  }
+
+  private async runReindex(): Promise<number> {
     if (!this.meili.isConfigured()) return 0;
     await this.ensureIndex();
 
@@ -357,9 +383,13 @@ export class SearchService implements OnModuleInit {
    *    `isActive` + an active category, so a withdrawn product never surfaces
    *    through its code.
    *
-   * The index itself still carries no `sku` (`ProductIndexSource` does not
-   * expose one — TASK-522), so this is also the only path that can answer such a
-   * query while the engine is up.
+   * Kept after TASK-522 put `sku` into the index, on purpose. The engine answers
+   * a PARTIAL code («RN13» → «RN13PRO-BK») and a code inside a phrase, which it
+   * could not before — but it cannot answer a whole code with exactly one
+   * position: the hyphen splits `IP15-1` into two words and the last word is
+   * matched as a prefix, so the engine returns `IP15-1` together with `IP15-10`,
+   * `IP15-12`… SF-SRCH-09 («знаходить рівно цей товар») needs the single hit,
+   * and only this lookup gives it.
    */
   private async findByExactSku(
     query: string,
@@ -520,6 +550,7 @@ export class SearchService implements OnModuleInit {
       name: source.name,
       description: source.description,
       slug: source.slug,
+      sku: source.sku,
       price: Number(source.price.toString()),
       compareAtPrice:
         source.compareAtPrice != null ? Number(source.compareAtPrice.toString()) : null,
@@ -533,8 +564,11 @@ export class SearchService implements OnModuleInit {
       inStock: source.stock > 0,
       isActive: source.isActive,
       createdAt: source.createdAt.getTime(),
+      // The code feeds the cross-script terms too (TASK-522): a code that spells
+      // out what the product fits («GLASS-IPHONE-15») must be findable in the
+      // other script («айфон») even when the name does not say it.
       searchTerms: extractSearchSynonymTerms(
-        `${source.name} ${source.categoryName} ${source.brandName ?? ''}`,
+        `${source.name} ${source.categoryName} ${source.brandName ?? ''} ${source.sku ?? ''}`,
       ),
     };
   }

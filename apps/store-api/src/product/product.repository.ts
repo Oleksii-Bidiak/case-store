@@ -182,6 +182,12 @@ export interface ProductIndexSource {
   price: { toString(): string };
   compareAtPrice: { toString(): string } | null;
   slug: string;
+  /**
+   * Article number (TASK-522), or null when the product has none. Indexed so the
+   * engine answers a partial code or a code inside a phrase; the exact-code
+   * pre-pass in `SearchService` still owns a whole-code query.
+   */
+  sku: string | null;
   categoryId: string;
   categoryName: string;
   /** Manufacturer id/name joined for the search brand facet (TASK-189). */
@@ -388,7 +394,8 @@ export class ProductRepository {
    * the search pre-pass, where a shopper typing `ip15-1` means `IP15-1`. The
    * Postgres full-text fallback's `contains` already ignores case, so a
    * case-sensitive lookup here made the answer depend on whether Meilisearch
-   * was up (the engine indexes no `sku`, so this is its only code path).
+   * was up (the engine indexes `sku` since TASK-522, but only this lookup
+   * answers a whole code with exactly one position).
    *
    * `sku` is unique only case-SENSITIVELY, so two positions may differ by case
    * alone. The exact-case one wins; with no exact spelling and more than one
@@ -1005,6 +1012,7 @@ export class ProductRepository {
       price: product.price,
       compareAtPrice: product.compareAtPrice,
       slug: product.slug,
+      sku: product.sku,
       categoryId: product.categoryId,
       categoryName: product.category?.name ?? '',
       brandId: product.brandId,

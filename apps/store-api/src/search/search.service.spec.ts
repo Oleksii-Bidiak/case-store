@@ -65,6 +65,7 @@ function makeIndexSource(overrides: Record<string, unknown> = {}) {
     price: { toString: () => '29.99' },
     compareAtPrice: { toString: () => '39.99' },
     slug: 'iphone-15-case',
+    sku: 'SPG-IP15-CL',
     categoryId: 'cat-1',
     categoryName: 'Cases',
     brandId: 'brand-1',
@@ -182,8 +183,12 @@ describe('SearchService', () => {
     });
 
     it('configures searchable/filterable/sortable attributes + typo tolerance', () => {
+      // `sku` sits right after `name` (TASK-522): a query matching an article
+      // number is the strongest signal a shopper can give, so under the
+      // `attribute` ranking rule it must outrank a mention in a description.
       expect(PRODUCTS_INDEX_SETTINGS.searchableAttributes).toEqual([
         'name',
+        'sku',
         'description',
         'categoryName',
         'brandName',
@@ -202,6 +207,15 @@ describe('SearchService', () => {
       ]);
       expect(PRODUCTS_INDEX_SETTINGS.sortableAttributes).toEqual(['price', 'createdAt']);
       expect(PRODUCTS_INDEX_SETTINGS.typoTolerance).toBeDefined();
+    });
+
+    it('never typo-corrects an article number (TASK-522)', () => {
+      // «IP16» is one typo away from «IP15»: typo tolerance on a code would hand a
+      // shopper looking for an iPhone 16 part the iPhone 15 one — a wrong fit,
+      // not a near miss. Words stay typo-tolerant; only the code is exact.
+      expect(PRODUCTS_INDEX_SETTINGS.typoTolerance).toEqual(
+        expect.objectContaining({ enabled: true, disableOnAttributes: ['sku'] }),
+      );
     });
 
     it('ships the bidirectional UA↔EN synonym map (TASK-200)', () => {
@@ -231,6 +245,9 @@ describe('SearchService', () => {
           categoryName: 'Cases',
           brandId: 'brand-1',
           brandName: 'Spigen',
+          // TASK-522: the article number is IN the document, so the engine can
+          // answer a partial code («SPG-IP15») and a code inside a phrase.
+          sku: 'SPG-IP15-CL',
           inStock: true,
           isActive: true,
           createdAt: new Date('2026-01-01T00:00:00.000Z').getTime(),
@@ -279,7 +296,33 @@ describe('SearchService', () => {
       }
     });
 
-    // A null source means "not on sale" — missing, soft-deleted, deactivated, or
+    it('indexes a product with no article number as sku null', async () => {
+      repo.findOneForIndex.mockResolvedValue(makeIndexSource({ sku: null }) as never);
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].sku).toBeNull();
+    });
+
+    it('derives cross-script search terms from the article number too (TASK-522)', async () => {
+      // Nothing in the name, category or brand says «iPhone» — only the code does.
+      repo.findOneForIndex.mockResolvedValue(
+        makeIndexSource({
+          name: 'Захисне скло 9H',
+          categoryName: 'Скло',
+          brandName: null,
+          sku: 'GLASS-IPHONE-15',
+        }) as never,
+      );
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].searchTerms).toContain('айфон');
+    });
+
+    // A null source means "not on sale"— missing, soft-deleted, deactivated, or
     // (TASK-297) filed in a DEACTIVATED CATEGORY. This delete is therefore the ONLY
     // de-indexing path a category withdrawal needs: `afterStatusChange` pushes the
     // subtree's products back through `indexProduct`, each resolves to null here, and
@@ -388,6 +431,31 @@ describe('SearchService', () => {
       const count = await service.reindexAll();
       expect(count).toBe(0);
       expect(meili.indexDocuments).not.toHaveBeenCalled();
+    });
+
+    it('joins a reindex already in flight instead of starting a second one (TASK-522)', async () => {
+      // The boot reindex and `npm run search:reindex` (or the admin button) land
+      // on the same process: two concurrent passes would double the engine work
+      // and race their prunes.
+      repo.findManyForIndex.mockResolvedValue({ items: [makeIndexSource()] as never });
+
+      const [first, second] = await Promise.all([service.reindexAll(), service.reindexAll()]);
+
+      expect(first).toBe(1);
+      expect(second).toBe(1);
+      expect(repo.findManyForIndex).toHaveBeenCalledTimes(1);
+
+      // Once it settles, the next call is a fresh pass.
+      await service.reindexAll();
+      expect(repo.findManyForIndex).toHaveBeenCalledTimes(2);
+    });
+
+    it('lets the next reindex run after a failed one', async () => {
+      repo.findManyForIndex.mockRejectedValueOnce(new Error('db down'));
+      await expect(service.reindexAll()).rejects.toThrow('db down');
+
+      repo.findManyForIndex.mockResolvedValue({ items: [makeIndexSource()] as never });
+      await expect(service.reindexAll()).resolves.toBe(1);
     });
   });
 
@@ -687,9 +755,11 @@ describe('SearchService', () => {
     ])(
       'answers a lower-case code with the upper-case position, engine %s (TASK-542)',
       async (_label, engineUp) => {
-        // The engine indexes no `sku`, so with Meili up this pre-pass is the only
-        // path that can answer a code at all — and the Postgres fallback's
-        // `contains` already ignores case. `ip15-1` must find `IP15-1` either way.
+        // The engine does index `sku` since TASK-522, but it would answer `ip15-1`
+        // with `IP15-1` AND `IP15-10`, `IP15-12`… (the hyphen splits the code and
+        // the last word is a prefix). SF-SRCH-09 wants exactly the one position,
+        // so this pre-pass still decides — and the Postgres fallback's `contains`
+        // already ignores case. `ip15-1` must find `IP15-1` either way.
         meili.isConfigured.mockReturnValue(engineUp);
         repo.findBySkuIgnoringCase.mockResolvedValue({ id: 'product-1' } as never);
         repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);

@@ -93,12 +93,14 @@ describe('BlogSearchService', () => {
       expect(BLOG_POSTS_INDEX_SETTINGS.filterableAttributes).toContain('categorySlug');
     });
 
-    it('shares the products index typo tolerance and synonyms verbatim', () => {
+    it('shares the products index word typo tolerance and synonyms verbatim', () => {
       // The header dropdown searches both in one keystroke — a query that is
       // typo-corrected for products must be typo-corrected for articles too.
-      expect(BLOG_POSTS_INDEX_SETTINGS.typoTolerance).toEqual(
-        PRODUCTS_INDEX_SETTINGS.typoTolerance,
-      );
+      // Only the per-attribute opt-out differs: products exempt `sku` (TASK-522),
+      // an attribute articles do not have.
+      const { disableOnAttributes, ...productWordTypos } = PRODUCTS_INDEX_SETTINGS.typoTolerance!;
+      expect(disableOnAttributes).toEqual(['sku']);
+      expect(BLOG_POSTS_INDEX_SETTINGS.typoTolerance).toEqual(productWordTypos);
       expect(BLOG_POSTS_INDEX_SETTINGS.synonyms).toBe(PRODUCTS_INDEX_SETTINGS.synonyms);
     });
   });
@@ -257,6 +259,20 @@ describe('BlogSearchService', () => {
 
       expect(await service.reindexAll()).toBe(0);
       expect(repo.findAllAdmin).not.toHaveBeenCalled();
+    });
+
+    it('joins a reindex already in flight instead of starting a second one', async () => {
+      // Same rule as the product index: the boot reindex and the reindex script
+      // meet in one process, and two passes would race their prunes.
+      repo.findAllAdmin.mockResolvedValue({ posts: [makePost()], total: 1 } as never);
+
+      const [first, second] = await Promise.all([service.reindexAll(), service.reindexAll()]);
+
+      expect([first, second]).toEqual([1, 1]);
+      expect(repo.findAllAdmin).toHaveBeenCalledTimes(1);
+
+      await service.reindexAll();
+      expect(repo.findAllAdmin).toHaveBeenCalledTimes(2);
     });
   });
 });

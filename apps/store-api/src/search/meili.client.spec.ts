@@ -32,6 +32,7 @@ function makeIndexMock(): jest.Mocked<MeiliIndexApi> {
     getDocuments: jest.fn().mockResolvedValue({ results: [], total: 0 }),
     waitForTask: jest.fn().mockResolvedValue({ status: 'succeeded' }),
     search: jest.fn().mockResolvedValue({ hits: [], estimatedTotalHits: 0 }),
+    getSettings: jest.fn().mockResolvedValue({ searchableAttributes: ['name', 'sku'] }),
   };
 }
 
@@ -57,6 +58,7 @@ const DOC: ProductSearchDocument = {
   name: 'iPhone 15 Case',
   description: 'Clear case',
   slug: 'iphone-15-case',
+  sku: 'SPG-IP15-CL',
   price: 29.99,
   compareAtPrice: null,
   categoryIds: ['c1'],
@@ -118,6 +120,28 @@ describe('MeiliClient', () => {
       // null, NOT an empty set: "could not check" must never be read as
       // "index is empty", or the reindex prune would delete everything.
       await expect(client.listDocumentIds()).resolves.toBeNull();
+      await expect(client.getSearchableAttributes()).resolves.toBeNull();
+    });
+  });
+
+  // TASK-522: `ensureIndex` swallows a rejected settings update, so the reindex
+  // script reads the settings BACK to prove the engine applied them.
+  describe('getSearchableAttributes', () => {
+    it('reads the applied searchable attributes of the given index', async () => {
+      const index = makeIndexMock();
+      const sdk = makeClientMock(index);
+      const client = new MeiliClient(makeConfig({}), loggerMock, sdk);
+
+      await expect(client.getSearchableAttributes('blog_posts')).resolves.toEqual(['name', 'sku']);
+      expect(sdk.index).toHaveBeenCalledWith('blog_posts');
+    });
+
+    it('answers null — never an empty list — when the read fails', async () => {
+      const index = makeIndexMock();
+      index.getSettings.mockRejectedValueOnce(new Error('timeout'));
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.getSearchableAttributes()).resolves.toBeNull();
     });
   });
 

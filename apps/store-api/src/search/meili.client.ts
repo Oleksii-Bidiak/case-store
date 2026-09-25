@@ -59,6 +59,11 @@ export interface ProductSearchDocument extends IndexedDocument {
   name: string;
   description: string | null;
   slug: string;
+  /**
+   * Article number (TASK-522). Searchable but exempt from typo tolerance — a
+   * code one character off names a different product, not a misspelling.
+   */
+  sku: string | null;
   price: number;
   compareAtPrice: number | null;
   /**
@@ -176,6 +181,7 @@ export interface MeiliIndexApi {
     query: string,
     options?: MeiliSearchOptions,
   ): Promise<{ hits: T[]; estimatedTotalHits?: number }>;
+  getSettings(): Promise<{ searchableAttributes?: string[] | null }>;
 }
 
 /** Minimal surface of the `meilisearch` SDK client this wrapper depends on. */
@@ -345,6 +351,26 @@ export class MeiliClient {
       return ids;
     } catch (err) {
       this.logger.warn({ err }, 'Meilisearch getDocuments failed; skipping stale-document prune');
+      return null;
+    }
+  }
+
+  /**
+   * The searchable attributes the engine has actually APPLIED to an index, or
+   * `null` when unconfigured or the read failed (TASK-522).
+   *
+   * {@link ensureIndex} is best-effort and does not wait for its settings task,
+   * so a rejected update is invisible to it. Reading the settings back is how the
+   * reindex script proves a settings change reached the engine instead of
+   * assuming it did. `null` means "unknown", never "no attributes".
+   */
+  async getSearchableAttributes(indexUid: string = PRODUCTS_INDEX): Promise<string[] | null> {
+    if (!this.client) return null;
+    try {
+      const settings = await this.client.index(indexUid).getSettings();
+      return settings?.searchableAttributes ?? null;
+    } catch (err) {
+      this.logger.warn({ err, indexUid }, 'Meilisearch getSettings failed');
       return null;
     }
   }
