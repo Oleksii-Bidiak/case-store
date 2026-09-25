@@ -68,7 +68,7 @@ docker compose up -d
 
 # 4. Database
 npm run db:generate      # Prisma client
-npm run db:migrate       # migrations
+npm run db:migrate       # migrations (new one: npm run db:migrate -- --name <name>)
 npm run db:seed          # optional dev data
 
 # 5. Dev servers (each in its own terminal)
