@@ -1,4 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
+// Shared with the warm-up globalSetup, which must hit the same servers.
+import { ADMIN_PORT, API_PORT, CLIENT_PORT } from "./e2e/fixtures/ports";
 
 /**
  * Playwright E2E config (TASK-105-D). Scaffolds the full-stack smoke suite:
@@ -20,9 +22,6 @@ import { defineConfig, devices } from "@playwright/test";
  *
  * CI runs this as a non-blocking job until the harness is proven stable.
  */
-const API_PORT = 3001;
-const CLIENT_PORT = 3000;
-const ADMIN_PORT = 3002;
 const DATABASE_URL =
   process.env.DATABASE_URL ??
   "postgresql://postgres:postgres@localhost:5432/store_test";

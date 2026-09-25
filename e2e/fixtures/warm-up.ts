@@ -43,8 +43,7 @@
  * serving 500 until `apps/store-admin/.next` was deleted.
  */
 
-const CLIENT_ORIGIN = "http://localhost:3000";
-const ADMIN_ORIGIN = "http://localhost:3002";
+import { ADMIN_ORIGIN, CLIENT_ORIGIN } from "./ports";
 
 /** Storefront: the login page, its post-login target and the deep links. */
 const CLIENT_ROUTES = ["/login", "/", "/checkout", "/cart", "/products"];
@@ -123,7 +122,9 @@ async function warmRoute(
   const started = Date.now();
   const html = await fetchCompiled(`${origin}${route}`, headers);
   const chunks = scriptChunks(html);
-  await Promise.all(chunks.map((chunk) => fetchCompiled(`${origin}${chunk}`, {})));
+  await Promise.all(
+    chunks.map((chunk) => fetchCompiled(`${origin}${chunk}`, {})),
+  );
   return {
     url: `${origin}${route}`,
     ms: Date.now() - started,
