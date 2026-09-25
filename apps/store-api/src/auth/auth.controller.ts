@@ -87,6 +87,15 @@ class EmailVerificationConfirmEnvelope {
   data!: EmailVerificationConfirmed;
 }
 
+/** One held permission with its display label (TASK-725). */
+class PermissionEntryEntity {
+  @ApiProperty({ example: 'orders:read' })
+  key!: string;
+
+  @ApiProperty({ example: 'Переглядати замовлення' })
+  label!: string;
+}
+
 /** Effective-permission payload for `GET /auth/me/permissions` (TASK-334). */
 class EffectivePermissionsEntity {
   @ApiProperty({ enum: UserRole, example: UserRole.MANAGER })
@@ -111,6 +120,15 @@ class EffectivePermissionsEntity {
 
   @ApiProperty({ type: [String], example: ['orders:read', 'products:write'] })
   permissions!: string[];
+
+  @ApiProperty({
+    type: [PermissionEntryEntity],
+    description:
+      'The same keys with their Ukrainian catalogue labels, in catalogue (zone) order — ' +
+      'for the caller’s own profile screen (TASK-725). A key missing from the catalogue ' +
+      'is labelled with the key itself.',
+  })
+  entries!: PermissionEntryEntity[];
 }
 
 class PermissionsResponseEnvelope {
@@ -129,6 +147,7 @@ type MessageResponse = { message: string };
   AuthTokens,
   AuthResponseEnvelope,
   MessageResponseEnvelope,
+  PermissionEntryEntity,
   EffectivePermissionsEntity,
   PermissionsResponseEnvelope,
   // TASK-485: the confirm route's own envelope — it reports the guest orders it

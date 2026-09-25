@@ -190,7 +190,8 @@ describe("AdminReturnTable — search and page size (TASK-423)", () => {
       expect(mockReplace).toHaveBeenCalledWith("/returns?search=olena"),
     );
     expect(
-      screen.queryByRole("button", { name: dict.common.search }),
+      // The old submit button's label; the debounce replaced it (TASK-816 dropped the key).
+      screen.queryByRole("button", { name: "Пошук" }),
     ).not.toBeInTheDocument();
   });
 

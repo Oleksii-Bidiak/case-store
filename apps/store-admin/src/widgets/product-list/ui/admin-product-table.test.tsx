@@ -41,6 +41,58 @@ function makeProductRow() {
   };
 }
 
+/** A node of the nested category tree, valid for both the admin and public read. */
+interface TreeNodeStub {
+  id: string;
+  name: string;
+  slug: string;
+  parentId: string | null;
+  depth: number;
+  isActive: boolean;
+  sortOrder: number;
+  productCount: number;
+  subtreeProductCount: number;
+  children: TreeNodeStub[];
+}
+
+function treeNode(
+  id: string,
+  name: string,
+  children: TreeNodeStub[] = [],
+  parentId: string | null = null,
+  depth = 1,
+): TreeNodeStub {
+  return {
+    id,
+    name,
+    slug: id,
+    parentId,
+    depth,
+    isActive: true,
+    sortOrder: 0,
+    productCount: 0,
+    subtreeProductCount: 0,
+    children,
+  };
+}
+
+/**
+ * TASK-717: category names come from the full tree — the admin tree for a
+ * session with `categories:write`, the public tree otherwise. Both are stubbed
+ * so a restricted render (the delete-permission cases) stays off
+ * onUnhandledRequest.
+ */
+function categoryTreeHandlers(
+  tree: TreeNodeStub[] = [treeNode("cat-1", "Cases")],
+) {
+  return [
+    http.get("*/api/categories/admin/tree", () =>
+      HttpResponse.json({ data: tree }),
+    ),
+    http.get("*/api/categories/tree", () => HttpResponse.json({ data: tree })),
+  ];
+}
+
 function stubEndpoints() {
   server.use(
     // TASK-230: the table lists via the guarded admin endpoint (all statuses).
@@ -50,12 +102,7 @@ function stubEndpoints() {
         meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
       }),
     ),
-    http.get("*/api/categories", () =>
-      HttpResponse.json({
-        data: [{ id: "cat-1", name: "Cases" }],
-        meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
-      }),
-    ),
+    ...categoryTreeHandlers(),
   );
 }
 
@@ -220,12 +267,7 @@ describe("AdminProductTable — photo column and filters (TASK-362)", () => {
           meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
         }),
       ),
-      http.get("*/api/categories", () =>
-        HttpResponse.json({
-          data: [{ id: "cat-1", name: "Cases" }],
-          meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
-        }),
-      ),
+      ...categoryTreeHandlers(),
     );
     renderTable();
     await screen.findByText("iPhone 15 Pro Case");
@@ -247,12 +289,7 @@ describe("AdminProductTable — photo column and filters (TASK-362)", () => {
           meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
         }),
       ),
-      http.get("*/api/categories", () =>
-        HttpResponse.json({
-          data: [{ id: "cat-1", name: "Cases" }],
-          meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
-        }),
-      ),
+      ...categoryTreeHandlers(),
     );
     renderTable();
     await screen.findByText("iPhone 15 Pro Case");
@@ -699,12 +736,7 @@ describe("AdminProductTable — delete a product (TASK-427)", () => {
           meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
         });
       }),
-      http.get("*/api/categories", () =>
-        HttpResponse.json({
-          data: [{ id: "cat-1", name: "Cases" }],
-          meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
-        }),
-      ),
+      ...categoryTreeHandlers(),
       http.delete("*/api/products/product-1", () => {
         counts.deletes += 1;
         return new HttpResponse(null, { status: 204 });
@@ -796,12 +828,7 @@ describe("AdminProductTable — the deleted view (TASK-427)", () => {
           meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
         });
       }),
-      http.get("*/api/categories", () =>
-        HttpResponse.json({
-          data: [{ id: "cat-1", name: "Cases" }],
-          meta: { total: 1, page: 1, limit: 100, totalPages: 1 },
-        }),
-      ),
+      ...categoryTreeHandlers(),
     );
     return queries;
   }
@@ -845,5 +872,89 @@ describe("AdminProductTable — the deleted view (TASK-427)", () => {
         name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
       }),
     ).toBeDisabled();
+  });
+});
+
+describe("AdminProductTable — category column covers every depth (TASK-717)", () => {
+  const LEAF_ID = "cat-leaf";
+  // Аксесуари → Чохли → Чохли для iPhone: the product sits on level 3, which is
+  // where an import files nearly every position. The old lookup read active
+  // ROOTS only and answered «—» here.
+  const chain = [
+    treeNode("cat-root", "Аксесуари", [
+      treeNode(
+        "cat-mid",
+        "Чохли",
+        [treeNode(LEAF_ID, "Чохли для iPhone", [], "cat-mid", 3)],
+        "cat-root",
+        2,
+      ),
+    ]),
+  ];
+
+  /** Stub the list with one product on the leaf, recording which tree was read. */
+  function stubLeafProduct() {
+    const reads = { admin: 0, public: 0 };
+    server.use(
+      http.get("*/api/products/admin/list", () =>
+        HttpResponse.json({
+          data: [{ ...makeProductRow(), categoryId: LEAF_ID }],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+      http.get("*/api/categories/admin/tree", () => {
+        reads.admin += 1;
+        return HttpResponse.json({ data: chain });
+      }),
+      http.get("*/api/categories/tree", () => {
+        reads.public += 1;
+        return HttpResponse.json({ data: chain });
+      }),
+    );
+    return reads;
+  }
+
+  it("names a level-3 subcategory from the admin tree for a categories:write holder", async () => {
+    const reads = stubLeafProduct();
+    renderTable({ permissions: ["products:read", "categories:write"] });
+
+    expect(await screen.findByText("Чохли для iPhone")).toBeInTheDocument();
+    expect(reads.admin).toBeGreaterThan(0);
+    // The full tree already covers it — the public read is never made.
+    expect(reads.public).toBe(0);
+  });
+
+  it("names it for the owner too (every permission implicitly)", async () => {
+    stubLeafProduct();
+    renderTable();
+
+    expect(await screen.findByText("Чохли для iPhone")).toBeInTheDocument();
+  });
+
+  it("falls back to the public tree for a manager without categories:write — never asks the 403 route", async () => {
+    const reads = stubLeafProduct();
+    renderTable({ permissions: ["products:read"] });
+
+    expect(await screen.findByText("Чохли для iPhone")).toBeInTheDocument();
+    expect(reads.public).toBeGreaterThan(0);
+    expect(reads.admin).toBe(0);
+  });
+
+  it("still shows «—» for a category the tree does not contain", async () => {
+    stubLeafProduct();
+    server.use(
+      http.get("*/api/categories/tree", () =>
+        HttpResponse.json({ data: [treeNode("other", "Інше")] }),
+      ),
+    );
+    renderTable({ permissions: ["products:read"] });
+
+    await screen.findByText("iPhone 15 Pro Case");
+    // The name/article line also falls back to «—», so read the category cell.
+    const cell = document.querySelector(
+      `td[data-label="${dict.products.colCategory}"]`,
+    );
+    await waitFor(() => expect(cell).toHaveTextContent("—"));
+    expect(screen.queryByText("Чохли для iPhone")).toBeNull();
   });
 });

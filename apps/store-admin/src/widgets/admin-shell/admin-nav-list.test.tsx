@@ -11,26 +11,39 @@ jest.mock("next/navigation", () => ({
   usePathname: () => "/",
 }));
 
-/** Mock both always-mounted nav counters (contact unread + needs-action). */
+/**
+ * Mock the nav counters: contact unread, and — since TASK-722 — the two section
+ * lists whose `meta.total` feeds the «Замовлення» / «Відгуки» badges. The list
+ * stubs answer the total only for the exact queue the badge counts (PENDING,
+ * one row), so a badge fed from any other query would read 0 and fail.
+ */
 function mockCounters(counts: {
   newOrders: number;
   pendingReviews: number;
   unread?: number;
 }) {
+  const page = (total: number) => ({
+    data: [],
+    meta: { total, page: 1, limit: 1, totalPages: total },
+  });
   server.use(
     http.get("*/api/contact/admin/unread-count", () =>
       HttpResponse.json({ data: { unread: counts.unread ?? 0 } }),
     ),
-    http.get("*/api/admin/dashboard/needs-action", () =>
-      HttpResponse.json({
-        data: {
-          newOrders: counts.newOrders,
-          pendingReviews: counts.pendingReviews,
-          unpaidInTransit: 0,
-          failedMails: 0,
-        },
-      }),
-    ),
+    http.get("*/api/admin/orders", ({ request }) => {
+      const url = new URL(request.url);
+      const isQueue =
+        url.searchParams.get("status") === "PENDING" &&
+        url.searchParams.get("limit") === "1";
+      return HttpResponse.json(page(isQueue ? counts.newOrders : 0));
+    }),
+    http.get("*/api/admin/reviews", ({ request }) => {
+      const url = new URL(request.url);
+      const isQueue =
+        url.searchParams.get("status") === "pending" &&
+        url.searchParams.get("limit") === "1";
+      return HttpResponse.json(page(isQueue ? counts.pendingReviews : 0));
+    }),
   );
 }
 
@@ -364,6 +377,8 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
   it("does not fetch the badge counters a manager cannot read", async () => {
     let needsActionCalls = 0;
     let unreadCalls = 0;
+    let ordersCalls = 0;
+    let reviewsCalls = 0;
     server.use(
       http.get("*/api/admin/dashboard/needs-action", () => {
         needsActionCalls += 1;
@@ -373,6 +388,14 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
         unreadCalls += 1;
         return HttpResponse.json({ data: {} }, { status: 403 });
       }),
+      http.get("*/api/admin/orders", () => {
+        ordersCalls += 1;
+        return HttpResponse.json({ data: {} }, { status: 403 });
+      }),
+      http.get("*/api/admin/reviews", () => {
+        reviewsCalls += 1;
+        return HttpResponse.json({ data: {} }, { status: 403 });
+      }),
     );
 
     renderNav({ isOwner: false, permissions: ["blog:write"] });
@@ -380,5 +403,55 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
     await screen.findByRole("link", { name: dict.nav.blog });
     expect(needsActionCalls).toBe(0);
     expect(unreadCalls).toBe(0);
+    expect(ordersCalls).toBe(0);
+    expect(reviewsCalls).toBe(0);
+  });
+
+  /**
+   * TASK-722 — the order operator's case. The badges used to come from the
+   * dashboard's needs-action endpoint, behind `analytics:read`, so a manager who
+   * works the order queue but has no dashboard never saw new orders arrive.
+   * Each badge now follows the right of its own section.
+   */
+  it("shows the Orders and Reviews badges without analytics:read, from each section's right", async () => {
+    let needsActionCalls = 0;
+    mockCounters({ newOrders: 5, pendingReviews: 3 });
+    server.use(
+      http.get("*/api/admin/dashboard/needs-action", () => {
+        needsActionCalls += 1;
+        return HttpResponse.json({ data: {} }, { status: 403 });
+      }),
+    );
+
+    renderNav({
+      isOwner: false,
+      permissions: ["orders:read", "reviews:moderate"],
+    });
+
+    expect(
+      await screen.findByLabelText(dict.dashboard.newOrdersBadgeAria(5)),
+    ).toHaveTextContent("5");
+    expect(
+      await screen.findByLabelText(dict.dashboard.pendingReviewsBadgeAria(3)),
+    ).toHaveTextContent("3");
+    expect(needsActionCalls).toBe(0);
+  });
+
+  it("gives an order operator the Orders badge and asks nothing about reviews", async () => {
+    let reviewsCalls = 0;
+    mockCounters({ newOrders: 2, pendingReviews: 7 });
+    server.use(
+      http.get("*/api/admin/reviews", () => {
+        reviewsCalls += 1;
+        return HttpResponse.json({ data: {} }, { status: 403 });
+      }),
+    );
+
+    renderNav({ isOwner: false, permissions: ["orders:read"] });
+
+    expect(
+      await screen.findByLabelText(dict.dashboard.newOrdersBadgeAria(2)),
+    ).toBeInTheDocument();
+    expect(reviewsCalls).toBe(0);
   });
 });

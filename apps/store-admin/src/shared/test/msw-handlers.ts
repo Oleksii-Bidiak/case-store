@@ -113,6 +113,17 @@ export const handlers = [
     }),
   ),
 
+  // Admin review moderation queue — empty by default. Since TASK-722 the nav's
+  // «Відгуки» badge reads `meta.total` of `?status=pending&limit=1` from here
+  // (instead of the analytics-only needs-action endpoint), and the nav is
+  // mounted by every shell test. Override per-test.
+  http.get("*/api/admin/reviews", () =>
+    HttpResponse.json({
+      data: [],
+      meta: { total: 0, page: 1, limit: 20, totalPages: 0 },
+    }),
+  ),
+
   // Content-map count sources (TASK-264) — each of the four list endpoints the
   // /content-map widget fetches returns an empty collection by default so any
   // shell/nav test that mounts near it stays off onUnhandledRequest. The
@@ -216,7 +227,13 @@ export const handlers = [
   // DEPUTY admin, which is `isOwner: false` with `isAdmin: true`.
   http.get("*/api/auth/me/permissions", () =>
     HttpResponse.json({
-      data: { role: "ADMIN", isOwner: true, isAdmin: true, permissions: [] },
+      data: {
+        role: "ADMIN",
+        isOwner: true,
+        isAdmin: true,
+        permissions: [],
+        entries: [],
+      },
     }),
   ),
 

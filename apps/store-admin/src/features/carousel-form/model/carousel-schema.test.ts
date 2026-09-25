@@ -14,7 +14,6 @@ const baseInput: CarouselFormInput = {
   placement: "HOME_RAILS",
   categoryId: "",
   itemLimit: "12",
-  sortOrder: "0",
   status: "DRAFT",
   scheduledAt: "",
 };
@@ -26,7 +25,6 @@ const baseValues: CarouselFormValues = {
   placement: "HOME_RAILS",
   categoryId: "",
   itemLimit: 12,
-  sortOrder: 0,
   status: "DRAFT",
   scheduledAt: "",
 };
@@ -86,15 +84,10 @@ describe("carouselSchema", () => {
   });
 
   it("transforms numeric strings to numbers on output", () => {
-    const result = carouselSchema.safeParse({
-      ...baseInput,
-      itemLimit: "8",
-      sortOrder: "3",
-    });
+    const result = carouselSchema.safeParse({ ...baseInput, itemLimit: "8" });
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.itemLimit).toBe(8);
-      expect(result.data.sortOrder).toBe(3);
     }
   });
 
@@ -170,8 +163,8 @@ describe("carouselFormValuesToCreateDto", () => {
   // carousel to the END of its placement bucket; on update it leaves the position the
   // operator dragged the row to untouched. Sending `0` — which the old form did for every
   // new carousel — put them all in slot 0 and left the homepage order to the database.
-  it("does NOT send sortOrder, even when the inert input value is set", () => {
-    const dto = carouselFormValuesToCreateDto({ ...baseValues, sortOrder: 2 });
+  it("does NOT send sortOrder", () => {
+    const dto = carouselFormValuesToCreateDto(baseValues);
     expect(dto).not.toHaveProperty("sortOrder");
   });
 
