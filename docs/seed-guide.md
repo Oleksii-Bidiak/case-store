@@ -146,9 +146,12 @@ npm run db:generate
 
 ### If `migrate dev` hangs, or fails with P1002
 
-Without `--name`, `prisma migrate dev` stops to ask for a migration name — and it asks even when
-there is no terminal to answer it (an agent, CI, a piped shell), so it waits forever. Closing
-stdin does **not** help: `</dev/null` still hangs at the same prompt. While it waits, the schema
+Without `--name`, `prisma migrate dev` prints `? Enter a name for the new migration: »` and
+stops there — and it asks even when there is no terminal to answer it (an agent shell, a piped
+shell, a script), so it waits forever. Closing stdin does **not** help: `</dev/null` still hangs
+at the same prompt. The only environment where it does not ask is one with a CI variable set
+(`CI=true`, as on GitHub Actions): there it skips the prompt and silently creates a migration with
+an empty name instead. While it waits, the schema
 engine holds Postgres advisory lock `72707369`, and as long as that process (or an orphaned
 `schema-engine`) is alive, every other `migrate dev`/`deploy`/`reset` against that database times
 out with **P1002** ("Timed out trying to acquire a postgres advisory lock"). The only thing that
