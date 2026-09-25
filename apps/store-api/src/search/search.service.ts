@@ -350,6 +350,9 @@ export class SearchService implements OnModuleInit {
    *  - only on page 1 with NO facet applied — an SKU already identifies a single
    *    product, so paging or narrowing it further is meaningless and would make
    *    a filtered result set contradict its own filters;
+   *  - case-insensitive (TASK-542): `ip15-1` finds `IP15-1`, exactly as the
+   *    Postgres fallback's `contains` would, so the answer no longer depends on
+   *    whether the engine is up;
    *  - the hit is re-read through `findByIdsForCards`, which gates on
    *    `isActive` + an active category, so a withdrawn product never surfaces
    *    through its code.
@@ -366,7 +369,7 @@ export class SearchService implements OnModuleInit {
   ): Promise<SearchResults | null> {
     if (page !== 1 || !looksLikeSku(query) || hasFacets(filters)) return null;
 
-    const match = await this.productRepository.findBySku(query);
+    const match = await this.productRepository.findBySkuIgnoringCase(query);
     if (!match) return null;
 
     const [card] = await this.productRepository.findByIdsForCards([match.id]);

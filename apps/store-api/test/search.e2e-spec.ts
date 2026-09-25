@@ -373,6 +373,28 @@ describe('Search (e2e)', () => {
       expect(res.body.data[0]).toMatchObject({ id: 'product-1' });
       expect(res.body.meta).toMatchObject({ total: 1, page: 1, totalPages: 1 });
     });
+
+    it('answers ip15-1 with IP15-1 — the code lookup ignores case (TASK-542)', async () => {
+      // No exact-case row, one case-insensitive one: the shopper typed the
+      // code in lower case. The engine indexes no `sku`, so this lookup is the
+      // only thing that can answer it while Meilisearch is up.
+      prismaServiceMock.product.findFirst.mockResolvedValue(null);
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'ip15-1' })
+        .expect(200);
+
+      expect(prismaServiceMock.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sku: { equals: 'ip15-1', mode: 'insensitive' }, deletedAt: null },
+        }),
+      );
+      expect(meiliClientMock.search).not.toHaveBeenCalled();
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).toMatchObject({ id: 'product-1', sku: 'IP15-1' });
+    });
   });
 
   describe('GET /api/search/suggest', () => {

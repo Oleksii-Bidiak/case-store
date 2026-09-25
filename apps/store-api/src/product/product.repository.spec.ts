@@ -151,6 +151,67 @@ describe('ProductRepository (soft-delete behaviour)', () => {
     });
   });
 
+  // ─── findBySkuIgnoringCase — the search article-number lookup (TASK-542) ─────
+  // A shopper typing `ip15-1` means `IP15-1`. The Postgres fallback's `contains`
+  // was already case-insensitive, so the exact-code pre-pass must be too, or the
+  // answer depends on whether Meilisearch is up.
+
+  describe('findBySkuIgnoringCase', () => {
+    it('returns the exact-case match without a second query', async () => {
+      const exact = { id: 'p-exact', sku: 'IP15-1' };
+      prismaMock.product.findFirst.mockResolvedValue(exact as never);
+
+      await expect(repository.findBySkuIgnoringCase('IP15-1')).resolves.toBe(exact);
+
+      expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
+        where: { sku: 'IP15-1', deletedAt: null },
+      });
+      expect(prismaMock.product.findMany).not.toHaveBeenCalled();
+    });
+
+    it('finds IP15-1 for the query ip15-1', async () => {
+      const row = { id: 'p-1', sku: 'IP15-1' };
+      prismaMock.product.findFirst.mockResolvedValue(null);
+      prismaMock.product.findMany.mockResolvedValue([row] as never);
+
+      await expect(repository.findBySkuIgnoringCase('ip15-1')).resolves.toBe(row);
+
+      expect(prismaMock.product.findMany).toHaveBeenCalledWith({
+        where: { sku: { equals: 'ip15-1', mode: 'insensitive' }, deletedAt: null },
+        take: 2,
+      });
+    });
+
+    it('answers null when the code names two positions that differ only by case', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+      prismaMock.product.findMany.mockResolvedValue([
+        { id: 'p-1', sku: 'AB-1' },
+        { id: 'p-2', sku: 'ab-1' },
+      ] as never);
+
+      await expect(repository.findBySkuIgnoringCase('Ab-1')).resolves.toBeNull();
+    });
+
+    it('answers null when nothing matches', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+      prismaMock.product.findMany.mockResolvedValue([]);
+
+      await expect(repository.findBySkuIgnoringCase('zz-9')).resolves.toBeNull();
+    });
+
+    it('escapes LIKE metacharacters so the code is matched literally', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+      prismaMock.product.findMany.mockResolvedValue([]);
+
+      await repository.findBySkuIgnoringCase('ab_1%\\x');
+
+      expect(prismaMock.product.findMany).toHaveBeenCalledWith({
+        where: { sku: { equals: 'ab\\_1\\%\\\\x', mode: 'insensitive' }, deletedAt: null },
+        take: 2,
+      });
+    });
+  });
+
   // ─── findBySlugWithRelations — public detail read (TASK-145) ─────────────────
   // The public PDP endpoint must hide deactivated products: the default query
   // filters `isActive: true`. The `activeOnly: false` override (reserved for the

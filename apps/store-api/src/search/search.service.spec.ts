@@ -98,7 +98,11 @@ describe('SearchService', () => {
   let repo: jest.Mocked<
     Pick<
       ProductRepository,
-      'findAll' | 'findByIdsForCards' | 'findOneForIndex' | 'findManyForIndex' | 'findBySku'
+      | 'findAll'
+      | 'findByIdsForCards'
+      | 'findOneForIndex'
+      | 'findManyForIndex'
+      | 'findBySkuIgnoringCase'
     >
   >;
   let categoryRepo: jest.Mocked<Pick<CategoryRepository, 'findAncestorIds' | 'findSubtreeIds'>> & {
@@ -131,7 +135,7 @@ describe('SearchService', () => {
       findManyForIndex: jest.fn(),
       // TASK-417: the exact-article-number lookup. Answers "no such code" by
       // default so every other test keeps taking the full-text path.
-      findBySku: jest.fn().mockResolvedValue(null),
+      findBySkuIgnoringCase: jest.fn().mockResolvedValue(null),
     };
     // TASK-236: by default a category's ancestor chain is just itself; the
     // toDocument tests override it to prove the rollup expansion. `findSubtreeIds`
@@ -665,20 +669,41 @@ describe('SearchService', () => {
 
   describe('search by article number', () => {
     it('answers a code-shaped query with the single product it names', async () => {
-      repo.findBySku.mockResolvedValue({ id: 'product-1' } as never);
+      repo.findBySkuIgnoringCase.mockResolvedValue({ id: 'product-1' } as never);
       repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
 
       const result = await service.search('RN13PRO-BK2', 1, 20);
 
-      expect(repo.findBySku).toHaveBeenCalledWith('RN13PRO-BK2');
+      expect(repo.findBySkuIgnoringCase).toHaveBeenCalledWith('RN13PRO-BK2');
       // An SKU is a code, not a phrase — it must not be typo-corrected or ranked.
       expect(meili.search).not.toHaveBeenCalled();
       expect(result.data.map((p) => p.id)).toEqual(['product-1']);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
     });
 
+    it.each([
+      ['up', true],
+      ['down', false],
+    ])(
+      'answers a lower-case code with the upper-case position, engine %s (TASK-542)',
+      async (_label, engineUp) => {
+        // The engine indexes no `sku`, so with Meili up this pre-pass is the only
+        // path that can answer a code at all — and the Postgres fallback's
+        // `contains` already ignores case. `ip15-1` must find `IP15-1` either way.
+        meili.isConfigured.mockReturnValue(engineUp);
+        repo.findBySkuIgnoringCase.mockResolvedValue({ id: 'product-1' } as never);
+        repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
+
+        const result = await service.search('ip15-1', 1, 20);
+
+        expect(repo.findBySkuIgnoringCase).toHaveBeenCalledWith('ip15-1');
+        expect(meili.search).not.toHaveBeenCalled();
+        expect(result.data.map((p) => p.id)).toEqual(['product-1']);
+      },
+    );
+
     it('falls through to full text when the code matches nothing', async () => {
-      repo.findBySku.mockResolvedValue(null);
+      repo.findBySkuIgnoringCase.mockResolvedValue(null);
       meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
 
@@ -689,7 +714,7 @@ describe('SearchService', () => {
     });
 
     it('drops the hit when the product is no longer card-visible (withdrawn category)', async () => {
-      repo.findBySku.mockResolvedValue({ id: 'product-1' } as never);
+      repo.findBySkuIgnoringCase.mockResolvedValue({ id: 'product-1' } as never);
       repo.findByIdsForCards.mockResolvedValue([] as never);
       meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [], total: 0 } as never);
@@ -708,7 +733,7 @@ describe('SearchService', () => {
       await service.search('RN13PRO-BK2', 2, 20);
       await service.search('RN13PRO-BK2', 1, 20, { brandId: 'brand-1' });
 
-      expect(repo.findBySku).not.toHaveBeenCalled();
+      expect(repo.findBySkuIgnoringCase).not.toHaveBeenCalled();
     });
   });
 

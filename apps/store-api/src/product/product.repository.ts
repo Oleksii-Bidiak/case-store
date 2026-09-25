@@ -384,6 +384,41 @@ export class ProductRepository {
   }
 
   /**
+   * Find the ONE product an article number names, ignoring case (TASK-542) —
+   * the search pre-pass, where a shopper typing `ip15-1` means `IP15-1`. The
+   * Postgres full-text fallback's `contains` already ignores case, so a
+   * case-sensitive lookup here made the answer depend on whether Meilisearch
+   * was up (the engine indexes no `sku`, so this is its only code path).
+   *
+   * `sku` is unique only case-SENSITIVELY, so two positions may differ by case
+   * alone. The exact-case one wins; with no exact spelling and more than one
+   * case-variant, the code names no single position and this answers `null`,
+   * letting search fall through to full text, which lists them all.
+   *
+   * Excludes soft-deleted rows; visibility is the caller's re-read (the card
+   * read gates on {@link PUBLIC_PRODUCT_WHERE}). Admin uniqueness checks keep
+   * using the case-sensitive {@link findBySku}, matching the database constraint.
+   *
+   * Prisma compiles an insensitive `equals` to `ILIKE`, so `_` and `%` in the
+   * code would be wildcards (`ab_1` matching `AB-1`); they and the escape
+   * character are escaped first. The integration spec pins this against a real
+   * Postgres, so a Prisma change in how it compiles the filter fails loudly.
+   */
+  async findBySkuIgnoringCase(sku: string): Promise<Product | null> {
+    const exact = await this.prisma.product.findFirst({ where: { sku, deletedAt: null } });
+    if (exact) return exact;
+
+    const variants = await this.prisma.product.findMany({
+      where: {
+        sku: { equals: sku.replace(/[\\%_]/g, '\\$&'), mode: 'insensitive' },
+        deletedAt: null,
+      },
+      take: 2,
+    });
+    return variants.length === 1 ? variants[0] : null;
+  }
+
+  /**
    * Find a product position by slug with its category, group (sibling positions
    * + attribute axes), and images. Used for the public product detail endpoint.
    * Excludes soft-deleted rows. Sibling positions are the other active,
