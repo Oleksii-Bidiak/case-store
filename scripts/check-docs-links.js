@@ -17,6 +17,13 @@
  * - the root rule files README.md, AGENTS.md, CLAUDE.md, requirements.md — they are
  *   the entry points every agent and developer reads first, so a dead path there
  *   costs the most. Cheap: four files.
+ * - source code (TASK-821): every .ts/.tsx/.js/.mjs/.cjs file under apps/*\/src and
+ *   scripts/, for bare `docs/….md` tokens only (CODE_DOC_TOKEN_RE). Comments point
+ *   readers at docs as often as the docs do — "why is this so? see docs/…" — and
+ *   before this a moved or never-written doc left such a comment dead with nothing
+ *   to notice (seo-settings-form.tsx cited an "operations" doc that never existed).
+ *   Skipped: node_modules, generated/ (Orval), .next/, dist/, and scripts/__tests__
+ *   (the tests of these scripts name missing docs on purpose).
  *
  * WHAT IS DELIBERATELY NOT SCANNED
  * --------------------------------
@@ -86,8 +93,23 @@ const EXCLUDED_DIRS = ["docs/plans", "docs/archive"];
 const ROOT_FILES = ["README.md", "AGENTS.md", "CLAUDE.md", "requirements.md"];
 
 /**
- * Per-doc exceptions: { 'doc.md': { 'missing/path': 'reason' } }. Scoped to ONE doc on
- * purpose — the same dead path in any other doc still fails. Keep it tiny; every
+ * Code roots scanned for bare `docs/….md` tokens (TASK-821). `apps/*` is expanded
+ * to every app that has a `src/`.
+ */
+const CODE_ROOTS = ["apps/*/src", "scripts"];
+const CODE_EXT_RE = /\.(?:ts|tsx|js|mjs|cjs)$/;
+/**
+ * Directories never descended into by the code scan:
+ * - node_modules / generated — third-party and Orval output, not ours to fix;
+ * - scripts/__tests__ — the tests of these very scripts: their fixtures and
+ *   inline test data name missing docs ON PURPOSE, to prove they are reported.
+ */
+const CODE_SKIP_DIRS = new Set(["node_modules", "generated", ".next", "dist"]);
+const CODE_SKIP_PATHS = ["scripts/__tests__"];
+
+/**
+ * Per-file exceptions: { 'file': { 'missing/path': 'reason' } }. Scoped to ONE file on
+ * purpose — the same dead path in any other file still fails. Keep it tiny; every
  * entry needs a reason.
  */
 const ALLOWED_MISSING = {
@@ -97,6 +119,11 @@ const ALLOWED_MISSING = {
   "docs/reviews/2026-07-24-launch-readiness-audit.md": {
     "apps/store-client/src/widgets/cart/ui/cart-delivery-payment.tsx":
       "deleted by TASK-331 after the audit",
+  },
+  // This script's own header names the file whose rename motivated the gate.
+  "scripts/check-docs-links.js": {
+    "docs/deploy.md":
+      "historical example in the header: the runbook that became docs/deploy/",
   },
 };
 
@@ -117,6 +144,27 @@ const MD_LINK_RE =
   /\]\(\s*<?((?:[^()\s<>]|\([^()\s]*\))+)>?(?:\s+"[^"]*")?\s*\)/g;
 const ROOT_ABS_REPO_RE = new RegExp(`^/${REPO_DIRS}/`);
 const MD_REF_RE = /^\s{0,3}\[[^\]]+\]:\s*<?(\S+?)>?(?:\s+.*)?$/;
+
+/**
+ * A bare repo-relative `docs/….md` token in source code (TASK-821). Code has no
+ * markdown links and rarely backticks, so comments and strings are matched as
+ * plain text, which is why the pattern is strict:
+ * - anchored at a word boundary: the character before `docs/` (or before an
+ *   optional `./`) must not be a word char, `/`, `.` or `-` — so
+ *   `scripts/docs/x.md`, `../docs/x.md` and `mydocs/x.md` are not repo-root
+ *   references and are left alone;
+ * - it must END in `.md` followed by a non-word char, so a prefix such as
+ *   `docs/plans/156.` (a plan cited by number) or `docs/deploy/` never matches,
+ *   and trailing punctuation (`docs/README.md.`, `docs/README.md)`,
+ *   `docs/README.md#anchor`) stays outside the token;
+ * - path characters are letters, digits, `_ - .` and `/` only: globs
+ *   (`docs/plans/NNN-*.md`) and template interpolation (`docs/${x}.md`) stop
+ *   the match before `.md`, so they are never mistaken for a file.
+ * Placeholder tokens that do match (`docs/plans/NNN-name.md`) are skipped by
+ * PLACEHOLDER_RE like everywhere else.
+ */
+const CODE_DOC_TOKEN_RE =
+  /(?<![\w/.-])(?:\.\/)?(docs\/(?:[\w.-]+\/)*[\w.-]*?\w\.md)(?![\w-])/g;
 
 const PLACEHOLDER_RE =
   /[<>{}$…]|\.\.\.|NNN|XXX|YYYY|(?:^|[-/_.])xx(?:$|[-/_.])/;
@@ -140,6 +188,38 @@ function listDocs(root = ROOT) {
   walk("docs");
   for (const f of ROOT_FILES)
     if (fs.existsSync(path.join(root, f))) out.push(f);
+  return out.sort();
+}
+
+/** Code files under CODE_ROOTS, repo-relative POSIX paths, sorted. */
+function listCodeFiles(root = ROOT) {
+  const out = [];
+  const walk = (dirRel) => {
+    if (CODE_SKIP_PATHS.includes(dirRel)) return;
+    for (const entry of fs.readdirSync(path.join(root, dirRel), {
+      withFileTypes: true,
+    })) {
+      const rel = `${dirRel}/${entry.name}`;
+      if (entry.isDirectory()) {
+        if (!CODE_SKIP_DIRS.has(entry.name)) walk(rel);
+      } else if (entry.isFile() && CODE_EXT_RE.test(entry.name)) out.push(rel);
+    }
+  };
+  for (const pattern of CODE_ROOTS) {
+    const roots = [];
+    if (pattern.startsWith("apps/*/")) {
+      const appsAbs = path.join(root, "apps");
+      if (fs.existsSync(appsAbs)) {
+        for (const app of fs.readdirSync(appsAbs, { withFileTypes: true })) {
+          if (app.isDirectory())
+            roots.push(`apps/${app.name}/${pattern.slice("apps/*/".length)}`);
+        }
+      }
+    } else roots.push(pattern);
+    for (const r of roots)
+      if (fs.existsSync(path.join(root, r)) && fs.statSync(path.join(root, r)).isDirectory())
+        walk(r);
+  }
   return out.sort();
 }
 
@@ -301,17 +381,33 @@ function extract(fileRel, root = ROOT) {
   return refs;
 }
 
+/** Bare `docs/….md` tokens in a source file (TASK-821), repo-root-relative. */
+function extractCode(fileRel, root = ROOT) {
+  const text = fs.readFileSync(path.join(root, fileRel), "utf8");
+  const refs = [];
+  text.split(/\r?\n/).forEach((line, idx) => {
+    for (const m of line.matchAll(CODE_DOC_TOKEN_RE)) {
+      refs.push({ lineNo: idx + 1, raw: m[1], rel: m[1] });
+    }
+  });
+  return refs;
+}
+
 /**
  * Scans `root` and RETURNS the result; never prints or exits, so a test can
  * run it against a fixture tree.
  */
 function run({ root = ROOT, allowed = ALLOWED_MISSING } = {}) {
   const docs = listDocs(root);
+  const code = listCodeFiles(root);
   const missing = [];
   let checked = 0;
   let skipped = 0;
 
-  const sources = docs.map((file) => [file, extract(file, root)]);
+  const sources = [
+    ...docs.map((file) => [file, extract(file, root)]),
+    ...code.map((file) => [file, extractCode(file, root)]),
+  ];
   for (const [file, refs] of sources) {
     for (const ref of refs) {
       if (PLACEHOLDER_RE.test(ref.raw)) {
@@ -331,15 +427,15 @@ function run({ root = ROOT, allowed = ALLOWED_MISSING } = {}) {
 
   const ignored = gitIgnored([...new Set(missing.map((m) => m.rel))], root);
   const broken = missing.filter((m) => !ignored.has(m.rel));
-  return { docs, checked, skipped, missing, broken };
+  return { docs, code, checked, skipped, missing, broken };
 }
 
 function main() {
-  const { docs, checked, skipped, missing, broken } = run();
+  const { docs, code, checked, skipped, missing, broken } = run();
 
   if (broken.length === 0) {
     console.log(
-      `docs:links — ${docs.length} files, ${checked} path references resolve ` +
+      `docs:links — ${docs.length} docs + ${code.length} code files, ${checked} path references resolve ` +
         `(${skipped} placeholders skipped, ${missing.length - broken.length} git-ignored artefacts).`,
     );
     return 0;
@@ -364,10 +460,13 @@ if (require.main === module) process.exitCode = main();
 module.exports = {
   ROOT,
   ALLOWED_MISSING,
+  CODE_DOC_TOKEN_RE,
   PLACEHOLDER_RE,
   fencedLines,
   extract,
+  extractCode,
   listDocs,
+  listCodeFiles,
   normalise,
   run,
   main,

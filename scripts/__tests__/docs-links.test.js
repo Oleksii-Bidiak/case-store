@@ -115,6 +115,81 @@ test("an unclosed fence hides nothing before it and everything after it", (t) =>
   assert.deepEqual(brokenOf(result), ["docs/unclosed.md:1 docs/missing-before.md"]);
 });
 
+// ── TASK-821: bare docs/….md tokens in code ──────────────────────────────────
+
+const tokensIn = (t, line) => {
+  const root = makeRepo(t, { "scripts/x.js": line + "\n" });
+  return docsLinks.extractCode("scripts/x.js", root).map((r) => r.raw);
+};
+
+test("code tokens: a repo-root docs path in a comment or string is picked up", (t) => {
+  assert.deepEqual(tokensIn(t, "// see docs/a/b-c.md for why"), ["docs/a/b-c.md"]);
+  assert.deepEqual(tokensIn(t, 'const p = "docs/x.md";'), ["docs/x.md"]);
+  assert.deepEqual(tokensIn(t, "// ./docs/x.md"), ["docs/x.md"]);
+});
+
+test("code tokens: trailing punctuation and anchors stay outside the token", (t) => {
+  assert.deepEqual(
+    tokensIn(t, "// (docs/a.md), docs/b.md. docs/c.md#sec docs/d.md:12 docs/e.md;"),
+    ["docs/a.md", "docs/b.md", "docs/c.md", "docs/d.md", "docs/e.md"],
+  );
+});
+
+test("code tokens: non-root and non-file look-alikes are not matched", (t) => {
+  assert.deepEqual(tokensIn(t, "// scripts/docs/x.md"), []);
+  assert.deepEqual(tokensIn(t, "// ../docs/x.md"), []);
+  assert.deepEqual(tokensIn(t, "// mydocs/x.md my-docs/y.md"), []);
+  assert.deepEqual(tokensIn(t, "// per docs/plans/156. and docs/deploy/"), []);
+  assert.deepEqual(tokensIn(t, "// docs/x.mdx docs/y.md-old"), []);
+  assert.deepEqual(tokensIn(t, "const p = `docs/${name}.md`; // docs/plans/NNN-*.md"), []);
+});
+
+test("the code scan reports dead docs refs in apps/*/src and scripts, and only there", (t) => {
+  const root = makeRepo(t, {
+    "docs/present.md": "# present\n",
+    "apps/web/src/a.ts": [
+      "// ok: docs/present.md.",
+      "// dead: docs/missing-from-app.md",
+      "// placeholder: docs/plans/NNN-name.md",
+      "export const x = 1;",
+    ].join("\n"),
+    "apps/web/src/b.tsx": "{/* ./docs/missing-from-tsx.md */}\n",
+    "apps/web/src/shared/api/generated/gen.ts": "// docs/missing-generated.md\n",
+    "apps/web/next.config.mjs": "// docs/missing-outside-src.md\n",
+    "apps/web/src/readme.md": "docs/missing-in-a-non-code-file.md\n",
+    "scripts/tool.js": "// the old docs/old-example.md, and docs/missing-from-script.md\n",
+    "scripts/__tests__/tool.test.js": "// docs/missing-in-a-test.md\n",
+    "scripts/load/k6.mjs": "// docs/missing-from-load.md\n",
+  });
+  const result = docsLinks.run({
+    root,
+    allowed: { "scripts/tool.js": { "docs/old-example.md": "fixture: historical" } },
+  });
+  assert.deepEqual(brokenOf(result), [
+    "apps/web/src/a.ts:2 docs/missing-from-app.md",
+    "apps/web/src/b.tsx:1 docs/missing-from-tsx.md",
+    "scripts/load/k6.mjs:1 docs/missing-from-load.md",
+    "scripts/tool.js:1 docs/missing-from-script.md",
+  ]);
+});
+
+test("a per-file allowance does not excuse the same path in another file", (t) => {
+  const root = makeRepo(t, {
+    "scripts/tool.js": "// docs/old-example.md\n",
+    "apps/web/src/a.ts": "// docs/old-example.md\n",
+  });
+  const result = docsLinks.run({
+    root,
+    allowed: { "scripts/tool.js": { "docs/old-example.md": "fixture" } },
+  });
+  assert.deepEqual(brokenOf(result), ["apps/web/src/a.ts:1 docs/old-example.md"]);
+});
+
+test("the real repo: its own header example is allowed only in check-docs-links.js", () => {
+  const entry = docsLinks.ALLOWED_MISSING["scripts/check-docs-links.js"];
+  assert.deepEqual(Object.keys(entry), ["docs/deploy.md"]);
+});
+
 test("requiring the module does not run the CLI", () => {
   assert.equal(typeof docsLinks.main, "function");
   assert.equal(process.exitCode ?? 0, 0);
