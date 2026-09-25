@@ -40,8 +40,14 @@
  *    http(s)/mailto/tel links and pure #anchors are ignored, and so are root-absolute
  *    targets like (/categories): in these docs they are storefront ROUTES. Links are
  *    looked for outside code spans only.
- * Fenced code blocks (``` … ```) are skipped entirely: they hold shell sessions and
- * examples whose paths are often run-time or remote (a server's /opt/...).
+ * Fenced code blocks (``` … ``` or ~~~ … ~~~) are skipped entirely: they hold shell
+ * sessions and examples whose paths are often run-time or remote (a server's
+ * /opt/...). Fences are paired by CommonMark's rules — same character, closer at
+ * least as long as the opener, no info string on the closer (fencedLines, TASK-768)
+ * — so a ``` shown inside a ```` block cannot flip the rest of the file.
+ *
+ * The CLI runs only under `require.main === module`; `run({ root })` and the
+ * parsers are exported for scripts/__tests__/docs-links.test.js.
  *
  * NORMALISATION / HEURISTICS (skip rather than false-positive)
  * ------------------------------------------------------------
@@ -81,8 +87,8 @@ const ROOT_FILES = ["README.md", "AGENTS.md", "CLAUDE.md", "requirements.md"];
 
 /**
  * Per-doc exceptions: { 'doc.md': { 'missing/path': 'reason' } }. Scoped to ONE doc on
- * purpose — the same dead path in any other doc still fails. Keep it tiny; every entry
- * needs a reason.
+ * purpose — the same dead path in any other doc still fails. Keep it tiny; every
+ * entry needs a reason.
  */
 const ALLOWED_MISSING = {
   // A dated audit cites the evidence as it stood on 2026-07-24. The stub it points at
@@ -94,8 +100,8 @@ const ALLOWED_MISSING = {
   },
 };
 
-function isAllowed(file, rel) {
-  return Boolean(ALLOWED_MISSING[file] && ALLOWED_MISSING[file][rel]);
+function isAllowed(allowed, file, rel) {
+  return Boolean(allowed[file] && allowed[file][rel]);
 }
 
 const REPO_DIRS = "(?:scripts|apps|docs|packages|e2e)";
@@ -119,13 +125,13 @@ function toPosix(p) {
   return p.split(path.sep).join("/");
 }
 
-function listDocs() {
+function listDocs(root = ROOT) {
   const out = [];
   const walk = (dirRel) => {
     if (EXCLUDED_DIRS.includes(dirRel)) return;
-    for (const entry of fs.readdirSync(path.join(ROOT, dirRel), {
-      withFileTypes: true,
-    })) {
+    const abs = path.join(root, dirRel);
+    if (!fs.existsSync(abs)) return;
+    for (const entry of fs.readdirSync(abs, { withFileTypes: true })) {
       const rel = `${dirRel}/${entry.name}`;
       if (entry.isDirectory()) walk(rel);
       else if (entry.isFile() && entry.name.endsWith(".md")) out.push(rel);
@@ -133,7 +139,7 @@ function listDocs() {
   };
   walk("docs");
   for (const f of ROOT_FILES)
-    if (fs.existsSync(path.join(ROOT, f))) out.push(f);
+    if (fs.existsSync(path.join(root, f))) out.push(f);
   return out.sort();
 }
 
@@ -170,8 +176,8 @@ function readDirNames(absDir) {
 }
 
 /** Case-exact existence check, segment by segment from the repo root. */
-function existsExact(relPosix) {
-  let abs = ROOT;
+function existsExact(relPosix, root = ROOT) {
+  let abs = root;
   for (const seg of relPosix.split("/")) {
     if (seg === "" || seg === ".") continue;
     if (seg === "..") {
@@ -185,11 +191,11 @@ function existsExact(relPosix) {
   return true;
 }
 
-function gitIgnored(paths) {
+function gitIgnored(paths, root = ROOT) {
   if (paths.length === 0) return new Set();
   try {
     const out = execFileSync("git", ["check-ignore", "--no-index", "--stdin"], {
-      cwd: ROOT,
+      cwd: root,
       input: paths.join("\n"),
       encoding: "utf8",
       stdio: ["pipe", "pipe", "ignore"],
@@ -202,17 +208,64 @@ function gitIgnored(paths) {
   }
 }
 
-function extract(fileRel) {
-  const text = fs.readFileSync(path.join(ROOT, fileRel), "utf8");
-  const fileDir = path.posix.dirname(fileRel);
-  const refs = [];
-  let inFence = false;
-  text.split(/\r?\n/).forEach((line, idx) => {
-    if (/^\s*(```|~~~)/.test(line)) {
-      inFence = !inFence;
+/**
+ * Fenced-code-block state, per CommonMark (TASK-768), for every line of a file.
+ * Returns an array of booleans: true = the line is a fence line or inside a
+ * fenced block, i.e. must not be scanned.
+ *
+ * The previous version flipped a single boolean on ANY line starting with
+ * ``` or ~~~. One odd marker — a ``` shown inside a ```` fence, a ~~~ inside a
+ * ``` block, an info-string line mistaken for a closer — inverted the rest of
+ * the file: from there on, real links went unchecked and code-block contents
+ * were checked. Deterministic, silent, and it weakened the gate precisely in
+ * the docs that explain fences.
+ *
+ * The rules implemented:
+ * - an OPENING fence is a run of >= 3 backticks or >= 3 tildes after optional
+ *   indentation; a backtick fence's info string may not contain a backtick
+ *   (otherwise the line is an inline code span, not a fence);
+ * - a fence CLOSES only on a line holding the SAME character, at least as many
+ *   times as the opener, and nothing else but whitespace (no info string);
+ * - an unclosed fence runs to the end of the file.
+ *
+ * One deliberate deviation: CommonMark caps a fence's indentation at 3 spaces
+ * (4+ is an indented code block). These docs nest fences inside list items,
+ * where the relative indent is what counts, so any indentation is accepted —
+ * as the old check did. That never inverts state; it only decides which lines
+ * can be fences.
+ */
+function fencedLines(lines) {
+  const out = new Array(lines.length).fill(false);
+  let open = null; // { ch, len }
+  lines.forEach((line, i) => {
+    const m = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
+    if (!open) {
+      if (m && !(m[1][0] === "`" && m[2].includes("`"))) {
+        open = { ch: m[1][0], len: m[1].length };
+        out[i] = true;
+      }
       return;
     }
-    if (inFence) return;
+    out[i] = true;
+    if (
+      m &&
+      m[1][0] === open.ch &&
+      m[1].length >= open.len &&
+      m[2].trim() === ""
+    )
+      open = null;
+  });
+  return out;
+}
+
+function extract(fileRel, root = ROOT) {
+  const text = fs.readFileSync(path.join(root, fileRel), "utf8");
+  const fileDir = path.posix.dirname(fileRel);
+  const refs = [];
+  const lines = text.split(/\r?\n/);
+  const fenced = fencedLines(lines);
+  lines.forEach((line, idx) => {
+    if (fenced[idx]) return;
     const lineNo = idx + 1;
 
     // 1. Backtick spans → repo-root-relative paths.
@@ -248,14 +301,19 @@ function extract(fileRel) {
   return refs;
 }
 
-function main() {
-  const files = listDocs();
+/**
+ * Scans `root` and RETURNS the result; never prints or exits, so a test can
+ * run it against a fixture tree.
+ */
+function run({ root = ROOT, allowed = ALLOWED_MISSING } = {}) {
+  const docs = listDocs(root);
   const missing = [];
   let checked = 0;
   let skipped = 0;
 
-  for (const file of files) {
-    for (const ref of extract(file)) {
+  const sources = docs.map((file) => [file, extract(file, root)]);
+  for (const [file, refs] of sources) {
+    for (const ref of refs) {
       if (PLACEHOLDER_RE.test(ref.raw)) {
         skipped++;
         continue;
@@ -266,20 +324,25 @@ function main() {
         continue;
       }
       checked++;
-      if (existsExact(rel) || isAllowed(file, rel)) continue;
+      if (existsExact(rel, root) || isAllowed(allowed, file, rel)) continue;
       missing.push({ file, lineNo: ref.lineNo, raw: ref.raw, rel });
     }
   }
 
-  const ignored = gitIgnored([...new Set(missing.map((m) => m.rel))]);
+  const ignored = gitIgnored([...new Set(missing.map((m) => m.rel))], root);
   const broken = missing.filter((m) => !ignored.has(m.rel));
+  return { docs, checked, skipped, missing, broken };
+}
+
+function main() {
+  const { docs, checked, skipped, missing, broken } = run();
 
   if (broken.length === 0) {
     console.log(
-      `docs:links — ${files.length} files, ${checked} path references resolve ` +
+      `docs:links — ${docs.length} files, ${checked} path references resolve ` +
         `(${skipped} placeholders skipped, ${missing.length - broken.length} git-ignored artefacts).`,
     );
-    process.exit(0);
+    return 0;
   }
 
   console.error(
@@ -293,7 +356,19 @@ function main() {
     "\nFix the path, rephrase a not-yet-existing file as a plan, or (last resort) add a " +
       "commented entry to ALLOWED_MISSING in scripts/check-docs-links.js.",
   );
-  process.exit(1);
+  return 1;
 }
 
-main();
+if (require.main === module) process.exitCode = main();
+
+module.exports = {
+  ROOT,
+  ALLOWED_MISSING,
+  PLACEHOLDER_RE,
+  fencedLines,
+  extract,
+  listDocs,
+  normalise,
+  run,
+  main,
+};
