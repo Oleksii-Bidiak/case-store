@@ -5077,6 +5077,49 @@
         ]
       }
     },
+    "/api/categories/{categoryId}/facet-ceiling": {
+      "get": {
+        "operationId": "attributeDefinitionControllerFacetCeiling",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": true,
+            "in": "path",
+            "description": "Category UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacetCeilingReportResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Category not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List categories of a subtree that declare more facets than the storefront shows",
+        "tags": [
+          "Attribute Definitions"
+        ]
+      }
+    },
     "/api/categories/{categoryId}/attribute-definitions/reorder": {
       "patch": {
         "operationId": "attributeDefinitionControllerReorder",
@@ -18095,6 +18138,74 @@
             "example": {
               "id": "550e8400-e29b-41d4-a716-446655440000"
             }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "FacetCeilingCategoryEntity": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Category UUID",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category name",
+            "example": "Зарядки"
+          },
+          "facetCount": {
+            "type": "number",
+            "description": "How many facets the category declares (own + inherited)",
+            "example": 7
+          },
+          "overflowLabels": {
+            "description": "Labels of the facets past the ceiling in template order — the ones the storefront drops first when every facet has values (an ACTIVE facet is still always offered)",
+            "example": [
+              "Комплектація"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "categoryId",
+          "categoryName",
+          "facetCount",
+          "overflowLabels"
+        ]
+      },
+      "FacetCeilingReportEntity": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Most facets the storefront offers per category (MAX_SPEC_FACETS)",
+            "example": 6
+          },
+          "categories": {
+            "description": "Categories of the subtree over the ceiling; empty when none is",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FacetCeilingCategoryEntity"
+            }
+          }
+        },
+        "required": [
+          "limit",
+          "categories"
+        ]
+      },
+      "FacetCeilingReportResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FacetCeilingReportEntity"
           }
         },
         "required": [

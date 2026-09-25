@@ -278,8 +278,9 @@ export class AttributeDefinitionRepository {
    * Cost is therefore `1 + 1 + (selected facets)` queries per catalogue page,
    * capped by `MAX_SPEC_FACETS` at SIX — that constant bounds how many facets a
    * request may have SELECTED, which is what this count is per. At this
-   * catalogue's volume that is the sizing the owner signed off on. Nothing here
-   * is cached yet (TASK-708).
+   * catalogue's volume that is the sizing the owner signed off on. The caller
+   * caches the result (TASK-708) and caps the facets it returns at the same
+   * constant (TASK-707).
    *
    * @param params the SAME narrowing params the listing runs (subtree ids,
    * brand, device, price, search, inStock, onSale, visibility), built by the

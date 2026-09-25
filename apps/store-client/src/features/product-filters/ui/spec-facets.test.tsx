@@ -377,9 +377,12 @@ describe("SpecFacets — multi-select (TASK-414)", () => {
     ).toBeInTheDocument();
   });
 
-  it("caps the facets at the server's own ceiling of six", async () => {
+  // The ceiling is the API's `MAX_SPEC_FACETS` since TASK-707 — ONE constant.
+  // A second cut here, with its own copy of the number, is what could drop a
+  // facet the API deliberately kept (an active one past the template ceiling).
+  it("offers every facet the API returns — it does not re-cut the list", async () => {
     stubFacets(
-      Array.from({ length: 9 }, (_, i) =>
+      Array.from({ length: 7 }, (_, i) =>
         facet(`k${i}`, `Фасет ${i}`, [`v${i}`]),
       ),
     );
@@ -393,15 +396,37 @@ describe("SpecFacets — multi-select (TASK-414)", () => {
     );
 
     await userEvent.click(
-      await screen.findByRole("button", { name: dict.filters.moreFacets(3) }),
+      await screen.findByRole("button", { name: dict.filters.moreFacets(4) }),
     );
 
     expect(
-      screen.getByRole("checkbox", { name: control("v5") }),
+      screen.getByRole("checkbox", { name: control("v6") }),
     ).toBeInTheDocument();
-    expect(
-      screen.queryByRole("checkbox", { name: control("v6") }),
-    ).not.toBeInTheDocument();
+  });
+
+  it("offers an ACTIVE facet the API kept past the template ceiling, ticked", async () => {
+    // What the API answers for `?specs=k7:v7` on a category with eight facets:
+    // the first five in template order plus the active one (TASK-707).
+    stubFacets([
+      ...Array.from({ length: 5 }, (_, i) =>
+        facet(`k${i}`, `Фасет ${i}`, [`v${i}`]),
+      ),
+      facet("k7", "Фасет 7", ["v7"]),
+    ]);
+
+    renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{ specs: "k7:v7" }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.filters.moreFacets(3) }),
+    );
+
+    expect(screen.getByRole("checkbox", { name: control("v7") })).toBeChecked();
   });
 
   // ── colour swatches (TASK-487 / owner decision B-10) ──────────────────────

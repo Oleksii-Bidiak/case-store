@@ -14,7 +14,11 @@ import {
   UpdateAttributeDefinitionDto,
   ReorderAttributeDefinitionsDto,
 } from './dto';
-import { AttributeDefinitionEntity } from './entities';
+import {
+  AttributeDefinitionEntity,
+  FacetCeilingCategoryEntity,
+  FacetCeilingReportEntity,
+} from './entities';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 /** Response envelope for a single attribute definition. */
@@ -27,6 +31,12 @@ class AttributeDefinitionResponse {
 class AttributeDefinitionListResponse {
   @ApiProperty({ type: [AttributeDefinitionEntity] })
   data!: AttributeDefinitionEntity[];
+}
+
+/** Response envelope for the facet-ceiling report (TASK-707). */
+class FacetCeilingReportResponse {
+  @ApiProperty({ type: FacetCeilingReportEntity })
+  data!: FacetCeilingReportEntity;
 }
 
 /** Response envelope for a delete acknowledgement. */
@@ -52,6 +62,9 @@ class AttributeDefinitionDeleteResponse {
   AttributeDefinitionResponse,
   AttributeDefinitionListResponse,
   AttributeDefinitionDeleteResponse,
+  FacetCeilingCategoryEntity,
+  FacetCeilingReportEntity,
+  FacetCeilingReportResponse,
 )
 @Controller()
 @UseGuards(PermissionGuard)
@@ -95,6 +108,26 @@ export class AttributeDefinitionController {
     @Param('categoryId') categoryId: string,
   ): Promise<AttributeDefinitionListResponse> {
     return { data: await this.service.findEffectiveForCategory(categoryId) };
+  }
+
+  /**
+   * GET /api/categories/:categoryId/facet-ceiling (TASK-707)
+   *
+   * Every category of the subtree whose declared facets exceed the storefront
+   * ceiling, with the labels that get cut — the admin signal for the cap the
+   * public `filterable-specs` endpoint enforces.
+   */
+  @Get('categories/:categoryId/facet-ceiling')
+  @ApiOperation({
+    summary: 'List categories of a subtree that declare more facets than the storefront shows',
+    operationId: 'attributeDefinitionControllerFacetCeiling',
+  })
+  @ApiParam({ name: 'categoryId', description: 'Category UUID' })
+  @ApiResponse({ status: 200, type: FacetCeilingReportResponse })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
+  @ApiResponse({ status: 404, description: 'Category not found' })
+  async facetCeiling(@Param('categoryId') categoryId: string): Promise<FacetCeilingReportResponse> {
+    return { data: await this.service.getFacetCeilingReport(categoryId) };
   }
 
   /** POST /api/categories/:categoryId/attribute-definitions — create a template. */

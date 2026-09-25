@@ -1,3 +1,4 @@
+import { MAX_SPEC_FACETS } from '../../../src/product/dto/product-list-query.dto';
 import { cataloguePositions } from './catalogue';
 import { rootCategorySlug } from './categories.data';
 import {
@@ -18,8 +19,8 @@ import {
  *
  *   - a facet is a `SELECT` or a `BOOLEAN`, NEVER a `TEXT` and never a `NUMBER`
  *     — free text yields one filter value per product;
- *   - a facet nobody can reach is not a facet: the sidebar caps at six
- *     (`SpecFacets.MAX_FACETS`), so declaring a seventh silently hides it;
+ *   - a facet nobody can reach is not a facet: the facet endpoint caps at six
+ *     (`MAX_SPEC_FACETS`, TASK-707), so declaring a seventh hides it;
  *   - a facet with no values renders as a control a shopper opens and finds
  *     empty, so every filterable definition must be FILLED IN by the catalogue.
  *
@@ -28,8 +29,11 @@ import {
  * instead of shipping.
  */
 
-/** The storefront's `SpecFacets.MAX_FACETS` — kept in step by this test. */
-const MAX_FACETS = 6;
+/**
+ * The facet ceiling — the API's own constant, not a copy of it (TASK-707):
+ * `GET /categories/:id/filterable-specs` returns at most this many facets.
+ */
+const MAX_FACETS = MAX_SPEC_FACETS;
 
 const facetsOf = (defs: AttributeDefinitionSeed[]): AttributeDefinitionSeed[] =>
   defs.filter((def) => def.isFilterable === true);

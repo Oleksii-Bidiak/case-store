@@ -17,6 +17,7 @@ import {
   ResolvedCatalogueFilters,
 } from '../catalog-filter/catalogue-filter.resolver';
 import {
+  MAX_SPEC_FACETS,
   parseSpecFilters,
   serializeSpecFilters,
   SpecFacetFilter,
@@ -24,7 +25,11 @@ import {
 import { CacheService } from '../cache/cache.service';
 import { buildFilterableSpecsKey, FILTERABLE_SPECS_PREFIX } from '../cache/cache-key.util';
 import { reorderErrorToHttp } from '../common/reorder';
-import { AttributeDefinitionEntity, FilterableSpecEntity } from './entities';
+import {
+  AttributeDefinitionEntity,
+  FacetCeilingReportEntity,
+  FilterableSpecEntity,
+} from './entities';
 import {
   CreateAttributeDefinitionDto,
   UpdateAttributeDefinitionDto,
@@ -110,6 +115,9 @@ export class AttributeDefinitionService {
    *     Counting «TPU» under `material:Силікон` would give zero for every value
    *     but the ticked one, and the facet could then never be changed, only
    *     added to.
+   *
+   * At most `MAX_SPEC_FACETS` facets come back, and an active one is never
+   * among the cut (TASK-707) — see {@link applyFacetCeiling}.
    */
   async getFilterableSpecs(
     categoryId: string,
@@ -190,12 +198,97 @@ export class AttributeDefinitionService {
       },
     );
 
-    return filterable
+    const nonEmpty = filterable
       .map((def) => ({
         definition: AttributeDefinitionEntity.fromPrisma(def),
         values: valuesByKey.get(def.key) ?? [],
       }))
       .filter((facet) => facet.values.length > 0);
+
+    return this.applyFacetCeiling(nonEmpty, new Set(specFilters.map((filter) => filter.key)));
+  }
+
+  /**
+   * The facet ceiling (TASK-707, owner decision B-10 «стеля 6 фасетів»): at
+   * most {@link MAX_SPEC_FACETS} facets per response, and the SAME constant
+   * that caps how many facets one request may filter by — a seventh facet could
+   * never be applied anyway. Before this the endpoint returned every facet and
+   * the storefront cut the list with its own copy of the number, so a seventh
+   * `isFilterable` definition vanished from the sidebar while its chip, fed by
+   * the same uncapped response, still showed.
+   *
+   * Deterministic: facets keep template order (`sortOrder`, then label — the
+   * order the admin editor sets), and the ceiling is counted over NON-EMPTY
+   * facets, so an empty one never takes a slot.
+   *
+   * An ACTIVE facet is never hidden. A link can carry `?specs=` for a facet
+   * past the ceiling (a shared URL, an old bookmark, a reordered template); the
+   * listing IS narrowed by it, so the sidebar must still offer the checkbox
+   * that undoes it — and the chips label themselves from this same response.
+   * Active facets therefore always make the cut and the remaining slots go to
+   * the others in template order. `parseSpecFilters` keeps at most
+   * `MAX_SPEC_FACETS` active keys, so the result never exceeds the ceiling.
+   */
+  private applyFacetCeiling(
+    facets: FilterableSpecEntity[],
+    activeKeys: ReadonlySet<string>,
+  ): FilterableSpecEntity[] {
+    if (facets.length <= MAX_SPEC_FACETS) {
+      return facets;
+    }
+    const activeCount = facets.filter((facet) => activeKeys.has(facet.definition.key)).length;
+    let freeSlots = Math.max(MAX_SPEC_FACETS - activeCount, 0);
+    return facets.filter((facet) => {
+      if (activeKeys.has(facet.definition.key)) return true;
+      if (freeSlots === 0) return false;
+      freeSlots -= 1;
+      return true;
+    });
+  }
+
+  /**
+   * Which categories of `categoryId`'s subtree declare more facets than the
+   * storefront offers (TASK-707) — the admin-side signal for the ceiling that
+   * {@link getFilterableSpecs} enforces.
+   *
+   * The whole SUBTREE, not just the category: definitions are inherited, so a
+   * facet added on a root can push a grandchild over the ceiling while the
+   * root itself stays under it. Counted over DECLARED facets (effective,
+   * `isFilterable`, facetable type), not over the values of any one slice:
+   * which facets are empty depends on the shopper's filters, so the declared
+   * count is the only one that says "something can be cut here".
+   */
+  async getFacetCeilingReport(categoryId: string): Promise<FacetCeilingReportEntity> {
+    await this.assertCategoryExists(categoryId);
+    const subtreeIds = await this.categoryRepository.findSubtreeIds(categoryId);
+
+    const perCategory = await Promise.all(
+      subtreeIds.map(async (id) => {
+        const effective = await this.repository.findEffectiveForCategory(id);
+        const facets = effective.filter((def) => def.isFilterable && isFacetableType(def.type));
+        return { id, facets };
+      }),
+    );
+    const over = perCategory.filter(({ facets }) => facets.length > MAX_SPEC_FACETS);
+    if (over.length === 0) {
+      return { limit: MAX_SPEC_FACETS, categories: [] };
+    }
+
+    const names = new Map(
+      (await this.categoryRepository.findByIds(over.map(({ id }) => id))).map((category) => [
+        category.id,
+        category.name,
+      ]),
+    );
+    return {
+      limit: MAX_SPEC_FACETS,
+      categories: over.map(({ id, facets }) => ({
+        categoryId: id,
+        categoryName: names.get(id) ?? id,
+        facetCount: facets.length,
+        overflowLabels: facets.slice(MAX_SPEC_FACETS).map((def) => def.label),
+      })),
+    };
   }
 
   /** Create a template on a category (admin-only). */

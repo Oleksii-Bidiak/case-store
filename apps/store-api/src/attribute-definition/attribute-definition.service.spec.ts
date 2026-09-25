@@ -7,6 +7,7 @@ import { CategoryRepository } from '../category';
 import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import { ConfigService } from '@nestjs/config';
 import { CacheService, FILTERABLE_SPECS_PREFIX } from '../cache';
+import { MAX_SPEC_FACETS } from '../product/dto/product-list-query.dto';
 import {
   ReorderDuplicateIdError,
   ReorderNotFoundError,
@@ -26,7 +27,11 @@ describe('AttributeDefinitionService', () => {
     delete: jest.fn(),
     reorder: jest.fn(),
   };
-  const categoryRepository = { findById: jest.fn(), findSubtreeIds: jest.fn() };
+  const categoryRepository = {
+    findById: jest.fn(),
+    findSubtreeIds: jest.fn(),
+    findByIds: jest.fn(),
+  };
   const catalogueFilters = { resolve: jest.fn() };
   const cache = { get: jest.fn(), set: jest.fn(), delByPrefix: jest.fn() };
 
@@ -653,6 +658,149 @@ describe('AttributeDefinitionService', () => {
 
       await expect(service.delete('ghost')).rejects.toBeInstanceOf(NotFoundException);
       expect(cache.delByPrefix).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── facet ceiling (TASK-707) ─────────────────────────────────────────────
+
+  describe('the facet ceiling (TASK-707)', () => {
+    /** Seven filterable SELECT facets, `f1`…`f7`, in template order. */
+    const defs = Array.from({ length: MAX_SPEC_FACETS + 1 }, (_, i) => ({
+      id: `d-f${i + 1}`,
+      categoryId: 'cat',
+      key: `f${i + 1}`,
+      label: `Фасет ${i + 1}`,
+      type: AttributeType.SELECT,
+      unit: null,
+      options: ['a'],
+      isFilterable: true,
+      sortOrder: i,
+    }));
+    const counted = new Map(defs.map((def) => [def.key, [{ value: 'a', count: 1 }]]));
+
+    beforeEach(() => {
+      repo.findEffectiveForCategory.mockResolvedValue(defs);
+      categoryRepository.findSubtreeIds.mockResolvedValue(['cat']);
+      repo.findValueCountsByKey.mockResolvedValue(counted);
+    });
+
+    it('returns at most MAX_SPEC_FACETS facets, the first ones in template order', async () => {
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(result.map((facet) => facet.definition.key)).toEqual([
+        'f1',
+        'f2',
+        'f3',
+        'f4',
+        'f5',
+        'f6',
+      ]);
+    });
+
+    it('counts the ceiling over NON-EMPTY facets — an empty one does not take a slot', async () => {
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map([...counted].filter(([key]) => key !== 'f2')),
+      );
+
+      const result = await service.getFilterableSpecs('cat');
+
+      expect(result.map((facet) => facet.definition.key)).toEqual([
+        'f1',
+        'f3',
+        'f4',
+        'f5',
+        'f6',
+        'f7',
+      ]);
+    });
+
+    it('never hides an ACTIVE facet — a past-the-ceiling one takes the last free slot', async () => {
+      // The «active but hidden» case: a link carries `?specs=f7:a`, the listing
+      // is narrowed by it, and the sidebar must still offer the checkbox that
+      // undoes it (and the chip must still find its label in this response).
+      const result = await service.getFilterableSpecs('cat', { specs: 'f7:a' });
+
+      const keys = result.map((facet) => facet.definition.key);
+      expect(keys).toHaveLength(MAX_SPEC_FACETS);
+      expect(keys).toContain('f7');
+      expect(keys).toEqual(['f1', 'f2', 'f3', 'f4', 'f5', 'f7']);
+    });
+
+    it('offers every active facet even when all of them sit past the ceiling', async () => {
+      const many = Array.from({ length: 10 }, (_, i) => ({
+        ...defs[0],
+        id: `m${i}`,
+        key: `m${i}`,
+      }));
+      repo.findEffectiveForCategory.mockResolvedValue(many);
+      repo.findValueCountsByKey.mockResolvedValue(
+        new Map(many.map((def) => [def.key, [{ value: 'a', count: 1 }]])),
+      );
+
+      const result = await service.getFilterableSpecs('cat', { specs: 'm8:a;m9:a' });
+
+      expect(result.map((facet) => facet.definition.key)).toEqual([
+        'm0',
+        'm1',
+        'm2',
+        'm3',
+        'm8',
+        'm9',
+      ]);
+    });
+  });
+
+  describe('getFacetCeilingReport (TASK-707)', () => {
+    const facet = (categoryId: string, key: string, sortOrder: number) => ({
+      id: `${categoryId}-${key}`,
+      categoryId,
+      key,
+      label: key.toUpperCase(),
+      type: AttributeType.SELECT,
+      unit: null,
+      options: ['a'],
+      isFilterable: true,
+      sortOrder,
+    });
+
+    it('lists every category of the subtree whose DECLARED facets exceed the ceiling', async () => {
+      categoryRepository.findSubtreeIds.mockResolvedValue(['root', 'child']);
+      const rootFacets = Array.from({ length: 5 }, (_, i) => facet('root', `r${i}`, i));
+      repo.findEffectiveForCategory.mockImplementation(async (id: string) =>
+        id === 'root'
+          ? rootFacets
+          : [...rootFacets, facet('child', 'c0', 10), facet('child', 'c1', 11)],
+      );
+      categoryRepository.findByIds.mockResolvedValue([{ id: 'child', name: 'Дочірня' }]);
+
+      const report = await service.getFacetCeilingReport('root');
+
+      expect(report.limit).toBe(MAX_SPEC_FACETS);
+      expect(report.categories).toEqual([
+        { categoryId: 'child', categoryName: 'Дочірня', facetCount: 7, overflowLabels: ['C1'] },
+      ]);
+    });
+
+    it('ignores definitions that are not facets (not filterable, or TEXT)', async () => {
+      categoryRepository.findSubtreeIds.mockResolvedValue(['root']);
+      repo.findEffectiveForCategory.mockResolvedValue([
+        ...Array.from({ length: 6 }, (_, i) => facet('root', `r${i}`, i)),
+        { ...facet('root', 'plain', 7), isFilterable: false },
+        { ...facet('root', 'text', 8), type: AttributeType.TEXT },
+      ]);
+
+      const report = await service.getFacetCeilingReport('root');
+
+      expect(report.categories).toEqual([]);
+      expect(categoryRepository.findByIds).not.toHaveBeenCalled();
+    });
+
+    it('404s for an unknown category', async () => {
+      categoryRepository.findById.mockResolvedValue(null);
+
+      await expect(service.getFacetCeilingReport('ghost')).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
     });
   });
 });
