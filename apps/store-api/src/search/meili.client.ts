@@ -134,6 +134,12 @@ export interface BlogPostSearchDocument extends IndexedDocument {
   /** Unix epoch ms of publication (0 when unknown) — sortable recency key. */
   publishedAt: number;
   /**
+   * The listing gate (TASK-436), filterable so the engine drops unlisted posts
+   * ITSELF (TASK-537): its exact total then counts only what the hub shows,
+   * instead of counting posts the published re-read removes afterwards.
+   */
+  listed: boolean;
+  /**
    * Cyrillic/Latin equivalents of the title + category tokens, injected at index
    * time so typo tolerance covers cross-script queries — the same trick the
    * product index uses (see `search-synonyms.ts`).

@@ -161,6 +161,7 @@ describe('BlogService', () => {
         categorySlug: undefined,
         page: 1,
         limit: 9,
+        includeUnlisted: false,
       });
       expect(result.data.map((p) => p.id)).toEqual(['post-3', 'post-1']);
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 9, totalPages: 1 });
@@ -178,6 +179,7 @@ describe('BlogService', () => {
         categorySlug: 'compare',
         page: 2,
         limit: 9,
+        includeUnlisted: false,
       });
     });
 
@@ -257,6 +259,11 @@ describe('BlogService', () => {
       await service.findAll({ page: 1, limit: 9, q: 'trade-in', includeUnlisted: true });
 
       expect(repositoryMock.findPublishedByIds).toHaveBeenCalledWith(['post-1'], true);
+      // …and the engine is told too, so its exact total (TASK-537) counts the
+      // same set the re-read keeps.
+      expect(indexerMock.search).toHaveBeenCalledWith(
+        expect.objectContaining({ includeUnlisted: true }),
+      );
     });
   });
 

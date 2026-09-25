@@ -33,6 +33,7 @@ function makePost(overrides: Record<string, unknown> = {}) {
     createdAt: new Date('2026-06-01T00:00:00.000Z'),
     updatedAt: new Date('2026-06-28T00:00:00.000Z'),
     keywords: [],
+    listed: true,
     category: { id: 'cat-1', slug: 'guides', name: 'Гайди' },
     ...overrides,
   };
@@ -95,6 +96,9 @@ describe('BlogSearchService', () => {
         'searchTerms',
       ]);
       expect(BLOG_POSTS_INDEX_SETTINGS.filterableAttributes).toContain('categorySlug');
+      // `listed` (TASK-537): the engine has to drop unlisted posts itself, or its
+      // exact total counts posts the hub's re-read then removes.
+      expect(BLOG_POSTS_INDEX_SETTINGS.filterableAttributes).toContain('listed');
     });
 
     it('shares the products index word typo tolerance and synonyms verbatim', () => {
@@ -126,6 +130,7 @@ describe('BlogSearchService', () => {
             categorySlug: 'guides',
             categoryName: 'Гайди',
             publishedAt: new Date('2026-06-28T00:00:00.000Z').getTime(),
+            listed: true,
           }),
         ],
         BLOG_POSTS_INDEX,
@@ -135,6 +140,17 @@ describe('BlogSearchService', () => {
       // The sanitized HTML body is deliberately NOT indexed — it would put tag
       // names and attribute values into the searchable text.
       expect(docs[0]).not.toHaveProperty('content');
+    });
+
+    it('indexes an unlisted post with listed=false, so the engine can filter it (TASK-537)', async () => {
+      // Unlisted is still PUBLISHED and searchable by the sitemap; it stays in
+      // the index, flagged, rather than being deleted from it.
+      repo.findById.mockResolvedValue(makePost({ listed: false }) as never);
+
+      await service.indexPost('post-1');
+
+      const [[docs]] = meili.indexDocuments.mock.calls;
+      expect((docs[0] as { listed: boolean }).listed).toBe(false);
     });
 
     it('carries the admin keywords and their cross-script terms (TASK-558)', async () => {
@@ -204,16 +220,40 @@ describe('BlogSearchService', () => {
         categorySlug: 'guides',
         page: 2,
         limit: 9,
+        includeUnlisted: false,
       });
 
       // page/hitsPerPage (TASK-537): the only mode in which the engine counts
       // exactly — the hub draws numbered pages from this total.
       expect(meili.search).toHaveBeenCalledWith(
         'павербнак',
-        { page: 2, hitsPerPage: 9, filter: ['categorySlug = "guides"'] },
+        { page: 2, hitsPerPage: 9, filter: ['categorySlug = "guides"', 'listed = true'] },
         BLOG_POSTS_INDEX,
       );
       expect(result).toEqual({ ids: ['post-3', 'post-1'], total: 2 });
+    });
+
+    // TASK-537 × TASK-436 — an exact total is only exact if the engine counts
+    // what the hub shows. The re-read drops `listed = false` posts, so an index
+    // that did not filter them counted every matching unlisted post into
+    // `totalHits` and drew a page the hub could never fill.
+    it('filters unlisted posts in the engine so its total counts only what the hub shows', async () => {
+      meili.search.mockResolvedValue({ hits: [{ id: 'post-1' }] as never, totalHits: 1 });
+
+      await service.search({ q: 'огляд', page: 1, limit: 9, includeUnlisted: false });
+      expect(meili.search).toHaveBeenLastCalledWith(
+        'огляд',
+        expect.objectContaining({ filter: ['listed = true'] }),
+        BLOG_POSTS_INDEX,
+      );
+
+      // The sitemap keeps its unlisted posts (TASK-436), so no listing clause.
+      await service.search({ q: 'огляд', page: 1, limit: 9, includeUnlisted: true });
+      expect(meili.search).toHaveBeenLastCalledWith(
+        'огляд',
+        expect.objectContaining({ filter: undefined }),
+        BLOG_POSTS_INDEX,
+      );
     });
 
     it('reports a page past the end as an empty answer, not as "could not tell you" (TASK-537)', async () => {
@@ -222,7 +262,12 @@ describe('BlogSearchService', () => {
       // total under the same URL.
       meili.search.mockResolvedValue({ hits: [], totalHits: 12 });
 
-      const result = await service.search({ q: 'iphone', page: 5, limit: 9 });
+      const result = await service.search({
+        q: 'iphone',
+        page: 5,
+        limit: 9,
+        includeUnlisted: false,
+      });
 
       expect(result).toEqual({ ids: [], total: 12 });
     });
@@ -243,6 +288,7 @@ describe('BlogSearchService', () => {
         categorySlug: 'x" OR categorySlug != "zzz',
         page: 1,
         limit: 9,
+        includeUnlisted: true,
       });
 
       expect(meili.search).toHaveBeenCalledWith(
@@ -253,17 +299,23 @@ describe('BlogSearchService', () => {
     });
 
     it('answers null for a blank query, an unconfigured engine, or zero hits', async () => {
-      expect(await service.search({ q: '   ', page: 1, limit: 9 })).toBeNull();
+      expect(
+        await service.search({ q: '   ', page: 1, limit: 9, includeUnlisted: false }),
+      ).toBeNull();
       expect(meili.search).not.toHaveBeenCalled();
 
       meili.isConfigured.mockReturnValue(false);
-      expect(await service.search({ q: 'iphone', page: 1, limit: 9 })).toBeNull();
+      expect(
+        await service.search({ q: 'iphone', page: 1, limit: 9, includeUnlisted: false }),
+      ).toBeNull();
 
       // Zero hits is "could not tell you", not "no such article": the index may
       // simply be empty on a freshly seeded server (TASK-376).
       meili.isConfigured.mockReturnValue(true);
       meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
-      expect(await service.search({ q: 'iphone', page: 1, limit: 9 })).toBeNull();
+      expect(
+        await service.search({ q: 'iphone', page: 1, limit: 9, includeUnlisted: false }),
+      ).toBeNull();
     });
   });
 

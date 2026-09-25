@@ -124,6 +124,7 @@ export class BlogService {
         categorySlug: params.category,
         page: params.page,
         limit: params.limit,
+        includeUnlisted: params.includeUnlisted,
       })
       .catch((err: unknown) => {
         this.logger.warn({ err }, 'Blog index query failed; falling back to Postgres');
@@ -138,8 +139,9 @@ export class BlogService {
       return { data: [], meta: this.buildMeta(hits.total, params.page, params.limit) };
     }
 
-    // The index has no `listed` field, so the flag is enforced on the re-read —
-    // otherwise searching for a word from an unlisted post puts it straight back
+    // The flag is enforced on the re-read as well as in the engine (TASK-537):
+    // a document indexed before `listed` joined it, or one whose listing changed
+    // while the engine was unreachable, must still not put an unlisted post back
     // on the hub and in the header suggestions.
     const posts = await this.blogRepository.findPublishedByIds(hits.ids, params.includeUnlisted);
     const byId = new Map(posts.map((post) => [post.id, post]));

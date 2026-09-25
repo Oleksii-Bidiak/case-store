@@ -31,7 +31,9 @@ const REINDEX_BATCH = 100;
  */
 export const BLOG_POSTS_INDEX_SETTINGS: IndexSettings = {
   searchableAttributes: ['title', 'keywords', 'excerpt', 'categoryName', 'searchTerms'],
-  filterableAttributes: ['categorySlug'],
+  // `listed` (TASK-537): filtered in the engine so its exact total matches what
+  // the hub shows — see `BlogPostSearchDocument.listed`.
+  filterableAttributes: ['categorySlug', 'listed'],
   sortableAttributes: ['publishedAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
   typoTolerance: {
@@ -56,6 +58,12 @@ export interface BlogSearchQuery {
   page: number;
   /** Posts per page. */
   limit: number;
+  /**
+   * Keep `listed = false` posts (the sitemap) or drop them (every list surface).
+   * Required, like on the repository reads (TASK-436): the engine must count the
+   * same set the re-read keeps, or the exact total is exact about the wrong set.
+   */
+  includeUnlisted: boolean;
 }
 
 /**
@@ -77,20 +85,26 @@ export interface BlogSearchQuery {
 const SLUG = /^[a-z0-9-]+$/;
 
 /**
- * Build the category clause, or nothing at all.
+ * Build the filter clauses, or nothing at all.
  *
- * The value lands inside a QUOTED Meilisearch filter expression, so a quote in
- * it rewrites the expression. `BlogPostListQueryDto` already rejects anything
- * that is not a slug; this is the second lock, because `BlogSearchQuery` is a
- * plain interface any future caller can satisfy without passing that DTO.
+ * Category: the value lands inside a QUOTED Meilisearch filter expression, so a
+ * quote in it rewrites the expression. `BlogPostListQueryDto` already rejects
+ * anything that is not a slug; this is the second lock, because
+ * `BlogSearchQuery` is a plain interface any future caller can satisfy without
+ * passing that DTO. A non-slug drops the clause rather than throwing: `search`
+ * is best-effort by contract, and a widened engine answer is still re-gated to
+ * PUBLISHED posts on hydration. It can never widen past that.
  *
- * A non-slug drops the clause rather than throwing: `search` is best-effort by
- * contract, and a widened engine answer is still re-gated to PUBLISHED posts on
- * hydration. It can never widen past that.
+ * Listing (TASK-537): unless the caller keeps unlisted posts, the engine drops
+ * them — so its exact total counts the set the re-read keeps.
  */
-function buildCategoryFilter(categorySlug?: string): string[] | undefined {
-  if (!categorySlug || !SLUG.test(categorySlug)) return undefined;
-  return [`categorySlug = "${categorySlug}"`];
+function buildFilter(query: BlogSearchQuery): string[] | undefined {
+  const clauses: string[] = [];
+  if (query.categorySlug && SLUG.test(query.categorySlug)) {
+    clauses.push(`categorySlug = "${query.categorySlug}"`);
+  }
+  if (!query.includeUnlisted) clauses.push('listed = true');
+  return clauses.length > 0 ? clauses : undefined;
 }
 
 @Injectable()
@@ -213,7 +227,7 @@ export class BlogSearchService implements OnModuleInit {
       {
         page: query.page,
         hitsPerPage: query.limit,
-        filter: buildCategoryFilter(query.categorySlug),
+        filter: buildFilter(query),
       },
       BLOG_POSTS_INDEX,
     );
@@ -272,6 +286,7 @@ function toDocument(post: BlogPostWithCategory): BlogPostSearchDocument {
     categorySlug: post.category.slug,
     categoryName: post.category.name,
     publishedAt: post.publishedAt ? post.publishedAt.getTime() : 0,
+    listed: post.listed,
     // Tags feed the cross-script terms too (TASK-558), as they do on products.
     searchTerms: extractSearchSynonymTerms(
       `${post.title} ${post.category.name} ${keywords.join(' ')}`,
