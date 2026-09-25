@@ -123,3 +123,17 @@ npm run generate:api && npm run test -w apps/store-admin -- --runInBand && npm r
   - 825 — `AuthTokens`/конверти auth, wishlist, csrf в A3 (`42bbf4ba`), конверт кошика в A1
     (`89f6cc93`); хвіст — TASK-985.
 - **636** закрито через 574: e2e `staff.e2e-spec.ts` — `P2002` у передачі власності → 409.
+
+## Ревʼю перед мержем 2026-09-26
+
+Три паралельні ревʼю за фокусом (атомарність кошика й замовлення, міграція `hiddenReason`,
+глобальний Prisma-фільтр, `AuthTokens` і зміна email, бекфіли прав по `UserPermission`).
+Міграції `hiddenReason` і бекфіли прав рішень модератора та людей не гублять; фільтр кодів
+відповідей не ламає (P2003/P2011/P2021 лишаються 500, `meta.target` не тече).
+
+- **Виправлено в хвилі:** `PATCH /cart/items/:id` перевіряв кількість по кошику, прочитаному до
+  запису, і писав голим `update` — TASK-779 закрив гонку лише для add. Тепер `updateItem` так само
+  блокує рядок кошика й перевіряє свіжий продукт у транзакції; int-spec на застарілому знімку
+  (`test/cart-add-concurrency.int-spec.ts`).
+- **У BACKLOG:** TASK-1005 (вже був: `deleteUser`/бан без спільної транзакції з `hideAuthor`),
+  TASK-1015 (P2034 → 500), TASK-1016 (одноразові email-токени — read-then-write).

@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-1007**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-1017**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -1195,6 +1195,8 @@
 | TASK-1003 | [тести, знайдено в TASK-602] `test/rating-abuse.int-spec.ts:118-120` у `beforeEach` робить `prisma.review.deleteMany({})` без обмеження — стирає всю таблицю `reviews`. Під `--runInBand` нешкідливо, але зʼїсть рядки сусіднього спека, якщо той лишить їх після впалого `afterAll` або прогін стане паралельним. Обмежити `productId: { in: productIds }` | ⬜ | [192](docs/plans/192-api-orders-money-auth.md) |
 | TASK-1005 | [дані, знайдено в TASK-603] `deleteUser` (`user.service.ts:347-356`) і `StaffService.remove` (`staff.service.ts:348-353`) — три послідовні `await` (soft-delete → відкликання сесій → `hideAuthor`) без транзакції: якщо `hideAuthor` впаде, акаунт уже видалено й розлогінено, а відгуки лишаються на вітрині, оператор бачить 500 без повтору. Той самий ризик у `deactivateUser` з хвилі 599. Звести в одну транзакцію або додати звірку | ⬜ | [192](docs/plans/192-api-orders-money-auth.md) |
 | TASK-1006 | [контракт, чистка, знайдено в TASK-601] `@ApiQuery({ name: 'status', description: 'Filter: pending \| approved \| rejected' })` у `review/admin-review.controller.ts` (~156-159) не згадує нове значення `all`; enum у схемі правильний (з `@ApiProperty` DTO), тож типи Orval і валідація не зачеплені — лише застарілий опис | ⬜ | [192](docs/plans/192-api-orders-money-auth.md) |
+| TASK-1015 | [API, помилки, ревʼю хвилі 192, знайдено в TASK-574] Глобальний Prisma-фільтр свідомо лишає `P2034` (write conflict / deadlock) як 500 (`common/filters/prisma-error.translator.ts`, тест у `prisma-exception.filter.spec.ts`), хоча це повторюваний стан, а не серверний баг: кожен сплеск конкуренції будить Sentry, а фронт не має сигналу «повтори». Вирішити: 409 з окремим кодом (`WRITE_CONFLICT`) і логом на сервері — або записати, чому 500 | ⬜ | [192](docs/plans/192-api-orders-money-auth.md) |
+| TASK-1016 | [auth, токени, ревʼю хвилі 192, знайдено в TASK-396] Одноразові email-токени (підтвердження пошти, скидання пароля, зміна й відкат email) — read-then-write: `findLive` читає `usedAt: null`, запис іде окремо, тож два одночасні відкриття одного посилання (подвійний клік, префетч поштовика) обидва проходять — ідемпотентно, але двічі відкликають сесії й шлють лист. Позначати використаним умовним записом `where: { id, usedAt: null }` з перевіркою count у тій самій транзакції | ⬜ | [192](docs/plans/192-api-orders-money-auth.md) |
 
 ### План 193 — API: каталог, пошук, санітайзер, сід ([план](docs/plans/193-api-catalogue-search-content.md))
 
@@ -1431,6 +1433,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-1007**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-1017**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
