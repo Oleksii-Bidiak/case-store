@@ -1474,10 +1474,10 @@ C @ 1-vwssf0vdy4x.js:2
 
 ### SYS — Інфраструктура, дані, пошта, бекапи (сторі В2, В3 · поза браузером)
 
-- [ ] **SYS-01 — Контейнери піднімаються.** **Зроби:** `docker compose up -d`, потім
+- [🔁] **SYS-01 — Контейнери піднімаються.** **Зроби:** `docker compose up -d`, потім
       `docker ps`. **Має бути:** три контейнери у стані `Up`.
-      🔧 **На сервері:** на сервері: `docker compose -f docker-compose.prod.yml --env-file .env.production ps` — контейнерів більше трьох, усі `healthy`.
-      🎯 не дійшли — після хвилі 173 · 📝 не дійшли
+      🔧 **На сервері:** на сервері: `docker compose -f docker-compose.prod.yml --env-file .env.production ps` (на staging додай `-f docker-compose.staging.yml`), зачекай ~1 хв після `up -d` — усі 8 сервісів `Up … (healthy)`, **включно** зі `store-client`, `store-admin` і `caddy` (раніше вічно `unhealthy`); `docker inspect --format '{{json .State.Health}}' store_prod_client` показує node-перевірку з `ExitCode 0`, не `wget`.
+      🎯 TASK-829 (було: не дійшли — після хвилі 173) · 📝 не дійшли
 - [ ] **SYS-02 — Postgres відповідає.** **Зроби:** підключись до БД будь-яким клієнтом.
       **Має бути:** з'єднання встановлюється, таблиці на місці.
       🔧 **На сервері:** через `$COMPOSE exec postgres psql -U store -d store`.
@@ -1633,12 +1633,16 @@ C @ 1-vwssf0vdy4x.js:2
       Push у main і ручний запуск — «Forced full run», нічого не пропущено. Повторний запуск
       Playwright дає cache hit браузерів.
       🎯 TASK-455 · ⛔ після TASK-491
-- [ ] **SYS-36 — Security workflow.** **Зроби:** Actions → Security → Run workflow
+- [🔁] **SYS-36 — Security workflow.** **Зроби:** Actions → Security → Run workflow
       (`image_tag` = `staging-latest`); відкрий PR у develop. **Має бути:** три джоби «Trivy
       image (store-api/client/admin)» зелені з таблицею CVE у лозі (або «not found —
       skipped», якщо staging ще не деплоївся); «CodeQL (javascript-typescript)» завершується,
-      у Security → Code scanning є результати; на PR є джоба «Dependency review».
-      🎯 TASK-452 · ⛔ після TASK-491
+      у Security → Code scanning є результати; на PR є джоба «Dependency review». Після
+      TASK-765/766/767: «Secret scan (gitleaks)» зелена, у лозі «<N> commits scanned» і жодного
+      «fatal»/«dubious ownership»; кроки Trivy резолвлять `trivy-action@v0.36.0`; серед алертів
+      Code scanning немає жодного з `apps/store-api/test`, `e2e`, `*.spec.*`, `scripts/load`,
+      `scripts/qa` (зокрема з `forgot-password-timing.mjs`).
+      🎯 TASK-452, TASK-765, TASK-766, TASK-767 · ⛔ після TASK-491
 - [ ] **SYS-37 — Обовʼязкові перевірки гілок.** **Зроби:** Settings → Branches для `develop`
       і `main`: познач обовʼязковими Detect Changes, Type Check, Lint, Build, Unit Tests, E2E
       Tests, Integration Tests, OpenAPI Contract Freshness, Lockfile Platform Coverage, Env
@@ -1651,12 +1655,32 @@ C @ 1-vwssf0vdy4x.js:2
       🎯 TASK-772
 - [🔁] **SYS-39 — Транзакційна пошта на nodemailer 9.1.1.** **Зроби:** на демо-стенді з реальною скринькою оформи тестове замовлення або запроси скидання пароля. **Має бути:** лист приходить правильному адресату з правильним вмістом; у лозі API немає помилок SMTP чи addressparser.
       🎯 TASK-757
+- [🔁] **SYS-40 — Sentry: staging не видається за production, стеки фронтів читабельні.**
+      **Зроби:** на staging-стенді після деплою
+      `docker compose -f docker-compose.prod.yml -f docker-compose.staging.yml exec store-api printenv SENTRY_ENVIRONMENT`,
+      потім спровокуй помилку staging-API. Коли Actions розблокують і в Environment staging
+      задано vars `SENTRY_ORG`/`SENTRY_PROJECT`, `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` > 0 і секрет
+      `SENTRY_AUTH_TOKEN` — кинь тестову помилку на вітрині й в адмінці, подивись запуск деплою.
+      **Має бути:** `printenv` друкує `staging` (навіть якщо staging env-файл каже production);
+      помилка staging-API в Sentry з `environment=staging`, правила `production` не спрацьовують;
+      помилки вітрини й адмінки мають розмініфікований стек з іменами вихідних файлів; транзакції
+      фронтів надходять; у запуску немає артефакту `*.dockerbuild` і Docker build summary для
+      кроків client/admin, а `docker buildx imagetools inspect ghcr.io/<owner>/store-client:staging-latest --format '{{json .Provenance}}'`
+      не містить значення токена.
+      🎯 TASK-737, TASK-739 · ⛔ source maps, трейси й артефакти — після TASK-491 (образи збирає CI)
+- [🔁] **SYS-41 — Бекап перевіряє, що архів uploads читається.** **Зроби:** на сервері
+      `cd /opt/case-store && ./scripts/backup.sh`. **Має бути:** у лозі
+      `verifying the uploads archive can be read back…`, далі `ok — N file(s)`, де N дорівнює
+      кількості завантажених зображень (не 0); скрипт завершується з кодом 0. Битий чи обрізаний
+      архів зупиняє бекап з помилкою «the uploads archive is unreadable» (відтворено тестом).
+      **Не на демо:** бекапи на демо не налаштовані — `AGE_PUBLIC_KEY` там навмисно порожній.
+      🎯 TASK-738 · ⛔ staging — TASK-457
 
 ---
 
 ## Додаток А — задача → чеки (що позначати 🔁 після мержу)
 
-- **(без задачі)** — SF-HOME-15, SF-CHK-15, SF-CHK-16, SF-CNT-14, AD-AUTH-09, AD-IMP-01, AD-IMP-02, AD-IMP-03, AD-IMP-04, AD-IMP-05, AD-IMP-06, AD-IMP-07, AD-IMP-08, AD-IMP-09, AD-IMP-10, AD-IMP-11, AD-IMP-12, AD-IMP-13, AD-IMP-14, AD-IMP-15, AD-IMP-16, AD-IMP-17, AD-IMP-18, AD-IMP-19, AD-IMP-20, AD-CAT-07, AD-ORD-30, AD-ORD-31, AD-CNT-04, AD-SET-01, AD-SET-02, AD-SET-03, AD-SET-04, AD-SET-05, AD-SET-06, AD-SET-07, AD-SET-08, AD-SET-09, AD-SET-10, AD-SET-11, AD-PUB-02, AD-PUB-05, AD-PUB-06, AD-PUB-07, AD-PUB-08, SYS-01, SYS-02, SYS-03, SYS-06, SYS-07, SYS-08, SYS-10, SYS-11, SYS-12, SYS-13, SYS-14, SYS-17, SYS-17, SYS-17, SYS-17, SYS-18, SYS-19, SYS-20, SYS-21, SYS-22, SYS-23, SYS-24, SYS-25, SYS-26, SYS-29
+- **(без задачі)** — SF-HOME-15, SF-CHK-15, SF-CHK-16, SF-CNT-14, AD-AUTH-09, AD-IMP-01, AD-IMP-02, AD-IMP-03, AD-IMP-04, AD-IMP-05, AD-IMP-06, AD-IMP-07, AD-IMP-08, AD-IMP-09, AD-IMP-10, AD-IMP-11, AD-IMP-12, AD-IMP-13, AD-IMP-14, AD-IMP-15, AD-IMP-16, AD-IMP-17, AD-IMP-18, AD-IMP-19, AD-IMP-20, AD-CAT-07, AD-ORD-30, AD-ORD-31, AD-CNT-04, AD-SET-01, AD-SET-02, AD-SET-03, AD-SET-04, AD-SET-05, AD-SET-06, AD-SET-07, AD-SET-08, AD-SET-09, AD-SET-10, AD-SET-11, AD-PUB-02, AD-PUB-05, AD-PUB-06, AD-PUB-07, AD-PUB-08, SYS-02, SYS-03, SYS-06, SYS-07, SYS-08, SYS-10, SYS-11, SYS-12, SYS-13, SYS-14, SYS-17, SYS-17, SYS-17, SYS-17, SYS-18, SYS-19, SYS-20, SYS-21, SYS-22, SYS-23, SYS-24, SYS-25, SYS-26, SYS-29
 - **TASK-175** — SF-ACC-11
 - **TASK-338** — SF-ACC-22
 - **TASK-370** — AD-DASH-14, AD-RET-13, AD-RET-01, AD-RET-02, AD-RET-03, AD-RET-04, AD-RET-05, AD-RET-06, AD-RET-07, AD-RET-08, AD-RET-09, AD-RET-10, AD-RET-11, AD-RET-12
@@ -1748,7 +1772,13 @@ C @ 1-vwssf0vdy4x.js:2
 - **TASK-732** — AD-ORD-49
 - **TASK-735** — SF-UX-20, AD-UX-01, AD-UX-02
 - **TASK-736** — SF-UX-21
+- **TASK-737** — SYS-40
+- **TASK-738** — SYS-41
+- **TASK-739** — SYS-40
 - **TASK-757** — SF-UX-22, AD-CNT-31, AD-CNT-32, SYS-39
+- **TASK-765** — SYS-36
+- **TASK-766** — SYS-36
+- **TASK-767** — SYS-36
 - **TASK-770** — SF-AUTH-25
 - **TASK-771** — AD-ORD-50, AD-ORD-51
 - **TASK-772** — SF-AUTH-26, SF-AUTH-27, SYS-38
@@ -1758,6 +1788,7 @@ C @ 1-vwssf0vdy4x.js:2
 - **TASK-784** — AD-RET-18
 - **TASK-785** — AD-RET-19, AD-RET-20, AD-RET-21
 - **TASK-794** — SF-CHK-27, SF-ACC-34, SF-PDP-33, AD-ORD-55
+- **TASK-829** — SYS-01
 - **TASK-830** — SF-CAT-13
 - **TASK-831** — SF-CAT-32
 - **TASK-832** — SF-PDP-02
