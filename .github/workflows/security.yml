@@ -41,10 +41,24 @@ jobs:
 
       # Run the binary via its own image rather than gitleaks-action, which asks
       # organisations for a licence key. Same scanner, no licensing surface.
+      #
+      # Pinned (TASK-765): `:latest` let an upstream release turn this job red
+      # with no commit of ours — and upstream has already deprecated `detect`
+      # in favour of `git` (history) / `dir` (plain files). `git <path>` is the
+      # like-for-like replacement: the same `git log -p` over all refs that
+      # `detect --source` ran. Bump the tag by hand and deliberately (Dependabot
+      # does not see an image named inside a `run:` script), reading the release
+      # notes when you do.
+      #
+      # .gitleaks.toml keeps the full default ruleset and only allowlists the
+      # known placeholders (the ci-dummy-* values in ci.yml, spec
+      # fixtures, two pinned historical false positives) — each scoped by rule,
+      # file AND value. Passed explicitly so a rename cannot silently fall back
+      # to the default config.
       - name: Run gitleaks
         run: |
-          docker run --rm -v "${PWD}:/repo" zricethezav/gitleaks:latest \
-            detect --source=/repo --redact --verbose --exit-code=1
+          docker run --rm -v "${PWD}:/repo" zricethezav/gitleaks:v8.30.1 \
+            git /repo --config=/repo/.gitleaks.toml --redact --verbose --exit-code=1
 
   # ── Dependency vulnerabilities ─────────────────────────────────────────────
   audit:
