@@ -17641,6 +17641,67 @@
           "sortOrder"
         ]
       },
+      "DeviceModelListItemEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Device model unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "deviceBrandId": {
+            "type": "string",
+            "description": "Owning device brand ID",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Device model name",
+            "example": "iPhone 15 Pro"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL-friendly slug",
+            "example": "iphone-15-pro"
+          }
+        },
+        "required": [
+          "id",
+          "deviceBrandId",
+          "name",
+          "slug"
+        ]
+      },
+      "DeviceBrandListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Active device brands",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceBrandEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "DeviceModelListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Active device models (id, brand, name, slug)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceModelListItemEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "DeviceModelEntity": {
         "type": "object",
         "properties": {
@@ -17711,36 +17772,6 @@
           "name",
           "slug",
           "isActive"
-        ]
-      },
-      "DeviceBrandListResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "description": "Active device brands",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DeviceBrandEntity"
-            }
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "DeviceModelListResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "description": "Active device models",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DeviceModelEntity"
-            }
-          }
-        },
-        "required": [
-          "data"
         ]
       },
       "DeviceBrandResponseEnvelope": {

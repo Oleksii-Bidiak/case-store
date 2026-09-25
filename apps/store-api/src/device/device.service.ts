@@ -6,10 +6,9 @@ import {
   UpdateDeviceBrandInput,
   CreateDeviceModelInput,
   UpdateDeviceModelInput,
-  FindModelsParams,
   FindAdminBrandsParams,
 } from './device.repository';
-import { DeviceBrandEntity, DeviceModelEntity } from './entities';
+import { DeviceBrandEntity, DeviceModelEntity, DeviceModelListItemEntity } from './entities';
 import { DeviceModelListQueryDto, DeviceBrandListQueryDto, ReorderDeviceBrandsDto } from './dto';
 import { generateSlug } from '../common/utils';
 import { reorderErrorToHttp } from '../common/reorder';
@@ -37,7 +36,7 @@ interface AdminDeviceBrandListResponse {
 }
 
 interface DeviceModelListResponse {
-  data: DeviceModelEntity[];
+  data: DeviceModelListItemEntity[];
 }
 
 interface PaginatedDeviceModelsResponse {
@@ -173,17 +172,18 @@ export class DeviceService {
 
   // ─── Device models ────────────────────────────────────────────────────────
 
-  /** Public — list active device models (optionally scoped to a brand/search). */
+  /**
+   * Public — list active device models (optionally scoped to a brand/search) as
+   * the light {@link DeviceModelListItemEntity} projection (TASK-702): the
+   * compat-landing SEO copy stays on the landing and admin routes.
+   */
   async getModels(query: DeviceModelListQueryDto): Promise<DeviceModelListResponse> {
-    const params: FindModelsParams = {
-      page: 1,
+    const models = await this.deviceRepository.findPublicModels({
       limit: query.limit ?? 200,
       deviceBrandId: query.deviceBrandId,
       search: query.search,
-      isActive: true,
-    };
-    const { models } = await this.deviceRepository.findModels(params);
-    return { data: models.map((m) => DeviceModelEntity.fromPrisma(m)) };
+    });
+    return { data: models.map((m) => DeviceModelListItemEntity.fromPrisma(m)) };
   }
 
   /** Admin — paginated device model list across all statuses (or an explicit filter). */

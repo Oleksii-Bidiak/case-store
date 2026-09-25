@@ -87,6 +87,40 @@ export interface DeviceModelSlugRename {
   newSlug: string;
 }
 
+/**
+ * Parameters of the PUBLIC device-model list (TASK-702). No `isActive` on
+ * purpose: the public read is active-only by construction, not by a flag a
+ * caller could forget. No `page` either — the storefront reads one bounded slice.
+ */
+export interface FindPublicModelsParams {
+  limit?: number;
+  deviceBrandId?: string;
+  search?: string;
+}
+
+/**
+ * The light column set of the public device-model list (TASK-702) — mirrors
+ * `DeviceModelListItemEntity`. Selected, not just mapped away, so the landing
+ * SEO copy (`metaTitle`/`metaDescription`/`description`) is never even read.
+ */
+const PUBLIC_MODEL_SELECT = {
+  id: true,
+  deviceBrandId: true,
+  name: true,
+  slug: true,
+} as const satisfies Prisma.DeviceModelSelect;
+
+/** One row of the public device-model list. */
+export type PublicDeviceModelRow = Prisma.DeviceModelGetPayload<{
+  select: typeof PUBLIC_MODEL_SELECT;
+}>;
+
+/** Newest first, then by name — shared by the admin and the public model lists. */
+const MODEL_LIST_ORDER: Prisma.DeviceModelOrderByWithRelationInput[] = [
+  { releaseYear: 'desc' },
+  { name: 'asc' },
+];
+
 /** A device model row with its brand relation loaded (for labelling). */
 export type DeviceModelWithBrand = DeviceModel & { brand: { name: string } };
 
@@ -258,9 +292,44 @@ export class DeviceRepository {
    * pagination. Ordered by releaseYear desc (newest first), then name.
    */
   async findModels(params: FindModelsParams): Promise<PaginatedDeviceModelsResult> {
-    const { page = 1, limit = 50, deviceBrandId, series, search, isActive } = params;
+    const { page = 1, limit = 50 } = params;
     const skip = (page - 1) * limit;
+    const where = this.buildModelWhere(params);
 
+    const [models, total] = await Promise.all([
+      this.prisma.deviceModel.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: MODEL_LIST_ORDER,
+        include: { brand: { select: { name: true } } },
+      }),
+      this.prisma.deviceModel.count({ where }),
+    ]);
+
+    return { models, total };
+  }
+
+  /**
+   * The PUBLIC device-model list (TASK-702): active models only, the light
+   * {@link PUBLIC_MODEL_SELECT} column set, no brand join and no COUNT — the
+   * public envelope carries no pagination meta, so a count would be thrown away.
+   */
+  findPublicModels(params: FindPublicModelsParams): Promise<PublicDeviceModelRow[]> {
+    const { limit = 50, deviceBrandId, search } = params;
+    return this.prisma.deviceModel.findMany({
+      where: this.buildModelWhere({ isActive: true, deviceBrandId, search }),
+      take: limit,
+      orderBy: MODEL_LIST_ORDER,
+      select: PUBLIC_MODEL_SELECT,
+    });
+  }
+
+  /** One where-clause for both model lists, so their filters cannot drift apart. */
+  private buildModelWhere(
+    params: Pick<FindModelsParams, 'deviceBrandId' | 'series' | 'search' | 'isActive'>,
+  ): Prisma.DeviceModelWhereInput {
+    const { deviceBrandId, series, search, isActive } = params;
     const where: Prisma.DeviceModelWhereInput = {};
     if (isActive !== undefined) {
       where.isActive = isActive;
@@ -274,19 +343,7 @@ export class DeviceRepository {
     if (search) {
       where.name = { contains: search, mode: 'insensitive' };
     }
-
-    const [models, total] = await Promise.all([
-      this.prisma.deviceModel.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: [{ releaseYear: 'desc' }, { name: 'asc' }],
-        include: { brand: { select: { name: true } } },
-      }),
-      this.prisma.deviceModel.count({ where }),
-    ]);
-
-    return { models, total };
+    return where;
   }
 
   findModelById(id: string): Promise<DeviceModelWithBrand | null> {

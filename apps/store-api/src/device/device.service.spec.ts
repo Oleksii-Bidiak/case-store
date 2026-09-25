@@ -33,6 +33,7 @@ const deviceRepositoryMock = {
   createBrand: jest.fn(),
   updateBrand: jest.fn(),
   findModels: jest.fn(),
+  findPublicModels: jest.fn(),
   findModelById: jest.fn(),
   findModelBySlug: jest.fn(),
   findModelsByIds: jest.fn(),
@@ -135,16 +136,60 @@ describe('DeviceService', () => {
   });
 
   describe('getModels', () => {
-    it('lists active models scoped to a brand', async () => {
-      deviceRepositoryMock.findModels.mockResolvedValue({ models: [mockModel], total: 1 });
-      const query: DeviceModelListQueryDto = { deviceBrandId: 'brand-1' };
+    it('lists active models scoped to a brand through the light public read', async () => {
+      deviceRepositoryMock.findPublicModels.mockResolvedValue([mockModel]);
+      const query: DeviceModelListQueryDto = { deviceBrandId: 'brand-1', search: 'pro' };
 
       const result = await service.getModels(query);
 
-      expect(deviceRepositoryMock.findModels).toHaveBeenCalledWith(
-        expect.objectContaining({ deviceBrandId: 'brand-1', isActive: true }),
-      );
-      expect(result.data[0]).toMatchObject({ id: 'model-1', brandName: 'Apple' });
+      expect(deviceRepositoryMock.findPublicModels).toHaveBeenCalledWith({
+        limit: 200,
+        deviceBrandId: 'brand-1',
+        search: 'pro',
+      });
+      expect(deviceRepositoryMock.findModels).not.toHaveBeenCalled();
+      expect(result.data[0]).toEqual({
+        id: 'model-1',
+        deviceBrandId: 'brand-1',
+        name: 'iPhone 15 Pro',
+        slug: 'iphone-15-pro',
+      });
+    });
+
+    // TASK-702: the homepage ModelPicker and the catalog filter pull up to 200
+    // rows of this — the landing SEO copy must not ride along, even when the
+    // repository hands back a full row.
+    it('never serialises the compat-landing SEO fields on the public list', async () => {
+      deviceRepositoryMock.findPublicModels.mockResolvedValue([
+        {
+          ...mockModel,
+          metaTitle: 'Чохли для iPhone 15 Pro',
+          metaDescription: 'Опис',
+          description: 'Лід',
+        },
+      ]);
+
+      const result = await service.getModels({});
+
+      expect(Object.keys(result.data[0]).sort()).toEqual(['deviceBrandId', 'id', 'name', 'slug']);
+    });
+  });
+
+  describe('getModelsPaginated (admin)', () => {
+    it('keeps the SEO overrides on the admin list', async () => {
+      deviceRepositoryMock.findModels.mockResolvedValue({
+        models: [{ ...mockModel, metaTitle: 'T', metaDescription: 'D', description: 'L' }],
+        total: 1,
+      });
+
+      const result = await service.getModelsPaginated({});
+
+      expect(result.data[0]).toMatchObject({
+        metaTitle: 'T',
+        metaDescription: 'D',
+        description: 'L',
+        brandName: 'Apple',
+      });
     });
   });
 

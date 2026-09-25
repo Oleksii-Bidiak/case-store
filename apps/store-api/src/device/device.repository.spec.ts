@@ -233,6 +233,38 @@ describe('DeviceRepository', () => {
     });
   });
 
+  // TASK-702: the public picker/filter list reads a narrow column set, so the SEO
+  // copy of the compat landing (metaTitle/metaDescription/description) is never
+  // even fetched — and it runs no COUNT the public envelope would throw away.
+  describe('findPublicModels', () => {
+    it('selects only the light columns under the same active/brand/search where', async () => {
+      prismaMock.deviceModel.findMany.mockResolvedValue([]);
+
+      await repo.findPublicModels({ limit: 50, deviceBrandId: 'brand-1', search: 'pro' });
+
+      const arg = prismaMock.deviceModel.findMany.mock.calls[0][0];
+      expect(arg.where).toEqual({
+        isActive: true,
+        deviceBrandId: 'brand-1',
+        name: { contains: 'pro', mode: 'insensitive' },
+      });
+      expect(arg.take).toBe(50);
+      expect(arg.orderBy).toEqual([{ releaseYear: 'desc' }, { name: 'asc' }]);
+      expect(arg.select).toEqual({ id: true, deviceBrandId: true, name: true, slug: true });
+      expect(arg).not.toHaveProperty('include');
+      expect(prismaMock.deviceModel.count).not.toHaveBeenCalled();
+    });
+
+    it('never lists an inactive model, whatever the caller passes', async () => {
+      prismaMock.deviceModel.findMany.mockResolvedValue([]);
+
+      await repo.findPublicModels({});
+
+      const arg = prismaMock.deviceModel.findMany.mock.calls[0][0];
+      expect(arg.where).toEqual({ isActive: true });
+    });
+  });
+
   describe('findModelsByIds', () => {
     it('short-circuits to [] for an empty id set (no query)', async () => {
       const result = await repo.findModelsByIds([]);

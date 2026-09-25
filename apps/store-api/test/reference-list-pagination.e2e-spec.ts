@@ -116,6 +116,7 @@ describe('Reference-list pagination (e2e)', () => {
     createBrand: jest.fn(),
     updateBrand: jest.fn(),
     findModels: jest.fn(),
+    findPublicModels: jest.fn(),
     findModelById: jest.fn(),
     findModelBySlug: jest.fn(),
     findModelsByIds: jest.fn(),
@@ -425,6 +426,53 @@ describe('Reference-list pagination (e2e)', () => {
       expect(deviceRepositoryMock.findBrands).toHaveBeenCalledWith(true);
       expect(deviceRepositoryMock.findBrandsWithCount).not.toHaveBeenCalled();
       expect(response.body.data).toHaveLength(1);
+    });
+  });
+
+  // ─── GET /api/device-models (TASK-702) ──────────────────────────────────────
+
+  describe('GET /api/device-models', () => {
+    const modelRow = {
+      id: idA,
+      deviceBrandId: idA,
+      name: 'iPhone 15 Pro',
+      slug: 'iphone-15-pro',
+      series: 'iPhone 15',
+      releaseYear: 2023,
+      isActive: true,
+      metaTitle: 'Чохли для iPhone 15 Pro',
+      metaDescription: 'Понад 40 чохлів',
+      description: 'Усі чохли, що точно сідають',
+      brand: { name: 'Apple' },
+    };
+
+    // The public list feeds the homepage ModelPicker and the catalog filter —
+    // up to 200 rows; the compat-landing SEO copy belongs to the landing route.
+    it('serves the light projection without the landing SEO fields', async () => {
+      deviceRepositoryMock.findPublicModels.mockResolvedValue([modelRow]);
+
+      const response = await request(app.getHttpServer()).get('/api/device-models').expect(200);
+
+      expect(deviceRepositoryMock.findModels).not.toHaveBeenCalled();
+      expect(response.body.data).toEqual([
+        { id: idA, deviceBrandId: idA, name: 'iPhone 15 Pro', slug: 'iphone-15-pro' },
+      ]);
+    });
+
+    it('keeps the SEO overrides on the admin model list', async () => {
+      deviceRepositoryMock.findModels.mockResolvedValue({ models: [modelRow], total: 1 });
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/devices/models')
+        .set('Authorization', `Bearer ${adminToken()}`)
+        .expect(200);
+
+      expect(response.body.data[0]).toMatchObject({
+        metaTitle: 'Чохли для iPhone 15 Pro',
+        metaDescription: 'Понад 40 чохлів',
+        description: 'Усі чохли, що точно сідають',
+        brandName: 'Apple',
+      });
     });
   });
 

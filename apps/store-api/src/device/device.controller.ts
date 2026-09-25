@@ -2,7 +2,7 @@ import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiProperty, ApiExtraModels } from '@nestjs/swagger';
 import { DeviceService } from './device.service';
 import { DeviceModelListQueryDto } from './dto';
-import { DeviceBrandEntity, DeviceModelEntity } from './entities';
+import { DeviceBrandEntity, DeviceModelListItemEntity } from './entities';
 
 /** Response envelope for the public device-brand list. */
 class DeviceBrandListResponse {
@@ -10,10 +10,17 @@ class DeviceBrandListResponse {
   data!: DeviceBrandEntity[];
 }
 
-/** Response envelope for the public device-model list. */
+/**
+ * Response envelope for the public device-model list — the light projection
+ * (TASK-702). The landing SEO overrides live on `CompatLandingEntity.deviceModel`
+ * and the admin routes, never on this up-to-200-row list.
+ */
 class DeviceModelListResponse {
-  @ApiProperty({ type: [DeviceModelEntity], description: 'Active device models' })
-  data!: DeviceModelEntity[];
+  @ApiProperty({
+    type: [DeviceModelListItemEntity],
+    description: 'Active device models (id, brand, name, slug)',
+  })
+  data!: DeviceModelListItemEntity[];
 }
 
 /**
@@ -26,7 +33,7 @@ class DeviceModelListResponse {
 @ApiTags('Devices')
 @ApiExtraModels(
   DeviceBrandEntity,
-  DeviceModelEntity,
+  DeviceModelListItemEntity,
   DeviceBrandListResponse,
   DeviceModelListResponse,
 )
