@@ -140,6 +140,22 @@ After any schema change, regenerate the client so TypeScript stays in sync:
 npm run db:generate
 ```
 
+### If `migrate dev` hangs, or fails with P1002
+
+Without `--name`, `prisma migrate dev` stops to ask for a migration name — and it asks even when
+there is no terminal to answer it (an agent, CI, a piped shell), so it waits forever. While it
+waits, the schema engine holds Postgres advisory lock `72707369`, and every later
+`migrate dev`/`deploy`/`reset` against that database times out with **P1002** ("Timed out trying
+to acquire a postgres advisory lock"). Always pass the name and close stdin:
+
+```bash
+npm run db:migrate -- --name add_foo_column </dev/null
+```
+
+If P1002 is already happening, kill the stale `schema-engine` process (or terminate the backend
+holding the lock) — commands and the full explanation are in
+[dev-traps.md](dev-traps.md) §2.
+
 ### If `migrate status` says none of the migrations are applied (TASK-347)
 
 A database created in the `db push` era has no `_prisma_migrations` table at all, so Prisma
