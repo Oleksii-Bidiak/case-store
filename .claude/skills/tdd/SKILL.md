@@ -153,3 +153,29 @@ npm run test:cov -w apps/store-api
 - Use `describe`/`it` blocks with clear, descriptive names.
 - Mock external dependencies (repository, external APIs) but NEVER mock the unit under test.
 - Always run the relevant test suite after changes.
+
+## Flaky tests in store-api (TASK-611)
+
+A test that fails in the full parallel `npm run test -w apps/store-api` but passes alone is
+**not** proven broken, and not proven fine either. Rules:
+
+- **The arbiter is the isolated run**: the file alone (`npx jest <path>` from
+  `apps/store-api`) or the whole suite with `--runInBand`. Red there = the test or the code
+  is wrong, fix it. Green there but red in parallel = a timing dependency — find it, do not
+  just re-run until green.
+- **Record the mechanism before fixing**: the exact failure text (`Exceeded timeout of 5000
+ms` is CPU starvation; an assertion failure is a real race) and what shared resource or
+  clock is involved. Reproduce under load when an idle machine won't: three full suites at
+  once (`npx jest &` ×3) reproduced both known flakes; fifteen sequential idle runs didn't.
+- **Never read the real clock twice and expect agreement.** `cron`'s `getTimeout()` is
+  `sendAt() − now` with two separate clock reads; across a second boundary it returns −1
+  and `CronJob.start()` stops the job instead. Pin the clock with
+  `jest.useFakeTimers({ now: <a .500 ms instant> })` (see `scheduling.util.spec.ts`), or use
+  a far-future expression.
+- **CPU-heavy tests get an explicit, measured timeout**, never a bigger global one. Build
+  heavy fixtures once in `beforeAll`, measure the test's duration in a full parallel run and
+  under oversubscription, and size the per-test timeout from the worst observation (see
+  `PHOTO_TIMEOUT_MS` in `image-processor.service.spec.ts`). Never weaken the assertion
+  (payload budget, fixture size) to make the clock happy.
+- `Test suite failed to run … UNKNOWN: unknown error, open '…node_modules…'` under extreme
+  oversubscription is Windows running out of process/file handles, not a test defect.
