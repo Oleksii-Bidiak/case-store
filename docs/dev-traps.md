@@ -47,11 +47,12 @@ class-transformer — наприклад сіду (`tsx prisma/seed.ts`), яки
 
 ---
 
-## 2. `prisma migrate dev` без TTY зависає, а наступний запуск падає з P1002
+## 2. `prisma migrate dev` без TTY зависає, а паралельний запуск падає з P1002
 
 **Симптом.** У неінтерактивній оболонці (агент, CI, `… | tee`, скрипт) `prisma migrate dev`
-після зміни схеми нічого не пише й не завершується. Його вбивають або кидають — і **кожен**
-наступний `migrate dev` / `migrate deploy` / `migrate reset` проти тієї ж бази падає за ~10 с:
+після зміни схеми нічого не пише й не завершується. Поки він висить (або поки живий
+осиротілий `schema-engine`, якщо батьківський процес кинули), **кожен** інший `migrate dev` /
+`migrate deploy` / `migrate reset` проти тієї ж бази падає за ~10 с:
 
 ```text
 Error: P1002
@@ -63,12 +64,16 @@ The database server … was reached but timed out.
 
 1. Коли `--name` не передано, `migrate dev` **питає імʼя міграції** («Enter a name for the new
    migration»). Пропускає питання він лише тоді, коли в оточенні стоїть змінна CI (`CI`,
-   `BUILD_NUMBER`, …): перевірка TTY у цьому місці фактично не спрацьовує. Тож без TTY, але з
-   відкритим stdin, промпт чекає вводу вічно.
+   `BUILD_NUMBER`, …): перевірка TTY у цьому місці фактично не спрацьовує. Тож без TTY промпт
+   чекає вводу вічно — **і закритий stdin цього не змінює**: з `</dev/null` він так само висить на
+   «Enter a name for the new migration» (у вбудованій бібліотеці промптів немає обробника EOF, а
+   живий дочірній schema engine не дає процесу завершитися).
 2. На момент питання schema engine (`schema-engine-windows.exe` / `schema-engine`) уже запущено
    і він **тримає сесійний advisory lock** Postgres `72707369` — так Prisma не дає двом міграціям
-   іти одночасно. Поки процес живий (а вбитий батьківський `node` часто лишає його сиротою), лок
-   не відпускається, і всі наступні спроби впираються в таймаут → P1002.
+   іти одночасно. Поки процес живий (а вбитий батьківський `node` може лишити його сиротою), лок
+   не відпускається, і всі інші спроби впираються в таймаут → P1002. Коли процес завершується
+   (зокрема після `timeout`/Ctrl+C, якщо engine не лишився сиротою), сесія закривається і лок
+   зникає разом із нею.
 
 Підтвердження про втрату даних (`Are you sure you want to create and apply this migration?`)
 без TTY натомість падає одразу з «environment is non-interactive, which is not supported» —
@@ -76,41 +81,67 @@ The database server … was reached but timed out.
 
 **Що робити.**
 
-- **Завжди передавати імʼя** і закривати stdin:
+- **Завжди передавати імʼя** — це єдине, що прибирає промпт:
 
   ```bash
-  npm run db:migrate -- --name add_foo_column </dev/null
+  npm run db:migrate -- --name add_foo_column
   ```
 
-  `--name` прибирає промпт; `</dev/null` — страховка: навіть якщо колись зʼявиться інше
-  питання, воно отримає EOF і завершиться, а не повисне.
+  `</dev/null` **не** є страховкою: без `--name` команда із закритим stdin висить так само
+  (перевірено наживо — див. нижче). Змінна `CI` теж прибирає промпт, але виставляти її вручну
+  заради цього не варто: вона змінює поведінку й інших інструментів.
 
 - **Потрібен лише SQL, без застосування** — `npx prisma migrate dev --create-only --name <name>`
   (з `apps/store-api`), або `npx prisma migrate diff … --script`, коли `migrate dev` у цьому
   оточенні взагалі непридатний (так роблять агентні хвилі — див.
   [session-runbook-2.md](session-runbook-2.md)).
 
-- **Лок уже висить (P1002)** — прибрати процес, що його тримає:
-
-  ```powershell
-  # Windows
-  Get-Process schema-engine* -ErrorAction SilentlyContinue | Stop-Process -Force
-  ```
-
-  ```bash
-  # Linux / macOS
-  pkill -f schema-engine
-  ```
-
-  Якщо процес на іншій машині чи в контейнері — закрити сесію з боку Postgres:
+- **Лок уже висить (P1002)** — спершу завершити свій завислий `migrate dev` (Ctrl+C / kill
+  саме цього процесу); зазвичай лок зникає разом із ним. Якщо ні — закрити сесію, що його тримає,
+  **лише у своїй базі**. Id лока `72707369` однаковий для всіх баз Prisma, а `pg_locks` бачить
+  увесь кластер: на спільному `store_postgres` паралельні агенти мігрують свої `store_test_NNN`, і
+  запит без фільтра за базою вбʼє їхні міграції посеред роботи. Підключіться до потрібної бази й
+  виконайте:
 
   ```sql
   SELECT pg_terminate_backend(pid)
   FROM pg_locks
-  WHERE locktype = 'advisory' AND objid = 72707369;
+  WHERE locktype = 'advisory'
+    AND objid = 72707369
+    AND database = (SELECT oid FROM pg_database WHERE datname = current_database());
   ```
 
   Після цього `npx prisma migrate status` має відповідати без таймауту.
+
+- **Вбивати `schema-engine` за іменем — лише коли ви певні, що інших міграцій на машині немає.**
+  `Get-Process schema-engine* | Stop-Process -Force` (Windows) чи `pkill -f schema-engine`
+  (Linux/macOS) зупиняють **усі** schema engine на машині, зокрема ті, що зараз мігрують бази
+  інших агентів чи сесій. Якщо лишився саме сирота вашого запуску — знайдіть його PID і
+  зупиніть лише його:
+
+  ```powershell
+  # Windows: переглянути, хто є хто, і зупинити один процес
+  Get-CimInstance Win32_Process -Filter "Name LIKE 'schema-engine%'" |
+    Select-Object ProcessId, ParentProcessId, CreationDate, CommandLine
+  Stop-Process -Id <PID> -Force
+  ```
+
+  ```bash
+  # Linux / macOS
+  pgrep -af schema-engine
+  kill <PID>
+  ```
+
+**Перевірено наживо 2026-09-25** на тимчасовій базі в `store_postgres` (Prisma 7.9.1):
+`migrate dev` без `--name` і з `</dev/null` висів на «Enter a name for the new migration», доки
+його не вбив `timeout 60` (exit 124). У цей час `pg_locks` показував наданий advisory lock
+`objid 72707369` у цій базі, а паралельний `migrate dev --name second </dev/null` упав з «Timed
+out trying to acquire a postgres advisory lock … Timeout: 10000ms». Запит `pg_terminate_backend`
+вище, виконаний з **іншої** бази, не зачепив нічого (0 сесій); у потрібній базі — відпустив лок
+(0 advisory-локів у кластері), і `migrate status` відповів одразу. Сам завислий CLI після цього
+**далі висів** на промпті — тож його все одно треба зупинити. Після `timeout` сиріт
+`schema-engine` не лишилося. `migrate dev --name probe </dev/null` створив і застосував міграцію
+без жодного питання (exit 0).
 
 Не вимикайте лок через `PRISMA_SCHEMA_DISABLE_ADVISORY_LOCK` «щоб не заважав»: він захищає від
 двох одночасних міграцій, а зависання лікується іменем міграції, а не вимкненням захисту.
