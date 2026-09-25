@@ -34,10 +34,12 @@ describe("SearchIndexView (TASK-377)", () => {
     expect(screen.getByRole("button", { name: d.button })).toBeEnabled();
   });
 
-  it("reindexes and reports how many products were indexed", async () => {
+  it("reindexes and reports how many products and articles were indexed", async () => {
+    // TASK-525 — the rebuild covers the blog index too; its count is shown so
+    // an empty blog index is visible rather than hidden behind the products.
     server.use(
       http.post(REINDEX_URL, () =>
-        HttpResponse.json({ data: { indexed: 178 } }),
+        HttpResponse.json({ data: { indexed: 178, blogPosts: 12 } }),
       ),
     );
     renderWithProviders(<SearchIndexView />);
@@ -45,8 +47,9 @@ describe("SearchIndexView (TASK-377)", () => {
     await userEvent.click(screen.getByRole("button", { name: d.button }));
 
     await waitFor(() =>
-      expect(toast.success).toHaveBeenCalledWith(d.toastDone(178)),
+      expect(toast.success).toHaveBeenCalledWith(d.toastDone(178, 12)),
     );
+    expect(d.toastDone(178, 12)).toContain("12");
   });
 
   it("surfaces a failure instead of pretending it worked", async () => {

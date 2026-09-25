@@ -2287,7 +2287,7 @@
             "access-token": []
           }
         ],
-        "summary": "Rebuild the product search index (admin)",
+        "summary": "Rebuild the product and blog search indexes (admin)",
         "tags": [
           "Search"
         ]
@@ -16361,10 +16361,16 @@
             "type": "number",
             "description": "Number of products re-indexed",
             "example": 128
+          },
+          "blogPosts": {
+            "type": "number",
+            "description": "Number of published blog posts re-indexed",
+            "example": 12
           }
         },
         "required": [
-          "indexed"
+          "indexed",
+          "blogPosts"
         ]
       },
       "ReindexResponseEnvelope": {

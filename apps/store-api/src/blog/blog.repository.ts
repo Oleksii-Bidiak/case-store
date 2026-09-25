@@ -9,7 +9,6 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
-import type { PublishablePort, RevalidateTarget } from '../publishing';
 import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
 
 /**
@@ -204,22 +203,16 @@ export interface UpdateBlogCategoryInput {
  * Repository encapsulating all Prisma access for the Blog models (posts +
  * categories). Services depend on this class — never on PrismaClient directly.
  *
- * Also implements {@link PublishablePort}: registered under
- * `PUBLISHABLE_REPOSITORY` so the PublishingScheduler flips due scheduled posts
- * live on its cron tick.
+ * NOT the scheduler's publishing port itself (TASK-525): `BlogPublisher` is, so
+ * that a post flipped live by the cron is also indexed for search. This class
+ * only supplies the flip, {@link publishDuePosts}.
  */
 @Injectable()
-export class BlogRepository implements PublishablePort {
+export class BlogRepository {
   constructor(
     private readonly prisma: PrismaService,
     private readonly slugRedirectRepository: SlugRedirectRepository,
   ) {}
-
-  /** Cache target purged when scheduled posts go live (see PublishingScheduler). */
-  readonly revalidateTarget: RevalidateTarget = {
-    tags: ['blog'],
-    paths: ['/blog'],
-  };
 
   // ─── posts: public reads ────────────────────────────────────────────────────
 
@@ -579,12 +572,16 @@ export class BlogRepository implements PublishablePort {
   // ─── publishing ─────────────────────────────────────────────────────────────
 
   /**
-   * {@link PublishablePort.publishDue} — flip every SCHEDULED post whose
-   * `scheduledAt` has passed to PUBLISHED, stamping `publishedAt = now` and
-   * clearing `scheduledAt`. Returns the count flipped.
+   * Flip every SCHEDULED post whose `scheduledAt` has passed to PUBLISHED,
+   * stamping `publishedAt = now` and clearing `scheduledAt`. Returns the ids
+   * flipped (TASK-525) — `BlogPublisher` indexes exactly those.
+   *
+   * One `UPDATE … RETURNING`, not a read then a write: the ids are the rows this
+   * statement changed, so a post an admin moves back to draft between two
+   * statements can neither be flipped by mistake nor indexed by mistake.
    */
-  async publishDue(now: Date): Promise<number> {
-    const { count } = await this.prisma.blogPost.updateMany({
+  async publishDuePosts(now: Date): Promise<string[]> {
+    const rows = await this.prisma.blogPost.updateManyAndReturn({
       where: {
         status: PublishStatus.SCHEDULED,
         scheduledAt: { lte: now },
@@ -594,7 +591,8 @@ export class BlogRepository implements PublishablePort {
         publishedAt: now,
         scheduledAt: null,
       },
+      select: { id: true },
     });
-    return count;
+    return rows.map((row) => row.id);
   }
 }

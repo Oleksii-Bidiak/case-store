@@ -104,8 +104,7 @@ describe('Reference-list pagination (e2e)', () => {
     deleteCategory: jest.fn(),
     countPostsInCategory: jest.fn(),
     reorderCategories: jest.fn(),
-    publishDue: jest.fn(),
-    revalidateTarget: { tags: ['blog'], paths: ['/blog'] },
+    publishDuePosts: jest.fn(),
   };
 
   const deviceRepositoryMock = {

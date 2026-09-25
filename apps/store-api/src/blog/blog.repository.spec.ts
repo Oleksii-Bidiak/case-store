@@ -44,6 +44,7 @@ const prismaMock = {
     create: jest.fn(),
     update: jest.fn(),
     updateMany: jest.fn(),
+    updateManyAndReturn: jest.fn(),
     delete: jest.fn(),
   },
   blogCategory: blogCategoryDelegate,
@@ -302,18 +303,30 @@ describe('BlogRepository', () => {
     });
   });
 
-  describe('publishDue', () => {
-    it('flips due SCHEDULED posts to PUBLISHED and returns the count', async () => {
-      prismaMock.blogPost.updateMany.mockResolvedValue({ count: 2 });
+  describe('publishDuePosts', () => {
+    // TASK-525 — the scheduler has to index what it just published, so the flip
+    // hands back WHICH posts went live, from the same statement that flipped
+    // them: a separate read before or after could name a post an admin moved
+    // back to draft in between.
+    it('flips due SCHEDULED posts to PUBLISHED in one statement and returns their ids', async () => {
+      prismaMock.blogPost.updateManyAndReturn.mockResolvedValue([{ id: 'p-1' }, { id: 'p-2' }]);
       const now = new Date('2026-07-05T00:00:00.000Z');
 
-      const count = await repository.publishDue(now);
+      const ids = await repository.publishDuePosts(now);
 
-      expect(count).toBe(2);
-      expect(prismaMock.blogPost.updateMany).toHaveBeenCalledWith({
+      expect(ids).toEqual(['p-1', 'p-2']);
+      expect(prismaMock.blogPost.updateManyAndReturn).toHaveBeenCalledWith({
         where: { status: PublishStatus.SCHEDULED, scheduledAt: { lte: now } },
         data: { status: PublishStatus.PUBLISHED, publishedAt: now, scheduledAt: null },
+        select: { id: true },
       });
+      expect(prismaMock.blogPost.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('returns an empty list when nothing is due', async () => {
+      prismaMock.blogPost.updateManyAndReturn.mockResolvedValue([]);
+
+      await expect(repository.publishDuePosts(new Date())).resolves.toEqual([]);
     });
   });
 
@@ -325,12 +338,6 @@ describe('BlogRepository', () => {
 
       expect(count).toBe(4);
       expect(prismaMock.blogPost.count).toHaveBeenCalledWith({ where: { categoryId: 'cat-1' } });
-    });
-  });
-
-  describe('revalidateTarget', () => {
-    it('targets the blog collection tag + hub path', () => {
-      expect(repository.revalidateTarget).toEqual({ tags: ['blog'], paths: ['/blog'] });
     });
   });
 

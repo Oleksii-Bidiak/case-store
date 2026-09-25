@@ -1,5 +1,5 @@
 // Search-index entity (TASK-377) — the admin-side maintenance surface of the
-// product search index.
+// search indexes (products, and the blog since TASK-525).
 //
 // Re-exports the Orval-generated search client from the shared layer so widgets
 // depend on `@/entities/search` rather than reaching into `@/shared/api`.

@@ -8,7 +8,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
-import { MeiliClient } from '../src/search';
+import { JwtService } from '@nestjs/jwt';
+import { BlogSearchService, MeiliClient, SearchService } from '../src/search';
 
 /**
  * E2E tests for the Search module (TASK-075).
@@ -455,6 +456,33 @@ describe('Search (e2e)', () => {
   describe('POST /api/admin/search/reindex', () => {
     it('requires authentication (401 without a token)', async () => {
       await request(app.getHttpServer()).post('/api/admin/search/reindex').expect(401);
+    });
+
+    // TASK-525 — the one repair action used to rebuild the products index only,
+    // so a drifted `blog_posts` index was repaired by nothing short of a restart.
+    it('rebuilds the products AND the blog index and reports both counts', async () => {
+      const products = jest.spyOn(app.get(SearchService), 'reindexAll').mockResolvedValue(178);
+      const blog = jest.spyOn(app.get(BlogSearchService), 'reindexAll').mockResolvedValue(12);
+      const token = app
+        .get(JwtService)
+        .sign(
+          { sub: 'admin-e2e-1', email: 'admin-e2e-1@example.com', role: 'ADMIN' },
+          { secret: process.env.JWT_SECRET, expiresIn: '15m' },
+        );
+
+      try {
+        const res = await request(app.getHttpServer())
+          .post('/api/admin/search/reindex')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(res.body).toEqual({ data: { indexed: 178, blogPosts: 12 } });
+        expect(products).toHaveBeenCalledTimes(1);
+        expect(blog).toHaveBeenCalledTimes(1);
+      } finally {
+        products.mockRestore();
+        blog.mockRestore();
+      }
     });
   });
 });
