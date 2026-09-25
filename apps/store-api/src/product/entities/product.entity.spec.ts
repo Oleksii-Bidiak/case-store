@@ -1,4 +1,5 @@
 import { ProductEntity } from './product.entity';
+import { PublicProductEntity } from './public-product.entity';
 
 /**
  * TASK-254 introduced the derived `reservedQty`/`physicalQty` pair;
@@ -52,5 +53,63 @@ describe('ProductEntity.fromPrisma — reserved/physical (TASK-254, TASK-408)', 
 
     expect(entity.reservedQty).toBeUndefined();
     expect(entity.physicalQty).toBeNaN();
+  });
+});
+
+/**
+ * TASK-814: the admin and the public entity used to declare their `fromPrisma`
+ * input and copy the shared fields each on its own — and the two copies had
+ * already drifted (the admin one did not accept `primaryImage.blurDataUrl`). One
+ * shared source type and one shared mapper now serve both; this pins that the
+ * same row yields the same shared fields from either side.
+ */
+describe('ProductEntity and PublicProductEntity shared fields (TASK-814)', () => {
+  const row = {
+    ...base,
+    description: 'Clear case',
+    compareAtPrice: { toString: () => '39.99' },
+    sku: 'SKU-1',
+    stock: 7,
+    reservedQty: 2,
+    groupId: 'grp-1',
+    brand: { id: 'b1', name: 'Spigen', slug: 'spigen', logo: null },
+    attributes: { color: 'blue' },
+    positionOrder: 3,
+    metaTitle: 'Meta',
+    metaDescription: 'Meta description',
+    keywords: ['magsafe'],
+    ogImage: 'https://cdn.example.com/og.jpg',
+    ratingAverage: 4.26,
+    ratingCount: 9,
+    primaryImage: {
+      id: 'img-1',
+      url: 'https://cdn.example.com/1.jpg',
+      alt: 'Front',
+      blurDataUrl: 'data:image/webp;base64,AAAA',
+      sortOrder: 0,
+      isPrimary: true,
+    },
+    compatibleDeviceModels: [
+      { id: 'd1', name: 'iPhone 15', slug: 'iphone-15', brandName: 'Apple' },
+    ],
+  };
+
+  it('accepts and keeps the primary image blur placeholder on the admin entity', () => {
+    const entity = ProductEntity.fromPrisma(row);
+
+    expect(entity.primaryImage?.blurDataUrl).toBe('data:image/webp;base64,AAAA');
+  });
+
+  it('maps every shared field identically on both entities', () => {
+    const admin = ProductEntity.fromPrisma(row);
+    const pub = PublicProductEntity.fromPrisma(row);
+
+    const { stock, reservedQty, physicalQty, ...adminShared } = admin;
+    const { inStock, lowStock, variantSummary, ...publicShared } = pub;
+
+    expect([stock, reservedQty, physicalQty]).toEqual([7, 2, 9]);
+    expect([inStock, lowStock, variantSummary.defaultVariantId]).toEqual([true, false, 'p1']);
+    expect({ ...publicShared }).toEqual({ ...adminShared });
+    expect(adminShared.ratingAverage).toBe(4.3);
   });
 });

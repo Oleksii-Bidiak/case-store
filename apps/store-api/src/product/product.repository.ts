@@ -739,8 +739,9 @@ export class ProductRepository {
   }
 
   /**
-   * Attach ratings, primary image and variant siblings to a page of products
-   * (shared by every sort path). Runs the three lookups in one batched pass to
+   * Attach ratings, primary image and variant siblings to a page of products.
+   * The ONE card hydration (TASK-814): shared by every listing sort path and by
+   * {@link findByIdsForCards}. Runs the three lookups in one batched pass to
    * avoid N+1 queries.
    */
   private async enrichProducts(products: ProductWithBrand[]) {
@@ -860,26 +861,10 @@ export class ProductRepository {
       where: { id: { in: ids }, ...PUBLIC_PRODUCT_WHERE },
       include: { brand: { select: BRAND_SUMMARY_SELECT } },
     });
-
-    const productIds = products.map((p) => p.id);
-    const groupIds = [
-      ...new Set(products.map((p) => p.groupId).filter((id): id is string => id != null)),
-    ];
-    const [ratings, primaryImages, variantSiblings] = await Promise.all([
-      this.getRatingsByProductId(productIds),
-      this.getPrimaryImagesByProductId(productIds),
-      this.getVariantSiblingsByGroupId(groupIds),
-    ]);
-    return products.map((product) => {
-      const rating = ratings.get(product.id);
-      return {
-        ...product,
-        ratingAverage: rating?.ratingAverage ?? null,
-        ratingCount: rating?.ratingCount ?? 0,
-        primaryImage: primaryImages.get(product.id) ?? null,
-        variantSiblings: product.groupId ? (variantSiblings.get(product.groupId) ?? []) : undefined,
-      };
-    });
+    // One hydration for every card (TASK-814): this used to be a copy of
+    // enrichProducts, so a field added to the listing never reached search
+    // results, «Ви переглядали» or the manual carousels.
+    return this.enrichProducts(products);
   }
 
   /**

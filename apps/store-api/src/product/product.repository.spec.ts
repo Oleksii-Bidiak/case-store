@@ -885,6 +885,25 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       const siblingArgs = prismaMock.product.findMany.mock.calls[1][0];
       expect(siblingArgs.where).toEqual({ groupId: { in: ['grp-1'] }, ...PUBLIC_PRODUCT_WHERE });
     });
+
+    // TASK-814: the card hydration used to be a character-for-character copy of
+    // the listing's private enrichProducts — a field added to one silently never
+    // reached search results, «Ви переглядали» or the manual carousels.
+    it('findByIdsForCards hydrates through the same enrichProducts pass as the listing (TASK-814)', async () => {
+      const rows = [{ id: 'p1', groupId: null }];
+      prismaMock.product.findMany.mockResolvedValueOnce(rows);
+      const enrichSpy = jest
+        .spyOn(
+          repository as unknown as { enrichProducts: (p: unknown[]) => Promise<unknown[]> },
+          'enrichProducts',
+        )
+        .mockResolvedValue([{ id: 'p1', hydrated: true }]);
+
+      const result = await repository.findByIdsForCards(['p1']);
+
+      expect(enrichSpy).toHaveBeenCalledWith(rows);
+      expect(result).toEqual([{ id: 'p1', hydrated: true }]);
+    });
   });
 
   // ─── SEO meta pass-through (TASK-241) ───────────────────────────────────────
