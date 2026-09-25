@@ -17,11 +17,15 @@
  * - the root rule files README.md, AGENTS.md, CLAUDE.md, requirements.md — they are
  *   the entry points every agent and developer reads first, so a dead path there
  *   costs the most. Cheap: four files.
- * - source code (TASK-821): every .ts/.tsx/.js/.mjs/.cjs file under apps/*\/src and
- *   scripts/, for bare `docs/….md` tokens only (CODE_DOC_TOKEN_RE). Comments point
- *   readers at docs as often as the docs do — "why is this so? see docs/…" — and
- *   before this a moved or never-written doc left such a comment dead with nothing
- *   to notice (seo-settings-form.tsx cited an "operations" doc that never existed).
+ * - source code (TASK-821): every file under apps/*\/src and scripts/ whose
+ *   extension is in CODE_EXT_RE — .ts/.tsx/.js/.mjs/.cjs, the operator shell
+ *   scripts (.sh/.bash/.ps1) and stylesheets (.css) — for bare `docs/….md`
+ *   tokens only (CODE_DOC_TOKEN_RE). Comments point readers at docs as often as
+ *   the docs do — "why is this so? see docs/…" — and before this a moved or
+ *   never-written doc left such a comment dead with nothing to notice
+ *   (seo-settings-form.tsx cited an "operations" doc that never existed). The shell
+ *   scripts matter most: backup.sh and disk-check.sh print docs/deploy/… runbook
+ *   paths to the very 2 a.m. reader this gate exists for.
  *   Skipped: node_modules, generated/ (Orval), .next/, dist/, and scripts/__tests__
  *   (the tests of these scripts name missing docs on purpose).
  *
@@ -47,6 +51,11 @@
  *    http(s)/mailto/tel links and pure #anchors are ignored, and so are root-absolute
  *    targets like (/categories): in these docs they are storefront ROUTES. Links are
  *    looked for outside code spans only.
+ * 3. In source code (not markdown): a bare `docs/….md` token anywhere on a line,
+ *    comment or string alike, resolved against the REPO ROOT. Stricter than rule 1
+ *    because there are no backticks to delimit it — see CODE_DOC_TOKEN_RE: it must
+ *    start at a word boundary (not `scripts/docs/…`, `../docs/…`) and end in `.md`
+ *    (not a prefix such as `docs/plans/156.` or `docs/deploy/`).
  * Fenced code blocks (``` … ``` or ~~~ … ~~~) are skipped entirely: they hold shell
  * sessions and examples whose paths are often run-time or remote (a server's
  * /opt/...). Fences are paired by CommonMark's rules — same character, closer at
@@ -75,8 +84,9 @@
  *
  * ALLOWLIST
  * ---------
- * ALLOWED_MISSING below — exact paths, scoped to one doc, each with a reason. Prefer
- * rephrasing the doc ("буде створено в TASK-NNN") over adding an entry.
+ * ALLOWED_MISSING below — exact paths, scoped to ONE scanned file (a doc or, since
+ * TASK-821, a code file such as this script's own header), each with a reason.
+ * Prefer rephrasing the file ("буде створено в TASK-NNN") over adding an entry.
  *
  * Usage:  node scripts/check-docs-links.js       (npm run docs:links)
  * Exit:   0 — every reference resolves; 1 — list of  file:line → missing path.
@@ -97,7 +107,11 @@ const ROOT_FILES = ["README.md", "AGENTS.md", "CLAUDE.md", "requirements.md"];
  * to every app that has a `src/`.
  */
 const CODE_ROOTS = ["apps/*/src", "scripts"];
-const CODE_EXT_RE = /\.(?:ts|tsx|js|mjs|cjs)$/;
+/**
+ * Scanned code extensions: TS/JS sources, the operator shell scripts (backup.sh,
+ * disk-check.sh — they print docs/deploy/… runbook paths) and stylesheets.
+ */
+const CODE_EXT_RE = /\.(?:ts|tsx|js|mjs|cjs|sh|bash|ps1|css)$/;
 /**
  * Directories never descended into by the code scan:
  * - node_modules / generated — third-party and Orval output, not ours to fix;

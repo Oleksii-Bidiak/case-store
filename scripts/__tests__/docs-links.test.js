@@ -173,6 +173,29 @@ test("the code scan reports dead docs refs in apps/*/src and scripts, and only t
   ]);
 });
 
+test("the code scan covers the operator shell scripts and stylesheets too", (t) => {
+  const root = makeRepo(t, {
+    "docs/deploy/08-backup-restore.md": "# restore\n",
+    "scripts/backup.sh": [
+      "#!/usr/bin/env bash",
+      'echo "Restore: see docs/deploy/08-backup-restore.md"',
+      'echo "Then: docs/deploy/08-nonexistent-restore.md."',
+      '# ${ROOT}/docs/not-a-root-ref.md and "$DIR/docs/also-not.md"',
+    ].join("\n"),
+    "scripts/disk-check.bash": "# docs/missing-from-bash.md\n",
+    "scripts/win.ps1": "# docs/missing-from-ps1.md\n",
+    "apps/web/src/app/globals.css": "/* tokens: docs/missing-design-system.md */\n",
+    "scripts/notes.txt": "docs/missing-in-plain-text.md\n",
+  });
+  const result = docsLinks.run({ root, allowed: {} });
+  assert.deepEqual(brokenOf(result), [
+    "apps/web/src/app/globals.css:1 docs/missing-design-system.md",
+    "scripts/backup.sh:3 docs/deploy/08-nonexistent-restore.md",
+    "scripts/disk-check.bash:1 docs/missing-from-bash.md",
+    "scripts/win.ps1:1 docs/missing-from-ps1.md",
+  ]);
+});
+
 test("a per-file allowance does not excuse the same path in another file", (t) => {
   const root = makeRepo(t, {
     "scripts/tool.js": "// docs/old-example.md\n",
