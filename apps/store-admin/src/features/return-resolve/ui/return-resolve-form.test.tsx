@@ -324,6 +324,17 @@ describe("ReturnResolveForm — returns:write gate (TASK-716)", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
+  it("renders neither the form nor the view-only line while the rights are loading", () => {
+    renderWithProviders(<ReturnResolveForm rma={makeReturn()} />, {
+      auth: { permissions: [], arePermissionsLoading: true },
+    });
+
+    expect(screen.queryByText(dict.common.viewOnly)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: dict.returns.resolveStatusAria }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders the decision form for a session holding returns:write", () => {
     renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
 

@@ -67,10 +67,13 @@ interface ReturnResolveFormProps {
  *
  * And a fourth (TASK-716): no form at all without `returns:write`. The PATCH
  * answers 403 to anyone else, so the section says in one line that the return
- * is view-only rather than offering a decision that cannot be saved.
+ * is view-only rather than offering a decision that cannot be saved. Neither
+ * branch renders while the grant set is still loading: `can()` answers false in
+ * that window for everyone, and the view-only line flashed at every writer.
  */
 export function ReturnResolveForm({ rma }: ReturnResolveFormProps) {
-  const { can } = useAuth();
+  const { can, arePermissionsLoading } = useAuth();
+  if (arePermissionsLoading) return null;
   if (!can(PERM.returnsWrite)) {
     return (
       <p className="text-sm text-muted-foreground">{dict.common.viewOnly}</p>
