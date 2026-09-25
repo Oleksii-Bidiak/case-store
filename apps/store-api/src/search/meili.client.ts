@@ -45,6 +45,19 @@ const DOCUMENT_ID_PAGE = 1000;
  */
 const REQUEST_TIMEOUT_MS = 5_000;
 
+/**
+ * `pagination.maxTotalHits` of every index this wrapper configures (TASK-537).
+ *
+ * Meilisearch never counts, nor serves, a hit past this bound: in
+ * page/hitsPerPage mode `totalHits` stops at it, so the page list the storefront
+ * draws from that total stops at the last page the engine can actually return.
+ * Pinned here instead of inherited from the engine default (also 1000) so the
+ * ceiling is visible in code and raising it is a deliberate settings change —
+ * which, like any other, reaches a live index on the next boot or
+ * `npm run search:reindex`. At 20 per page it is 50 pages of one query.
+ */
+export const SEARCH_MAX_TOTAL_HITS = 1000;
+
 /** Anything this wrapper can store: a document keyed by its primary `id`. */
 export interface IndexedDocument {
   id: string;
@@ -59,6 +72,17 @@ export interface ProductSearchDocument extends IndexedDocument {
   name: string;
   description: string | null;
   slug: string;
+  /**
+   * Article number (TASK-522). Searchable but exempt from typo tolerance — a
+   * code one character off names a different product, not a misspelling.
+   */
+  sku: string | null;
+  /**
+   * Admin-curated tags (TASK-437/558) — words a shopper types that the name and
+   * description do not contain. Searchable, ranked right after `sku`; never
+   * displayed from the index.
+   */
+  keywords: string[];
   price: number;
   compareAtPrice: number | null;
   /**
@@ -101,12 +125,20 @@ export interface ProductSearchDocument extends IndexedDocument {
  */
 export interface BlogPostSearchDocument extends IndexedDocument {
   title: string;
+  /** Admin-curated tags (TASK-437/558), searchable right after the title. */
+  keywords: string[];
   excerpt: string;
   slug: string;
   categorySlug: string;
   categoryName: string;
   /** Unix epoch ms of publication (0 when unknown) — sortable recency key. */
   publishedAt: number;
+  /**
+   * The listing gate (TASK-436), filterable so the engine drops unlisted posts
+   * ITSELF (TASK-537): its exact total then counts only what the hub shows,
+   * instead of counting posts the published re-read removes afterwards.
+   */
+  listed: boolean;
   /**
    * Cyrillic/Latin equivalents of the title + category tokens, injected at index
    * time so typo tolerance covers cross-script queries — the same trick the
@@ -129,10 +161,24 @@ export interface IndexSettings {
   typoTolerance?: Record<string, unknown>;
   /** Query-side synonym map: `{ term: [equivalent, ...] }`. */
   synonyms?: Record<string, string[]>;
+  /** Deepest hit the engine counts and serves — see {@link SEARCH_MAX_TOTAL_HITS}. */
+  pagination?: { maxTotalHits: number };
 }
 
-/** Options accepted by {@link MeiliClient.search}. */
+/**
+ * Options accepted by {@link MeiliClient.search}.
+ *
+ * Two modes, and which one a caller picks decides what total it gets back
+ * (TASK-537):
+ *  - `page` + `hitsPerPage` — for anything that shows NUMBERED pages. The engine
+ *    counts exhaustively and answers an exact `totalHits`.
+ *  - `limit` (+ `offset`) — for a top-N list that shows no total (autocomplete).
+ *    The engine only estimates the total there, so {@link MeiliSearchResult}
+ *    reports `totalHits: null` rather than pass the estimate off as a count.
+ */
 export interface MeiliSearchOptions {
+  page?: number;
+  hitsPerPage?: number;
   limit?: number;
   offset?: number;
   filter?: string | string[];
@@ -142,7 +188,13 @@ export interface MeiliSearchOptions {
 /** Normalised search result surfaced to the service. */
 export interface MeiliSearchResult<T> {
   hits: T[];
-  estimatedTotalHits: number;
+  /**
+   * The EXACT number of matches (capped at `pagination.maxTotalHits`) when the
+   * query was made with `page`/`hitsPerPage`; `null` for a `limit` query, whose
+   * only total is Meilisearch's documented-as-inexact `estimatedTotalHits`. An
+   * overshooting estimate used to draw clickable pages with no hits on them.
+   */
+  totalHits: number | null;
 }
 
 /** An index write accepted for processing — Meilisearch applies it asynchronously. */
@@ -175,7 +227,8 @@ export interface MeiliIndexApi {
   search<T = IndexedDocument>(
     query: string,
     options?: MeiliSearchOptions,
-  ): Promise<{ hits: T[]; estimatedTotalHits?: number }>;
+  ): Promise<{ hits: T[]; totalHits?: number; totalPages?: number; estimatedTotalHits?: number }>;
+  getSettings(): Promise<{ searchableAttributes?: string[] | null }>;
 }
 
 /** Minimal surface of the `meilisearch` SDK client this wrapper depends on. */
@@ -349,6 +402,26 @@ export class MeiliClient {
     }
   }
 
+  /**
+   * The searchable attributes the engine has actually APPLIED to an index, or
+   * `null` when unconfigured or the read failed (TASK-522).
+   *
+   * {@link ensureIndex} is best-effort and does not wait for its settings task,
+   * so a rejected update is invisible to it. Reading the settings back is how the
+   * reindex script proves a settings change reached the engine instead of
+   * assuming it did. `null` means "unknown", never "no attributes".
+   */
+  async getSearchableAttributes(indexUid: string = PRODUCTS_INDEX): Promise<string[] | null> {
+    if (!this.client) return null;
+    try {
+      const settings = await this.client.index(indexUid).getSettings();
+      return settings?.searchableAttributes ?? null;
+    } catch (err) {
+      this.logger.warn({ err, indexUid }, 'Meilisearch getSettings failed');
+      return null;
+    }
+  }
+
   /** Remove a single document by id (best-effort). */
   async deleteDocument(id: string, indexUid: string = PRODUCTS_INDEX): Promise<void> {
     if (!this.client) return;
@@ -382,9 +455,10 @@ export class MeiliClient {
   }
 
   /**
-   * Query the products index. Returns the hits + estimated total, or `null` when
-   * the engine is unconfigured or the request fails — the caller treats `null`
-   * as "not available" and falls back to Postgres.
+   * Query an index. Returns the hits + the exact total (page/hitsPerPage queries
+   * only — see {@link MeiliSearchResult.totalHits}), or `null` when the engine is
+   * unconfigured or the request fails — the caller treats `null` as "not
+   * available" and falls back to Postgres.
    */
   async search<T extends IndexedDocument = ProductSearchDocument>(
     query: string,
@@ -395,7 +469,7 @@ export class MeiliClient {
     try {
       const res = await this.client.index(indexUid).search<T>(query, options);
       const hits = res.hits ?? [];
-      return { hits, estimatedTotalHits: res.estimatedTotalHits ?? hits.length };
+      return { hits, totalHits: typeof res.totalHits === 'number' ? res.totalHits : null };
     } catch (err) {
       this.logger.warn(
         { err, indexUid, query },

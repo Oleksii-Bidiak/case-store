@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { CacheService } from '../src/cache/cache.service';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
@@ -180,6 +181,16 @@ describe('Widening the catalogue facet set: backfill + the TEXT rule (integratio
         BrandRepository,
         DeviceRepository,
         CatalogueFilterResolver,
+        // A cache that never hits (TASK-708): these specs mutate rows between
+        // reads and assert on the LIVE counts, which is the uncached half.
+        {
+          provide: CacheService,
+          useValue: {
+            get: async () => null,
+            set: async () => undefined,
+            delByPrefix: async () => undefined,
+          },
+        },
       ],
     }).compile();
 

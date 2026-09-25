@@ -8,7 +8,7 @@ import {
   UNRESOLVED_FILTER_ID,
 } from '../catalog-filter/catalogue-filter.resolver';
 import { PublicProductEntity } from '../product/entities';
-import { MeiliClient } from './meili.client';
+import { MeiliClient, SEARCH_MAX_TOTAL_HITS } from './meili.client';
 import {
   SearchService,
   PRODUCTS_INDEX_SETTINGS,
@@ -65,6 +65,8 @@ function makeIndexSource(overrides: Record<string, unknown> = {}) {
     price: { toString: () => '29.99' },
     compareAtPrice: { toString: () => '39.99' },
     slug: 'iphone-15-case',
+    sku: 'SPG-IP15-CL',
+    keywords: [],
     categoryId: 'cat-1',
     categoryName: 'Cases',
     brandId: 'brand-1',
@@ -98,7 +100,11 @@ describe('SearchService', () => {
   let repo: jest.Mocked<
     Pick<
       ProductRepository,
-      'findAll' | 'findByIdsForCards' | 'findOneForIndex' | 'findManyForIndex' | 'findBySku'
+      | 'findAll'
+      | 'findByIdsForCards'
+      | 'findOneForIndex'
+      | 'findManyForIndex'
+      | 'findBySkuIgnoringCase'
     >
   >;
   let categoryRepo: jest.Mocked<Pick<CategoryRepository, 'findAncestorIds' | 'findSubtreeIds'>> & {
@@ -131,7 +137,7 @@ describe('SearchService', () => {
       findManyForIndex: jest.fn(),
       // TASK-417: the exact-article-number lookup. Answers "no such code" by
       // default so every other test keeps taking the full-text path.
-      findBySku: jest.fn().mockResolvedValue(null),
+      findBySkuIgnoringCase: jest.fn().mockResolvedValue(null),
     };
     // TASK-236: by default a category's ancestor chain is just itself; the
     // toDocument tests override it to prove the rollup expansion. `findSubtreeIds`
@@ -178,8 +184,15 @@ describe('SearchService', () => {
     });
 
     it('configures searchable/filterable/sortable attributes + typo tolerance', () => {
+      // `sku` sits right after `name` (TASK-522): a query matching an article
+      // number is the strongest signal a shopper can give, so under the
+      // `attribute` ranking rule it must outrank a mention in a description.
+      // `keywords` (TASK-558) follow: an admin tag is a deliberate "this product
+      // IS about X", stronger than X merely appearing in the description.
       expect(PRODUCTS_INDEX_SETTINGS.searchableAttributes).toEqual([
         'name',
+        'sku',
+        'keywords',
         'description',
         'categoryName',
         'brandName',
@@ -198,6 +211,15 @@ describe('SearchService', () => {
       ]);
       expect(PRODUCTS_INDEX_SETTINGS.sortableAttributes).toEqual(['price', 'createdAt']);
       expect(PRODUCTS_INDEX_SETTINGS.typoTolerance).toBeDefined();
+    });
+
+    it('never typo-corrects an article number (TASK-522)', () => {
+      // «IP16» is one typo away from «IP15»: typo tolerance on a code would hand a
+      // shopper looking for an iPhone 16 part the iPhone 15 one — a wrong fit,
+      // not a near miss. Words stay typo-tolerant; only the code is exact.
+      expect(PRODUCTS_INDEX_SETTINGS.typoTolerance).toEqual(
+        expect.objectContaining({ enabled: true, disableOnAttributes: ['sku'] }),
+      );
     });
 
     it('ships the bidirectional UA↔EN synonym map (TASK-200)', () => {
@@ -227,6 +249,9 @@ describe('SearchService', () => {
           categoryName: 'Cases',
           brandId: 'brand-1',
           brandName: 'Spigen',
+          // TASK-522: the article number is IN the document, so the engine can
+          // answer a partial code («SPG-IP15») and a code inside a phrase.
+          sku: 'SPG-IP15-CL',
           inStock: true,
           isActive: true,
           createdAt: new Date('2026-01-01T00:00:00.000Z').getTime(),
@@ -275,7 +300,86 @@ describe('SearchService', () => {
       }
     });
 
-    // A null source means "not on sale" — missing, soft-deleted, deactivated, or
+    it('carries the admin keywords into the document (TASK-558)', async () => {
+      // The admin's own tag vocabulary — words a shopper types that the name
+      // and description do not contain. Stored since TASK-437, searchable only
+      // once they are in the document.
+      repo.findOneForIndex.mockResolvedValue(
+        makeIndexSource({ keywords: ['ударостійкий', 'подарунок'] }) as never,
+      );
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].keywords).toEqual(['ударостійкий', 'подарунок']);
+    });
+
+    it('indexes a product without keywords as an empty list, never undefined', async () => {
+      repo.findOneForIndex.mockResolvedValue(makeIndexSource({ keywords: [] }) as never);
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].keywords).toEqual([]);
+    });
+
+    it('derives cross-script search terms from the keywords too (TASK-558)', async () => {
+      // A tag is exactly the kind of word the name does not say — and the
+      // shopper may type it in the other script («магсейф» for a "MagSafe" tag).
+      repo.findOneForIndex.mockResolvedValue(
+        makeIndexSource({
+          name: 'Чохол прозорий',
+          categoryName: 'Чохли',
+          brandName: null,
+          sku: null,
+          keywords: ['MagSafe'],
+        }) as never,
+      );
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].searchTerms).toContain('магсейф');
+    });
+
+    it('carries keywords on the full reindex path as well (TASK-558)', async () => {
+      repo.findManyForIndex.mockResolvedValueOnce({
+        items: [makeIndexSource({ keywords: ['подарунок'] })] as never,
+      });
+
+      await service.reindexAll();
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].keywords).toEqual(['подарунок']);
+    });
+
+    it('indexes a product with no article number as sku null', async () => {
+      repo.findOneForIndex.mockResolvedValue(makeIndexSource({ sku: null }) as never);
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].sku).toBeNull();
+    });
+
+    it('derives cross-script search terms from the article number too (TASK-522)', async () => {
+      // Nothing in the name, category or brand says «iPhone» — only the code does.
+      repo.findOneForIndex.mockResolvedValue(
+        makeIndexSource({
+          name: 'Захисне скло 9H',
+          categoryName: 'Скло',
+          brandName: null,
+          sku: 'GLASS-IPHONE-15',
+        }) as never,
+      );
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].searchTerms).toContain('айфон');
+    });
+
+    // A null source means "not on sale"— missing, soft-deleted, deactivated, or
     // (TASK-297) filed in a DEACTIVATED CATEGORY. This delete is therefore the ONLY
     // de-indexing path a category withdrawal needs: `afterStatusChange` pushes the
     // subtree's products back through `indexProduct`, each resolves to null here, and
@@ -385,6 +489,31 @@ describe('SearchService', () => {
       expect(count).toBe(0);
       expect(meili.indexDocuments).not.toHaveBeenCalled();
     });
+
+    it('joins a reindex already in flight instead of starting a second one (TASK-522)', async () => {
+      // The boot reindex and `npm run search:reindex` (or the admin button) land
+      // on the same process: two concurrent passes would double the engine work
+      // and race their prunes.
+      repo.findManyForIndex.mockResolvedValue({ items: [makeIndexSource()] as never });
+
+      const [first, second] = await Promise.all([service.reindexAll(), service.reindexAll()]);
+
+      expect(first).toBe(1);
+      expect(second).toBe(1);
+      expect(repo.findManyForIndex).toHaveBeenCalledTimes(1);
+
+      // Once it settles, the next call is a fresh pass.
+      await service.reindexAll();
+      expect(repo.findManyForIndex).toHaveBeenCalledTimes(2);
+    });
+
+    it('lets the next reindex run after a failed one', async () => {
+      repo.findManyForIndex.mockRejectedValueOnce(new Error('db down'));
+      await expect(service.reindexAll()).rejects.toThrow('db down');
+
+      repo.findManyForIndex.mockResolvedValue({ items: [makeIndexSource()] as never });
+      await expect(service.reindexAll()).resolves.toBe(1);
+    });
   });
 
   // ─── search (Meili path + fallback) ──────────────────────────────────────────
@@ -393,7 +522,7 @@ describe('SearchService', () => {
     it('hydrates Meili hit ids into product cards, preserving order', async () => {
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-2' }, { id: 'product-1' }] as never,
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       repo.findByIdsForCards.mockResolvedValue([
         makeProduct({ id: 'product-1' }),
@@ -402,15 +531,54 @@ describe('SearchService', () => {
 
       const result = await service.search('case', 1, 20);
 
+      // page/hitsPerPage, not limit/offset (TASK-537): only that mode makes the
+      // engine count EXACTLY, and the storefront draws numbered pages from it.
       expect(meili.search).toHaveBeenCalledWith('case', {
-        limit: 20,
-        offset: 0,
+        page: 1,
+        hitsPerPage: 20,
         filter: ['isActive = true'],
       });
       // Order follows Meili relevance (product-2 first), not the repo order.
       expect(result.data.map((p) => p.id)).toEqual(['product-2', 'product-1']);
       expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
+    });
+
+    it('asks the engine for the requested page by number (TASK-537)', async () => {
+      meili.search.mockResolvedValue({ hits: [{ id: 'product-1' }] as never, totalHits: 25 });
+      repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
+
+      const result = await service.search('case', 2, 12);
+
+      expect(meili.search).toHaveBeenCalledWith(
+        'case',
+        expect.objectContaining({ page: 2, hitsPerPage: 12 }),
+      );
+      expect(meili.search.mock.calls[0][1]).not.toHaveProperty('offset');
+      expect(meili.search.mock.calls[0][1]).not.toHaveProperty('limit');
+      // Page count comes from the engine's exact total: 25 hits / 12 = 3 pages.
+      expect(result.meta).toEqual({ total: 25, page: 2, limit: 12, totalPages: 3 });
+    });
+
+    it('answers a page past the end from the engine, not from Postgres (TASK-537)', async () => {
+      // The engine matched 25 products, the URL asks for page 9 of 12-per-page.
+      // Falling back on "zero hits" here swapped in Postgres' different result set
+      // and different total under the same URL; the engine has answered — the page
+      // is simply past the end.
+      meili.search.mockResolvedValue({ hits: [], totalHits: 25 });
+
+      const result = await service.search('case', 9, 12);
+
+      expect(repo.findAll).not.toHaveBeenCalled();
+      expect(result.data).toEqual([]);
+      expect(result.meta).toEqual({ total: 25, page: 9, limit: 12, totalPages: 3 });
+    });
+
+    it('caps the deepest reachable page at the index maxTotalHits (TASK-537)', () => {
+      // Meilisearch never counts past `pagination.maxTotalHits`, so the page list
+      // it feeds is bounded by it too. Pinned explicitly rather than inherited, so
+      // raising it is a deliberate settings change that a reindex pushes.
+      expect(PRODUCTS_INDEX_SETTINGS.pagination).toEqual({ maxTotalHits: SEARCH_MAX_TOTAL_HITS });
     });
 
     it('falls back to Postgres when Meili returns null (engine down)', async () => {
@@ -439,7 +607,7 @@ describe('SearchService', () => {
       // The state a freshly deployed server is in: the engine is up and healthy,
       // the index is empty because seeding wrote straight to Postgres. Trusting
       // that answer showed "nothing found" over a full catalogue.
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
 
       const result = await service.search('case', 1, 20);
@@ -469,7 +637,7 @@ describe('SearchService', () => {
       // and with a non-zero `total` — is the stale index talking, not the data.
       meili.search.mockResolvedValue({
         hits: [{ id: 'gone-1' }, { id: 'gone-2' }] as never,
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       repo.findByIdsForCards.mockResolvedValue([] as never);
       repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
@@ -490,7 +658,7 @@ describe('SearchService', () => {
     it('translates every facet into the engine filter expression', async () => {
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-1' }] as never,
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
 
@@ -522,7 +690,7 @@ describe('SearchService', () => {
     it('sends no sort for relevance and a price sort otherwise', async () => {
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-1' }] as never,
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
 
@@ -612,7 +780,7 @@ describe('SearchService', () => {
     beforeEach(() => {
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-1' }] as never,
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
     });
@@ -665,21 +833,44 @@ describe('SearchService', () => {
 
   describe('search by article number', () => {
     it('answers a code-shaped query with the single product it names', async () => {
-      repo.findBySku.mockResolvedValue({ id: 'product-1' } as never);
+      repo.findBySkuIgnoringCase.mockResolvedValue({ id: 'product-1' } as never);
       repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
 
       const result = await service.search('RN13PRO-BK2', 1, 20);
 
-      expect(repo.findBySku).toHaveBeenCalledWith('RN13PRO-BK2');
+      expect(repo.findBySkuIgnoringCase).toHaveBeenCalledWith('RN13PRO-BK2');
       // An SKU is a code, not a phrase — it must not be typo-corrected or ranked.
       expect(meili.search).not.toHaveBeenCalled();
       expect(result.data.map((p) => p.id)).toEqual(['product-1']);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
     });
 
+    it.each([
+      ['up', true],
+      ['down', false],
+    ])(
+      'answers a lower-case code with the upper-case position, engine %s (TASK-542)',
+      async (_label, engineUp) => {
+        // The engine does index `sku` since TASK-522, but it would answer `ip15-1`
+        // with `IP15-1` AND `IP15-10`, `IP15-12`… (the hyphen splits the code and
+        // the last word is a prefix). SF-SRCH-09 wants exactly the one position,
+        // so this pre-pass still decides — and the Postgres fallback's `contains`
+        // already ignores case. `ip15-1` must find `IP15-1` either way.
+        meili.isConfigured.mockReturnValue(engineUp);
+        repo.findBySkuIgnoringCase.mockResolvedValue({ id: 'product-1' } as never);
+        repo.findByIdsForCards.mockResolvedValue([makeProduct()] as never);
+
+        const result = await service.search('ip15-1', 1, 20);
+
+        expect(repo.findBySkuIgnoringCase).toHaveBeenCalledWith('ip15-1');
+        expect(meili.search).not.toHaveBeenCalled();
+        expect(result.data.map((p) => p.id)).toEqual(['product-1']);
+      },
+    );
+
     it('falls through to full text when the code matches nothing', async () => {
-      repo.findBySku.mockResolvedValue(null);
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      repo.findBySkuIgnoringCase.mockResolvedValue(null);
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
 
       const result = await service.search('RN13PRO-BK2', 1, 20);
@@ -689,9 +880,9 @@ describe('SearchService', () => {
     });
 
     it('drops the hit when the product is no longer card-visible (withdrawn category)', async () => {
-      repo.findBySku.mockResolvedValue({ id: 'product-1' } as never);
+      repo.findBySkuIgnoringCase.mockResolvedValue({ id: 'product-1' } as never);
       repo.findByIdsForCards.mockResolvedValue([] as never);
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [], total: 0 } as never);
 
       const result = await service.search('RN13PRO-BK2', 1, 20);
@@ -701,14 +892,14 @@ describe('SearchService', () => {
     });
 
     it('does not run for an ordinary phrase, a later page, or a filtered query', async () => {
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [], total: 0 } as never);
 
       await service.search('case', 1, 20);
       await service.search('RN13PRO-BK2', 2, 20);
       await service.search('RN13PRO-BK2', 1, 20, { brandId: 'brand-1' });
 
-      expect(repo.findBySku).not.toHaveBeenCalled();
+      expect(repo.findBySkuIgnoringCase).not.toHaveBeenCalled();
     });
   });
 
@@ -721,7 +912,7 @@ describe('SearchService', () => {
       // for a withdrawn category never reaches the dropdown (TASK-297).
       meili.search.mockResolvedValue({
         hits: [{ id: 'product-2' }, { id: 'product-1' }] as never,
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       repo.findByIdsForCards.mockResolvedValue([
         makeProduct({ id: 'product-1', name: 'iPhone 15 Case', slug: 'iphone-15-case' }),
@@ -758,7 +949,7 @@ describe('SearchService', () => {
       // it, so it vanishes from the dropdown instead of surfacing a dead PDP link.
       meili.search.mockResolvedValue({
         hits: [{ id: 'live-product' }, { id: 'withdrawn-product' }] as never,
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       repo.findByIdsForCards.mockResolvedValue([
         makeProduct({ id: 'live-product', slug: 'live' }),
@@ -797,7 +988,7 @@ describe('SearchService', () => {
     });
 
     it('falls back to Postgres when the index answers with zero hits (TASK-376)', async () => {
-      meili.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+      meili.search.mockResolvedValue({ hits: [], totalHits: 0 });
       repo.findAll.mockResolvedValue({ products: [makeProduct()], total: 1 } as never);
 
       const res = await service.suggest('iphone');

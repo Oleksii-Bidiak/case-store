@@ -199,6 +199,12 @@ services:
       # journeys silently used the code default `http://localhost:3000` — dead
       # links in production that no health check can see.
       STORE_CLIENT_URL: ${NEXT_PUBLIC_APP_URL:?NEXT_PUBLIC_APP_URL must be set}
+      # Extra hosts an `<img>` in rich text (pages, blog, product descriptions)
+      # may load from; the sanitizer drops every other host on save (TASK-758).
+      # Same reasoning as STORE_CLIENT_URL: it is the storefront's own list —
+      # the CSP `img-src` refuses any host outside NEXT_PUBLIC_IMAGE_HOSTS — so
+      # it is fed from that one variable, never set separately.
+      IMAGE_HOSTS: ${NEXT_PUBLIC_IMAGE_HOSTS:-}
       UPLOAD_DEST: ${UPLOAD_DEST:-./uploads}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}

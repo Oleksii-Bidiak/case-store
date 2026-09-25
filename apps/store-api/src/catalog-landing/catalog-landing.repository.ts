@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
-import { buildProductListWhere, ProductListWhereParams } from '../product/product-list-where';
+import { buildProductListWhere } from '../product/product-list-where';
+import { publicProductSql } from '../product/product-visibility';
 
 /** One (category × device model) bucket: the pair and how many products sit in it. */
 export interface CompatPairCount {
@@ -16,8 +18,10 @@ export interface CompatPairCount {
  * 15 Pro».
  *
  * ── Why the visibility scope is not written here ────────────────────────────
- * Both reads narrow through {@link buildProductListWhere}, the one listing
- * `where` builder TASK-489 extracted. That is not tidiness, it is the
+ * The single-page count narrows through {@link buildProductListWhere}, the one
+ * listing `where` builder TASK-489 extracted; the all-pairs aggregate, which
+ * Prisma cannot express, uses that predicate's SQL twin `publicProductSql`
+ * (TASK-711) rather than a hand-written copy. That is not tidiness, it is the
  * acceptance criterion: «кількість сторінок = активні пари з ≥1 товаром» only
  * holds while "≥1 товар" means exactly what the listing on that page will show.
  * A second, hand-written predicate here is how a page gets published for a
@@ -33,47 +37,48 @@ export class CatalogLandingRepository {
    * model) pair in one read — the single source that decides both which pages
    * exist and what the sitemap lists.
    *
-   * One query, tallied in memory rather than a `groupBy`: Prisma can only group
-   * by scalar columns OF THE GROUPED MODEL, and the two halves of this pair live
-   * on different tables (`product_device_compat.device_model_id` and
-   * `products.category_id`). The alternative was raw SQL — which would have had
-   * to restate the visibility predicate by hand, i.e. exactly the drift this
-   * class exists to avoid. The row set is one row per (product, compatible
-   * model), the smallest join in the catalogue.
+   * Always the PUBLIC scope — the only scope a landing page is ever measured in.
    *
-   * `deviceModel: { isActive: true }` matches the PUBLIC device list
-   * (`GET /device-models`, active-only): a model the storefront's own filter
-   * will not offer must not have a landing page either. The owning device BRAND
-   * is deliberately not consulted — no public read filters on it today, and
-   * inventing that rule only here would make this endpoint disagree with the
-   * device picker.
+   * ONE `GROUP BY` in Postgres (TASK-711): the result is one row per pair, not
+   * one per (product, compatible model). Prisma's `groupBy` cannot express it —
+   * it groups only by scalar columns of the grouped model, and the two halves of
+   * this pair live on different tables (`product_device_compat.device_model_id`
+   * and `products.category_id`) — so this is raw SQL. The visibility half is NOT
+   * restated by hand: it is {@link publicProductSql}, the SQL twin that sits
+   * beside `PUBLIC_PRODUCT_WHERE` and is typed against its keys, and the
+   * int-spec proves this aggregate equal to a tally over
+   * `buildProductListWhere` on every hidden-product case.
+   *
+   * `COUNT(*)` counts products: `(product_id, device_model_id)` is the compat
+   * table's primary key, so a product is in a pair at most once.
+   *
+   * `dm.is_active = true` matches the PUBLIC device list (`GET /device-models`,
+   * active-only): a model the storefront's own filter will not offer must not
+   * have a landing page either. The owning device BRAND is deliberately not
+   * consulted — no public read filters on it today, and inventing that rule only
+   * here would make this endpoint disagree with the device picker.
    */
-  async countCompatPairs(params: ProductListWhereParams): Promise<CompatPairCount[]> {
-    const rows = await this.prisma.productDeviceCompat.findMany({
-      where: {
-        product: buildProductListWhere(params),
-        deviceModel: { isActive: true },
-      },
-      select: { deviceModelId: true, product: { select: { categoryId: true } } },
-    });
+  async countCompatPairs(): Promise<CompatPairCount[]> {
+    const rows = await this.prisma.$queryRaw<
+      Array<{ categoryId: string; deviceModelId: string; productCount: number | bigint }>
+    >(Prisma.sql`
+      SELECT p.category_id AS "categoryId",
+             pdc.device_model_id AS "deviceModelId",
+             COUNT(*)::int AS "productCount"
+      FROM product_device_compat pdc
+      JOIN products p ON p.id = pdc.product_id
+      JOIN categories c ON c.id = p.category_id
+      JOIN device_models dm ON dm.id = pdc.device_model_id
+      WHERE ${publicProductSql({ product: 'p', category: 'c' })}
+        AND dm.is_active = true
+      GROUP BY p.category_id, pdc.device_model_id
+    `);
 
-    const tally = new Map<string, CompatPairCount>();
-    for (const row of rows) {
-      // `|` cannot occur in a uuid, so the composite key is unambiguous without
-      // escaping either half.
-      const key = `${row.product.categoryId}|${row.deviceModelId}`;
-      const bucket = tally.get(key);
-      if (bucket) {
-        bucket.productCount += 1;
-      } else {
-        tally.set(key, {
-          categoryId: row.product.categoryId,
-          deviceModelId: row.deviceModelId,
-          productCount: 1,
-        });
-      }
-    }
-    return [...tally.values()];
+    return rows.map((row) => ({
+      categoryId: row.categoryId,
+      deviceModelId: row.deviceModelId,
+      productCount: Number(row.productCount),
+    }));
   }
 
   /**

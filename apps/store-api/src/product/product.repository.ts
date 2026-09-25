@@ -11,6 +11,7 @@ import {
 import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
 import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 import { COLOR_SPEC_KEY, isColorAxis, withColorAxis } from '../common/color-axis';
+import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 
 /**
  * Interactive-transaction budget for the bulk colour write (TASK-487). See the
@@ -181,6 +182,18 @@ export interface ProductIndexSource {
   price: { toString(): string };
   compareAtPrice: { toString(): string } | null;
   slug: string;
+  /**
+   * Article number (TASK-522), or null when the product has none. Indexed so the
+   * engine answers a partial code or a code inside a phrase; the exact-code
+   * pre-pass in `SearchService` still owns a whole-code query.
+   */
+  sku: string | null;
+  /**
+   * Admin-curated tags (TASK-437) — the words a shopper types that the name and
+   * description do not contain. Indexed and searchable since TASK-558; empty
+   * when the admin set none.
+   */
+  keywords: string[];
   categoryId: string;
   categoryName: string;
   /** Manufacturer id/name joined for the search brand facet (TASK-189). */
@@ -351,6 +364,22 @@ export class ProductRepository {
   }
 
   /**
+   * Find a product by id as a SHOPPER may see it (TASK-781): on sale, not
+   * deleted, in an active category — {@link PUBLIC_PRODUCT_WHERE}. A draft, a
+   * withdrawn product or one in a hidden category resolves to null, exactly like
+   * an id that never existed, so a public route built on it cannot be used as an
+   * existence oracle for hidden positions (nor leak their prices).
+   *
+   * {@link findById} stays the admin read: it returns drafts on purpose.
+   */
+  findPublicById(id: string): Promise<(Product & { brand: ProductBrandSummary | null }) | null> {
+    return this.prisma.product.findFirst({
+      where: { id, ...PUBLIC_PRODUCT_WHERE },
+      include: { brand: { select: BRAND_SUMMARY_SELECT } },
+    });
+  }
+
+  /**
    * Find a product by slug.
    * Returns the product record or null if not found. Excludes soft-deleted rows.
    */
@@ -367,6 +396,42 @@ export class ProductRepository {
   }
 
   /**
+   * Find the ONE product an article number names, ignoring case (TASK-542) —
+   * the search pre-pass, where a shopper typing `ip15-1` means `IP15-1`. The
+   * Postgres full-text fallback's `contains` already ignores case, so a
+   * case-sensitive lookup here made the answer depend on whether Meilisearch
+   * was up (the engine indexes `sku` since TASK-522, but only this lookup
+   * answers a whole code with exactly one position).
+   *
+   * `sku` is unique only case-SENSITIVELY, so two positions may differ by case
+   * alone. The exact-case one wins; with no exact spelling and more than one
+   * case-variant, the code names no single position and this answers `null`,
+   * letting search fall through to full text, which lists them all.
+   *
+   * Excludes soft-deleted rows; visibility is the caller's re-read (the card
+   * read gates on {@link PUBLIC_PRODUCT_WHERE}). Admin uniqueness checks keep
+   * using the case-sensitive {@link findBySku}, matching the database constraint.
+   *
+   * Prisma compiles an insensitive `equals` to `ILIKE`, so `_` and `%` in the
+   * code would be wildcards (`ab_1` matching `AB-1`); they and the escape
+   * character are escaped first. The integration spec pins this against a real
+   * Postgres, so a Prisma change in how it compiles the filter fails loudly.
+   */
+  async findBySkuIgnoringCase(sku: string): Promise<Product | null> {
+    const exact = await this.prisma.product.findFirst({ where: { sku, deletedAt: null } });
+    if (exact) return exact;
+
+    const variants = await this.prisma.product.findMany({
+      where: {
+        sku: { equals: sku.replace(/[\\%_]/g, '\\$&'), mode: 'insensitive' },
+        deletedAt: null,
+      },
+      take: 2,
+    });
+    return variants.length === 1 ? variants[0] : null;
+  }
+
+  /**
    * Find a product position by slug with its category, group (sibling positions
    * + attribute axes), and images. Used for the public product detail endpoint.
    * Excludes soft-deleted rows. Sibling positions are the other active,
@@ -380,17 +445,21 @@ export class ProductRepository {
    *   Either way the public PDP surfaces a 404 (TASK-145). Pass `false` to bypass
    *   both filters for staff preview of withdrawn products (TASK-155);
    *   soft-deleted rows remain excluded regardless.
+   *
+   * The sibling positions are ALWAYS filtered by {@link PUBLIC_PRODUCT_WHERE},
+   * preview or not (TASK-782): the variant switcher links to them, and a sibling
+   * whose category was withdrawn is a link to a 404. The preview shows what the
+   * storefront will show, so it gets the same list.
    */
   async findBySlugWithRelations(
     slug: string,
     options?: { activeOnly?: boolean },
   ): Promise<ProductWithRelations['product'] | null> {
     const product = await this.prisma.product.findFirst({
-      where: {
-        slug,
-        deletedAt: null,
-        ...((options?.activeOnly ?? true) ? { isActive: true, category: { isActive: true } } : {}),
-      },
+      where:
+        (options?.activeOnly ?? true)
+          ? { slug, ...PUBLIC_PRODUCT_WHERE }
+          : { slug, deletedAt: null },
       include: {
         category: {
           select: { id: true, name: true, slug: true },
@@ -403,7 +472,7 @@ export class ProductRepository {
               select: { name: true, sortOrder: true },
             },
             positions: {
-              where: { isActive: true, deletedAt: null },
+              where: PUBLIC_PRODUCT_WHERE,
               orderBy: { positionOrder: 'asc' },
               select: {
                 id: true,
@@ -718,8 +787,9 @@ export class ProductRepository {
   }
 
   /**
-   * Attach ratings, primary image and variant siblings to a page of products
-   * (shared by every sort path). Runs the three lookups in one batched pass to
+   * Attach ratings, primary image and variant siblings to a page of products.
+   * The ONE card hydration (TASK-814): shared by every listing sort path and by
+   * {@link findByIdsForCards}. Runs the three lookups in one batched pass to
    * avoid N+1 queries.
    */
   private async enrichProducts(products: ProductWithBrand[]) {
@@ -791,7 +861,7 @@ export class ProductRepository {
       return new Map();
     }
     const rows = await this.prisma.product.findMany({
-      where: { groupId: { in: groupIds }, isActive: true, deletedAt: null },
+      where: { groupId: { in: groupIds }, ...PUBLIC_PRODUCT_WHERE },
       orderBy: { positionOrder: 'asc' },
       select: {
         id: true,
@@ -836,34 +906,13 @@ export class ProductRepository {
       return [];
     }
     const products = await this.prisma.product.findMany({
-      where: {
-        id: { in: ids },
-        isActive: true,
-        deletedAt: null,
-        category: { isActive: true },
-      },
+      where: { id: { in: ids }, ...PUBLIC_PRODUCT_WHERE },
       include: { brand: { select: BRAND_SUMMARY_SELECT } },
     });
-
-    const productIds = products.map((p) => p.id);
-    const groupIds = [
-      ...new Set(products.map((p) => p.groupId).filter((id): id is string => id != null)),
-    ];
-    const [ratings, primaryImages, variantSiblings] = await Promise.all([
-      this.getRatingsByProductId(productIds),
-      this.getPrimaryImagesByProductId(productIds),
-      this.getVariantSiblingsByGroupId(groupIds),
-    ]);
-    return products.map((product) => {
-      const rating = ratings.get(product.id);
-      return {
-        ...product,
-        ratingAverage: rating?.ratingAverage ?? null,
-        ratingCount: rating?.ratingCount ?? 0,
-        primaryImage: primaryImages.get(product.id) ?? null,
-        variantSiblings: product.groupId ? (variantSiblings.get(product.groupId) ?? []) : undefined,
-      };
-    });
+    // One hydration for every card (TASK-814): this used to be a copy of
+    // enrichProducts, so a field added to the listing never reached search
+    // results, «Ви переглядали» or the manual carousels.
+    return this.enrichProducts(products);
   }
 
   /**
@@ -909,7 +958,7 @@ export class ProductRepository {
    */
   async findOneForIndex(id: string): Promise<ProductIndexSource | null> {
     const product = await this.prisma.product.findFirst({
-      where: { id, isActive: true, deletedAt: null, category: { isActive: true } },
+      where: { id, ...PUBLIC_PRODUCT_WHERE },
       include: {
         category: { select: { name: true } },
         brand: { select: { name: true } },
@@ -934,7 +983,7 @@ export class ProductRepository {
    */
   async findManyForIndex(skip: number, take: number): Promise<{ items: ProductIndexSource[] }> {
     const rows = await this.prisma.product.findMany({
-      where: { isActive: true, deletedAt: null, category: { isActive: true } },
+      where: PUBLIC_PRODUCT_WHERE,
       orderBy: { createdAt: 'asc' },
       skip,
       take,
@@ -969,6 +1018,8 @@ export class ProductRepository {
       price: product.price,
       compareAtPrice: product.compareAtPrice,
       slug: product.slug,
+      sku: product.sku,
+      keywords: product.keywords ?? [],
       categoryId: product.categoryId,
       categoryName: product.category?.name ?? '',
       brandId: product.brandId,

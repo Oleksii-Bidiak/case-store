@@ -6,10 +6,9 @@ import {
   UpdateDeviceBrandInput,
   CreateDeviceModelInput,
   UpdateDeviceModelInput,
-  FindModelsParams,
   FindAdminBrandsParams,
 } from './device.repository';
-import { DeviceBrandEntity, DeviceModelEntity } from './entities';
+import { DeviceBrandEntity, DeviceModelEntity, DeviceModelListItemEntity } from './entities';
 import { DeviceModelListQueryDto, DeviceBrandListQueryDto, ReorderDeviceBrandsDto } from './dto';
 import { generateSlug } from '../common/utils';
 import { reorderErrorToHttp } from '../common/reorder';
@@ -37,7 +36,7 @@ interface AdminDeviceBrandListResponse {
 }
 
 interface DeviceModelListResponse {
-  data: DeviceModelEntity[];
+  data: DeviceModelListItemEntity[];
 }
 
 interface PaginatedDeviceModelsResponse {
@@ -173,17 +172,18 @@ export class DeviceService {
 
   // ─── Device models ────────────────────────────────────────────────────────
 
-  /** Public — list active device models (optionally scoped to a brand/search). */
+  /**
+   * Public — list active device models (optionally scoped to a brand/search) as
+   * the light {@link DeviceModelListItemEntity} projection (TASK-702): the
+   * compat-landing SEO copy stays on the landing and admin routes.
+   */
   async getModels(query: DeviceModelListQueryDto): Promise<DeviceModelListResponse> {
-    const params: FindModelsParams = {
-      page: 1,
+    const models = await this.deviceRepository.findPublicModels({
       limit: query.limit ?? 200,
       deviceBrandId: query.deviceBrandId,
       search: query.search,
-      isActive: true,
-    };
-    const { models } = await this.deviceRepository.findModels(params);
-    return { data: models.map((m) => DeviceModelEntity.fromPrisma(m)) };
+    });
+    return { data: models.map((m) => DeviceModelListItemEntity.fromPrisma(m)) };
   }
 
   /** Admin — paginated device model list across all statuses (or an explicit filter). */
@@ -238,13 +238,21 @@ export class DeviceService {
         throw new NotFoundException('Device brand not found');
       }
     }
-    if (input.slug !== undefined && input.slug !== model.slug) {
-      const existing = await this.deviceRepository.findModelBySlug(input.slug);
+    const slugChanging = input.slug !== undefined && input.slug !== model.slug;
+    if (slugChanging) {
+      const existing = await this.deviceRepository.findModelBySlug(input.slug!);
       if (existing && existing.id !== id) {
         throw new ConflictException('A device model with this slug already exists');
       }
     }
-    await this.deviceRepository.updateModel(id, input);
+    // TASK-699: the model slug is the second segment of the public compatibility
+    // landing `/catalog/<категорія>/<модель>`, so a rename records a 308 in the
+    // SlugRedirect ledger — but only for a model that was visible BEFORE this write
+    // (plan 147 §Design Decision 3, as for categories): a hidden model's URL never
+    // answered. The PRE-write snapshot matters when one call both renames and hides.
+    const slugRename =
+      model.isActive && slugChanging ? { oldSlug: model.slug, newSlug: input.slug! } : undefined;
+    await this.deviceRepository.updateModel(id, input, slugRename);
     const withBrand = await this.deviceRepository.findModelById(id);
     return DeviceModelEntity.fromPrisma(withBrand!);
   }

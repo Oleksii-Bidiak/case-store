@@ -70,6 +70,7 @@ function makePost(): BlogPostEntity {
     coverImageUrl: null,
     coverBlurDataUrl: null,
     authorName: "Автор",
+    author: null,
     readingMinutes: 5,
     featured: false,
     listed: true,

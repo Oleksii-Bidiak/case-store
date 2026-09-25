@@ -2,6 +2,7 @@ import { IsString, IsOptional, IsInt, IsEnum, MaxLength, Min, Matches } from 'cl
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { PageKind } from '@prisma/client';
+import { MAX_RICH_TEXT_CONTENT_LENGTH } from '../../common/sanitize';
 import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { PublishFieldsDto } from '../../publishing';
 import { HUB_SLUGS } from '../hub-routes';
@@ -21,8 +22,12 @@ export class CreatePageDto extends PublishFieldsDto {
   @ApiProperty({
     description: 'Page body as HTML (Tiptap output)',
     example: '<h2>Section</h2><p>Content…</p>',
+    maxLength: MAX_RICH_TEXT_CONTENT_LENGTH,
   })
   @IsString()
+  @MaxLength(MAX_RICH_TEXT_CONTENT_LENGTH, {
+    message: `Content must be at most ${MAX_RICH_TEXT_CONTENT_LENGTH} characters`,
+  })
   content!: string;
 
   @ApiProperty({

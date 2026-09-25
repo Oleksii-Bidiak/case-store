@@ -2,7 +2,8 @@ import { ApiProperty } from '@nestjs/swagger';
 import { ProductImageEntity } from './product-image.entity';
 import { ProductBrandEntity } from './product-brand.entity';
 import { ProductCompatibleDeviceEntity } from './product-compatible-device.entity';
-import { ProductSpecEntity, buildProductSpecs, type SpecValueRow } from './product-spec.entity';
+import { ProductSpecEntity } from './product-spec.entity';
+import { mapSharedProductFields, type ProductSource } from './product-source';
 
 /**
  * Domain entity representing a product.
@@ -241,81 +242,11 @@ export class ProductEntity {
    * mutation path cannot silently re-introduce the bug, it has to pass the
    * aggregate (`ProductRepository.getReservedQtyByProductId`) or fail to compile.
    */
-  static fromPrisma(product: {
-    id: string;
-    name: string;
-    slug: string;
-    description: string | null;
-    price: { toString(): string };
-    compareAtPrice: { toString(): string } | null;
-    sku: string | null;
-    stock: number;
-    reservedQty: number;
-    categoryId: string;
-    groupId?: string | null;
-    brand?: { id: string; name: string; slug: string; logo: string | null } | null;
-    attributes?: unknown;
-    positionOrder?: number;
-    isActive: boolean;
-    metaTitle?: string | null;
-    metaDescription?: string | null;
-    keywords?: string[];
-    ogImage?: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-    ratingAverage?: number | null;
-    ratingCount?: number;
-    primaryImage?: {
-      id: string;
-      url: string;
-      alt: string | null;
-      sortOrder: number;
-      isPrimary: boolean;
-    } | null;
-    compatibleDeviceModels?: Array<{
-      id: string;
-      name: string;
-      slug: string;
-      brandName: string;
-    }>;
-    /** Structured spec-value rows (joined with their definition), TASK-191. */
-    specValues?: SpecValueRow[];
-  }): ProductEntity {
-    const entity = new ProductEntity();
-    entity.id = product.id;
-    entity.name = product.name;
-    entity.slug = product.slug;
-    entity.description = product.description;
-    entity.price = product.price.toString();
-    entity.compareAtPrice = product.compareAtPrice ? product.compareAtPrice.toString() : null;
-    entity.sku = product.sku;
+  static fromPrisma(product: ProductSource & { reservedQty: number }): ProductEntity {
+    const entity = Object.assign(new ProductEntity(), mapSharedProductFields(product));
     entity.stock = product.stock;
     entity.reservedQty = product.reservedQty;
     entity.physicalQty = entity.stock + entity.reservedQty;
-    entity.categoryId = product.categoryId;
-    entity.groupId = product.groupId ?? null;
-    entity.brand = product.brand ? ProductBrandEntity.fromPrisma(product.brand) : null;
-    entity.attributes = (product.attributes as Record<string, string> | null) ?? {};
-    entity.positionOrder = product.positionOrder ?? 0;
-    entity.isActive = product.isActive;
-    entity.metaTitle = product.metaTitle ?? null;
-    entity.metaDescription = product.metaDescription ?? null;
-    entity.keywords = product.keywords ?? [];
-    entity.ogImage = product.ogImage ?? null;
-    entity.createdAt = product.createdAt;
-    entity.updatedAt = product.updatedAt;
-    entity.ratingAverage =
-      product.ratingAverage != null ? Math.round(product.ratingAverage * 10) / 10 : null;
-    entity.ratingCount = product.ratingCount ?? 0;
-    entity.primaryImage = product.primaryImage
-      ? ProductImageEntity.fromPrisma(product.primaryImage)
-      : null;
-    entity.compatibleDeviceModels = (product.compatibleDeviceModels ?? []).map((m) =>
-      ProductCompatibleDeviceEntity.fromSummary(m),
-    );
-    const { specs, highlights } = buildProductSpecs(product.specValues);
-    entity.specs = specs;
-    entity.highlights = highlights;
     return entity;
   }
 }

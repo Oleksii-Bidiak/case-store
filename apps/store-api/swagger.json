@@ -985,6 +985,46 @@
         ]
       }
     },
+    "/api/addon-services/admin/resolved-for-product/{productId}": {
+      "get": {
+        "operationId": "addonServiceControllerAdminResolveForProduct",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "description": "Product UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved add-ons",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvedAddonListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Product not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Resolve the add-on services applicable to any non-deleted product (admin)",
+        "tags": [
+          "AddonServices"
+        ]
+      }
+    },
     "/api/addon-services/admin/{id}": {
       "get": {
         "operationId": "addonServiceControllerFindById",
@@ -2065,7 +2105,8 @@
                 "PAGE",
                 "BLOG_POST",
                 "PRODUCT",
-                "CATEGORY"
+                "CATEGORY",
+                "DEVICE_MODEL"
               ]
             }
           },
@@ -2077,6 +2118,17 @@
             "schema": {
               "maxLength": 255,
               "example": "stara-adresa",
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "Namespace of the dead address — for PAGE the page kind (LEGAL / INFO) whose route was requested. Omit for other entities.",
+            "schema": {
+              "maxLength": 32,
+              "example": "LEGAL",
               "type": "string"
             }
           }
@@ -2324,7 +2376,7 @@
             "access-token": []
           }
         ],
-        "summary": "Rebuild the product search index (admin)",
+        "summary": "Rebuild the product and blog search indexes (admin)",
         "tags": [
           "Search"
         ]
@@ -3661,7 +3713,7 @@
             "description": "Images reordered"
           },
           "400": {
-            "description": "Invalid payload (e.g. >1 primary)"
+            "description": "Invalid payload (>1 primary, or an image listed twice)"
           },
           "401": {
             "description": "Unauthenticated"
@@ -3670,7 +3722,7 @@
             "description": "Forbidden — admin access required"
           },
           "404": {
-            "description": "Product not found"
+            "description": "Product not found, or an image id that is not one of its images"
           }
         },
         "security": [
@@ -5121,6 +5173,49 @@
           }
         ],
         "summary": "List a category's effective (own + inherited) templates (admin)",
+        "tags": [
+          "Attribute Definitions"
+        ]
+      }
+    },
+    "/api/categories/{categoryId}/facet-ceiling": {
+      "get": {
+        "operationId": "attributeDefinitionControllerFacetCeiling",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": true,
+            "in": "path",
+            "description": "Category UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacetCeilingReportResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Category not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List categories of a subtree that declare more facets than the storefront shows",
         "tags": [
           "Attribute Definitions"
         ]
@@ -16022,6 +16117,11 @@
             "type": "string",
             "description": "The current live slug the old address permanently redirects to",
             "example": "nova-adresa"
+          },
+          "newScope": {
+            "type": "string",
+            "description": "Namespace of the live address — for PAGE the page kind (LEGAL / INFO) whose route serves newSlug. Absent for single-namespace entities.",
+            "example": "INFO"
           }
         },
         "required": [
@@ -16606,10 +16706,16 @@
             "type": "number",
             "description": "Number of products re-indexed",
             "example": 128
+          },
+          "blogPosts": {
+            "type": "number",
+            "description": "Number of published blog posts re-indexed",
+            "example": 12
           }
         },
         "required": [
-          "indexed"
+          "indexed",
+          "blogPosts"
         ]
       },
       "ReindexResponseEnvelope": {
@@ -17902,6 +18008,67 @@
           "sortOrder"
         ]
       },
+      "DeviceModelListItemEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Device model unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "deviceBrandId": {
+            "type": "string",
+            "description": "Owning device brand ID",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Device model name",
+            "example": "iPhone 15 Pro"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL-friendly slug",
+            "example": "iphone-15-pro"
+          }
+        },
+        "required": [
+          "id",
+          "deviceBrandId",
+          "name",
+          "slug"
+        ]
+      },
+      "DeviceBrandListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Active device brands",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceBrandEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "DeviceModelListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Active device models (id, brand, name, slug)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceModelListItemEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "DeviceModelEntity": {
         "type": "object",
         "properties": {
@@ -17972,36 +18139,6 @@
           "name",
           "slug",
           "isActive"
-        ]
-      },
-      "DeviceBrandListResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "description": "Active device brands",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DeviceBrandEntity"
-            }
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "DeviceModelListResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "description": "Active device models",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DeviceModelEntity"
-            }
-          }
-        },
-        "required": [
-          "data"
         ]
       },
       "DeviceBrandResponseEnvelope": {
@@ -18400,6 +18537,74 @@
             "example": {
               "id": "550e8400-e29b-41d4-a716-446655440000"
             }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "FacetCeilingCategoryEntity": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Category UUID",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category name",
+            "example": "Зарядки"
+          },
+          "facetCount": {
+            "type": "number",
+            "description": "How many facets the category declares (own + inherited)",
+            "example": 7
+          },
+          "overflowLabels": {
+            "description": "Labels of the facets past the ceiling in template order — the ones the storefront drops first when every facet has values (an ACTIVE facet is still always offered)",
+            "example": [
+              "Комплектація"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "categoryId",
+          "categoryName",
+          "facetCount",
+          "overflowLabels"
+        ]
+      },
+      "FacetCeilingReportEntity": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Most facets the storefront offers per category (MAX_SPEC_FACETS)",
+            "example": 6
+          },
+          "categories": {
+            "description": "Categories of the subtree over the ceiling; empty when none is",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FacetCeilingCategoryEntity"
+            }
+          }
+        },
+        "required": [
+          "limit",
+          "categories"
+        ]
+      },
+      "FacetCeilingReportResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FacetCeilingReportEntity"
           }
         },
         "required": [
@@ -21696,7 +21901,8 @@
           "content": {
             "type": "string",
             "description": "Page body as HTML (Tiptap output)",
-            "example": "<h2>Section</h2><p>Content…</p>"
+            "example": "<h2>Section</h2><p>Content…</p>",
+            "maxLength": 100000
           },
           "slug": {
             "type": "string",
@@ -21785,7 +21991,8 @@
           "content": {
             "type": "string",
             "description": "Page body as HTML (Tiptap output)",
-            "example": "<h2>Section</h2><p>Content…</p>"
+            "example": "<h2>Section</h2><p>Content…</p>",
+            "maxLength": 100000
           },
           "slug": {
             "type": "string",
@@ -21841,6 +22048,39 @@
             "example": 10
           }
         }
+      },
+      "BlogPostAuthorSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Author id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Author display name",
+            "example": "Ірина Ткач"
+          },
+          "role": {
+            "type": "string",
+            "description": "Short role shown under the name",
+            "example": "Редакторка гайдів",
+            "nullable": true
+          },
+          "bio": {
+            "type": "string",
+            "description": "Plain-text bio shown in the article author card",
+            "example": "Пише покрокові гайди про зарядки, павербанки й аудіо.",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "bio"
+        ]
       },
       "BlogPostCategorySummary": {
         "type": "object",
@@ -21909,8 +22149,18 @@
           },
           "authorName": {
             "type": "string",
-            "description": "Author display name",
+            "description": "Author display name (the byline)",
             "example": "Олег Пилипенко"
+          },
+          "author": {
+            "description": "The linked author with role and bio (TASK-554). Null only for a post with a blank byline.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BlogPostAuthorSummary"
+              }
+            ]
           },
           "readingMinutes": {
             "type": "number",
@@ -22009,6 +22259,7 @@
           "excerpt",
           "content",
           "authorName",
+          "author",
           "featured",
           "listed",
           "category",
@@ -22291,7 +22542,8 @@
           "content": {
             "type": "string",
             "description": "Post body as HTML (Tiptap output)",
-            "example": "<h2>Дизайн</h2><p>Текст…</p>"
+            "example": "<h2>Дизайн</h2><p>Текст…</p>",
+            "maxLength": 100000
           },
           "excerpt": {
             "type": "string",
@@ -22406,7 +22658,8 @@
           "content": {
             "type": "string",
             "description": "Post body as HTML (Tiptap output)",
-            "example": "<h2>Дизайн</h2><p>Текст…</p>"
+            "example": "<h2>Дизайн</h2><p>Текст…</p>",
+            "maxLength": 100000
           },
           "excerpt": {
             "type": "string",

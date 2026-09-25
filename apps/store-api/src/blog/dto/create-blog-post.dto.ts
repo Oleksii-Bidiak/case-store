@@ -12,6 +12,7 @@ import {
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { MAX_RICH_TEXT_CONTENT_LENGTH } from '../../common/sanitize';
 import { IsKeywordsField, IsOgImageField } from '../../common/validators';
 import { PublishFieldsDto } from '../../publishing';
 
@@ -29,8 +30,12 @@ export class CreateBlogPostDto extends PublishFieldsDto {
   @ApiProperty({
     description: 'Post body as HTML (Tiptap output)',
     example: '<h2>Дизайн</h2><p>Текст…</p>',
+    maxLength: MAX_RICH_TEXT_CONTENT_LENGTH,
   })
   @IsString()
+  @MaxLength(MAX_RICH_TEXT_CONTENT_LENGTH, {
+    message: `Content must be at most ${MAX_RICH_TEXT_CONTENT_LENGTH} characters`,
+  })
   content!: string;
 
   @ApiProperty({

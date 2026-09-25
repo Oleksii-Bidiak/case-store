@@ -4,6 +4,7 @@ import type {
   UpdateDeviceModelDto,
 } from "@/entities/device";
 import { dict } from "@/shared/config";
+import { UUID_PATTERN } from "@/shared/lib/uuid";
 
 const e = dict.deviceModelForm.errors;
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -13,7 +14,8 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
  * a string on the INPUT side, transformed to a number on OUTPUT.
  */
 export const deviceModelSchema = z.object({
-  deviceBrandId: z.string().trim().uuid(e.brandRequired),
+  // Shape only — the brand id was read off the database (TASK-808).
+  deviceBrandId: z.string().trim().regex(UUID_PATTERN, e.brandRequired),
   name: z.string().trim().min(1, e.nameRequired).max(255, e.nameMax),
   slug: z
     .string()

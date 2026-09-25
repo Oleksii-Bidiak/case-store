@@ -13,6 +13,16 @@ export interface CompatibleDeviceModelSummary {
 }
 
 /**
+ * A group position touched by the bulk compat write (TASK-826): enough for the
+ * service to evict both detail cache keys and to index or de-index it.
+ */
+export interface GroupCompatPosition {
+  id: string;
+  slug: string;
+  isActive: boolean;
+}
+
+/**
  * ProductDeviceCompatRepository — Prisma access for the Product ↔ DeviceModel
  * compatibility join (TASK-190). Co-located in the `product` module (compat is a
  * property of the position, not a peer aggregate — doc 099 §3), split out of
@@ -89,21 +99,24 @@ export class ProductDeviceCompatRepository {
 
   /**
    * Apply the same compat set to every position sharing `groupId` (the bulk admin
-   * action — doc 099 §3). Returns the number of positions updated. Runs the
-   * per-position delete+insert inside a single transaction.
+   * action — doc 099 §3). Returns the number of positions updated and each
+   * position's `id`, `slug` and `isActive` — the caller needs the slug to evict
+   * the public (slug-keyed) detail cache and the real `isActive` to index or
+   * de-index each position (TASK-826). Runs the per-position delete+insert inside
+   * a single transaction.
    */
   async setDeviceCompatForGroup(
     groupId: string,
     deviceModelIds: string[],
-  ): Promise<{ updatedCount: number; productIds: string[] }> {
+  ): Promise<{ updatedCount: number; positions: GroupCompatPosition[] }> {
     const uniqueIds = [...new Set(deviceModelIds)];
     const positions = await this.prisma.product.findMany({
       where: { groupId, deletedAt: null },
-      select: { id: true },
+      select: { id: true, slug: true, isActive: true },
     });
     const productIds = positions.map((p) => p.id);
     if (productIds.length === 0) {
-      return { updatedCount: 0, productIds: [] };
+      return { updatedCount: 0, positions: [] };
     }
     await this.prisma.$transaction([
       this.prisma.productDeviceCompat.deleteMany({ where: { productId: { in: productIds } } }),
@@ -118,7 +131,7 @@ export class ProductDeviceCompatRepository {
           ]
         : []),
     ]);
-    return { updatedCount: productIds.length, productIds };
+    return { updatedCount: productIds.length, positions };
   }
 
   /** Count non-deleted positions in a group (to validate the bulk action). */

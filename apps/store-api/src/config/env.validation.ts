@@ -377,6 +377,23 @@ export class EnvironmentVariables {
   @IsString()
   PUBLIC_BASE_URL?: string;
 
+  // ─── Rich-text image hosts (TASK-758) ─────────────────────────────────────
+  // Extra hosts an `<img>` inside rich text (pages, blog, product descriptions)
+  // may load from, besides relative paths and PUBLIC_BASE_URL. Any other host is
+  // stripped by the sanitizer on save. It mirrors the storefront's
+  // NEXT_PUBLIC_IMAGE_HOSTS — compose passes that SAME value — because the
+  // storefront CSP `img-src` refuses every host not on that list anyway: an image
+  // the API kept but the CSP blocks is a broken picture nobody gets told about.
+  // Same shape: bare hostnames, comma-separated; empty = none.
+  @IsOptional()
+  @IsString()
+  @Matches(/^[\sa-z0-9.,-]*$/i, {
+    message:
+      'IMAGE_HOSTS must be comma-separated bare hostnames — no scheme, port, path or ' +
+      'wildcard. e.g. "cdn.mystore.ua,images.brand.com"',
+  })
+  IMAGE_HOSTS?: string;
+
   // ─── Refresh-token cleanup (TASK-102) ───────────────────────────────────────
   // Scheduled purge of expired/revoked RefreshToken rows. Both optional with
   // safe defaults so the app boots without any extra configuration.

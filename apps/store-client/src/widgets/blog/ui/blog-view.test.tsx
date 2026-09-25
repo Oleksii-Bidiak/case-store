@@ -17,6 +17,8 @@ function makePost(overrides: Partial<BlogPostView> = {}): BlogPostView {
     title: "Post title",
     excerpt: "Post excerpt",
     author: "Author Name",
+    authorRole: null,
+    authorBio: null,
     date: "28 черв. 2026",
     publishedAt: "2026-06-28T09:00:00.000Z",
     read: "6 хв",

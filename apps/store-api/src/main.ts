@@ -14,6 +14,7 @@ import { CsrfService } from './csrf';
 import { buildHelmetOptions } from './config/security.config';
 import { applyProxyTrust } from './config/trust-proxy';
 import { HttpExceptionFilter } from './common/filters';
+import { JSON_BODY_LIMIT_BYTES } from './common/sanitize';
 import { LoggingInterceptor } from './common/interceptors';
 
 async function bootstrap() {
@@ -47,6 +48,12 @@ async function bootstrap() {
 
   // Parse cookies from incoming requests (needed for refresh token + CSRF)
   app.use(cookieParser());
+
+  // Explicit JSON body limit (TASK-571), derived from the longest rich-text
+  // field the DTOs accept — see rich-text.constants.ts. Registering the json
+  // parser here replaces Nest's default one (it skips a parser already
+  // mounted), whose implicit 100 kB sat below a legal page at the DTO limit.
+  app.useBodyParser('json', { limit: JSON_BODY_LIMIT_BYTES });
 
   // CSRF protection (signed double-submit cookie) on the cookie-authenticated,
   // state-changing routes. Mounted at the Express layer AFTER cookieParser so

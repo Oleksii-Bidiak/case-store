@@ -13,11 +13,19 @@ describe('applySlugRename (chain-collapse reducer)', () => {
     oldSlug: string,
     newSlug: string,
     entity: SlugRedirectEntity = PAGE,
-  ): SlugRedirectRow => ({ entity, oldSlug, newSlug });
+  ): SlugRedirectRow => ({ entity, scope: '', oldSlug, newScope: '', newSlug });
+
+  /** A row between two namespaced addresses (TASK-566), written `scope:slug` on each side. */
+  const scoped = (from: string, to: string, entity: SlugRedirectEntity = PAGE): SlugRedirectRow => {
+    const [scope, oldSlug] = from.split(':');
+    const [newScope, newSlug] = to.split(':');
+    return { entity, scope, oldSlug, newScope, newSlug };
+  };
 
   /** Order-insensitive row-set equality. */
   const expectRows = (actual: SlugRedirectRow[], expected: SlugRedirectRow[]) => {
-    const key = (r: SlugRedirectRow) => `${r.entity}|${r.oldSlug}|${r.newSlug}`;
+    const key = (r: SlugRedirectRow) =>
+      `${r.entity}|${r.scope}:${r.oldSlug}|${r.newScope}:${r.newSlug}`;
     expect([...actual].map(key).sort()).toEqual([...expected].map(key).sort());
   };
 
@@ -100,5 +108,59 @@ describe('applySlugRename (chain-collapse reducer)', () => {
     const result = applySlugRename([row('B', 'C'), row('Z', 'C')], PAGE, 'C', 'D');
 
     expectRows(result, [row('B', 'D'), row('Z', 'D'), row('C', 'D')]);
+  });
+
+  // ── TASK-566: an address is (scope, slug). Pages live in two namespaces, so
+  //    `/legal/B` and `/info/B` are different addresses of different pages. ──
+
+  const LEGAL = (slug: string) => ({ scope: 'LEGAL', slug });
+  const INFO = (slug: string) => ({ scope: 'INFO', slug });
+
+  it('case 10: the same slug in another scope is a different address — never overwritten', () => {
+    const result = applySlugRename([scoped('LEGAL:B', 'LEGAL:C')], PAGE, INFO('B'), INFO('D'));
+
+    expectRows(result, [scoped('LEGAL:B', 'LEGAL:C'), scoped('INFO:B', 'INFO:D')]);
+  });
+
+  it('case 11: the collapse repoints only aliases of the renamed ADDRESS, not of its bare slug', () => {
+    const result = applySlugRename(
+      [scoped('LEGAL:A', 'LEGAL:B'), scoped('INFO:Z', 'INFO:B')],
+      PAGE,
+      LEGAL('B'),
+      LEGAL('C'),
+    );
+
+    expectRows(result, [
+      scoped('LEGAL:A', 'LEGAL:C'),
+      scoped('INFO:Z', 'INFO:B'),
+      scoped('LEGAL:B', 'LEGAL:C'),
+    ]);
+  });
+
+  it('case 12: a kind move keeping the slug is a rename between addresses', () => {
+    const result = applySlugRename([], PAGE, LEGAL('B'), INFO('B'));
+
+    expectRows(result, [scoped('LEGAL:B', 'INFO:B')]);
+  });
+
+  it('case 13: a kind move collapses the chain onto the new address', () => {
+    const result = applySlugRename([scoped('LEGAL:A', 'LEGAL:B')], PAGE, LEGAL('B'), INFO('B'));
+
+    expectRows(result, [scoped('LEGAL:A', 'INFO:B'), scoped('LEGAL:B', 'INFO:B')]);
+  });
+
+  it('case 14: moving back leaves no self-loop and no 2-cycle', () => {
+    const result = applySlugRename([scoped('LEGAL:B', 'INFO:B')], PAGE, INFO('B'), LEGAL('B'));
+
+    expectRows(result, [scoped('INFO:B', 'LEGAL:B')]);
+    for (const r of result) {
+      expect(`${r.scope}:${r.oldSlug}`).not.toBe(`${r.newScope}:${r.newSlug}`);
+    }
+  });
+
+  it('case 15: a bare-string rename stays in the empty scope (single-namespace entities)', () => {
+    const result = applySlugRename([], CATEGORY, 'B', 'C');
+
+    expectRows(result, [row('B', 'C', CATEGORY)]);
   });
 });

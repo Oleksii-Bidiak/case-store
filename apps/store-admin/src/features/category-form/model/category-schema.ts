@@ -6,6 +6,7 @@ import {
   KEYWORD_MAX_LENGTH,
   parseKeywords,
 } from "@/shared/lib/seo";
+import { UUID_PATTERN } from "@/shared/lib/uuid";
 
 const e = dict.categoryForm.errors;
 const seoErrors = dict.seoFields.errors;
@@ -44,7 +45,8 @@ export const categorySchema = z.object({
   parentId: z
     .string()
     .trim()
-    .uuid(e.parentInvalid)
+    // Shape only — the parent was read off the database (TASK-808).
+    .regex(UUID_PATTERN, e.parentInvalid)
     .optional()
     .or(z.literal("")),
 

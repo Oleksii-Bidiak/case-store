@@ -87,7 +87,7 @@ export class AdminReviewQueryDto {
     format: 'uuid',
   })
   @IsOptional()
-  @IsUUID()
+  @IsUUID('loose')
   productId?: string;
 
   @ApiProperty({

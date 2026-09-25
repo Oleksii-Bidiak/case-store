@@ -6,6 +6,7 @@ import {
   KEYWORD_MAX_LENGTH,
   parseKeywords,
 } from "@/shared/lib/seo";
+import { UUID_PATTERN } from "@/shared/lib/uuid";
 
 const e = dict.productForm.errors;
 const seoErrors = dict.seoFields.errors;
@@ -23,8 +24,6 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 function isBlankRichText(html: string): boolean {
   return !html.replace(/<[^>]*>/g, "").trim();
 }
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
  * Validation schema for the admin product form.
@@ -88,7 +87,9 @@ export const productSchema = z.object({
     .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), e.stockInt)
     .transform((v) => (v === undefined || v === "" ? 0 : Number(v))),
 
-  categoryId: z.string().uuid(e.categoryRequired),
+  // Shape only, like groupId/brandId below and the API's @IsUUID('loose'): the
+  // category was read off the database, never typed (TASK-808).
+  categoryId: z.string().regex(UUID_PATTERN, e.categoryRequired),
 
   // "" represents "no group" — mapped to undefined in the DTO.
   groupId: z

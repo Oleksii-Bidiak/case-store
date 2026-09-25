@@ -1,6 +1,7 @@
 import { INestApplication, NotFoundException } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
+import { Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
@@ -9,6 +10,8 @@ import { CatalogLandingService } from '../src/catalog-landing/catalog-landing.se
 import { CategoryRepository } from '../src/category/category.repository';
 import { DeviceRepository } from '../src/device/device.repository';
 import { PrismaService } from '../src/prisma';
+import { buildProductListWhere } from '../src/product/product-list-where';
+import { PUBLIC_PRODUCT_WHERE, publicProductSql } from '../src/product/product-visibility';
 import { SlugRedirectRepository } from '../src/slug-redirect';
 
 /**
@@ -318,6 +321,73 @@ describe('Compatibility landing pages (integration)', () => {
     });
   });
 
+  describe('the GROUP BY aggregate equals the shared predicate (TASK-711)', () => {
+    /**
+     * `countCompatPairs` is raw SQL because Prisma cannot group across two
+     * tables. These tests are what makes that safe: on a fixture that trips
+     * every hidden-product case (inactive, soft-deleted, inactive category,
+     * inactive model), the SQL answers exactly what the Prisma predicate does.
+     */
+    it('publicProductSql selects exactly the rows PUBLIC_PRODUCT_WHERE does', async () => {
+      const viaSql = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT p.id FROM products p
+        JOIN categories c ON c.id = p.category_id
+        WHERE ${publicProductSql({ product: 'p', category: 'c' })}
+          AND p.id IN (${Prisma.join(productIds)})
+      `);
+      const viaPrisma = await prisma.product.findMany({
+        where: { ...PUBLIC_PRODUCT_WHERE, id: { in: productIds } },
+        select: { id: true },
+      });
+
+      const sqlIds = viaSql.map((row) => row.id).sort();
+      // Non-vacuous: some fixture products are visible and some are not.
+      expect(sqlIds.length).toBeGreaterThan(0);
+      expect(sqlIds.length).toBeLessThan(productIds.length);
+      expect(sqlIds).toEqual(viaPrisma.map((row) => row.id).sort());
+    });
+
+    it('reports the same pairs and counts as a tally over buildProductListWhere', async () => {
+      // The pre-TASK-711 implementation, kept here as the oracle: every public
+      // compat row fetched through the shared listing builder, tallied in JS.
+      const rows = await prisma.productDeviceCompat.findMany({
+        where: {
+          product: {
+            ...buildProductListWhere({ isActive: true, categoryActiveOnly: true }),
+            id: { in: productIds },
+          },
+          deviceModel: { isActive: true },
+        },
+        select: { deviceModelId: true, product: { select: { categoryId: true } } },
+      });
+      const oracle = new Map<string, number>();
+      for (const row of rows) {
+        const key = `${row.product.categoryId}|${row.deviceModelId}`;
+        oracle.set(key, (oracle.get(key) ?? 0) + 1);
+      }
+
+      const ours = new Set([childId, deadId, leafId]);
+      const pairs = await app.get(CatalogLandingRepository).countCompatPairs();
+      const actual = new Map(
+        pairs
+          .filter((pair) => ours.has(pair.categoryId))
+          .map((pair) => [`${pair.categoryId}|${pair.deviceModelId}`, pair.productCount]),
+      );
+
+      expect(actual).toEqual(oracle);
+      expect(actual).toEqual(
+        new Map([
+          [`${childId}|${phoneId}`, 2],
+          [`${childId}|${tabletId}`, 1],
+          [`${leafId}|${phoneId}`, 1],
+        ]),
+      );
+      for (const count of actual.values()) {
+        expect(typeof count).toBe('number');
+      }
+    });
+  });
+
   describe('one page (the existence check the route 404s on)', () => {
     it('resolves a real pair, with the same count the list reports', async () => {
       const page = await service.getCompatPage(slug('child'), slug('phone'));
@@ -330,8 +400,9 @@ describe('Compatibility landing pages (integration)', () => {
     it('agrees with the list on EVERY page, count included', async () => {
       // The acceptance criterion in its strongest form: the two reads are
       // separate queries (an aggregate over the compat table vs. a subtree
-      // COUNT), and the only thing keeping them honest is the shared
-      // `buildProductListWhere`. If one ever grows a filter the other lacks,
+      // COUNT), and the only thing keeping them honest is the shared predicate
+      // — `buildProductListWhere` on one side, its SQL twin `publicProductSql`
+      // on the other (TASK-711). If one ever grows a filter the other lacks,
       // this is where it shows up.
       const pages = await fixturePages();
       for (const page of pages) {

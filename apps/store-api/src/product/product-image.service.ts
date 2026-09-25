@@ -170,6 +170,19 @@ export class ProductImageService {
   /**
    * Update ordering and the primary flag for a product's images. At most one
    * image may be marked primary.
+   *
+   * Every id must be one of THIS product's images (TASK-783), the same
+   * ownership rule {@link deleteImage} enforces: an id of another product's
+   * image, or one that does not exist, answers 404 and nothing is written —
+   * before, the first switched the other product's cover and the second reached
+   * Prisma as P2025 and answered 500. The check lives in the repository's write
+   * (every update scoped by `productId`, the batch rolled back on a miss) rather
+   * than in a read before it, so an image deleted between the two cannot slip
+   * back into a 500.
+   *
+   * The payload may be partial. When it promotes an image, the repository demotes
+   * the product's current cover in the same transaction even if the payload does
+   * not mention it, so a product never ends up with two covers.
    */
   async reorderImages(productId: string, updates: ReorderImageInput[]): Promise<void> {
     const product = await this.productRepository.findById(productId);
@@ -177,9 +190,11 @@ export class ProductImageService {
       throw new NotFoundException('Product not found');
     }
 
-    const primaryCount = updates.filter((u) => u.isPrimary).length;
-    if (primaryCount > 1) {
+    if (updates.filter((u) => u.isPrimary).length > 1) {
       throw new BadRequestException('At most one image can be primary');
+    }
+    if (new Set(updates.map((u) => u.id)).size !== updates.length) {
+      throw new BadRequestException('Each image may be listed only once');
     }
 
     const payload: UpdateImageInput[] = updates.map((u) => ({
@@ -187,7 +202,9 @@ export class ProductImageService {
       sortOrder: u.sortOrder,
       isPrimary: u.isPrimary,
     }));
-    await this.imageRepository.updateMany(payload);
+    if (!(await this.imageRepository.reorderForProduct(productId, payload))) {
+      throw new NotFoundException('Image not found');
+    }
     await this.evictProductCaches(productId, product.slug);
   }
 

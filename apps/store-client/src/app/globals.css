@@ -528,4 +528,53 @@ html {
   border-radius: 0 12px 12px 0;
   background: color-mix(in oklab, var(--color-primary) 6%, var(--color-card));
   font-style: italic;
+}/* Tables (TASK-548). Until these rules existed a table in a legal or info page
+   rendered as browser default — borderless rows of run-together text. The
+   values mirror `RICH_TEXT_PROSE` (shared/ui/rich-text.tsx), which styles the
+   same sanitized markup on the blog and the product page, at this body's type
+   scale. `table-layout: fixed` + full width is load-bearing, not cosmetic: it
+   keeps a wide table from pushing the page sideways on a phone (cells wrap
+   instead), because the sanitizer's allow-list has no wrapper element to give
+   the table its own scroll container. */
+.legal-doc-body table {
+  width: 100%;
+  margin: 0 0 18px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 15px;
+  line-height: 1.55;
+}
+.legal-doc-body caption {
+  caption-side: top;
+  padding-bottom: 8px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--color-muted-foreground);
+}
+.legal-doc-body th,
+.legal-doc-body td {
+  padding: 8px 12px;
+  border: 1px solid var(--color-border);
+  vertical-align: top;
+  text-align: left;
+  overflow-wrap: break-word;
+  color: var(--color-foreground);
+}
+.legal-doc-body th {
+  background: var(--color-muted);
+  font-weight: 600;
+}
+/* A totals row reads as the table's conclusion, not as one more data row. */
+.legal-doc-body tfoot td,
+.legal-doc-body tfoot th {
+  border-top-width: 2px;
+  font-weight: 600;
+}
+/* Tiptap wraps every cell's content in a paragraph; the body's paragraph
+   spacing would make each cell twice as tall as its text. */
+.legal-doc-body th p,
+.legal-doc-body td p {
+  margin: 0;
+  font-size: inherit;
+  line-height: inherit;
 }

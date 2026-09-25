@@ -31,7 +31,8 @@ function makeIndexMock(): jest.Mocked<MeiliIndexApi> {
     deleteDocuments: jest.fn().mockResolvedValue({ taskUid: 5 }),
     getDocuments: jest.fn().mockResolvedValue({ results: [], total: 0 }),
     waitForTask: jest.fn().mockResolvedValue({ status: 'succeeded' }),
-    search: jest.fn().mockResolvedValue({ hits: [], estimatedTotalHits: 0 }),
+    search: jest.fn().mockResolvedValue({ hits: [], totalHits: 0, totalPages: 0 }),
+    getSettings: jest.fn().mockResolvedValue({ searchableAttributes: ['name', 'sku'] }),
   };
 }
 
@@ -57,6 +58,7 @@ const DOC: ProductSearchDocument = {
   name: 'iPhone 15 Case',
   description: 'Clear case',
   slug: 'iphone-15-case',
+  sku: 'SPG-IP15-CL',
   price: 29.99,
   compareAtPrice: null,
   categoryIds: ['c1'],
@@ -118,6 +120,28 @@ describe('MeiliClient', () => {
       // null, NOT an empty set: "could not check" must never be read as
       // "index is empty", or the reindex prune would delete everything.
       await expect(client.listDocumentIds()).resolves.toBeNull();
+      await expect(client.getSearchableAttributes()).resolves.toBeNull();
+    });
+  });
+
+  // TASK-522: `ensureIndex` swallows a rejected settings update, so the reindex
+  // script reads the settings BACK to prove the engine applied them.
+  describe('getSearchableAttributes', () => {
+    it('reads the applied searchable attributes of the given index', async () => {
+      const index = makeIndexMock();
+      const sdk = makeClientMock(index);
+      const client = new MeiliClient(makeConfig({}), loggerMock, sdk);
+
+      await expect(client.getSearchableAttributes('blog_posts')).resolves.toEqual(['name', 'sku']);
+      expect(sdk.index).toHaveBeenCalledWith('blog_posts');
+    });
+
+    it('answers null — never an empty list — when the read fails', async () => {
+      const index = makeIndexMock();
+      index.getSettings.mockRejectedValueOnce(new Error('timeout'));
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.getSearchableAttributes()).resolves.toBeNull();
     });
   });
 
@@ -234,15 +258,30 @@ describe('MeiliClient', () => {
       expect(index.deleteAllDocuments).toHaveBeenCalled();
     });
 
-    it('search maps hits + estimatedTotalHits', async () => {
+    // TASK-537 — a numbered page list is drawn from the total, so the total has
+    // to be the engine's EXACT count. Meilisearch only computes one in
+    // page/hitsPerPage mode (`totalHits`); `estimatedTotalHits` is documented as
+    // inexact and used to overshoot into pages with no hits.
+    it('search maps hits + the exact totalHits of a page/hitsPerPage query', async () => {
       const index = makeIndexMock();
-      index.search.mockResolvedValue({ hits: [DOC], estimatedTotalHits: 1 });
+      index.search.mockResolvedValue({ hits: [DOC], totalHits: 21, totalPages: 2 });
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      const res = await client.search('iphone', { page: 2, hitsPerPage: 20 });
+
+      expect(index.search).toHaveBeenCalledWith('iphone', { page: 2, hitsPerPage: 20 });
+      expect(res).toEqual({ hits: [DOC], totalHits: 21 });
+    });
+
+    it('never passes an estimate off as a total: a limit query reports totalHits null', async () => {
+      const index = makeIndexMock();
+      index.search.mockResolvedValue({ hits: [DOC], estimatedTotalHits: 57 });
       const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
 
       const res = await client.search('iphone', { limit: 10 });
 
       expect(index.search).toHaveBeenCalledWith('iphone', { limit: 10 });
-      expect(res).toEqual({ hits: [DOC], estimatedTotalHits: 1 });
+      expect(res).toEqual({ hits: [DOC], totalHits: null });
     });
 
     it('health returns true when the engine reports "available"', async () => {

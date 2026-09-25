@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { WishlistRepository, WishlistWithItems } from './wishlist.repository';
 import { PrismaService } from '../prisma';
 import type { ResolvedWishlistIdentity } from './wishlist-identity.types';
+import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
 
 // ─── Mock PrismaService ──────────────────────────────────────────────────────
 
@@ -20,6 +21,7 @@ const prismaMock = {
   },
   product: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
   },
   $transaction: jest.fn(),
 };
@@ -58,6 +60,20 @@ describe('WishlistRepository', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     repository = new WishlistRepository(prismaMock as unknown as PrismaService);
+  });
+
+  describe('findProductForWishlistValidation (TASK-781)', () => {
+    it('accepts only a publicly visible product — a draft answers like a missing id', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+
+      const result = await repository.findProductForWishlistValidation('draft-1');
+
+      expect(result).toBeNull();
+      expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
+        where: { id: 'draft-1', ...PUBLIC_PRODUCT_WHERE },
+        select: { id: true },
+      });
+    });
   });
 
   describe('findOrCreate', () => {

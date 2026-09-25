@@ -33,8 +33,25 @@ describe('SlugRedirectController', () => {
         slug: 'old-slug',
       });
 
-      expect(mockService.lookup).toHaveBeenCalledWith(SlugRedirectEntity.BLOG_POST, 'old-slug');
+      expect(mockService.lookup).toHaveBeenCalledWith(
+        SlugRedirectEntity.BLOG_POST,
+        'old-slug',
+        undefined,
+      );
       expect(result).toEqual({ data: { newSlug: 'new-slug' } });
+    });
+
+    it('passes the namespace of the dead address through (TASK-566)', async () => {
+      mockService.lookup.mockResolvedValue({ newSlug: 'dostavka', newScope: 'INFO' });
+
+      const result = await controller.lookup({
+        entity: SlugRedirectEntity.PAGE,
+        slug: 'delivery',
+        scope: 'LEGAL',
+      });
+
+      expect(mockService.lookup).toHaveBeenCalledWith(SlugRedirectEntity.PAGE, 'delivery', 'LEGAL');
+      expect(result).toEqual({ data: { newSlug: 'dostavka', newScope: 'INFO' } });
     });
 
     it('throws NotFoundException when no redirect exists', async () => {

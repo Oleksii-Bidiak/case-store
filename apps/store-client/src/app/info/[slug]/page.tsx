@@ -109,20 +109,20 @@ export default async function InfoDocPage({ params }: InfoDocPageProps) {
   if (!page) {
     // TASK-285: an admin may have renamed the slug — and since TASK-435 they may
     // also have changed its KIND, which moves it to /legal/<slug> under the same
-    // slug and records nothing in the rename ledger. `resolvePageRedirect`
-    // answers both, and returns null for a real 404.
+    // slug. `resolvePageRedirect` answers both, and returns null for a real 404.
     //
-    // It also resolves the rename case THROUGH the page's kind, which matters
-    // here: the ledger is keyed by entity rather than by route, so a renamed
-    // LEGAL slug requested under /info/ used to 308 into another /info/ address
-    // that then 404s. It now 404s once, honestly.
+    // The ledger is keyed by ADDRESS — kind plus slug (TASK-566) — and asked
+    // about THIS route's kind: `/info/delivery` and `/legal/delivery` may be two
+    // pages with two rename histories, so a LEGAL rename recorded since then no
+    // longer answers an /info/ request (rows from before it answer both, as
+    // they always did — the migration copied them into each kind).
     //
     // For those status codes to actually reach the wire, this route deliberately
     // has NO route-level loading.tsx: a loading boundary streams a 200 shell
     // before permanentRedirect()/notFound() can set the status (same rationale
     // as /legal/[slug] and /categories/[slug]). The page is light — content is
     // server-fetched before render — so no inner <Suspense> skeleton either.
-    const target = await resolvePageRedirect(slug, `/info/${slug}`);
+    const target = await resolvePageRedirect(slug, "INFO", `/info/${slug}`);
     if (target) {
       permanentRedirect(target);
     }

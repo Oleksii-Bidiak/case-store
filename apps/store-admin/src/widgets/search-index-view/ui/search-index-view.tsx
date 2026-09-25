@@ -25,7 +25,9 @@ export function SearchIndexView() {
   const { mutate, isPending } = useReindexSearch({
     mutation: {
       onSuccess: (res) => {
-        toast.success(d.toastDone(res?.data?.indexed ?? 0));
+        toast.success(
+          d.toastDone(res?.data?.indexed ?? 0, res?.data?.blogPosts ?? 0),
+        );
       },
       onError: () => {
         toast.error(d.toastFailed);

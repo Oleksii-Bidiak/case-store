@@ -1,8 +1,14 @@
 import { Injectable } from '@nestjs/common';
-import { BlogCategory, BlogPost, Prisma, PublishStatus, SlugRedirectEntity } from '@prisma/client';
+import {
+  Author,
+  BlogCategory,
+  BlogPost,
+  Prisma,
+  PublishStatus,
+  SlugRedirectEntity,
+} from '@prisma/client';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
-import type { PublishablePort, RevalidateTarget } from '../publishing';
 import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
 
 /**
@@ -45,15 +51,30 @@ export interface SlugRenameInput {
   newSlug: string;
 }
 
-/** A BlogPost row with its category relation eagerly included. */
+/**
+ * A BlogPost row with its category (and, since TASK-554, its author) eagerly
+ * included. `author` is optional in the TYPE only so fixtures that predate the
+ * relation still type-check; every read below includes it.
+ */
 export type BlogPostWithCategory = BlogPost & {
   category: Pick<BlogCategory, 'id' | 'slug' | 'name'>;
+  author?: Pick<Author, 'id' | 'name' | 'role' | 'bio'> | null;
 };
 
-/** Common include so every returned post carries its category summary. */
-const CATEGORY_INCLUDE = {
+/** Common include so every returned post carries its category and author summary. */
+const POST_INCLUDE = {
   category: { select: { id: true, slug: true, name: true } },
+  author: { select: { id: true, name: true, role: true, bio: true } },
 } satisfies Prisma.BlogPostInclude;
+
+/**
+ * Link key for a byline (TASK-554): the trimmed name, or null for a blank one.
+ * The migration's backfill uses the same `btrim` so both paths agree.
+ */
+function authorKey(authorName: string): string | null {
+  const name = authorName.trim();
+  return name === '' ? null : name;
+}
 
 /**
  * Category + free-text + pagination filters shared by the public and the admin
@@ -182,22 +203,16 @@ export interface UpdateBlogCategoryInput {
  * Repository encapsulating all Prisma access for the Blog models (posts +
  * categories). Services depend on this class — never on PrismaClient directly.
  *
- * Also implements {@link PublishablePort}: registered under
- * `PUBLISHABLE_REPOSITORY` so the PublishingScheduler flips due scheduled posts
- * live on its cron tick.
+ * NOT the scheduler's publishing port itself (TASK-525): `BlogPublisher` is, so
+ * that a post flipped live by the cron is also indexed for search. This class
+ * only supplies the flip, {@link publishDuePosts}.
  */
 @Injectable()
-export class BlogRepository implements PublishablePort {
+export class BlogRepository {
   constructor(
     private readonly prisma: PrismaService,
     private readonly slugRedirectRepository: SlugRedirectRepository,
   ) {}
-
-  /** Cache target purged when scheduled posts go live (see PublishingScheduler). */
-  readonly revalidateTarget: RevalidateTarget = {
-    tags: ['blog'],
-    paths: ['/blog'],
-  };
 
   // ─── posts: public reads ────────────────────────────────────────────────────
 
@@ -238,7 +253,7 @@ export class BlogRepository implements PublishablePort {
     const [posts, total] = await Promise.all([
       this.prisma.blogPost.findMany({
         where,
-        include: CATEGORY_INCLUDE,
+        include: POST_INCLUDE,
         skip,
         take: limit,
         orderBy: [{ featured: 'desc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
@@ -260,7 +275,7 @@ export class BlogRepository implements PublishablePort {
   findPublishedBySlug(slug: string): Promise<BlogPostWithCategory | null> {
     return this.prisma.blogPost.findFirst({
       where: { slug, status: PublishStatus.PUBLISHED },
-      include: CATEGORY_INCLUDE,
+      include: POST_INCLUDE,
     });
   }
 
@@ -279,7 +294,7 @@ export class BlogRepository implements PublishablePort {
     const [posts, total] = await Promise.all([
       this.prisma.blogPost.findMany({
         where,
-        include: CATEGORY_INCLUDE,
+        include: POST_INCLUDE,
         skip,
         take: limit,
         orderBy: [{ createdAt: 'desc' }],
@@ -292,7 +307,7 @@ export class BlogRepository implements PublishablePort {
 
   /** Find a post by ID regardless of status (admin use). */
   findById(id: string): Promise<BlogPostWithCategory | null> {
-    return this.prisma.blogPost.findUnique({ where: { id }, include: CATEGORY_INCLUDE });
+    return this.prisma.blogPost.findUnique({ where: { id }, include: POST_INCLUDE });
   }
 
   /**
@@ -320,7 +335,7 @@ export class BlogRepository implements PublishablePort {
         status: PublishStatus.PUBLISHED,
         ...listedWhere(includeUnlisted),
       },
-      include: CATEGORY_INCLUDE,
+      include: POST_INCLUDE,
     });
   }
 
@@ -331,67 +346,102 @@ export class BlogRepository implements PublishablePort {
 
   // ─── posts: writes ──────────────────────────────────────────────────────────
 
-  /** Create a post. Unique-slug violation bubbles up for the service to map. */
+  /**
+   * Resolve the Author row a byline links to (TASK-554), creating it on first
+   * use — the admin form still takes a free-text name, so a new name is a new
+   * author (with no role/bio until someone writes them). Blank byline → null.
+   * The upsert has an empty `update` and a unique `where`, so Postgres runs it as
+   * a native `INSERT … ON CONFLICT` and two concurrent first uses cannot collide.
+   */
+  private async linkAuthor(tx: Prisma.TransactionClient, authorName: string) {
+    const name = authorKey(authorName);
+    if (name === null) return null;
+    const author = await tx.author.upsert({
+      where: { name },
+      update: {},
+      create: { name },
+      select: { id: true },
+    });
+    return author.id;
+  }
+
+  /**
+   * Create a post, linked to its author in the same transaction (TASK-554).
+   * Unique-slug violation bubbles up for the service to map.
+   */
   create(data: CreateBlogPostInput): Promise<BlogPostWithCategory> {
-    return this.prisma.blogPost.create({
-      data: {
-        slug: data.slug,
-        title: data.title,
-        excerpt: data.excerpt,
-        content: data.content,
-        categoryId: data.categoryId,
-        authorName: data.authorName,
-        coverImageUrl: data.coverImageUrl ?? null,
-        coverBlurDataUrl: data.coverBlurDataUrl ?? null,
-        readingMinutes: data.readingMinutes ?? null,
-        featured: data.featured ?? false,
-        listed: data.listed ?? true,
-        metaTitle: data.metaTitle ?? null,
-        metaDescription: data.metaDescription ?? null,
-        keywords: data.keywords ?? [],
-        ogImage: data.ogImage ?? null,
-        status: data.status,
-        publishedAt: data.publishedAt,
-        scheduledAt: data.scheduledAt,
-      },
-      include: CATEGORY_INCLUDE,
+    return this.prisma.$transaction(async (tx) => {
+      const authorId = await this.linkAuthor(tx, data.authorName);
+      return tx.blogPost.create({
+        data: {
+          slug: data.slug,
+          title: data.title,
+          excerpt: data.excerpt,
+          content: data.content,
+          categoryId: data.categoryId,
+          authorName: data.authorName,
+          authorId,
+          coverImageUrl: data.coverImageUrl ?? null,
+          coverBlurDataUrl: data.coverBlurDataUrl ?? null,
+          readingMinutes: data.readingMinutes ?? null,
+          featured: data.featured ?? false,
+          listed: data.listed ?? true,
+          metaTitle: data.metaTitle ?? null,
+          metaDescription: data.metaDescription ?? null,
+          keywords: data.keywords ?? [],
+          ogImage: data.ogImage ?? null,
+          status: data.status,
+          publishedAt: data.publishedAt,
+          scheduledAt: data.scheduledAt,
+        },
+        include: POST_INCLUDE,
+      });
     });
   }
 
   /**
    * Update a post's provided fields.
    *
-   * When `slugRename` is present (a publicly-visible post's slug is changing —
-   * gated by the service, plan 147 §Design Decision 3), the update and the
-   * slug-redirect chain-collapse write commit in ONE transaction. When absent,
-   * the behavior is the pre-TASK-285 single-statement update (no transaction
-   * on the hot, no-rename path).
+   * A transaction is opened only when the write has more than one statement:
+   *  - `slugRename` present (a publicly-visible post's slug is changing — gated
+   *    by the service, plan 147 §Design Decision 3): the slug-redirect
+   *    chain-collapse write commits with the update;
+   *  - `authorName` present: the post is re-linked to that name's Author row
+   *    (TASK-554), so the byline and the bio card never name different people.
+   * Otherwise it is the pre-TASK-285 single-statement update (no transaction on
+   * the hot path).
    */
   update(
     id: string,
     data: UpdateBlogPostInput,
     slugRename?: SlugRenameInput,
   ): Promise<BlogPostWithCategory> {
-    if (!slugRename) {
+    if (!slugRename && data.authorName === undefined) {
       return this.prisma.blogPost.update({
         where: { id },
         data,
-        include: CATEGORY_INCLUDE,
+        include: POST_INCLUDE,
       });
     }
 
     return this.prisma.$transaction(async (tx) => {
+      const write: Prisma.BlogPostUncheckedUpdateInput =
+        data.authorName === undefined
+          ? data
+          : { ...data, authorId: await this.linkAuthor(tx, data.authorName) };
       const updated = await tx.blogPost.update({
         where: { id },
-        data,
-        include: CATEGORY_INCLUDE,
+        data: write,
+        include: POST_INCLUDE,
       });
-      await this.slugRedirectRepository.recordRename(
-        tx,
-        SlugRedirectEntity.BLOG_POST,
-        slugRename.oldSlug,
-        slugRename.newSlug,
-      );
+      if (slugRename) {
+        await this.slugRedirectRepository.recordRename(
+          tx,
+          SlugRedirectEntity.BLOG_POST,
+          slugRename.oldSlug,
+          slugRename.newSlug,
+        );
+      }
       return updated;
     });
   }
@@ -522,12 +572,16 @@ export class BlogRepository implements PublishablePort {
   // ─── publishing ─────────────────────────────────────────────────────────────
 
   /**
-   * {@link PublishablePort.publishDue} — flip every SCHEDULED post whose
-   * `scheduledAt` has passed to PUBLISHED, stamping `publishedAt = now` and
-   * clearing `scheduledAt`. Returns the count flipped.
+   * Flip every SCHEDULED post whose `scheduledAt` has passed to PUBLISHED,
+   * stamping `publishedAt = now` and clearing `scheduledAt`. Returns the ids
+   * flipped (TASK-525) — `BlogPublisher` indexes exactly those.
+   *
+   * One `UPDATE … RETURNING`, not a read then a write: the ids are the rows this
+   * statement changed, so a post an admin moves back to draft between two
+   * statements can neither be flipped by mistake nor indexed by mistake.
    */
-  async publishDue(now: Date): Promise<number> {
-    const { count } = await this.prisma.blogPost.updateMany({
+  async publishDuePosts(now: Date): Promise<string[]> {
+    const rows = await this.prisma.blogPost.updateManyAndReturn({
       where: {
         status: PublishStatus.SCHEDULED,
         scheduledAt: { lte: now },
@@ -537,7 +591,8 @@ export class BlogRepository implements PublishablePort {
         publishedAt: now,
         scheduledAt: null,
       },
+      select: { id: true },
     });
-    return count;
+    return rows.map((row) => row.id);
   }
 }

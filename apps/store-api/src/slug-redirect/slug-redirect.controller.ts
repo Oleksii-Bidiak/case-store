@@ -18,7 +18,7 @@ export class SlugRedirectLookupResponse {
 /**
  * Public slug-redirect lookup (no auth required) — TASK-285-D.
  *
- *   GET /api/slug-redirect?entity=PAGE&slug=old-slug
+ *   GET /api/slug-redirect?entity=PAGE&scope=LEGAL&slug=old-slug
  *
  * Consulted by the storefront's dynamic routes right before rendering a 404:
  * a hit means the address was renamed by an admin and the visitor should be
@@ -47,7 +47,7 @@ export class SlugRedirectController {
   @ApiResponse({ status: 400, description: 'Invalid entity value' })
   @ApiResponse({ status: 404, description: 'No redirect recorded for this slug' })
   async lookup(@Query() query: SlugRedirectLookupQueryDto): Promise<SlugRedirectLookupResponse> {
-    const result = await this.slugRedirectService.lookup(query.entity, query.slug);
+    const result = await this.slugRedirectService.lookup(query.entity, query.slug, query.scope);
     if (!result) {
       throw new NotFoundException(`No redirect recorded for ${query.entity} slug "${query.slug}"`);
     }

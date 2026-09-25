@@ -157,6 +157,13 @@ export class BannerService {
 
     const wasPublished = banner.status === PublishStatus.PUBLISHED;
 
+    // Only a placement that DIFFERS from the stored one is a move (TASK-580). The admin form
+    // re-sends the current placement on every save; treating that as a move would drop the
+    // banner to the bottom of its own list on every rename. A real move is re-appended to
+    // the end of the target placement by `BannerRepository.updateWithPlacementMove`.
+    const targetPlacement =
+      dto.placement !== undefined && dto.placement !== banner.placement ? dto.placement : null;
+
     const input: UpdateBannerInput = {
       placement: dto.placement,
       title: dto.title,
@@ -189,7 +196,9 @@ export class BannerService {
           : resolved.publishedAt;
     }
 
-    const updated = await this.bannerRepository.update(id, input);
+    const updated = targetPlacement
+      ? await this.bannerRepository.updateWithPlacementMove(id, input, targetPlacement)
+      : await this.bannerRepository.update(id, input);
     const entity = BannerEntity.fromPrisma(updated);
     // Revalidate whenever public visibility could have changed: the banner is
     // live now, or it was live before (e.g. just unpublished or edited in place).

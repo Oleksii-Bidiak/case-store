@@ -1,9 +1,12 @@
+import { MAX_SPEC_FACETS } from '../../../src/product/dto/product-list-query.dto';
 import { cataloguePositions } from './catalogue';
 import { rootCategorySlug } from './categories.data';
 import {
   AXIS_BACKED_SPECS,
   colorOfPosition,
   definitionsByRootCategory,
+  inertFacets,
+  narrowsNothing,
   type AttributeDefinitionSeed,
 } from './attributes.data';
 
@@ -16,8 +19,8 @@ import {
  *
  *   - a facet is a `SELECT` or a `BOOLEAN`, NEVER a `TEXT` and never a `NUMBER`
  *     — free text yields one filter value per product;
- *   - a facet nobody can reach is not a facet: the sidebar caps at six
- *     (`SpecFacets.MAX_FACETS`), so declaring a seventh silently hides it;
+ *   - a facet nobody can reach is not a facet: the facet endpoint caps at six
+ *     (`MAX_SPEC_FACETS`, TASK-707), so declaring a seventh hides it;
  *   - a facet with no values renders as a control a shopper opens and finds
  *     empty, so every filterable definition must be FILLED IN by the catalogue.
  *
@@ -26,8 +29,11 @@ import {
  * instead of shipping.
  */
 
-/** The storefront's `SpecFacets.MAX_FACETS` — kept in step by this test. */
-const MAX_FACETS = 6;
+/**
+ * The facet ceiling — the API's own constant, not a copy of it (TASK-707):
+ * `GET /categories/:id/filterable-specs` returns at most this many facets.
+ */
+const MAX_FACETS = MAX_SPEC_FACETS;
 
 const facetsOf = (defs: AttributeDefinitionSeed[]): AttributeDefinitionSeed[] =>
   defs.filter((def) => def.isFilterable === true);
@@ -189,6 +195,45 @@ describe('the catalogue facet set (TASK-488 / B-10)', () => {
 
     it('covers every declared root', () => {
       expect(Object.keys(EXPECTED).sort()).toEqual(Object.keys(definitionsByRootCategory).sort());
+    });
+  });
+
+  describe('a facet that narrows nothing is not offered (TASK-700)', () => {
+    it('calls a facet inert only when EVERY position carries the SAME value', () => {
+      expect(narrowsNothing(['Лише чохол', 'Лише чохол'])).toBe(true);
+      // A second value splits the catalogue — the facet earns its slot back.
+      expect(narrowsNothing(['Лише чохол', 'Чохол + захисне скло'])).toBe(false);
+      // One value, but not on every position: ticking it still hides the rest
+      // (a hydrogel film has no «9H»), so the facet does narrow.
+      expect(narrowsNothing(['9H', undefined])).toBe(false);
+      expect(narrowsNothing([])).toBe(false);
+    });
+
+    it("finds exactly «Комплектація» inert in today's catalogue", () => {
+      // All twelve cases ship «Лише чохол». «Твердість» is single-valued too,
+      // but films carry none, so its «9H» checkbox is a real filter — the rule
+      // is about narrowing, not about counting values.
+      expect([...inertFacets()].sort()).toEqual(['cases:bundle']);
+    });
+  });
+
+  describe("«Вихідний роз'єм» carries only what the card says (TASK-701 / B-11)", () => {
+    it('fills charger-output on the four confirmed chargers and nowhere else', () => {
+      // Owner decision B-11: a value inferred from the description («ноутбук
+      // отримає 65 Вт, отже USB-C») is erased, not kept — the catalogue must not
+      // claim anything the product card does not say. What stays is named by the
+      // title, spelled out in the description, or implied by the charger TYPE.
+      const filled = Object.fromEntries(
+        cataloguePositions()
+          .filter((position) => position.entry.specs?.['charger-output'] !== undefined)
+          .map((position) => [position.entry.slug, position.entry.specs?.['charger-output']]),
+      );
+      expect(filled).toEqual({
+        'charger-anker-20w': 'USB-C',
+        'charger-baseus-gan-65w': 'USB-C + USB-A',
+        'wireless-charger-belkin-magsafe': 'Бездротовий',
+        'wireless-charger-baseus-3in1': 'Бездротовий',
+      });
     });
   });
 

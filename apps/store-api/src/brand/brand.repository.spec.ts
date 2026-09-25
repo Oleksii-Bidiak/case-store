@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../prisma';
 import { BrandRepository } from './brand.repository';
+import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
 
 const mockBrand = {
   id: 'brand-uuid-1',
@@ -89,12 +90,7 @@ describe('BrandRepository', () => {
         where: {
           isActive: true,
           products: {
-            some: {
-              isActive: true,
-              deletedAt: null,
-              categoryId: { in: ['cat-1', 'cat-1-child'] },
-              category: { isActive: true },
-            },
+            some: { ...PUBLIC_PRODUCT_WHERE, categoryId: { in: ['cat-1', 'cat-1-child'] } },
           },
         },
         orderBy: { name: 'asc' },

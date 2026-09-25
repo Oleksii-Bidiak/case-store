@@ -7,6 +7,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import type { DeviceModelListItemEntity } from "@/entities/device";
 import { ModelPicker } from "./model-picker";
 
 const mockPush = jest.fn();
@@ -24,16 +25,13 @@ const brands = [
   },
 ];
 
-const models = [
+// The light public projection `GET /device-models` serves since TASK-702.
+const models: DeviceModelListItemEntity[] = [
   {
     id: "model-15pro",
     deviceBrandId: "brand-apple",
     name: "iPhone 15 Pro",
     slug: "iphone-15-pro",
-    series: "iPhone 15",
-    releaseYear: 2023,
-    isActive: true,
-    brandName: "Apple",
   },
 ];
 

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, WishlistItem } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
 import type { ResolvedWishlistIdentity } from './wishlist-identity.types';
 
 /**
@@ -222,13 +223,16 @@ export class WishlistRepository {
   }
 
   /**
-   * Check whether a product position exists, for validating an add request
-   * before writing a wishlist item. Returns null when the product does not
-   * exist. Wishlist-internal use only.
+   * Check whether a product position may be saved — it must be publicly visible
+   * ({@link PUBLIC_PRODUCT_WHERE}, TASK-781). Returns null for a missing id AND
+   * for a draft, withdrawn, soft-deleted or hidden-category product, so the add
+   * answers 404 for both and cannot be used to probe for hidden positions.
+   * Lines already saved are not touched by this check — it gates new adds only.
+   * Wishlist-internal use only.
    */
   findProductForWishlistValidation(productId: string): Promise<{ id: string } | null> {
-    return this.prisma.product.findUnique({
-      where: { id: productId },
+    return this.prisma.product.findFirst({
+      where: { id: productId, ...PUBLIC_PRODUCT_WHERE },
       select: { id: true },
     });
   }

@@ -15,24 +15,15 @@ import {
 import { ColorSwatchFilter } from "./color-swatch-filter";
 import { FilterCheckbox } from "./filter-checkbox";
 
-/**
- * Hard ceiling on the facets offered at once — the «стеля 6 фасетів у
- * сайдбарі» of owner decision B-10, and the same number as the API's own
- * `MAX_SPEC_FACETS`, because each extra facet a shopper ticks is another EXISTS
- * subquery server-side and a seventh could never be APPLIED anyway.
- *
- * The ceiling is OURS, though: `getFilterableSpecs` returns every filterable
- * facet a category declares, without a limit of its own, so a seventh would
- * arrive here and be cut by the `slice` below — silently, and only from this
- * sidebar: an already-active one would still show as a chip that can clear it.
- * Nothing stops an operator declaring that seventh today, which is TASK-707.
- *
- * Verified against the widened facet set in TASK-488: «Зарядки» reaches exactly
- * six and every other root stays below, so nothing a category declares is
- * currently cut off here. Which six, and in which order, is the OPERATOR's
- * call — the list arrives sorted by `sortOrder`, which the admin panel edits.
+/*
+ * No facet ceiling here (TASK-707). The «стеля 6 фасетів у сайдбарі» of owner
+ * decision B-10 is enforced by the API — `getFilterableSpecs` returns at most
+ * `MAX_SPEC_FACETS` facets, in template order, and never drops one the shopper
+ * has active. This component used to cut the list again with its own copy of
+ * the number, which could only ever disagree with the server: a second cut
+ * would drop exactly the active facet the API kept past the template ceiling.
+ * The admin panel warns when a category declares more than the ceiling.
  */
-const MAX_FACETS = 6;
 
 /** Facets shown before the "Ще фільтри" disclosure (B-10: «решта під «Ще фільтри»»). */
 const INITIAL_FACETS = 3;
@@ -69,8 +60,8 @@ interface SpecFacetsProps {
  * multi-select since TASK-414 / owner decision B-10).
  *
  * Rendered only when a category is active and it declares filterable specs;
- * offers up to {@link MAX_FACETS} facets from
- * `GET /categories/:id/filterable-specs`, the first {@link INITIAL_FACETS}
+ * offers the facets of `GET /categories/:id/filterable-specs` (at most six —
+ * the API's ceiling), the first {@link INITIAL_FACETS}
  * expanded and the rest behind a "Ще фільтри" disclosure.
  *
  * Two defects this replaces, both from the single-`<Select>` version:
@@ -111,9 +102,9 @@ export function SpecFacets({
   // inherited by every descendant, so «Колір» reaches a subcategory whose
   // products have no colour at all. Belt and braces: a control a shopper can
   // open and find nothing in reads as a broken page, not as "no such filter".
-  const facets = (query.data?.data ?? [])
-    .filter((facet) => facet.values.length > 0)
-    .slice(0, MAX_FACETS);
+  const facets = (query.data?.data ?? []).filter(
+    (facet) => facet.values.length > 0,
+  );
   const selected = parseSpecParam(specs);
 
   if (!categoryId || facets.length === 0) {

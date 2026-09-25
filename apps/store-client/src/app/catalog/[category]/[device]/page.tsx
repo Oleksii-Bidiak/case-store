@@ -244,17 +244,19 @@ export default async function CompatLandingPage({
 
   const page = await resolveCompatPage(category, device);
   if (!page) {
-    // An admin may have renamed the CATEGORY's slug — serve the permanent
-    // redirect to the current address instead of a dead 404, exactly as
-    // `/categories/[slug]` does. The device segment is carried over untouched.
-    //
-    // KNOWN GAP: `SlugRedirectEntityKind` has no `DEVICE_MODEL`, so a renamed
-    // DEVICE slug leaves no ledger entry and still 404s here. These URLs make
-    // that rename user-visible for the first time; closing it needs a new kind
-    // + a write from the device-model update path, which is its own task.
-    const newCategorySlug = await resolveSlugRedirect("CATEGORY", category);
-    if (newCategorySlug && newCategorySlug !== category) {
-      permanentRedirect(`/catalog/${newCategorySlug}/${device}`);
+    // An admin may have renamed the CATEGORY's slug, the device MODEL's slug
+    // (TASK-699), or both — serve the permanent redirect to the current address
+    // instead of a dead 404, exactly as `/categories/[slug]` does. Both segments
+    // are resolved BEFORE redirecting, so a double rename is one hop rather than
+    // two, the middle one through an address that is itself dead.
+    const [newCategorySlug, newDeviceSlug] = await Promise.all([
+      resolveSlugRedirect("CATEGORY", category),
+      resolveSlugRedirect("DEVICE_MODEL", device),
+    ]);
+    const targetCategory = newCategorySlug || category;
+    const targetDevice = newDeviceSlug || device;
+    if (targetCategory !== category || targetDevice !== device) {
+      permanentRedirect(`/catalog/${targetCategory}/${targetDevice}`);
     }
     notFound();
   }

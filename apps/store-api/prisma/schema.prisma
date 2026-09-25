@@ -1024,7 +1024,8 @@ model PasswordResetToken {
 /// `isActive`.
 model Page {
   id              String        @id @default(uuid())
-  slug            String        @unique
+  /// Unique per `kind`, not globally (TASK-566) — see `@@unique([kind, slug])`.
+  slug            String
   /// What this row is and where it is served — see {@link PageKind}.
   /// `LEGAL` → /legal/<slug>, `INFO` → /info/<slug>, `HUB` → meta tags for the
   /// existing hub route named by `slug` (no address of its own).
@@ -1057,6 +1058,11 @@ model Page {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
+  /// A slug is an address only within its kind's namespace (TASK-566): `/legal/delivery` and
+  /// `/info/delivery` are two different pages, and a HUB row (`contact`, `promo`, …) has no
+  /// address at all, so it must not block a document of the same slug. The plain slug index
+  /// stays for the storefront's kind-agnostic "did this page move" lookup.
+  @@unique([kind, slug])
   @@index([slug])
   @@index([status])
   /// The admin list filters by kind on every tab switch (Усі / Юридичні /
@@ -1286,7 +1292,14 @@ model BlogPost {
   content          String        @db.Text
   coverImageUrl    String?       @map("cover_image_url")
   coverBlurDataUrl String?       @map("cover_blur_data_url")
+  /// Byline as the editor typed it. The repository keeps `authorId` in step on
+  /// every write that sets it (upsert Author by trimmed name), so this string and
+  /// `author.name` never disagree through the API (TASK-554).
   authorName       String        @map("author_name")
+  /// The article's Author — role and bio for the storefront bio card. Null only
+  /// for a blank byline; SetNull so deleting an author never deletes articles.
+  authorId         String?       @map("author_id")
+  author           Author?       @relation(fields: [authorId], references: [id], onDelete: SetNull)
   readingMinutes   Int?          @map("reading_minutes")
   featured         Boolean       @default(false)
   /// Listing visibility (TASK-436). `true` (the default) is the normal post.
@@ -1339,7 +1352,30 @@ model BlogPost {
   @@index([status])
   @@index([slug])
   @@index([categoryId])
+  @@index([authorId])
   @@map("blog_posts")
+}
+
+/// Blog article author (TASK-554). Until now the author was only a string on
+/// the post, and the role + bio the storefront shows under every article were
+/// one invented placeholder in the storefront dictionary — the same "reviewer
+/// for 5 years" under every name. Role and bio now live here, one row per
+/// person, and the API returns them with the post.
+///
+/// `name` is unique because it is the join key the repository links posts by
+/// (the admin form still takes a free-text byline — author CRUD is future work).
+model Author {
+  id        String     @id @default(uuid())
+  name      String     @unique
+  /// Short title under the name, e.g. "Оглядачка аудіотехніки". Null = not shown.
+  role      String?
+  /// One- or two-sentence plain-text bio. Null = not shown.
+  bio       String?    @db.Text
+  posts     BlogPost[]
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  @@map("authors")
 }
 
 /// Placement slot a banner renders in on the storefront homepage (TASK-186).
@@ -1579,11 +1615,15 @@ model ProductAttributeValue {
 }
 
 /// Discriminates which content model a SlugRedirect row belongs to (TASK-285).
+/// DEVICE_MODEL (TASK-699): a device model's slug is the second segment of the public
+/// compatibility landing `/catalog/<категорія>/<модель>` (TASK-490), so renaming it
+/// must leave a 308 behind exactly like a category rename does.
 enum SlugRedirectEntity {
   PAGE
   BLOG_POST
   PRODUCT
   CATEGORY
+  DEVICE_MODEL
 }
 
 /// Server-side 301-redirect ledger for admin-renamed content slugs (TASK-285, SEO-10). One row
@@ -1597,18 +1637,31 @@ enum SlugRedirectEntity {
 /// the public lookup a single O(1) unique-key read with no chain-walking and — critically — no
 /// possibility of a redirect loop, however many times the same entity gets renamed back and
 /// forth. See plan 147 §Design Decision 2 for the exact write-time algorithm and its proof.
+///
+/// ADDRESS = (scope, slug), TASK-566. A slug alone is not an address for every entity: pages
+/// live in two namespaces (`/legal/<slug>`, `/info/<slug>`) and the same slug may exist in both
+/// at once, so a PAGE row carries the page KIND whose route served the dead address (`scope`)
+/// and the kind the live page is served under (`newScope`). Every other entity has one
+/// namespace and leaves both empty. The invariant above holds per address: no row's
+/// `(newScope, newSlug)` equals another row's `(scope, oldSlug)` of the same entity.
 model SlugRedirect {
   id        String             @id @default(uuid())
   entity    SlugRedirectEntity
+  /// Namespace of the DEAD address — for PAGE the page kind (`LEGAL` / `INFO`) whose route
+  /// served `oldSlug`; '' for single-namespace entities.
+  scope     String             @default("")
   oldSlug   String             @map("old_slug")
+  /// Namespace of the LIVE address `newSlug` is served under — for PAGE the page's current
+  /// kind; '' for single-namespace entities. A kind change is recorded as a rename too.
+  newScope  String             @default("") @map("new_scope")
   newSlug   String             @map("new_slug")
   /// Updated whenever a later rename repoints this row (chain collapse) — see plan 147
   /// Design Decision 1.
   createdAt DateTime           @default(now()) @map("created_at")
   updatedAt DateTime           @updatedAt @map("updated_at")
 
-  @@unique([entity, oldSlug])
-  @@index([entity, newSlug])
+  @@unique([entity, scope, oldSlug])
+  @@index([entity, newScope, newSlug])
   @@map("slug_redirects")
 }
 

@@ -54,7 +54,7 @@ describe('ProductImageService', () => {
     create: jest.Mock;
     findById: jest.Mock;
     delete: jest.Mock;
-    updateMany: jest.Mock;
+    reorderForProduct: jest.Mock;
   };
   let mediaRepository: { findById: jest.Mock; findByUrl: jest.Mock };
   let mediaUsage: { findUsageForUrl: jest.Mock };
@@ -73,7 +73,8 @@ describe('ProductImageService', () => {
       create: jest.fn((input) => Promise.resolve(input)),
       findById: jest.fn(),
       delete: jest.fn(),
-      updateMany: jest.fn().mockResolvedValue(undefined),
+      // true = every id was one of the product's images and the batch was written.
+      reorderForProduct: jest.fn().mockResolvedValue(true),
     };
     mediaRepository = {
       findById: jest.fn().mockResolvedValue(LIBRARY_ASSET),
@@ -399,7 +400,7 @@ describe('ProductImageService', () => {
           { id: 'b', sortOrder: 1, isPrimary: true },
         ]),
       ).rejects.toThrow(BadRequestException);
-      expect(imageRepository.updateMany).not.toHaveBeenCalled();
+      expect(imageRepository.reorderForProduct).not.toHaveBeenCalled();
     });
 
     it('persists the new ordering and evicts caches', async () => {
@@ -407,8 +408,50 @@ describe('ProductImageService', () => {
         { id: 'a', sortOrder: 1, isPrimary: false },
         { id: 'b', sortOrder: 0, isPrimary: true },
       ]);
-      expect(imageRepository.updateMany).toHaveBeenCalledTimes(1);
+      expect(imageRepository.reorderForProduct).toHaveBeenCalledTimes(1);
       expect(cache.delByPrefix).toHaveBeenCalled();
+    });
+
+    // ─── TASK-783: the ids must be THIS product's images ────────────────────
+    //
+    // `deleteImage` always checked ownership; the reorder did not, so an id of
+    // another product's image switched THAT product's cover, and an unknown id
+    // reached Prisma as P2025 and answered 500. The ownership check, the demotion
+    // of the current cover and the rollback live in the repository's single
+    // transaction (proved against Postgres in
+    // test/product-image-reorder.repository.int-spec.ts); the service maps its
+    // refusal to 404.
+
+    it('scopes the write to the product in the URL', async () => {
+      const items = [{ id: 'c', sortOrder: 0, isPrimary: true }];
+      await service.reorderImages(PRODUCT_ID, items);
+      expect(imageRepository.reorderForProduct).toHaveBeenCalledWith(PRODUCT_ID, items);
+    });
+
+    it('answers 404 and evicts nothing when an id is not one of the product images', async () => {
+      imageRepository.reorderForProduct.mockResolvedValue(false);
+      await expect(
+        service.reorderImages(PRODUCT_ID, [{ id: 'foreign-img', sortOrder: 0, isPrimary: true }]),
+      ).rejects.toThrow(NotFoundException);
+      expect(cache.delByPrefix).not.toHaveBeenCalled();
+    });
+
+    it('answers 400 when the same image is listed twice, before writing', async () => {
+      await expect(
+        service.reorderImages(PRODUCT_ID, [
+          { id: 'b', sortOrder: 0, isPrimary: false },
+          { id: 'b', sortOrder: 1, isPrimary: false },
+        ]),
+      ).rejects.toThrow(BadRequestException);
+      expect(imageRepository.reorderForProduct).not.toHaveBeenCalled();
+    });
+
+    it('answers 404 for an unknown product before writing', async () => {
+      productRepository.findById.mockResolvedValue(null);
+      await expect(
+        service.reorderImages(PRODUCT_ID, [{ id: 'a', sortOrder: 0, isPrimary: true }]),
+      ).rejects.toThrow(NotFoundException);
+      expect(imageRepository.reorderForProduct).not.toHaveBeenCalled();
     });
   });
 });

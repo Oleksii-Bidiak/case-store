@@ -32,7 +32,7 @@ jest.mock("next/navigation", () => ({
 }));
 // Slug-redirect lookup (TASK-285) — mocked per-case below.
 jest.mock("@/shared/lib/slug-redirect", () => ({
-  resolveSlugRedirect: jest.fn(),
+  resolveSlugRedirectTarget: jest.fn(),
 }));
 
 import LegalDocPage, { generateMetadata } from "./page";
@@ -42,10 +42,10 @@ import {
   fetchPublishedPageAnyKind,
 } from "@/shared/api/pages-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import { resolveSlugRedirectTarget } from "@/shared/lib/slug-redirect";
 
-const resolveRedirect = resolveSlugRedirect as jest.MockedFunction<
-  typeof resolveSlugRedirect
+const resolveRedirect = resolveSlugRedirectTarget as jest.MockedFunction<
+  typeof resolveSlugRedirectTarget
 >;
 
 const fetchPage = fetchPublishedPage as jest.MockedFunction<
@@ -98,7 +98,12 @@ const runMeta = (slug = "dostavka-ta-oplata") =>
 afterEach(() => jest.clearAllMocks());
 // The kind-less lookup only matters on the 404 path; default it to "no such row"
 // so every other test keeps describing what it is actually about.
-beforeEach(() => fetchAnyKind.mockResolvedValue(null));
+// The same for the ledger (TASK-566): clearAllMocks keeps implementations, so a
+// redirect one test set up must not leak into the next.
+beforeEach(() => {
+  fetchAnyKind.mockResolvedValue(null);
+  resolveRedirect.mockResolvedValue(null);
+});
 
 describe("legal/[slug] generateMetadata (TASK-268 review)", () => {
   it("brands a blank-meta page title with the %s template and derives the description", async () => {
@@ -168,19 +173,27 @@ describe("legal/[slug] slug-redirect (TASK-285)", () => {
     LegalDocPage({ params: Promise.resolve({ slug }) });
 
   it("permanently redirects a renamed slug to its current address", async () => {
-    fetchPage.mockResolvedValue(null); // dead slug — content fetch 404s
-    resolveRedirect.mockResolvedValue("nova-adresa");
-    fetchAnyKind.mockImplementation(async (slug: string) =>
-      slug === "nova-adresa"
+    // Dead slug — content fetch 404s; the renamed page is live under LEGAL.
+    fetchPage.mockImplementation(async (slug: string, kind: string) =>
+      slug === "nova-adresa" && kind === "LEGAL"
         ? makePage({ slug: "nova-adresa", kind: "LEGAL" })
         : null,
     );
+    resolveRedirect.mockResolvedValue({
+      newSlug: "nova-adresa",
+      newScope: "LEGAL",
+    });
 
     await expect(runPage("stara-adresa")).rejects.toThrow(
       "NEXT_REDIRECT:/legal/nova-adresa",
     );
 
-    expect(resolveRedirect).toHaveBeenCalledWith("PAGE", "stara-adresa");
+    // TASK-566: the ledger is asked about the address in THIS route's kind.
+    expect(resolveRedirect).toHaveBeenCalledWith(
+      "PAGE",
+      "stara-adresa",
+      "LEGAL",
+    );
     expect(permanentRedirect).toHaveBeenCalledWith("/legal/nova-adresa");
     expect(notFound).not.toHaveBeenCalled();
   });
@@ -207,11 +220,12 @@ describe("legal/[slug] slug-redirect (TASK-285)", () => {
     expect(fetchPage).toHaveBeenCalledWith("dostavka-ta-oplata", "LEGAL");
   });
 
-  // Changing a page's kind moves its URL without touching its slug, and the
-  // rename ledger records nothing for that — before this, an indexed
+  // Changing a page's kind moves its URL without touching its slug. A move made
+  // before TASK-566 recorded nothing in the ledger — before this, an indexed
   // /legal/<slug> simply died the moment an operator switched «Вид сторінки».
   it("308s to /info when the page was switched to the help surface", async () => {
     fetchPage.mockResolvedValue(null); // no LEGAL page under this slug any more
+    resolveRedirect.mockResolvedValue(null); // an unrecorded (pre-TASK-566) move
     fetchAnyKind.mockResolvedValue(makePage({ slug: "oplata", kind: "INFO" }));
 
     await expect(runPage("oplata")).rejects.toThrow(
@@ -220,8 +234,48 @@ describe("legal/[slug] slug-redirect (TASK-285)", () => {
 
     expect(permanentRedirect).toHaveBeenCalledWith("/info/oplata");
     expect(notFound).not.toHaveBeenCalled();
-    // The ledger has nothing to say about a kind change; don't waste the call.
-    expect(resolveRedirect).not.toHaveBeenCalled();
+  });
+
+  // TASK-566 — since a kind change is recorded like a rename, the ledger alone
+  // answers it, naming the kind the page now lives under.
+  it("308s a recorded kind move to the page's new surface", async () => {
+    fetchPage.mockImplementation(async (slug: string, kind: string) =>
+      slug === "oplata" && kind === "INFO"
+        ? makePage({ slug: "oplata", kind: "INFO" })
+        : null,
+    );
+    resolveRedirect.mockResolvedValue({ newSlug: "oplata", newScope: "INFO" });
+
+    await expect(runPage("oplata")).rejects.toThrow(
+      "NEXT_REDIRECT:/info/oplata",
+    );
+
+    expect(fetchPage).toHaveBeenCalledWith("oplata", "INFO");
+    expect(fetchAnyKind).not.toHaveBeenCalled();
+  });
+
+  // TASK-566 — /legal/delivery and /info/delivery can coexist. When the LEGAL
+  // one is renamed, the help page that still carries the slug must not capture
+  // the legal document's old address: the ledger, asked first, knows better.
+  it("follows the legal page's rename, not an INFO page that keeps the old slug", async () => {
+    fetchPage.mockImplementation(async (slug: string, kind: string) =>
+      slug === "dostavka" && kind === "LEGAL"
+        ? makePage({ slug: "dostavka", kind: "LEGAL" })
+        : null,
+    );
+    resolveRedirect.mockResolvedValue({
+      newSlug: "dostavka",
+      newScope: "LEGAL",
+    });
+    fetchAnyKind.mockResolvedValue(
+      makePage({ slug: "delivery", kind: "INFO" }),
+    );
+
+    await expect(runPage("delivery")).rejects.toThrow(
+      "NEXT_REDIRECT:/legal/dostavka",
+    );
+
+    expect(fetchAnyKind).not.toHaveBeenCalled();
   });
 
   it("sends the inlined help page to the hub it is canonical on", async () => {

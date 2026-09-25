@@ -435,6 +435,13 @@ so a staging database can never be seeded with `localhost` URLs.
 
 ## 9. Known constraints
 
+- **Re-seeding overwrites admin edits on seeded rows.** The seed is idempotent (a second run adds
+  nothing), but it is not a top-up: every seeded product gets its name, description, `metaTitle`
+  and all its spec values back, every seeded blog post its title, body and author, every attribute
+  definition its `isFilterable`. Whatever an owner or tester changed in those rows on a shared
+  stand is lost. Only `siteName` is filled strictly when empty. Run `db:seed` on a stand only when
+  losing those edits is agreed. A changed `isFilterable` reaches the storefront up to 5 minutes
+  later (the `filterable-specs` cache). Field-level protection is TASK-1181.
 - **`seed-address-1`** is a hard-coded address id used for idempotency. Do not reuse that id for
   test data outside the seed, or the upsert will overwrite your row.
 - **Imagery needs no network.** Seed images are rendered locally (§8), so an offline machine gets

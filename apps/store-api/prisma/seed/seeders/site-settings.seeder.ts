@@ -53,7 +53,8 @@ export async function seedSiteContactSettings(prisma: PrismaClient) {
  *   - noindexSite: false — assume production once this ships
  *   - additionalSameAsLinks: [] — none configured out of the box
  *
- * Idempotent: `update: {}` preserves any admin edits on re-seed.
+ * Idempotent: `update: {}` preserves any admin edits on re-seed. The one
+ * exception is a still-null `siteName`, which is filled (TASK-567).
  */
 export async function seedSeoSettings(prisma: PrismaClient) {
   const SINGLETON_ID = '00000000-0000-0000-0000-000000000002';
@@ -77,5 +78,16 @@ export async function seedSeoSettings(prisma: PrismaClient) {
     },
   });
 
-  console.log('  ✓ SeoSettings: singleton row upserted');
+  // TASK-567: `update: {}` above means `siteName` only ever landed on a FRESH
+  // row, so a database seeded before TASK-433 kept a blank «Назва магазину».
+  // Fill it here — guarded by `siteName: null` in the WHERE, so a name the
+  // owner typed in the admin panel is never overwritten.
+  const filled = await prisma.seoSettings.updateMany({
+    where: { id: SINGLETON_ID, siteName: null },
+    data: { siteName: STORE_NAME },
+  });
+
+  console.log(
+    `  ✓ SeoSettings: singleton row upserted${filled.count > 0 ? ' (empty siteName filled)' : ''}`,
+  );
 }

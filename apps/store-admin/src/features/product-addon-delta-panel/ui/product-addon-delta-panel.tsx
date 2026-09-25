@@ -5,11 +5,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
   getAddonServiceControllerGetProductDeltasQueryKey,
-  getAddonServiceControllerResolveForProductQueryKey,
+  getAddonServiceControllerAdminResolveForProductQueryKey,
   useAddonServiceControllerAdminFindActive,
   useAddonServiceControllerClearProductDelta,
   useAddonServiceControllerGetProductDeltas,
-  useAddonServiceControllerResolveForProduct,
+  useAddonServiceControllerAdminResolveForProduct,
   useAddonServiceControllerSetProductDelta,
   type AddonServiceEntity,
   type ResolvedAddonEntity,
@@ -106,9 +106,12 @@ export function ProductAddonDeltaPanel({
   const isStaged = !productId;
   const stagedAddons = value ?? NO_STAGED_ADDONS;
 
-  const resolved = useAddonServiceControllerResolveForProduct(productId ?? "", {
-    query: { enabled: !isStaged },
-  });
+  const resolved = useAddonServiceControllerAdminResolveForProduct(
+    productId ?? "",
+    {
+      query: { enabled: !isStaged },
+    },
+  );
   const deltas = useAddonServiceControllerGetProductDeltas(productId ?? "", {
     query: { enabled: !isStaged },
   });
@@ -131,7 +134,8 @@ export function ProductAddonDeltaPanel({
   const invalidate = () => {
     if (!productId) return;
     void queryClient.invalidateQueries({
-      queryKey: getAddonServiceControllerResolveForProductQueryKey(productId),
+      queryKey:
+        getAddonServiceControllerAdminResolveForProductQueryKey(productId),
     });
     void queryClient.invalidateQueries({
       queryKey: getAddonServiceControllerGetProductDeltasQueryKey(productId),

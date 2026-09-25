@@ -119,9 +119,16 @@ describe("catalog/[category]/[device] — existence (TASK-490)", () => {
     expect(notFound).toHaveBeenCalled();
   });
 
+  /** Ledger stub: answers only the (entity, slug) pairs it is given. */
+  function ledger(entries: Record<string, string>) {
+    resolveRedirect.mockImplementation(
+      async (entity, slug) => entries[`${entity}:${slug}`] ?? null,
+    );
+  }
+
   it("308s to the current category slug when the category was renamed", async () => {
     findPage.mockRejectedValue(notFoundError());
-    resolveRedirect.mockResolvedValue("novi-chohly");
+    ledger({ "CATEGORY:stari-chohly": "novi-chohly" });
 
     await expect(run("stari-chohly", "iphone-15-pro")).rejects.toThrow(
       "NEXT_REDIRECT:/catalog/novi-chohly/iphone-15-pro",
@@ -131,6 +138,55 @@ describe("catalog/[category]/[device] — existence (TASK-490)", () => {
       "/catalog/novi-chohly/iphone-15-pro",
     );
     expect(notFound).not.toHaveBeenCalled();
+  });
+
+  // TASK-699: the model half of the same promise — a renamed DEVICE slug used to
+  // leave the indexed `/catalog/<категорія>/<стара-модель>` as a dead 404.
+  it("308s to the current model slug when the device model was renamed", async () => {
+    findPage.mockRejectedValue(notFoundError());
+    ledger({ "DEVICE_MODEL:iphone-15-pro-old": "iphone-15-pro" });
+
+    await expect(run("chohly", "iphone-15-pro-old")).rejects.toThrow(
+      "NEXT_REDIRECT:/catalog/chohly/iphone-15-pro",
+    );
+    expect(resolveRedirect).toHaveBeenCalledWith(
+      "DEVICE_MODEL",
+      "iphone-15-pro-old",
+    );
+    expect(permanentRedirect).toHaveBeenCalledWith(
+      "/catalog/chohly/iphone-15-pro",
+    );
+    expect(notFound).not.toHaveBeenCalled();
+  });
+
+  it("308s in ONE hop when both the category and the model were renamed", async () => {
+    // Two sequential redirects would cost the crawler a hop and pass through an
+    // address that is itself dead — both segments are resolved before redirecting.
+    findPage.mockRejectedValue(notFoundError());
+    ledger({
+      "CATEGORY:stari-chohly": "novi-chohly",
+      "DEVICE_MODEL:iphone-15-pro-old": "iphone-15-pro",
+    });
+
+    await expect(run("stari-chohly", "iphone-15-pro-old")).rejects.toThrow(
+      "NEXT_REDIRECT",
+    );
+    // Exact-match: `toThrow(string)` is a substring test, and the half-fixed
+    // «/catalog/novi-chohly/iphone-15-pro-old» would satisfy it.
+    expect(permanentRedirect).toHaveBeenCalledTimes(1);
+    expect(permanentRedirect).toHaveBeenCalledWith(
+      "/catalog/novi-chohly/iphone-15-pro",
+    );
+  });
+
+  it("404s when neither segment has a ledger entry", async () => {
+    findPage.mockRejectedValue(notFoundError());
+    ledger({});
+
+    await expect(run("chohly", "nope")).rejects.toThrow("NEXT_NOT_FOUND");
+    expect(resolveRedirect).toHaveBeenCalledWith("CATEGORY", "chohly");
+    expect(resolveRedirect).toHaveBeenCalledWith("DEVICE_MODEL", "nope");
+    expect(permanentRedirect).not.toHaveBeenCalled();
   });
 
   it("never consults the redirect ledger when the pair resolves", async () => {

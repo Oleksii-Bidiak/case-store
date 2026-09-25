@@ -11,7 +11,7 @@ import {
   useCategoryControllerGetAdminTree,
 } from "@/entities/category";
 import { useProductGroupControllerFindById } from "@/entities/product-group";
-import { useAddonServiceControllerResolveForProduct } from "@/entities/addon-service";
+import { useAddonServiceControllerAdminResolveForProduct } from "@/entities/addon-service";
 import { ProductDeleteAction } from "@/features/product-delete";
 import {
   AdminFormSkeleton,
@@ -60,7 +60,8 @@ export function AdminProductCardView({ productId }: AdminProductCardViewProps) {
   const isNotFound = error?.response?.status === 404;
 
   const imagesQuery = useProductImageControllerList(productId);
-  const addonsQuery = useAddonServiceControllerResolveForProduct(productId);
+  const addonsQuery =
+    useAddonServiceControllerAdminResolveForProduct(productId);
   const categoriesQuery = useCategoryControllerGetAdminTree();
   const groupQuery = useProductGroupControllerFindById(
     product?.groupId ?? "",

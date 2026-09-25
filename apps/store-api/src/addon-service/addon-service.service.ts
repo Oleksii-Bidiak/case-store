@@ -126,14 +126,37 @@ export class AddonServiceService {
   // ─── Applicability read views ─────────────────────────────────────────────
 
   /**
-   * The add-ons that apply to one product, fully resolved. Backs the admin
-   * product-delta panel and a PDP-side preview; the storefront cart gets the
-   * same data batched inside `GET /cart`, not from here.
+   * The add-ons that apply to one product, fully resolved — PUBLIC read, the
+   * PDP-side preview (the storefront cart gets the same data batched inside
+   * `GET /cart`, not from here).
+   *
+   * Resolves the product through the shared public predicate (TASK-781): a
+   * draft, a withdrawn product or one in a hidden category answers 404 exactly
+   * like an id that never existed. Before, this read only checked `deletedAt`,
+   * so a draft answered 200 with its add-on prices and a guessed id could be
+   * told apart from a hidden one.
    */
   async resolveForProduct(productId: string): Promise<ResolvedAddonEntity[]> {
+    const product = await this.productRepository.findPublicById(productId);
+    if (!product) throw new NotFoundException('Product not found');
+    return this.resolveFor(product);
+  }
+
+  /**
+   * The same resolution for the admin product panel and card: any non-deleted
+   * product, drafts included — an operator configures add-ons BEFORE a product
+   * goes on sale (TASK-781 split the admin read off the public route).
+   */
+  async resolveForProductForAdmin(productId: string): Promise<ResolvedAddonEntity[]> {
     const product = await this.productRepository.findById(productId);
     if (!product || product.deletedAt) throw new NotFoundException('Product not found');
+    return this.resolveFor(product);
+  }
 
+  private async resolveFor(product: {
+    id: string;
+    categoryId: string;
+  }): Promise<ResolvedAddonEntity[]> {
     const addons = await this.resolver.resolveForProduct({
       id: product.id,
       categoryId: product.categoryId,

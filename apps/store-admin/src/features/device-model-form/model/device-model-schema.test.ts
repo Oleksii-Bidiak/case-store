@@ -67,3 +67,16 @@ describe("device-model form — compatibility landing copy (TASK-490)", () => {
     expect(() => parse({ metaTitle: "x".repeat(255) })).not.toThrow();
   });
 });
+
+describe("device-model form — deviceBrandId is shape-checked (TASK-808)", () => {
+  it("accepts a database-issued id whose version nibble is outside [1-8]", () => {
+    expect(() =>
+      parse({ deviceBrandId: "aaaaaaaa-bbbb-0ccc-0ddd-eeeeeeeeeeee" }),
+    ).not.toThrow();
+  });
+
+  it("still rejects a value that is not UUID-shaped", () => {
+    expect(() => parse({ deviceBrandId: "not-a-uuid" })).toThrow();
+    expect(() => parse({ deviceBrandId: "" })).toThrow();
+  });
+});

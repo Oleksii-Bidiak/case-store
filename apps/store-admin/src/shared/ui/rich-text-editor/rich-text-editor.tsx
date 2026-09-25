@@ -4,6 +4,7 @@ import * as React from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { TableKit } from "@tiptap/extension-table";
+import { CellSelection, selectedRect } from "@tiptap/pm/tables";
 import {
   Bold,
   Italic,
@@ -29,6 +30,7 @@ import {
 import { cn } from "@/shared/lib/utils";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { CaptionedTable } from "./captioned-table";
 import { ImageNode } from "./image-node";
 
 /** One image, as the editor stores it — exactly the server's `img` allow-list. */
@@ -141,6 +143,33 @@ interface ToolbarButton {
 
 /** Table row/column commands only apply with the caret inside a table. */
 const inTable = (e: Editor) => e.isActive("table");
+
+/**
+ * The span range the server keeps (TASK-548) — the same numbers as
+ * `MAX_TABLE_COLSPAN` / `MAX_TABLE_ROWSPAN` in the API's
+ * `common/sanitize/rich-text.constants.ts`. `sanitizeRichText()` clamps a
+ * larger span to the bound, which for a merge the editor had allowed would
+ * leave the row a column short after the save. The apps cannot share a module;
+ * change one, change both.
+ */
+export const MAX_TABLE_COLSPAN = 20;
+export const MAX_TABLE_ROWSPAN = 100;
+
+/**
+ * "Об'єднати клітинки" is on only when there is a merge to make (two or more
+ * cells selected — prosemirror-tables' own `mergeCells` check) AND the merged
+ * cell would stay inside the span range the server keeps.
+ */
+function canMergeCells(e: Editor): boolean {
+  if (!e.can().mergeCells()) return false;
+  const { selection } = e.state;
+  if (!(selection instanceof CellSelection)) return false;
+  const rect = selectedRect(e.state);
+  return (
+    rect.right - rect.left <= MAX_TABLE_COLSPAN &&
+    rect.bottom - rect.top <= MAX_TABLE_ROWSPAN
+  );
+}
 
 /**
  * Toolbar actions. Marks, headings, lists, blocks and links all come from
@@ -264,6 +293,23 @@ const TOOLBAR_GROUPS: ToolbarButton[][] = [
       run: (e) => e.chain().focus().deleteColumn().run(),
       isEnabled: inTable,
     },
+    // Merged cells (TASK-548). The server has kept `colspan`/`rowspan` since
+    // TASK-434, so a merged cell could be imported but never MADE here. Select
+    // cells by dragging across them (or Shift+arrows), then merge.
+    {
+      short: "Об'єднати",
+      label: "Об'єднати клітинки",
+      run: (e) => e.chain().focus().mergeCells().run(),
+      isEnabled: canMergeCells,
+    },
+    {
+      short: "Розділити",
+      label: "Розділити клітинку",
+      run: (e) => e.chain().focus().splitCell().run(),
+      // Only a cell that spans more than one row or column has anything to
+      // split into.
+      isEnabled: (e) => e.can().splitCell(),
+    },
     {
       icon: Trash2,
       label: "Видалити таблицю",
@@ -326,6 +372,11 @@ const TABLE_PROSE = [
   // Tiptap wraps every cell's content in a paragraph; the prose paragraph
   // spacing around it would push each cell twice as tall as its text.
   "[&_th_p]:my-0 [&_td_p]:my-0",
+  // Caption and totals row (TASK-548) — the parts of a table the server keeps
+  // since then. The editor itself folds `<tfoot>` rows into the body, but the
+  // three copies stay identical rather than subtly different.
+  "[&_caption]:caption-top [&_caption]:pb-2 [&_caption]:text-left [&_caption]:text-sm [&_caption]:text-muted-foreground",
+  "[&_tfoot_td]:border-t-2 [&_tfoot_td]:font-semibold [&_tfoot_th]:border-t-2",
 ].join(" ");
 
 /**
@@ -352,12 +403,20 @@ const TABLE_PROSE = [
  *   u, s, ul, ol, li,
  *   blockquote, code, pre ....... StarterKit
  *   a ........................... Link (bundled by StarterKit v3)
- *   table/tr/th/td .............. TableKit
- *   thead/tbody ................. parsed away, re-emitted as <tbody> — the
+ *   table/tr/th/td .............. TableKit (table = {@link CaptionedTable})
+ *   thead/tbody/tfoot ........... parsed away, re-emitted as <tbody> — the
  *                                 ProseMirror table model has no separate
- *                                 header SECTION, only header CELLS, so
- *                                 `<thead><tr><th>` round-trips as
- *                                 `<tbody><tr><th>`: same cells, same text
+ *                                 header or footer SECTION, only header CELLS,
+ *                                 so `<thead><tr><th>` round-trips as
+ *                                 `<tbody><tr><th>` and a `<tfoot>` row as the
+ *                                 last body row: same cells, same text
+ *   caption ..................... `caption` attribute of {@link CaptionedTable}
+ *                                 (TASK-548): the text survives, inline marks
+ *                                 inside it are flattened
+ *   colgroup/col ................ rebuilt by Tiptap from the cells on every
+ *                                 save; an incoming `span` is dropped, which
+ *                                 loses nothing a reader sees (the server
+ *                                 strips every `col` attribute that styles)
  *   img ......................... {@link ImageNode}, carrying `src` and `alt`
  *                                 and nothing else — which is precisely the
  *                                 server's `allowedAttributes.img`
@@ -477,7 +536,11 @@ export function RichTextEditor({
       // stripped on save — the operator would drag a column, see it move, and
       // find it back at default width after a reload. Not offering the handle
       // is more honest than offering one that forgets.
-      TableKit.configure({ table: { resizable: false } }),
+      //
+      // The table node itself is {@link CaptionedTable} — Tiptap's `Table`
+      // plus a caption (TASK-548) — so TableKit registers only rows and cells.
+      TableKit.configure({ table: false }),
+      CaptionedTable.configure({ resizable: false }),
       // `src` + `alt`, matching the server's `allowedAttributes.img` exactly —
       // see {@link ImageNode} and the schema table above (TASK-547).
       ImageNode,

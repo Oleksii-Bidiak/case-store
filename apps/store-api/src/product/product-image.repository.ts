@@ -31,6 +31,9 @@ export interface UpdateImageInput {
   isPrimary: boolean;
 }
 
+/** Thrown inside the reorder transaction to roll it back; never leaves the repository. */
+class ForeignImageInReorder extends Error {}
+
 /**
  * Encapsulates all Prisma access for the `product_images` table. Returns domain
  * entities, never raw Prisma rows.
@@ -101,19 +104,51 @@ export class ProductImageRepository {
   }
 
   /**
-   * Update sortOrder + isPrimary for a set of images atomically. The caller is
-   * responsible for the at-most-one-primary invariant; this method only persists.
+   * Persist a gallery reorder for ONE product, atomically (TASK-783). Returns
+   * `false` — having written nothing — when any id is not one of this product's
+   * images (another product's image, or no image at all); `true` otherwise.
+   *
+   * - Every update is scoped by `productId`, so a foreign id matches no row
+   *   instead of rewriting another product's cover, and an unknown id never
+   *   reaches Prisma as a P2025 (`update` on a missing row) that answers 500.
+   * - When the payload promotes an image, every other cover of the product is
+   *   demoted in the same transaction — a partial payload that does not mention
+   *   the current cover cannot leave two. The caller still guarantees the
+   *   payload itself promotes at most one image.
+   * - The product's gallery rows are locked first (`FOR UPDATE`), so two
+   *   concurrent reorders promoting different images serialise: the second one's
+   *   demote runs after the first commits and sees its cover. Without the lock,
+   *   under READ COMMITTED each demote reads a snapshot where the other's
+   *   promotion is not yet visible, and both covers survive.
    */
-  async updateMany(updates: UpdateImageInput[]): Promise<void> {
-    if (updates.length === 0) return;
-    await this.prisma.$transaction(
-      updates.map((u) =>
-        this.prisma.productImage.update({
-          where: { id: u.id },
-          data: { sortOrder: u.sortOrder, isPrimary: u.isPrimary },
-        }),
-      ),
-    );
+  async reorderForProduct(productId: string, updates: UpdateImageInput[]): Promise<boolean> {
+    if (updates.length === 0) return true;
+    const ids = updates.map((u) => u.id);
+    const promotes = updates.some((u) => u.isPrimary);
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM product_images WHERE product_id = ${productId} FOR UPDATE`;
+
+        if (promotes) {
+          await tx.productImage.updateMany({
+            where: { productId, isPrimary: true, id: { notIn: ids } },
+            data: { isPrimary: false },
+          });
+        }
+        for (const u of updates) {
+          const { count } = await tx.productImage.updateMany({
+            where: { id: u.id, productId },
+            data: { sortOrder: u.sortOrder, isPrimary: u.isPrimary },
+          });
+          if (count !== 1) throw new ForeignImageInReorder();
+        }
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof ForeignImageInReorder) return false;
+      throw error;
+    }
   }
 
   /**
