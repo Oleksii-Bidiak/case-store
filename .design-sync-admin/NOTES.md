@@ -202,8 +202,9 @@ Update this file when `admin-nav-list.tsx`, `admin-header.tsx` or the drawer cha
 ### Screen artboards (TASK-848 onward)
 
 One file per section (`Login`, `Dashboard`, `Orders`, `Products`, `Categories`, `Staff`,
-`Settings`, `Profile`.dc.html — group «База», base commit `629ad274`, see the registry in
-`docs/plans/189-design-track-cycle-2.md`). Each file is a canvas like AdminShell's showcase:
+`Settings`, `Profile`.dc.html — group «База», base commit `629ad274`; `Returns`, `Reviews`,
+`Users`, `Messages`, `Subscribers`, `AuditLog`.dc.html — group «CRM», base commit `4f5c4b02`;
+see the registry in `docs/plans/189-design-track-cycle-2.md`). Each file is a canvas like AdminShell's showcase:
 the section's screens at 1440 and 390, then the states the code has (loading, empty, error,
 confirm dialogs) at 1440 only, unless 390 lays them out differently. They draw the code **as
 is** — every known defect they reproduce is listed in the file's `<style>` header comment, and
@@ -220,3 +221,11 @@ a mismatch with the code is an artboard bug, not a design proposal. Conventions:
 - dc pitfalls: never mix a `{{ }}` hole with text in `style` (wrap the icon in a coloured span);
   `<textarea>{{ x }}</textarea>` renders `[object Object]` — use `value="{{ x }}"`; `.prose`
   collides with the bundle's typography plugin (65ch) — pick another class name.
+- The 390 dialog carries the `m` class on ITSELF (`dlg k m`), so its near-full-screen rule must be
+  the compound `.dlg.m`, not the descendant `.m .dlg` — the «База» files (Staff, Orders…) still use
+  `.m .dlg`, so their 390 dialogs render centred instead of `top-4 h-[calc(100%-2rem)]` (fix in Д-ж).
+- A cell with `max-w-xs` + `whitespace-nowrap` really is capped at 320px in Chromium and its text
+  runs on into the next column — draw it that way, it is what the admin shows.
+- Pre-render before uploading: open any Pages `serve_url` in Playwright with `page.route` fulfilling
+  that path from the local file — relative `support.js` / `ds-base.js` / `_ds` / `AdminShell` resolve
+  against the project, so a new file renders exactly as it will once written.
