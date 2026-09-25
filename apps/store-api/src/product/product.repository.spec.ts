@@ -910,7 +910,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       ['findOneForIndex', 'findFirst'],
       ['findManyForIndex', 'findMany'],
     ] as const)(
-      '%s carries the article number into the index source (TASK-522)',
+      '%s carries the article number and keywords into the index source (TASK-522, TASK-558)',
       async (method, prismaCall) => {
         const row = {
           id: 'product-1',
@@ -920,6 +920,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
           compareAtPrice: null,
           slug: 'chokhol-spigen',
           sku: 'SPG-IP15-CL',
+          keywords: ['ударостійкий'],
           categoryId: 'cat-1',
           brandId: null,
           stock: 3,
@@ -940,6 +941,8 @@ describe('ProductRepository (soft-delete behaviour)', () => {
             : (await repository.findManyForIndex(0, 100)).items[0];
 
         expect(result?.sku).toBe('SPG-IP15-CL');
+        // TASK-558: the admin tags ride the same source into the document.
+        expect(result?.keywords).toEqual(['ударостійкий']);
       },
     );
 

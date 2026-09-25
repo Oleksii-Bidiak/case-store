@@ -66,6 +66,7 @@ function makeIndexSource(overrides: Record<string, unknown> = {}) {
     compareAtPrice: { toString: () => '39.99' },
     slug: 'iphone-15-case',
     sku: 'SPG-IP15-CL',
+    keywords: [],
     categoryId: 'cat-1',
     categoryName: 'Cases',
     brandId: 'brand-1',
@@ -186,9 +187,12 @@ describe('SearchService', () => {
       // `sku` sits right after `name` (TASK-522): a query matching an article
       // number is the strongest signal a shopper can give, so under the
       // `attribute` ranking rule it must outrank a mention in a description.
+      // `keywords` (TASK-558) follow: an admin tag is a deliberate "this product
+      // IS about X", stronger than X merely appearing in the description.
       expect(PRODUCTS_INDEX_SETTINGS.searchableAttributes).toEqual([
         'name',
         'sku',
+        'keywords',
         'description',
         'categoryName',
         'brandName',
@@ -294,6 +298,59 @@ describe('SearchService', () => {
       for (const term of ['айфон', 'чохол', 'чохли']) {
         expect(docs[0].searchTerms).toContain(term);
       }
+    });
+
+    it('carries the admin keywords into the document (TASK-558)', async () => {
+      // The admin's own tag vocabulary — words a shopper types that the name
+      // and description do not contain. Stored since TASK-437, searchable only
+      // once they are in the document.
+      repo.findOneForIndex.mockResolvedValue(
+        makeIndexSource({ keywords: ['ударостійкий', 'подарунок'] }) as never,
+      );
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].keywords).toEqual(['ударостійкий', 'подарунок']);
+    });
+
+    it('indexes a product without keywords as an empty list, never undefined', async () => {
+      repo.findOneForIndex.mockResolvedValue(makeIndexSource({ keywords: [] }) as never);
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].keywords).toEqual([]);
+    });
+
+    it('derives cross-script search terms from the keywords too (TASK-558)', async () => {
+      // A tag is exactly the kind of word the name does not say — and the
+      // shopper may type it in the other script («магсейф» for a "MagSafe" tag).
+      repo.findOneForIndex.mockResolvedValue(
+        makeIndexSource({
+          name: 'Чохол прозорий',
+          categoryName: 'Чохли',
+          brandName: null,
+          sku: null,
+          keywords: ['MagSafe'],
+        }) as never,
+      );
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].searchTerms).toContain('магсейф');
+    });
+
+    it('carries keywords on the full reindex path as well (TASK-558)', async () => {
+      repo.findManyForIndex.mockResolvedValueOnce({
+        items: [makeIndexSource({ keywords: ['подарунок'] })] as never,
+      });
+
+      await service.reindexAll();
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].keywords).toEqual(['подарунок']);
     });
 
     it('indexes a product with no article number as sku null', async () => {

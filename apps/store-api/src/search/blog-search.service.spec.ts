@@ -32,6 +32,7 @@ function makePost(overrides: Record<string, unknown> = {}) {
     scheduledAt: null,
     createdAt: new Date('2026-06-01T00:00:00.000Z'),
     updatedAt: new Date('2026-06-28T00:00:00.000Z'),
+    keywords: [],
     category: { id: 'cat-1', slug: 'guides', name: 'Гайди' },
     ...overrides,
   };
@@ -83,9 +84,12 @@ describe('BlogSearchService', () => {
       expect(BLOG_POSTS_INDEX).toBe('blog_posts');
     });
 
-    it('searches title, excerpt, category and the cross-script terms', () => {
+    it('searches title, keywords, excerpt, category and the cross-script terms', () => {
+      // `keywords` (TASK-558) rank right after the title, mirroring the product
+      // index: an admin tag outranks a passing mention in the excerpt.
       expect(BLOG_POSTS_INDEX_SETTINGS.searchableAttributes).toEqual([
         'title',
+        'keywords',
         'excerpt',
         'categoryName',
         'searchTerms',
@@ -131,6 +135,31 @@ describe('BlogSearchService', () => {
       // The sanitized HTML body is deliberately NOT indexed — it would put tag
       // names and attribute values into the searchable text.
       expect(docs[0]).not.toHaveProperty('content');
+    });
+
+    it('carries the admin keywords and their cross-script terms (TASK-558)', async () => {
+      repo.findById.mockResolvedValue(
+        makePost({ title: 'Як обрати чохол', keywords: ['MagSafe', 'подарунок'] }) as never,
+      );
+
+      await service.indexPost('post-1');
+
+      const [[docs]] = meili.indexDocuments.mock.calls;
+      const doc = docs[0] as { keywords: string[]; searchTerms: string[] };
+      expect(doc.keywords).toEqual(['MagSafe', 'подарунок']);
+      expect(doc.searchTerms).toContain('магсейф');
+    });
+
+    it('carries keywords on the full blog reindex path as well (TASK-558)', async () => {
+      repo.findAllAdmin.mockResolvedValue({
+        posts: [makePost({ keywords: ['подарунок'] })],
+        total: 1,
+      } as never);
+
+      await service.reindexAll();
+
+      const [[docs]] = meili.indexDocuments.mock.calls;
+      expect((docs[0] as { keywords: string[] }).keywords).toEqual(['подарунок']);
     });
 
     it('DELETES the document when the post is a draft (unpublish removes it from search)', async () => {

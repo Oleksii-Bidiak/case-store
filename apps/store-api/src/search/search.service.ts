@@ -36,9 +36,23 @@ const REINDEX_BATCH = 100;
  * code one character off names a different part (a wrong fit), not a misspelt
  * word. A settings change only reaches a live index through a reindex:
  * `npm run search:reindex` (see `src/scripts/search-reindex.ts`).
+ *
+ * `keywords` (TASK-558) follow `sku`: they are the admin's own tags (TASK-437) —
+ * «ударостійкий», «подарунок» — a deliberate "this product IS about X", which
+ * should outrank X merely being mentioned in a description. They stay
+ * typo-tolerant (they are words, not codes) and feed `searchTerms` too, so a tag
+ * typed in the other script still matches. Same reindex step as `sku`.
  */
 export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
-  searchableAttributes: ['name', 'sku', 'description', 'categoryName', 'brandName', 'searchTerms'],
+  searchableAttributes: [
+    'name',
+    'sku',
+    'keywords',
+    'description',
+    'categoryName',
+    'brandName',
+    'searchTerms',
+  ],
   // `price` and `inStock` joined the facets in TASK-417: the results page now
   // carries the catalogue's filter panel, and a price or availability filter has
   // to narrow the ENGINE's answer — filtering the hydrated page afterwards would
@@ -551,6 +565,7 @@ export class SearchService implements OnModuleInit {
       description: source.description,
       slug: source.slug,
       sku: source.sku,
+      keywords: source.keywords,
       price: Number(source.price.toString()),
       compareAtPrice:
         source.compareAtPrice != null ? Number(source.compareAtPrice.toString()) : null,
@@ -566,9 +581,10 @@ export class SearchService implements OnModuleInit {
       createdAt: source.createdAt.getTime(),
       // The code feeds the cross-script terms too (TASK-522): a code that spells
       // out what the product fits («GLASS-IPHONE-15») must be findable in the
-      // other script («айфон») even when the name does not say it.
+      // other script («айфон») even when the name does not say it. The admin tags
+      // likewise (TASK-558): a "MagSafe" tag must answer «магсейф».
       searchTerms: extractSearchSynonymTerms(
-        `${source.name} ${source.categoryName} ${source.brandName ?? ''} ${source.sku ?? ''}`,
+        `${source.name} ${source.categoryName} ${source.brandName ?? ''} ${source.sku ?? ''} ${source.keywords.join(' ')}`,
       ),
     };
   }

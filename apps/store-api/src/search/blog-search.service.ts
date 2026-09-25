@@ -22,9 +22,14 @@ const REINDEX_BATCH = 100;
  * «павербнак» must not get typo-corrected products next to an empty article
  * list. `excerpt` is searchable but ranks after the title; `searchTerms` carries
  * the cross-script equivalents, last, for the same reason it does on products.
+ *
+ * `keywords` (TASK-558) — the admin's tags (TASK-437) — rank right after the
+ * title, exactly as they follow the name/article number on products: a tag is a
+ * deliberate statement of what the article is about, a word in the excerpt is
+ * not. A settings change reaches a live index through `npm run search:reindex`.
  */
 export const BLOG_POSTS_INDEX_SETTINGS: IndexSettings = {
-  searchableAttributes: ['title', 'excerpt', 'categoryName', 'searchTerms'],
+  searchableAttributes: ['title', 'keywords', 'excerpt', 'categoryName', 'searchTerms'],
   filterableAttributes: ['categorySlug'],
   sortableAttributes: ['publishedAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
@@ -231,18 +236,23 @@ export class BlogSearchService implements OnModuleInit {
 /**
  * Build a blog search document from a post row. The body is NOT indexed: it is
  * sanitized HTML, so indexing it would put tag names and attribute values into
- * the searchable text; the title, excerpt and category are what a reader
- * actually searches by.
+ * the searchable text; the title, the admin's tags, the excerpt and the
+ * category are what a reader actually searches by.
  */
 function toDocument(post: BlogPostWithCategory): BlogPostSearchDocument {
+  const keywords = post.keywords ?? [];
   return {
     id: post.id,
     title: post.title,
+    keywords,
     excerpt: post.excerpt,
     slug: post.slug,
     categorySlug: post.category.slug,
     categoryName: post.category.name,
     publishedAt: post.publishedAt ? post.publishedAt.getTime() : 0,
-    searchTerms: extractSearchSynonymTerms(`${post.title} ${post.category.name}`),
+    // Tags feed the cross-script terms too (TASK-558), as they do on products.
+    searchTerms: extractSearchSynonymTerms(
+      `${post.title} ${post.category.name} ${keywords.join(' ')}`,
+    ),
   };
 }

@@ -188,6 +188,12 @@ export interface ProductIndexSource {
    * pre-pass in `SearchService` still owns a whole-code query.
    */
   sku: string | null;
+  /**
+   * Admin-curated tags (TASK-437) — the words a shopper types that the name and
+   * description do not contain. Indexed and searchable since TASK-558; empty
+   * when the admin set none.
+   */
+  keywords: string[];
   categoryId: string;
   categoryName: string;
   /** Manufacturer id/name joined for the search brand facet (TASK-189). */
@@ -1013,6 +1019,7 @@ export class ProductRepository {
       compareAtPrice: product.compareAtPrice,
       slug: product.slug,
       sku: product.sku,
+      keywords: product.keywords ?? [],
       categoryId: product.categoryId,
       categoryName: product.category?.name ?? '',
       brandId: product.brandId,

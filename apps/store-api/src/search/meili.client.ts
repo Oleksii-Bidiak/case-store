@@ -64,6 +64,12 @@ export interface ProductSearchDocument extends IndexedDocument {
    * code one character off names a different product, not a misspelling.
    */
   sku: string | null;
+  /**
+   * Admin-curated tags (TASK-437/558) — words a shopper types that the name and
+   * description do not contain. Searchable, ranked right after `sku`; never
+   * displayed from the index.
+   */
+  keywords: string[];
   price: number;
   compareAtPrice: number | null;
   /**
@@ -106,6 +112,8 @@ export interface ProductSearchDocument extends IndexedDocument {
  */
 export interface BlogPostSearchDocument extends IndexedDocument {
   title: string;
+  /** Admin-curated tags (TASK-437/558), searchable right after the title. */
+  keywords: string[];
   excerpt: string;
   slug: string;
   categorySlug: string;
