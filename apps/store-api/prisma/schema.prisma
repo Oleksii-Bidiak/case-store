@@ -1534,11 +1534,15 @@ model ProductAttributeValue {
 }
 
 /// Discriminates which content model a SlugRedirect row belongs to (TASK-285).
+/// DEVICE_MODEL (TASK-699): a device model's slug is the second segment of the public
+/// compatibility landing `/catalog/<категорія>/<модель>` (TASK-490), so renaming it
+/// must leave a 308 behind exactly like a category rename does.
 enum SlugRedirectEntity {
   PAGE
   BLOG_POST
   PRODUCT
   CATEGORY
+  DEVICE_MODEL
 }
 
 /// Server-side 301-redirect ledger for admin-renamed content slugs (TASK-285, SEO-10). One row
