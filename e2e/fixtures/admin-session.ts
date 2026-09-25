@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { E2E_ADMIN_EMAIL, E2E_ADMIN_PASSWORD } from "./seed-e2e";
+import { waitForHydration } from "./hydration";
 
 /**
  * Sign the seeded staff account in, inside THIS page's own context (TASK-405).
@@ -30,9 +31,13 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   // Labels are the Ukrainian strings from
   // `apps/store-admin/src/shared/config/dictionary.ts` (`dict.login`); the admin
   // app is not importable from here, so they are matched loosely.
+  const submit = page.getByRole("button", { name: /^увійти$/i });
+  // A click before hydration is a native GET submit, not a login (TASK-753).
+  await waitForHydration(page.locator("form").filter({ has: submit }));
+
   await page.getByLabel(/(електронна пошта|email)/i).fill(E2E_ADMIN_EMAIL);
   await page.getByLabel(/пароль/i).fill(E2E_ADMIN_PASSWORD);
-  await page.getByRole("button", { name: /^увійти$/i }).click();
+  await submit.click();
 
   // A CUSTOMER login is rejected in place with "не має прав адміністратора", so
   // leaving /login is itself the proof that the seeded account is staff.

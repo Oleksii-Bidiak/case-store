@@ -39,7 +39,10 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? "github" : "list",
-  globalSetup: "./e2e/fixtures/seed-e2e.ts",
+  // Both run after `webServer` is up. The warm-up compiles every route a test
+  // lands on right after a login, so a cold `next dev` compile cannot outlast a
+  // 5-second expect (TASK-753 — the measurement is in warm-up.ts).
+  globalSetup: ["./e2e/fixtures/seed-e2e.ts", "./e2e/fixtures/warm-up.ts"],
 
   use: {
     baseURL: `http://localhost:${CLIENT_PORT}`,
