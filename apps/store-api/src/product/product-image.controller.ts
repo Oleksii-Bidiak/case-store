@@ -178,10 +178,16 @@ export class ProductImageController {
   })
   @ApiParam({ name: 'productId', description: 'Product UUID' })
   @ApiResponse({ status: 200, description: 'Images reordered' })
-  @ApiResponse({ status: 400, description: 'Invalid payload (e.g. >1 primary)' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid payload (>1 primary, or an image listed twice)',
+  })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  @ApiResponse({ status: 404, description: 'Product not found' })
+  @ApiResponse({
+    status: 404,
+    description: 'Product not found, or an image id that is not one of its images',
+  })
   async reorder(
     @Param('productId') productId: string,
     @Body() dto: ReorderImagesDto,

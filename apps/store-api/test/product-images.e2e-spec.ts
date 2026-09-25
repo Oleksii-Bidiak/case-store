@@ -51,7 +51,7 @@ describe('ProductImageController (e2e)', () => {
     create: jest.fn(),
     findById: jest.fn(),
     delete: jest.fn(),
-    updateMany: jest.fn(),
+    reorderForProduct: jest.fn(),
   };
 
   const mediaRepositoryMock = {
@@ -518,7 +518,7 @@ describe('ProductImageController (e2e)', () => {
     it('returns 200 for an admin with a valid body', async () => {
       const token = generateAccessToken('admin-1', 'ADMIN');
       productRepositoryMock.findById.mockResolvedValue(testProduct);
-      imageRepositoryMock.updateMany.mockResolvedValue(undefined);
+      imageRepositoryMock.reorderForProduct.mockResolvedValue(true);
 
       await request(app.getHttpServer())
         .patch(`/api/products/${PRODUCT_ID}/images/reorder`)
@@ -526,7 +526,49 @@ describe('ProductImageController (e2e)', () => {
         .send({ items: [{ id: IMAGE_ID, sortOrder: 0, isPrimary: true }] })
         .expect(200);
 
-      expect(imageRepositoryMock.updateMany).toHaveBeenCalledTimes(1);
+      expect(imageRepositoryMock.reorderForProduct).toHaveBeenCalledWith(PRODUCT_ID, [
+        { id: IMAGE_ID, sortOrder: 0, isPrimary: true },
+      ]);
+    });
+
+    // TASK-783: an image id of ANOTHER product (or one that does not exist)
+    // answers 404 — before, it switched the other product's cover or, for an
+    // unknown id, surfaced Prisma's P2025 as a 500. The repository's
+    // product-scoped transaction matches no row for it and rolls back (proved on
+    // Postgres in product-image-reorder.repository.int-spec.ts).
+    it('returns 404 for an image of another product', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+      imageRepositoryMock.reorderForProduct.mockResolvedValue(false);
+
+      await request(app.getHttpServer())
+        .patch(`/api/products/${PRODUCT_ID}/images/reorder`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          items: [
+            { id: IMAGE_ID, sortOrder: 1, isPrimary: false },
+            { id: '660e8400-e29b-41d4-a716-446655440999', sortOrder: 0, isPrimary: true },
+          ],
+        })
+        .expect(404);
+    });
+
+    it('returns 400 and writes nothing when the same image is listed twice', async () => {
+      const token = generateAccessToken('admin-1', 'ADMIN');
+      productRepositoryMock.findById.mockResolvedValue(testProduct);
+
+      await request(app.getHttpServer())
+        .patch(`/api/products/${PRODUCT_ID}/images/reorder`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          items: [
+            { id: IMAGE_ID, sortOrder: 0, isPrimary: false },
+            { id: IMAGE_ID, sortOrder: 1, isPrimary: false },
+          ],
+        })
+        .expect(400);
+
+      expect(imageRepositoryMock.reorderForProduct).not.toHaveBeenCalled();
     });
 
     it('returns 400 when more than one image is primary', async () => {
