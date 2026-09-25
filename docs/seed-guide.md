@@ -28,13 +28,13 @@ hook in `apps/store-api/prisma.config.ts` (`migrations.seed: 'tsx prisma/seed.ts
 
 All commands run from the **repo root** unless noted. They delegate to the `store-api` workspace.
 
-| Command               | What it does                                                                                                          |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `npm run db:seed`     | Run the seed script against the current DB (no schema change). Idempotent — with one one-off TASK-397 caveat, see §3. |
-| `npm run db:migrate`  | Apply pending migrations via `prisma migrate dev`, then auto-run the seed hook.                                       |
-| `npm run db:push`     | Push the schema to the DB without creating a migration (rapid dev only).                                              |
-| `npm run db:studio`   | Open Prisma Studio to browse/edit seeded data in the browser.                                                         |
-| `npm run db:generate` | Regenerate the Prisma Client after a schema change.                                                                   |
+| Command               | What it does                                                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `npm run db:seed`     | Run the seed script against the current DB (no schema change). Idempotent — with one one-off TASK-397 caveat, see §3.  |
+| `npm run db:migrate`  | `prisma migrate dev`: create a migration from schema changes and apply it. Pass `-- --name <name>`. **Does not seed.** |
+| `npm run db:push`     | Push the schema to the DB without creating a migration (rapid dev only).                                               |
+| `npm run db:studio`   | Open Prisma Studio to browse/edit seeded data in the browser.                                                          |
+| `npm run db:generate` | Regenerate the Prisma Client after a schema change.                                                                    |
 
 Workspace-direct equivalents (run from anywhere) use the `-w` flag, e.g.
 `npm run db:seed -w apps/store-api`.
@@ -123,18 +123,22 @@ with no images. Recovery is simply re-running `npm run db:seed`.
 When you change `prisma/schema.prisma`:
 
 ```bash
-npm run db:migrate            # creates + applies the migration, then runs the seed hook
+npm run db:migrate -- --name add_foo_column   # creates + applies the migration — nothing else
+npm run db:seed                               # only if you want the fixtures refreshed too
 ```
 
-`prisma migrate dev` triggers the seed hook automatically, so the DB is migrated **and** reseeded
-in one step. If you only changed seed data (no schema change), skip the migration and run the seed
-directly:
+**Prisma 7 no longer seeds after `migrate dev`** (nor after `migrate reset`, see §5): the
+automatic seed and its `--skip-seed` flag were removed in v7. The `migrations.seed` entry in
+`prisma.config.ts` is now read only by `prisma db seed`, i.e. by `npm run db:seed`. Older notes
+that say "`db:migrate` reseeds in one step" predate the upgrade. If you only changed seed data (no
+schema change), skip the migration and run the seed alone.
 
-```bash
-npm run db:seed
-```
+The single `--` matters: it hands `--name` through the root script to `prisma migrate dev`. Omit
+the name and Prisma stops to ask for one — see the next subsection for what that does to a shell
+without a terminal.
 
-After any schema change, regenerate the client so TypeScript stays in sync:
+After any schema change, regenerate the client so TypeScript stays in sync (`migrate dev` no
+longer does this either in Prisma 7):
 
 ```bash
 npm run db:generate
@@ -264,6 +268,8 @@ The command above needs a machine that can actually run it — and **that is nev
   Dockerfile. Staging and production are identical in this respect.
 - **CI does not seed.** Neither `deploy-staging` nor `deploy-production` in `ci.yml` has a seed
   step. Nothing will do this for you.
+
+Why it is built this way, and what would replace the manual step, is in §10.
 
 So there is exactly one procedure, and it is the same for every remote environment: temporarily
 publish Postgres on the **server's** `127.0.0.1`, open an SSH tunnel from a machine with the full
@@ -462,3 +468,66 @@ so a staging database can never be seeded with `localhost` URLs.
   photos still go through the admin upload flow, not the seed.
 - The seed assumes an empty or already-seeded DB. It does **not** delete unrelated rows you may
   have created manually — only seed-owned axes and images are replaced wholesale.
+
+---
+
+## 10. What the pipeline seeds vs what a human enters (TASK-328)
+
+The question behind this section came from the owner during the 2026-07-21 demo: _"do companies
+really enter the seed by hand?"_ They do not — but of the three kinds of data a shop holds, only
+two belong in a pipeline, and only one of those on production. Keeping them apart is the
+decision; the manual step we have today is a consequence of it plus one temporary gap.
+
+### Three classes of data
+
+| Class                                                    | Where it comes from                             | Automated?                     | In this repo                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------- | ----------------------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **1. Reference data** — rows the code cannot run without | **Migrations**, on every environment incl. prod | Yes — `prisma migrate deploy`  | **Practically none, and that was checked, not assumed.** Order/payment/return statuses and the like are Prisma **enums** in `schema.prisma`, not lookup tables. Both settings singletons default themselves: `SeoSettingsService` and `SiteContactService` return `SeoSettingsEntity.empty()` / `SiteContactSettingsEntity.empty()` when the row is missing, and their repositories `upsert` on the first save. Nothing needs moving into a migration. |
+| **2. Fixtures** — demo catalogue, demo accounts, orders  | **The seeder** (`prisma/seed.ts`, §3–§8)        | Should be — **never on prod**  | Fixed, published passwords (§7) make it a hazard anywhere real customers live; `assertSeedAllowed()` (§6) refuses production unless explicitly overridden for a fresh staging/demo box.                                                                                                                                                                                                                                                                |
+| **3. The client's real catalogue**                       | **The admin panel and the catalogue import**    | **Never through the pipeline** | It belongs to the business, changes daily and has nothing to do with the code version. Put it in a pipeline and a price change becomes a release — and the admin panel becomes pointless.                                                                                                                                                                                                                                                              |
+
+So on production a pipeline runs migrations and nothing else; fixtures exist only on
+dev/staging/demo; and the catalogue is entered by people.
+
+### Why class 2 is still a manual step today
+
+Two reasons, and only one of them is temporary:
+
+- **Deliberate: the production image cannot seed itself.** `apps/store-api/Dockerfile` runs
+  `npm prune --omit=dev` in the `build` stage, which removes `tsx` (the seed's runner), and the
+  `runner` stage copies `dist/` and `prisma/` but **not `src/`** — while the seeders import
+  `src/common/sanitize` (`prisma/seed/seeders/pages.seeder.ts`, `blog.seeder.ts`). That is a
+  safeguard, not an oversight: an image that ships to production has no business creating
+  accounts whose passwords are printed in this file.
+- **Temporary: nothing else could run it.** There are no ephemeral environments, and GitHub
+  Actions is billing-locked (TASK-491), so no workflow can execute a seed job even if one existed.
+
+Until the follow-ups below land, the SSH-tunnel procedure in §6 is **the only working way** to
+seed a remote environment. Do not remove it from this guide or from
+[`deploy/03b-test-deploy-no-domain.md`](deploy/03b-test-deploy-no-domain.md) §7.
+
+### Target design (follow-up work, not implemented)
+
+**A — a separate seeder image, production image unchanged.**
+
+- Split the Dockerfile stages: `build` (full install, compile — **no prune**) → `prod-deps`
+  (`npm prune --omit=dev` on a copy) → `runner` (copies from `prod-deps` + `dist/`), so the
+  runner stays **byte-identical** to today's.
+- Add a `seeder` stage `FROM build`: it has `tsx`, `src/` and `prisma/`, and its command is
+  `prisma db seed`.
+- Expose it in compose as a service under the profile `seed`, so a normal `docker compose up`
+  never starts it and seeding is an explicit `docker compose --profile seed run --rm seeder`.
+- The `seeder` image is **not pushed to GHCR** — it is built on the box that needs it.
+
+**B — a `seed-staging` job in CI.**
+
+- Trigger: `workflow_dispatch` only, behind the `staging` environment gate — never on push.
+- After seeding, **restart `store-api`**: the seeder writes to Postgres behind the app's back, so
+  Redis keeps serving the cached empty responses and Meilisearch keeps an empty index until the
+  app rebuilds them.
+- Fail on the **result**, not on the exit code: query `count(products)` afterwards and fail the
+  job when it is `0`. A seed that exits 0 having written nothing is exactly the failure a green
+  job would hide.
+
+Both are tracked as separate BACKLOG rows. Until they exist, "the pipeline seeds staging" is not
+true, and nothing in the docs should imply it.
