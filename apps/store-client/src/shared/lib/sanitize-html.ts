@@ -1,5 +1,9 @@
 import DOMPurify from "isomorphic-dompurify";
 import { withOpenerSafeRel } from "./link-rel";
+import { TABLE_SPAN_ATTRIBUTES, clampTableSpan } from "./table-span";
+
+/** Elements whose span attributes {@link clampTableSpan} bounds. */
+const TABLE_SPAN_TAGS = new Set(["TD", "TH", "COL", "COLGROUP"]);
 
 // Harden admin-authored links: any `target="_blank"` gets `noopener noreferrer`
 // so the opened page can't reach back via `window.opener` — added to the rel
@@ -9,6 +13,17 @@ import { withOpenerSafeRel } from "./link-rel";
 DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   if (node.tagName === "A" && node.getAttribute("target") === "_blank") {
     node.setAttribute("rel", withOpenerSafeRel(node.getAttribute("rel")));
+  }
+  // Table spans are clamped to the range the API's sanitizer writes (TASK-548),
+  // so a page body stored before that clamp cannot render `colspan="9999"`.
+  if (TABLE_SPAN_TAGS.has(node.tagName)) {
+    for (const name of TABLE_SPAN_ATTRIBUTES) {
+      const value = node.getAttribute(name);
+      if (value === null) continue;
+      const clamped = clampTableSpan(name, value);
+      if (clamped === null) node.removeAttribute(name);
+      else node.setAttribute(name, clamped);
+    }
   }
 });
 

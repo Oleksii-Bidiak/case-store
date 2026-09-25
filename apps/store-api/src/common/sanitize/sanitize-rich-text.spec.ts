@@ -1,3 +1,4 @@
+import { MAX_TABLE_COLSPAN, MAX_TABLE_ROWSPAN } from './rich-text.constants';
 import { sanitizeRichText } from './sanitize-rich-text';
 
 /**
@@ -178,6 +179,107 @@ describe('sanitizeRichText', () => {
       '</tbody></table>';
 
     expect(sanitizeRichText(html)).toBe(html);
+  });
+
+  /**
+   * TASK-548 — the rest of a real table. The catalogue import writes vendor
+   * HTML through this sanitizer, and a spec table with a caption, a column
+   * group or a totals footer lost those parts on its very first save.
+   */
+  it('keeps caption, colgroup, col and tfoot', () => {
+    const html =
+      '<table><caption>Розміри</caption>' +
+      '<colgroup><col span="2" /><col /></colgroup>' +
+      '<thead><tr><th>A</th><th>B</th><th>C</th></tr></thead>' +
+      '<tbody><tr><td>1</td><td>2</td><td>3</td></tr></tbody>' +
+      '<tfoot><tr><td colspan="2">Разом</td><td>3</td></tr></tfoot>' +
+      '</table>';
+
+    expect(sanitizeRichText(html)).toBe(html);
+  });
+
+  it('keeps inline formatting inside a caption but no attributes on it', () => {
+    const result = sanitizeRichText(
+      '<table><caption class="x" style="color:red" onclick="alert(1)">Розміри <strong>чохлів</strong></caption>' +
+        '<tbody><tr><td>1</td></tr></tbody></table>',
+    );
+
+    expect(result).toContain('<caption>Розміри <strong>чохлів</strong></caption>');
+  });
+
+  it('strips every attribute but span from col and colgroup', () => {
+    const result = sanitizeRichText(
+      '<table><colgroup span="2" style="width:9999px" class="x"><col width="300" style="background:red" span="2" /></colgroup>' +
+        '<tbody><tr><td>1</td><td>2</td></tr></tbody></table>',
+    );
+
+    expect(result).toContain('<colgroup span="2"><col span="2" /></colgroup>');
+  });
+
+  /**
+   * TASK-548 — a span is structure, but an unbounded one is a layout weapon:
+   * `colspan="9999"` makes the browser lay out ten thousand columns in a
+   * `table-fixed` table, squeezing every real one to nothing. Clamped, not
+   * dropped, so an oversized merge still reads as a merge.
+   */
+  describe('clamps table spans to the documented range', () => {
+    const cell = (attrs: string) => `<table><tbody><tr><td ${attrs}>x</td></tr></tbody></table>`;
+    const cellOut = (attrs: string) => sanitizeRichText(cell(attrs)).match(/<td[^>]*>/)?.[0];
+
+    it('exports the documented bounds', () => {
+      expect(MAX_TABLE_COLSPAN).toBe(20);
+      expect(MAX_TABLE_ROWSPAN).toBe(100);
+    });
+
+    it('caps colspan at MAX_TABLE_COLSPAN', () => {
+      expect(cellOut('colspan="9999"')).toBe(`<td colspan="${MAX_TABLE_COLSPAN}">`);
+    });
+
+    it('caps rowspan at MAX_TABLE_ROWSPAN', () => {
+      expect(cellOut('rowspan="70000"')).toBe(`<td rowspan="${MAX_TABLE_ROWSPAN}">`);
+    });
+
+    it('keeps an in-range span exactly as written, the boundaries included', () => {
+      expect(cellOut('colspan="1" rowspan="1"')).toBe('<td colspan="1" rowspan="1">');
+      expect(cellOut(`colspan="${MAX_TABLE_COLSPAN}"`)).toBe(`<td colspan="${MAX_TABLE_COLSPAN}">`);
+      expect(cellOut(`rowspan="${MAX_TABLE_ROWSPAN}"`)).toBe(`<td rowspan="${MAX_TABLE_ROWSPAN}">`);
+    });
+
+    it('reads a span the way a browser does and writes it back normalised', () => {
+      // HTML's "rules for parsing non-negative integers": leading whitespace
+      // and a `+` are skipped, digits are read, trailing junk is ignored.
+      expect(cellOut('colspan=" +3px"')).toBe('<td colspan="3">');
+      expect(cellOut('rowspan="007"')).toBe('<td rowspan="7">');
+    });
+
+    it('drops a span that is zero, negative or not a number — the browser default is 1', () => {
+      // `rowspan="0"` means "to the end of the section" in HTML — an unbounded
+      // span by another name, so it goes the same way as garbage.
+      expect(cellOut('colspan="0"')).toBe('<td>');
+      expect(cellOut('rowspan="0"')).toBe('<td>');
+      expect(cellOut('colspan="-4"')).toBe('<td>');
+      expect(cellOut('rowspan="abc"')).toBe('<td>');
+      expect(cellOut('colspan=""')).toBe('<td>');
+    });
+
+    it('clamps th exactly like td', () => {
+      expect(
+        sanitizeRichText(
+          '<table><tbody><tr><th colspan="500" rowspan="500">H</th></tr></tbody></table>',
+        ),
+      ).toContain(`<th colspan="${MAX_TABLE_COLSPAN}" rowspan="${MAX_TABLE_ROWSPAN}">`);
+    });
+
+    it('clamps col and colgroup span against the column bound', () => {
+      const result = sanitizeRichText(
+        '<table><colgroup span="1000"><col span="9999" /><col span="0" /></colgroup>' +
+          '<tbody><tr><td>1</td></tr></tbody></table>',
+      );
+
+      expect(result).toContain(
+        `<colgroup span="${MAX_TABLE_COLSPAN}"><col span="${MAX_TABLE_COLSPAN}" /><col /></colgroup>`,
+      );
+    });
   });
 
   it('strips every other attribute from table cells', () => {

@@ -34,6 +34,9 @@ const PROSE = [
   // Tiptap wraps every cell's content in a paragraph; the 18px paragraph
   // spacing above would make each cell twice as tall as its text.
   "[&_th_p]:my-0 [&_td_p]:my-0",
+  // Caption and totals row (TASK-548) — kept by the server since then.
+  "[&_caption]:caption-top [&_caption]:pb-2 [&_caption]:text-left [&_caption]:text-sm [&_caption]:text-muted-foreground",
+  "[&_tfoot_td]:border-t-2 [&_tfoot_td]:font-semibold [&_tfoot_th]:border-t-2",
 ].join(" ");
 
 export interface RichTextPreviewProps {

@@ -1,5 +1,7 @@
 import sanitizeHtml from 'sanitize-html';
 
+import { MAX_TABLE_COLSPAN, MAX_TABLE_ROWSPAN } from './rich-text.constants';
+
 /**
  * Allow-list policy for rich-text HTML produced by the admin Tiptap editor.
  *
@@ -16,7 +18,9 @@ import sanitizeHtml from 'sanitize-html';
  * paths, the API's uploads origin and the IMAGE_HOSTS allow-list — and base64
  * raster `data:` images (never `data:text/html` or `data:image/svg+xml`); an
  * image from anywhere else is dropped whole; table cells keep `colspan`
- * and `rowspan` (structure, not presentation) and nothing else.
+ * and `rowspan` (structure, not presentation) and nothing else, `col` and
+ * `colgroup` keep only `span`, and every span is clamped to the documented
+ * range in `rich-text.constants.ts` (TASK-548).
  */
 const RICH_TEXT_POLICY: sanitizeHtml.IOptions = {
   allowedTags: [
@@ -42,12 +46,22 @@ const RICH_TEXT_POLICY: sanitizeHtml.IOptions = {
     'a',
     'img',
     'table',
+    // TASK-548: the rest of a real table. `caption` names it, `colgroup`/`col`
+    // group its columns, `tfoot` holds its totals row. Without them a vendor
+    // spec table from the catalogue import lost those parts on its first save.
+    'caption',
+    'colgroup',
+    'col',
     'thead',
     'tbody',
+    'tfoot',
     'tr',
     'th',
     'td',
   ],
+  // `<col>` is a void element; without this it would be written back as
+  // `<col></col>`, which an HTML parser reads as a stray end tag.
+  selfClosing: [...sanitizeHtml.defaults.selfClosing, 'col'],
   allowedAttributes: {
     a: ['href', 'target', 'rel'],
     img: ['src', 'alt'],
@@ -58,8 +72,14 @@ const RICH_TEXT_POLICY: sanitizeHtml.IOptions = {
     // carry (style, class, width, on*) stays off the list on purpose — the
     // admin editor never emits it, and vendor HTML from the catalogue import
     // is exactly the untrusted input this policy exists to flatten.
+    //
+    // Every span is also CLAMPED (TASK-548) — see {@link clampSpans}.
     th: ['colspan', 'rowspan'],
     td: ['colspan', 'rowspan'],
+    // How many columns a column group covers: structure again, and the only
+    // thing a `<col>` says once its presentational `width`/`style` are gone.
+    col: ['span'],
+    colgroup: ['span'],
   },
   // Only these URL schemes survive on hrefs / srcs; `javascript:` and other
   // dangerous schemes are dropped entirely.
@@ -192,6 +212,52 @@ function isExternalLink(href: string | undefined, siteOrigin: string | undefined
 }
 
 /**
+ * The upper bound of each span attribute (TASK-548). A `<col>`/`<colgroup>`
+ * `span` counts columns, so it shares the column bound.
+ */
+const SPAN_LIMITS: Readonly<Record<string, number>> = {
+  colspan: MAX_TABLE_COLSPAN,
+  rowspan: MAX_TABLE_ROWSPAN,
+  span: MAX_TABLE_COLSPAN,
+};
+
+/**
+ * HTML's "rules for parsing non-negative integers", which is how a browser
+ * reads a span: leading ASCII whitespace and one `+` are skipped, the digits
+ * that follow are the value, and anything after them is ignored — so `" +3px"`
+ * is 3 to the browser, and must be 3 here too, or the clamp and the renderer
+ * would disagree about the table.
+ */
+const HTML_NON_NEGATIVE_INTEGER = /^[\t\n\f\r ]*\+?(\d+)/;
+
+/**
+ * Keep every span attribute on a table element inside the documented range
+ * ({@link MAX_TABLE_COLSPAN}, {@link MAX_TABLE_ROWSPAN}): read it the way a
+ * browser does, clamp a value above the bound to the bound, drop one below 1
+ * (zero — `rowspan="0"` is "to the end of the section", an unbounded span by
+ * another name — or unparseable) so the browser default of 1 applies, and
+ * write what is kept back as plain digits. Other attributes pass through to the
+ * allow-list untouched.
+ */
+function clampSpans(tagName: string, attribs: sanitizeHtml.Attributes): sanitizeHtml.Tag {
+  const next: sanitizeHtml.Attributes = { ...attribs };
+  for (const [name, max] of Object.entries(SPAN_LIMITS)) {
+    const raw = next[name];
+    if (raw === undefined) {
+      continue;
+    }
+    const digits = HTML_NON_NEGATIVE_INTEGER.exec(raw)?.[1];
+    const value = digits === undefined ? 0 : Number(digits);
+    if (value < 1) {
+      delete next[name];
+    } else {
+      next[name] = String(Math.min(value, max));
+    }
+  }
+  return { tagName, attribs: next };
+}
+
+/**
  * The full policy for one call: the static allow-list plus the rules that
  * depend on the deployment's origins.
  */
@@ -212,6 +278,10 @@ function buildPolicy(options: ResolvedSanitizeOptions): sanitizeHtml.IOptions {
             : 'noopener noreferrer',
         },
       }),
+      th: clampSpans,
+      td: clampSpans,
+      col: clampSpans,
+      colgroup: clampSpans,
     },
     // An `<img>` whose source did not pass {@link isAllowedImageSrc} is dropped
     // WHOLE. Leaving it with the src stripped would store a sourceless image —
