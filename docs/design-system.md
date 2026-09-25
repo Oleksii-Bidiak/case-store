@@ -14,8 +14,10 @@ and the polish bar of Apple Store / Stripe / Linear.
 ## 1. Design principles
 
 1. **One primary action per screen.** The indigo `primary` button is reserved for the
-   single most important action in a view (Buy / Add to cart / Checkout). Everything else
-   is `secondary`, `outline`, or a link.
+   single most important **page-level** action in a view (Buy / Add to cart / Checkout).
+   Everything else is `secondary`, `outline`, or a link. Allowed exceptions (owner decision
+   7.4, audit 2026-09-24): the header chrome (cart button, search submit) and the «Купити»
+   button on each product card — they repeat per item or per layout, not per page.
 2. **Let products breathe, but keep commerce dense.** Generous whitespace around hero and
    section headings; tight, information-rich product cards (price, old price, discount %,
    variants, delivery hint) like the benchmark UA shops.
@@ -32,8 +34,14 @@ and the polish bar of Apple Store / Stripe / Linear.
 ## 2. Color tokens
 
 Use as Tailwind utilities: `bg-primary`, `text-primary-foreground`, `border-border`, etc.
-Every color has light + dark values (dark via `prefers-color-scheme`). **Never** reference
-the hex directly.
+Every color has light + dark values. **Never** reference the hex directly.
+
+**Theme mechanism.** The theme is owned by next-themes (`app/providers.tsx`,
+`attribute="data-theme"`, `defaultTheme="system"`). The header switcher offers light / system /
+dark. Light sets `data-theme="light"` and dark sets `data-theme="dark"` (`:root[data-theme='dark']`).
+In "system" there is no `data-theme`, and only then does `@media (prefers-color-scheme: dark)`
+decide (`:root:not([data-theme='light'])`). Tailwind's `dark:` variant follows the same
+attribute. The two dark blocks in `globals.css` must stay in sync.
 
 | Token                                    | Role                          | Light                             | Dark                              |
 | ---------------------------------------- | ----------------------------- | --------------------------------- | --------------------------------- |
@@ -51,6 +59,7 @@ the hex directly.
 | `destructive` / `destructive-foreground` | Errors, delete                | `#ef4444` / `#fff`                | `#dc2626` / `#fff`                |
 | `border` / `input` / `ring`              | Borders / inputs / focus ring | `#e2e8f0` / `#e2e8f0` / `#4f46e5` | `#334155` / `#334155` / `#6366f1` |
 | `overlay`                                | Modal scrim                   | `rgba(0,0,0,.8)`                  | `rgba(0,0,0,.8)`                  |
+| `footer` / `footer-foreground`           | Footer & announcement bar     | `#0f172a` / `#ffffff`             | same (theme-invariant, F-06)      |
 
 **Usage rules**
 
@@ -59,6 +68,19 @@ the hex directly.
 - Discount badge: `bg-sale text-sale-foreground`. "New": `bg-primary text-primary-foreground`.
 - Stock: in-stock `text-success`, low-stock `text-warning`, out `text-muted-foreground`.
 - Focus ring: rely on `ring`/`ring-ring` — never remove focus outlines.
+- Footer and announcement bar: `bg-footer text-footer-foreground` — a dark panel in both themes.
+- **Order & payment status colours** — one map, rendered with `Badge` everywhere (`/orders`,
+  order confirmation, `/orders/status`, guest order view):
+
+  | Status group                                          | Colour                       |
+  | ----------------------------------------------------- | ---------------------------- |
+  | In progress (pending, confirmed, processing, shipped) | shades of `primary`          |
+  | `DELIVERED`, `PAID`                                   | `success`                    |
+  | `REFUNDED`, `PARTIALLY_REFUNDED`                      | `muted` / `muted-foreground` |
+  | `CANCELLED`, `FAILED`                                 | `destructive`                |
+
+  The single shared map is rolling out via TASK-868. Until then some screens still carry their
+  own mapping.
 
 ---
 
@@ -77,8 +99,19 @@ Fonts (Next font vars, mapped in `@theme`): `font-sans` = Geist Sans (body/UI),
 | Small / meta    | `text-sm text-muted-foreground`                              | Captions, helper text              |
 | Micro           | `text-xs`                                                    | Badges, legal, SKU                 |
 
-Rules: max **one** `h1` per page; never skip heading levels; line length ≤ ~70ch for prose
-(`max-w-prose`); prices use `tabular-nums` so columns align.
+Rules:
+
+- The H1 and H2 rows are **mandatory**. Page titles and section headings use exactly these
+  classes and no per-page `text-[..px]` (owner decision 7.5). Pages that still hard-code sizes
+  move over via TASK-861.
+- The Hero row is for the homepage slider only.
+- Max **one** `h1` per page, and never skip heading levels.
+- Line length ≤ ~70ch for prose (`max-w-prose`).
+- **Text sizes come only from the scale** (`text-xs` … `text-6xl`). The half-steps `13.5 / 14.5
+/ 12.5 / 11.5px` are not allowed (owner decision 7.10). The existing ones are folded into the
+  scale in one pass via TASK-863.
+- **Price figures use `font-mono` (Geist Mono)**. This is the house equivalent of `tabular-nums`,
+  so columns of prices align.
 
 ---
 
@@ -87,7 +120,19 @@ Rules: max **one** `h1` per page; never skip heading levels; line length ≤ ~70
 Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 `1 (4px) · 2 (8px) · 3 (12px) · 4 (16px) · 6 (24px) · 8 (32px) · 12 (48px) · 16 (64px) · 24 (96px)`.
 
-- **Page container:** `mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8`.
+- **Page container:** one width token of **1320px** for every page, the header and the footer
+  (owner decision 7.1): `mx-auto w-full max-w-(--container-page) px-4 sm:px-6 lg:px-8`. It is
+  rolling out via TASK-860. Until then the code still uses `max-w-7xl` (1280px) in some places
+  and 1320 in others. Don't add a third width.
+- **Inner widths** are not containers. They sit inside the page container:
+
+  | Content                    | Width       |
+  | -------------------------- | ----------- |
+  | Article prose              | 760px       |
+  | Auth forms                 | `max-w-md`  |
+  | Order lists (`/orders`, …) | `max-w-3xl` |
+  | 404 block                  | 560px       |
+
 - **Section vertical rhythm:** `py-12 md:py-16` (hero may go `py-20 md:py-28`).
 - **Grid gaps:** cards `gap-4 md:gap-6`; form fields `gap-4`.
 - **Card internal padding:** `p-4` (compact) / `p-6` (roomy).
@@ -112,18 +157,32 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
   `sticky top-0 z-50` (64px), so any other sticky panel must clear it with a **96px** top
   offset — `lg:sticky` + `STICKY_ASIDE_TOP` (`lg:top-24`) from
   `store-client/src/shared/config/layout.ts`; scroll-spy / `scrollTo` math uses
-  `STICKY_HEADER_OFFSET` (96) from the same module. Never hardcode the offset.
+  `STICKY_HEADER_OFFSET` (96) from the same module. Never hardcode the offset. Known
+  exception: the PDP aside still sticks at `md:top-24` until TASK-519.
+- **Mobile sticky bar** (below `md`): the primary action of a long page is pinned to the bottom
+  edge. This covers the PDP `MobileAtcBar` (price + add to cart), plus the cart and checkout
+  («До сплати» + CTA, owner decision 7.6, TASK-864). The page content reserves room for it with
+  `pb-24 md:pb-0` so the last block is never hidden under the bar.
 
 ---
 
 ## 5. Radius & elevation
 
-| Token                        | Value            | Use                         |
-| ---------------------------- | ---------------- | --------------------------- |
-| `rounded-sm`                 | `radius − 4px`   | Badges, small chips         |
-| `rounded-md`                 | `radius − 2px`   | Inputs, buttons             |
-| `rounded-lg`                 | `0.75rem` (base) | Cards, dialogs, images      |
-| `rounded-xl` / `rounded-2xl` | `+4 / +8px`      | Hero panels, feature blocks |
+Radii follow what the storefront actually renders (owner decision 7.9):
+
+| Role                          | Radius           | Today in code    |
+| ----------------------------- | ---------------- | ---------------- |
+| Card (product, info, order)   | 18px             | `rounded-[18px]` |
+| Large CTA                     | 13px             | `rounded-[13px]` |
+| Menu item                     | 11px             | `rounded-[11px]` |
+| Chip / pill                   | full             | `rounded-full`   |
+| Inputs, buttons (`shared/ui`) | `radius − 2px`   | `rounded-md`     |
+| Badges, small chips           | `radius − 4px`   | `rounded-sm`     |
+| Dialogs, images               | `0.75rem` (base) | `rounded-lg`     |
+
+The 18 / 13 / 11 values become named radius tokens via TASK-862, and the arbitrary
+`rounded-[..px]` classes are replaced with them. New code picks the role from this table and
+does not invent a new radius.
 
 | Shadow            | Use                                                           |
 | ----------------- | ------------------------------------------------------------- |
@@ -160,10 +219,24 @@ is ≥ 4.5:1 on `disabled`, `background`, `card`, `popover` and `muted` in both 
 New disabled styling anywhere on the storefront uses these tokens, not opacity; decorative
 icons (e.g. the select chevron) may keep an opacity since they carry no text.
 
-- Use existing `shared/ui` primitives: `Button` (variants via CVA), `Badge`, `Input`,
-  `Label`, `Select`, `Dialog`, `Sheet`, `Tabs`, `Skeleton`, `Separator`, Sonner toasts.
-- **Loading** = skeletons that match final layout (already present: product-grid,
-  product-detail, cart, checkout skeletons). Never a bare spinner for full-page loads.
+- Use the existing `shared/ui` primitives. `apps/store-client/src/shared/ui/index.ts` exports
+  **56 components**, the same set the Claude Design system syncs. Most of them are compound parts:
+  - **Controls:** `Button` (CVA variants), `Input`, `Textarea`, `Label`, `Select` (+ parts),
+    `Combobox`, `PhoneInput`, `Slider`.
+  - **Overlays:** `Dialog` (+ parts) and `Sheet` (+ parts).
+  - **Navigation & structure:** `Tabs` (+ parts), `Pagination`, `Separator`, `AccountDropdown`
+    / `AccountDropdownItem`.
+  - **Commerce:** `ProductCard`, `ProductCardImage`, `ProductThumb`, `CategoryTileImage`,
+    `ColorDots`, `RatingStars`, `ReviewRatingStars`, `Badge`, `Logo`.
+  - **Content & feedback:** `RichText`, `Skeleton`, `CheckoutSkeleton`, and the Sonner `Toaster`.
+- **RadioGroup and Checkbox are not `shared/ui` components.** They are native `<input
+type="radio|checkbox">` elements styled with tokens where they are used (checkout payment,
+  filters, cart rows, forms). Keep them native: the browser gives keyboard and form semantics for
+  free.
+- **Loading** = skeletons that match the final layout. Never a bare spinner for full-page loads.
+  A `loading.tsx` skeleton and a Suspense fallback must render the **same** container,
+  breadcrumbs and grid as the page they stand in for. A skeleton with a different width or column
+  count reflows the page when the content lands (parity fixes: TASK-869).
 - **Empty states** get an icon + one-line explanation + a primary action.
 - **Errors** surface via Sonner toast or inline field message — never `alert()`/`confirm()`
   (use `Dialog`).
@@ -183,7 +256,8 @@ icons (e.g. the select chevron) may keep an opacity since they carry no text.
 ## 8. Accessibility checklist (part of "done")
 
 - [ ] Keyboard: every action reachable & operable via Tab/Enter/Space/Esc.
-- [ ] Visible `focus-visible` ring on all interactive elements.
+- [ ] Visible `focus-visible` ring on all interactive elements. `outline-none` is allowed
+      **only** together with a `focus-visible:ring-*` replacement on the same element.
 - [ ] Contrast ≥ 4.5:1 text / 3:1 large text & UI borders (check sale-on-white, muted text).
 - [ ] Images have meaningful `alt` (empty `alt=""` for decorative).
 - [ ] Icon-only buttons have `aria-label` (wishlist heart, cart, close).
@@ -206,12 +280,16 @@ Reusable patterns the storefront should converge on — pulled from the UA bench
   `text-sm text-muted-foreground line-through` + `bg-sale` "-XX%" chip; optional
   "від N ₴/міс" installment line in `text-xs text-muted-foreground`.
 - **Trust strip:** 3–4 icon+label items (delivery, guarantee, secure payment, returns)
-  under hero and on PDP/cart.
+  under hero and on PDP. In the cart and checkout it sits **under the order summary** (owner
+  decision 7.6, TASK-864).
+- **Product grids** everywhere, including `/promo`, use the 1 / 2 / 4 grid from §4. The old
+  auto-fill promo grid is being retired (TASK-501/536).
 - **Badges:** `Sale` (`bg-sale`), `New` (`bg-primary`), `Bestseller`/`Хіт` (`bg-warning`),
   `Out of stock` (`bg-muted text-muted-foreground`).
 - **PDP:** gallery + thumbnails, breadcrumb, variant selector, stock indicator, price block,
   Add-to-cart + sticky mobile ATC bar, trust badges, Description/Specs/Reviews tabs,
-  related row.
+  related row. «Сумісні аксесуари» (compatible accessories) is a horizontal **rail under the
+  tabs**, not a grid.
 - **Sticky header** with backdrop blur, prominent search, live cart count, wishlist count.
 
 ---
@@ -220,8 +298,28 @@ Reusable patterns the storefront should converge on — pulled from the UA bench
 
 - ❌ Raw hex / arbitrary `[...]` values in markup.
 - ❌ A semantic color used off-meaning (e.g. green for a non-success accent).
-- ❌ More than one `primary` button competing in a single view.
+- ❌ More than one page-level `primary` button competing in a single view. Header chrome and
+  the per-card «Купити» are the allowed exceptions (§1).
 - ❌ Removing focus outlines; icon buttons without `aria-label`.
 - ❌ `window.alert` / `window.confirm` / native `prompt` — use Dialog/Sonner.
 - ❌ Hardcoded English strings or `$` — use the dictionary + `formatMoney`.
 - ❌ Editing generated API files or `.env*`.
+
+---
+
+## 11. Mockups (Claude Design)
+
+- **Where:** the storefront mockups live in the Claude Design project «store-client — Pages».
+  It binds its own copy of this design system under `_ds/`, refreshed after every
+  `/design-sync` (procedure: `.design-sync/NOTES.md` → Re-sync risks). The components and
+  tokens come from «store-client Design System», which is compiled from `shared/ui` and
+  `globals.css`.
+- **Artboards:** every screen gets two artboards, desktop **1440** and mobile **390**. The
+  **light theme** is primary, and dark is a switch. The artboards use the 1320px container
+  token (§4) and the type and radius scales from §3 and §5 — tokens from `_ds`, no private hex.
+- **An artboard shows only what exists in code.** A parity artboard reproduces the implemented
+  screen and never "improves" it. A difference from the code is a defect of the artboard.
+  New features are drawn in the dedicated new-screen sessions (Д-н in plan 189), not slipped
+  into parity artboards.
+- Mock product data must carry `inStock` like the real `PublicProductEntity`. Without it
+  `ProductCard` renders every item as «Немає в наявності».
