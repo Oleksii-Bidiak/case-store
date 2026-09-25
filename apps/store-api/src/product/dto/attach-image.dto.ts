@@ -17,6 +17,10 @@ export class AttachImageDto {
     example: '550e8400-e29b-41d4-a716-446655440000',
     format: 'uuid',
   })
-  @IsUUID()
+  // 'loose' like every other @IsUUID in src/ (TASK-397, TASK-808): the id comes
+  // from the media library the admin just listed, i.e. the database issued it,
+  // and the mode-less default ('all') rejects ids that are UUID-shaped without a
+  // version nibble. `common/dto/is-uuid-loose.guard.spec.ts` enforces this.
+  @IsUUID('loose', { message: 'mediaAssetId must be a valid UUID' })
   mediaAssetId!: string;
 }
