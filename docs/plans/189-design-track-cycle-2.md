@@ -29,7 +29,7 @@
 
 | Проєкт                                                              | Тип           | Що в ньому                                                                                                              | Як оновлюється                                                                                               |
 | ------------------------------------------------------------------- | ------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| «store-client Design System» `f20dfb51-3752-4dfd-b3f7-def6adfe814e` | DESIGN_SYSTEM | Скомпільовані `shared/ui` вітрини, прев'ю, токени з `apps/store-client/src/app/globals.css`                             | `/design-sync` за `.design-sync/` (NOTES.md → Re-sync risks); останній синк 2026-09-19 з `09aaa712`          |
+| «store-client Design System» `f20dfb51-3752-4dfd-b3f7-def6adfe814e` | DESIGN_SYSTEM | Скомпільовані `shared/ui` вітрини, прев'ю, токени з `apps/store-client/src/app/globals.css`                             | `/design-sync` за `.design-sync/` (NOTES.md → Re-sync risks); останній синк 2026-09-25 з `57aa2a97`          |
 | «store-client — Pages» `a8ec3567-e819-4d5c-948c-04a1a8fd47aa`       | PROJECT       | Макети сторінок вітрини + **власна копія** DS у `_ds/store-client-design-system-f20dfb51…/` (6 файлів)                  | Після кожного синку: `copy_files` 6 файлів із DS-проєкту з `if_match`, скриншоти всіх `*.dc.html` до й після |
 | «store-admin Design System» (створює Д-д)                           | DESIGN_SYSTEM | Скомпільовані `apps/store-admin/src/shared/ui` (40+ shadcn-примітивів), токени з `apps/store-admin/src/app/globals.css` | `/design-sync` за окремим конфігом `.design-sync-admin/` (не чіпає вітринний `.design-sync/`)                |
 | «store-admin — Pages» (створює Д-д)                                 | PROJECT       | Артборди всіх екранів адмінки + копія `_ds/store-admin-design-system-…/`                                                | Та сама процедура копіювання після кожного синку адмінки                                                     |
@@ -50,7 +50,7 @@ DS-проєкту в «store-admin — Pages» можна покласти хі�
 `list_comments` і гасить через `ack_comments`.
 
 **Правило перед кожною дизайн-сесією:** перевірити, чи дизайн-система не відстала від коду:
-`git log 09aaa712..HEAD -- apps/store-client/src/shared/ui apps/store-client/src/app/globals.css` (для
+`git log 57aa2a97..HEAD -- apps/store-client/src/shared/ui apps/store-client/src/app/globals.css` (для
 адмінки — коміт із `.design-sync-admin/NOTES.md`). Не порожньо — спершу синк.
 
 ## Сесії
