@@ -3,7 +3,11 @@ import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import { SlugRedirectEntity } from '@prisma/client';
-import { applySlugRename, SlugRedirectRow } from '../src/slug-redirect/slug-redirect-chain.util';
+import {
+  applySlugRename,
+  SlugAddress,
+  SlugRedirectRow,
+} from '../src/slug-redirect/slug-redirect-chain.util';
 import { SlugRedirectRepository } from '../src/slug-redirect/slug-redirect.repository';
 import { PrismaService } from '../src/prisma';
 
@@ -49,7 +53,13 @@ describe('SlugRedirectRepository.recordRename (integration)', () => {
     oldSlug: string,
     newSlug: string,
     entity: SlugRedirectEntity = PAGE,
-  ): SlugRedirectRow => ({ entity, oldSlug: slug(oldSlug), newSlug: slug(newSlug) });
+  ): SlugRedirectRow => ({
+    entity,
+    scope: '',
+    oldSlug: slug(oldSlug),
+    newScope: '',
+    newSlug: slug(newSlug),
+  });
 
   // Plan 147 §Design Decision 2 — the same 9-row case table as the unit spec.
   const cases: Case[] = [
@@ -127,13 +137,20 @@ describe('SlugRedirectRepository.recordRename (integration)', () => {
     },
   ];
 
-  const key = (r: SlugRedirectRow) => `${r.entity}|${r.oldSlug}|${r.newSlug}`;
+  const key = (r: SlugRedirectRow) =>
+    `${r.entity}|${r.scope}:${r.oldSlug}|${r.newScope}:${r.newSlug}`;
 
   const readBack = async (): Promise<SlugRedirectRow[]> => {
     const rows = await prisma.slugRedirect.findMany({
       where: { oldSlug: { startsWith: `${ns}-` } },
     });
-    return rows.map((r) => ({ entity: r.entity, oldSlug: r.oldSlug, newSlug: r.newSlug }));
+    return rows.map((r) => ({
+      entity: r.entity,
+      scope: r.scope,
+      oldSlug: r.oldSlug,
+      newScope: r.newScope,
+      newSlug: r.newSlug,
+    }));
   };
 
   const cleanNamespace = () =>
@@ -185,6 +202,93 @@ describe('SlugRedirectRepository.recordRename (integration)', () => {
     // same inputs (anti-drift tie between this suite and the unit spec).
     const predicted = applySlugRename(seed, entity, slug(from), slug(to));
     expect(final.map(key).sort()).toEqual(predicted.map(key).sort());
+  });
+
+  // ── TASK-566: page addresses are (kind, slug). Written `KIND:slug`. ─────────
+  const addr = (a: string): SlugAddress => {
+    const [scope, s] = a.split(':');
+    return { scope, slug: slug(s) };
+  };
+  const scoped = (from: string, to: string): SlugRedirectRow => {
+    const f = addr(from);
+    const t = addr(to);
+    return { entity: PAGE, scope: f.scope, oldSlug: f.slug, newScope: t.scope, newSlug: t.slug };
+  };
+
+  interface ScopedCase {
+    name: string;
+    seed: SlugRedirectRow[];
+    from: string;
+    to: string;
+    expected: SlugRedirectRow[];
+  }
+
+  const scopedCases: ScopedCase[] = [
+    {
+      name: 'case 10: the same slug in another kind is never overwritten',
+      seed: [scoped('LEGAL:B', 'LEGAL:C')],
+      from: 'INFO:B',
+      to: 'INFO:D',
+      expected: [scoped('LEGAL:B', 'LEGAL:C'), scoped('INFO:B', 'INFO:D')],
+    },
+    {
+      name: 'case 11: the collapse repoints only aliases of the renamed address',
+      seed: [scoped('LEGAL:A', 'LEGAL:B'), scoped('INFO:Z', 'INFO:B')],
+      from: 'LEGAL:B',
+      to: 'LEGAL:C',
+      expected: [
+        scoped('LEGAL:A', 'LEGAL:C'),
+        scoped('INFO:Z', 'INFO:B'),
+        scoped('LEGAL:B', 'LEGAL:C'),
+      ],
+    },
+    {
+      name: 'case 13: a kind move collapses the chain onto the new address',
+      seed: [scoped('LEGAL:A', 'LEGAL:B')],
+      from: 'LEGAL:B',
+      to: 'INFO:B',
+      expected: [scoped('LEGAL:A', 'INFO:B'), scoped('LEGAL:B', 'INFO:B')],
+    },
+    {
+      name: 'case 14: moving back leaves no self-loop',
+      seed: [scoped('LEGAL:B', 'INFO:B')],
+      from: 'INFO:B',
+      to: 'LEGAL:B',
+      expected: [scoped('INFO:B', 'LEGAL:B')],
+    },
+  ];
+
+  it.each(scopedCases)('$name', async ({ seed, from, to, expected }) => {
+    if (seed.length > 0) {
+      await prisma.slugRedirect.createMany({ data: seed });
+    }
+
+    await prisma.$transaction((tx) => repo.recordRename(tx, PAGE, addr(from), addr(to)));
+
+    const final = await readBack();
+    expect(final.map(key).sort()).toEqual(expected.map(key).sort());
+    const predicted = applySlugRename(seed, PAGE, addr(from), addr(to));
+    expect(final.map(key).sort()).toEqual(predicted.map(key).sort());
+  });
+
+  it('findRedirect reads one namespace — /legal/<old> and /info/<old> resolve independently', async () => {
+    await prisma.$transaction((tx) =>
+      repo.recordRename(tx, PAGE, addr('LEGAL:old'), addr('LEGAL:new-legal')),
+    );
+    await prisma.$transaction((tx) =>
+      repo.recordRename(tx, PAGE, addr('INFO:old'), addr('INFO:new-info')),
+    );
+
+    await expect(repo.findRedirect(PAGE, slug('old'), 'LEGAL')).resolves.toMatchObject({
+      newScope: 'LEGAL',
+      newSlug: slug('new-legal'),
+    });
+    await expect(repo.findRedirect(PAGE, slug('old'), 'INFO')).resolves.toMatchObject({
+      newScope: 'INFO',
+      newSlug: slug('new-info'),
+    });
+    // A scoped row never answers the unscoped (single-namespace) lookup.
+    await expect(repo.findRedirect(PAGE, slug('old'))).resolves.toBeNull();
   });
 
   it('findRedirect resolves a recorded rename and misses an unknown slug', async () => {

@@ -368,6 +368,50 @@ describe('Pages (e2e)', () => {
         .send({ title: 'Privacy Policy', content: '<p>dup</p>' })
         .expect(409);
     });
+
+    // TASK-566 — a slug is unique per kind: /legal/delivery and /info/delivery coexist.
+    it('creates an INFO page on a slug a LEGAL page already uses — only the same kind is checked', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      pageRepositoryMock.findBySlugAny.mockImplementation((slug: string, kind: string) =>
+        Promise.resolve(
+          slug === 'delivery' && kind === 'LEGAL' ? { ...publishedPage, slug: 'delivery' } : null,
+        ),
+      );
+      pageRepositoryMock.create.mockResolvedValue({
+        ...publishedPage,
+        slug: 'delivery',
+        kind: 'INFO',
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/admin/pages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Доставка', content: '<p>x</p>', slug: 'delivery', kind: 'INFO' })
+        .expect(201);
+
+      expect(pageRepositoryMock.findBySlugAny).toHaveBeenCalledWith('delivery', 'INFO');
+      expect(response.body.data).toMatchObject({ slug: 'delivery', kind: 'INFO' });
+    });
+
+    it('names the kind of the owning row and a stable code in the 409', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      pageRepositoryMock.findBySlugAny.mockResolvedValue({
+        ...publishedPage,
+        slug: 'delivery',
+        kind: 'INFO',
+      });
+
+      const response = await request(app.getHttpServer())
+        .post('/api/admin/pages')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: 'Доставка', content: '<p>x</p>', slug: 'delivery', kind: 'INFO' })
+        .expect(409);
+
+      expect(response.body).toMatchObject({
+        error: 'PAGE_SLUG_TAKEN',
+        message: 'Slug "delivery" is already taken by an INFO page',
+      });
+    });
   });
 
   // ─── Admin listing (TASK-357) ─────────────────────────────────────────────────

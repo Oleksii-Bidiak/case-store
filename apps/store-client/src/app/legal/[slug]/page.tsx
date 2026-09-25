@@ -103,15 +103,16 @@ export default async function LegalDocPage({ params }: LegalDocPageProps) {
   if (!page) {
     // TASK-285: an admin may have renamed the slug — and since TASK-435 they may
     // also have changed its KIND, which moves it to /info/<slug> under the same
-    // slug and records nothing in the rename ledger. `resolvePageRedirect`
-    // answers both, and returns null for a real 404.
+    // slug. The ledger records both, keyed by the kind whose route served the
+    // address (TASK-566), so the lookup is asked about THIS route's kind.
+    // `resolvePageRedirect` answers both, and returns null for a real 404.
     //
     // For the status codes to actually reach the wire, this route deliberately
     // has NO route-level loading.tsx: a loading boundary streams a 200 shell
     // before permanentRedirect()/notFound() can set the status (same rationale
     // as /categories/[slug]). The page is light — content is server-fetched
     // before render — so no inner <Suspense> skeleton is needed either.
-    const target = await resolvePageRedirect(slug, `/legal/${slug}`);
+    const target = await resolvePageRedirect(slug, "LEGAL", `/legal/${slug}`);
     if (target) {
       permanentRedirect(target);
     }

@@ -8,6 +8,7 @@ import { toast } from "@/shared/ui/toast";
 import {
   PageForm,
   pageFormValuesToUpdateDto,
+  pageSaveConflictMessage,
   type PageFormInput,
   type PageFormValues,
 } from "@/features/page-form";
@@ -73,8 +74,11 @@ export function EditPageView({ pageId }: EditPageViewProps) {
           toast.success(dict.pages.toastUpdated);
           router.push("/pages");
         },
-        onError: () => {
-          toast.error(dict.pages.toastUpdateFailed);
+        onError: (error) => {
+          toast.error(
+            pageSaveConflictMessage(error, values.kind) ??
+              dict.pages.toastUpdateFailed,
+          );
         },
       },
     );

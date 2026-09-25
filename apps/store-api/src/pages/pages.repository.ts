@@ -46,16 +46,26 @@ function publicKindWhere(kind?: PageKind): Prisma.PageWhereInput {
   return kind ? { kind } : { kind: { not: PageKind.HUB } };
 }
 
+/** One public address of a page: its slug inside its kind's namespace (TASK-566). */
+export interface PageAddress {
+  kind: PageKind;
+  slug: string;
+}
+
 /**
- * Slugs of a rename being persisted by this update — when present, the write
- * additionally records a 301 redirect `oldSlug → newSlug` in the SlugRedirect
- * ledger, atomically with the page update (TASK-285-E). The service passes it
- * only when the page was publicly visible before the write (plan 147 §Design
+ * Addresses of a move being persisted by this update — when present, the write
+ * additionally records a 301 redirect `from → to` in the SlugRedirect ledger,
+ * atomically with the page update (TASK-285-E). The service passes it only
+ * when the page was publicly visible before the write (plan 147 §Design
  * Decision 3).
+ *
+ * An address is `(kind, slug)`, not a bare slug (TASK-566): the same slug may be
+ * live under `/legal` and `/info` at once, so the ledger scopes every PAGE row
+ * by kind, and a kind change that keeps the slug is a move like a rename.
  */
 export interface SlugRenameInput {
-  oldSlug: string;
-  newSlug: string;
+  from: PageAddress;
+  to: PageAddress;
 }
 
 /**
@@ -201,6 +211,12 @@ export class PageRepository implements PublishablePort {
   findBySlug(slug: string, kind?: PageKind): Promise<Page | null> {
     return this.prisma.page.findFirst({
       where: { slug, status: PublishStatus.PUBLISHED, ...publicKindWhere(kind) },
+      // A slug is unique per kind only (TASK-566), so without a kind two
+      // published rows can match (`/legal/delivery`, `/info/delivery`). The
+      // kind-agnostic caller is the storefront's "did this page move" probe,
+      // which asks only after its own kind missed — the order just makes the
+      // answer stable instead of whatever the planner returns first.
+      orderBy: { kind: 'asc' },
     });
   }
 
@@ -212,11 +228,13 @@ export class PageRepository implements PublishablePort {
   }
 
   /**
-   * Find a page by slug regardless of status — used by the service to enforce
-   * slug uniqueness on create/update.
+   * Find a page by its address — slug within a kind — regardless of status.
+   * Used by the service to enforce uniqueness on create/update, which is per
+   * kind (TASK-566): `/legal/delivery` and `/info/delivery` are two pages, and
+   * a HUB row never blocks a document of the same slug.
    */
-  findBySlugAny(slug: string): Promise<Page | null> {
-    return this.prisma.page.findUnique({ where: { slug } });
+  findBySlugAny(slug: string, kind: PageKind): Promise<Page | null> {
+    return this.prisma.page.findUnique({ where: { kind_slug: { kind, slug } } });
   }
 
   /**
@@ -302,7 +320,7 @@ export class PageRepository implements PublishablePort {
 
   /**
    * Create a new page, APPENDED to the END of the list (`sortOrder = max + 1`, `0` for
-   * the first page) — TASK-428. The unique-constraint error on `slug` is left to bubble
+   * the first page) — TASK-428. The unique-constraint error on `(kind, slug)` is left to bubble
    * up so the service can translate it into a ConflictException. `isActive` is derived
    * from `status` — never accepted from the caller.
    *
@@ -349,7 +367,7 @@ export class PageRepository implements PublishablePort {
    * Update a page's fields. Only provided fields are written; when `status`
    * changes the derived `isActive` mirror is written to match.
    *
-   * When `slugRename` is present (a publicly-visible page's slug is changing —
+   * When `slugRename` is present (a publicly-visible page's address — slug or kind — is changing —
    * gated by the service, plan 147 §Design Decision 3), the update and the
    * slug-redirect chain-collapse write commit in ONE transaction so the ledger
    * can never drift from the page's actual slug. When absent, the behavior is
@@ -375,8 +393,8 @@ export class PageRepository implements PublishablePort {
       await this.slugRedirectRepository.recordRename(
         tx,
         SlugRedirectEntity.PAGE,
-        slugRename.oldSlug,
-        slugRename.newSlug,
+        { scope: slugRename.from.kind, slug: slugRename.from.slug },
+        { scope: slugRename.to.kind, slug: slugRename.to.slug },
       );
       return updated;
     });

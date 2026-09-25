@@ -2031,6 +2031,17 @@
               "example": "stara-adresa",
               "type": "string"
             }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "Namespace of the dead address — for PAGE the page kind (LEGAL / INFO) whose route was requested. Omit for other entities.",
+            "schema": {
+              "maxLength": 32,
+              "example": "LEGAL",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -15761,6 +15772,11 @@
             "type": "string",
             "description": "The current live slug the old address permanently redirects to",
             "example": "nova-adresa"
+          },
+          "newScope": {
+            "type": "string",
+            "description": "Namespace of the live address — for PAGE the page kind (LEGAL / INFO) whose route serves newSlug. Absent for single-namespace entities.",
+            "example": "INFO"
           }
         },
         "required": [

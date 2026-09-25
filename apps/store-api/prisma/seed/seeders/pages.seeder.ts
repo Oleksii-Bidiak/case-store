@@ -9,7 +9,7 @@ import { pagesData } from '../data/content/pages.data';
  * HUB rows that give the storefront's listing routes their meta tags. Content is
  * Tiptap-style HTML sanitized through {@link sanitizeRichText} on write, exactly
  * like the admin editor. All pages are PUBLISHED with a real `publishedAt` and
- * the derived `isActive` mirror set true. Idempotent — upsert on the unique slug.
+ * the derived `isActive` mirror set true. Idempotent — upsert on the unique (kind, slug).
  *
  * TASK-311 — NO FABRICATED FACTS. The prose is deliberately realistic (the
  * staging site must look like a real shop), but EVERY factual claim about the
@@ -75,8 +75,9 @@ export async function seedPages(prisma: PrismaClient) {
       isActive: true,
       sortOrder: i,
     };
+    // Keyed by address (TASK-566): a slug is unique per kind, not globally.
     await prisma.page.upsert({
-      where: { slug: page.slug },
+      where: { kind_slug: { kind: page.kind, slug: page.slug } },
       update: data,
       create: { slug: page.slug, ...data },
     });

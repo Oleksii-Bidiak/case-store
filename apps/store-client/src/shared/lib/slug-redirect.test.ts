@@ -2,7 +2,10 @@ jest.mock("@/shared/api/generated/slug-redirect/slug-redirect", () => ({
   slugRedirectControllerLookup: jest.fn(),
 }));
 
-import { resolveSlugRedirect } from "./slug-redirect";
+import {
+  resolveSlugRedirect,
+  resolveSlugRedirectTarget,
+} from "./slug-redirect";
 import { slugRedirectControllerLookup } from "@/shared/api/generated/slug-redirect/slug-redirect";
 
 const lookup = slugRedirectControllerLookup as jest.MockedFunction<
@@ -37,6 +40,40 @@ describe("resolveSlugRedirect (TASK-285)", () => {
 
     await expect(
       resolveSlugRedirect("BLOG_POST", "whatever"),
+    ).resolves.toBeNull();
+  });
+});
+
+describe("resolveSlugRedirectTarget (TASK-566)", () => {
+  it("asks about the address in the requested namespace and returns where it lives now", async () => {
+    lookup.mockResolvedValue({
+      data: { newSlug: "dostavka", newScope: "INFO" },
+    });
+
+    await expect(
+      resolveSlugRedirectTarget("PAGE", "delivery", "LEGAL"),
+    ).resolves.toEqual({ newSlug: "dostavka", newScope: "INFO" });
+    expect(lookup).toHaveBeenCalledWith({
+      entity: "PAGE",
+      slug: "delivery",
+      scope: "LEGAL",
+    });
+  });
+
+  it("reports no namespace for a single-namespace entity", async () => {
+    lookup.mockResolvedValue({ data: { newSlug: "nova" } });
+
+    await expect(
+      resolveSlugRedirectTarget("CATEGORY", "stara"),
+    ).resolves.toEqual({ newSlug: "nova", newScope: null });
+    expect(lookup).toHaveBeenCalledWith({ entity: "CATEGORY", slug: "stara" });
+  });
+
+  it("returns null on any lookup error", async () => {
+    lookup.mockRejectedValue(new Error("404"));
+
+    await expect(
+      resolveSlugRedirectTarget("PAGE", "x", "INFO"),
     ).resolves.toBeNull();
   });
 });

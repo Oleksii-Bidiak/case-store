@@ -1355,6 +1355,10 @@ export const dict = {
     tabInfo: "Довідкові",
     tabHub: "Хаби",
     emptyKind: "Сторінок цього виду ще немає.",
+    // TASK-566 — a slug is unique within its kind; name the tab that holds the owner.
+    toastSlugTaken: (kindLabel: string) =>
+      `Сторінка з такою адресою вже є серед сторінок виду «${kindLabel}». ` +
+      "Змініть slug або відредагуйте наявну сторінку.",
   },
 
   pageForm: {

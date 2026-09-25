@@ -41,6 +41,22 @@ describe('SlugRedirectLookupQueryDto', () => {
     expect(errors.filter((e) => e.property === 'slug').length).toBeGreaterThan(0);
   });
 
+  it('accepts an optional page-kind scope (TASK-566)', async () => {
+    const errors = await validate(
+      toDto({ entity: SlugRedirectEntity.PAGE, slug: 'delivery', scope: 'INFO' }),
+    );
+    expect(errors).toHaveLength(0);
+  });
+
+  it('rejects a scope that is not an upper-case namespace token', async () => {
+    for (const scope of ['info', 'LEGAL; drop', 'A'.repeat(33), '']) {
+      const errors = await validate(
+        toDto({ entity: SlugRedirectEntity.PAGE, slug: 'delivery', scope }),
+      );
+      expect(errors.filter((e) => e.property === 'scope').length).toBeGreaterThan(0);
+    }
+  });
+
   it('rejects an unknown entity value', async () => {
     const errors = await validate(toDto({ entity: 'BANANA', slug: 'ok' }));
     expect(errors.filter((e) => e.property === 'entity').length).toBeGreaterThan(0);
