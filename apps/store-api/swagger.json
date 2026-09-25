@@ -21577,6 +21577,39 @@
           }
         }
       },
+      "BlogPostAuthorSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Author id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Author display name",
+            "example": "Ірина Ткач"
+          },
+          "role": {
+            "type": "string",
+            "description": "Short role shown under the name",
+            "example": "Редакторка гайдів",
+            "nullable": true
+          },
+          "bio": {
+            "type": "string",
+            "description": "Plain-text bio shown in the article author card",
+            "example": "Пише покрокові гайди про зарядки, павербанки й аудіо.",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "bio"
+        ]
+      },
       "BlogPostCategorySummary": {
         "type": "object",
         "properties": {
@@ -21644,8 +21677,18 @@
           },
           "authorName": {
             "type": "string",
-            "description": "Author display name",
+            "description": "Author display name (the byline)",
             "example": "Олег Пилипенко"
+          },
+          "author": {
+            "description": "The linked author with role and bio (TASK-554). Null only for a post with a blank byline.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BlogPostAuthorSummary"
+              }
+            ]
           },
           "readingMinutes": {
             "type": "number",
@@ -21744,6 +21787,7 @@
           "excerpt",
           "content",
           "authorName",
+          "author",
           "featured",
           "listed",
           "category",

@@ -49,6 +49,7 @@ function makeBlogPost(overrides: Partial<BlogPostEntity> = {}): BlogPostEntity {
     coverImageUrl: null,
     coverBlurDataUrl: null,
     authorName: "Олег Пилипенко",
+    author: null,
     readingMinutes: 6,
     featured: false,
     listed: true,

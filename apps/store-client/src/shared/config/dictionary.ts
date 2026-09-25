@@ -391,8 +391,9 @@ export const dict = {
       ],
       socialSoon: "Наші канали скоро запрацюють.",
     },
-    // Article detail page (/blog/[slug], Article.dc.html import). The body is
-    // shared demo content until the Blog backend (TASK-170) supplies real posts.
+    // Article detail page (/blog/[slug], Article.dc.html import). The body and
+    // the author's role/bio come from the API (TASK-170, TASK-554) — there is
+    // deliberately no placeholder bio here any more.
     article: {
       shareLabel: "Поділитись:",
       copyAria: "Скопіювати посилання",
@@ -404,9 +405,6 @@ export const dict = {
       relatedHeading: "Читайте також",
       // "{read} читання" — e.g. "8 хв читання".
       readSuffix: "читання",
-      authorRolePlaceholder: "Оглядач мобільної техніки",
-      authorBioPlaceholder:
-        "Тестує смартфони й ноутбуки для CaseStore понад 5 років. Любить довгі порівняння та чесні висновки без маркетингу.",
     },
     // TASK-417 — the hub pages properly now (numbered pages, one slice each)
     // instead of growing one ever-longer list, so the old "показати більше"

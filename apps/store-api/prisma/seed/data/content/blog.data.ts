@@ -8,36 +8,42 @@ export const categoriesData = [
   { slug: 'compare', name: 'Порівняння', sortOrder: 5 },
 ];
 
-// Shared demo article body — moved server-side from the storefront mockup.
-// Only allow-listed tags (sanitized below). h2 headings drive the storefront
-// table of contents (ids are derived client-side from the heading text).
-export const demoBodyHtml = `
-    <p>Кожної осені виробники ставлять власників попередньої моделі перед тим
-    самим питанням: оновлюватись чи ні. Розкладемо все по поличках — без
-    маркетингу й зайвого шуму.</p>
-    <h2>Дизайн і матеріали</h2>
-    <p>Зовні пристрій майже не змінився: та сама рамка, ті самі габарити.
-    Головна зовнішня новинка — оновлене керування та матовіше скло ззаду.</p>
-    <ul>
-      <li>Нова тактильна кнопка з підтримкою жестів</li>
-      <li>Оновлена система охолодження — менше тротлінгу в іграх</li>
-      <li>Ті самі кольори корпусу, але приємніший на дотик матеріал</li>
-    </ul>
-    <h2>Камери</h2>
-    <p>Основний сенсор підріс, але найбільша різниця — в обробці. Нічний режим
-    витягує більше деталей у тінях, а портрети тепер можна перефокусовувати вже
-    після зйомки.</p>
-    <blockquote>«Якщо камера — головна причина покупки, апгрейд відчутний.
-    У решті сценаріїв різниця косметична.»</blockquote>
-    <h2>Продуктивність і батарея</h2>
-    <p>Чип швидший, але в щоденних задачах ви цього не помітите. Різниця
-    розкривається в іграх та важкому монтажі. Автономність підросла приблизно на
-    годину активного екрана.</p>
-    <h2>Підсумок</h2>
-    <p>Це впевнене, але еволюційне оновлення. Якщо ваш поточний пристрій працює
-    добре, поспішати нема куди. Якщо ж ви на старшій моделі або багато
-    фотографуєте — новинка того варта.</p>
-  `;
+/** One body per post, keyed by slug (TASK-554) — see the file for the rules. */
+export { postBodiesHtml, readingMinutesFor } from './blog-bodies.data';
+
+/**
+ * Demo authors behind the bylines below (TASK-554). The role and bio used to be
+ * ONE placeholder in the storefront dictionary, printed under every name. They
+ * are demo personas: the bios describe what each one writes about on this blog
+ * and claim no credentials, employers or years of experience.
+ */
+export const authorsData: { name: string; role: string; bio: string }[] = [
+  {
+    name: 'Олег Пилипенко',
+    role: 'Оглядач смартфонів і ноутбуків',
+    bio: 'Пише порівняння й огляди флагманів. Намагається відповісти на одне питання: чи потрібен апгрейд саме вам, а не всім.',
+  },
+  {
+    name: 'Ірина Ткач',
+    role: 'Авторка гайдів з аудіо та зарядки',
+    bio: 'Розбирається в навушниках, павербанках і всьому, що заряджає. Складає чек-листи, з якими зручно обирати без консультанта.',
+  },
+  {
+    name: 'Марія Литвин',
+    role: 'Авторка про ноутбуки, ТВ і розумний дім',
+    bio: 'Пише про техніку для дому й навчання: як підібрати ноутбук, телевізор чи перші пристрої розумного дому під свої задачі.',
+  },
+  {
+    name: 'Андрій Мороз',
+    role: 'Автор практичних порад',
+    bio: 'Пише короткі інструкції на кожен день: як наклеїти захисне скло, підготувати телефон до обміну чи зберегти батарею.',
+  },
+  {
+    name: `Редакція ${STORE_NAME}`,
+    role: 'Команда магазину',
+    bio: 'Новини асортименту, надходження й анонси від команди магазину.',
+  },
+];
 
 export const postsData: {
   slug: string;
@@ -45,7 +51,6 @@ export const postsData: {
   title: string;
   excerpt: string;
   author: string;
-  readingMinutes: number;
   publishedAt: string;
   featured?: boolean;
   /** TASK-436 — omitted means listed (the column default). */
@@ -72,7 +77,6 @@ export const postsData: {
       'Порівняння iPhone 16 та iPhone 15: камери, чип A18, автономність і ціна. Кому апгрейд вартий грошей, а кому ні.',
     keywords: ['iphone 16', 'iphone 15', 'порівняння', 'апгрейд'],
     author: 'Олег Пилипенко',
-    readingMinutes: 8,
     publishedAt: '2026-06-28',
     featured: true,
   },
@@ -87,7 +91,6 @@ export const postsData: {
       'ANC, кодеки, час роботи та затримка звуку — на що дивитись, обираючи TWS-навушники, і які характеристики можна ігнорувати.',
     keywords: ['навушники', 'tws', 'anc', 'кодеки'],
     author: 'Ірина Ткач',
-    readingMinutes: 6,
     publishedAt: '2026-06-25',
   },
   {
@@ -101,7 +104,6 @@ export const postsData: {
       'Як порахувати реальну ємність павербанка під свій телефон, що дає GaN і швидка зарядка — і за що не варто переплачувати.',
     keywords: ['павербанк', 'powerbank', 'mah', 'gan'],
     author: 'Ірина Ткач',
-    readingMinutes: 5,
     publishedAt: '2026-06-22',
   },
   {
@@ -110,7 +112,6 @@ export const postsData: {
     title: 'Огляд Samsung Galaxy S26 Ultra: два тижні з флагманом',
     excerpt: 'Екран, камери на 200 Мп, S Pen і батарея — що вражає, а до чого доведеться звикати.',
     author: 'Олег Пилипенко',
-    readingMinutes: 11,
     publishedAt: '2026-06-20',
     featured: true,
   },
@@ -121,7 +122,6 @@ export const postsData: {
     excerpt:
       'Чи вистачить 8 ГБ памʼяті, як щодо нагріву без кулера та скільки живе батарея в реальних задачах.',
     author: 'Марія Литвин',
-    readingMinutes: 9,
     publishedAt: '2026-06-17',
   },
   {
@@ -131,7 +131,6 @@ export const postsData: {
     excerpt:
       'Готуємо пристрій до оцінки, дивимось, що впливає на ціну, і не втрачаємо на дрібницях.',
     author: 'Андрій Мороз',
-    readingMinutes: 4,
     publishedAt: '2026-06-14',
     // TASK-436 — the one seeded post that demonstrates `listed = false`: it is
     // published and opens at /blog/trade-in-how, but stays out of the blog grid,
@@ -146,7 +145,6 @@ export const postsData: {
     title: 'Розумний дім з нуля: з чого почати без зайвих витрат',
     excerpt: 'Лампи, розетки, датчики та хаб — базовий набір, який реально економить час і гроші.',
     author: 'Марія Литвин',
-    readingMinutes: 7,
     publishedAt: '2026-06-11',
   },
   {
@@ -155,7 +153,6 @@ export const postsData: {
     title: `Новинки червня: що завезли до ${STORE_NAME} цього місяця`,
     excerpt: 'Свіжі флагмани, аудіо та аксесуари — коротко про найцікавіші релізи та ціни.',
     author: `Редакція ${STORE_NAME}`,
-    readingMinutes: 3,
     publishedAt: '2026-06-08',
   },
   {
@@ -165,7 +162,6 @@ export const postsData: {
     excerpt:
       'Порівнюємо типи захисту, розвіюємо міфи про олеофобне покриття та вчимось клеїти без пузирів.',
     author: 'Андрій Мороз',
-    readingMinutes: 5,
     publishedAt: '2026-06-05',
   },
   {
@@ -175,7 +171,6 @@ export const postsData: {
     excerpt:
       'RTX проти інтегрованої графіки, частота екрана й охолодження — на що дивитись перед покупкою.',
     author: 'Олег Пилипенко',
-    readingMinutes: 10,
     publishedAt: '2026-06-02',
   },
   {
@@ -185,7 +180,6 @@ export const postsData: {
     excerpt:
       'Прості правила зарядки й налаштувань, які реально сповільнюють деградацію акумулятора.',
     author: 'Ірина Ткач',
-    readingMinutes: 4,
     publishedAt: '2026-05-30',
   },
   {
@@ -195,7 +189,6 @@ export const postsData: {
     excerpt:
       'Розбираємось у типах матриць, яскравості та частоті — і підбираємо діагональ під відстань перегляду.',
     author: 'Марія Литвин',
-    readingMinutes: 8,
     publishedAt: '2026-05-27',
   },
 ];

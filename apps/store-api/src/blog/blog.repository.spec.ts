@@ -23,7 +23,12 @@ const blogCategoryDelegate = {
 
 const txMock = {
   blogPost: {
+    create: jest.fn(),
     update: jest.fn(),
+  },
+  // TASK-554 — every write that names an author links the post to its Author row.
+  author: {
+    upsert: jest.fn(),
   },
   blogCategory: blogCategoryDelegate,
   // `pg_advisory_xact_lock` — taken by `createCategory` and by `reorderCategories`.
@@ -102,6 +107,87 @@ describe('BlogRepository', () => {
         'new-slug',
       );
       expect(prismaMock.blogPost.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('author link (TASK-554)', () => {
+    const AUTHOR_SELECT = { select: { id: true, name: true, role: true, bio: true } };
+
+    const createInput = (authorName: string) => ({
+      slug: 's',
+      title: 't',
+      excerpt: 'e',
+      content: '<p>c</p>',
+      categoryId: 'cat-1',
+      authorName,
+      status: PublishStatus.DRAFT,
+      publishedAt: null,
+      scheduledAt: null,
+    });
+
+    it('create upserts the author by trimmed name and links the post in one transaction', async () => {
+      txMock.author.upsert.mockResolvedValue({ id: 'author-1' });
+      txMock.blogPost.create.mockResolvedValue({ id: 'post-1' });
+
+      await repository.create(createInput('  Ірина Ткач '));
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.author.upsert).toHaveBeenCalledWith({
+        where: { name: 'Ірина Ткач' },
+        update: {},
+        create: { name: 'Ірина Ткач' },
+        select: { id: true },
+      });
+      const args = txMock.blogPost.create.mock.calls[0][0];
+      expect(args.data.authorId).toBe('author-1');
+      expect(args.include.author).toEqual(AUTHOR_SELECT);
+      expect(prismaMock.blogPost.create).not.toHaveBeenCalled();
+    });
+
+    it('create leaves the post unlinked when the author name is blank', async () => {
+      txMock.blogPost.create.mockResolvedValue({ id: 'post-1' });
+
+      await repository.create(createInput('   '));
+
+      expect(txMock.author.upsert).not.toHaveBeenCalled();
+      expect(txMock.blogPost.create.mock.calls[0][0].data.authorId).toBeNull();
+    });
+
+    it('update re-links the author inside a transaction when the name changes', async () => {
+      txMock.author.upsert.mockResolvedValue({ id: 'author-2' });
+      txMock.blogPost.update.mockResolvedValue({ id: 'post-1' });
+
+      await repository.update('post-1', { authorName: 'Марія Литвин' });
+
+      expect(prismaMock.$transaction).toHaveBeenCalledTimes(1);
+      expect(txMock.blogPost.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'post-1' },
+          data: { authorName: 'Марія Литвин', authorId: 'author-2' },
+        }),
+      );
+      expect(slugRedirectRepositoryMock.recordRename).not.toHaveBeenCalled();
+      expect(prismaMock.blogPost.update).not.toHaveBeenCalled();
+    });
+
+    it('every post read carries the author summary', async () => {
+      prismaMock.blogPost.findFirst.mockResolvedValue(null);
+      prismaMock.blogPost.findMany.mockResolvedValue([]);
+      prismaMock.blogPost.findUnique.mockResolvedValue(null);
+      prismaMock.blogPost.count.mockResolvedValue(0);
+
+      await repository.findPublishedBySlug('x');
+      await repository.findAll({ page: 1, limit: 10, includeUnlisted: false });
+      await repository.findAllAdmin({ page: 1, limit: 10 });
+      await repository.findById('post-1');
+      await repository.findPublishedByIds(['post-1'], false);
+
+      expect(prismaMock.blogPost.findFirst.mock.calls[0][0].include.author).toEqual(AUTHOR_SELECT);
+      expect(prismaMock.blogPost.findMany).toHaveBeenCalledTimes(3);
+      for (const call of prismaMock.blogPost.findMany.mock.calls) {
+        expect(call[0].include.author).toEqual(AUTHOR_SELECT);
+      }
+      expect(prismaMock.blogPost.findUnique.mock.calls[0][0].include.author).toEqual(AUTHOR_SELECT);
     });
   });
 
