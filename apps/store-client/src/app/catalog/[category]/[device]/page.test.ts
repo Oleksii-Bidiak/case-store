@@ -31,6 +31,27 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/shared/lib/slug-redirect", () => ({
   resolveSlugRedirect: jest.fn(),
 }));
+// React `cache()` memoizes only inside a server request, which Jest never opens —
+// outside one it is a pass-through, so a "called once" assertion could not fail.
+// Stand in for the request scope: one Map per wrapped function, emptied between
+// tests exactly as a new request starts empty (TASK-703).
+jest.mock("react", () => {
+  const actual = jest.requireActual("react");
+  const scope = globalThis as { __requestMemos?: Map<string, unknown>[] };
+  scope.__requestMemos ??= [];
+  return {
+    ...actual,
+    cache: <A extends unknown[], R>(fn: (...args: A) => R) => {
+      const memo = new Map<string, R>();
+      scope.__requestMemos!.push(memo as Map<string, unknown>);
+      return (...args: A): R => {
+        const key = JSON.stringify(args);
+        if (!memo.has(key)) memo.set(key, fn(...args));
+        return memo.get(key)!;
+      };
+    },
+  };
+});
 
 import { notFound, permanentRedirect } from "next/navigation";
 import { catalogLandingControllerFindCompatPage } from "@/shared/api/generated/catalog/catalog";
@@ -95,7 +116,33 @@ const meta = (
     searchParams: Promise.resolve(searchParams),
   });
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => {
+  jest.clearAllMocks();
+  // A new test is a new request: forget every memoized call.
+  (
+    globalThis as { __requestMemos?: Map<string, unknown>[] }
+  ).__requestMemos?.forEach((memo) => memo.clear());
+});
+
+describe("catalog/[category]/[device] — one API call per render (TASK-703)", () => {
+  it("generateMetadata and the page body share a single compat-page request", async () => {
+    findPage.mockResolvedValue(pair() as never);
+
+    await meta("chohly", "iphone-15-pro");
+    await run("chohly", "iphone-15-pro");
+
+    expect(findPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not share the answer between two different pairs", async () => {
+    findPage.mockResolvedValue(pair() as never);
+
+    await meta("chohly", "iphone-15-pro");
+    await run("chohly", "iphone-15");
+
+    expect(findPage).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("catalog/[category]/[device] — existence (TASK-490)", () => {
   it("renders a pair that has products", async () => {

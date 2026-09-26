@@ -1,4 +1,4 @@
-import { Suspense, Fragment } from "react";
+import { Suspense, Fragment, cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
@@ -48,17 +48,21 @@ function first(value: string | string[] | undefined): string | undefined {
  * (server-side). The tree is active-only, so an inactive or unknown slug
  * resolves to null. Null on any fetch failure too — the caller decides
  * between metadata fallback and `notFound()`.
+ *
+ * React `cache()` (TASK-703): `generateMetadata` and the page body both resolve
+ * the path, and the tree read is axios, which Next's `fetch` dedup does not see —
+ * so each render used to download the whole tree twice. Scoped to one request.
  */
-async function resolveCategoryPath(
-  slug: string,
-): Promise<CategoryTreeNodeEntity[] | null> {
-  try {
-    const { data } = await categoryControllerGetCategoryTree();
-    return findCategoryPathBySlug(data ?? [], slug);
-  } catch {
-    return null;
-  }
-}
+const resolveCategoryPath = cache(
+  async (slug: string): Promise<CategoryTreeNodeEntity[] | null> => {
+    try {
+      const { data } = await categoryControllerGetCategoryTree();
+      return findCategoryPathBySlug(data ?? [], slug);
+    } catch {
+      return null;
+    }
+  },
+);
 
 /**
  * Serve the 308 from a pre-TASK-420 uuid query to its slug form, if this is one.

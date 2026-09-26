@@ -32,8 +32,28 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/shared/lib/slug-redirect", () => ({
   resolveSlugRedirect: jest.fn(),
 }));
+// React `cache()` memoizes only inside a server request, which Jest never opens —
+// outside one it is a pass-through. Stand in for the request scope, emptied
+// between tests (TASK-703; same stand-in as catalog/[category]/[device]).
+jest.mock("react", () => {
+  const actual = jest.requireActual("react");
+  const scope = globalThis as { __requestMemos?: Map<string, unknown>[] };
+  scope.__requestMemos ??= [];
+  return {
+    ...actual,
+    cache: <A extends unknown[], R>(fn: (...args: A) => R) => {
+      const memo = new Map<string, R>();
+      scope.__requestMemos!.push(memo as Map<string, unknown>);
+      return (...args: A): R => {
+        const key = JSON.stringify(args);
+        if (!memo.has(key)) memo.set(key, fn(...args));
+        return memo.get(key)!;
+      };
+    },
+  };
+});
 
-import CategoryLandingPage from "./page";
+import CategoryLandingPage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
@@ -60,7 +80,27 @@ function makeTree(): CategoryTreeNodeEntity[] {
   ];
 }
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => {
+  jest.clearAllMocks();
+  (
+    globalThis as { __requestMemos?: Map<string, unknown>[] }
+  ).__requestMemos?.forEach((memo) => memo.clear());
+});
+
+describe("categories/[slug] — one tree read per render (TASK-703)", () => {
+  it("generateMetadata and the page body share a single category-tree request", async () => {
+    getTree.mockResolvedValue({ data: makeTree() } as never);
+    const props = {
+      params: Promise.resolve({ slug: "chohly" }),
+      searchParams: Promise.resolve({}),
+    };
+
+    await generateMetadata(props);
+    await CategoryLandingPage(props);
+
+    expect(getTree).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("categories/[slug] slug-redirect (TASK-285 Крок W)", () => {
   const runPage = (slug: string) =>

@@ -1,4 +1,4 @@
-import { Fragment, Suspense } from "react";
+import { Fragment, Suspense, cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
@@ -87,22 +87,31 @@ function isNotFound(error: unknown): boolean {
  * RETHROWN, so an outage renders the error boundary instead of quietly
  * de-indexing the whole `/catalog` tree behind a wall of 404s — the failure mode
  * a blanket `catch` would have produced.
+ *
+ * Wrapped in React `cache()` (TASK-703): `generateMetadata` and the page body
+ * both need the pair, and the Orval fetcher is axios — Next's `fetch`
+ * deduplication does not see it, so without the memo every render asked the API
+ * twice. `cache()` is scoped to one server request, so two visitors never share
+ * an answer. A rejected call is memoized too, which is what we want: the body
+ * rethrows the same outage the metadata already saw instead of retrying it.
  */
-async function resolveCompatPage(
-  categorySlug: string,
-  deviceSlug: string,
-): Promise<CompatLandingDetailEntity | null> {
-  try {
-    const { data } = await catalogLandingControllerFindCompatPage(
-      categorySlug,
-      deviceSlug,
-    );
-    return data;
-  } catch (error) {
-    if (isNotFound(error)) return null;
-    throw error;
-  }
-}
+const resolveCompatPage = cache(
+  async (
+    categorySlug: string,
+    deviceSlug: string,
+  ): Promise<CompatLandingDetailEntity | null> => {
+    try {
+      const { data } = await catalogLandingControllerFindCompatPage(
+        categorySlug,
+        deviceSlug,
+      );
+      return data;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  },
+);
 
 /**
  * The category's ancestor path from the public (active-only) tree, for the

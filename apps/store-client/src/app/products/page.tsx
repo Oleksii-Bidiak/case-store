@@ -1,4 +1,4 @@
-import { Suspense, Fragment } from "react";
+import { Suspense, Fragment, cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
@@ -37,17 +37,21 @@ function first(value: string | string[] | undefined): string | undefined {
  * description + JSON-LD). Uses the public category tree so any node — root or
  * sub-category — resolves. Keyed by SLUG since TASK-420, the form the catalogue
  * URL now carries. Returns null on any failure so the catalog still renders.
+ *
+ * React `cache()` (TASK-703): `generateMetadata` and the page body both resolve
+ * the node, and the tree read is axios, which Next's `fetch` dedup does not see —
+ * so a `?category=` view used to download the tree twice. Scoped to one request.
  */
-async function resolveCategoryNode(
-  slug: string,
-): Promise<CategoryTreeNodeEntity | null> {
-  try {
-    const { data } = await categoryControllerGetCategoryTree();
-    return findCategoryNodeBySlug(data ?? [], slug);
-  } catch {
-    return null;
-  }
-}
+const resolveCategoryNode = cache(
+  async (slug: string): Promise<CategoryTreeNodeEntity | null> => {
+    try {
+      const { data } = await categoryControllerGetCategoryTree();
+      return findCategoryNodeBySlug(data ?? [], slug);
+    } catch {
+      return null;
+    }
+  },
+);
 
 /**
  * Serve the 308 from a pre-TASK-420 uuid URL to its slug form, if this is one.
