@@ -13,6 +13,7 @@ import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import type { SalesDay, SalesTotals } from '../src/analytics/reports/sales.repository';
 import { CatalogueRepository } from '../src/analytics/reports/catalogue.repository';
 import { ProductsReportRepository } from '../src/analytics/reports/products-report.repository';
+import { RegistrationsRepository } from '../src/analytics/reports/registrations.repository';
 import type {
   BrandSalesRow,
   CategorySalesRow,
@@ -81,6 +82,11 @@ describe('Admin Analytics Reports (e2e)', () => {
     getOutsiders: jest.fn().mockResolvedValue({ total: 0, rows: [] }),
   };
 
+  const registrationsRepositoryMock = {
+    getTotals: jest.fn().mockResolvedValue({ registrations: 12, fromGuest: 3 }),
+    getDaily: jest.fn().mockResolvedValue([{ date: '2026-09-01', registrations: 2 }]),
+  };
+
   const permissionRepositoryMock = createPermissionRepositoryMock();
 
   const authRepositoryMock = {
@@ -132,6 +138,8 @@ describe('Admin Analytics Reports (e2e)', () => {
       .useValue(catalogueRepositoryMock)
       .overrideProvider(ProductsReportRepository)
       .useValue(productsRepositoryMock)
+      .overrideProvider(RegistrationsRepository)
+      .useValue(registrationsRepositoryMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -169,6 +177,34 @@ describe('Admin Analytics Reports (e2e)', () => {
   // The reports cache in memory for the whole suite (REDIS_HOST=''), so each
   // case below asks a period of its own — a cached answer from a previous case
   // must not be what is asserted.
+  describe('GET /api/admin/analytics/reports/registrations (TASK-690)', () => {
+    const URL = '/api/admin/analytics/reports/registrations';
+
+    it('returns 403 for a manager without analytics:read', async () => {
+      await request(app.getHttpServer())
+        .get(URL)
+        .set('Authorization', `Bearer ${tokenFor('manager-e2e-1', UserRole.MANAGER)}`)
+        .expect(403);
+      expect(registrationsRepositoryMock.getTotals).not.toHaveBeenCalled();
+    });
+
+    it('answers a reader with the counts, their comparison and the daily series', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['analytics:read']);
+
+      const response = await request(app.getHttpServer())
+        .get(URL)
+        .query({ preset: 'this-month' })
+        .set('Authorization', `Bearer ${tokenFor('manager-e2e-1', UserRole.MANAGER)}`)
+        .expect(200);
+
+      expect(response.body.data).toMatchObject({
+        registrations: { current: 12, previous: 12, changePct: 0 },
+        fromGuest: { current: 3, previous: 3, changePct: 0 },
+        daily: [{ date: '2026-09-01', registrations: 2 }],
+      });
+    });
+  });
+
   describe('GET /api/admin/analytics/reports/products (TASK-688)', () => {
     const URL = '/api/admin/analytics/reports/products';
     const MANAGER = () => `Bearer ${tokenFor('manager-e2e-1', UserRole.MANAGER)}`;

@@ -14143,6 +14143,73 @@
         ]
       }
     },
+    "/api/admin/analytics/reports/registrations": {
+      "get": {
+        "description": "Customer accounts created in the period (staff excluded; later-deleted accounts still count), how many of them had placed a guest order with the same email before registering, and a daily series over Kyiv days. No money in it.",
+        "operationId": "getRegistrationsReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registrations report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationsReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "New customer accounts in a period, compared with the previous one",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
     "/api/admin/analytics/reports/brands": {
       "get": {
         "description": "A flat row per brand that sold in the period or its comparison; products without a brand are the `brandId: null` row. Attribution uses the CURRENT catalogue. `revenue` is absent without analytics:revenue, and rows are then ranked by units.",
@@ -27950,6 +28017,73 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/ProductsReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "RegistrationDayEntity": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Kyiv calendar day",
+            "example": "2026-08-01"
+          },
+          "registrations": {
+            "type": "number",
+            "description": "New customer accounts that day",
+            "example": 3
+          }
+        },
+        "required": [
+          "date",
+          "registrations"
+        ]
+      },
+      "RegistrationsReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "registrations": {
+            "description": "New customer accounts",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "fromGuest": {
+            "description": "Of those, accounts whose email had placed a guest order before registering",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "daily": {
+            "description": "One point per Kyiv day of the period, first to last; empty days are zeros",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegistrationDayEntity"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "registrations",
+          "fromGuest",
+          "daily"
+        ]
+      },
+      "RegistrationsReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RegistrationsReportEntity"
           }
         },
         "required": [

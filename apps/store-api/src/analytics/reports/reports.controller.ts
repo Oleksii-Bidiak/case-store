@@ -14,6 +14,8 @@ import { ProductsReportQueryDto } from './dto/products-report-query.dto';
 import { ProductsReportEntity } from './entities/products-report.entity';
 import { SalesReportEntity } from './entities/sales-report.entity';
 import { ProductsReportService } from './products-report.service';
+import { RegistrationsReportEntity } from './entities/registrations-report.entity';
+import { RegistrationsReportService } from './registrations-report.service';
 import { SalesReportService } from './sales-report.service';
 
 class SalesReportEnvelope {
@@ -29,6 +31,11 @@ class CategoryReportEnvelope {
 class ProductsReportEnvelope {
   @ApiProperty({ type: ProductsReportEntity })
   data!: ProductsReportEntity;
+}
+
+class RegistrationsReportEnvelope {
+  @ApiProperty({ type: RegistrationsReportEntity })
+  data!: RegistrationsReportEntity;
 }
 
 class BrandReportEnvelope {
@@ -59,6 +66,7 @@ export class ReportsController {
     private readonly salesReportService: SalesReportService,
     private readonly catalogueReportService: CatalogueReportService,
     private readonly productsReportService: ProductsReportService,
+    private readonly registrationsReportService: RegistrationsReportService,
   ) {}
 
   /** «Продажі за категоріями» — roots, or the children of `parentId`, each over its subtree. */
@@ -106,6 +114,31 @@ export class ReportsController {
     @CurrentActor() actor: PermissionActor,
   ): Promise<{ data: ProductsReportEntity }> {
     return { data: await this.productsReportService.getProductsReport(query, actor) };
+  }
+
+  /** «Реєстрації» — new customer accounts, compared, with the guest → account share. */
+  @Get('registrations')
+  @RequirePermission('analytics:read')
+  @ApiOperation({
+    summary: 'New customer accounts in a period, compared with the previous one',
+    description:
+      'Customer accounts created in the period (staff excluded; later-deleted accounts still ' +
+      'count), how many of them had placed a guest order with the same email before ' +
+      'registering, and a daily series over Kyiv days. No money in it.',
+    operationId: 'getRegistrationsReport',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Registrations report',
+    type: RegistrationsReportEnvelope,
+  })
+  @ApiResponse({ status: 400, description: 'The period cannot be answered' })
+  @ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid token' })
+  @ApiResponse({ status: 403, description: 'Forbidden — analytics:read required' })
+  async getRegistrations(
+    @Query() query: PeriodQueryDto,
+  ): Promise<{ data: RegistrationsReportEntity }> {
+    return { data: await this.registrationsReportService.getRegistrationsReport(query) };
   }
 
   /** «Продажі за брендами» — flat, with «Без бренду» as `brandId: null`. */

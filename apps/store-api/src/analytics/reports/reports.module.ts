@@ -4,6 +4,8 @@ import { CatalogueReportService } from './catalogue-report.service';
 import { CatalogueRepository } from './catalogue.repository';
 import { ProductsReportRepository } from './products-report.repository';
 import { ProductsReportService } from './products-report.service';
+import { RegistrationsReportService } from './registrations-report.service';
+import { RegistrationsRepository } from './registrations.repository';
 import { ReportCache } from './report-cache';
 import { ReportsController } from './reports.controller';
 import { SalesReportService } from './sales-report.service';
@@ -34,6 +36,8 @@ import { SalesRepository } from './sales.repository';
     CatalogueReportService,
     ProductsReportRepository,
     ProductsReportService,
+    RegistrationsRepository,
+    RegistrationsReportService,
   ],
   exports: [ReportCache, SalesRepository, ProductsReportRepository],
 })
