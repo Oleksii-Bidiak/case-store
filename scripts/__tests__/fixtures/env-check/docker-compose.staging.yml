@@ -1,0 +1,4 @@
+# Fixture: staging override with nothing of its own to interpolate.
+services:
+  store-api:
+    image: ghcr.io/example/store-api:staging-latest

@@ -41,10 +41,24 @@ jobs:
 
       # Run the binary via its own image rather than gitleaks-action, which asks
       # organisations for a licence key. Same scanner, no licensing surface.
+      #
+      # Pinned (TASK-765): `:latest` let an upstream release turn this job red
+      # with no commit of ours — and upstream has already deprecated `detect`
+      # in favour of `git` (history) / `dir` (plain files). `git <path>` is the
+      # like-for-like replacement: the same `git log -p` over all refs that
+      # `detect --source` ran. Bump the tag by hand and deliberately (Dependabot
+      # does not see an image named inside a `run:` script), reading the release
+      # notes when you do.
+      #
+      # .gitleaks.toml keeps the full default ruleset and only allowlists the
+      # known placeholders (the ci-dummy-* values in ci.yml, spec
+      # fixtures, two pinned historical false positives) — each scoped by rule,
+      # file AND value. Passed explicitly so a rename cannot silently fall back
+      # to the default config.
       - name: Run gitleaks
         run: |
-          docker run --rm -v "${PWD}:/repo" zricethezav/gitleaks:latest \
-            detect --source=/repo --redact --verbose --exit-code=1
+          docker run --rm -v "${PWD}:/repo" zricethezav/gitleaks:v8.30.1 \
+            git /repo --config=/repo/.gitleaks.toml --redact --verbose --exit-code=1
 
   # ── Dependency vulnerabilities ─────────────────────────────────────────────
   audit:
@@ -87,6 +101,12 @@ jobs:
   # Scans the Dockerfiles and compose files for hardening mistakes (running as
   # root, writable filesystems, exposed ports, missing healthchecks) and the
   # lockfile for known-vulnerable packages.
+  #
+  # trivy-action is referenced by its `v`-prefixed release tag (TASK-767): after
+  # the 2026 supply-chain incident upstream moved to `vX.Y.Z` tags, and the bare
+  # `0.28.0` this file used (a mutable tag from October 2024) no longer exists —
+  # refs/tags/0.28.0 answered 404 on 2026-09-25, so these steps could not even
+  # resolve the action. Same tag in all three steps — bump them together.
   trivy:
     name: Trivy (config + dependencies)
     runs-on: ubuntu-latest
@@ -94,7 +114,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Scan Dockerfiles and compose config
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
@@ -105,7 +125,7 @@ jobs:
           severity: HIGH,CRITICAL
 
       - name: Scan dependencies for known CVEs
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -141,6 +161,9 @@ jobs:
           # `npm ci` and no build — and no Orval output, which is gitignored
           # generated code and not ours to review.
           build-mode: none
+          # paths-ignore for tests, e2e, load and QA scripts (TASK-766) — they
+          # are not attack surface, and scripts/qa forges headers on purpose.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Analyze
         uses: github/codeql-action/analyze@v4
@@ -259,7 +282,7 @@ jobs:
 
       - name: Scan the image for known CVEs
         if: steps.exists.outputs.found == 'true'
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         env:
           # Trivy pulls the image itself; these are its registry credentials.
           TRIVY_USERNAME: ${{ github.actor }}

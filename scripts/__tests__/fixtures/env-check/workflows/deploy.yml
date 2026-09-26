@@ -1,0 +1,68 @@
+# Fixture for scripts/__tests__/env-check.test.js. Stored outside `.github/` so
+# nothing ever runs it; the test copies it to `.github/workflows/` in a temp dir.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload something with an unrelated file input
+        uses: actions/upload-artifact@v4
+        with:
+          name: report
+          path: report.txt
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs:
+      - checks
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & push store-api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/store-api/Dockerfile
+          push: true
+
+      - name: Build & push store-client
+        uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          # a comment inside the env map is not a key
+          DOCKER_BUILD_SUMMARY: "false"
+        with:
+          context: .
+          file: apps/store-client/Dockerfile
+          push: true
+          provenance: mode=min
+          build-args: |
+            NEXT_PUBLIC_API_URL=https://api.${{ vars.DOMAIN }}
+
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+          tags: |
+            ghcr.io/example/store-client:latest
+
+      - name: Build & push store-admin
+        uses: docker/build-push-action@v6
+        env: # a trailing comment on the env key
+          DOCKER_BUILD_SUMMARY: false
+          DOCKER_BUILD_RECORD_UPLOAD: false # and on a value
+        with:
+          context: .
+          file: "apps/store-admin/Dockerfile"
+          push: true
+          provenance: "mode=min" # quoted
+          build-args: |-
+            NEXT_PUBLIC_API_URL=https://api.${{ vars.DOMAIN }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
+          tags: ghcr.io/example/store-admin:latest
+
+      - name: Notify
+        run: echo done

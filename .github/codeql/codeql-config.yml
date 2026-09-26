@@ -1,0 +1,29 @@
+# CodeQL configuration (TASK-766) — wired into the `codeql` job of
+# .github/workflows/security.yml via `config-file`.
+#
+# The default query suite stays as it is; this only narrows WHAT is analysed to
+# code that ships. Tests, load scripts and QA probes are not attack surface, and
+# some are hostile on purpose — scripts/qa/forgot-password-timing.mjs forges
+# `X-Forwarded-For` to probe rate limiting, a guaranteed header-injection alert.
+# Left in, they fill Security → Code scanning with alerts nobody should fix,
+# which is how the real ones get missed.
+#
+# Do NOT add application source here to silence an alert. Dismiss that alert in
+# the UI with a reason, so the decision is visible and reviewable.
+name: case-store CodeQL config
+
+paths-ignore:
+  # store-api e2e / integration suites and their helpers.
+  - apps/store-api/test/**
+  # Playwright end-to-end suite at the repo root.
+  - e2e/**
+  # Unit and component specs anywhere in the apps.
+  - "**/*.spec.ts"
+  - "**/*.spec.tsx"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  # Tests of the repo scripts, and their fixture trees.
+  - scripts/__tests__/**
+  # k6 load-test harness and manual QA probes (never deployed).
+  - scripts/load/**
+  - scripts/qa/**

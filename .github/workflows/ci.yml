@@ -226,11 +226,17 @@ jobs:
           node-version: 22
       - run: node scripts/check-lockfile-platforms.js
 
-  # Four sources of truth describe the same environment variables — both compose
-  # files, .env.production.example, and env.validation.ts — and nothing used to
-  # compare them. That is how STORE_CLIENT_URL, REVALIDATE_SECRET and GOOGLE_* all
-  # ended up read by code but never delivered in production (TASK-324). Zero deps,
-  # so no `npm ci`.
+  # Five sources of truth describe the same environment variables — both compose
+  # files, .env.production.example, env.validation.ts, the frontend Dockerfiles
+  # and the `build-args:` lists of THIS file's image builds (TASK-494) — plus the
+  # application code that reads them, and nothing used to compare them. That is
+  # how STORE_CLIENT_URL, REVALIDATE_SECRET and GOOGLE_* all ended up read by
+  # code but never delivered in production (TASK-324), and how the Sentry build
+  # args never reached a deployed frontend (TASK-737). Zero deps, so no `npm ci`.
+  #
+  # The unit tests of the zero-dependency scripts run here too (node:test, no
+  # installs). A glob, not a directory: since Node 21 `node --test <dir>` treats
+  # the directory as a module path and fails with MODULE_NOT_FOUND.
   env-drift:
     name: Env Drift Gate
     runs-on: ubuntu-latest
@@ -240,6 +246,8 @@ jobs:
         with:
           node-version: 22
       - run: node scripts/env-check.js --audit
+      - name: Unit tests of the repo scripts
+        run: node --test "scripts/__tests__/*.test.js"
 
   # ──────────────────────────────────────────────────────────────────────────
   # docs-links (TASK-453 wrote the checker, TASK-455 wires it) — every repo path
@@ -775,7 +783,8 @@ jobs:
       # NEXT_PUBLIC_* are BAKED at build time → these images are tied to the
       # staging domain and can never be promoted to prod (prod builds its own).
       # Values come from the `staging` Environment's variables (public URLs, not
-      # secrets). Optional vars (Sentry/Umami) default to empty via the
+      # secrets — SENTRY_AUTH_TOKEN is the one exception and comes from the
+      # Environment's `secrets.*`). Optional vars (Sentry/Umami) default to empty via the
       # Dockerfile ARGs when the corresponding `vars.*` are unset.
       #
       # THESE LISTS — not docker-compose.prod.yml — are what actually builds the
@@ -783,13 +792,44 @@ jobs:
       # `docker compose up --build`, so a var added there and not here still
       # never reaches a deployed container. Whenever you add an `ARG` to a
       # frontend Dockerfile, add it in BOTH places or decide, in writing, that
-      # empty is correct for this environment (TASK-348).
+      # empty is correct for this environment (TASK-348). Since TASK-494
+      # `scripts/env-check.js --audit` (check 3c) enforces it: every key the
+      # prod compose passes in `build.args` must appear in each matching
+      # `build-args:` list below, and nothing the env table does not know.
+      #
+      # Sentry (TASK-737): the trace rate and the ORG/PROJECT/AUTH_TOKEN trio were
+      # missing here, so deployed frontends traced 0 % and uploaded no source maps
+      # whatever the operator set. All four are optional: an empty
+      # SENTRY_AUTH_TOKEN makes @sentry/nextjs skip the upload with a warning (it
+      # never fails `next build`, and a failed upload is logged, not thrown).
+      #
+      # SENTRY_AUTH_TOKEN travels as a build ARG, and this repository is PUBLIC.
+      # docker/build-push-action@v6 publishes build-arg VALUES in THREE places by
+      # default, and all three are closed on every step that carries the token.
+      # None of these lines is decoration — do not drop one:
+      #   1. `provenance: mode=min` — the default on a public repo is a
+      #      `mode=max` provenance attestation pushed to GHCR next to the image,
+      #      and max mode records every build-arg value. min mode omits them.
+      #   2. `DOCKER_BUILD_RECORD_UPLOAD: false` — the post step exports the
+      #      buildx history record (build args with their resolved values) and
+      #      uploads it as a workflow ARTIFACT, which anyone who can read a
+      #      public repo can download.
+      #   3. `DOCKER_BUILD_SUMMARY: false` — the job summary lists the build
+      #      inputs, build-args included; false also skips the record export.
+      # GitHub's log masking hides the secret in the step log, not in these.
+      # The proper fix is a BuildKit secret mount (`secrets:` input +
+      # `RUN --mount=type=secret`) instead of an ARG; until the Dockerfiles take
+      # one, all three lines stay.
       - name: Build & push store-client
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           file: apps/store-client/Dockerfile
           push: true
+          provenance: mode=min
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.STAGING_DOMAIN }}
@@ -800,8 +840,12 @@ jobs:
             NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=${{ vars.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
+            NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${{ vars.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE || '0' }}
             NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}
             NEXT_PUBLIC_UMAMI_WEBSITE_ID=${{ vars.NEXT_PUBLIC_UMAMI_WEBSITE_ID }}
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: |
             ${{ steps.img.outputs.prefix }}/store-client:${{ steps.img.outputs.tag_sha }}
             ${{ steps.img.outputs.prefix }}/store-client:staging-latest
@@ -810,10 +854,14 @@ jobs:
 
       - name: Build & push store-admin
         uses: docker/build-push-action@v6
+        env: # keep SENTRY_AUTH_TOKEN out of the public artifact + summary — see store-client
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           file: apps/store-admin/Dockerfile
           push: true
+          provenance: mode=min # build-arg values stay out of the attestation — see store-client
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.${{ vars.STAGING_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.STAGING_DOMAIN }}
@@ -822,6 +870,10 @@ jobs:
             NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${{ vars.NEXT_PUBLIC_UMAMI_DASHBOARD_URL }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=staging
+            NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${{ vars.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE || '0' }}
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: |
             ${{ steps.img.outputs.prefix }}/store-admin:${{ steps.img.outputs.tag_sha }}
             ${{ steps.img.outputs.prefix }}/store-admin:staging-latest
@@ -1164,13 +1216,20 @@ jobs:
       # shape and was missing from this list entirely until TASK-495: set it to
       # `true` when store-api has real GOOGLE_CLIENT_ID/_SECRET, or the
       # "Sign in with Google" button stays hidden no matter what the API holds.
+      # The Sentry lines, `provenance: mode=min` and the two DOCKER_BUILD_* env
+      # lines are TASK-737 — see the staging block for why all three must stay
+      # while SENTRY_AUTH_TOKEN travels as a build arg in a public repo.
       - name: Build & push store-client
         if: steps.need.outputs.client == 'true'
         uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           file: apps/store-client/Dockerfile
           push: true
+          provenance: mode=min
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.PROD_DOMAIN }}
@@ -1181,8 +1240,12 @@ jobs:
             NEXT_PUBLIC_GOOGLE_AUTH_ENABLED=${{ vars.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
+            NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${{ vars.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE || '0' }}
             NEXT_PUBLIC_UMAMI_SRC=${{ vars.NEXT_PUBLIC_UMAMI_SRC }}
             NEXT_PUBLIC_UMAMI_WEBSITE_ID=${{ vars.NEXT_PUBLIC_UMAMI_WEBSITE_ID }}
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: ${{ steps.img.outputs.prefix }}/store-client:${{ steps.img.outputs.tag_client }}
           cache-from: type=gha,scope=store-client
           cache-to: type=gha,mode=max,scope=store-client
@@ -1190,10 +1253,14 @@ jobs:
       - name: Build & push store-admin
         if: steps.need.outputs.admin == 'true'
         uses: docker/build-push-action@v6
+        env: # keep SENTRY_AUTH_TOKEN out of the public artifact + summary — see staging store-client
+          DOCKER_BUILD_RECORD_UPLOAD: false
+          DOCKER_BUILD_SUMMARY: false
         with:
           context: .
           file: apps/store-admin/Dockerfile
           push: true
+          provenance: mode=min # build-arg values stay out of the attestation — see staging store-client
           build-args: |
             NEXT_PUBLIC_API_URL=https://api.${{ vars.PROD_DOMAIN }}
             NEXT_PUBLIC_APP_URL=https://${{ vars.PROD_DOMAIN }}
@@ -1202,6 +1269,10 @@ jobs:
             NEXT_PUBLIC_UMAMI_DASHBOARD_URL=${{ vars.NEXT_PUBLIC_UMAMI_DASHBOARD_URL }}
             NEXT_PUBLIC_SENTRY_DSN=${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
             NEXT_PUBLIC_SENTRY_ENVIRONMENT=production
+            NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${{ vars.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE || '0' }}
+            SENTRY_ORG=${{ vars.SENTRY_ORG }}
+            SENTRY_PROJECT=${{ vars.SENTRY_PROJECT }}
+            SENTRY_AUTH_TOKEN=${{ secrets.SENTRY_AUTH_TOKEN }}
           tags: ${{ steps.img.outputs.prefix }}/store-admin:${{ steps.img.outputs.tag_admin }}
           cache-from: type=gha,scope=store-admin
           cache-to: type=gha,mode=max,scope=store-admin

@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 /**
  * env-check — one declarative table of every environment variable this stack
- * uses, and a gate that fails CI whenever the four real sources disagree with it.
+ * uses, and a gate that fails CI whenever the real sources disagree with it.
  *
  * WHY THIS EXISTS
  * ---------------
- * The same variable is written down in five independent places:
+ * The same variable is written down in six independent places:
  *
  *   1. docker-compose.prod.yml (+ .staging)  — what the containers actually get
  *   2. .env.production.example               — what the operator is told to fill in
  *   3. apps/store-api/src/config/env.validation.ts — what the API refuses to boot without
  *   4. the two frontend Dockerfiles          — which build args the image accepts
- *   5. the application source                — what the code actually reads
+ *   5. the `build-args:` lists in .github/workflows/*.yml — what the DEPLOYED
+ *      frontend images are actually built with
+ *   6. the application source                — what the code actually reads
  *
  * Nothing kept them in sync, and they drifted — not theoretically. Three holes
  * were live in production at once (TASK-324):
@@ -51,17 +53,39 @@
  * named Dockerfile must declare `ARG X` *and* re-export `ENV X=${X}`, and must
  * not declare build ARGs the table does not know about.
  *
+ * Source 5 was added by TASK-494, for the same reason one hop further out.
+ * compose's `build.args` only run on a manual `docker compose up --build`; the
+ * images that are actually deployed are built by docker/build-push-action steps
+ * in ci.yml, from their own hand-written `build-args: |` lists. A variable added
+ * to compose, the Dockerfile and this table — everything check 3/3b looks at —
+ * but not to those lists still never reaches a deployed bundle. That is exactly
+ * how NEXT_PUBLIC_GOOGLE_AUTH_ENABLED (TASK-495) and the Sentry trace rate plus
+ * the source-map trio (TASK-737) went missing while this gate reported no drift.
+ * Hence check 3c: every workflow step that builds a BUILD_SERVICES Dockerfile
+ * (matched by its `file: apps/<svc>/Dockerfile`) must pass every build arg the
+ * prod compose passes to that service, and nothing the table does not list.
+ *
+ * Check 3d rides on the same parse (TASK-737). Once SENTRY_AUTH_TOKEN joined
+ * those lists, a build arg carried a SECRET, and the repository is public:
+ * docker/build-push-action@v6 publishes build-arg values by default in a
+ * `mode=max` provenance attestation on GHCR, in the build-record artifact and in
+ * the job summary. So any workflow build step with a `${{ secrets.* }}` build arg
+ * must set `provenance: mode=min` and step `env:` DOCKER_BUILD_RECORD_UPLOAD and
+ * DOCKER_BUILD_SUMMARY to `false`, or the gate fails.
+ *
  * HOW IT WORKS
  * ------------
  * `VARS` below is the ONE place a variable is described. Every entry declares
- * where it must appear; the gate parses the four sources and diffs both ways, so
+ * where it must appear; the gate parses the sources and diffs both ways, so
  * a variable added to a compose file, to the example, to env.validation.ts, or to
  * the code — and not to this table — turns CI red. That is the point: the table
  * is not documentation that trails the code, it is the thing the code is checked
  * against.
  *
  * IT NEVER READS A REAL ENV FILE. Only committed, non-secret sources: the compose
- * files, `.env.production.example`, `env.validation.ts` and the app source. There
+ * files, `.env.production.example`, `env.validation.ts`, the Dockerfiles, the
+ * workflow files (their `${{ vars.* }}` / `${{ secrets.* }}` expressions, never a
+ * value) and the app source. There
  * is deliberately no "check my server's .env" mode — that would mean a script
  * whose job is to open the file holding every production secret, and the payoff
  * (compose already fails fast on a missing `:?` var) does not come close to
@@ -74,6 +98,11 @@
  *
  * The `--audit` run also verifies the markdown block in DOC_PATH is current, so
  * the operator-facing matrix cannot rot away from the table above it.
+ *
+ * `--root <dir>` points every source path at another tree (default: the repo
+ * this script lives in). The parsers and `audit()` are exported and the CLI only
+ * runs under `require.main === module`, so scripts/__tests__/env-check.test.js
+ * can drive the audit against a fixture repo with its own small table.
  */
 
 const fs = require("fs");
@@ -84,6 +113,16 @@ const COMPOSE_FILES = ["docker-compose.prod.yml", "docker-compose.staging.yml"];
 const EXAMPLE_FILE = ".env.production.example";
 const VALIDATION_FILE = "apps/store-api/src/config/env.validation.ts";
 const DOC_PATH = "docs/deploy/04a-env-matrix.md";
+/** Every `*.yml` / `*.yaml` here is scanned for image-build steps (check 3c). */
+const WORKFLOW_DIR = ".github/workflows";
+/**
+ * build-push-action env switches that must be `false` on any step passing a
+ * `secrets.*` build arg: each default publishes build-arg values (check 3d).
+ */
+const SECRET_BUILD_ENV_OFF = [
+  "DOCKER_BUILD_RECORD_UPLOAD",
+  "DOCKER_BUILD_SUMMARY",
+];
 const DOC_MARKER_START = "<!-- env-matrix:start -->";
 const DOC_MARKER_END = "<!-- env-matrix:end -->";
 
@@ -114,10 +153,20 @@ const CODE_ROOTS = [
  * Known drift that is accepted for now. Keyed `VAR@check`, and every entry needs
  * a reason and a task — same discipline as scripts/audit-gate.js. Empty is the
  * correct steady state: an exception here means a source and this table disagree
- * on purpose, which should be rare and always temporary.
+ * on purpose, which should be rare and always temporary. An entry that no longer
+ * suppresses anything is itself reported as drift, so a fixed hole cannot leave
+ * a stale licence behind.
  */
 const EXCEPTIONS = {
-  // 'FOO@example': { reason: '…', task: 'TASK-000' },
+  // Read by the storefront (shared/config/site.ts) and deliberately NOT in VARS.
+  // `@code` covers only check 6 — the code scan — so the moment anyone wires the
+  // flag into compose, the operator template or env.validation.ts, those checks
+  // still fail with "missing from VARS" and force the row back into the table.
+  "NEXT_PUBLIC_FEATURE_STUBS@code": {
+    reason:
+      "storefront stubs flag, excluded from the table on purpose: the three stub controls (compare / buy in one click / the account 'Comparison' section) are hidden, and the only value an operator may set today is none at all — so it has no compose, build-arg, Dockerfile or operator-template wiring and no row in the operator matrix. TASK-085/TASK-178 wire it through compose, the Dockerfile and the template and re-add the VARS row when they switch the stubs on",
+    task: "TASK-526",
+  },
 };
 
 /**
@@ -1413,26 +1462,10 @@ const VARS = [
     howTo:
       "`true` — і лише після того, як у store-api задані справжні GOOGLE_CLIENT_ID/_SECRET. Порожньо (сховано) — правильний стан, доки OAuth-клієнт у Google Cloud Console не створений.",
   },
-  {
-    name: "NEXT_PUBLIC_FEATURE_STUBS",
-    group: "frontend",
-    need: "optional",
-    compose: "none",
-    services: [],
-    buildArgs: [],
-    example: false,
-    validated: "absent",
-    code: "used",
-    effect:
-      "Не `true` (тобто в будь-якому нормальному розгортанні) → вітрина ховає три контроли, за якими ще немає функції: «Порівняти» і «Купити в 1 клік» у картці товару та розділ «Порівняння» в кабінеті. Раніше вони показувалися завжди і на кожен клік відповідали тостом «скоро» — покупець читав це як зламаний магазин. Розмітку не видалено: TASK-085 і TASK-178 при розпаркуванні вмикають прапорець і замінюють заглушки справжньою функцією. Build-time.",
-    howTo:
-      "Не задавати. `true` — лише на демостенді, де свідомо показують, що саме в роботі.",
-    gap: {
-      reason:
-        "code-only for now: the flag is deliberately not threaded through compose, the Dockerfile build args or the operator example, because the only value an operator should ever set is the absent one — TASK-085/TASK-178 do that plumbing when they switch the stubs on",
-      task: "TASK-526",
-    },
-  },
+  // NEXT_PUBLIC_FEATURE_STUBS is deliberately NOT a row here — see its
+  // EXCEPTIONS entry (TASK-526). A row would put it in the operator matrix,
+  // i.e. tell the operator about a variable whose only correct value is unset
+  // and which no container build could receive anyway.
   {
     name: "SERVER_FETCH_TIMEOUT_MS",
     group: "frontend",
@@ -1753,7 +1786,7 @@ const VARS = [
 // Parsers
 // ───────────────────────────────────────────────────────────────────────────
 
-const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
+const readFrom = (root, rel) => fs.readFileSync(path.join(root, rel), "utf8");
 const stripComments = (text) =>
   text
     .split(/\r?\n/)
@@ -1889,6 +1922,151 @@ function parseDockerfileBuildVars(text) {
   return { args, envs, buildStage: true };
 }
 
+/**
+ * Image-build steps of one GitHub Actions workflow: every step that carries a
+ * `file:` key (docker/build-push-action's Dockerfile input), with the keys of its
+ * `build-args: |` block scalar. Returns
+ *   [{ job, step, line, file, args: Set<string>, secretArgs: Set<string>,
+ *      provenance: string|null, env: Map<string,string> }]
+ * — `line` is 1-based (the `file:` line), `args` is empty when the step has no
+ * `build-args:` at all, which is itself drift the caller reports.
+ * `secretArgs` are the build args whose value reads `secrets.*`, `provenance`
+ * the step's `provenance:` input and `env` its own `env:` map — what check 3d
+ * needs to tell whether a secret build arg gets published (TASK-737).
+ *
+ * Indentation-driven, like parseComposeStructure: zero installs. What it relies
+ * on is only what YAML itself fixes for block style — a step is a `- ` item, its
+ * keys sit deeper than the dash, and a block scalar's content is indented deeper
+ * than its key. Flow style (`with: { file: … }`) is not understood; nobody
+ * writes a build step that way, and if someone does, the service simply has no
+ * matching step and check 3c says so rather than passing.
+ */
+function parseWorkflowBuildSteps(text) {
+  const lines = text.split(/\r?\n/);
+  const indentOf = (s) => s.match(/^\s*/)[0].length;
+  const isBlank = (s) => !s.trim() || /^\s*#/.test(s);
+  const steps = [];
+
+  let job = null;
+  let inJobs = false;
+  let step = null; // { dash, job, step, line, file, args, startLine }
+
+  const flush = () => {
+    if (step && step.file) steps.push(step);
+    step = null;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (isBlank(raw)) continue;
+    const indent = indentOf(raw);
+
+    if (indent === 0) {
+      flush();
+      inJobs = /^jobs:\s*$/.test(raw);
+      job = null;
+      continue;
+    }
+    if (!inJobs) continue;
+
+    // A job id is the first key level under `jobs:`, whatever its indent width;
+    // a trailing comment (`deploy-staging: # …`) does not make it something else.
+    const jobKey = raw.match(/^\s+([A-Za-z0-9_-]+):\s*(?:#.*)?$/);
+    if (!step && job === null && jobKey) {
+      job = { name: jobKey[1], indent };
+      continue;
+    }
+    if (job && indent <= job.indent) {
+      flush();
+      job = jobKey ? { name: jobKey[1], indent } : null;
+      continue;
+    }
+
+    // Anything at or left of the current item's dash ends that item: the next
+    // step (`- …` at the same indent) or a job-level key after `steps:`. Deeper
+    // dashes are nested lists inside the step and do not.
+    const dash = raw.match(/^(\s*)-\s+(.*)$/);
+    if (step && indent <= step.dash) flush();
+    if (dash && !step) {
+      step = {
+        dash: indent,
+        job: job ? job.name : "?",
+        step: null,
+        line: null,
+        file: null,
+        args: new Set(),
+        secretArgs: new Set(),
+        provenance: null,
+        env: new Map(),
+      };
+    }
+    if (!step) continue;
+
+    // On the dash line itself the first key follows the `- ` (`- name: …`).
+    const body = dash && indent === step.dash ? dash[2] : raw.trim();
+    const name = body.match(/^name:\s*(.+?)\s*$/);
+    if (name && step.step === null) step.step = name[1].replace(/^["']|["']$/g, "");
+
+    // The Dockerfile path, normalised to repo-relative: `./apps/…` and
+    // `${{ github.workspace }}/apps/…` name the same file as `apps/…`, and a step
+    // spelled either way must still be matched by check 3c, not skipped.
+    const file = body.match(
+      /^file:\s*(?:"([^"]*)"|'([^']*)'|([^\s#][^#]*?))\s*(?:#.*)?$/,
+    );
+    if (file) {
+      step.file = (file[1] ?? file[2] ?? file[3])
+        .replace(/^\$\{\{\s*github\.workspace\s*\}\}\//, "")
+        .replace(/^\.\//, "");
+      step.line = i + 1;
+    }
+
+    const provenance = body.match(/^provenance:\s*(.*?)\s*(?:#.*)?$/);
+    if (provenance) step.provenance = provenance[1].replace(/^["']|["']$/g, "");
+
+    const block = body.match(/^build-args:\s*[|>][-+]?\s*(?:#.*)?$/);
+    if (block) {
+      for (let j = i + 1; j < lines.length; j++) {
+        const inner = lines[j];
+        if (!inner.trim()) continue;
+        if (indentOf(inner) <= indent) break;
+        const kv = inner.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+        if (kv) {
+          step.args.add(kv[1]);
+          if (/\bsecrets\./.test(kv[2])) step.secretArgs.add(kv[1]);
+        }
+        i = j;
+      }
+    }
+
+    // The step's own `env:` map (flat `KEY: value` children only).
+    if (/^env:\s*(?:#.*)?$/.test(body)) {
+      for (let j = i + 1; j < lines.length; j++) {
+        const inner = lines[j];
+        if (isBlank(inner)) continue;
+        if (indentOf(inner) <= indent) break;
+        const kv = inner.match(
+          /^\s*([A-Za-z_][A-Za-z0-9_]*):\s*(.*?)\s*(?:#.*)?$/,
+        );
+        if (kv) step.env.set(kv[1], kv[2].replace(/^["']|["']$/g, ""));
+        i = j;
+      }
+    }
+  }
+  flush();
+  return steps.map(
+    ({ job: j, step: s, line, file, args, secretArgs, provenance, env }) => ({
+      job: j,
+      step: s ?? "(unnamed step)",
+      line,
+      file,
+      args,
+      secretArgs,
+      provenance,
+      env,
+    }),
+  );
+}
+
 /** Keys of `.env.production.example` (commented-out lines are not keys). */
 function parseExample(text) {
   const keys = new Set();
@@ -1952,7 +2130,7 @@ function stripJsComments(src) {
 }
 
 /** Every `process.env.X` / `config.get('X')` in non-test application source. */
-function scanCode() {
+function scanCode(root = ROOT) {
   const names = new Map();
   const isTest = (p) =>
     /\.(test|spec|e2e-spec)\.[tj]sx?$/.test(p) || /[\\/]__tests__[\\/]/.test(p);
@@ -1973,30 +2151,56 @@ function scanCode() {
       let m;
       while ((m = re.exec(src))) {
         const name = m[1] || m[2] || m[3];
-        const relPath = path.relative(ROOT, full).replace(/\\/g, "/");
+        const relPath = path.relative(root, full).replace(/\\/g, "/");
         (names.get(name) ?? names.set(name, new Set()).get(name)).add(relPath);
       }
     }
   };
 
-  for (const root of CODE_ROOTS) {
-    const abs = path.join(ROOT, root);
+  for (const codeRoot of CODE_ROOTS) {
+    const abs = path.join(root, codeRoot);
     if (fs.existsSync(abs)) walk(abs);
   }
   return names;
+}
+
+/** Image-build steps of every workflow file under WORKFLOW_DIR, sorted by path. */
+function readWorkflowBuildSteps(root = ROOT) {
+  const dir = path.join(root, WORKFLOW_DIR);
+  if (!fs.existsSync(dir)) return [];
+  return fs
+    .readdirSync(dir)
+    .filter((name) => /\.ya?ml$/.test(name))
+    .sort()
+    .flatMap((name) => {
+      const relPath = `${WORKFLOW_DIR}/${name}`;
+      return parseWorkflowBuildSteps(readFrom(root, relPath)).map((s) => ({
+        ...s,
+        workflow: relPath,
+      }));
+    });
 }
 
 // ───────────────────────────────────────────────────────────────────────────
 // Audit
 // ───────────────────────────────────────────────────────────────────────────
 
-function audit() {
+/**
+ * Runs every check and RETURNS the result — it never prints or exits, so a test
+ * can call it against a fixture tree. `root`, `vars` and `exceptions` default to
+ * this repo, its table and its EXCEPTIONS; the CLI below passes nothing else.
+ *
+ * Returns { drift: Map<name, string[]>, skipped, gaps, stats } — drift empty
+ * means the gate passes.
+ */
+function audit({ root = ROOT, vars = VARS, exceptions = EXCEPTIONS } = {}) {
+  const VARS = vars; // shadow: every check below reads the table it was given
+  const read = (rel) => readFrom(root, rel);
   const byName = new Map(VARS.map((v) => [v.name, v]));
   if (byName.size !== VARS.length) {
-    console.error(
+    throw new Error(
       "Duplicate entries in VARS — every variable must appear once.",
     );
-    process.exit(1);
   }
 
   const composeTexts = COMPOSE_FILES.map(read);
@@ -2004,14 +2208,15 @@ function audit() {
   const prod = parseComposeStructure(composeTexts[0]);
   const example = parseExample(read(EXAMPLE_FILE));
   const validation = parseValidation(read(VALIDATION_FILE));
-  const code = scanCode();
+  const code = scanCode(root);
+  const workflowSteps = readWorkflowBuildSteps(root);
 
   /** name -> [messages] */
   const drift = new Map();
   const skipped = [];
   const add = (name, check, message) => {
     const key = `${name}@${check}`;
-    const allowed = EXCEPTIONS[key];
+    const allowed = exceptions[key];
     if (allowed) {
       skipped.push({ key, message, ...allowed });
       return;
@@ -2146,6 +2351,80 @@ function audit() {
     }
   }
 
+  // 3c. …and every workflow step that builds that Dockerfile must pass the same
+  //     args. These `build-args:` lists, not compose, build the DEPLOYED images;
+  //     compose's `build.args` only ever run on a manual `up --build`. See the
+  //     header (TASK-494).
+  for (const service of BUILD_SERVICES) {
+    const dfPath = DOCKERFILES[service];
+    const composeArgs = prod.buildArgs[service] ?? new Set();
+    const tableArgs = new Set(
+      VARS.filter((v) => v.buildArgs.includes(service)).map((v) => v.name),
+    );
+    const steps = workflowSteps.filter((s) => s.file === dfPath);
+    if (!steps.length) {
+      add(
+        service,
+        "workflow",
+        `no step in ${WORKFLOW_DIR}/*.yml builds ${dfPath} (looked for \`file: ${dfPath}\`) — either the deploy stopped building this image, or the parser no longer understands the workflow; both must be looked at, not passed`,
+      );
+      continue;
+    }
+    for (const s of steps) {
+      const where = `${s.workflow}:${s.line} (job \`${s.job}\`, step "${s.step}")`;
+      for (const name of composeArgs) {
+        if (!s.args.has(name)) {
+          add(
+            name,
+            "workflow",
+            `${COMPOSE_FILES[0]} passes it as a build arg of \`${service}\`, but ${where} does not — the deployed image is built with it empty`,
+          );
+        }
+      }
+      for (const name of s.args) {
+        if (!tableArgs.has(name)) {
+          add(
+            name,
+            "workflow",
+            `passed as a build arg by ${where}, but the table does not list \`${service}\` in buildArgs`,
+          );
+        }
+      }
+    }
+  }
+
+  // 3d. A build arg whose value is a `secrets.*` expression is PUBLISHED by
+  //     docker/build-push-action@v6 unless the step switches three defaults
+  //     off: the provenance attestation (mode=max records build-arg values), the
+  //     build-record artifact and the job summary (both carry them too). The
+  //     repository is public, so each of those is readable by anyone (TASK-737).
+  //     GitHub's log masking covers the step log only.
+  for (const s of workflowSteps) {
+    if (!s.secretArgs.size) continue;
+    const where = `${s.workflow}:${s.line} (job \`${s.job}\`, step "${s.step}")`;
+    const missing = [];
+    if (!/^(?:mode=min|false)$/.test(s.provenance ?? "")) {
+      missing.push(
+        s.provenance === null
+          ? "`provenance: mode=min` (it has none — the public-repo default is mode=max)"
+          : `\`provenance: mode=min\` (it has \`${s.provenance}\`)`,
+      );
+    }
+    for (const key of SECRET_BUILD_ENV_OFF) {
+      if (!/^false$/i.test(s.env.get(key) ?? "")) {
+        missing.push(`step \`env: ${key}: false\``);
+      }
+    }
+    if (!missing.length) continue;
+    for (const name of s.secretArgs) {
+      add(
+        name,
+        "workflow-secret",
+        `${where} passes it as a build arg from \`secrets.*\` but lacks ${missing.join(", ")} — the value is published with the build (see the TASK-737 comment in ci.yml)`,
+      );
+    }
+  }
+
   // 4. `.env.production.example`.
   for (const key of example) {
     const v = byName.get(key);
@@ -2199,13 +2478,16 @@ function audit() {
     }
   }
 
-  // 6. application source.
+  // 6. application source. "Read by code but missing from VARS" is keyed `@code`
+  //    rather than `@table` (TASK-526): an EXCEPTIONS entry for a code-only
+  //    variable must not also silence the compose/example/validation checks,
+  //    which report their own "missing from VARS" as `@table`.
   for (const [name, files] of code) {
     const v = byName.get(name);
     if (!v) {
       add(
         name,
-        "table",
+        "code",
         `read by ${[...files].slice(0, 2).join(", ")} but missing from VARS`,
       );
     } else if (v.code === "unused") {
@@ -2240,14 +2522,14 @@ function audit() {
   }
 
   // 8. Docs freshness — the operator-facing matrix must match this table.
-  const docPath = path.join(ROOT, DOC_PATH);
+  const docPath = path.join(root, DOC_PATH);
   if (!fs.existsSync(docPath)) {
     add(
       "(docs)",
       "docs",
       `${DOC_PATH} does not exist — run \`node scripts/env-check.js --docs --write\``,
     );
-  } else if (!docsAreCurrent(fs.readFileSync(docPath, "utf8"))) {
+  } else if (!docsAreCurrent(fs.readFileSync(docPath, "utf8"), VARS)) {
     add(
       "(docs)",
       "docs",
@@ -2255,20 +2537,47 @@ function audit() {
     );
   }
 
-  report({ drift, skipped, refs, example, validation, code });
+  // 9. Stale EXCEPTIONS — an entry that suppressed nothing on this run is a
+  //    licence for drift that no longer exists, waiting to hide the next one.
+  //    Added directly, not via add(): an exception cannot excuse itself.
+  const used = new Set(skipped.map((s) => s.key));
+  for (const key of Object.keys(exceptions)) {
+    if (!used.has(key)) {
+      if (!drift.has("(exceptions)")) drift.set("(exceptions)", []);
+      drift
+        .get("(exceptions)")
+        .push(
+          `[exceptions] ${key} suppressed nothing — the drift it excused is gone; delete the entry (${exceptions[key].task ?? "no task"})`,
+        );
+    }
+  }
+
+  return {
+    drift,
+    skipped,
+    gaps: VARS.filter((v) => v.gap),
+    stats: {
+      refs: refs.size,
+      example: example.size,
+      validation: validation.size,
+      code: code.size,
+      workflowSteps: workflowSteps.length,
+      vars: VARS.length,
+    },
+  };
 }
 
 const rel = (p) => path.relative(ROOT, p).replace(/\\/g, "/");
 
-function report({ drift, skipped, refs, example, validation, code }) {
+/** Prints an audit() result. Returns true when the gate passes. */
+function report({ drift, skipped, gaps, stats }) {
   console.log(
-    `Sources parsed: ${refs.size} compose refs, ${example.size} keys in ${EXAMPLE_FILE}, ` +
-      `${validation.size} validated fields, ${code.size} variables read by application code, ` +
-      `${VARS.length} rows in the table.`,
+    `Sources parsed: ${stats.refs} compose refs, ${stats.example} keys in ${EXAMPLE_FILE}, ` +
+      `${stats.validation} validated fields, ${stats.code} variables read by application code, ` +
+      `${stats.workflowSteps} workflow step(s) with a Dockerfile, ${stats.vars} rows in the table.`,
   );
   console.log("");
 
-  const gaps = VARS.filter((v) => v.gap);
   if (gaps.length) {
     console.log(
       `Declared gaps — known, deliberate, and documented (${gaps.length}):`,
@@ -2287,7 +2596,7 @@ function report({ drift, skipped, refs, example, validation, code }) {
 
   if (!drift.size) {
     console.log("No environment drift: every source agrees with the table.");
-    return;
+    return true;
   }
 
   console.error(
@@ -2311,7 +2620,7 @@ function report({ drift, skipped, refs, example, validation, code }) {
   console.error(
     `VARS in ${rel(__filename)}, or an entry with a reason and a task to EXCEPTIONS.`,
   );
-  process.exit(1);
+  return false;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -2336,7 +2645,7 @@ function enforcedBy(v) {
 
 const cell = (s) => String(s).replace(/\|/g, "\\|").replace(/\n/g, " ");
 
-function renderDocs() {
+function renderDocs(vars = VARS) {
   const out = [];
 
   // A variable whose `group` is not in GROUPS renders nowhere — it silently
@@ -2345,18 +2654,17 @@ function renderDocs() {
   // VARS reached the page. Found while adding SCHEDULER_ENABLED under a group
   // name that did not exist (TASK-381). Fail loudly instead.
   const known = new Set(GROUPS.map(([group]) => group));
-  const orphans = VARS.filter((v) => !known.has(v.group));
+  const orphans = vars.filter((v) => !known.has(v.group));
   if (orphans.length) {
-    console.error(
+    throw new Error(
       `Unknown group(s) in VARS — these would be dropped from the docs:\n` +
         orphans.map((v) => `  ${v.name} → "${v.group}"`).join("\n") +
         `\nUse one of: ${[...known].join(", ")}`,
     );
-    process.exit(1);
   }
 
   for (const [group, title] of GROUPS) {
-    const rows = VARS.filter((v) => v.group === group);
+    const rows = vars.filter((v) => v.group === group);
     if (!rows.length) continue;
     out.push(`### ${title}`);
     out.push("");
@@ -2399,23 +2707,24 @@ function normalizeTable(block) {
     .join("\n");
 }
 
-function docsAreCurrent(docText) {
+function docsAreCurrent(docText, vars = VARS) {
   const start = docText.indexOf(DOC_MARKER_START);
   const end = docText.indexOf(DOC_MARKER_END);
   if (start === -1 || end === -1) return false;
   const current = docText.slice(start + DOC_MARKER_START.length, end);
-  return normalizeTable(current) === normalizeTable(renderDocs());
+  return normalizeTable(current) === normalizeTable(renderDocs(vars));
 }
 
-function writeDocs() {
-  const docPath = path.join(ROOT, DOC_PATH);
+/** Splices the rendered matrix between the markers. Returns false on failure. */
+function writeDocs({ root = ROOT, vars = VARS } = {}) {
+  const docPath = path.join(root, DOC_PATH);
   if (!fs.existsSync(docPath)) {
     console.error(
       `${DOC_PATH} does not exist — create it with the two markers first:`,
     );
     console.error(`  ${DOC_MARKER_START}`);
     console.error(`  ${DOC_MARKER_END}`);
-    process.exit(1);
+    return false;
   }
   const text = fs.readFileSync(docPath, "utf8");
   const start = text.indexOf(DOC_MARKER_START);
@@ -2424,27 +2733,70 @@ function writeDocs() {
     console.error(
       `${DOC_PATH} is missing the ${DOC_MARKER_START} / ${DOC_MARKER_END} markers.`,
     );
-    process.exit(1);
+    return false;
   }
   const next =
     text.slice(0, start + DOC_MARKER_START.length) +
     "\n\n" +
-    renderDocs() +
+    renderDocs(vars) +
     "\n\n" +
     text.slice(end);
   fs.writeFileSync(docPath, next);
   console.log(`Wrote the matrix into ${DOC_PATH}.`);
+  return true;
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// CLI
+// ───────────────────────────────────────────────────────────────────────────
 
-const args = process.argv.slice(2);
-if (args.includes("--docs")) {
-  if (args.includes("--write")) writeDocs();
-  else console.log(renderDocs());
-} else if (args.includes("--audit")) {
-  audit();
-} else {
-  console.error("Usage: node scripts/env-check.js --audit | --docs [--write]");
-  process.exit(1);
+function main(argv) {
+  const rootAt = argv.indexOf("--root");
+  const root = rootAt === -1 ? ROOT : path.resolve(argv[rootAt + 1] ?? "");
+  if (argv.includes("--docs")) {
+    if (argv.includes("--write")) return writeDocs({ root }) ? 0 : 1;
+    console.log(renderDocs());
+    return 0;
+  }
+  if (argv.includes("--audit")) return report(audit({ root })) ? 0 : 1;
+  console.error(
+    "Usage: node scripts/env-check.js --audit | --docs [--write] [--root <dir>]",
+  );
+  return 1;
 }
+
+if (require.main === module) {
+  try {
+    process.exitCode = main(process.argv.slice(2));
+  } catch (err) {
+    console.error(err.message);
+    process.exitCode = 1;
+  }
+}
+
+module.exports = {
+  ROOT,
+  VARS,
+  EXCEPTIONS,
+  GROUPS,
+  BUILD_SERVICES,
+  DOCKERFILES,
+  DOC_PATH,
+  DOC_MARKER_START,
+  DOC_MARKER_END,
+  parseComposeRefs,
+  parseComposeStructure,
+  parseDockerfileBuildVars,
+  parseWorkflowBuildSteps,
+  parseExample,
+  parseValidation,
+  stripJsComments,
+  scanCode,
+  readWorkflowBuildSteps,
+  audit,
+  report,
+  renderDocs,
+  docsAreCurrent,
+  writeDocs,
+  main,
+};

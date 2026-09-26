@@ -44,6 +44,17 @@ name: case-store
 services:
   store-api:
     image: ghcr.io/oleksii-bidiak/store-api:${IMAGE_TAG:-staging-latest}
+    environment:
+      # A LITERAL, not `${SENTRY_ENVIRONMENT:-staging}` (TASK-739). The staging
+      # env file (the STAGING_ENV_FILE secret) is copied from the production
+      # template, which sets SENTRY_ENVIRONMENT=production — so any
+      # interpolated default here would lose to it, and staging-API errors would
+      # land in Sentry as `production` and fire the prod alert rules
+      # (docs/deploy/06-day-to-day.md §1.1). The frontends already get `staging`
+      # baked in by the CI build (NEXT_PUBLIC_SENTRY_ENVIRONMENT). Compose merges
+      # `environment` per key, so every other store-api variable still comes
+      # from the base file.
+      SENTRY_ENVIRONMENT: staging
 
   store-client:
     image: ghcr.io/oleksii-bidiak/store-client:${IMAGE_TAG:-staging-latest}

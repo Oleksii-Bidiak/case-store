@@ -405,16 +405,11 @@ services:
     # if the API is briefly down, rather than refuse to start.
     depends_on:
       - store-api
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -qO- http://localhost:3000/ >/dev/null 2>&1 || exit 1",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+    # No `healthcheck:` here ON PURPOSE (TASK-829): the image's own HEALTHCHECK
+    # (apps/store-client/Dockerfile — a `node -e` HTTP probe on $PORT) applies.
+    # An override used to call `wget`, which node:22-slim does not ship, so the
+    # container was reported `unhealthy` forever while serving 200s. Any probe
+    # added here must run with what the slim image has: node, not wget/curl.
     networks:
       - store_network
 
@@ -454,16 +449,8 @@ services:
       - "127.0.0.1:3002:3002"
     depends_on:
       - store-api
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget -qO- http://localhost:3002/ >/dev/null 2>&1 || exit 1",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
+    # No `healthcheck:` here ON PURPOSE (TASK-829) — the image's node-based
+    # HEALTHCHECK (apps/store-admin/Dockerfile) applies; see store-client above.
     networks:
       - store_network
 
@@ -492,11 +479,17 @@ services:
       - store-admin
       - store-api
     healthcheck:
-      # Caddy's admin API (localhost:2019) returns the running config JSON.
+      # Caddy's admin API returns the running config JSON. The address is the
+      # literal 127.0.0.1, not `localhost` (TASK-829): Caddy's default admin
+      # listener is `localhost:2019`, which Go binds to ONE address — the IPv4
+      # loopback (neither Caddyfile has a global `admin` option that would move
+      # it) — while busybox wget in the alpine image may resolve `localhost` to
+      # ::1 first and get "connection refused". The container then showed
+      # `unhealthy` with a perfectly working proxy (demo stand, 2026-09-21).
       test:
         [
           "CMD-SHELL",
-          "wget -qO- http://localhost:2019/config/ >/dev/null 2>&1 || exit 1",
+          "wget -qO- http://127.0.0.1:2019/config/ >/dev/null 2>&1 || exit 1",
         ]
       interval: 30s
       timeout: 5s

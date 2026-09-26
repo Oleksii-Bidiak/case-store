@@ -28,8 +28,22 @@ describe('schedulingEnabled (TASK-381)', () => {
 describe('stopCronJob (TASK-381)', () => {
   let registry: SchedulerRegistry;
 
+  // Pinned, frozen, mid-second clock (TASK-611). `CronJob.start()` asks
+  // `getTimeout()` = max(-1, sendAt() - now), and the two sides read the real
+  // clock separately: sendAt() rounds its read UP to the next whole second, the
+  // subtraction reads it again. On a cold luxon those reads are ~3 ms apart on an
+  // idle machine and far more under a full parallel jest run, so a start that
+  // straddles a second boundary gets -1, `start()` calls `stop()` instead, and
+  // `running` is false before the test has done anything. With the clock frozen
+  // at .500 both reads agree and the next tick is always 500 ms away. Fake timers
+  // also mean the started jobs never schedule a real timeout.
   beforeEach(() => {
+    jest.useFakeTimers({ now: new Date('2026-01-15T12:00:00.500Z') });
     registry = new SchedulerRegistry();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
   });
 
   it('stops a running job and removes it from the registry', () => {

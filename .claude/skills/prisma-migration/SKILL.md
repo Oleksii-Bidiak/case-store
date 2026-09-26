@@ -157,6 +157,17 @@ Consequences you must plan around:
 > `--schema=prisma/schema.prisma` for you): `db:generate`, `db:migrate`, `db:push`,
 > `db:seed`, `db:studio`. The bare `npx prisma …` forms below assume you are inside
 > `apps/store-api`; from the repo root add `--schema=apps/store-api/prisma/schema.prisma`.
+>
+> Passing flags through the root wrapper: `npm run db:migrate -- --name <name>` — one `--`
+> is enough, the script itself ends in `--` so the flags reach `prisma migrate dev`
+> (TASK-612; before that fix the inner npm swallowed `--name`, prisma waited on its name
+> prompt and left a `schema-engine` holding an advisory lock → the next run failed `P1002`).
+> In an agent / non-TTY shell **always pass `--name`** — it is the only thing that removes
+> the prompt. `</dev/null` is not a safeguard: with stdin closed and no `--name` it still
+> hangs on "Enter a name for the new migration" with the lock held. For a lock that is
+> already stuck, stop your own process and release the lock only in your own database
+> (scoped `pg_terminate_backend`), never by killing `schema-engine` machine-wide — see
+> `docs/dev-traps.md` §2.
 
 ```bash
 # Create and apply a new migration (dev)

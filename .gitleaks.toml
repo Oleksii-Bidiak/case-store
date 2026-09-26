@@ -1,0 +1,66 @@
+# gitleaks configuration (TASK-765) — read by the `secrets` job in
+# .github/workflows/security.yml.
+#
+# The full default ruleset stays on (`useDefault`); this file only ADDS a
+# narrowly scoped allowlist. Everything below is AND-scoped: a finding is
+# ignored only when it comes from the named rule, in the named file, AND the
+# secret itself is one of the listed placeholder values. A real key pasted into
+# ci.yml still fails the job, and a `ci-dummy-*` string anywhere else is still
+# reported.
+#
+# `targetRules` is load-bearing, not decoration. A GLOBAL allowlist's `paths`
+# are applied before a file is scanned at all, whatever `condition` says —
+# verified against v8.30.1: with paths + regexes + condition = "AND" and no
+# targetRules, ci.yml was skipped outright and a planted live-format Stripe key
+# in it went unreported. Targeted at a rule, the allowlist is evaluated per
+# finding, so the AND holds.
+#
+# Keep it that way. An allowlist that matches a path alone, or a value alone,
+# is a blanket ignore by another name.
+
+title = "case-store gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fake, non-functional secrets the CI jobs boot store-api with (ci-dummy-* JWT/CSRF/revalidate values and the throwaway service-container Postgres password)"
+condition = "AND"
+# The default rule that flags them (generic-api-key: KEY: <high-entropy value>).
+targetRules = ["generic-api-key"]
+# Matched against the finding's file path. The optional leading segment keeps it
+# working for `gitleaks dir <dir>` runs, where paths carry the scanned prefix.
+paths = ['''(^|/)\.github/workflows/ci\.yml$''']
+# Matched against the extracted secret (regexTarget defaults to "secret").
+regexes = [
+  '''^ci-dummy-[a-z0-9-]+$''',
+  '''^postgres$''',
+]
+
+[[allowlists]]
+description = "Placeholder secrets that unit/e2e specs configure the app with ('test-…' / 'e2e-…-at-least-32-characters-long'); they only need to satisfy the >=32-char validation"
+condition = "AND"
+targetRules = ["generic-api-key"]
+paths = [
+  '''(^|/)apps/[^/]+/src/.+\.spec\.ts$''',
+  '''(^|/)apps/[^/]+/test/.+\.e2e-spec\.ts$''',
+]
+regexes = ['''^(test|e2e)-[a-z0-9-]+-at-least-32-characters-long$''']
+
+# Two historical false positives, pinned to the commit AND file they were found
+# in, so neither the file nor the pattern is excused anywhere else:
+#   - 0079753f: `token=abc123def456` — the sample reset URL in a mail-template spec;
+#   - 87f717d6: an operator-template snippet in plan 001 where `JWT_SECRET=` is
+#     left empty and the rule reads the NEXT line (`JWT_EXPIRATION=15m`) as its value.
+[[allowlists]]
+description = "Historical false positives (sample token in a spec, empty JWT_SECRET= in a plan's env snippet)"
+condition = "AND"
+targetRules = ["generic-api-key"]
+commits = [
+  "0079753f51841f29e4542a8d27f352d21e3904f3",
+  "87f717d6a8035dd6d2471133936d77885969fa05",
+]
+paths = [
+  '''(^|/)apps/store-api/src/mail/templates/password-reset\.template\.spec\.ts$''',
+  '''(^|/)docs/plans/001-nestjs-setup\.md$''',
+]

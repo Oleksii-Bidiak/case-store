@@ -1,6 +1,9 @@
-# Dependabot — free on private repositories, unlike CodeQL (which needs paid
-# GitHub Advanced Security), so it is the highest-signal scanner available here
-# at zero cost.
+# Dependabot — keeps npm, the Docker base images and the pinned GitHub Actions
+# current. It is one scanner of several, not the only free one: the repository
+# is public, so CodeQL runs at no cost too and is enabled in
+# .github/workflows/security.yml (TASK-452), next to gitleaks, npm audit and
+# Trivy. Dependabot's part is the one they do not cover — opening the upgrade
+# PRs.
 #
 # Grouping is deliberate: an ungrouped monorepo of this size produces enough
 # individual PRs each week that the owner would start ignoring them, which is

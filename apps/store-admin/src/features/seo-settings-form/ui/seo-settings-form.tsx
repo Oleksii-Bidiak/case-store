@@ -353,7 +353,9 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
         The `noindexSite` column and the storefront's robots.ts handling remain as
         a deliberate emergency kill switch — flipping it now needs a database
         write, which is the right amount of friction for an action this
-        destructive. See docs/operations.md.
+        destructive. The operator-facing explanation lives in
+        docs/admin-guide.md, §18 «SEO-налаштування» → «Куди подівся перемикач
+        „Приховати сайт від пошукових систем“».
       */}
 
       <FormActionsBar>

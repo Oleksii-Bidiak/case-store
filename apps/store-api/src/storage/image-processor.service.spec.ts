@@ -46,8 +46,33 @@ async function makePhotoFixture(width = 4000, height = 3000): Promise<Buffer> {
     .toBuffer();
 }
 
+/**
+ * Budget for the tests that touch the 12 MP photo (TASK-611).
+ *
+ * Measured, not guessed. Idle, one process: building the fixture ≈ 0.3 s and
+ * processing it ≈ 0.3 s. Inside a normal full `npm run test -w apps/store-api`
+ * (15 jest workers on 16 cores, each libvips pool sized to the core count) one
+ * such test took 1.0–1.4 s. With the CPU oversubscribed — three full suites at
+ * once, i.e. what a small CI runner or a busy dev box looks like — they took
+ * 3.1–9.6 s and one of them died at jest's 5 s default ("Exceeded timeout of
+ * 5000 ms for a test"), three runs out of three. The work is legitimately
+ * CPU-bound; the default was simply sized for unit tests that do no work.
+ *
+ * 30 s is ~3× the worst observation. The fixture is also built ONCE for the
+ * file (`beforeAll`) instead of per test, which removes about half of the heavy
+ * work outright. The 400 KB payload budget and the fixture size are untouched —
+ * they are the assertions, the clock is not.
+ */
+const PHOTO_TIMEOUT_MS = 30_000;
+
 describe('ImageProcessor', () => {
   let processor: ImageProcessor;
+  /** The 12 MP JPEG, built once — see PHOTO_TIMEOUT_MS. Never mutated. */
+  let photo: Buffer;
+
+  beforeAll(async () => {
+    photo = await makePhotoFixture(4000, 3000);
+  }, PHOTO_TIMEOUT_MS);
 
   beforeEach(() => {
     processor = new ImageProcessor();
@@ -92,19 +117,21 @@ describe('ImageProcessor', () => {
   // longer what gets stored.
 
   describe('downscaling', () => {
-    it('shrinks a 12 MP photo to the 2000px cap and a sane payload', async () => {
-      const input = await makePhotoFixture(4000, 3000);
+    it(
+      'shrinks a 12 MP photo to the 2000px cap and a sane payload',
+      async () => {
+        const { webp } = await processor.process(photo);
 
-      const { webp } = await processor.process(input);
-
-      const meta = await sharp(webp).metadata();
-      expect(meta.format).toBe('webp');
-      // `fit: 'inside'` on a square box → the LONGEST edge lands on the cap and
-      // the aspect ratio is kept, so 4:3 becomes 2000×1500, never 2000×2000.
-      expect(meta.width).toBe(2000);
-      expect(meta.height).toBe(1500);
-      expect(webp.byteLength).toBeLessThanOrEqual(400 * 1024);
-    });
+        const meta = await sharp(webp).metadata();
+        expect(meta.format).toBe('webp');
+        // `fit: 'inside'` on a square box → the LONGEST edge lands on the cap and
+        // the aspect ratio is kept, so 4:3 becomes 2000×1500, never 2000×2000.
+        expect(meta.width).toBe(2000);
+        expect(meta.height).toBe(1500);
+        expect(webp.byteLength).toBeLessThanOrEqual(400 * 1024);
+      },
+      PHOTO_TIMEOUT_MS,
+    );
 
     it('leaves an image already under the cap at its original size', async () => {
       // `withoutEnlargement` — a small logo must not be upscaled to 2000px, which
@@ -189,19 +216,21 @@ describe('ImageProcessor', () => {
   // ─── Reported dimensions (TASK-441) ───────────────────────────────────────
 
   describe('reported dimensions', () => {
-    it('reports the dimensions and size OF THE STORED RENDER, not of the input', async () => {
-      // The media library records these on the asset row, so "what it says" and
-      // "what it stored" have to be the same picture. A 4000×3000 input that is
-      // reported as 4000×3000 would put the pre-resize numbers on a post-resize
-      // file, and nothing downstream could tell.
-      const input = await makePhotoFixture(4000, 3000);
+    it(
+      'reports the dimensions and size OF THE STORED RENDER, not of the input',
+      async () => {
+        // The media library records these on the asset row, so "what it says" and
+        // "what it stored" have to be the same picture. A 4000×3000 input that is
+        // reported as 4000×3000 would put the pre-resize numbers on a post-resize
+        // file, and nothing downstream could tell.
+        const { webp, width, height, bytes } = await processor.process(photo);
 
-      const { webp, width, height, bytes } = await processor.process(input);
-
-      expect({ width, height }).toEqual({ width: 2000, height: 1500 });
-      expect(bytes).toBe(webp.byteLength);
-      expect(bytes).toBeLessThan(input.byteLength);
-    });
+        expect({ width, height }).toEqual({ width: 2000, height: 1500 });
+        expect(bytes).toBe(webp.byteLength);
+        expect(bytes).toBeLessThan(photo.byteLength);
+      },
+      PHOTO_TIMEOUT_MS,
+    );
 
     it('reports the ROTATED dimensions for an EXIF-rotated photo', async () => {
       // Orientation 6 swaps the axes. Reporting the pre-rotation 400×300 here
