@@ -13,6 +13,7 @@ import {
   type PermissionTemplateEntity,
   type ZoneGroup,
 } from "@/entities/staff";
+import { useAuth } from "@/entities/session";
 import {
   Badge,
   Button,
@@ -74,12 +75,15 @@ export function PermissionTemplateDialog({
   const queryClient = useQueryClient();
   const createTemplate = useCreatePermissionTemplate();
   const updateTemplate = useUpdatePermissionTemplate();
+  // The catalogue is read through the caller's own `staff/:id/permissions`
+  // (see `useGrantableCatalogue`), so the feature supplies the session id.
+  const { userId } = useAuth();
 
   const {
     catalogue,
     zones,
     isLoading: catalogueLoading,
-  } = useGrantableCatalogue({ enabled: open });
+  } = useGrantableCatalogue(userId, { enabled: open });
 
   // forms.md Rule 1a. The signature covers the identity AND the version, so a
   // refetch that changed the set repaints while an unchanged one does not.
