@@ -270,7 +270,7 @@ export const pagesData: {
 
   // ─── HUB rows: meta tags for listing routes that already exist ───────────────
   // Not pages. Each one's slug NAMES the storefront route it describes, and only
-  // the six slugs below mean anything (the API rejects any other). Descriptions
+  // the seven slugs below mean anything (the API rejects any other). Descriptions
   // say what the section is — never a claim about the shop (terms, addresses,
   // guarantees): those belong in the LEGAL documents above, where a lawyer reads
   // them.
@@ -356,6 +356,23 @@ export const pagesData: {
         <p>Це не окрема сторінка сайту, а SEO-картка розділу
         <strong>/promo</strong>: тут задаються заголовок і опис, які бачить
         Google і які показуються у прев'ю посилання. Самі акційні добірки формуються зі знижок і банерів.</p>
+      `,
+  },
+  {
+    // TASK-549 — `/products` was the one indexed listing with no owner-editable
+    // meta. Only the UNFILTERED catalogue reads this row; a `?category=` view
+    // takes the category's own texts, and any filter is noindex anyway.
+    slug: 'products',
+    kind: PageKind.HUB,
+    title: 'Розділ «Каталог»',
+    excerpt: 'SEO-заголовок і опис для каталогу всіх товарів.',
+    metaTitle: `Каталог товарів | ${STORE_NAME}`,
+    metaDescription:
+      'Увесь асортимент магазину на одній сторінці — фільтруйте за категорією, брендом, пристроєм і ціною.',
+    content: `
+        <p>Це не окрема сторінка сайту, а SEO-картка розділу
+        <strong>/products</strong>: тут задаються заголовок і опис, які бачить
+        Google і які показуються у прев'ю посилання. Самі товари редагуються в розділі «Товари».</p>
       `,
   },
 ];

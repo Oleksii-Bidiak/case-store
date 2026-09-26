@@ -564,7 +564,7 @@ describe('PageRepository', () => {
       // rows it flipped, so it purges every root a page can appear on.
       expect(repository.revalidateTarget).toEqual({
         tags: ['pages'],
-        paths: ['/legal', '/info', '/categories', '/blog', '/contact', '/promo'],
+        paths: ['/legal', '/info', '/categories', '/blog', '/contact', '/promo', '/products'],
       });
     });
   });

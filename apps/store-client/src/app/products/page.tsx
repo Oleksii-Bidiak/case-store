@@ -17,6 +17,7 @@ import { categoryControllerGetCategoryTree } from "@/shared/api/generated/catego
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import {
+  buildHubMetadata,
   buildListingMetadata,
   buildOgImages,
   resolveSeo,
@@ -184,26 +185,19 @@ export async function generateMetadata({
     };
   }
 
-  // Unfiltered / keyword-search / unknown-category → generic listing metadata,
-  // still branded through the same helper so the title carries the store name.
-  const title = toMetadataTitle(
-    { title: dict.meta.productsTitle, titleAbsolute: false },
-    { settings: seo, siteName, fallback: dict.meta.productsTitle },
-  );
-  return {
-    title,
-    description: dict.meta.productsDescription,
-    ...canonicalAndRobots,
-    openGraph: {
-      title: title.absolute,
-      description: dict.meta.productsDescription,
-      url: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
-      siteName,
-      locale: "uk_UA",
-      type: "website",
-      images: buildOgImages({ defaultOgImage: seo?.defaultOgImage }),
-    },
-  };
+  // Unfiltered / keyword-search / unknown-category → the `products` HUB row
+  // (TASK-549): `/products` was the one indexed listing whose title and
+  // description the owner could change nowhere. Same three tiers as the other
+  // hubs (row meta → row title/excerpt → dictionary). The listing policy still
+  // decides canonical vs noindex: a clean view (incl. `?page=N`) is canonical, a
+  // filtered one carries the policy's robots instead.
+  return buildHubMetadata({
+    slug: "products",
+    canonical: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
+    fallbackTitle: dict.meta.productsTitle,
+    fallbackDescription: dict.meta.productsDescription,
+    robots: listingMeta.robots,
+  });
 }
 
 /**

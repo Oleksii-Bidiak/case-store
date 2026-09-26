@@ -17,14 +17,22 @@ export interface HubMetadataInput {
   fallbackDescription: string;
   /** Open Graph `type`; hubs are listings, so "website" unless stated. */
   ogType?: "website" | "article";
+  /**
+   * A FILTERED view of the hub (`/products?search=…`, `/blog?q=…`): pass the
+   * `robots` that `buildListingMetadata` returned and the result carries it
+   * INSTEAD of the canonical — noindex and canonical are mutually exclusive in
+   * this codebase (plan 143, rule 2). `og:url` still names `canonical`, the
+   * clean hub, so a shared link previews the listing rather than the query.
+   */
+  robots?: { index: boolean; follow: boolean };
 }
 
 /**
  * Build a listing hub's metadata from its admin-managed `HUB` page row
  * (TASK-435).
  *
- * The six hubs (`/categories`, `/blog`, `/legal`, `/contact`, `/info`, `/promo`)
- * are routes implemented in this app, not documents in the database — there is
+ * The seven hubs (`/categories`, `/blog`, `/legal`, `/contact`, `/info`, `/promo`,
+ * and since TASK-549 `/products`) are routes implemented in this app, not documents in the database — there is
  * nothing for an admin to write. A `HUB` page row exists only to give each of
  * them a `metaTitle`/`metaDescription` the owner controls from the panel.
  *
@@ -52,6 +60,7 @@ export async function buildHubMetadata({
   fallbackTitle,
   fallbackDescription,
   ogType = "website",
+  robots,
 }: HubMetadataInput): Promise<Metadata> {
   const [page, seo] = await Promise.all([
     fetchPublishedPage(slug, "HUB"),
@@ -82,7 +91,7 @@ export async function buildHubMetadata({
   return {
     title,
     description,
-    alternates: { canonical },
+    ...(robots ? { robots } : { alternates: { canonical } }),
     // A segment's `openGraph` replaces the root layout's wholesale (Next merges
     // metadata shallowly), so siteName/locale/images are re-stated here — same
     // shape as /legal/[slug].

@@ -5,11 +5,12 @@ import type { PageEntityKind } from "@/shared/api/generated/models";
  *
  * A `HUB` page row is not a page: it carries the `metaTitle`/`metaDescription`
  * of a listing route this app already implements in code. Its slug NAMES that
- * route, so these six pairs are the complete vocabulary — the API rejects a HUB
- * row on any other slug.
+ * route, so these seven pairs are the complete vocabulary — the API rejects a HUB
+ * row on any other slug. `products` joined in TASK-549: `/products` was the one
+ * indexed listing whose title and description the owner could change nowhere.
  *
  * This is the ONE place the storefront states the mapping: `generateMetadata()`
- * on each of the six hubs reads its slug from here, and `sitemap.ts` uses it to
+ * on each of the hubs reads its slug from here, and `sitemap.ts` uses it to
  * know that a HUB row must NOT get a sitemap entry of its own (the route it
  * describes is already in the static list — emitting it twice would be a
  * duplicate URL).
@@ -29,6 +30,7 @@ export const HUB_PAGES = [
   { slug: "contact", route: "/contact" },
   { slug: "info", route: "/info" },
   { slug: "promo", route: "/promo" },
+  { slug: "products", route: "/products" },
 ] as const;
 
 /** The slug of a storefront hub whose meta tags an admin can edit. */

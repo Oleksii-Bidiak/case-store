@@ -55,6 +55,10 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title,
     description,
+    // TASK-549 — the most-linked URL of the store had no canonical, so every
+    // `/?utm_…` / `/?ref=…` variant a campaign or a partner links to was a
+    // self-declared duplicate of the home page.
+    alternates: { canonical: SITE_URL },
     // TASK-432: the homepage had no openGraph block of its own, so a shared link
     // showed the root layout's site-wide title/description rather than the
     // homepage's own resolved pair. Same shape as /legal/[slug], plus explicit

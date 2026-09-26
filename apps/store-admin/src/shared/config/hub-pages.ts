@@ -5,7 +5,7 @@ import type { PageEntityKind } from "@/shared/api/generated/models";
  *
  * A page of kind `HUB` is not a document: it supplies the `metaTitle` /
  * `metaDescription` of a listing route the storefront already implements in
- * code, and its slug NAMES that route. Only these six slugs mean anything — the
+ * code, and its slug NAMES that route. Only these seven slugs mean anything — the
  * API rejects a HUB row on any other — which is why the page form offers a
  * picker here instead of a free-text slug field: a typo would otherwise create a
  * row that is editable, saved, and attached to nothing.
@@ -23,6 +23,9 @@ export const HUB_PAGES = [
   { slug: "contact", route: "/contact" },
   { slug: "info", route: "/info" },
   { slug: "promo", route: "/promo" },
+  // TASK-549 — the unfiltered catalogue, the one indexed listing whose meta the
+  // owner could not edit anywhere before.
+  { slug: "products", route: "/products" },
 ] as const;
 
 /** The slug of a storefront hub whose meta tags the panel can edit. */

@@ -11,6 +11,10 @@ jest.mock("@/shared/api/generated/categories/categories", () => ({
 jest.mock("@/shared/api/seo-settings-server", () => ({
   fetchSeoSettings: jest.fn().mockResolvedValue(null),
 }));
+// The `products` HUB row (TASK-549) — mocked per case below.
+jest.mock("@/shared/api/pages-server", () => ({
+  fetchPublishedPage: jest.fn().mockResolvedValue(null),
+}));
 // A modern (slug) URL never reaches the legacy uuid lookup; pin that here so the
 // tree mock below counts only the category resolution this file is about.
 jest.mock("@/shared/lib/legacy-catalog-params", () => ({
@@ -44,11 +48,19 @@ jest.mock("react", () => {
 });
 
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
-import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
+import type {
+  CategoryTreeNodeEntity,
+  PageEntity,
+} from "@/shared/api/generated/models";
+import { fetchPublishedPage } from "@/shared/api/pages-server";
+import { SITE_URL, dict } from "@/shared/config";
 import ProductsPage, { generateMetadata } from "./page";
 
 const getTree = categoryControllerGetCategoryTree as jest.MockedFunction<
   typeof categoryControllerGetCategoryTree
+>;
+const fetchPage = fetchPublishedPage as jest.MockedFunction<
+  typeof fetchPublishedPage
 >;
 
 function makeTree(): CategoryTreeNodeEntity[] {
@@ -93,5 +105,60 @@ describe("products — one tree read per render (TASK-703)", () => {
     await ProductsPage(props());
 
     expect(getTree).not.toHaveBeenCalled();
+  });
+});
+
+describe("products — owner-editable meta for the unfiltered catalogue (TASK-549)", () => {
+  function hubRow(overrides: Partial<PageEntity> = {}): PageEntity {
+    return {
+      slug: "products",
+      kind: "HUB",
+      title: "Розділ «Каталог»",
+      excerpt: null,
+      metaTitle: "Каталог чохлів і техніки | CaseStore",
+      metaDescription: "Опис каталогу від власника.",
+      ogImage: null,
+      ...overrides,
+    } as unknown as PageEntity;
+  }
+
+  it("takes title and description from the products HUB row", async () => {
+    fetchPage.mockResolvedValue(hubRow());
+
+    const meta = await generateMetadata(props());
+
+    expect(fetchPage).toHaveBeenCalledWith("products", "HUB");
+    expect(meta.title).toEqual({
+      absolute: "Каталог чохлів і техніки | CaseStore",
+    });
+    expect(meta.description).toBe("Опис каталогу від власника.");
+    expect(meta.alternates?.canonical).toBe(`${SITE_URL}/products`);
+    expect(meta.robots).toBeUndefined();
+  });
+
+  it("falls back to the dictionary when there is no row", async () => {
+    fetchPage.mockResolvedValue(null);
+
+    const meta = await generateMetadata(props());
+
+    expect(meta.description).toBe(dict.meta.productsDescription);
+    expect(meta.alternates?.canonical).toBe(`${SITE_URL}/products`);
+  });
+
+  it("keeps ?page=N in the canonical of a clean paged view", async () => {
+    const meta = await generateMetadata(props({ page: "3" }));
+
+    expect(meta.alternates?.canonical).toBe(`${SITE_URL}/products?page=3`);
+  });
+
+  it("noindexes a filtered view and drops its canonical", async () => {
+    fetchPage.mockResolvedValue(hubRow());
+
+    const meta = await generateMetadata(props({ search: "чохол" }));
+
+    expect(meta.robots).toEqual({ index: false, follow: true });
+    expect(meta.alternates).toBeUndefined();
+    // The preview of a shared search link still names the clean listing.
+    expect(meta.openGraph?.url).toBe(`${SITE_URL}/products`);
   });
 });

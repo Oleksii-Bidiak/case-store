@@ -21991,7 +21991,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo). Defaults to LEGAL.",
+            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo, products). Defaults to LEGAL.",
             "enum": [
               "LEGAL",
               "INFO",
@@ -22081,7 +22081,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo)",
+            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo, products)",
             "enum": [
               "LEGAL",
               "INFO",
