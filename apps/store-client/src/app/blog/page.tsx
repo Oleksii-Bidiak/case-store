@@ -10,23 +10,38 @@ import {
   buildBreadcrumbSchema,
   buildItemListSchema,
 } from "@/shared/lib/schema";
+import { buildListingMetadata } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { SITE_URL, dict } from "@/shared/config";
 
-// TASK-432 — /blog was the only storefront route with no `alternates.canonical`,
-// so every `?category=`/`?q=`/`?page=` variant of the hub self-canonicalized and
-// competed with the clean URL. The hub canonicalizes onto itself; the paged and
-// filtered views are navigation, not separate documents.
-//
 // TASK-435 — title/description come from the `blog` HUB page row so the owner
-// can edit them in the panel; the dictionary strings remain the fallback. The
-// canonical is unchanged.
-export function generateMetadata(): Promise<Metadata> {
+// can edit them in the panel; the dictionary strings remain the fallback.
+//
+// TASK-524 — canonical/robots follow the catalogue's listing policy (plan 143).
+// Since TASK-417 each `?page=N` is a disjoint slice of the archive, so pointing
+// it at page 1 (what TASK-432 did while pages still accumulated) told crawlers
+// the archive's older articles were duplicates of the newest nine; each page is
+// now its own canonical. A `?q=` search or a `?category=` chip is a narrowed
+// view of the same posts — `noindex, follow`, no canonical, exactly like a
+// filtered catalogue listing: its links are still followed, it is not indexed.
+export async function generateMetadata({
+  searchParams,
+}: BlogPageProps): Promise<Metadata> {
+  const resolved = await searchParams;
+  const isFiltered = Boolean(
+    readParam(resolved.q)?.trim() || readParam(resolved.category),
+  );
+  const listing = buildListingMetadata({
+    basePath: "/blog",
+    page: Number(readParam(resolved.page)),
+  });
+
   return buildHubMetadata({
     slug: "blog",
-    canonical: `${SITE_URL}/blog`,
+    canonical: `${SITE_URL}${isFiltered ? "/blog" : (listing.canonicalPath ?? "/blog")}`,
     fallbackTitle: dict.meta.blogTitle,
     fallbackDescription: dict.meta.blogDescription,
+    robots: isFiltered ? { index: false, follow: true } : undefined,
   });
 }
 
