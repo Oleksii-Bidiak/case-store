@@ -770,6 +770,77 @@ describe("AdminReviewTable — withdrawn authors and the abuse series (TASK-1004
     expect(mockReplace).toHaveBeenCalledWith("/reviews?status=all");
   });
 
+  it("clears the deep-link narrowing too when «Скинути все» is pressed", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "status=all&visibility=hidden&productId=product-uuid-1&createdIp=203.0.113.7&search=olena&page=3",
+    );
+    stubReviews();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    // One clear-all for all four chips, not one per filter group.
+    const clearAll = screen.getAllByRole("button", {
+      name: dict.common.table.clearAllFilters,
+    });
+    expect(clearAll).toHaveLength(1);
+
+    await userEvent.click(clearAll[0]);
+    // Every chip goes, and the page with them; the search term is not a chip.
+    expect(mockReplace).toHaveBeenCalledWith("/reviews?search=olena");
+  });
+
+  it("offers «Скинути все» once a deep-link chip joins a single filter", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "status=all&productId=product-uuid-1",
+    );
+    stubReviews();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.clearAllFilters }),
+    );
+    expect(mockReplace).toHaveBeenCalledWith("/reviews");
+  });
+
+  it.each([
+    [
+      "visibility=foo",
+      dict.reviews.filterVisibilityAria,
+      dict.reviews.filterVisibilityVisible,
+    ],
+    ["status=foo", dict.reviews.filterStatusAria, dict.reviews.filterPending],
+    [
+      "visibility=visible",
+      dict.reviews.filterVisibilityAria,
+      dict.reviews.filterVisibilityVisible,
+    ],
+  ])(
+    "shows what %s actually queries — the default, with no stray chip",
+    async (query, aria, label) => {
+      mockSearchParamsRef.current = new URLSearchParams(query);
+      const params = stubReviews();
+      renderTable();
+      await screen.findByText("iPhone 15 Pro Case");
+
+      expect(params[0].get("visibility")).toBe("visible");
+      expect(params[0].get("status")).toBe("pending");
+      expect(screen.getByRole("combobox", { name: aria })).toHaveTextContent(
+        label,
+      );
+      // No chip at all for a value the rows are not narrowed by — neither
+      // «…: foo» nor one naming the default.
+      expect(
+        screen.queryByRole("button", { name: /^Прибрати фільтр/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", {
+          name: dict.common.table.clearAllFilters,
+        }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
   it("names the product by its id while the series is empty", async () => {
     mockSearchParamsRef.current = new URLSearchParams(
       "productId=product-uuid-9",

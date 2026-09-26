@@ -111,8 +111,9 @@ function resolveStatus(raw: string | null): AdminReviewControllerListStatus {
 
 /**
  * The author-visibility slice the URL asks for (TASK-1004), defaulting to the
- * API's own default, `visible`. An unknown value falls back there too, so the
- * chip and the rows can never disagree.
+ * API's own default, `visible`. An unknown value falls back there too. The
+ * filter control is fed this RESOLVED value, never the raw param (see
+ * `filterValues` below) — that is what keeps the chip and the rows in step.
  */
 function resolveVisibility(raw: string | null): ReviewAuthorVisibility {
   const known = Object.values(ReviewAuthorVisibility);
@@ -334,13 +335,6 @@ function AdminReviewTableView() {
           label: dict.reviews.filterAll,
         },
       ],
-      // A link someone shared may spell the default out (`?status=pending`).
-      // The rows are the same either way, so the chip must read as the filter it
-      // is rather than as the raw enum value.
-      resolveLabel: (value) =>
-        value === AdminReviewControllerListStatus.pending
-          ? dict.reviews.filterPending
-          : value,
       className: "w-48",
     },
     {
@@ -358,13 +352,22 @@ function AdminReviewTableView() {
           label: dict.reviews.filterVisibilityAll,
         },
       ],
-      resolveLabel: (value) =>
-        value === ReviewAuthorVisibility.visible
-          ? dict.reviews.filterVisibilityVisible
-          : value,
       className: "w-48",
     },
   ];
+
+  // What the controls show: the RESOLVED queue and slice, with each default
+  // spelled as "no filter". Feeding the raw params instead made `?visibility=foo`
+  // query `visible` while the chip read «…: foo» and the Select went blank, and
+  // `?status=pending` show a chip for the queue an absent param returns anyway.
+  const filterValues: Record<string, string> = {
+    status:
+      statusParam === AdminReviewControllerListStatus.pending
+        ? ""
+        : statusParam,
+    visibility:
+      visibilityParam === ReviewAuthorVisibility.visible ? "" : visibilityParam,
+  };
 
   // The deep-link narrowing from the dashboard (TASK-601). The product is named
   // from the rows once they arrive — they all belong to it — and by its id
@@ -390,6 +393,23 @@ function AdminReviewTableView() {
         ]
       : []),
   ];
+
+  // «Скинути все» has to clear EVERY narrowing on screen, the deep-link chips
+  // included. `TableFilters` only knows its own params, so its built-in button
+  // would leave `productId`/`createdIp` behind; the table therefore renders one
+  // `TableFilters` per filter (each alone never shows its own clear-all) and
+  // owns the single clear-all below. Search is not a filter chip and stays, as
+  // it does under `TableFilters`' own button.
+  const activeFilterCount =
+    Object.values(filterValues).filter(Boolean).length + linkChips.length;
+  const clearAllFilters = () =>
+    updateParams({
+      status: undefined,
+      visibility: undefined,
+      productId: undefined,
+      createdIp: undefined,
+      page: undefined,
+    });
 
   // Selection is offered only on the PENDING queue, matching the per-row
   // buttons: approved rows are read-only here, and a checkbox column with
@@ -436,14 +456,14 @@ function AdminReviewTableView() {
           />
         }
         filters={
-          <>
-            <TableFilters
-              filters={filters}
-              values={{
-                status: searchParams.get("status") ?? "",
-                visibility: searchParams.get("visibility") ?? "",
-              }}
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            {filters.map((filter) => (
+              <TableFilters
+                key={filter.param}
+                filters={[filter]}
+                values={filterValues}
+              />
+            ))}
             {/* TASK-1004: removable chips for the dashboard deep link — the
                 same shape `TableFilters` gives its own chips. */}
             {linkChips.map((chip) => (
@@ -461,7 +481,17 @@ function AdminReviewTableView() {
                 <XIcon aria-hidden="true" className="size-3.5" />
               </Button>
             ))}
-          </>
+            {activeFilterCount > 1 && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={clearAllFilters}
+              >
+                {dict.common.table.clearAllFilters}
+              </Button>
+            )}
+          </div>
         }
         selectAll={
           selectableIds.length > 0 ? (
