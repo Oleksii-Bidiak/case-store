@@ -73,6 +73,7 @@ export async function generateMetadata({
           entityOgImage: product.ogImage,
           pageImage: images[0]?.url,
           defaultOgImage: resolved.ogImage,
+          alt: title.absolute,
         }),
       },
     };

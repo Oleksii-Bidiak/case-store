@@ -90,6 +90,7 @@ export async function generateMetadata({
       images: buildOgImages({
         entityOgImage: page.ogImage,
         defaultOgImage: resolved.ogImage,
+        alt: title.absolute,
       }),
     },
   };

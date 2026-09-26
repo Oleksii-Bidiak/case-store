@@ -87,6 +87,52 @@ afterEach(() => {
   ).__requestMemos?.forEach((memo) => memo.clear());
 });
 
+describe("categories/[slug] — link preview (TASK-568/569)", () => {
+  const props = {
+    params: Promise.resolve({ slug: "chohly" }),
+    searchParams: Promise.resolve({}),
+  };
+
+  it("uses the category's own tile picture before the store-wide card", async () => {
+    const [node] = makeTree();
+    getTree.mockResolvedValue({
+      data: [{ ...node, image: "https://cdn.example.com/chohly.jpg" }],
+    } as never);
+
+    const meta = await generateMetadata(props);
+
+    const og = meta.openGraph as { images?: unknown; title?: string };
+    expect(og.images).toEqual([
+      { url: "https://cdn.example.com/chohly.jpg", alt: og.title },
+    ]);
+  });
+
+  it("sizes the admin-chosen card and gives it the page title as alt", async () => {
+    const [node] = makeTree();
+    getTree.mockResolvedValue({
+      data: [
+        {
+          ...node,
+          ogImage: "https://cdn.example.com/og.jpg",
+          image: "https://cdn.example.com/chohly.jpg",
+        },
+      ],
+    } as never);
+
+    const meta = await generateMetadata(props);
+
+    const og = meta.openGraph as { images?: unknown; title?: string };
+    expect(og.images).toEqual([
+      {
+        url: "https://cdn.example.com/og.jpg",
+        width: 1200,
+        height: 630,
+        alt: og.title,
+      },
+    ]);
+  });
+});
+
 describe("categories/[slug] — one tree read per render (TASK-703)", () => {
   it("generateMetadata and the page body share a single category-tree request", async () => {
     getTree.mockResolvedValue({ data: makeTree() } as never);

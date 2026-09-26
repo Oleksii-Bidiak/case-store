@@ -108,6 +108,22 @@ describe("products — one tree read per render (TASK-703)", () => {
   });
 });
 
+describe("products?category= — link preview (TASK-569)", () => {
+  it("uses the category's own tile picture, with the page title as alt", async () => {
+    const [node] = makeTree();
+    getTree.mockResolvedValue({
+      data: [{ ...node, image: "https://cdn.example.com/chohly.jpg" }],
+    } as never);
+
+    const meta = await generateMetadata(props({ category: "chohly" }));
+
+    const og = meta.openGraph as { images?: unknown; title?: string };
+    expect(og.images).toEqual([
+      { url: "https://cdn.example.com/chohly.jpg", alt: og.title },
+    ]);
+  });
+});
+
 describe("products — owner-editable meta for the unfiltered catalogue (TASK-549)", () => {
   function hubRow(overrides: Partial<PageEntity> = {}): PageEntity {
     return {

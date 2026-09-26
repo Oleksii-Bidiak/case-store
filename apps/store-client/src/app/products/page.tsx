@@ -179,7 +179,11 @@ export async function generateMetadata({
         // every filtered `/products?category=…` link.
         images: buildOgImages({
           entityOgImage: node.ogImage,
+          // TASK-569 — same chain as /categories/[slug]: the category's own
+          // tile picture before the store-wide default.
+          categoryImage: node.image,
           defaultOgImage: seoMeta.ogImage,
+          alt: title.absolute,
         }),
       },
     };

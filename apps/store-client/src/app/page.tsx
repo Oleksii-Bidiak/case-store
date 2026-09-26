@@ -72,7 +72,10 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName,
       locale: "uk_UA",
       type: "website",
-      images: buildOgImages({ defaultOgImage: resolved.ogImage }),
+      images: buildOgImages({
+        defaultOgImage: resolved.ogImage,
+        alt: title.absolute,
+      }),
     },
   };
 }

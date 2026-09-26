@@ -115,19 +115,22 @@ const resolveCompatPage = cache(
 
 /**
  * The category's ancestor path from the public (active-only) tree, for the
- * breadcrumb trail. Null on any failure — the crumbs degrade to the pair itself
- * rather than taking the page down with them.
+ * breadcrumb trail and the category's own picture for the link preview
+ * (TASK-569). Null on any failure — the crumbs degrade to the pair itself and
+ * the preview to the store-wide image, rather than taking the page down.
+ *
+ * `cache()`d like `resolveCompatPage`: metadata and body both read it.
  */
-async function resolveCategoryPath(
-  slug: string,
-): Promise<CategoryTreeNodeEntity[] | null> {
-  try {
-    const { data } = await categoryControllerGetCategoryTree();
-    return findCategoryPathBySlug(data ?? [], slug);
-  } catch {
-    return null;
-  }
-}
+const resolveCategoryPath = cache(
+  async (slug: string): Promise<CategoryTreeNodeEntity[] | null> => {
+    try {
+      const { data } = await categoryControllerGetCategoryTree();
+      return findCategoryPathBySlug(data ?? [], slug);
+    } catch {
+      return null;
+    }
+  },
+);
 
 /** The eight listing filter params, read from the query string. */
 function readFilters(resolved: {
@@ -221,6 +224,10 @@ export async function generateMetadata({
   });
   const description = seoMeta.description ?? generatedDescription;
 
+  // TASK-569 — the category's own picture for the preview. Same cached tree read
+  // the body's breadcrumb makes, so it costs the request nothing extra.
+  const categoryNode = (await resolveCategoryPath(page.categorySlug))?.at(-1);
+
   return {
     title,
     description,
@@ -237,7 +244,13 @@ export async function generateMetadata({
       siteName,
       locale: "uk_UA",
       type: "website",
-      images: buildOgImages({ defaultOgImage: seoMeta.ogImage }),
+      images: buildOgImages({
+        // A compat page is a slice of that category, so its tile picture
+        // stands in before the store-wide default.
+        categoryImage: categoryNode?.image,
+        defaultOgImage: seoMeta.ogImage,
+        alt: title.absolute,
+      }),
     },
   };
 }

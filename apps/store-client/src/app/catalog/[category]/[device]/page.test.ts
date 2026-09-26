@@ -55,6 +55,7 @@ jest.mock("react", () => {
 
 import { notFound, permanentRedirect } from "next/navigation";
 import { catalogLandingControllerFindCompatPage } from "@/shared/api/generated/catalog/catalog";
+import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { SITE_URL, dict } from "@/shared/config";
 import { ProductListView } from "@/widgets";
@@ -353,6 +354,30 @@ describe("catalog/[category]/[device] — metadata (TASK-490)", () => {
 
     expect(result.robots).toEqual({ index: false, follow: true });
     expect(result.alternates?.canonical).toBe(`${SITE_URL}/categories/chohly`);
+  });
+
+  // TASK-568/569 — the category's own tile picture, with an alt, before the
+  // store-wide card; one tree read shared with the body's breadcrumb.
+  it("previews with the category's image, carrying the page title as alt", async () => {
+    findPage.mockResolvedValue(pair() as never);
+    (categoryControllerGetCategoryTree as jest.Mock).mockResolvedValueOnce({
+      data: [
+        {
+          id: "cat-1",
+          slug: "chohly",
+          name: "Чохли",
+          image: "https://cdn.example.com/chohly.jpg",
+          children: [],
+        },
+      ],
+    });
+
+    const result = await meta("chohly", "iphone-15-pro");
+
+    const og = result.openGraph as { images?: unknown; title?: string };
+    expect(og.images).toEqual([
+      { url: "https://cdn.example.com/chohly.jpg", alt: og.title },
+    ]);
   });
 
   it("falls back to a bare title when there is no such page", async () => {

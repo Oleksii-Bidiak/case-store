@@ -177,7 +177,11 @@ export async function generateMetadata({
       // the global default and then the brand card.
       images: buildOgImages({
         entityOgImage: node.ogImage,
+        // TASK-569 — the category's own tile picture (the one /categories
+        // shows) before the store-wide default.
+        categoryImage: node.image,
         defaultOgImage: seoMeta.ogImage,
+        alt: title.absolute,
       }),
     },
   };

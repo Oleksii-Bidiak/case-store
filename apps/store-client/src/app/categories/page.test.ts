@@ -151,7 +151,12 @@ describe("categories hub generateMetadata", () => {
     const meta = await generateMetadata();
 
     expect(meta.openGraph?.images).toEqual([
-      { url: "https://cdn.example.com/og/categories.jpg" },
+      {
+        url: "https://cdn.example.com/og/categories.jpg",
+        width: 1200,
+        height: 630,
+        alt: meta.openGraph?.title,
+      },
     ]);
   });
 
@@ -165,7 +170,12 @@ describe("categories hub generateMetadata", () => {
     const meta = await generateMetadata();
 
     expect(meta.openGraph?.images).toEqual([
-      { url: "https://cdn.example.com/og/store.png" },
+      {
+        url: "https://cdn.example.com/og/store.png",
+        width: 1200,
+        height: 630,
+        alt: meta.openGraph?.title,
+      },
     ]);
   });
 });
