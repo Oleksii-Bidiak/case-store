@@ -1,22 +1,27 @@
 "use client";
 
-import { Loader2, Star } from "lucide-react";
+import { Loader2, Star, XIcon } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
   AdminReviewControllerListStatus,
+  AdminReviewEntityTextStatus,
+  ReviewAuthorVisibility,
+  ReviewHiddenReason,
   getAdminReviewControllerListQueryKey,
   useAdminReviewControllerApprove,
   useAdminReviewControllerList,
   useAdminReviewControllerReject,
+  type AdminReviewEntity,
 } from "@/entities/review";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import { useReviewBulkModeration } from "@/features/review-bulk-moderation";
 import { ReviewReplyAction } from "@/features/review-reply";
 import { ReviewAuthorModerationAction } from "@/features/review-author-moderation";
 import { useRowSelection } from "@/shared/lib/use-row-selection";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { formatDate } from "@/shared/lib";
 import {
   Badge,
@@ -105,10 +110,61 @@ function resolveStatus(raw: string | null): AdminReviewControllerListStatus {
 }
 
 /**
+ * The author-visibility slice the URL asks for (TASK-1004), defaulting to the
+ * API's own default, `visible`. An unknown value falls back there too, so the
+ * chip and the rows can never disagree.
+ */
+function resolveVisibility(raw: string | null): ReviewAuthorVisibility {
+  const known = Object.values(ReviewAuthorVisibility);
+  return known.includes(raw as ReviewAuthorVisibility)
+    ? (raw as ReviewAuthorVisibility)
+    : ReviewAuthorVisibility.visible;
+}
+
+/**
+ * Why a row's author contribution is withdrawn, in words (TASK-1004).
+ *
+ * Read from the server's `hiddenReason`, not inferred: before TASK-596 the row
+ * carried only `ratingVisible`, which folds a moderator's hide and an
+ * unconfirmed email into one boolean, so the badge could report the effect and
+ * never the cause. The cause matters because each lever is lifted by a
+ * different hand — a moderator's «повернути», an un-ban, or nobody.
+ */
+const HIDDEN_REASON_LABELS: Record<ReviewHiddenReason, string> = {
+  [ReviewHiddenReason.MODERATOR]: dict.reviews.hiddenByModerator,
+  [ReviewHiddenReason.BAN]: dict.reviews.hiddenByBan,
+  [ReviewHiddenReason.DELETED]: dict.reviews.hiddenByDeletion,
+};
+
+/**
+ * The rating cell's status badge (TASK-1004).
+ *
+ * A withdrawn row names its reason. A row that is NOT withdrawn but whose
+ * rating still does not count is the other gate `ratingVisible` folds in — an
+ * unconfirmed email — and keeps the old effect-only «Оцінка не враховується»,
+ * which is exactly true there and needs no cause the row does not carry.
+ */
+function RatingStatusBadge({ review }: { review: AdminReviewEntity }) {
+  if (review.hiddenReason) {
+    return (
+      <Badge variant="outline">
+        {HIDDEN_REASON_LABELS[review.hiddenReason]}
+      </Badge>
+    );
+  }
+  if (!review.ratingVisible) {
+    return <Badge variant="secondary">{dict.reviews.ratingNotCounted}</Badge>;
+  }
+  return null;
+}
+
+/**
  * AdminReviewTable — moderation queue for product reviews. The status filter
- * (`?status=pending|approved|rejected`, default `pending`), the search
- * (`?search=`), the page (`?page=`) and the page size (`?limit=`) live in the
- * URL. Mutations invalidate the list so the queue refreshes in place.
+ * (`?status=pending|approved|rejected|all`, default `pending`), the author
+ * visibility (`?visibility=visible|hidden|all`, default `visible`), the
+ * deep-link narrowing (`?productId=`, `?createdIp=`), the search (`?search=`),
+ * the page (`?page=`) and the page size (`?limit=`) live in the URL. Mutations
+ * invalidate the list so the queue refreshes in place.
  *
  * ── TASK-446: three queues, and rejecting is no longer a delete ──────────────
  * `Review.isActive` is gone. The TEXT now carries a three-value `textStatus` and
@@ -139,10 +195,20 @@ function resolveStatus(raw: string | null): AdminReviewControllerListStatus {
  * shared one, and it searches what the queue shows: the review text, the author's
  * email and the product name.
  *
- * The status control's "no filter" option is «На розгляді» rather than a third
- * «Усі» state, because there is no such state to offer: the API treats an absent
- * `status` as `pending`. An «Усі» that silently returned the pending queue would
- * be a lie the operator could not see through.
+ * The status control's "no filter" option is «На розгляді», because that is what
+ * an absent `status` returns: the API treats it as `pending`. «Усі» is a real
+ * option of its own since TASK-601 added `status=all` to the API — every text
+ * verdict plus ratings left without any text — and it is offered as a value,
+ * never as the "no filter" slot, so it cannot silently mean the pending queue.
+ *
+ * ── TASK-1004: the withdrawn pile, and the series behind a dashboard card ────
+ * The API has filtered on the author's visibility since TASK-596 and defaults
+ * to `visible`, so a withdrawn author's rows — and with them the «повернути»
+ * button — were unreachable from this screen. The visibility control opens
+ * them. `productId` and `createdIp` arrive only from the dashboard's
+ * rating-abuse card (TASK-601), so they have no control here, just a removable
+ * chip each: the rows ARE narrowed by them, and a narrowing the operator cannot
+ * see or undo reads as missing data.
  *
  * `LiveAnnouncer` MUST wrap the queue rather than sit inside it — the same split
  * `AdminCategoryTree` and `MessageInbox` make, for the same reason.
@@ -169,13 +235,21 @@ function AdminReviewTableView() {
   // an absent param really returns — but «rejected» must NOT land there, or the
   // chip would say one queue while the rows came from another.
   const statusParam = resolveStatus(searchParams.get("status"));
+  const visibilityParam = resolveVisibility(searchParams.get("visibility"));
+  const productIdParam = searchParams.get("productId") ?? "";
+  const createdIpParam = searchParams.get("createdIp") ?? "";
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
+  const updateParams = useUrlParams();
+
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminReviewControllerList({
       status: statusParam,
+      visibility: visibilityParam,
+      productId: productIdParam || undefined,
+      createdIp: createdIpParam || undefined,
       search: searchParam || undefined,
       page,
       limit: pageSize,
@@ -187,11 +261,18 @@ function AdminReviewTableView() {
   const reviews = data?.data ?? [];
   const totalPages = data?.meta?.totalPages ?? 1;
   const isPending = statusParam === AdminReviewControllerListStatus.pending;
-  // What each tab is FOR, rather than one hard-coded queue. Approving an already
+  // What each ROW is for, rather than one hard-coded queue. Approving an already
   // approved text, or re-rejecting a rejected one, is a button that changes
-  // nothing visible — which reads as a broken button, not as a no-op.
-  const canApprove = statusParam !== AdminReviewControllerListStatus.approved;
-  const canReject = statusParam !== AdminReviewControllerListStatus.rejected;
+  // nothing visible — which reads as a broken button, not as a no-op. Decided
+  // per row since TASK-1004: on the verdict tabs every row shares the verdict,
+  // so this is what the tab rule used to say; on «Усі» the rows are mixed, and
+  // a rating left without any text has no text to approve or reject at all.
+  const canApprove = (review: AdminReviewEntity) =>
+    Boolean(review.comment) &&
+    review.textStatus !== AdminReviewEntityTextStatus.APPROVED;
+  const canReject = (review: AdminReviewEntity) =>
+    Boolean(review.comment) &&
+    review.textStatus !== AdminReviewEntityTextStatus.REJECTED;
 
   const invalidateList = () => {
     void queryClient.invalidateQueries({
@@ -246,6 +327,12 @@ function AdminReviewTableView() {
           value: AdminReviewControllerListStatus.rejected,
           label: dict.reviews.filterRejected,
         },
+        // TASK-601/1004: every verdict plus ratings without text — where the
+        // dashboard's rating-abuse card sends the operator.
+        {
+          value: AdminReviewControllerListStatus.all,
+          label: dict.reviews.filterAll,
+        },
       ],
       // A link someone shared may spell the default out (`?status=pending`).
       // The rows are the same either way, so the chip must read as the filter it
@@ -256,6 +343,52 @@ function AdminReviewTableView() {
           : value,
       className: "w-48",
     },
+    {
+      param: "visibility",
+      label: dict.reviews.filterVisibilityAria,
+      // URL-absent is the API's own default, `visible` — the queue as it was.
+      allLabel: dict.reviews.filterVisibilityVisible,
+      options: [
+        {
+          value: ReviewAuthorVisibility.hidden,
+          label: dict.reviews.filterVisibilityHidden,
+        },
+        {
+          value: ReviewAuthorVisibility.all,
+          label: dict.reviews.filterVisibilityAll,
+        },
+      ],
+      resolveLabel: (value) =>
+        value === ReviewAuthorVisibility.visible
+          ? dict.reviews.filterVisibilityVisible
+          : value,
+      className: "w-48",
+    },
+  ];
+
+  // The deep-link narrowing from the dashboard (TASK-601). The product is named
+  // from the rows once they arrive — they all belong to it — and by its id
+  // until then (or when the series is empty).
+  const productChipName = reviews[0]?.productName ?? productIdParam;
+  const linkChips = [
+    ...(productIdParam
+      ? [
+          {
+            param: "productId",
+            text: dict.reviews.productChip(productChipName),
+            aria: dict.reviews.productChipAria(productChipName),
+          },
+        ]
+      : []),
+    ...(createdIpParam
+      ? [
+          {
+            param: "createdIp",
+            text: dict.reviews.ipChip(createdIpParam),
+            aria: dict.reviews.ipChipAria(createdIpParam),
+          },
+        ]
+      : []),
   ];
 
   // Selection is offered only on the PENDING queue, matching the per-row
@@ -303,10 +436,32 @@ function AdminReviewTableView() {
           />
         }
         filters={
-          <TableFilters
-            filters={filters}
-            values={{ status: searchParams.get("status") ?? "" }}
-          />
+          <>
+            <TableFilters
+              filters={filters}
+              values={{
+                status: searchParams.get("status") ?? "",
+                visibility: searchParams.get("visibility") ?? "",
+              }}
+            />
+            {/* TASK-1004: removable chips for the dashboard deep link — the
+                same shape `TableFilters` gives its own chips. */}
+            {linkChips.map((chip) => (
+              <Button
+                key={chip.param}
+                type="button"
+                variant="secondary"
+                size="sm"
+                aria-label={chip.aria}
+                onClick={() =>
+                  updateParams({ [chip.param]: undefined, page: undefined })
+                }
+              >
+                <span>{chip.text}</span>
+                <XIcon aria-hidden="true" className="size-3.5" />
+              </Button>
+            ))}
+          </>
         }
         selectAll={
           selectableIds.length > 0 ? (
@@ -456,17 +611,13 @@ function AdminReviewTableView() {
                     <TableCell label={dict.reviews.colRating}>
                       <div className="flex flex-col items-start gap-1">
                         <ReviewStars rating={review.rating} />
-                        {/* TASK-446: `ratingVisible` folds a moderator's hide and
-                            an unconfirmed email into one flag, and the row cannot
-                            tell which. It reports the EFFECT, which is true either
-                            way — without it a moderator reads a 1★ and assumes it
-                            is dragging the average down when it may not count at
-                            all. */}
-                        {!review.ratingVisible && (
-                          <Badge variant="secondary">
-                            {dict.reviews.ratingNotCounted}
-                          </Badge>
-                        )}
+                        {/* TASK-1004: the cause from `hiddenReason` when the
+                            author's contribution is withdrawn; the effect-only
+                            «Оцінка не враховується» for the remaining gate, an
+                            unconfirmed email. Without either a moderator reads
+                            a 1★ and assumes it drags the average down when it
+                            may not count at all. */}
+                        <RatingStatusBadge review={review} />
                       </div>
                     </TableCell>
                     <TableCell
@@ -497,7 +648,7 @@ function AdminReviewTableView() {
                       className="text-right max-md:text-left"
                     >
                       <div className="flex flex-wrap justify-end gap-2 max-md:justify-start">
-                        {canApprove && (
+                        {canApprove(review) && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -510,7 +661,7 @@ function AdminReviewTableView() {
                             {dict.reviews.approve}
                           </Button>
                         )}
-                        {canReject && (
+                        {canReject(review) && (
                           <Button
                             variant="destructive"
                             size="sm"
@@ -530,7 +681,7 @@ function AdminReviewTableView() {
                         <ReviewAuthorModerationAction
                           userId={review.userId}
                           author={authorOf(review.userEmail)}
-                          ratingVisible={review.ratingVisible}
+                          hiddenReason={review.hiddenReason}
                         />
                       </div>
                     </TableCell>
