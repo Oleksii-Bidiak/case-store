@@ -1438,6 +1438,10 @@ enum ContactMessageStatus {
   IN_PROGRESS
   READ
   ARCHIVED
+  /// TASK-761: a honeypot hit, kept instead of dropped so a false positive (a
+  /// password manager filling the trap) can be seen. Out of the default inbox,
+  /// the unread count and the per-email cooldown; reached via `?status=SPAM`.
+  SPAM
 }
 
 /// Customer contact / support message submitted from the storefront contact

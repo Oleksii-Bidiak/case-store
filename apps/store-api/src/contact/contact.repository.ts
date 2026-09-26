@@ -52,8 +52,10 @@ function buildContactOrderBy(
 }
 
 /**
- * Allowed fields for creating a contact message. `status` is always NEW on
- * insert (the DB default) — never accepted from the caller.
+ * Allowed fields for creating a contact message. `status` is NEW on insert (the
+ * DB default) unless the SERVICE says otherwise — it is never taken from the
+ * request; the one other value written here is `SPAM` for a honeypot hit
+ * (TASK-761), with a note saying why.
  */
 export interface CreateContactMessageInput {
   name: string;
@@ -62,6 +64,8 @@ export interface CreateContactMessageInput {
   message: string;
   topic?: string | null;
   orderRef?: string | null;
+  status?: ContactMessageStatus;
+  adminNote?: string | null;
 }
 
 /**
@@ -114,6 +118,8 @@ export class ContactRepository {
         message: data.message,
         topic: data.topic ?? null,
         orderRef: data.orderRef ?? null,
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.adminNote !== undefined && { adminNote: data.adminNote }),
       },
     });
   }
@@ -126,8 +132,11 @@ export class ContactRepository {
   async findAll(params: FindAllParams): Promise<PaginatedContactMessagesResult> {
     const { page, limit, status, search } = params;
     const skip = (page - 1) * limit;
+    // TASK-761: "all" means all the MAIL — honeypot hits are kept for the record
+    // but reached only by asking for them (`?status=SPAM`), or a burst of bot
+    // traffic would bury the inbox it was kept out of.
     const where: Prisma.ContactMessageWhereInput = {
-      ...(status !== undefined && { status }),
+      status: status !== undefined ? status : { not: ContactMessageStatus.SPAM },
     };
 
     // TASK-423: the inbox had no search. Every column an operator would look
@@ -254,12 +263,16 @@ export class ContactRepository {
    *   sender for longer than the window. The age is now computed in SQL against
    *   `now()` — `AT TIME ZONE 'UTC'` because the column is a zone-less
    *   timestamp Prisma writes in UTC. The service still clamps a negative age.
+   *
+   * `SPAM` rows (TASK-761) never count: a bot that put a real person's address
+   * into the form must not lock that person out of it for ten minutes.
    */
   async findLatestMessageAgeMsByEmail(email: string): Promise<number | null> {
     const rows = await this.prisma.$queryRaw<Array<{ age_ms: number }>>`
       SELECT (EXTRACT(EPOCH FROM ((now() AT TIME ZONE 'UTC') - created_at)) * 1000)::float8 AS age_ms
         FROM contact_messages
        WHERE email = ${email}
+         AND status <> 'SPAM'
        ORDER BY created_at DESC
        LIMIT 1`;
     return rows.length > 0 ? Number(rows[0].age_ms) : null;

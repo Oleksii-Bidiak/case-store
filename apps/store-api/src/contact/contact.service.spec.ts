@@ -127,7 +127,6 @@ describe('ContactService', () => {
       email: 'ivan@example.com',
       message: 'Доброго дня! Питання по замовленню.',
     };
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
     beforeEach(() => {
       contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(null);
@@ -135,24 +134,39 @@ describe('ContactService', () => {
     });
 
     describe('honeypot', () => {
-      it('answers a filled honeypot with a plausible id but stores nothing', async () => {
+      // TASK-761: a hit used to be dropped without a trace, so a false positive
+      // (a password manager filling the trap) ate real mail invisibly.
+      it('keeps a filled honeypot as a SPAM row and answers with its id, like any success', async () => {
+        contactRepositoryMock.create.mockResolvedValue(
+          makeMessage({ id: 'spam-uuid-1', status: ContactMessageStatus.SPAM }),
+        );
+
         const result = await service.submit({ ...validDto, website: 'https://spam.example' });
 
-        expect(result.id).toMatch(UUID_RE);
-        expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+        expect(result).toEqual({ id: 'spam-uuid-1' });
+        expect(contactRepositoryMock.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            email: 'ivan@example.com',
+            message: validDto.message,
+            status: ContactMessageStatus.SPAM,
+            adminNote: expect.stringContaining('https://spam.example'),
+          }),
+        );
       });
 
-      it('does not even consult the cooldown for a bot — no DB read at all', async () => {
-        await service.submit({ ...validDto, website: 'x' });
+      it('clips what the trap held before noting it', async () => {
+        await service.submit({ ...validDto, website: 'x'.repeat(400) });
 
+        const note = contactRepositoryMock.create.mock.calls[0][0].adminNote as string;
+        expect(note).toContain('x'.repeat(255));
+        expect(note).not.toContain('x'.repeat(256));
+      });
+
+      it('neither consults nor feeds the cooldown for a hit', async () => {
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(1000);
+
+        await expect(service.submit({ ...validDto, website: 'x' })).resolves.toBeDefined();
         expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).not.toHaveBeenCalled();
-      });
-
-      it('mints a fresh id per bot submission, so the fake is not a constant to fingerprint', async () => {
-        const first = await service.submit({ ...validDto, website: 'x' });
-        const second = await service.submit({ ...validDto, website: 'x' });
-
-        expect(first.id).not.toBe(second.id);
       });
 
       it('logs the trip without the sender PII', async () => {

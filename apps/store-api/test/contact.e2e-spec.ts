@@ -169,7 +169,11 @@ describe('Contact (e2e)', () => {
       expect(contactRepositoryMock.create).toHaveBeenCalledTimes(1);
     });
 
-    it('answers a filled honeypot with the same 201 shape and stores nothing', async () => {
+    it('answers a filled honeypot with the same 201 shape and files it as SPAM (TASK-761)', async () => {
+      contactRepositoryMock.create.mockResolvedValue(
+        makeMessageRow({ status: ContactMessageStatus.SPAM }),
+      );
+
       const res = await request(app.getHttpServer())
         .post('/api/contact')
         .send({ ...body, website: 'https://spam.example' })
@@ -178,7 +182,9 @@ describe('Contact (e2e)', () => {
       expect(Object.keys(res.body)).toEqual(['data']);
       expect(Object.keys(res.body.data)).toEqual(['id']);
       expect(res.body.data.id).toMatch(/^[0-9a-f-]{36}$/);
-      expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+      expect(contactRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: ContactMessageStatus.SPAM }),
+      );
       expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).not.toHaveBeenCalled();
     });
 
@@ -272,6 +278,29 @@ describe('Contact (e2e)', () => {
       expect(contactRepositoryMock.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ status: ContactMessageStatus.IN_PROGRESS }),
       );
+    });
+
+    it('accepts ?status=SPAM — the only way to reach honeypot hits (TASK-761)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      contactRepositoryMock.findAll.mockResolvedValue({
+        messages: [makeMessageRow({ status: ContactMessageStatus.SPAM })],
+        total: 1,
+      });
+      contactRepositoryMock.countByStatus.mockResolvedValue(0);
+      contactRepositoryMock.findMatchingUserIds.mockResolvedValue(new Map());
+
+      const response = await request(app.getHttpServer())
+        .get('/api/contact/admin')
+        .query({ status: 'SPAM' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data[0].status).toBe('SPAM');
+      expect(contactRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ status: ContactMessageStatus.SPAM }),
+      );
+      // The unread badge counts NEW only, so SPAM never inflates it.
+      expect(contactRepositoryMock.countByStatus).toHaveBeenCalledWith(ContactMessageStatus.NEW);
     });
 
     it('rejects an unknown status value with 400', async () => {

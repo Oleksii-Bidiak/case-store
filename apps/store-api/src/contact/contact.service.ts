@@ -1,9 +1,12 @@
-import { randomUUID } from 'node:crypto';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { RetryAfterException } from '../common/filters/retry-after.exception';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessageStatus } from '@prisma/client';
-import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
+import {
+  ContactMessagesNotFoundError,
+  ContactRepository,
+  type CreateContactMessageInput,
+} from './contact.repository';
 import { ContactMessageEntity } from './entities';
 import {
   CreateContactMessageDto,
@@ -76,10 +79,10 @@ export class ContactService {
    * The public storefront submit (TASK-452): the anti-spam rules, then
    * {@link create}.
    *
-   * 1. **Honeypot.** A non-empty `website` is a bot. It gets the success answer
-   *    — a fresh random id in the usual shape — and nothing is read or written.
-   *    The id is minted per call so the fake cannot be told apart by being the
-   *    same every time. Checked first so a bot costs no database round-trip.
+   * 1. **Honeypot.** A non-empty `website` is a bot — or a false positive. It
+   *    gets the success answer with the id of a row stored as `SPAM` (TASK-761;
+   *    until then nothing was written, so a false positive left no trace). The
+   *    cooldown is skipped for it, in both directions.
    * 2. **Per-email cooldown.** A second message from the same address (compared
    *    trimmed and lower-cased) inside {@link CONTACT_EMAIL_COOLDOWN_MS} is a
    *    429 with `error: 'CONTACT_COOLDOWN'`.
@@ -93,10 +96,27 @@ export class ContactService {
     const { website, ...message } = dto;
 
     if (website) {
+      // TASK-761: KEPT, as a SPAM row, instead of thrown away. A silent drop
+      // made a false positive — a password manager or a Chrome heuristic that
+      // starts filling the trap — invisible by design: every message from that
+      // browser would vanish forever and nothing would say so. The row sits
+      // outside the default inbox and the unread count, behind the «Спам» filter.
+      //
+      // The sender still gets the ordinary success answer, and the cooldown is
+      // neither checked nor fed (SPAM rows are excluded from its probe): a bot
+      // using a real person's address must not lock that person out.
+      const spam = await this.contactRepository.create({
+        ...this.toCreateInput(message),
+        status: ContactMessageStatus.SPAM,
+        adminNote: `Honeypot: «${website.slice(0, 255)}»`,
+      });
       // No name/email/phone in the log line: this is a bot's payload, and it is
       // also possibly a real person's address a bot is abusing.
-      this.logger.info({ topic: dto.topic ?? null }, 'Contact honeypot tripped — discarded');
-      return { id: randomUUID() };
+      this.logger.info(
+        { contactMessageId: spam.id, topic: dto.topic ?? null },
+        'Contact honeypot tripped — stored as SPAM',
+      );
+      return { id: spam.id };
     }
 
     const email = dto.email.trim().toLowerCase();
@@ -127,20 +147,25 @@ export class ContactService {
    * response to `{ id }` so no stored PII is echoed back.
    */
   async create(dto: CreateContactMessageDto): Promise<ContactMessageEntity> {
-    const message = await this.contactRepository.create({
-      name: dto.name,
-      phone: dto.phone,
-      email: dto.email,
-      message: dto.message,
-      topic: dto.topic ?? null,
-      orderRef: dto.orderRef ?? null,
-    });
+    const message = await this.contactRepository.create(this.toCreateInput(dto));
 
     this.logger.info(
       { contactMessageId: message.id, topic: message.topic },
       'Contact message received',
     );
     return ContactMessageEntity.fromPrisma(message);
+  }
+
+  /** The stored fields of a message — the honeypot never among them. */
+  private toCreateInput(dto: Omit<CreateContactMessageDto, 'website'>): CreateContactMessageInput {
+    return {
+      name: dto.name,
+      phone: dto.phone,
+      email: dto.email,
+      message: dto.message,
+      topic: dto.topic ?? null,
+      orderRef: dto.orderRef ?? null,
+    };
   }
 
   /**

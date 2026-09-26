@@ -85,16 +85,19 @@ describe('ContactRepository', () => {
   });
 
   describe('findAll', () => {
-    it('lists messages newest-first with pagination and no status filter', async () => {
+    it('lists messages newest-first with pagination and no status filter — SPAM left out (TASK-761)', async () => {
       prismaMock.contactMessage.findMany.mockResolvedValue([makeMessage()]);
       prismaMock.contactMessage.count.mockResolvedValue(1);
 
       const result = await repository.findAll({ page: 1, limit: 20 });
 
       expect(result).toEqual({ messages: [makeMessage()], total: 1 });
+      expect(prismaMock.contactMessage.count).toHaveBeenCalledWith({
+        where: { status: { not: ContactMessageStatus.SPAM } },
+      });
       expect(prismaMock.contactMessage.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: {},
+          where: { status: { not: ContactMessageStatus.SPAM } },
           skip: 0,
           take: 20,
           orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
@@ -118,6 +121,17 @@ describe('ContactRepository', () => {
       expect(prismaMock.contactMessage.count).toHaveBeenCalledWith({
         where: { status: ContactMessageStatus.ARCHIVED },
       });
+    });
+
+    it('reaches the SPAM rows only when asked for them (TASK-761)', async () => {
+      prismaMock.contactMessage.findMany.mockResolvedValue([]);
+      prismaMock.contactMessage.count.mockResolvedValue(0);
+
+      await repository.findAll({ page: 1, limit: 20, status: ContactMessageStatus.SPAM });
+
+      expect(prismaMock.contactMessage.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { status: ContactMessageStatus.SPAM } }),
+      );
     });
 
     describe('sorting (TASK-354)', () => {
@@ -418,6 +432,8 @@ describe('ContactRepository', () => {
         expect(sql).not.toMatch(/ILIKE|lower\(/i);
         expect(sql).toMatch(/now\(\) AT TIME ZONE 'UTC'/);
         expect(sql).toMatch(/ORDER BY created_at DESC\s+LIMIT 1/);
+        // TASK-761: a bot using someone's address must not lock them out.
+        expect(sql).toMatch(/status <> 'SPAM'/);
       });
     });
 

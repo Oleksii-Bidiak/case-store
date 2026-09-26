@@ -11463,7 +11463,8 @@
                 "NEW",
                 "IN_PROGRESS",
                 "READ",
-                "ARCHIVED"
+                "ARCHIVED",
+                "SPAM"
               ]
             }
           },
@@ -19765,7 +19766,8 @@
               "NEW",
               "IN_PROGRESS",
               "READ",
-              "ARCHIVED"
+              "ARCHIVED",
+              "SPAM"
             ],
             "example": "NEW"
           },
@@ -24426,7 +24428,8 @@
               "NEW",
               "IN_PROGRESS",
               "READ",
-              "ARCHIVED"
+              "ARCHIVED",
+              "SPAM"
             ],
             "example": "NEW"
           },
@@ -24598,7 +24601,8 @@
               "NEW",
               "IN_PROGRESS",
               "READ",
-              "ARCHIVED"
+              "ARCHIVED",
+              "SPAM"
             ],
             "example": "READ"
           }
@@ -24618,7 +24622,8 @@
               "NEW",
               "IN_PROGRESS",
               "READ",
-              "ARCHIVED"
+              "ARCHIVED",
+              "SPAM"
             ],
             "example": "READ"
           },
