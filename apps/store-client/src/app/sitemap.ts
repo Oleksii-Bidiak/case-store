@@ -6,8 +6,8 @@ import {
   fetchAllActiveProducts,
   fetchAllCompatLandingPages,
   fetchAllPublishedPages,
+  fetchAllPublishedPosts,
 } from "@/shared/lib/schema";
-import { fetchPublishedPosts } from "@/shared/api/blog-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 
 // In Next.js 16 metadata routes are cached (statically generated) by default,
@@ -174,15 +174,13 @@ async function fetchCompatRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
 
 async function fetchBlogRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
   try {
-    // One page of up to 100 published posts covers the current catalogue.
-    // `includeUnlisted: true` is the whole reason that flag exists (TASK-436): a
-    // post kept out of the feed is still a public document, and a sitemap that
-    // omitted it while its URL answered 200 would be the cloaking-shaped design
-    // the owner rejected. This is the ONE caller allowed to pass true.
-    const { posts } = await fetchPublishedPosts({
-      limit: 100,
-      includeUnlisted: true,
-    });
+    // Every page of published posts (TASK-551 — one page of 100 used to drop the
+    // 101st post from the index), unlisted ones included: a post kept out of the
+    // feed is still a public document (TASK-436), and a sitemap that omitted it
+    // while its URL answered 200 would be the cloaking-shaped design the owner
+    // rejected. Unlike the /blog grid's reader, this one THROWS on failure, so an
+    // outage is reported below instead of shipping a sitemap with no articles.
+    const posts = await fetchAllPublishedPosts();
     return posts.map((post) => ({
       url: `${SITE_URL}/blog/${post.slug}`,
       lastModified: post.publishedAt ? new Date(post.publishedAt) : now,

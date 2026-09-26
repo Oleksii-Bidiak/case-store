@@ -38,10 +38,12 @@ export interface FetchPublishedPostsParams {
    * Whether to include posts flagged `listed = false` (TASK-436). REQUIRED, and
    * that is the point: this one read serves surfaces that need opposite answers.
    * Every LIST — the `/blog` grid, the header search suggestions, "Читайте
-   * також" — passes `false`. `sitemap.xml` passes `true`, because an unlisted
+   * також" — passes `false`. The sitemap wants `true`, because an unlisted
    * post is still a public, indexable document, and dropping it from the sitemap
    * while its URL keeps answering is the cloaking-shaped design the owner
-   * rejected. Neither default is safe, so there is none: a caller that does not
+   * rejected — it reads through `fetchAllPublishedPosts` (shared/lib/schema)
+   * since TASK-551, which paginates and throws instead of returning an empty
+   * page. Neither default is safe, so there is none: a caller that does not
    * say which side it is on does not compile.
    */
   includeUnlisted: boolean;

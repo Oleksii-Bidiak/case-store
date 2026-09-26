@@ -13,6 +13,7 @@ export { buildItemListSchema } from "./buildItemListSchema";
 export type { ItemListEntry } from "./buildItemListSchema";
 export { fetchAllActiveProducts } from "./fetchAllProducts";
 export { fetchAllPublishedPages } from "./fetchAllPages";
+export { fetchAllPublishedPosts } from "./fetchAllPosts";
 export {
   fetchAllActiveCategories,
   flattenActiveCategories,
