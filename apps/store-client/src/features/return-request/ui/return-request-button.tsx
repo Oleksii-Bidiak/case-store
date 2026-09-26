@@ -100,6 +100,14 @@ export function ReturnRequestButton({
     },
   });
 
+  // TASK-631. `remaining` is only true once the ledger has arrived: before that
+  // every line looks fully returnable, so a quantity typed in that window could
+  // be larger than what the server will accept, and the form used to SHOW the
+  // typed number while SENDING the clamped one. The fields wait for the answer
+  // (or for a failure, after which the server's own cap is the backstop and the
+  // load error says so), and the value rendered is always the clamped one — so
+  // what is on screen is exactly what goes in the request.
+  const ledgerSettled = data !== undefined || isError;
   const lines = returnableLines(items, data?.data ?? []);
   const selected = lines
     .map((line) => ({
@@ -185,9 +193,12 @@ export function ReturnRequestButton({
                   inputMode="numeric"
                   min={0}
                   max={line.remaining}
-                  disabled={line.remaining === 0}
+                  disabled={!ledgerSettled || line.remaining === 0}
                   aria-label={dict.returnRequest.quantityAria(line.productName)}
-                  value={quantities[line.orderItemId] ?? 0}
+                  value={clampQuantity(
+                    quantities[line.orderItemId] ?? 0,
+                    line.remaining,
+                  )}
                   onChange={(event) =>
                     setQuantities((previous) => ({
                       ...previous,
