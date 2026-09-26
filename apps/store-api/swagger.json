@@ -12876,6 +12876,36 @@
         ]
       }
     },
+    "/api/returns": {
+      "get": {
+        "operationId": "getMyReturns",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The caller's returns across all their orders, newest request first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List my returns",
+        "tags": [
+          "Returns"
+        ]
+      }
+    },
     "/api/orders/{orderId}/returns": {
       "post": {
         "operationId": "createReturn",
