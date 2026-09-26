@@ -170,6 +170,9 @@ export const dict = {
     freeCallout: "Безкоштовно по Україні",
     socialsAria: "Ми в соцмережах",
     payments: ["Visa", "Mastercard", "Apple Pay", "Google Pay", "Privat24"],
+    // TASK-834 — the two hubs, so every published page has a way in.
+    infoLegalHub: "Усі правові документи",
+    infoHelpHub: "Довідка та підтримка",
   },
 
   trust: {
