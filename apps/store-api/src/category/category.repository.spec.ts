@@ -25,6 +25,7 @@ const txMock = {
   category: {
     update: jest.fn(),
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
     updateMany: jest.fn(),
   },
@@ -82,11 +83,16 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
     // PUT re-sending the unchanged current parent must stay on the lock-free fast path —
     // and must never write `parentId` back outside the locks.
     it('takes the fast path (no transaction) when parentId is present but unchanged', async () => {
-      findUnique.mockResolvedValue({ parentId: 'parent-1' });
+      findFirst.mockResolvedValue({ parentId: 'parent-1' });
       update.mockResolvedValue({ id: 'cat-1', parentId: 'parent-1' });
 
       const result = await repo.update('cat-1', { name: 'Renamed', parentId: 'parent-1' });
 
+      // The unlocked parent hint reads live rows only (TASK-653).
+      expect(findFirst).toHaveBeenCalledWith({
+        where: { id: 'cat-1', deletedAt: null },
+        select: { parentId: true },
+      });
       expect(result.reparented).toBe(false);
       expect($transaction).not.toHaveBeenCalled();
       expect(update).toHaveBeenCalledWith({
@@ -96,12 +102,17 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
     });
 
     it('opens the locked transaction when parentId actually differs from the current one', async () => {
-      findUnique.mockResolvedValue({ parentId: 'parent-1' });
-      txMock.category.findUnique.mockResolvedValue(null); // prepareReparent's in-tx re-read
+      findFirst.mockResolvedValue({ parentId: 'parent-1' });
+      txMock.category.findFirst.mockResolvedValue(null); // prepareReparent's in-tx re-read
 
       await expect(repo.update('cat-1', { parentId: 'parent-2' })).rejects.toBeInstanceOf(
         CategoryNotFoundError,
       );
+      // Authoritative, under the tree lock: a deleted node cannot be moved (TASK-653).
+      expect(txMock.category.findFirst).toHaveBeenCalledWith({
+        where: { id: 'cat-1', deletedAt: null },
+        select: { parentId: true },
+      });
 
       // The locked path WAS entered (the tree lock was taken before the in-tx re-read).
       expect($transaction).toHaveBeenCalledTimes(1);
@@ -151,7 +162,7 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
 
       expect(result).toBeNull();
       expect(findFirst).toHaveBeenCalledWith({
-        where: { slug: 'phone-cases', isActive: true },
+        where: { slug: 'phone-cases', deletedAt: null, isActive: true },
       });
     });
 
@@ -164,7 +175,20 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
       const result = await repo.findBySlug('phone-cases', { activeOnly: false });
 
       expect(result).not.toBeNull();
-      expect(findFirst).toHaveBeenCalledWith({ where: { slug: 'phone-cases' } });
+      expect(findFirst).toHaveBeenCalledWith({ where: { slug: 'phone-cases', deletedAt: null } });
+    });
+
+    // TASK-653: a tombstone's slug is mangled to `deleted:<id>:<slug>` (invariant I3),
+    // so it can never collide with a live slug — not even the uniqueness check needs it.
+    it('never returns a deleted category, whatever activeOnly says', async () => {
+      findFirst.mockResolvedValue(null);
+
+      await repo.findBySlug('phone-cases', { activeOnly: false });
+      await repo.findBySlug('phone-cases');
+
+      for (const [args] of findFirst.mock.calls as Array<[{ where: object }]>) {
+        expect(args.where).toEqual(expect.objectContaining({ deletedAt: null }));
+      }
     });
   });
 
@@ -416,8 +440,13 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
       const result = await repo.setActiveMany(['cat-1', 'cat-2'], false);
 
       expect($transaction).toHaveBeenCalledTimes(1);
+      // Deleted ids are unknown here (TASK-653): never flip a tombstone back on.
+      expect(txMock.category.findMany).toHaveBeenNthCalledWith(1, {
+        where: { id: { in: ['cat-1', 'cat-2'] }, deletedAt: null },
+        select: { id: true },
+      });
       expect(txMock.category.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['cat-1', 'cat-2'] } },
+        where: { id: { in: ['cat-1', 'cat-2'] }, deletedAt: null },
         data: { isActive: false },
       });
       expect(result.updatedCount).toBe(2);
@@ -565,7 +594,7 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
 
     describe('findWithProductCount', () => {
       it('adds up the whole subtree when the category has descendants', async () => {
-        findUnique.mockResolvedValue({ id: 'root', name: 'Root' });
+        findFirst.mockResolvedValue({ id: 'root', name: 'Root' });
         queryRaw.mockResolvedValue([{ id: 'root' }, { id: 'child' }]);
         productCount.mockResolvedValueOnce(0).mockResolvedValueOnce(19);
 
@@ -575,11 +604,20 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
         expect(result!.subtreeProductCount).toBe(19);
       });
 
+      // TASK-653: defence in depth — a tombstone is not found, even by id.
+      it('reads live categories only', async () => {
+        findFirst.mockResolvedValue(null);
+
+        await expect(repo.findWithProductCount('gone')).resolves.toBeNull();
+        expect(findFirst).toHaveBeenCalledWith({ where: { id: 'gone', deletedAt: null } });
+        expect(productCount).not.toHaveBeenCalled();
+      });
+
       // TASK-781: the number must equal what the listing below it shows — so a
       // product in a deactivated CHILD of the subtree, or a soft-deleted one, is
       // not counted. Both counts go through the one shared predicate.
       it('counts only publicly visible products, both directly and across the subtree', async () => {
-        findUnique.mockResolvedValue({ id: 'root', name: 'Root' });
+        findFirst.mockResolvedValue({ id: 'root', name: 'Root' });
         queryRaw.mockResolvedValue([{ id: 'root' }, { id: 'child' }]);
         productCount.mockResolvedValue(0);
 
@@ -596,7 +634,7 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
       // A leaf's subtree is itself, so the second count would be the first one
       // re-run — skipping it keeps the common read exactly as cheap as it was.
       it('skips the second count for a leaf and reuses the direct one', async () => {
-        findUnique.mockResolvedValue({ id: 'leaf', name: 'Leaf' });
+        findFirst.mockResolvedValue({ id: 'leaf', name: 'Leaf' });
         queryRaw.mockResolvedValue([{ id: 'leaf' }]);
         productCount.mockResolvedValue(4);
 

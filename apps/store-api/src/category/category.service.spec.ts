@@ -548,6 +548,18 @@ describe('CategoryService', () => {
       expect(categoryRepositoryMock.findById).toHaveBeenCalledWith('cat-uuid-1');
       expect(categoryRepositoryMock.create).toHaveBeenCalled();
     });
+
+    // TASK-653: the repository re-checks the parent under the bucket lock, which a
+    // concurrent subtree delete holds — a parent deleted in that window is a 404.
+    it('maps a parent deleted under the lock to 404, not a 500', async () => {
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.create.mockRejectedValue(new CategoryNotFoundError());
+
+      await expect(
+        service.create({ name: 'iPhone Cases', slug: 'iphone-cases', parentId: 'cat-uuid-1' }),
+      ).rejects.toThrow(NotFoundException);
+    });
   });
 
   // ─── update (admin) ──────────────────────────────────────────────────────────

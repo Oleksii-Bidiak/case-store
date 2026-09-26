@@ -271,11 +271,16 @@ export class CategoryRepository {
   ) {}
 
   /**
-   * Find a category by ID.
-   * Returns the category record or null if not found.
+   * Find a LIVE category by ID.
+   * Returns the category record, or null if it does not exist or is deleted — a
+   * tombstone (TASK-653) answers exactly like a missing row, so every caller (service
+   * guards, the catalogue filter resolver, attribute definitions, add-ons, carousels)
+   * rejects it without a check of its own.
+   *
+   * `findFirst`, not `findUnique`: `deletedAt` is not part of the primary key.
    */
   findById(id: string): Promise<Category | null> {
-    return this.prisma.category.findUnique({ where: { id } });
+    return this.prisma.category.findFirst({ where: { id, deletedAt: null } });
   }
 
   /**
@@ -290,12 +295,16 @@ export class CategoryRepository {
    * Unfiltered by `isActive` on purpose: the caller has to be able to tell a
    * DEACTIVATED ancestor (skip the page, keep walking up — the grandparent's
    * listing still rolls those products up) from a MISSING one.
+   *
+   * Filtered by `deletedAt` (TASK-653): a deleted category is MISSING, not merely
+   * deactivated — its slug is mangled, so it can never be a page, and the sitemap
+   * and the facet-ceiling report must not name it.
    */
   findByIds(ids: string[]): Promise<Category[]> {
     if (ids.length === 0) {
       return Promise.resolve([]);
     }
-    return this.prisma.category.findMany({ where: { id: { in: ids } } });
+    return this.prisma.category.findMany({ where: { id: { in: ids }, deletedAt: null } });
   }
 
   /**
@@ -311,12 +320,17 @@ export class CategoryRepository {
    *   could not see it would sail past the guard straight into the unique
    *   constraint.
    *
+   * A deleted category is NEVER returned, `activeOnly: false` included (TASK-653):
+   * its slug is mangled to `deleted:<id>:<slug>` on deletion, so it cannot collide
+   * with a live slug and the uniqueness check has no reason to see it.
+   *
    * `findFirst`, not `findUnique`: `isActive` is not part of the unique index.
    */
   findBySlug(slug: string, options?: { activeOnly?: boolean }): Promise<Category | null> {
     return this.prisma.category.findFirst({
       where: {
         slug,
+        deletedAt: null,
         ...((options?.activeOnly ?? true) ? { isActive: true } : {}),
       },
     });
@@ -332,6 +346,7 @@ export class CategoryRepository {
 
     const where: Prisma.CategoryWhereInput = {
       parentId: null,
+      deletedAt: null,
       ...(isActive !== undefined && { isActive }),
     };
 
@@ -376,8 +391,9 @@ export class CategoryRepository {
     } = params;
     const skip = (page - 1) * limit;
 
-    // Build the where clause from optional filters
-    const where: Prisma.CategoryWhereInput = {};
+    // Build the where clause from optional filters. Deleted categories never list
+    // (TASK-653) — for `count` as well, so the pagination total matches the page.
+    const where: Prisma.CategoryWhereInput = { deletedAt: null };
 
     if (isActive !== undefined) {
       where.isActive = isActive;
@@ -441,20 +457,25 @@ export class CategoryRepository {
     // The `{ id: 'asc' }` tiebreaker (TASK-291, plan 158 §3.9) is load-bearing: every
     // legacy row still carries `sortOrder = 0`, and `orderBy: { sortOrder: 'asc' }`
     // alone leaves sibling order DB-arbitrary — it can differ between two requests.
+    //
+    // `deletedAt: null` on EVERY level (TASK-653): this is the storefront's main source
+    // — navigation, `/categories/[slug]`, breadcrumbs, the sitemap, the merchant feed.
+    // A tombstone also has `isActive = false`, but the visibility toggle is not the
+    // deletion rule and must not be relied on to stand in for it.
     return this.prisma.category.findMany({
-      where: { parentId: null, isActive: true },
+      where: { parentId: null, isActive: true, deletedAt: null },
       orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
       include: {
         children: {
-          where: { isActive: true },
+          where: { isActive: true, deletedAt: null },
           orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
           include: {
             children: {
-              where: { isActive: true },
+              where: { isActive: true, deletedAt: null },
               orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
               include: {
                 children: {
-                  where: { isActive: true },
+                  where: { isActive: true, deletedAt: null },
                   orderBy: [{ sortOrder: 'asc' }, { id: 'asc' }],
                 },
               },
@@ -482,11 +503,17 @@ export class CategoryRepository {
    *
    * Pass a transaction client to read the post-write tree inside `applyTreeMoves`'
    * own transaction.
+   *
+   * Deleted categories are excluded (TASK-653) — not only for display: the admin panel
+   * builds its reorder payload from these buckets, so this read and the live-only
+   * reorder snapshot (`readSnapshot`) must agree on bucket membership, or every
+   * reorder of a tombstone's former bucket would be refused (404 / 409 TREE_STALE).
    */
   async findCategoryTreeForAdmin(
     client: CategoryDbClient = this.prisma,
   ): Promise<AdminCategoryTreeNodeEntity[]> {
     const rows = (await client.category.findMany({
+      where: { deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -676,13 +703,14 @@ export class CategoryRepository {
     if (ids.length === 0) return false;
 
     const rows = await client.category.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, deletedAt: null },
       select: { id: true, parentId: true },
     });
     const parentById = new Map(rows.map((row) => [row.id, row.parentId] as const));
 
-    // An id the snapshot does not know is a 404 the rules module will raise; treat it as
-    // "not a reparent" here so the lock choice stays cheap.
+    // An id the snapshot does not know (a deleted one included — TASK-653) is a 404 the
+    // rules module will raise; treat it as "not a reparent" here so the lock choice
+    // stays cheap.
     return groups.some((grp) =>
       grp.orderedIds.some((id) => parentById.has(id) && parentById.get(id) !== grp.parentId),
     );
@@ -696,7 +724,7 @@ export class CategoryRepository {
     const ids = groups.flatMap((grp) => grp.orderedIds);
     const rows = ids.length
       ? await tx.category.findMany({
-          where: { id: { in: ids } },
+          where: { id: { in: ids }, deletedAt: null },
           select: { id: true, parentId: true, sortOrder: true },
         })
       : [];
@@ -738,14 +766,23 @@ export class CategoryRepository {
   }
 
   /**
-   * The WHOLE `category` table — NO `where` clause. Load-bearing (§3.7): a filtered
-   * snapshot (payload ids + affected parents only) makes BOTH the multi-move cycle walk
-   * and the `level + height` depth check uncomputable, because a moved node's own
-   * descendants and its intermediate ancestors would be absent. Category is a taxonomy
-   * (tens–low hundreds of rows) — the full read is trivially cheap.
+   * The WHOLE LIVE `category` tree — every row except the tombstones, never narrowed to
+   * the payload. Load-bearing (§3.7): a snapshot filtered to the payload ids + affected
+   * parents makes BOTH the multi-move cycle walk and the `level + height` depth check
+   * uncomputable, because a moved node's own descendants and its intermediate ancestors
+   * would be absent. Category is a taxonomy (tens–low hundreds of rows) — the full read
+   * is trivially cheap.
+   *
+   * Dropping the tombstones (TASK-653) does NOT break that completeness: deletion is
+   * always a whole-subtree cascade (invariant I2 — a live category never has a deleted
+   * ancestor, and a deleted one never has a live child), so every live node's ancestors
+   * and descendants are live and all present. Leaving them in would make a tombstone
+   * look like a member of its former bucket (a perpetual TREE_STALE) and a legal
+   * parent for a move.
    */
   private readSnapshot(tx: Prisma.TransactionClient): Promise<CategorySnapshotRow[]> {
     return tx.category.findMany({
+      where: { deletedAt: null },
       select: { id: true, parentId: true, sortOrder: true },
     });
   }
@@ -780,8 +817,10 @@ export class CategoryRepository {
    * this subtree are not counted, because the listing does not show them either.
    */
   async findWithProductCount(id: string): Promise<CategoryWithCountResult | null> {
-    const category = await this.prisma.category.findUnique({
-      where: { id },
+    // Live rows only (TASK-653) — defence in depth: the public caller resolves the id
+    // through `findBySlug`, which already hides tombstones.
+    const category = await this.prisma.category.findFirst({
+      where: { id, deletedAt: null },
     });
 
     if (!category) {
@@ -822,7 +861,10 @@ export class CategoryRepository {
    */
   private async loadSubtreeProductCounts(): Promise<Map<string, number>> {
     const [rows, directRows] = await Promise.all([
-      this.prisma.category.findMany({ select: { id: true, parentId: true } }),
+      this.prisma.category.findMany({
+        where: { deletedAt: null },
+        select: { id: true, parentId: true },
+      }),
       this.prisma.product.groupBy({
         by: ['categoryId'],
         where: { isActive: true },
@@ -891,8 +933,9 @@ export class CategoryRepository {
     } = params;
     const skip = (page - 1) * limit;
 
-    // Build the where clause from optional filters
-    const where: Prisma.CategoryWhereInput = {};
+    // Build the where clause from optional filters. Deleted categories never list
+    // (TASK-653) — for `count` as well, so the pagination total matches the page.
+    const where: Prisma.CategoryWhereInput = { deletedAt: null };
 
     if (isActive !== undefined) {
       where.isActive = isActive;
@@ -976,8 +1019,24 @@ export class CategoryRepository {
     return this.prisma.$transaction(async (tx) => {
       await this.acquireLocks(tx, [bucketLockKey(parentId)]);
 
+      // Re-check the parent UNDER the bucket lock (TASK-653): the service's check ran
+      // before it, and a concurrent delete of the parent's subtree holds exactly this
+      // lock until it commits. Without the re-check, a create that waited on that lock
+      // would insert a live child under a tombstone — breaking invariant I2, which the
+      // snapshot and ancestor reads rely on.
+      if (parentId !== null) {
+        const parent = await tx.category.findFirst({
+          where: { id: parentId, deletedAt: null },
+          select: { id: true },
+        });
+        if (!parent) {
+          throw new CategoryNotFoundError(`Parent category "${parentId}" not found`);
+        }
+      }
+
+      // Live rows only: a tombstone keeps its old `sortOrder` but is no longer a sibling.
       const { _max } = await tx.category.aggregate({
-        where: { parentId },
+        where: { parentId, deletedAt: null },
         _max: { sortOrder: true },
       });
       const nextSortOrder = _max.sortOrder === null ? 0 : _max.sortOrder + 1;
@@ -1081,8 +1140,8 @@ export class CategoryRepository {
    * `prepareReparent` under {@link TREE_LOCK_KEY}.
    */
   private async currentParentId(id: string): Promise<string | null> {
-    const current = await this.prisma.category.findUnique({
-      where: { id },
+    const current = await this.prisma.category.findFirst({
+      where: { id, deletedAt: null },
       select: { parentId: true },
     });
     if (!current) {
@@ -1113,8 +1172,11 @@ export class CategoryRepository {
     // Tree lock FIRST (before any read), so parentage cannot shift underneath the guards.
     await this.acquireLocks(tx, [TREE_LOCK_KEY]);
 
-    const current = await tx.category.findUnique({
-      where: { id },
+    // Live rows only (TASK-653) — authoritative, under the tree lock: a deleted node
+    // cannot be moved, and (via the live-only snapshot below) nothing can be moved
+    // UNDER a deleted node.
+    const current = await tx.category.findFirst({
+      where: { id, deletedAt: null },
       select: { parentId: true },
     });
     if (!current) {
@@ -1176,8 +1238,10 @@ export class CategoryRepository {
    */
   async setActiveMany(ids: string[], isActive: boolean): Promise<BulkStatusResult> {
     return this.prisma.$transaction(async (tx) => {
+      // A deleted id is unknown (TASK-653): it 404s the batch instead of flipping a
+      // tombstone's `isActive` back on.
       const found = await tx.category.findMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, deletedAt: null },
         select: { id: true },
       });
 
@@ -1188,7 +1252,7 @@ export class CategoryRepository {
       }
 
       const { count } = await tx.category.updateMany({
-        where: { id: { in: ids } },
+        where: { id: { in: ids }, deletedAt: null },
         data: { isActive },
       });
 
@@ -1409,12 +1473,12 @@ export class CategoryRepository {
   }
 
   /**
-   * Find direct children of a category.
+   * Find the live direct children of a category (deleted ones excluded — TASK-653).
    * Returns categories whose parentId matches the given ID.
    */
   findChildren(parentId: string): Promise<Category[]> {
     return this.prisma.category.findMany({
-      where: { parentId },
+      where: { parentId, deletedAt: null },
       orderBy: { sortOrder: 'asc' },
     });
   }
@@ -1430,6 +1494,12 @@ export class CategoryRepository {
    * re-check needs. The CTE body is byte-identical to the TASK-238 hardening (physical
    * `categories` / `parent_id` names, `UNION` so it terminates even on an existing
    * cycle, strict descendants excluding self); only the client is parameterised.
+   *
+   * Live descendants only (TASK-653): `deleted_at IS NULL` in BOTH halves. Under
+   * invariant I2 (deletion is a whole-subtree cascade) this changes no result today —
+   * a live node has no deleted descendant; the filter is the guard against a future
+   * write path that breaks I2. Proven on real Postgres in
+   * `test/category.repository.int-spec.ts`.
    */
   async findDescendantIds(
     categoryId: string,
@@ -1437,12 +1507,13 @@ export class CategoryRepository {
   ): Promise<string[]> {
     const result = await client.$queryRaw<Array<{ id: string }>>`
       WITH RECURSIVE descendants AS (
-        -- Base case: direct children of the category
-        SELECT id FROM categories WHERE parent_id = ${categoryId}
+        -- Base case: live direct children of the category
+        SELECT id FROM categories WHERE parent_id = ${categoryId} AND deleted_at IS NULL
         UNION
-        -- Recursive case: children of children
+        -- Recursive case: live children of children
         SELECT c.id FROM categories c
         INNER JOIN descendants d ON c.parent_id = d.id
+        WHERE c.deleted_at IS NULL
       )
       SELECT id FROM descendants
     `;
@@ -1465,6 +1536,12 @@ export class CategoryRepository {
    * `client` (TASK-652): pass an interactive-transaction client to resolve the subtree
    * under the locks `deleteSubtreeWithMove` holds — same contract as
    * {@link findDescendantIds}.
+   *
+   * Live descendants only (TASK-653): `deleted_at IS NULL` in the recursive step. The
+   * base row is left unfiltered and the self id is added regardless, so the contract
+   * "self is always present" holds for a tombstone too — whose subtree then resolves to
+   * just itself, which holds no product (invariant I1). `deleteSubtreeWithMove` calls
+   * this only for a node it has just verified live under the lock.
    */
   async findSubtreeIds(
     categoryId: string,
@@ -1475,9 +1552,10 @@ export class CategoryRepository {
         -- Base case: the category itself
         SELECT id, parent_id FROM categories WHERE id = ${categoryId}
         UNION
-        -- Recursive case: children of nodes already in the subtree
+        -- Recursive case: live children of nodes already in the subtree
         SELECT c.id, c.parent_id FROM categories c
         INNER JOIN subtree s ON c.parent_id = s.id
+        WHERE c.deleted_at IS NULL
       )
       SELECT id FROM subtree
     `;

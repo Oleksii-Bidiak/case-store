@@ -297,10 +297,17 @@ export class CategoryService {
       }
     }
 
-    const category = await this.categoryRepository.create({
-      ...input,
-      slug,
-    });
+    // The repository re-checks the parent under the bucket lock (TASK-653): a parent
+    // deleted between the check above and the insert surfaces as a 404, not a 500.
+    let category;
+    try {
+      category = await this.categoryRepository.create({
+        ...input,
+        slug,
+      });
+    } catch (error) {
+      throw this.toHttp(error);
+    }
 
     return CategoryEntity.fromPrisma(category);
   }

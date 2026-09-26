@@ -544,6 +544,7 @@ export class ProductService {
 
     // Reject an unknown brand id up front (TASK-189).
     await this.ensureBrandExists(input.brandId);
+    await this.ensureCategoryIsLive(input.categoryId);
 
     const product = await this.productRepository.create({
       ...input,
@@ -595,6 +596,12 @@ export class ProductService {
     // Reject an unknown brand id when brandId is being (re)assigned (TASK-189).
     if (input.brandId !== undefined) {
       await this.ensureBrandExists(input.brandId);
+    }
+
+    // Only when the category CHANGES: a product already filed in a category keeps
+    // saving even while an unrelated edit re-sends its current `categoryId`.
+    if (input.categoryId !== undefined && input.categoryId !== product.categoryId) {
+      await this.ensureCategoryIsLive(input.categoryId);
     }
 
     // Record a 301 redirect only when the product was publicly visible (active)
@@ -918,6 +925,23 @@ export class ProductService {
    * NotFoundException for an unknown brand so the write fails cleanly before it
    * hits the DB foreign key.
    */
+  /**
+   * Refuse to file a product in a category that does not exist or is deleted
+   * (TASK-653). Deleting a category moves every product out of it in one
+   * transaction (invariant I1); without this guard the product API alone could put
+   * one straight back into the tombstone, where no public read would ever show it.
+   * `CategoryRepository.findById` hides tombstones, so one read covers both cases.
+   *
+   * 400, not 404: the product request is well-addressed — it is its `categoryId`
+   * field that is invalid.
+   */
+  private async ensureCategoryIsLive(categoryId: string): Promise<void> {
+    const category = await this.categoryRepository.findById(categoryId);
+    if (!category) {
+      throw new BadRequestException('Category not found');
+    }
+  }
+
   private async ensureBrandExists(brandId?: string | null): Promise<void> {
     if (brandId == null) {
       return;
