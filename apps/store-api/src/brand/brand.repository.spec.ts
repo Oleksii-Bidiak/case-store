@@ -108,19 +108,40 @@ describe('BrandRepository', () => {
   });
 
   describe('findAllAdmin', () => {
+    const countInclude = {
+      _count: { select: { products: { where: { deletedAt: null } } } },
+    };
+
     it('paginates with no filters (skip/take derived from page/limit)', async () => {
-      prismaMock.brand.findMany.mockResolvedValue([mockBrand]);
+      prismaMock.brand.findMany.mockResolvedValue([
+        { ...mockBrand, _count: { products: 7 } },
+      ] as never);
       prismaMock.brand.count.mockResolvedValue(1);
 
       const result = await repository.findAllAdmin({ page: 1, limit: 20 });
 
-      expect(result).toEqual({ brands: [mockBrand], total: 1 });
+      // TASK-840: the count rides along as its own field, never leaks `_count`.
+      expect(result).toEqual({ brands: [{ brand: mockBrand, productCount: 7 }], total: 1 });
       expect(prismaMock.brand.findMany).toHaveBeenCalledWith({
         where: {},
         skip: 0,
         take: 20,
         orderBy: { name: 'asc' },
+        include: countInclude,
       });
+    });
+
+    it('counts live products only — soft-deleted ones are excluded, hidden ones are not', async () => {
+      prismaMock.brand.findMany.mockResolvedValue([]);
+      prismaMock.brand.count.mockResolvedValue(0);
+
+      await repository.findAllAdmin({ page: 1, limit: 20 });
+
+      const args = prismaMock.brand.findMany.mock.calls[0][0] as {
+        include: { _count: { select: { products: { where: Record<string, unknown> } } } };
+      };
+      expect(args.include._count.select.products.where).toEqual({ deletedAt: null });
+      expect(args.include._count.select.products.where).not.toHaveProperty('isActive');
     });
 
     it('applies the isActive filter and name search, and offsets by page', async () => {
@@ -134,6 +155,7 @@ describe('BrandRepository', () => {
         skip: 10,
         take: 10,
         orderBy: { name: 'asc' },
+        include: countInclude,
       });
     });
   });

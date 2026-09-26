@@ -1767,6 +1767,14 @@ export const dict = {
     copyIdDone: "Скопійовано",
     copyIdFailed: "Не вдалося скопіювати — виділіть ID вручну",
     copyIdAria: "Скопіювати ID бренду",
+    // TASK-840 (AD-CAT-12): the list showed names only — no way to tell a brand
+    // in use from an empty one without opening the catalogue.
+    colLogo: "Лого",
+    logoAlt: (name: string) => `Логотип ${name}`,
+    noLogo: "без лого",
+    colProducts: "Товарів",
+    colProductsHint:
+      "Усі товари бренду, крім видалених, — і видимі, і приховані",
   },
 
   brandForm: {

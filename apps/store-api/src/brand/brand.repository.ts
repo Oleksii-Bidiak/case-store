@@ -38,9 +38,31 @@ export interface UpdateBrandInput {
  * Result of a paginated admin brand query.
  */
 export interface PaginatedBrandsResult {
-  brands: Brand[];
+  brands: BrandWithProductCount[];
   total: number;
 }
+
+/**
+ * One admin-list row: the brand plus how many LIVE products carry it (TASK-840).
+ */
+export interface BrandWithProductCount {
+  brand: Brand;
+  productCount: number;
+}
+
+/**
+ * Which products the admin brand list counts (TASK-840): every product that is not
+ * soft-deleted, visible or hidden.
+ *
+ * Deliberately NOT the active-only count the admin category tree shows
+ * (`category.repository.ts`, `findCategoryTreeForAdmin`). The question this column
+ * answers for a brand is «is it in use?» — before renaming, hiding or cleaning up a
+ * brand — and a hidden product still carries its brand. It matters in practice: a
+ * catalogue import files every new position as a HIDDEN draft (TASK-361), so right
+ * after an import an active-only count would read 0 for brands that own dozens of
+ * products. Tombstones are excluded: a deleted product no longer belongs to anyone.
+ */
+export const BRAND_COUNTED_PRODUCT_WHERE: Prisma.ProductWhereInput = { deletedAt: null };
 
 /**
  * Repository encapsulating all Prisma access for the Brand model (TASK-189).
@@ -99,7 +121,9 @@ export class BrandRepository {
 
   /**
    * Paginated admin listing (all statuses) with optional active-status filter
-   * and name search. Ordered by name ascending for a stable admin table.
+   * and name search. Ordered by name ascending for a stable admin table. Each row
+   * carries its live product count (TASK-840, see {@link BRAND_COUNTED_PRODUCT_WHERE})
+   * — one grouped `_count` in the same query, not a request per brand.
    */
   async findAllAdmin(params: FindAllAdminParams): Promise<PaginatedBrandsResult> {
     const { page, limit, isActive, search } = params;
@@ -115,16 +139,23 @@ export class BrandRepository {
       where.name = { contains: search, mode: 'insensitive' };
     }
 
-    const [brands, total] = await Promise.all([
+    const [rows, total] = await Promise.all([
       this.prisma.brand.findMany({
         where,
         skip,
         take: limit,
         orderBy: { name: 'asc' },
+        include: {
+          _count: { select: { products: { where: BRAND_COUNTED_PRODUCT_WHERE } } },
+        },
       }),
       this.prisma.brand.count({ where }),
     ]);
 
+    const brands = rows.map(({ _count, ...brand }) => ({
+      brand: brand as Brand,
+      productCount: _count.products,
+    }));
     return { brands, total };
   }
 
