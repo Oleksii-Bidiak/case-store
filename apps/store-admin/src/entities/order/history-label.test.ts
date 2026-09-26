@@ -9,6 +9,7 @@ import {
   historyActorLabel,
   historyChangeLabel,
   historyNoteLabel,
+  isRefusedPaymentEvent,
 } from "./history-label";
 import { dict } from "@/shared/config";
 
@@ -27,6 +28,7 @@ function makeEntry(
     toPaymentStatus: null,
     changedBy: null,
     note: null,
+    rejectedPaymentStatus: null,
     changedAt: "2026-07-08T10:00:00.000Z",
     ...overrides,
   };
@@ -99,5 +101,58 @@ describe("historyNoteLabel", () => {
 
   it("is null on an ordinary row", () => {
     expect(historyNoteLabel(makeEntry({ note: null }))).toBeNull();
+  });
+});
+
+// TASK-621: the row the webhook writes when it refuses an event.
+describe("refused payment events", () => {
+  const refused = (overrides: Partial<OrderStatusHistoryEntity> = {}) =>
+    makeEntry({
+      changeType: OrderStatusHistoryEntityChangeType.PAYMENT_STATUS,
+      fromPaymentStatus: OrderEntityPaymentStatus.PAID,
+      toPaymentStatus: OrderEntityPaymentStatus.PAID,
+      note: OrderStatusHistoryEntityNote.PAYMENT_EVENT_REFUSED,
+      rejectedPaymentStatus: OrderEntityPaymentStatus.FAILED,
+      ...overrides,
+    });
+
+  it("names what the event asked for and what stayed", () => {
+    expect(historyChangeLabel(refused())).toBe(
+      dict.orderStatus.paymentEventRefusedLabel("Помилка оплати", "Оплачено"),
+    );
+    expect(historyNoteLabel(refused())).toBe(
+      dict.orderStatus.paymentEventRefusedHistoryNote,
+    );
+    expect(isRefusedPaymentEvent(refused())).toBe(true);
+  });
+
+  it("reads a legacy from = to row with no note as a refusal too", () => {
+    const legacy = refused({ note: null, rejectedPaymentStatus: null });
+
+    expect(isRefusedPaymentEvent(legacy)).toBe(true);
+    expect(historyChangeLabel(legacy)).toBe(
+      dict.orderStatus.paymentEventRefusedLegacyLabel("Оплачено"),
+    );
+    expect(historyChangeLabel(legacy)).not.toBe("Оплата: Оплачено → Оплачено");
+  });
+
+  it("does not flag an ordinary payment move or a status row", () => {
+    expect(
+      isRefusedPaymentEvent(
+        makeEntry({
+          changeType: OrderStatusHistoryEntityChangeType.PAYMENT_STATUS,
+          fromPaymentStatus: OrderEntityPaymentStatus.PENDING,
+          toPaymentStatus: OrderEntityPaymentStatus.PAID,
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isRefusedPaymentEvent(
+        makeEntry({
+          fromStatus: OrderEntityStatus.PENDING,
+          toStatus: OrderEntityStatus.PENDING,
+        }),
+      ),
+    ).toBe(false);
   });
 });

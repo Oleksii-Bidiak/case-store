@@ -17800,6 +17800,11 @@
             "description": "Whether the brand is active and visible in the store",
             "example": true
           },
+          "productCount": {
+            "type": "number",
+            "description": "Number of live (not soft-deleted) products of this brand, visible or hidden (admin listing only, TASK-840)",
+            "example": 42
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -17883,7 +17888,7 @@
         "type": "object",
         "properties": {
           "data": {
-            "description": "Brands for the current page",
+            "description": "Brands for the current page, each with its logo and `productCount` (live products, visible or hidden — TASK-840)",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/BrandEntity"
@@ -25393,10 +25398,24 @@
           },
           "note": {
             "type": "string",
-            "description": "A flag on the row for an event the operator must see (TASK-932 / TASK-788): PAID_AFTER_CANCEL on a payment row — the money arrived after the order was cancelled; SHIPPED_UNPAID on a status row — shipped while the online payment was unconfirmed. Null on an ordinary row.",
+            "description": "A flag on the row for an event the operator must see (TASK-932 / TASK-788): PAID_AFTER_CANCEL on a payment row — the money arrived after the order was cancelled; SHIPPED_UNPAID on a status row — shipped while the online payment was unconfirmed; PAYMENT_EVENT_REFUSED on a payment row — a provider event asked for a move the shop refused (the row stays current → current; the asked-for status is in rejectedPaymentStatus, TASK-621). Null on an ordinary row.",
             "enum": [
               "PAID_AFTER_CANCEL",
-              "SHIPPED_UNPAID"
+              "SHIPPED_UNPAID",
+              "PAYMENT_EVENT_REFUSED"
+            ],
+            "nullable": true,
+            "example": null
+          },
+          "rejectedPaymentStatus": {
+            "type": "string",
+            "description": "TASK-621: on a PAYMENT_EVENT_REFUSED row, the payment status the provider event asked for and the shop refused. Null on every other row, and on refusals recorded before the column existed (those read from = to with no note).",
+            "enum": [
+              "PENDING",
+              "PAID",
+              "FAILED",
+              "PARTIALLY_REFUNDED",
+              "REFUNDED"
             ],
             "nullable": true,
             "example": null
@@ -25418,6 +25437,7 @@
           "toPaymentStatus",
           "changedBy",
           "note",
+          "rejectedPaymentStatus",
           "changedAt"
         ]
       },

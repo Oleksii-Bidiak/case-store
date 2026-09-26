@@ -15,6 +15,7 @@ describe('OrderStatusHistoryEntity.fromPrisma — note', () => {
   const base = {
     id: 'h-1',
     orderId: 'o-1',
+    rejectedPaymentStatus: null,
     changedBy: null,
     changedAt: new Date('2026-09-24T10:00:00.000Z'),
   };
@@ -59,5 +60,50 @@ describe('OrderStatusHistoryEntity.fromPrisma — note', () => {
     });
 
     expect(entity.note).toBeNull();
+  });
+});
+
+/**
+ * TASK-621: a refused provider event is written `current → current` with the
+ * PAYMENT_EVENT_REFUSED note and the requested status in its own column; the
+ * entity must carry both, or the timeline is back to «Оплачено → Оплачено».
+ */
+describe('OrderStatusHistoryEntity.fromPrisma — refused payment event', () => {
+  it('carries the note and the rejected payment status', () => {
+    const entity = OrderStatusHistoryEntity.fromPrisma({
+      id: 'h-2',
+      orderId: 'o-1',
+      changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+      fromStatus: null,
+      toStatus: null,
+      fromPaymentStatus: PaymentStatus.PAID,
+      toPaymentStatus: PaymentStatus.PAID,
+      note: OrderHistoryNote.PAYMENT_EVENT_REFUSED,
+      rejectedPaymentStatus: PaymentStatus.FAILED,
+      changedBy: null,
+      changedAt: new Date('2026-09-26T10:00:00.000Z'),
+    });
+
+    expect(entity.note).toBe(OrderHistoryNote.PAYMENT_EVENT_REFUSED);
+    expect(entity.rejectedPaymentStatus).toBe(PaymentStatus.FAILED);
+    expect(entity.toPaymentStatus).toBe(PaymentStatus.PAID);
+  });
+
+  it('is null on every other row', () => {
+    const entity = OrderStatusHistoryEntity.fromPrisma({
+      id: 'h-3',
+      orderId: 'o-1',
+      changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+      fromStatus: null,
+      toStatus: null,
+      fromPaymentStatus: PaymentStatus.PENDING,
+      toPaymentStatus: PaymentStatus.PAID,
+      note: null,
+      rejectedPaymentStatus: null,
+      changedBy: null,
+      changedAt: new Date('2026-09-26T10:00:00.000Z'),
+    });
+
+    expect(entity.rejectedPaymentStatus).toBeNull();
   });
 });

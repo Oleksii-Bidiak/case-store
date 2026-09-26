@@ -149,9 +149,16 @@ enum OrderHistoryChangeType {
 /// operator moved an ONLINE-paid order to SHIPPED while its payment was still
 /// PENDING/FAILED. Allowed (decision B-1: only the impossible is refused), but
 /// recorded on the STATUS row so the decision has a trace.
+///
+/// PAYMENT_EVENT_REFUSED — «подію оплати відхилено» (TASK-621): the provider
+/// reported an outcome the payment state machine (or the B-1 cross-rule) did not
+/// allow, so nothing moved. The row stays `current → current` — the chain of
+/// history rows must stay a chain — and carries what the event ASKED for in
+/// `OrderStatusHistory.rejectedPaymentStatus`.
 enum OrderHistoryNote {
   PAID_AFTER_CANCEL
   SHIPPED_UNPAID
+  PAYMENT_EVENT_REFUSED
 }
 
 /// Data type of a structured product characteristic (TASK-191, plan 112).
@@ -805,6 +812,10 @@ model OrderStatusHistory {
   // Null for an ordinary move. Set when the row records an event the shop wrote
   // down but deliberately did not act on — see OrderHistoryNote (TASK-619).
   note              OrderHistoryNote?
+  // TASK-621: set only on a PAYMENT_EVENT_REFUSED row — the payment status the
+  // provider's event asked for and the shop refused. Kept out of
+  // `toPaymentStatus`, which stays the literal truth (`current → current`).
+  rejectedPaymentStatus PaymentStatus?     @map("rejected_payment_status")
   // Nullable: system/webhook-driven changes (order creation's initial PENDING
   // row today; a future Stripe/payment webhook tomorrow) have no acting
   // admin/customer user. Populated with the acting user's id when the change
