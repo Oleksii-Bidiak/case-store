@@ -59,6 +59,7 @@ import {
   TableCell,
   TableHead,
   TableHeader,
+  TableFilters,
   TableRow,
   TableSearch,
   TableToolbar,
@@ -66,6 +67,7 @@ import {
   TabsList,
   TabsTrigger,
   type SortableTreeRowRenderProps,
+  type TableFilterDef,
 } from "@/shared/ui";
 import { formatDate } from "@/shared/lib";
 import { useUrlParams } from "@/shared/lib/use-url-params";
@@ -120,6 +122,37 @@ const KIND_LABELS: Record<PageEntityKind, string> = {
   [PageEntityKind.HUB]: dict.pages.kindHub,
 };
 
+/**
+ * Status filter (TASK-562), LOCAL for the same reason as the kind tabs: the API's
+ * `AdminPageListQueryDto.status` exists, but a server-side slice cannot be
+ * reordered, so the complete list stays loaded and `?status=` only hides rows —
+ * and, like every other row-hiding control on this grid, locks the drag.
+ *
+ * Reads `status`, never the `isActive` mirror, so «Заплановано» is its own
+ * option rather than being folded into «Чернетка» (the TASK-430 lesson).
+ */
+const PAGE_STATUSES = [
+  "PUBLISHED",
+  "SCHEDULED",
+  "DRAFT",
+] as const satisfies ReadonlyArray<PageEntity["status"]>;
+
+const STATUS_FILTER: TableFilterDef = {
+  param: "status",
+  label: dict.pages.filterStatus,
+  allLabel: dict.pages.filterStatusAll,
+  options: [
+    { value: "PUBLISHED", label: dict.pages.statusPublished },
+    { value: "SCHEDULED", label: dict.pages.statusScheduled },
+    { value: "DRAFT", label: dict.pages.statusDraft },
+  ],
+};
+
+/** Narrow an arbitrary `?status=` string to a page status. */
+function isPageStatus(value: string): value is PageEntity["status"] {
+  return (PAGE_STATUSES as ReadonlyArray<string>).includes(value);
+}
+
 /** Narrow an arbitrary `?kind=` string to the enum. */
 function isPageKind(value: string): value is PageEntityKind {
   return Object.values(PageEntityKind).includes(value as PageEntityKind);
@@ -160,9 +193,15 @@ function AdminPageGrid() {
   const kindParam = searchParams.get("kind") ?? "";
   const kindFilter = isPageKind(kindParam) ? kindParam : undefined;
   const kindActive = kindFilter !== undefined;
+  // A hand-typed `?status=bogus` filters nothing — and so shows no chip either
+  // (the `values` passed to TableFilters below), rather than a chip for a
+  // filter that is not applied.
+  const statusParam = searchParams.get("status") ?? "";
+  const statusFilter = isPageStatus(statusParam) ? statusParam : undefined;
+  const statusActive = statusFilter !== undefined;
 
-  // Either filter hides rows, and either one therefore locks the drag.
-  const filterActive = searchActive || kindActive;
+  // Any filter hides rows, and any one therefore locks the drag.
+  const filterActive = searchActive || kindActive || statusActive;
 
   // The active tab is the one matching `?kind=` exactly, with an absent filter
   // standing for the "Усі" sentinel; otherwise CUSTOM_TAB → nothing highlighted.
@@ -183,13 +222,14 @@ function AdminPageGrid() {
         .filter(
           (page) =>
             (kindFilter === undefined || page.kind === kindFilter) &&
+            (statusFilter === undefined || page.status === statusFilter) &&
             (!searchActive ||
               page.title.toLowerCase().includes(needle) ||
               page.slug.toLowerCase().includes(needle)),
         )
         .map((page) => page.id),
     );
-  }, [filterActive, kindFilter, needle, pages, searchActive]);
+  }, [filterActive, kindFilter, needle, pages, searchActive, statusFilter]);
 
   const focus = useRowFocus();
   const reorder = usePageReorder({
@@ -294,6 +334,12 @@ function AdminPageGrid() {
             label={dict.reorderList.searchLabel}
           />
         }
+        filters={
+          <TableFilters
+            filters={[STATUS_FILTER]}
+            values={{ status: statusFilter ?? "" }}
+          />
+        }
         actions={
           <ReorderUndoButton
             canUndo={reorder.canUndo}
@@ -308,7 +354,9 @@ function AdminPageGrid() {
           ? dict.reorderList.searchLockedHint
           : kindActive
             ? dict.pages.kindLockedHint
-            : dict.pages.reorderHint}
+            : statusActive
+              ? dict.pages.statusLockedHint
+              : dict.pages.reorderHint}
       </p>
 
       <div id={PAGE_INSTRUCTIONS_LONG_ID} className="sr-only">
@@ -332,7 +380,9 @@ function AdminPageGrid() {
         <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
           {searchActive
             ? dict.reorderList.emptyMatch(search.trim())
-            : dict.pages.emptyKind}
+            : statusActive
+              ? dict.common.table.emptyFiltered
+              : dict.pages.emptyKind}
         </div>
       ) : (
         <div className="rounded-lg border border-border shadow-card overflow-hidden">

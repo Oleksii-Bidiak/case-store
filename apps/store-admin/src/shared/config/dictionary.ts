@@ -1345,6 +1345,12 @@ export const dict = {
     toastSlugTaken: (kindLabel: string) =>
       `Сторінка з такою адресою вже є серед сторінок виду «${kindLabel}». ` +
       "Змініть slug або відредагуйте наявну сторінку.",
+    // TASK-562 — status filter (`?status=`), local like the kind tabs, so it
+    // locks reordering for the same reason.
+    filterStatus: "Фільтр за статусом",
+    filterStatusAll: "Усі статуси",
+    statusLockedHint:
+      "Поки увімкнено фільтр за статусом, порядок змінювати не можна: сторінки впорядковані одним спільним списком, а тут видно лише його частину. Зніміть фільтр.",
   },
 
   pageForm: {
@@ -2238,12 +2244,6 @@ export const dict = {
     refundedLabel: "Повернуто",
     refundedOfTotal: (refunded: string, total: string) =>
       `${refunded} з ${total}`,
-    // An honest blank. The method, the per-attempt history and the refund button
-    // need `Order.paymentMethod` on the order entity plus the admin payments
-    // endpoints, and the merged backend exposes neither — so the card says it
-    // cannot read them rather than implying there were no attempts.
-    paymentAttemptsUnavailable:
-      "Історія спроб оплати та повернення коштів стануть доступні після увімкнення онлайн-оплати.",
 
     // --- Operator-created (phone) orders (TASK-341) ---------------------------
     createHeading: "Нове замовлення",
@@ -2372,6 +2372,64 @@ export const dict = {
     returnsForOrderEmpty: "Заявок на повернення по цьому замовленню немає.",
     returnsForOrderLoadError: "Не вдалося завантажити заявки на повернення.",
     returnsForOrderRequestedAt: (date: string) => `подано ${date}`,
+
+    // --- Спроби оплати й повернення коштів (TASK-371) -------------------------
+    // Картка платежу на замовленні: кожна спроба LiqPay і кнопка повернення на
+    // успішній. 202 від сервера означає лише «запит надіслано» — статус оплати
+    // змінює колбек LiqPay, тому жоден бейдж після кліку не перемикається.
+    paymentAttemptsHeading: "Спроби оплати",
+    paymentAttemptsLoading: "Завантажуємо спроби оплати…",
+    paymentAttemptsLoadError: "Не вдалося завантажити спроби оплати.",
+    paymentAttemptsEmpty:
+      "Спроб онлайн-оплати ще не було — покупець не відкривав сторінку LiqPay.",
+    paymentAttemptsOnDelivery:
+      "Оплата при отриманні: онлайн-спроб немає, гроші повертаються поза LiqPay — через заявку на повернення.",
+    paymentAttemptAmount: "Сума",
+    paymentAttemptProviderId: "Ідентифікатор LiqPay",
+    paymentAttemptFailure: "Причина відмови",
+    paymentAttemptSettledAt: "Завершено",
+    paymentAttemptCreatedAt: "Відкрито",
+    paymentAttemptStatus: {
+      PENDING: "Очікує",
+      SUCCEEDED: "Успішна",
+      FAILED: "Відхилена",
+      EXPIRED: "Прострочена",
+      REFUNDED: "Повернено",
+    },
+    refundAction: "Повернути кошти",
+    refundTitle: "Повернення коштів через LiqPay",
+    refundDescription: (amount: string) =>
+      `Гроші повернуться на картку покупця. Оплачено цією спробою: ${amount}.`,
+    refundModeLegend: "Скільки повернути",
+    refundModeFull: (amount: string) => `Усю суму — ${amount}`,
+    refundModePartial: "Частину",
+    refundAmountLabel: "Сума повернення, ₴",
+    refundAmountHint: "Наприклад, 499 або 499.50 — не більше за оплачене.",
+    refundAmountInvalid: "Вкажіть суму числом, до двох знаків після крапки.",
+    refundAmountZero: "Сума має бути більшою за нуль.",
+    refundAmountTooLarge: (amount: string) =>
+      `Не більше за оплачене цією спробою: ${amount}.`,
+    refundNext: "Далі",
+    refundBack: "Назад",
+    refundCancel: "Скасувати",
+    refundConfirmTitle: "Підтвердіть повернення",
+    refundConfirmText: (amount: string) =>
+      `Повернути покупцеві ${amount}? Запит піде в LiqPay одразу, скасувати його звідси не можна.`,
+    refundConfirm: (amount: string) => `Повернути ${amount}`,
+    refundRequested:
+      "Запит на повернення надіслано. Статус оплати оновиться після підтвердження LiqPay.",
+    // Кнопка на спробі, по якій запит уже пішов: до колбека повтор надіслав би
+    // другий запит у LiqPay — стелі кумулятивних повернень на сервері немає
+    // (TASK-1302).
+    refundPending: "Запит надіслано — чекаємо підтвердження LiqPay",
+    refundErrorForbidden:
+      "У вас немає права повертати кошти. Попросіть власника додати право «Повертати гроші».",
+    refundErrorConflict:
+      "Цю спробу вже не можна повернути: її статус змінився. Список спроб оновлено.",
+    refundErrorTooLarge: "Сума перевищує оплачену цією спробою.",
+    refundErrorNotFound: "Спробу оплати не знайдено — оновіть сторінку.",
+    refundErrorGeneric:
+      "Не вдалося надіслати запит на повернення. Спробуйте ще раз.",
   },
 
   reviews: {
@@ -2489,10 +2547,10 @@ export const dict = {
     unhideAuthorSuccess: (count: number) =>
       `Повернуто відгуків автора: ${count}`,
     unhideAuthorError: "Не вдалося повернути відгуки автора. Спробуйте ще раз.",
-    // `ratingVisible` folds two independent gates — a moderator's hide and an
-    // unconfirmed email — and the moderation row does not say which. The badge
-    // therefore reports the EFFECT, which is true either way, and never guesses
-    // at the cause.
+    // Since TASK-1004 only the unconfirmed-email gate reaches this badge: a
+    // withdrawn author's row names its lever from `hiddenReason` (the keys
+    // below). A row with no `hiddenReason` whose `ratingVisible` is still false
+    // is held back by the email alone, and there the effect is the whole truth.
     ratingNotCounted: "Оцінка не враховується",
 
     // --- Why a row is withdrawn, from the server (TASK-1004, API TASK-596/599) --
