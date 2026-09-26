@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { makeOrder } from "@/shared/test/msw-handlers";
-import { type OrderEntityStatus } from "@/entities/order";
+import { statusBadgeClass, type OrderEntityStatus } from "@/entities/order";
 import { dict } from "@/shared/config";
 import { OrderHistoryView } from "./order-history-view";
 
@@ -82,6 +82,17 @@ describe("OrderHistoryView — return request (TASK-373)", () => {
       ).not.toBeInTheDocument();
     },
   );
+
+  it("paints the status badge from the shared map (TASK-802)", async () => {
+    stubOrders(["DELIVERED"]);
+
+    renderHistory();
+
+    const badge = await screen.findByLabelText(
+      `${dict.orderHistory.statusSr}: ${dict.order.orderStatusLabels.DELIVERED}`,
+    );
+    expect(badge).toHaveClass(...statusBadgeClass("DELIVERED").split(" "));
+  });
 
   it("offers it on the delivered order only, in a mixed list", async () => {
     stubOrders(["PENDING", "DELIVERED"]);

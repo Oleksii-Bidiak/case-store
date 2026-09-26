@@ -4,24 +4,13 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/entities/session";
-import { useGetOrders } from "@/entities/order";
+import { statusBadgeClass, useGetOrders } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
 import { ReturnRequestButton } from "@/features/return-request";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib";
 import { OrderHistorySkeleton } from "./order-history-skeleton";
-
-/** Token-based badge colours per status value (no raw hex) — mirrors confirmation. */
-const STATUS_BADGE: Record<string, string> = {
-  PENDING: "bg-muted text-muted-foreground",
-  CONFIRMED: "bg-primary/10 text-primary",
-  PROCESSING: "bg-primary/20 text-primary",
-  SHIPPED: "bg-primary/30 text-primary",
-  DELIVERED: "bg-primary/10 text-primary font-semibold",
-  CANCELLED: "bg-destructive/10 text-destructive",
-  REFUNDED: "bg-destructive/10 text-destructive",
-};
 
 const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
   year: "numeric",
@@ -99,10 +88,9 @@ export function OrderHistoryView() {
                     aria-label={`${dict.orderHistory.statusSr}: ${
                       dict.order.orderStatusLabels[order.status] ?? order.status
                     }`}
-                    className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${
-                      STATUS_BADGE[order.status] ??
-                      "bg-muted text-muted-foreground"
-                    }`}
+                    className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass(
+                      order.status,
+                    )}`}
                   >
                     {dict.order.orderStatusLabels[order.status] ?? order.status}
                   </span>

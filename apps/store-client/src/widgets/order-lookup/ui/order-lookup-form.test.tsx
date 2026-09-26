@@ -3,7 +3,7 @@ import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib/format";
-import type { PublicOrderEntity } from "@/entities/order";
+import { statusBadgeClass, type PublicOrderEntity } from "@/entities/order";
 import { OrderLookupForm } from "./order-lookup-form";
 
 const d = dict.orderLookup;
@@ -147,6 +147,24 @@ describe("OrderLookupForm (TASK-483)", () => {
     await fillAndSubmit(user);
 
     expect(await screen.findByText(d.errors.rateLimited)).toBeInTheDocument();
+  });
+
+  it("paints PARTIALLY_REFUNDED from the shared status map (TASK-802)", async () => {
+    respondWith([{ ...order, paymentStatus: "PARTIALLY_REFUNDED" }]);
+    const user = userEvent.setup();
+
+    renderWithProviders(<OrderLookupForm />);
+    await fillAndSubmit(user);
+
+    const badge = await screen.findByLabelText(
+      dict.order.paymentStatusAria("PARTIALLY_REFUNDED"),
+    );
+    expect(badge).toHaveClass(
+      ...statusBadgeClass("PARTIALLY_REFUNDED").split(" "),
+    );
+    expect(badge).toHaveTextContent(
+      dict.order.paymentLabel("PARTIALLY_REFUNDED"),
+    );
   });
 
   it("refuses a number shorter than 8 characters before any request is made", async () => {

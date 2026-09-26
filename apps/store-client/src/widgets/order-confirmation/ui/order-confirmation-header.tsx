@@ -1,6 +1,7 @@
-import type {
-  OrderEntityStatus,
-  OrderEntityPaymentStatus,
+import {
+  statusBadgeClass as badgeClass,
+  type OrderEntityStatus,
+  type OrderEntityPaymentStatus,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
 
@@ -12,19 +13,6 @@ interface OrderConfirmationHeaderProps {
   createdAt: string;
 }
 
-/** Token-based badge colours per status value (no raw hex). */
-const STATUS_BADGE: Record<string, string> = {
-  PENDING: "bg-muted text-muted-foreground",
-  CONFIRMED: "bg-primary/10 text-primary",
-  PROCESSING: "bg-primary/20 text-primary",
-  SHIPPED: "bg-primary/30 text-primary",
-  DELIVERED: "bg-primary/10 text-primary font-semibold",
-  CANCELLED: "bg-destructive/10 text-destructive",
-  REFUNDED: "bg-destructive/10 text-destructive",
-  PAID: "bg-primary/10 text-primary",
-  FAILED: "bg-destructive/10 text-destructive",
-};
-
 const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
   year: "numeric",
   month: "long",
@@ -34,10 +22,6 @@ const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
-}
-
-function badgeClass(value: string): string {
-  return STATUS_BADGE[value] ?? "bg-muted text-muted-foreground";
 }
 
 /**

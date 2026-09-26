@@ -8,6 +8,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { makeOrder } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
+import { statusBadgeClass } from "@/entities/order";
 import { OrderConfirmationView } from "./order-confirmation-view";
 
 // next/navigation is unavailable under jsdom — mock the router.
@@ -52,6 +53,24 @@ describe("OrderConfirmationView", () => {
     expect(screen.getByText("Очікує підтвердження")).toBeInTheDocument();
     expect(screen.getByText("Оплата: Очікує оплати")).toBeInTheDocument();
     expect(screen.queryByText("PENDING")).not.toBeInTheDocument();
+  });
+
+  it("paints PARTIALLY_REFUNDED like the other pages, not in the grey PENDING fallback (TASK-802)", async () => {
+    server.use(
+      http.get("*/api/orders/:id", () =>
+        HttpResponse.json(makeOrder({ paymentStatus: "PARTIALLY_REFUNDED" })),
+      ),
+    );
+
+    renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
+
+    const badge = await screen.findByLabelText(
+      dict.order.paymentStatusAria("PARTIALLY_REFUNDED"),
+    );
+    expect(badge).toHaveClass(
+      ...statusBadgeClass("PARTIALLY_REFUNDED").split(" "),
+    );
+    expect(badge).not.toHaveClass("bg-muted");
   });
 
   it("localizes the country code instead of rendering the raw ISO value", async () => {
