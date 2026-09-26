@@ -27,6 +27,7 @@ import {
   Textarea,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { apiErrorCode, apiErrorStatus } from "@/shared/lib";
 import {
   OPERATOR_NOTES_MAX_LENGTH,
   canRestock,
@@ -142,8 +143,7 @@ function ReturnResolveEditor({ rma }: ReturnResolveFormProps) {
           toast.success(dict.returns.resolveSuccess);
         },
         onError: (error) => {
-          const status = (error as { response?: { status?: number } })?.response
-            ?.status;
+          const status = apiErrorStatus(error);
           if (status === 409) {
             // The server's state machine is authoritative — this client-side
             // mirror losing to it is exactly the drift the mirror's docblock
@@ -154,8 +154,7 @@ function ReturnResolveEditor({ rma }: ReturnResolveFormProps) {
             toast.error(dict.returns.resolveConflict);
             return;
           }
-          const code = (error as { response?: { data?: { error?: unknown } } })
-            ?.response?.data?.error;
+          const code = apiErrorCode(error);
           const ceiling =
             typeof code === "string"
               ? REFUND_CEILING_MESSAGES[code]

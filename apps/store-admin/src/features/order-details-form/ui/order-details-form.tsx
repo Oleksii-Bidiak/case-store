@@ -14,6 +14,7 @@ import {
 } from "@/entities/order";
 import {
   orderConflictMessage,
+  orderWriteErrorMessage,
   type ApiErrorLike,
 } from "@/features/order-status-update";
 import { PERM } from "@/entities/permission";
@@ -130,14 +131,10 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
     resetOptions: { keepDirtyValues: true },
   });
 
-  // A 400 that names the waybill is a RULE, not a lost update, and must not be
-  // reported as one. `orderConflictMessage` keys off any string `error` field in
-  // the body, and Nest's validation envelope carries `error: "Bad Request"` — so
-  // without this the operator is told their order "changed elsewhere, reload the
-  // page" when what actually happened is that they typed the ТТН wrong.
-  const conflict = isWaybillRejection(updateDetails.error)
-    ? null
-    : orderConflictMessage(updateDetails.error as ApiErrorLike);
+  // A 409 conflict or a 403 «немає права» (TASK-622). A 400 — the waybill rule
+  // included — is neither and yields null: the conflict check is gated on the
+  // status now, so the old `isWaybillRejection` carve-out here is gone.
+  const conflict = orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
 
   const onSubmit = (values: OrderDetailsFormValues) => {
     updateDetails.mutate(
@@ -167,8 +164,8 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
           toast.success(dict.orders.detailsSaved);
         },
         onError: (error) => {
-          // FIRST, for the reason given above `conflict`: the server refused ONE
-          // named field, which is neither a conflict nor an unknowable failure.
+          // FIRST: the server refused ONE named field, which is neither a
+          // conflict nor an unknowable failure.
           // Say which field and which rule — and put the message under the field
           // as well, because the toast will go and the box that needs fixing
           // stays.
@@ -189,7 +186,10 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
             toast.error(message);
             return;
           }
-          toast.error(dict.orders.detailsFailed);
+          toast.error(
+            orderWriteErrorMessage(error as ApiErrorLike) ??
+              dict.orders.detailsFailed,
+          );
         },
       },
     );

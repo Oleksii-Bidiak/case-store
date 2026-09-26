@@ -15,6 +15,7 @@ import {
 } from "@/entities/order";
 import {
   orderConflictMessage,
+  orderWriteErrorMessage,
   type ApiErrorLike,
 } from "@/features/order-status-update";
 import { PERM } from "@/entities/permission";
@@ -78,7 +79,9 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
     resetOptions: { keepDirtyValues: true },
   });
 
-  const conflict = orderConflictMessage(updateDetails.error as ApiErrorLike);
+  // 409 → conflict sentence, 403 → «немає права» (TASK-622). A 400 is neither:
+  // it used to read as «замовлення змінилося», because any coded body counted.
+  const conflict = orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
 
   if (!editable) {
     return (
@@ -141,7 +144,10 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
             toast.error(message);
             return;
           }
-          toast.error(dict.orders.detailsFailed);
+          toast.error(
+            orderWriteErrorMessage(error as ApiErrorLike) ??
+              dict.orders.detailsFailed,
+          );
         },
       },
     );

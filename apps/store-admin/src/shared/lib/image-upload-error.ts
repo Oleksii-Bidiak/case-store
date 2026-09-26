@@ -1,4 +1,4 @@
-import { isAxiosError } from "axios";
+import { apiErrorStatus } from "./api-error-message";
 
 /**
  * The words an image upload fails in, and the extensions its picker offers.
@@ -44,6 +44,13 @@ export interface ImageUploadCopy {
   errorTooLarge: string;
   /** 400/415 — the MIME or the real bytes are not an accepted image. */
   errorUnsupportedType: string;
+  /**
+   * 400 only, when a route gives it its own meaning (TASK-810). The store-logo
+   * route answers 400 for a file that IS an image but is unusable — an SVG with
+   * nothing safe left after sanitising — which is not «wrong type». Omitted, a
+   * 400 reads as `errorUnsupportedType`, as it always has.
+   */
+  errorRejected?: string;
   /** Anything else: a network failure, a 500, an expired session. */
   errorGeneric: string;
 }
@@ -54,7 +61,8 @@ export interface ImageUploadCopy {
  * not a decodable image of an allowed type, 400 the declared MIME type is not one
  * we accept (Multer's `fileFilter`), anything else generic.
  *
- * 400 and 415 deliberately produce the SAME message. They are one mistake from
+ * 400 and 415 produce the SAME message unless the caller supplies
+ * `errorRejected` (the store logo does — see `logo-upload-error.ts`). They are one mistake from
  * where the operator sits — "this file is not a picture we can use" — and the
  * distinction between "the browser's label was wrong" and "the bytes were wrong"
  * is ours, not theirs.
@@ -63,15 +71,14 @@ export function imageUploadErrorMessage(
   error: unknown,
   copy: Pick<
     ImageUploadCopy,
-    "errorTooLarge" | "errorUnsupportedType" | "errorGeneric"
+    "errorTooLarge" | "errorUnsupportedType" | "errorGeneric" | "errorRejected"
   >,
 ): string {
-  const status = isAxiosError(error) ? error.response?.status : undefined;
-
-  switch (status) {
+  switch (apiErrorStatus(error)) {
     case 413:
       return copy.errorTooLarge;
     case 400:
+      return copy.errorRejected ?? copy.errorUnsupportedType;
     case 415:
       return copy.errorUnsupportedType;
     default:
