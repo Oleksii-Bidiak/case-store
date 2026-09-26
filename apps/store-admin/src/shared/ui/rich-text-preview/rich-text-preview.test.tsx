@@ -29,6 +29,58 @@ describe("RichTextPreview (TASK-266)", () => {
     expect(prose.querySelector("blockquote")).toHaveTextContent("Цитата дня.");
   });
 
+  // TASK-492: every tag the server's sanitizer keeps is rendered AND styled.
+  it("renders and styles the rest of the sanitizer's allow-list", () => {
+    render(
+      <RichTextPreview
+        html={[
+          "<h1>Головний</h1>",
+          "<h4>Дрібний</h4>",
+          "<p><s>стара ціна</s> <u>важливо</u> <code>USB-C</code></p>",
+          '<img src="https://cdn.example.com/a.jpg" alt="Чохол">',
+          "<hr>",
+          "<pre><code>const a = 1;</code></pre>",
+          "<table><caption>Характеристики</caption>",
+          "<tbody><tr><td>Вага</td><td>30 г</td></tr></tbody>",
+          "<tfoot><tr><td>Разом</td><td>1</td></tr></tfoot></table>",
+        ].join("")}
+      />,
+    );
+
+    const prose = screen.getByTestId("rich-text-preview")
+      .firstElementChild as HTMLElement;
+
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Головний" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 4, name: "Дрібний" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Чохол" })).toBeInTheDocument();
+    expect(prose.querySelector("hr")).not.toBeNull();
+    expect(prose.querySelector("s")).toHaveTextContent("стара ціна");
+    expect(prose.querySelector("pre code")).toHaveTextContent("const a = 1;");
+    expect(prose.querySelector("caption")).toHaveTextContent("Характеристики");
+    expect(prose.querySelector("tfoot")).toHaveTextContent("Разом");
+
+    for (const rule of [
+      "[&_h1]:text-3xl",
+      "[&_h4]:text-lg",
+      "[&_img]:max-w-full",
+      "[&_hr]:border-border",
+      "[&_s]:line-through",
+      "[&_code]:bg-muted",
+      "[&_pre]:overflow-x-auto",
+      "[&_pre_code]:bg-transparent",
+      "[&_caption]:caption-top",
+      "[&_tfoot_td]:font-semibold",
+    ]) {
+      expect(prose.className).toContain(rule);
+    }
+    // Semantic tokens only — no raw colour values in the prose rules.
+    expect(prose.className).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+  });
+
   it("shows the empty placeholder for an empty string", () => {
     render(<RichTextPreview html="" emptyLabel="Порожньо" />);
 
