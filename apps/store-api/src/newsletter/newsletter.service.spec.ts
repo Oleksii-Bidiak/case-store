@@ -100,7 +100,9 @@ describe('NewsletterService', () => {
       const csv = await service.exportCsv({});
       const lines = csv.split('\r\n');
 
-      expect(lines[0]).toBe('email,status,source,createdAt');
+      // TASK-691: the BOM leads the file (Excel on Windows needs it to read
+      // UTF-8), and it is the only thing before the header.
+      expect(lines[0]).toBe('﻿email,status,source,createdAt');
       expect(lines[1]).toBe('user@example.com,SUBSCRIBED,home,2026-01-01T00:00:00.000Z');
     });
 

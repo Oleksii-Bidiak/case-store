@@ -1,3 +1,6 @@
+/** UTF-8 byte-order mark — what tells Excel the file is UTF-8. */
+const CSV_BOM = "﻿";
+
 /**
  * Trigger a client-side download of a CSV string as a file. Wraps the text in a
  * Blob, creates a temporary object URL, and clicks a synthetic anchor.
@@ -8,9 +11,15 @@
  * sideways dependency the FSD boundaries exist to prevent, and that is the worse
  * of the two. Whoever next touches either copy should move it to `shared/lib`
  * and delete both.
+ *
+ * Writes the UTF-8 BOM first (TASK-691). The server sends one, but the browser
+ * strips a leading BOM while decoding the response text, so without this line
+ * the saved file had none and Excel on Windows opened every Cyrillic word as
+ * mojibake. Added only when missing, so it never doubles.
  */
 export function downloadCsv(csv: string, filename: string): void {
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const body = csv.startsWith(CSV_BOM) ? csv : `${CSV_BOM}${csv}`;
+  const blob = new Blob([body], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;

@@ -50,7 +50,7 @@ import {
 } from '../addon-service';
 // Shared with the newsletter export: one formula-injection guard, so a fix
 // cannot land in one export and miss the other (see the helper's docblock).
-import { escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
+import { buildCsvDocument, escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
 // TASK-483/466: one canonical phone spelling on both sides of the comparison.
 import { normalizeUaPhone } from '../common/validators';
 import type {
@@ -721,14 +721,16 @@ export class OrderService {
    * {@link ORDER_EXPORT_MAX_ROWS} newest-first rows. The leading BOM is not
    * decoration: without it Excel on Windows reads a UTF-8 CSV as the system
    * codepage, and every Ukrainian customer name in the file arrives as mojibake
-   * — which looks like OUR data being corrupt, not the spreadsheet's guess.
+   * — which looks like OUR data being corrupt, not the spreadsheet's guess. It
+   * comes from {@link buildCsvDocument}, shared with every export (TASK-691).
    */
   async adminExportOrdersCsv(query: AdminOrderExportQueryDto): Promise<string> {
     const rows = await this.orderRepository.findAllForExport(query, ORDER_EXPORT_MAX_ROWS);
 
-    const lines = [ORDER_EXPORT_HEADER.join(','), ...rows.map((row) => this.toCsvRow(row))];
-
-    return `\uFEFF${lines.join('\r\n')}`;
+    return buildCsvDocument([
+      ORDER_EXPORT_HEADER.join(','),
+      ...rows.map((row) => this.toCsvRow(row)),
+    ]);
   }
 
   /** One export row → one CSV line, in {@link ORDER_EXPORT_HEADER} order. */
