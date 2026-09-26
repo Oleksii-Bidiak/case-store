@@ -151,6 +151,50 @@ describe('SearchSynonymsService (TASK-559)', () => {
       expect(result.appliedToSearch).toBe(false);
     });
 
+    it('a read that started before a save cannot overwrite the saved list in the cache', async () => {
+      // A read begins (TTL expired, product indexing) and sees the PRE-save rows…
+      let resolveStaleRead!: (groups: string[][]) => void;
+      repository.findAllGroups.mockReturnValueOnce(
+        new Promise<string[][]>((resolve) => {
+          resolveStaleRead = resolve;
+        }),
+      );
+      const staleRead = service.getSynonymMap();
+
+      // …the admin saves while it is still in flight…
+      await service.replace(SAVED);
+
+      // …and only then does the old read come back.
+      resolveStaleRead([]);
+      await staleRead;
+
+      // The cache still holds the SAVED list, not the pre-save defaults — so a
+      // reindex in the next minute pushes the new map, not the old one.
+      const map = await service.getSynonymMap();
+      expect(map['гаджет']).toEqual(['gadget']);
+      expect(map).not.toBe(UA_EN_SYNONYMS);
+      expect(repository.findAllGroups).toHaveBeenCalledTimes(1);
+    });
+
+    it('the admin screen re-reads after a save instead of joining a stale in-flight read', async () => {
+      let resolveStaleRead!: (groups: string[][]) => void;
+      repository.findAllGroups.mockReturnValueOnce(
+        new Promise<string[][]>((resolve) => {
+          resolveStaleRead = resolve;
+        }),
+      );
+      const staleRead = service.getSynonymMap();
+      await service.replace(SAVED);
+
+      repository.findAllGroups.mockResolvedValueOnce(SAVED);
+      const settings = await service.getSettings();
+      resolveStaleRead([]);
+      await staleRead;
+
+      expect(settings.isDefault).toBe(false);
+      expect(repository.findAllGroups).toHaveBeenCalledTimes(2);
+    });
+
     it('does not touch the engine when the database write fails', async () => {
       repository.replaceAllGroups.mockRejectedValueOnce(new Error('db down'));
 

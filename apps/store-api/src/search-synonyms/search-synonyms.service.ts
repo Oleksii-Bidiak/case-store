@@ -57,6 +57,8 @@ function defaults(): ResolvedSynonyms {
 export class SearchSynonymsService {
   private cached: { value: ResolvedSynonyms; at: number } | null = null;
   private loading: Promise<ResolvedSynonyms> | null = null;
+  /** Bumped by every save; a read that started under an older one is stale. */
+  private generation = 0;
 
   constructor(
     private readonly repository: SearchSynonymsRepository,
@@ -88,6 +90,13 @@ export class SearchSynonymsService {
    */
   async replace(groups: string[][]): Promise<SearchSynonymsSaveResultEntity> {
     await this.repository.replaceAllGroups(groups);
+    // Every read already in flight may hold the PRE-save rows: bump the
+    // generation so it cannot cache them over the list we just saved, and drop
+    // it from single-flight so the next caller reads the committed table.
+    // Bumped AFTER the commit on purpose — a read starting mid-write is
+    // skipped too; one starting after this line sees the new rows.
+    this.generation += 1;
+    this.loading = null;
     const resolved = resolveGroups(groups);
     this.remember(resolved);
 
@@ -124,19 +133,28 @@ export class SearchSynonymsService {
     }
   }
 
-  /** Read the table (single-flight) and cache the result. Throws on DB errors. */
+  /**
+   * Read the table (single-flight) and cache the result. Throws on DB errors.
+   *
+   * A read overtaken by a save ({@link replace} bumped the generation while it
+   * was in flight) still answers its own caller, but is NOT cached: otherwise it
+   * would put the pre-save list back for a whole TTL, and a reindex in that
+   * window would push the old map to Meilisearch over the one just saved.
+   */
   private load(): Promise<ResolvedSynonyms> {
     if (!this.loading) {
-      this.loading = this.repository
+      const generation = this.generation;
+      const loading: Promise<ResolvedSynonyms> = this.repository
         .findAllGroups()
         .then((groups) => {
           const resolved = resolveGroups(groups);
-          this.remember(resolved);
+          if (generation === this.generation) this.remember(resolved);
           return resolved;
         })
         .finally(() => {
-          this.loading = null;
+          if (this.loading === loading) this.loading = null;
         });
+      this.loading = loading;
     }
     return this.loading;
   }
