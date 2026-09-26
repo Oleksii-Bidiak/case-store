@@ -16,6 +16,8 @@ interface NeedsActionCounts {
   unavailableItems?: number;
   /** TASK-352 — late-paid orders still cancelled. */
   paidAfterCancel?: number;
+  /** TASK-601 — the situations `ratingAbuse` counted, by name. */
+  ratingAbuseSignals?: { productIds: string[]; createdIps: string[] };
 }
 
 function mockNeedsAction(counts: NeedsActionCounts) {
@@ -24,6 +26,7 @@ function mockNeedsAction(counts: NeedsActionCounts) {
       HttpResponse.json({
         data: {
           ratingAbuse: 0,
+          ratingAbuseSignals: { productIds: [], createdIps: [] },
           unavailableItems: 0,
           paidAfterCancel: 0,
           ...counts,
@@ -76,7 +79,7 @@ describe("NeedsActionWidget (TASK-248)", () => {
    * collected a burst of ratings in an hour, an address behind a run of 1★ — and
    * the place to look at them is the reviews screen.
    */
-  it("deep-links the rating-abuse card to the reviews screen", async () => {
+  it("deep-links the rating-abuse card to the reviews screen for a moderator", async () => {
     mockNeedsAction({
       newOrders: 0,
       pendingReviews: 0,
@@ -84,14 +87,21 @@ describe("NeedsActionWidget (TASK-248)", () => {
       failedMails: 0,
       pendingOver48h: 0,
       ratingAbuse: 4,
+      ratingAbuseSignals: {
+        productIds: ["p-1", "p-2"],
+        createdIps: ["10.0.0.1", "10.0.0.2"],
+      },
     });
 
-    renderWithProviders(<NeedsActionWidget />);
+    renderWithProviders(<NeedsActionWidget />, {
+      auth: { permissions: ["analytics:read", "reviews:moderate"] },
+    });
 
     const link = (
       await screen.findByText(dict.dashboard.needsActionRatingAbuse)
     ).closest("a") as HTMLElement;
-    expect(link).toHaveAttribute("href", "/reviews");
+    // Several situations → the whole screen, every queue (TASK-601).
+    expect(link).toHaveAttribute("href", "/reviews?status=all");
     expect(within(link).getByText("4")).toHaveClass("text-warning");
   });
 
@@ -411,6 +421,93 @@ describe("NeedsActionWidget (TASK-248)", () => {
         screen.queryByText(dict.dashboard.needsActionNewReturns),
       ).not.toBeInTheDocument();
       expect(seen).toHaveLength(0);
+    });
+  });
+
+  /**
+   * TASK-601 (UI part, row TASK-1004): the rating-abuse card opens the series
+   * it counted when there is exactly one, and never puts an IP address in a
+   * link for a session that cannot moderate reviews.
+   */
+  describe("the rating-abuse card link (TASK-601)", () => {
+    const quiet = {
+      newOrders: 0,
+      pendingReviews: 0,
+      unpaidInTransit: 0,
+      failedMails: 0,
+      pendingOver48h: 0,
+    };
+    const MODERATOR = {
+      auth: { permissions: ["analytics:read", "reviews:moderate"] },
+    };
+
+    async function cardLink() {
+      return (
+        await screen.findByText(dict.dashboard.needsActionRatingAbuse)
+      ).closest("a");
+    }
+
+    it("opens the one flagged product across every queue", async () => {
+      mockNeedsAction({
+        ...quiet,
+        ratingAbuse: 1,
+        ratingAbuseSignals: { productIds: ["prod-uuid-1"], createdIps: [] },
+      });
+      renderWithProviders(<NeedsActionWidget />, MODERATOR);
+
+      expect(await cardLink()).toHaveAttribute(
+        "href",
+        "/reviews?status=all&productId=prod-uuid-1",
+      );
+    });
+
+    it("opens the one flagged address across every queue", async () => {
+      mockNeedsAction({
+        ...quiet,
+        ratingAbuse: 1,
+        ratingAbuseSignals: { productIds: [], createdIps: ["2001:db8::1"] },
+      });
+      renderWithProviders(<NeedsActionWidget />, MODERATOR);
+
+      expect(await cardLink()).toHaveAttribute(
+        "href",
+        `/reviews?status=all&createdIp=${encodeURIComponent("2001:db8::1")}`,
+      );
+    });
+
+    it("opens the unfiltered screen for a product AND an address — one filter cannot show both", async () => {
+      mockNeedsAction({
+        ...quiet,
+        ratingAbuse: 2,
+        ratingAbuseSignals: {
+          productIds: ["prod-uuid-1"],
+          createdIps: ["10.0.0.7"],
+        },
+      });
+      renderWithProviders(<NeedsActionWidget />, MODERATOR);
+
+      expect(await cardLink()).toHaveAttribute("href", "/reviews?status=all");
+    });
+
+    it("opens the unfiltered screen when nothing is flagged", async () => {
+      mockNeedsAction(quiet);
+      renderWithProviders(<NeedsActionWidget />, MODERATOR);
+
+      expect(await cardLink()).toHaveAttribute("href", "/reviews?status=all");
+    });
+
+    it("is not a link — and leaks no IP — without reviews:moderate", async () => {
+      mockNeedsAction({
+        ...quiet,
+        ratingAbuse: 1,
+        ratingAbuseSignals: { productIds: [], createdIps: ["10.0.0.7"] },
+      });
+      const { container } = renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read"] },
+      });
+
+      expect(await cardLink()).toBeNull();
+      expect(container.innerHTML).not.toContain("10.0.0.7");
     });
   });
 });

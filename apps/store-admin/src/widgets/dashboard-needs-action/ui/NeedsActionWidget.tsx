@@ -11,6 +11,7 @@ import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
+import { ratingAbuseHref } from "../model/rating-abuse-href";
 import { NeedsActionWidgetSkeleton } from "./NeedsActionWidgetSkeleton";
 
 /**
@@ -83,6 +84,9 @@ export function NeedsActionWidget() {
     useAdminDashboardControllerGetNeedsAction();
   const { can } = useAuth();
   const canReadReturns = can(PERM.returnsRead);
+  // TASK-601: the rating-abuse card links only for a moderator — its href can
+  // carry an IP address (see `ratingAbuseHref`).
+  const canModerateReviews = can(PERM.reviewsModerate);
   const { data: returnsData } = useAdminReturnControllerFindAll(
     { status: ReturnEntityStatus.REQUESTED, limit: 1 },
     { query: { ...OPERATIONAL_LIST_QUERY, enabled: canReadReturns } },
@@ -178,13 +182,20 @@ export function NeedsActionWidget() {
         />
         {/* TASK-446: situations worth OPENING, not reviews to moderate — a
             product that collected a burst of ratings in an hour, an address
-            behind a run of 1★. The destination is the reviews screen with no
-            status filter, because the rows behind a burst can sit in any of the
-            three queues and a `?status=` would hide most of them. */}
+            behind a run of 1★. TASK-601: the payload names them, so a single
+            situation opens the reviews screen filtered to that product or that
+            address, with `status=all` — the rows behind a burst sit in every
+            queue. Several situations open the unfiltered screen. A link only for
+            `reviews:moderate`: the href can carry an IP, and an analytics-only
+            viewer could neither act on the screen nor should copy the address. */}
         <NeedsActionCard
           label={dict.dashboard.needsActionRatingAbuse}
           count={counts.ratingAbuse}
-          href="/reviews"
+          href={
+            canModerateReviews
+              ? ratingAbuseHref(counts.ratingAbuseSignals)
+              : undefined
+          }
         />
         {/* TASK-470: orders holding a line that can no longer be supplied. The
             deep link carries the SAME predicate the tile counts
