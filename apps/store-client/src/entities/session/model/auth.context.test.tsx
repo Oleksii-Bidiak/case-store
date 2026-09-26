@@ -2,15 +2,15 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { server } from "@/shared/test/msw-server";
-import { getGetCartQueryKey } from "@/shared/api/generated/cart/cart";
 import {
   api,
   clearSessionMarker,
   getAccessToken,
+  getGetCartQueryKey,
   markSessionActive,
   setAccessToken,
   shouldAttemptSessionRefresh,
-} from "@/shared/api/instance";
+} from "@/shared/api";
 import { AuthProvider } from "./auth.context";
 import { useAuth } from "./use-auth";
 

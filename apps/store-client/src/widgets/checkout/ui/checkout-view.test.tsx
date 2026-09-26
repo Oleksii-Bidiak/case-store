@@ -16,7 +16,7 @@ import {
   clearSessionMarker,
   markSessionActive,
   setAccessToken,
-} from "@/shared/api/instance";
+} from "@/shared/api";
 import { makeCart, makeOrder, makeUser } from "@/shared/test/msw-handlers";
 import { dict } from "@/shared/config";
 import { CheckoutView } from "./checkout-view";
