@@ -10,6 +10,7 @@ import {
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../common/reorder';
+import type { BlogPostSuggestionRow } from './entities';
 
 /**
  * Advisory-lock namespace for blog categories (TASK-295). The prefix is MANDATORY — locks
@@ -66,6 +67,18 @@ const POST_INCLUDE = {
   category: { select: { id: true, slug: true, name: true } },
   author: { select: { id: true, name: true, role: true, bio: true } },
 } satisfies Prisma.BlogPostInclude;
+
+/**
+ * The columns a search-autocomplete suggestion is read with (TASK-543) — and
+ * nothing else. `content` is the point: the header popup must not pull the
+ * sanitised article bodies across the wire on every keystroke.
+ */
+const SUGGESTION_SELECT = {
+  id: true,
+  slug: true,
+  title: true,
+  coverImageUrl: true,
+} satisfies Prisma.BlogPostSelect;
 
 /**
  * Link key for a byline (TASK-554): the trimmed name, or null for a blank one.
@@ -336,6 +349,47 @@ export class BlogRepository {
         ...listedWhere(includeUnlisted),
       },
       include: POST_INCLUDE,
+    });
+  }
+
+  // ─── posts: search-autocomplete suggestions (TASK-543) ──────────────────────
+
+  /**
+   * Suggestion rows for a set of search-index hits — the light twin of
+   * {@link findPublishedByIds}. Same PUBLISHED + listed gate (a stale index
+   * document must not surface a draft or an unlisted post in the header popup),
+   * but a `select` of the four columns the popup renders instead of the full
+   * row: no `content`, no category/author joins. Order is Prisma's; the caller
+   * re-applies the engine's ranking.
+   */
+  findPublishedSuggestionsByIds(ids: string[]): Promise<BlogPostSuggestionRow[]> {
+    if (ids.length === 0) return Promise.resolve([]);
+    return this.prisma.blogPost.findMany({
+      where: {
+        id: { in: ids },
+        status: PublishStatus.PUBLISHED,
+        ...listedWhere(false),
+      },
+      select: SUGGESTION_SELECT,
+    });
+  }
+
+  /**
+   * Postgres fallback for suggestions — the same `contains` scan over title and
+   * excerpt, gate and ordering as the public list ({@link findAll}), minus the
+   * count and the heavy columns. Always the LISTED set: suggestions are a list
+   * surface (TASK-436).
+   */
+  findPublishedSuggestions(q: string, limit: number): Promise<BlogPostSuggestionRow[]> {
+    return this.prisma.blogPost.findMany({
+      where: {
+        status: PublishStatus.PUBLISHED,
+        ...listedWhere(false),
+        ...this.buildSearchWhere({ page: 1, limit, q }),
+      },
+      select: SUGGESTION_SELECT,
+      take: limit,
+      orderBy: [{ featured: 'desc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
     });
   }
 
