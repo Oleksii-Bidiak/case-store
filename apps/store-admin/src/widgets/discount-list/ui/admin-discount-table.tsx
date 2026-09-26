@@ -24,15 +24,19 @@ import {
 } from "@/shared/ui";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
-import { formatDate } from "@/shared/lib";
+import { formatCurrency, formatDate } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { AdminDiscountTableSkeleton } from "./admin-discount-table-skeleton";
 
-/** Format a discount's value cell by type (e.g. "10%" or "₴50.00"). */
+/**
+ * Format a discount's value cell by type (e.g. "10%" or "50 ₴"). A fixed amount
+ * goes through the one money formatter (TASK-801) — it was `₴50.00`, the sign
+ * in front and a dot, unlike every other sum in the panel.
+ */
 function formatValue(discount: DiscountEntity): string {
   return discount.type === "PERCENT"
     ? `${Number(discount.value)}%`
-    : `₴${discount.value}`;
+    : formatCurrency(discount.value);
 }
 
 /** Format the expiry cell (date only, or an em dash when unbounded). */

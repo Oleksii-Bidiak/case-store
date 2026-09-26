@@ -75,6 +75,46 @@ describe('buildOrderConfirmationEmail', () => {
       expect(text).not.toContain('$');
     });
 
+    // TASK-801: the same string the storefront shows for the same order.
+    it('formats money like the storefront — grouped, comma decimals, no trailing zeros', () => {
+      // Intl groups with NBSP or narrow NBSP depending on the ICU build.
+      const plain = (value: string) => value.replace(/[\u00a0\u202f]/g, ' ');
+      const { html, text } = buildOrderConfirmationEmail(
+        baseParams({
+          order: {
+            ...baseParams().order,
+            items: [
+              {
+                productName: 'MacBook Case',
+                variantName: null,
+                quantity: 1,
+                price: '1299.00',
+                lineTotal: '1299.00',
+              },
+              {
+                productName: 'Screen Protector',
+                variantName: null,
+                quantity: 1,
+                price: '29.99',
+                lineTotal: '29.99',
+              },
+            ],
+            subtotal: '1328.99',
+            total: '1328.99',
+          },
+        }),
+      );
+
+      expect(plain(text)).toContain('MacBook Case x1 — 1 299 ₴');
+      expect(plain(text)).toContain('Screen Protector x1 — 29,99 ₴');
+      expect(plain(text)).toContain('Разом: 1 328,99 ₴');
+      expect(plain(html)).toContain('1 299 ₴');
+      expect(plain(html)).toContain('29,99 ₴');
+      // The raw Decimal string must not leak into either body.
+      expect(text).not.toContain('1299.00');
+      expect(html).not.toContain('1299.00');
+    });
+
     it('localizes the table headers and totals labels', () => {
       const { html } = buildOrderConfirmationEmail(baseParams());
       expect(html).toContain('Товар');
@@ -97,8 +137,8 @@ describe('buildOrderConfirmationEmail', () => {
 
     it("contains every item's quantity and line total", () => {
       const { html } = buildOrderConfirmationEmail(baseParams());
-      expect(html).toContain('59.98');
-      expect(html).toContain('9.99');
+      expect(html).toContain('59,98');
+      expect(html).toContain('9,99 ₴');
       // quantities
       expect(html).toMatch(/\b2\b/);
       expect(html).toMatch(/\b1\b/);
@@ -106,7 +146,7 @@ describe('buildOrderConfirmationEmail', () => {
 
     it('contains the grand total', () => {
       const { html } = buildOrderConfirmationEmail(baseParams());
-      expect(html).toContain('69.97');
+      expect(html).toContain('69,97');
     });
 
     it('contains the shipping recipient full name', () => {
@@ -121,8 +161,8 @@ describe('buildOrderConfirmationEmail', () => {
       expect(text).toContain('550E8400');
       expect(text).toContain('iPhone 15 Pro Case');
       expect(text).toContain('Screen Protector');
-      expect(text).toContain('59.98');
-      expect(text).toContain('69.97');
+      expect(text).toContain('59,98');
+      expect(text).toContain('69,97');
       expect(text).toContain('Olena Shevchenko');
       expect(hasHtmlTags(text)).toBe(false);
     });
@@ -210,8 +250,8 @@ describe('buildOrderConfirmationEmail', () => {
       params.order.items = [];
       expect(() => buildOrderConfirmationEmail(params)).not.toThrow();
       const { html, text } = buildOrderConfirmationEmail(params);
-      expect(html).toContain('69.97');
-      expect(text).toContain('69.97');
+      expect(html).toContain('69,97');
+      expect(text).toContain('69,97');
     });
 
     // TASK-229: country/postalCode are optional on AddressDto — a minimal valid

@@ -12,6 +12,7 @@ import {
 } from "@/entities/carousel";
 import { useProductControllerAdminFindAll } from "@/entities/product";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
+import { formatCurrency } from "@/shared/lib";
 import { Badge, Button, Input } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
@@ -164,7 +165,7 @@ export function CarouselItemPicker({ carouselId }: CarouselItemPickerProps) {
                     <span className="min-w-0 truncate text-sm text-foreground">
                       {product.name}
                       <span className="ml-2 text-muted-foreground">
-                        {product.price} ₴
+                        {formatCurrency(product.price)}
                       </span>
                     </span>
                     <Button
@@ -255,7 +256,7 @@ function CarouselItemRow({
         <span className="min-w-0 truncate text-sm text-foreground">
           {item.product.name}
           <span className="ml-2 text-muted-foreground">
-            {item.product.price} ₴
+            {formatCurrency(item.product.price)}
           </span>
         </span>
         {!item.product.isActive && (
