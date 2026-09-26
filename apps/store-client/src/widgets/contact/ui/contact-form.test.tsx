@@ -68,3 +68,78 @@ describe("ContactForm — cooldown wait (TASK-762)", () => {
     expect(await screen.findByText(d.errors.cooldown)).toBeInTheDocument();
   });
 });
+
+/** Every field the shopper filled, as it should still read after a failure. */
+function expectInputKept() {
+  expect(screen.getByRole("textbox", { name: d.fieldName })).toHaveValue(
+    "Олександр",
+  );
+  expect(screen.getByRole("textbox", { name: d.fieldPhone })).toHaveValue(
+    "+380 50 111 2233",
+  );
+  expect(screen.getByRole("textbox", { name: d.fieldEmail })).toHaveValue(
+    "shopper@example.com",
+  );
+  expect(screen.getByRole("textbox", { name: d.fieldMessage })).toHaveValue(
+    "Питання про доставку",
+  );
+  expect(screen.getByRole("checkbox")).toBeChecked();
+}
+
+/**
+ * TASK-764 — the existing suites only looked at the error TEXT. What matters to
+ * the person who just typed a long message is that it is still there, and that
+ * a failure is never dressed up as the «Дякуємо!» panel.
+ */
+describe("ContactForm — a failed submit keeps the form (TASK-764)", () => {
+  it.each([
+    ["the per-email cooldown", () => cooldownResponse(120)],
+    [
+      "the per-IP throttle",
+      () =>
+        HttpResponse.json(
+          { statusCode: 429, message: "Too Many Requests" },
+          { status: 429 },
+        ),
+    ],
+  ])("keeps every field filled after a 429 from %s", async (_, respond) => {
+    server.use(http.post("*/api/contact", respond));
+    const user = userEvent.setup();
+    renderWithProviders(<ContactForm />);
+
+    await fillAndSubmit(user);
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expectInputKept();
+    expect(screen.queryByText(d.sentHeading)).not.toBeInTheDocument();
+  });
+
+  it("stays on the form after a 500 — no success panel, input intact", async () => {
+    server.use(
+      http.post("*/api/contact", () =>
+        HttpResponse.json({ statusCode: 500 }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<ContactForm />);
+
+    await fillAndSubmit(user);
+
+    expect(await screen.findByText(d.errors.submitFailed)).toBeInTheDocument();
+    expect(screen.queryByText(d.sentHeading)).not.toBeInTheDocument();
+    expectInputKept();
+    expect(screen.getByRole("button", { name: d.submit })).toBeEnabled();
+  });
+
+  it("stays on the form when the network fails outright", async () => {
+    server.use(http.post("*/api/contact", () => HttpResponse.error()));
+    const user = userEvent.setup();
+    renderWithProviders(<ContactForm />);
+
+    await fillAndSubmit(user);
+
+    expect(await screen.findByText(d.errors.submitFailed)).toBeInTheDocument();
+    expect(screen.queryByText(d.sentHeading)).not.toBeInTheDocument();
+    expectInputKept();
+  });
+});

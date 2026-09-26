@@ -123,3 +123,82 @@ describe("InfoContactForm — cooldown wait (TASK-762)", () => {
     expect(screen.queryByText(d.formError)).not.toBeInTheDocument();
   });
 });
+
+function expectInputKept() {
+  expect(screen.getByRole("textbox", { name: d.formName })).toHaveValue(
+    "Олександр",
+  );
+  expect(screen.getByRole("textbox", { name: d.formPhone })).toHaveValue(
+    "+380 50 111 2233",
+  );
+  expect(screen.getByRole("textbox", { name: d.formEmail })).toHaveValue(
+    "shopper@example.com",
+  );
+  expect(screen.getByRole("textbox", { name: d.formMessage })).toHaveValue(
+    "Питання про доставку",
+  );
+}
+
+/** TASK-764: a failure keeps what was typed and never shows «надіслано». */
+describe("InfoContactForm — a failed submit keeps the form (TASK-764)", () => {
+  it.each([
+    [
+      "cooldown",
+      () =>
+        HttpResponse.json(
+          { statusCode: 429, error: "CONTACT_COOLDOWN", message: "recent" },
+          { status: 429 },
+        ),
+    ],
+    [
+      "throttle",
+      () =>
+        HttpResponse.json(
+          { statusCode: 429, message: "Too Many Requests" },
+          { status: 429 },
+        ),
+    ],
+  ])("keeps every field filled after a 429 (%s)", async (_, respond) => {
+    server.use(http.post("*/api/contact", respond));
+    const user = userEvent.setup();
+    renderWithProviders(<InfoContactForm />);
+
+    await fill(user);
+    await user.click(submitButton());
+
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    expectInputKept();
+    expect(screen.queryByText(d.formSent)).not.toBeInTheDocument();
+  });
+
+  it("stays on the form after a 500", async () => {
+    server.use(
+      http.post("*/api/contact", () =>
+        HttpResponse.json({ statusCode: 500 }, { status: 500 }),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InfoContactForm />);
+
+    await fill(user);
+    await user.click(submitButton());
+
+    expect(await screen.findByText(d.formError)).toBeInTheDocument();
+    expect(screen.queryByText(d.formSent)).not.toBeInTheDocument();
+    expectInputKept();
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it("stays on the form when the network fails outright", async () => {
+    server.use(http.post("*/api/contact", () => HttpResponse.error()));
+    const user = userEvent.setup();
+    renderWithProviders(<InfoContactForm />);
+
+    await fill(user);
+    await user.click(submitButton());
+
+    expect(await screen.findByText(d.formError)).toBeInTheDocument();
+    expect(screen.queryByText(d.formSent)).not.toBeInTheDocument();
+    expectInputKept();
+  });
+});

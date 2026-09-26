@@ -143,6 +143,22 @@ describe('Contact cooldown on Postgres (integration)', () => {
     expect(await prisma.contactMessage.count({ where: { email } })).toBe(2);
   });
 
+  it('does not let a SPAM row lock the real owner of the address out (TASK-761)', async () => {
+    const email = freshEmail();
+
+    // A bot fills the trap with someone else's address…
+    const bot = await service.submit({ ...validDto(email), website: 'https://spam.example' });
+    created.push(bot.id);
+    expect((await prisma.contactMessage.findUnique({ where: { id: bot.id } }))?.status).toBe(
+      'SPAM',
+    );
+
+    // …and the person who owns it can still write straight away.
+    const human = await service.submit(validDto(email));
+    created.push(human.id);
+    expect(await prisma.contactMessage.count({ where: { email } })).toBe(2);
+  });
+
   it('has the (email, created_at DESC) index that serves the probe', async () => {
     const rows = await prisma.$queryRaw<Array<{ indexdef: string }>>`
       SELECT indexdef FROM pg_indexes
