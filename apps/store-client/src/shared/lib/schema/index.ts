@@ -1,4 +1,4 @@
-// Schema.org JSON-LD builders (pure) + server-only product paginator for SEO.
+// Schema.org JSON-LD builders — pure, safe for client components.
 export { buildOrganizationSchema } from "./buildOrganizationSchema";
 export { buildWebSiteSchema } from "./buildWebSiteSchema";
 export { buildBreadcrumbSchema } from "./buildBreadcrumbSchema";
@@ -11,13 +11,5 @@ export { buildFaqPageSchema } from "./buildFaqPageSchema";
 export type { FaqSchemaItem } from "./buildFaqPageSchema";
 export { buildItemListSchema } from "./buildItemListSchema";
 export type { ItemListEntry, ItemListItemType } from "./buildItemListSchema";
-export { fetchAllActiveProducts } from "./fetchAllProducts";
-export { fetchAllPublishedPages } from "./fetchAllPages";
-export { fetchAllPublishedPosts } from "./fetchAllPosts";
-export {
-  fetchAllActiveCategories,
-  flattenActiveCategories,
-} from "./fetchAllCategories";
-export type { FlatCategoryRoute } from "./fetchAllCategories";
-export { fetchAllCompatLandingPages } from "./fetchCompatLandingPages";
-export type { CompatLandingRoute } from "./fetchCompatLandingPages";
+// The server-only fetchers (sitemap, merchant feed) live in `./server` — see
+// the note there (TASK-819). Nothing below this barrel may perform a request.

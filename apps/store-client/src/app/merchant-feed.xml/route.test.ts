@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 import { GET } from "./route";
-import { fetchAllActiveProducts } from "@/shared/lib/schema";
+import { fetchAllActiveProducts } from "@/shared/lib/schema/server";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import type {
@@ -8,7 +8,7 @@ import type {
   PublicProductEntity,
 } from "@/shared/api/generated/models";
 
-jest.mock("@/shared/lib/schema", () => ({
+jest.mock("@/shared/lib/schema/server", () => ({
   fetchAllActiveProducts: jest.fn(),
 }));
 

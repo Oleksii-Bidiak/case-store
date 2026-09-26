@@ -1,5 +1,5 @@
 jest.mock("@sentry/nextjs", () => ({ captureException: jest.fn() }));
-jest.mock("@/shared/lib/schema", () => ({
+jest.mock("@/shared/lib/schema/server", () => ({
   fetchAllActiveProducts: jest.fn(),
   fetchAllActiveCategories: jest.fn(),
   fetchAllPublishedPages: jest.fn(),
@@ -19,7 +19,7 @@ import {
   fetchAllCompatLandingPages,
   fetchAllPublishedPages,
   fetchAllPublishedPosts,
-} from "@/shared/lib/schema";
+} from "@/shared/lib/schema/server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import type { SeoSettingsEntity } from "@/shared/api/generated/models";
 import { INFO_SLUG_INLINED_ON_HUB, SITE_URL } from "@/shared/config";

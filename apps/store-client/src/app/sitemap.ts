@@ -7,7 +7,7 @@ import {
   fetchAllCompatLandingPages,
   fetchAllPublishedPages,
   fetchAllPublishedPosts,
-} from "@/shared/lib/schema";
+} from "@/shared/lib/schema/server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 
 // In Next.js 16 metadata routes are cached (statically generated) by default,
