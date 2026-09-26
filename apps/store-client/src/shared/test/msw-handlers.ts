@@ -297,4 +297,9 @@ export const handlers = [
   http.get("*/api/products/:productId/reviews/mine", () =>
     HttpResponse.json({ data: null }),
   ),
+
+  // The caller's returns across all orders (TASK-608). The order history asks
+  // for it on every mount; "no returns" is the shape every suite that merely
+  // renders the history wants. Status tests override it with `server.use(...)`.
+  http.get("*/api/returns", () => HttpResponse.json({ data: [] })),
 ];

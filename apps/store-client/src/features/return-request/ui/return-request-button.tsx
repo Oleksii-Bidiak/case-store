@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
+  getGetMyReturnsQueryKey,
   getGetOrderReturnsQueryKey,
   useCreateReturn,
   useGetOrderReturns,
@@ -76,6 +77,10 @@ export function ReturnRequestButton({
       onSuccess: () => {
         void queryClient.invalidateQueries({
           queryKey: getGetOrderReturnsQueryKey(orderId),
+        });
+        // TASK-608: the history shows the new request's status from this list.
+        void queryClient.invalidateQueries({
+          queryKey: getGetMyReturnsQueryKey(),
         });
         toast.success(dict.returnRequest.success);
         close();

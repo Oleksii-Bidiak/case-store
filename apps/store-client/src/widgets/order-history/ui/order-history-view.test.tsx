@@ -94,6 +94,89 @@ describe("OrderHistoryView — return request (TASK-373)", () => {
     expect(badge).toHaveClass(...statusBadgeClass("DELIVERED").split(" "));
   });
 
+  describe("return request status (TASK-608)", () => {
+    const returnRow = (
+      orderId: string,
+      status: string,
+      requestedAt: string,
+    ) => ({
+      id: `return-${orderId}-${status}`,
+      orderId,
+      status,
+      reason: null,
+      requestedAt,
+      resolvedAt: null,
+      restockedAt: null,
+      refundedAmount: null,
+      items: [],
+    });
+
+    it("shows the status of the request next to its order", async () => {
+      stubOrders(["DELIVERED", "DELIVERED"]);
+      server.use(
+        http.get("*/api/returns", () =>
+          HttpResponse.json({
+            data: [returnRow("order-2", "APPROVED", "2026-09-20T10:00:00Z")],
+          }),
+        ),
+      );
+
+      renderHistory();
+
+      const label = dict.returnRequest.statusLabels.APPROVED;
+      expect(
+        await screen.findByLabelText(dict.returnRequest.statusAria(label)),
+      ).toHaveTextContent(label);
+      // Only the order the request belongs to carries it.
+      expect(
+        screen.getAllByLabelText(dict.returnRequest.statusAria(label)),
+      ).toHaveLength(1);
+      const row = screen.getByText(/#ORDER-2/i).closest("li");
+      expect(row).toHaveTextContent(label);
+    });
+
+    it("shows the NEWEST request when an order has several", async () => {
+      stubOrders(["DELIVERED"]);
+      server.use(
+        http.get("*/api/returns", () =>
+          HttpResponse.json({
+            // The API answers newest first.
+            data: [
+              returnRow("order-1", "REQUESTED", "2026-09-21T10:00:00Z"),
+              returnRow("order-1", "REFUNDED", "2026-09-01T10:00:00Z"),
+            ],
+          }),
+        ),
+      );
+
+      renderHistory();
+
+      expect(
+        await screen.findByText(dict.returnRequest.statusLabels.REQUESTED),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByText(dict.returnRequest.statusLabels.REFUNDED),
+      ).not.toBeInTheDocument();
+    });
+
+    it("still lists the orders when the returns request fails", async () => {
+      stubOrders(["DELIVERED"]);
+      server.use(
+        http.get(
+          "*/api/returns",
+          () => new HttpResponse(null, { status: 500 }),
+        ),
+      );
+
+      renderHistory();
+
+      expect(await screen.findByText(/#ORDER-1/i)).toBeInTheDocument();
+      expect(
+        screen.queryByText(dict.orderHistory.loadError),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("offers it on the delivered order only, in a mixed list", async () => {
     stubOrders(["PENDING", "DELIVERED"]);
 
