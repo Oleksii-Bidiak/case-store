@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { resolveReportPeriod } from './report-period';
+import { lastKyivDays, resolveReportPeriod } from './report-period';
 
 /**
  * TASK-685: one period resolver for every report. It returns TWO ranges — the
@@ -149,5 +149,19 @@ describe('resolveReportPeriod', () => {
       NOW,
     );
     expect(current.fromDay).toBe('2026-09-20');
+  });
+});
+
+describe('lastKyivDays (TASK-694)', () => {
+  it('is the same range as the matching preset — one "last 30 days" everywhere', () => {
+    const now = new Date('2026-09-26T11:00:00.000Z');
+    expect(lastKyivDays(30, now)).toEqual(resolveReportPeriod({ preset: '30d' }, now).current);
+  });
+
+  it('starts at Kyiv midnight, not the server’s', () => {
+    // 00:30 Kyiv on 1 September — still 31 August in UTC.
+    const range = lastKyivDays(1, new Date('2026-08-31T21:30:00.000Z'));
+    expect(range).toMatchObject({ fromDay: '2026-09-01', toDay: '2026-09-01', days: 1 });
+    expect(range.start).toEqual(new Date('2026-08-31T21:00:00.000Z'));
   });
 });

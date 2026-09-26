@@ -6,10 +6,13 @@ import {
   MailOutboxStatus,
   OrderStatus,
   PaymentStatus,
+  ReturnStatus,
   OrderHistoryChangeType,
   ReviewTextStatus,
 } from '@prisma/client';
 import { ProductsReportRepository } from '../src/analytics/reports/products-report.repository';
+import { lastKyivDays } from '../src/analytics/reports/report-period';
+import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
 import { PrismaService } from '../src/prisma';
@@ -52,7 +55,7 @@ describe('DashboardRepository (integration)', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, DashboardRepository, ProductsReportRepository],
+      providers: [PrismaService, DashboardRepository, ProductsReportRepository, SalesRepository],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -401,6 +404,99 @@ describe('DashboardRepository (integration)', () => {
       await prisma.order.deleteMany({});
       const revenue = await repo.getRevenueMetrics();
       expect(revenue.averageOrderValueLast30Days).toBe(0);
+    });
+  });
+
+  /**
+   * TASK-694: the dashboard's money is the `/analytics` sales report's money —
+   * one formula and one Kyiv day on both screens.
+   */
+  describe('getRevenueMetrics — one truth with the sales report (TASK-694)', () => {
+    let sales: SalesRepository;
+    let partialOrderId: string;
+    let earlyOrderId: string;
+
+    beforeAll(async () => {
+      sales = app.get(SalesRepository);
+      await prisma.orderItem.deleteMany({});
+      await prisma.order.deleteMany({});
+
+      // 1 000 ₴ with 200 ₴ returned: stays in sales in full, the 200 is a refund.
+      ({ id: partialOrderId } = await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          subtotal: '1000.00',
+          total: '1000.00',
+        },
+      }));
+      await prisma.return.create({
+        data: {
+          orderId: partialOrderId,
+          status: ReturnStatus.REFUNDED,
+          refundedAmount: '200.00',
+          resolvedAt: new Date(),
+        },
+      });
+
+      // A minute after Kyiv midnight today — still "yesterday" in UTC.
+      const kyivMidnight = lastKyivDays(1, new Date()).start;
+      const createdAt = new Date(Math.min(kyivMidnight.getTime() + 60_000, Date.now()));
+      ({ id: earlyOrderId } = await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '50.00',
+          total: '50.00',
+          createdAt,
+        },
+      }));
+    });
+
+    afterAll(async () => {
+      // Returns are Restrict on the order: they go first.
+      await prisma.return.deleteMany({ where: { orderId: partialOrderId } });
+      await prisma.order.deleteMany({ where: { id: { in: [partialOrderId, earlyOrderId] } } });
+    });
+
+    it('keeps a partly refunded order and subtracts only the refund', async () => {
+      const revenue = await repo.getRevenueMetrics();
+
+      expect(revenue.revenueLast30Days).toBe(850);
+      expect(revenue.totalRevenue).toBe(850);
+      // (1 000 + 50 − 200) ÷ 2 orders.
+      expect(revenue.averageOrderValueLast30Days).toBe(425);
+    });
+
+    it('gives the same numbers as the sales report over the same days', async () => {
+      const window = lastKyivDays(30, new Date());
+      const [revenue, inWindow, allTime, daily] = await Promise.all([
+        repo.getRevenueMetrics(),
+        sales.getTotals(window),
+        sales.getTotals(null),
+        sales.getDaily(window),
+      ]);
+
+      expect(revenue.revenueLast30Days).toBe(inWindow.sales - inWindow.refunds);
+      expect(revenue.totalRevenue).toBe(allTime.sales - allTime.refunds);
+      expect(revenue.revenueByDay).toEqual(daily.map((d) => ({ date: d.date, value: d.net })));
+    });
+
+    it('puts an order placed just after Kyiv midnight on today, in money and in counts', async () => {
+      const today = lastKyivDays(1, new Date()).fromDay;
+      const [revenue, summary] = await Promise.all([repo.getRevenueMetrics(), repo.getSummary()]);
+
+      const lastRevenue = revenue.revenueByDay[revenue.revenueByDay.length - 1];
+      const lastOrders = summary.orders.ordersByDay[summary.orders.ordersByDay.length - 1];
+      expect(lastRevenue.date).toBe(today);
+      expect(lastOrders.date).toBe(today);
+      // Both orders of this block were placed today (Kyiv): 1 000 + 50 − 200.
+      expect(lastRevenue.value).toBe(850);
+      expect(lastOrders.value).toBe(2);
+      expect(summary.orders.ordersByDay).toHaveLength(30);
+      expect(summary.users.newUsersByDay[summary.users.newUsersByDay.length - 1].date).toBe(today);
     });
   });
 

@@ -78,6 +78,17 @@ function range(fromDay: CalendarDay, toDay: CalendarDay): ReportRange {
   };
 }
 
+/**
+ * The last `days` Kyiv calendar days at `now`, today included — the rolling
+ * presets here, and the dashboard's fixed windows (30 days, 90 for repeat
+ * buyers — TASK-694), so "the last 30 days" is the same 30 Kyiv days on the
+ * dashboard and on `/analytics`.
+ */
+export function lastKyivDays(days: number, now: Date): ReportRange {
+  const today = kyivDateOf(now);
+  return range(addDays(today, -(days - 1)), today);
+}
+
 /** The equal run of days right before `current`. */
 function precedingRange(current: ReportRange): ReportRange {
   const toDay = addDays(current.fromDay, -1);
@@ -117,7 +128,7 @@ export function resolveReportPeriod(input: ReportPeriodInput, now: Date): Report
     case '7d':
     case '30d':
     case '90d': {
-      const current = range(addDays(today, -(ROLLING_DAYS[preset] - 1)), today);
+      const current = lastKyivDays(ROLLING_DAYS[preset], now);
       return { preset, current, previous: precedingRange(current) };
     }
     case 'this-month': {
