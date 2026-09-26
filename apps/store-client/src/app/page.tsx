@@ -143,7 +143,7 @@ export default async function HomePage() {
       <RecommendationCarousels carousels={carousels.HOME_RAILS} />
       <PromoBanner banner={banners.PROMO_BANNER[0]} />
       <RecentlyViewed />
-      <Newsletter />
+      <Newsletter contact={contact} />
     </div>
   );
 }
