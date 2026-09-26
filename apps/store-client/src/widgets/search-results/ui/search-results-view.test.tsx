@@ -70,9 +70,8 @@ function installFilterPanelHandlers() {
     }),
     http.get("*/api/device-brands", () => HttpResponse.json({ data: [] })),
     http.get("*/api/device-models", () => HttpResponse.json({ data: [] })),
-    http.get("*/api/wishlist", () =>
-      HttpResponse.json({ data: { items: [] } }),
-    ),
+    // `/api/wishlist` (asked by every card's heart) comes from the shared
+    // default handlers (TASK-531).
   );
 }
 
@@ -80,6 +79,22 @@ beforeEach(() => {
   currentQuery = "";
   mockReplace.mockClear();
   installFilterPanelHandlers();
+});
+
+// TASK-531: every card on the page asked for the wishlist and each miss logged
+// an MSW "unhandled request" error. Keep the suite quiet — an unmocked request
+// here is either a new default the shared handlers lack or a real regression.
+const unhandledRequests: string[] = [];
+function recordUnhandled({ request }: { request: Request }) {
+  unhandledRequests.push(`${request.method} ${new URL(request.url).pathname}`);
+}
+beforeAll(() => server.events.on("request:unhandled", recordUnhandled));
+afterAll(() =>
+  server.events.removeListener("request:unhandled", recordUnhandled),
+);
+afterEach(() => {
+  const seen = unhandledRequests.splice(0);
+  expect(seen).toEqual([]);
 });
 
 function variantSummary(overrides: Record<string, unknown> = {}) {
