@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { ProductRepository, ProductIndexSource } from '../product/product.repository';
 import { CategoryRepository } from '../category/category.repository';
@@ -9,7 +9,8 @@ import {
   IndexSettings,
   SEARCH_MAX_TOTAL_HITS,
 } from './meili.client';
-import { UA_EN_SYNONYMS, extractSearchSynonymTerms } from './search-synonyms';
+import { UA_EN_SYNONYMS, extractSearchSynonymTerms, type SynonymMap } from './search-synonyms';
+import { SearchSynonymsService } from '../search-synonyms/search-synonyms.service';
 import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import { SearchSuggestionEntity } from './entities';
 import type { SearchQueryDto, SearchSort } from './dto';
@@ -77,6 +78,8 @@ export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
     minWordSizeForTypos: { oneTypo: 4, twoTypos: 8 },
     disableOnAttributes: ['sku'],
   },
+  // The BUILT-IN map. What the engine actually receives is the admin's saved
+  // list (TASK-559) — `ensureIndex` overrides this field from the database.
   synonyms: UA_EN_SYNONYMS,
   // The deepest result the `/search` page list can reach (TASK-537).
   pagination: { maxTotalHits: SEARCH_MAX_TOTAL_HITS },
@@ -175,8 +178,17 @@ export class SearchService implements OnModuleInit {
     private readonly categoryRepository: CategoryRepository,
     private readonly logger: PinoLogger,
     private readonly catalogueFilters: CatalogueFilterResolver,
+    // The admin-edited synonym list (TASK-559). Optional only so the unit specs
+    // that build this service by hand keep working; the module always provides
+    // it. Absent → the built-in dictionary.
+    @Optional() private readonly synonyms?: SearchSynonymsService,
   ) {
     this.logger.setContext(SearchService.name);
+  }
+
+  /** The synonym map to index with: the saved list, or the built-in one. */
+  private synonymMap(): Promise<SynonymMap> {
+    return this.synonyms ? this.synonyms.getSynonymMap() : Promise.resolve(UA_EN_SYNONYMS);
   }
 
   /**
@@ -215,9 +227,16 @@ export class SearchService implements OnModuleInit {
     );
   }
 
-  /** Apply the index settings (idempotent, best-effort). */
+  /**
+   * Apply the index settings (idempotent, best-effort), with the synonym map
+   * read from the admin's saved list (TASK-559) rather than the built-in one
+   * the constant carries.
+   */
   async ensureIndex(): Promise<void> {
-    await this.meili.ensureIndex(PRODUCTS_INDEX_SETTINGS);
+    await this.meili.ensureIndex({
+      ...PRODUCTS_INDEX_SETTINGS,
+      synonyms: await this.synonymMap(),
+    });
   }
 
   /**
@@ -232,7 +251,7 @@ export class SearchService implements OnModuleInit {
       await this.meili.deleteDocument(productId);
       return;
     }
-    await this.meili.indexDocuments([await this.toDocument(source)]);
+    await this.meili.indexDocuments([await this.toDocument(source, await this.synonymMap())]);
   }
 
   /** Remove a product from the index (deactivate / delete). */
@@ -274,13 +293,15 @@ export class SearchService implements OnModuleInit {
     if (!this.meili.isConfigured()) return 0;
     await this.ensureIndex();
 
+    // One synonym map for the whole pass, so every document of it agrees.
+    const synonyms = await this.synonymMap();
     const seenIds = new Set<string>();
     const batches: { uid: number; count: number }[] = [];
     let skip = 0;
     for (;;) {
       const { items } = await this.productRepository.findManyForIndex(skip, REINDEX_BATCH);
       if (items.length === 0) break;
-      const docs = await Promise.all(items.map((item) => this.toDocument(item)));
+      const docs = await Promise.all(items.map((item) => this.toDocument(item, synonyms)));
       for (const doc of docs) seenIds.add(doc.id);
       const uid = await this.meili.indexDocuments(docs);
       if (uid !== null) batches.push({ uid, count: docs.length });
@@ -583,7 +604,10 @@ export class SearchService implements OnModuleInit {
    * (TASK-236) so a category-scoped filter rolls up subcategory products, just
    * like the Postgres subtree rollup.
    */
-  private async toDocument(source: ProductIndexSource): Promise<ProductSearchDocument> {
+  private async toDocument(
+    source: ProductIndexSource,
+    synonyms: SynonymMap,
+  ): Promise<ProductSearchDocument> {
     const categoryIds = await this.categoryRepository.findAncestorIds(source.categoryId);
     return {
       id: source.id,
@@ -611,6 +635,7 @@ export class SearchService implements OnModuleInit {
       // likewise (TASK-558): a "MagSafe" tag must answer «магсейф».
       searchTerms: extractSearchSynonymTerms(
         `${source.name} ${source.categoryName} ${source.brandName ?? ''} ${source.sku ?? ''} ${source.keywords.join(' ')}`,
+        synonyms,
       ),
     };
   }

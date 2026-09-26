@@ -2407,3 +2407,30 @@ model UserNote {
   @@index([userId, createdAt(sort: Desc)])
   @@map("user_notes")
 }
+
+/// One group of search synonyms (TASK-559): every term is a synonym of every
+/// other term in the same group, in both directions («чохол» ↔ `case`).
+///
+/// The admin edits the WHOLE list at once on /settings/search (a PUT replaces
+/// every row), so there is no per-row identity anyone depends on and no update
+/// path — only delete-all + insert in one transaction.
+///
+/// An EMPTY table is not "no synonyms": it means the owner has never saved the
+/// list, and search uses the built-in UA↔EN dictionary
+/// (`src/search/search-synonyms.ts`). That keeps a fresh install and every
+/// existing deployment working with no seed step, and makes "restore the
+/// defaults" the same operation as saving an empty list.
+///
+/// Terms are stored normalised (trimmed, lowercase, single words, deduplicated
+/// within the group) — the DTO does that, so the column never has to be
+/// re-cleaned on read.
+model SearchSynonymGroup {
+  id        String   @id @default(uuid())
+  terms     String[]
+  /// Position in the admin list, so the operator's order survives a reload.
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("search_synonym_groups")
+}

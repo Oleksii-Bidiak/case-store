@@ -2384,7 +2384,6 @@ export const dict = {
       "Спроб онлайн-оплати ще не було — покупець не відкривав сторінку LiqPay.",
     paymentAttemptsOnDelivery:
       "Оплата при отриманні: онлайн-спроб немає, гроші повертаються поза LiqPay — через заявку на повернення.",
-    paymentAttemptAmount: "Сума",
     paymentAttemptProviderId: "Ідентифікатор LiqPay",
     paymentAttemptFailure: "Причина відмови",
     paymentAttemptSettledAt: "Завершено",
@@ -3606,6 +3605,8 @@ export const dict = {
       productImage: "Фото товарів",
       attributeDefinition: "Характеристики",
       seoSettings: "SEO-налаштування",
+      // TASK-559: PUT /admin/search/synonyms → `searchSynonyms.update`.
+      searchSynonyms: "Синоніми пошуку",
     },
 
     // ── TASK-430: the log in Ukrainian ────────────────────────────────────────

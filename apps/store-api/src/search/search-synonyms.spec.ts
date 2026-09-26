@@ -1,4 +1,9 @@
-import { UA_EN_SYNONYMS, extractSearchSynonymTerms } from './search-synonyms';
+import {
+  DEFAULT_SYNONYM_GROUPS,
+  UA_EN_SYNONYMS,
+  buildSynonymMap,
+  extractSearchSynonymTerms,
+} from './search-synonyms';
 
 describe('UA_EN_SYNONYMS', () => {
   it('covers the QA-critical brand pair in both directions', () => {
@@ -107,5 +112,45 @@ describe('extractSearchSynonymTerms', () => {
     // The code is part of the extracted text; a hyphenated code must yield its
     // words, not one opaque token.
     expect(extractSearchSynonymTerms('Захисне скло GLASS-IPHONE-15')).toContain('айфон');
+  });
+
+  // TASK-559 — the map is the admin's saved list now, passed in by the indexers.
+  it('uses the map it is given instead of the built-in one', () => {
+    const map = buildSynonymMap([['гаджет', 'gadget']]);
+    expect(extractSearchSynonymTerms('Гаджет і чохол', map)).toEqual(['gadget']);
+  });
+
+  it('never reads prototype members for a token like «constructor»', () => {
+    expect(extractSearchSynonymTerms('constructor toString __proto__')).toEqual([]);
+  });
+});
+
+describe('buildSynonymMap (TASK-559)', () => {
+  it('links every term to every other term of its group, both ways', () => {
+    expect(buildSynonymMap([['a', 'b', 'c']])).toEqual({
+      a: ['b', 'c'],
+      b: ['a', 'c'],
+      c: ['a', 'b'],
+    });
+  });
+
+  it('unions the siblings of a term that sits in two groups', () => {
+    expect(
+      buildSynonymMap([
+        ['band', 'strap'],
+        ['band', 'bracelet'],
+      ]).band,
+    ).toEqual(['strap', 'bracelet']);
+  });
+
+  it('keeps admin-typed «__proto__» / «constructor» as ordinary own keys', () => {
+    const map = buildSynonymMap([['__proto__', 'constructor']]);
+    expect(Object.keys(map).sort()).toEqual(['__proto__', 'constructor']);
+    expect(Object.getPrototypeOf(map)).toBe(Object.prototype);
+    expect(map.constructor).toEqual(['__proto__']);
+  });
+
+  it('reproduces the built-in map from the default groups', () => {
+    expect(buildSynonymMap(DEFAULT_SYNONYM_GROUPS)).toEqual(UA_EN_SYNONYMS);
   });
 });
