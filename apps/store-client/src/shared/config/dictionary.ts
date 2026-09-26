@@ -990,6 +990,11 @@ export const dict = {
     lightboxNext: "Наступне фото",
     lightboxCounter: (current: number, total: number) =>
       `${current} з ${total}`,
+    // PDP rail arrows name their own rail (TASK-813): with both «Сумісні
+    // аксесуари» and «Схожі товари» on one page there are four arrow buttons,
+    // and a screen reader must hear four different names.
+    railPrev: (title: string) => `${title}: гортати назад`,
+    railNext: (title: string) => `${title}: гортати вперед`,
   },
 
   reviews: {

@@ -2,15 +2,29 @@
 
 import { useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { useProductControllerFindAll } from "@/entities/product";
+import {
+  useProductControllerFindAll,
+  type ProductControllerFindAllParams,
+} from "@/entities/product";
 import { ProductCard, Skeleton } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
 
-interface ProductRelatedProps {
-  categoryId: string;
-  /** Current product id — excluded from the related list. */
+/** The one filter that tells the PDP's rails apart. */
+export type ProductRailFilter = Pick<
+  ProductControllerFindAllParams,
+  "categoryId" | "deviceModelId"
+>;
+
+interface ProductRailProps {
+  /** Visible heading; also names the arrow buttons. */
+  title: string;
+  /** Id of the heading element — unique per rail on the page. */
+  headingId: string;
+  /** Which products the rail lists: same category, or same device model. */
+  filter: ProductRailFilter;
+  /** Current product id — excluded from the rail. */
   excludeId: string;
 }
 
@@ -18,16 +32,26 @@ const ARROW_CLASS =
   "grid size-10 shrink-0 place-items-center rounded-[11px] border-[1.5px] border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
- * ProductRelated — a horizontal snap-scroll rail of up to eight other products
- * from the same category, with prev/next arrow controls (design import). Uses
- * the existing product list hook (no new endpoint). Renders nothing when there
- * are no other products to show.
+ * ProductRail — a horizontal snap-scroll rail of up to eight other products,
+ * with prev/next arrow controls. The PDP mounts it twice: «Сумісні аксесуари»
+ * (same device model, TASK-190) and «Схожі товари» (same category).
+ *
+ * TASK-813: those used to be two copies of this file that differed only in the
+ * query parameter and the heading — and so carried the same arrow labels, four
+ * buttons with two pairs of identical names for a screen reader. The labels are
+ * now built from the rail's title. Renders nothing when the query yields no
+ * other products.
  */
-export function ProductRelated({ categoryId, excludeId }: ProductRelatedProps) {
+export function ProductRail({
+  title,
+  headingId,
+  filter,
+  excludeId,
+}: ProductRailProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const { data, isPending } = useProductControllerFindAll({
-    categoryId,
+    ...filter,
     isActive: true,
     page: 1,
     limit: 9,
@@ -40,15 +64,12 @@ export function ProductRelated({ categoryId, excludeId }: ProductRelatedProps) {
 
   if (isPending) {
     return (
-      <section
-        aria-labelledby="related-heading"
-        className="flex flex-col gap-4"
-      >
+      <section aria-labelledby={headingId} className="flex flex-col gap-4">
         <h2
-          id="related-heading"
+          id={headingId}
           className="font-display text-[22px] font-bold tracking-tight text-foreground"
         >
-          {dict.product.relatedTitle}
+          {title}
         </h2>
         <div className="flex gap-[18px] overflow-hidden">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -62,31 +83,28 @@ export function ProductRelated({ categoryId, excludeId }: ProductRelatedProps) {
     );
   }
 
-  const related = (data?.data ?? [])
+  const products = (data?.data ?? [])
     .filter((p) => p.id !== excludeId)
     .slice(0, 8);
 
-  if (related.length === 0) {
+  if (products.length === 0) {
     return null;
   }
 
   return (
-    <section
-      aria-labelledby="related-heading"
-      className="flex flex-col gap-[18px]"
-    >
+    <section aria-labelledby={headingId} className="flex flex-col gap-[18px]">
       <div className="flex items-center justify-between gap-3">
         <h2
-          id="related-heading"
+          id={headingId}
           className="font-display text-[22px] font-bold tracking-tight text-foreground"
         >
-          {dict.product.relatedTitle}
+          {title}
         </h2>
         <div className="hidden gap-2.5 sm:flex">
           <button
             type="button"
             onClick={() => scroll(-1)}
-            aria-label={dict.product.relatedPrev}
+            aria-label={dict.product.railPrev(title)}
             className={ARROW_CLASS}
           >
             <ChevronLeft className="size-[18px]" aria-hidden="true" />
@@ -94,7 +112,7 @@ export function ProductRelated({ categoryId, excludeId }: ProductRelatedProps) {
           <button
             type="button"
             onClick={() => scroll(1)}
-            aria-label={dict.product.relatedNext}
+            aria-label={dict.product.railNext(title)}
             className={ARROW_CLASS}
           >
             <ChevronRight className="size-[18px]" aria-hidden="true" />
@@ -106,7 +124,7 @@ export function ProductRelated({ categoryId, excludeId }: ProductRelatedProps) {
         ref={scrollRef}
         className="flex snap-x snap-mandatory gap-[18px] overflow-x-auto pb-3.5 [scrollbar-width:thin]"
       >
-        {related.map((product) => (
+        {products.map((product) => (
           <div key={product.id} className="w-[244px] shrink-0 snap-start">
             <ProductCard
               product={product}

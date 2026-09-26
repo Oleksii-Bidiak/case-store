@@ -394,11 +394,6 @@
       "count": 3
     }
   },
-  "src/widgets/product-detail/ui/product-compatible.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 10
-    }
-  },
   "src/widgets/product-detail/ui/product-detail-skeleton.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 6
@@ -414,7 +409,7 @@
       "count": 3
     }
   },
-  "src/widgets/product-detail/ui/product-related.tsx": {
+  "src/widgets/product-detail/ui/product-rail.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 10
     }
