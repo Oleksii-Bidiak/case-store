@@ -407,6 +407,16 @@ export class OrderRepository {
             : {}),
           status: OrderStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
+          // TASK-1018: TASK-330/650 wired the payment method and the reservation
+          // deadline through OrderService, but this write dropped both, so every
+          // storefront order landed as ON_DELIVERY with a null deadline and
+          // `findExpiredReservations` never released an abandoned card order's
+          // stock. Mocked-repository tests could not see it — see
+          // test/order-create-from-cart.int-spec.ts. Same shape as createManual.
+          ...(params.paymentMethod ? { paymentMethod: params.paymentMethod } : {}),
+          ...(params.reservationExpiresAt !== undefined
+            ? { reservationExpiresAt: params.reservationExpiresAt }
+            : {}),
           subtotal,
           discount: discountAmount,
           discountCode: discountParam?.code ?? null,

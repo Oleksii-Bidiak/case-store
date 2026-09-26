@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-1018**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-1019**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -758,6 +758,7 @@
 | --- | --- | --- | --- |
 | TASK-642 | Схема: `enum DeliveryMethod`, `Order.deliveryMethod`/`pickupPointId`, модель `PickupPoint` (`isActive`, без `deletedAt`), поля `DeliverySetting` (4 перемикачі, місто/ціна/поріг кур'єра); міграція через `migrate diff --script` + бекфіл `OTHER` там, де немає `npCityRef` — порахувати рядки до і після | ⬜ | [184](docs/plans/184-delivery-methods.md) |
 | TASK-643 | Бекенд: `deliveryMethod`/`pickupPointId` у `CreateOrderDto`, гілка розрахунку вартості за методом (`order.service.ts:308-321`), матриця доставка × оплата окремим модулем із перевіркою на створенні (`OTHER`+`ONLINE` → 400), знімок методу в `shippingAddress`, публічний `GET /api/delivery/methods`, нові поля в `AdminDeliveryController.PUT`; TDD — модуль входить у `total` | ⬜ | [184](docs/plans/184-delivery-methods.md) |
+| TASK-1018 | [🔴 резерв, сусідня з TASK-643] TASK-650 не доходила до БД: `OrderRepository.createFromCart` не пише `paymentMethod` і `reservationExpiresAt`, хоча сервіс їх передає (пише лише `createManual`) — кожне замовлення вітрини лягало `ON_DELIVERY` без дедлайну, 30-хв звільнення стоку не спрацьовувало жодного разу; unit і e2e мокають репозиторій, тож були зелені. Полагоджено + int-тест на справжньому Postgres (`order-create-from-cart.int-spec.ts`) | ✅ | [184](docs/plans/184-delivery-methods.md) |
 | TASK-644 | Адмінка: екран `/settings/delivery` під `settings:delivery` — відправник НП, перемикачі методів, місто/ціна/поріг кур'єра; форма за `docs/conventions/forms.md` (`values`/`reset()`). **Закриває TASK-374** | ⬜ | [184](docs/plans/184-delivery-methods.md) |
 | TASK-645 | Адмінка: CRUD точок самовивозу на тому ж екрані — створення, редагування, «Активна», `sortOrder`; деактивація як основна дія, видалення як другорядна (знімок на замовленні робить `SetNull` безпечним) | ⬜ | [184](docs/plans/184-delivery-methods.md) |
 | TASK-646 | Вітрина: радіогрупа способу доставки на кроці 1 чекауту + гілки полів; список із `GET /api/delivery/methods` через Orval-хук; zod через `superRefine` (один `CheckoutFormValues`), недоступні за матрицею оплати — вимкнені з причиною, як `PaymentMethodBlocker` | ⬜ | [184](docs/plans/184-delivery-methods.md) |
@@ -1520,6 +1521,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-1018**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-1019**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
