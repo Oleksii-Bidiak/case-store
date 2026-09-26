@@ -1944,6 +1944,20 @@ C @ 1-vwssf0vdy4x.js:2
       архів зупиняє бекап з помилкою «the uploads archive is unreadable» (відтворено тестом).
       **Не на демо:** бекапи на демо не налаштовані — `AGE_PUBLIC_KEY` там навмисно порожній.
       🎯 TASK-738 · ⛔ staging — TASK-457
+- [🔁] **SYS-42 — Спосіб доставки старих замовлень після міграції.** **Зроби:** після деплою
+      на сервері
+      `docker compose ... exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT delivery_method, count(*) FROM orders GROUP BY 1"`
+      (та сама форма, що в `docs/deploy/08-backup-restore.md`),
+      а потім два запити-інваріанти:
+      `SELECT count(*) FROM orders WHERE COALESCE(shipping_address->>'npCityRef','') <> '' AND delivery_method = 'OTHER'`
+      і
+      `SELECT count(*) FROM orders WHERE COALESCE(shipping_address->>'npCityRef','') = '' AND delivery_method <> 'OTHER'`.
+      **Має бути:** обидва інваріанти дають `0`.
+      Сума за методами дорівнює загальній кількості замовлень. `OTHER` — рівно ті старі
+      замовлення, де місто вводили вільним текстом, `NOVA_POSHTA` — ті, де місто вибирали з
+      довідника НП. Жодне замовлення не має `PICKUP`/`COURIER`: до частини U їх ніхто не
+      створює.
+      🎯 TASK-642
 
 ---
 
@@ -2120,3 +2134,4 @@ C @ 1-vwssf0vdy4x.js:2
 - **TASK-525** — AD-SET-14, AD-PUB-09
 - **TASK-537** — SF-SRCH-17, SF-CNT-36
 - **TASK-1018** — SF-CHK-30
+- **TASK-642** — SYS-42
