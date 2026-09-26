@@ -190,6 +190,34 @@ describe("SearchAutocomplete — the pill's behaviour at every width (TASK-805/5
     expect(within(productList()).getAllByRole("option")).toHaveLength(1);
   });
 
+  // TASK-759: a cover the CSP blocks fires `error`; the row falls back to the
+  // same newspaper icon a post without a cover has, not an empty 32px box.
+  it("swaps a blog cover that fails to load for the newspaper icon", async () => {
+    mockSuggest(
+      [],
+      [blogPost({ coverImageUrl: "https://blocked.example.com/cover.jpg" })],
+    );
+
+    await typeQuery("чохол");
+
+    const blogList = await screen.findByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    const option = within(blogList).getByRole("option");
+    const cover = option.querySelector("img");
+    expect(cover).toHaveAttribute(
+      "src",
+      "https://blocked.example.com/cover.jpg",
+    );
+
+    act(() => {
+      cover!.dispatchEvent(new Event("error"));
+    });
+
+    expect(option.querySelector("img")).toBeNull();
+    expect(option.querySelector("svg")).not.toBeNull();
+  });
+
   // TASK-543: the article rows come from the light suggest endpoint, never the
   // list endpoint that carries every article's body (the unhandled-request
   // policy would also fail the test on a stray `/api/blog` call).

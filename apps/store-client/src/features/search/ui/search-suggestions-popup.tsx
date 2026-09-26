@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Newspaper, Search } from "lucide-react";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
+import { FallbackImg } from "@/shared/ui";
 import type { SearchSuggestionsPopupModel } from "../model/use-search-autocomplete";
 
 interface SearchSuggestionsPopupProps {
@@ -127,19 +128,19 @@ export function SearchSuggestionsPopup({
                     index === activeIndex && "bg-muted",
                   )}
                 >
-                  {post.coverImageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={post.coverImageUrl}
-                      alt=""
-                      className="size-8 shrink-0 rounded-md object-cover"
-                    />
-                  ) : (
-                    <Newspaper
-                      className="size-4 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                  )}
+                  {/* No cover, or one the CSP blocks / that fails to load —
+                      the same newspaper icon (TASK-759). */}
+                  <FallbackImg
+                    src={post.coverImageUrl}
+                    alt=""
+                    className="size-8 shrink-0 rounded-md object-cover"
+                    fallback={
+                      <Newspaper
+                        className="size-4 shrink-0 text-muted-foreground"
+                        aria-hidden="true"
+                      />
+                    }
+                  />
                   <span className="min-w-0 flex-1 truncate">{post.title}</span>
                 </li>
               );

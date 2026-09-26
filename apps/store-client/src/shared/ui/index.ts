@@ -67,3 +67,5 @@ export { Logo } from "./logo";
 export { CategoryTileImage } from "./category-tile-image";
 // Admin banner pictures behind the homepage banners (TASK-740).
 export { BannerBackdrop } from "./banner-backdrop";
+// Plain <img> for admin URLs with a load-failure fallback (TASK-759).
+export { FallbackImg } from "./fallback-img";

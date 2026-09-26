@@ -1,4 +1,4 @@
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { fireEvent, renderWithProviders, screen } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import { BlogArticleView } from "./blog-article-view";
 import type { BlogPostView } from "../model/posts";
@@ -84,6 +84,34 @@ describe("BlogArticleView", () => {
         screen.getByRole("heading", { level: 2, name: label }),
       ).toBeInTheDocument();
     }
+  });
+
+  it("drops a cover that fails to load, leaving the gradient (TASK-759)", () => {
+    const { container } = renderWithProviders(
+      <BlogArticleView
+        post={makePost({
+          coverImageUrl: "https://blocked.example.com/cover.jpg",
+        })}
+        related={[]}
+      />,
+    );
+
+    const cover = container.querySelector(
+      'img[src="https://blocked.example.com/cover.jpg"]',
+    );
+    expect(cover).not.toBeNull();
+
+    fireEvent.error(cover!);
+
+    expect(
+      container.querySelector(
+        'img[src="https://blocked.example.com/cover.jpg"]',
+      ),
+    ).toBeNull();
+    // The caption over the gradient backdrop stays.
+    expect(
+      screen.getByText(dict.blog.article.coverCaption),
+    ).toBeInTheDocument();
   });
 
   it("renders related posts, excluding the current article", () => {
