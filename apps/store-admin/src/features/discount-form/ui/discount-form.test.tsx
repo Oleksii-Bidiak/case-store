@@ -50,6 +50,65 @@ describe("DiscountForm", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  // TASK-796: the API has @Min(1) on both caps; `0` used to pass the form and
+  // come back as a generic "could not create".
+  it.each([
+    ["maxRedemptions", dict.discountForm.maxRedemptions],
+    ["perUserLimit", dict.discountForm.perUserLimit],
+  ])("rejects a %s of 0 with the hint under the field", async (_, label) => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<DiscountForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByLabelText(dict.discountForm.code), "cap");
+    await userEvent.type(screen.getByLabelText(dict.discountForm.value), "5");
+    await userEvent.type(screen.getByLabelText(label, { exact: false }), "0");
+    await submitForm();
+
+    expect(
+      await screen.findByText(dict.discountForm.errors.intInvalid),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("rejects a value with more than two decimals", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<DiscountForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByLabelText(dict.discountForm.code), "dec");
+    await userEvent.type(
+      screen.getByLabelText(dict.discountForm.value),
+      "10.555",
+    );
+    await submitForm();
+
+    expect(
+      await screen.findByText(dict.discountForm.errors.decimalsMax),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("accepts a cap of 1 and a value with two decimals", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<DiscountForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByLabelText(dict.discountForm.code), "ok");
+    await userEvent.type(
+      screen.getByLabelText(dict.discountForm.value),
+      "12.5",
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.discountForm.perUserLimit, { exact: false }),
+      "1",
+    );
+    await submitForm();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      value: 12.5,
+      perUserLimit: 1,
+    });
+  });
+
   it("requires a code", async () => {
     const onSubmit = jest.fn();
     renderWithProviders(<DiscountForm onSubmit={onSubmit} isPending={false} />);

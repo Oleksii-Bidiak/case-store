@@ -1261,6 +1261,8 @@ export const dict = {
       minSpendInvalid: "Вкажіть невід'ємне число",
       intInvalid: "Вкажіть ціле число більше 0",
       dateOrder: "Дата початку має передувати даті завершення",
+      // TASK-796: mirrors the API's `maxDecimalPlaces: 2` on money fields.
+      decimalsMax: "Не більше двох знаків після коми",
     },
     // TASK-795: the window is a pair of KYIV calendar days, inclusive.
     datesHint:

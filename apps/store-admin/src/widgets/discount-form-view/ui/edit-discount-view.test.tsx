@@ -97,3 +97,37 @@ describe("EditDiscountView — dates are Kyiv calendar days (TASK-795)", () => {
     });
   });
 });
+
+describe("EditDiscountView — failed save (TASK-796)", () => {
+  beforeEach(() => {
+    toastError.mockReset();
+  });
+
+  it("shows the API's own message instead of the generic one", async () => {
+    stubDiscount();
+    server.use(
+      http.patch(`*/api/admin/discounts/${DISCOUNT_ID}`, () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            error: "Bad Request",
+            message: ["perUserLimit must be at least 1"],
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(<EditDiscountView discountId={DISCOUNT_ID} />);
+    await waitFor(() => expect(startsInput()).toHaveValue("2026-09-01"));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.saveChanges }),
+    );
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        "perUserLimit must be at least 1",
+      ),
+    );
+  });
+});

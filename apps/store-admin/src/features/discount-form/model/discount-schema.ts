@@ -14,13 +14,29 @@ const e = dict.discountForm.errors;
  * PERCENT 1–100 bound and the start/expiry ordering are enforced here (mirroring
  * the server's `assertValidDefinition`), with the server as the final arbiter.
  */
+/**
+ * An optional positive-integer cap. `0` is rejected here (TASK-796): the API's
+ * `@Min(1)` refuses it, and a form that lets it through only earns the operator
+ * a generic "could not save" with no hint which field was wrong. Blank means
+ * "no cap".
+ */
 const optionalIntString = (message: string) =>
   z
     .string()
     .trim()
     .optional()
-    .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), message)
+    .refine(
+      (v) => v === undefined || v === "" || (/^\d+$/.test(v) && Number(v) >= 1),
+      message,
+    )
     .transform((v) => (v === undefined || v === "" ? undefined : Number(v)));
+
+/**
+ * At most two digits after the decimal point — the API validates money with
+ * `@IsNumber({ maxDecimalPlaces: 2 })` (TASK-796).
+ */
+const hasAtMostTwoDecimals = (v: string | undefined) =>
+  v === undefined || !/[.,]\d{3,}/.test(v);
 
 export const discountSchema = z
   .object({
@@ -38,6 +54,7 @@ export const discountSchema = z
       .trim()
       .min(1, e.valueRequired)
       .refine((v) => Number(v) > 0, e.valuePositive)
+      .refine(hasAtMostTwoDecimals, e.decimalsMax)
       .transform((v) => Number(v)),
 
     minSpend: z
@@ -48,6 +65,7 @@ export const discountSchema = z
         (v) => v === undefined || v === "" || Number(v) >= 0,
         e.minSpendInvalid,
       )
+      .refine(hasAtMostTwoDecimals, e.decimalsMax)
       .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
     maxRedemptions: optionalIntString(e.intInvalid),

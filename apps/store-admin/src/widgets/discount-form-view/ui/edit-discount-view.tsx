@@ -19,7 +19,7 @@ import {
   type DiscountEntity,
 } from "@/entities/discount";
 import { dict } from "@/shared/config";
-import { toKyivDateInput } from "@/shared/lib";
+import { apiErrorMessage, toKyivDateInput } from "@/shared/lib";
 
 interface EditDiscountViewProps {
   discountId: string;
@@ -64,8 +64,12 @@ export function EditDiscountView({ discountId }: EditDiscountViewProps) {
           toast.success(dict.discounts.toastUpdated);
           router.push("/discounts");
         },
-        onError: () => {
-          toast.error(dict.discounts.toastUpdateFailed);
+        // The server's own words when it has them (TASK-796); the generic copy
+        // is only the fallback.
+        onError: (mutationError) => {
+          toast.error(
+            apiErrorMessage(mutationError) ?? dict.discounts.toastUpdateFailed,
+          );
         },
       },
     );
