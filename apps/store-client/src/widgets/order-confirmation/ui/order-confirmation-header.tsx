@@ -4,6 +4,7 @@ import {
   type OrderEntityPaymentStatus,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
+import { formatDate } from "@/shared/lib/format";
 
 interface OrderConfirmationHeaderProps {
   orderId: string;
@@ -11,17 +12,6 @@ interface OrderConfirmationHeaderProps {
   paymentStatus: OrderEntityPaymentStatus;
   /** ISO timestamp */
   createdAt: string;
-}
-
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-});
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
 }
 
 /**

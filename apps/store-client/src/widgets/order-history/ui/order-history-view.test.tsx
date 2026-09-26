@@ -83,6 +83,17 @@ describe("OrderHistoryView — return request (TASK-373)", () => {
     },
   );
 
+  it("writes the order date the way the confirmation and lookup pages do (TASK-809)", async () => {
+    stubOrders(["DELIVERED"]);
+
+    renderHistory();
+
+    // One month style on all three order screens, read in Kyiv: the fixture's
+    // midnight UTC is 03:00 on the 1st there. The history used to print
+    // "1 черв. 2026 р." next to the confirmation page's "1 червня 2026 р.".
+    expect(await screen.findByText("1 червня 2026")).toBeInTheDocument();
+  });
+
   it("paints the status badge from the shared map (TASK-802)", async () => {
     stubOrders(["DELIVERED"]);
 

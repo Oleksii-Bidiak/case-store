@@ -7,6 +7,7 @@
 // render (the UI stays as-is; only its data source changed).
 
 import type { BlogPostEntity } from "@/shared/api";
+import { formatDate } from "@/shared/lib/format";
 
 /** Presentational post shape consumed by the blog UI components. */
 export interface BlogPostView {
@@ -34,54 +35,25 @@ export interface BlogPostView {
   content: string;
 }
 
-// Ukrainian abbreviated month names (index 0–11), matching the original mockup
-// display format ("28 черв. 2026").
-const MONTH_ABBR = [
-  "січ.",
-  "лют.",
-  "берез.",
-  "квіт.",
-  "трав.",
-  "черв.",
-  "лип.",
-  "серп.",
-  "вер.",
-  "жовт.",
-  "лист.",
-  "груд.",
-] as const;
-
-// Ukrainian genitive month names, for the article head's long form
-// ("28 червня 2026").
-const MONTH_FULL = [
-  "січня",
-  "лютого",
-  "березня",
-  "квітня",
-  "травня",
-  "червня",
-  "липня",
-  "серпня",
-  "вересня",
-  "жовтня",
-  "листопада",
-  "грудня",
-] as const;
-
-/** Format an ISO instant as a short UA date ("28 черв. 2026"). */
-export function formatBlogDate(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getDate()} ${MONTH_ABBR[d.getMonth()]} ${d.getFullYear()}`;
+/** A usable publish instant, or `null` for a missing / malformed one. */
+function publishedInstant(iso: string | null): string | null {
+  return iso && Number.isFinite(new Date(iso).getTime()) ? iso : null;
 }
 
-/** Format an ISO instant as a long UA date ("28 червня 2026"). */
+/**
+ * Format an ISO instant as a short Kyiv date ("28 черв. 2026"); an unpublished
+ * or malformed date renders nothing. Delegates to the shared formatter
+ * (TASK-809), so the day is read in Kyiv and not in the process's zone.
+ */
+export function formatBlogDate(iso: string | null): string {
+  const instant = publishedInstant(iso);
+  return instant ? formatDate(instant, "short") : "";
+}
+
+/** Format an ISO instant as a long Kyiv date ("28 червня 2026"). */
 export function formatBlogLongDate(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return `${d.getDate()} ${MONTH_FULL[d.getMonth()]} ${d.getFullYear()}`;
+  const instant = publishedInstant(iso);
+  return instant ? formatDate(instant) : "";
 }
 
 /**

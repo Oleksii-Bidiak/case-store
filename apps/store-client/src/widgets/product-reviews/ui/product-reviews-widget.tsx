@@ -11,6 +11,7 @@ import {
 import { RatingStars, ReviewRatingStars, Skeleton, Badge } from "@/shared/ui";
 import { Pagination } from "@/shared/ui/pagination";
 import { dict } from "@/shared/config";
+import { formatDate } from "@/shared/lib/format";
 import { SubmitReviewForm } from "@/features/submit-review";
 
 interface ProductReviewsWidgetProps {
@@ -41,16 +42,6 @@ const REVIEW_PAGE_PARAM = "reviewPage";
 export function resolveReviewPageParam(raw: string | null): number {
   const parsed = Number.parseInt(raw ?? "", 10);
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
-}
-
-/** Format an ISO date string as a short uk-UA date. */
-function formatReviewDate(value: string | Date): string {
-  const date = typeof value === "string" ? new Date(value) : value;
-  return new Intl.DateTimeFormat("uk-UA", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  }).format(date);
 }
 
 /**
@@ -85,7 +76,7 @@ function ShopReply({
           {dict.reviews.shopReply}
         </span>
         <span className="ml-auto text-xs text-muted-foreground">
-          {formatReviewDate(reply.createdAt)}
+          {formatDate(reply.createdAt)}
         </span>
       </div>
       <p className="text-sm whitespace-pre-line text-muted-foreground">
@@ -109,7 +100,7 @@ function ReviewRow({ review }: { review: ReviewEntity }) {
           </Badge>
         )}
         <span className="ml-auto text-xs text-muted-foreground">
-          {formatReviewDate(review.createdAt)}
+          {formatDate(review.createdAt)}
         </span>
       </div>
       <p className="text-sm whitespace-pre-line text-muted-foreground">

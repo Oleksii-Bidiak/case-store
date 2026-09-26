@@ -3,18 +3,7 @@ import {
   type PublicOrderEntity,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
-import { formatMoney } from "@/shared/lib/format";
-
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-});
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
-}
+import { formatDate, formatMoney } from "@/shared/lib/format";
 
 /**
  * OrderLookupResult — one order as the public form is allowed to show it

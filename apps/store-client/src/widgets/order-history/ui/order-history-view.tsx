@@ -10,19 +10,8 @@ import { useGetMyReturns, type ReturnEntity } from "@/entities/return";
 import { ReturnRequestButton } from "@/features/return-request";
 import { Badge, Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatMoney } from "@/shared/lib";
+import { formatDate, formatMoney } from "@/shared/lib";
 import { OrderHistorySkeleton } from "./order-history-skeleton";
-
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
-}
 
 /**
  * The status of the NEWEST return request per order (TASK-608). The API lists
