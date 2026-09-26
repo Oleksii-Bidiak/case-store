@@ -336,6 +336,8 @@ function AdminReviewTableView() {
           },
         ]}
       />
+      {/* TASK-812: the bulk-reject AlertDialog (portalled). */}
+      {bulk.confirmDialog}
 
       {isLoading ? (
         <AdminReviewTableSkeleton />

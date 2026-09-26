@@ -1,13 +1,14 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Badge, Button } from "@/shared/ui";
+import { StatusToggleButton } from "@/shared/ui/status-toggle-button";
 import { dict } from "@/shared/config";
 import {
   getProductControllerAdminFindAllQueryKey,
   useProductControllerActivate,
   useProductControllerDeactivate,
 } from "@/entities/product";
+import { useStatusToggle } from "@/features/bulk-status";
 
 interface ProductStatusToggleProps {
   productId: string;
@@ -19,7 +20,7 @@ interface ProductStatusToggleProps {
  *
  * Invalidates the (prefix-matched) product list query on success so the table
  * reflects the new status. The base query key matches every paginated/filtered
- * variant of the list.
+ * variant of the list. The engine is the shared `useStatusToggle` (TASK-812).
  */
 export function ProductStatusToggle({
   productId,
@@ -29,39 +30,25 @@ export function ProductStatusToggle({
   const activate = useProductControllerActivate();
   const deactivate = useProductControllerDeactivate();
 
-  const isPending = activate.isPending || deactivate.isPending;
-  const mutation = isActive ? deactivate : activate;
-
-  const handleToggle = () => {
-    if (isPending) return;
-    mutation.mutate(
-      { id: productId },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: getProductControllerAdminFindAllQueryKey(),
-          });
-        },
-      },
-    );
-  };
+  const { toggle, isPending } = useStatusToggle({
+    id: productId,
+    isActive,
+    activate,
+    deactivate,
+    onWritten: () => {
+      void queryClient.invalidateQueries({
+        queryKey: getProductControllerAdminFindAllQueryKey(),
+      });
+    },
+  });
 
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="sm"
-      onClick={handleToggle}
-      disabled={isPending}
-      aria-label={
-        isActive
-          ? dict.statusToggle.productDeactivate
-          : dict.statusToggle.productActivate
-      }
-    >
-      <Badge variant={isActive ? "default" : "secondary"}>
-        {isActive ? dict.common.active : dict.common.inactive}
-      </Badge>
-    </Button>
+    <StatusToggleButton
+      isActive={isActive}
+      isPending={isPending}
+      onToggle={toggle}
+      activateLabel={dict.statusToggle.productActivate}
+      deactivateLabel={dict.statusToggle.productDeactivate}
+    />
   );
 }

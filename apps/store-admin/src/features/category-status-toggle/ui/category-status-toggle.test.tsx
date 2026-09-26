@@ -23,6 +23,8 @@ function stubDeactivate(calls: string[]) {
   );
 }
 
+// TASK-812: the prompt is an AlertDialog now. A `window.confirm` call anywhere
+// in this flow is a regression, so the spy stays — asserting it is never hit.
 const confirmSpy = jest.spyOn(window, "confirm");
 
 afterEach(() => confirmSpy.mockReset());
@@ -31,7 +33,6 @@ describe("CategoryStatusToggle — blast radius (TASK-291-I, §3.11)", () => {
   it("a node WITH descendants: CANCEL → ZERO mutation calls, focus back on the toggle", async () => {
     const calls: string[] = [];
     stubDeactivate(calls);
-    confirmSpy.mockReturnValue(false);
 
     renderWithProviders(
       <CategoryStatusToggle
@@ -47,17 +48,30 @@ describe("CategoryStatusToggle — blast radius (TASK-291-I, §3.11)", () => {
     });
     await userEvent.click(button);
 
-    expect(confirmSpy).toHaveBeenCalledWith(
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(
       dict.categories.tree.deactivateConfirm("Alpha", 3),
     );
+    // The safe answer holds initial focus — a stray Enter cancels.
+    expect(
+      screen.getByRole("button", { name: dict.common.cancel }),
+    ).toHaveFocus();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.cancel }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
     expect(calls).toEqual([]);
-    expect(button).toHaveFocus();
+    await waitFor(() => expect(button).toHaveFocus());
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it("a node WITH descendants: ACCEPT → exactly ONE call, and the count was shown first", async () => {
     const calls: string[] = [];
     stubDeactivate(calls);
-    confirmSpy.mockReturnValue(true);
 
     renderWithProviders(
       <CategoryStatusToggle
@@ -74,11 +88,19 @@ describe("CategoryStatusToggle — blast radius (TASK-291-I, §3.11)", () => {
       }),
     );
 
-    expect(confirmSpy).toHaveBeenCalledWith(
+    expect(await screen.findByRole("alertdialog")).toHaveTextContent(
       "„Alpha“ буде приховано разом із 3 підкатегоріями",
     );
+    // Nothing is sent while the question is on screen.
+    expect(calls).toEqual([]);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.deactivate }),
+    );
+
     await waitFor(() => expect(calls).toEqual([ID]));
     expect(calls).toHaveLength(1);
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it("a LEAF node shows NO confirmation at all", async () => {
@@ -100,8 +122,9 @@ describe("CategoryStatusToggle — blast radius (TASK-291-I, §3.11)", () => {
       }),
     );
 
-    expect(confirmSpy).not.toHaveBeenCalled();
     await waitFor(() => expect(calls).toEqual([ID]));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it("invalidates the admin-tree query key on success (§3.11)", async () => {

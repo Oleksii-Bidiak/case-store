@@ -15,6 +15,8 @@ import { useProductGroupControllerFindAll } from "@/entities/product-group";
 import { useAuth } from "@/entities/session";
 import { ProductStatusToggle } from "@/features/product-status-toggle";
 import { useProductBulkStatus } from "@/features/product-bulk-status";
+import { useProductBulkColor } from "@/features/product-bulk-color";
+import { useProductBulkGroup } from "@/features/product-bulk-group";
 import { ProductDeleteAction } from "@/features/product-delete";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
@@ -43,8 +45,6 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { colorsInUse, formatCurrency, formatDate } from "@/shared/lib";
-import { useProductBulkColor } from "../model/use-product-bulk-color";
-import { useProductBulkGroup } from "../model/use-product-bulk-group";
 import { AdminProductTableSkeleton } from "./admin-product-table-skeleton";
 import { MoveToGroupDialog } from "./move-to-group-dialog";
 import { SetColorDialog } from "./set-color-dialog";
@@ -325,6 +325,10 @@ function AdminProductTableView() {
           },
         ]}
       />
+
+      {/* TASK-812: the deactivate / clear-colour AlertDialogs (portalled). */}
+      {bulk.confirmDialog}
+      {bulkColor.confirmDialog}
 
       <MoveToGroupDialog
         open={isGroupDialogOpen}

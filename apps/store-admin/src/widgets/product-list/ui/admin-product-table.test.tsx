@@ -4,6 +4,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
@@ -535,11 +536,13 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
  * pressing «Записати» on a half-typed field quietly destructive.
  */
 describe("AdminProductTable — bulk set colour (TASK-487)", () => {
+  // TASK-812: the clear prompt is an AlertDialog. The spy only proves that
+  // `window.confirm` is never reached any more.
   let confirmSpy: jest.SpyInstance;
 
   beforeEach(() => {
     mockReplace.mockClear();
-    confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    confirmSpy = jest.spyOn(window, "confirm");
   });
   afterEach(() => confirmSpy.mockRestore());
 
@@ -615,15 +618,23 @@ describe("AdminProductTable — bulk set colour (TASK-487)", () => {
       screen.getByRole("button", { name: dict.products.bulk.colorClear }),
     );
 
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ ids: ["product-1"], color: null });
     // Removing a colour takes the products out of the colour filter — the one
     // direction of this action that is worth asking about.
-    expect(confirmSpy).toHaveBeenCalled();
+    const prompt = await screen.findByRole("alertdialog");
+    expect(prompt).toHaveTextContent(dict.products.bulk.colorClearConfirm(1));
+    expect(bodies).toHaveLength(0);
+    await userEvent.click(
+      within(prompt).getByRole("button", {
+        name: dict.products.bulk.colorClear,
+      }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ ids: ["product-1"], color: null });
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it("writes nothing when the clear prompt is declined", async () => {
-    confirmSpy.mockReturnValue(false);
     stubEndpoints();
     const bodies = stubColorBulk();
     renderTable();
@@ -634,8 +645,20 @@ describe("AdminProductTable — bulk set colour (TASK-487)", () => {
     await userEvent.click(
       screen.getByRole("button", { name: dict.products.bulk.colorClear }),
     );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: dict.common.cancel,
+      }),
+    );
 
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
     expect(bodies).toHaveLength(0);
+    // The colour dialog is still open — declining the prompt is not «close».
+    expect(
+      screen.getByLabelText(dict.products.bulk.colorDialogLabel),
+    ).toBeInTheDocument();
   });
 
   it("refuses to submit an empty colour rather than treating it as a clear", async () => {
@@ -670,7 +693,13 @@ describe("AdminProductTable — bulk set colour (TASK-487)", () => {
       screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
     );
 
-    await waitFor(() => expect(confirmSpy).not.toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText(dict.products.bulk.colorDialogLabel),
+      ).toBeNull(),
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it("clears the selection once the server confirms", async () => {
@@ -956,5 +985,89 @@ describe("AdminProductTable — category column covers every depth (TASK-717)", 
     );
     await waitFor(() => expect(cell).toHaveTextContent("—"));
     expect(screen.queryByText("Чохли для iPhone")).toBeNull();
+  });
+});
+
+/**
+ * Bulk activate / deactivate (TASK-355) through the shared `useBulkStatus`
+ * engine, with the prompt as an AlertDialog (TASK-812).
+ */
+describe("AdminProductTable — bulk status confirm (TASK-812)", () => {
+  function stubStatusBulk() {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch("*/api/products/status", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ data: { updatedCount: 1 } });
+      }),
+    );
+    return bodies;
+  }
+
+  async function selectTheRow() {
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
+      }),
+    );
+  }
+
+  it("asks in an AlertDialog before deactivating; cancel sends nothing", async () => {
+    const confirmSpy = jest.spyOn(window, "confirm");
+    stubEndpoints();
+    const bodies = stubStatusBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.deactivate(1) }),
+    );
+    const prompt = await screen.findByRole("alertdialog");
+    expect(prompt).toHaveTextContent(dict.products.bulk.deactivateConfirm(1));
+
+    await userEvent.click(
+      within(prompt).getByRole("button", { name: dict.common.cancel }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(bodies).toHaveLength(0);
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("deactivates once confirmed, and activating does not ask at all", async () => {
+    stubEndpoints();
+    const bodies = stubStatusBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.deactivate(1) }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: dict.products.bulk.deactivate(1),
+      }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ ids: ["product-1"], isActive: false });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", {
+          name: dict.products.bulk.activate(1),
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    await selectTheRow();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.activate(1) }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({ ids: ["product-1"], isActive: true });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });
