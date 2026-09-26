@@ -83,19 +83,35 @@ export function SearchSynonymsForm({ settings }: SearchSynonymsFormProps) {
     );
   };
 
-  const onRestoreDefaults = async () => {
+  const onRestoreDefaults = async (
+    description: string = d.restoreDescription,
+  ) => {
     const confirmed = await confirm({
       title: d.restoreTitle,
-      description: d.restoreDescription,
+      description,
       confirmLabel: d.restoreConfirm,
       destructive: true,
     });
     if (confirmed) save({ groups: [] }, true);
   };
 
+  /**
+   * The API stores an empty list as "never saved" — i.e. the built-in
+   * dictionary. So a save with no groups left (every row removed or blank) IS
+   * the restore operation: it takes the same confirmation and says so, instead
+   * of toasting «saved» and silently bringing the defaults back.
+   */
+  const onSubmit = (values: SearchSynonymsFormValues) => {
+    if (values.groups.length === 0) {
+      void onRestoreDefaults(d.emptySaveDescription);
+      return;
+    }
+    save(values, false);
+  };
+
   return (
     <form
-      onSubmit={handleSubmit((values) => save(values, false))}
+      onSubmit={handleSubmit(onSubmit)}
       className="flex flex-col gap-4"
       noValidate
     >

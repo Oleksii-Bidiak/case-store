@@ -4646,7 +4646,8 @@ export const dict = {
       "Через кому. Кожне слово — одне слово без пробілів, дефісів і апострофів; великі літери не мають значення.",
     addGroup: "Додати групу",
     removeGroupAria: (n: number) => `Видалити групу ${n}`,
-    empty: "Жодної групи. Додайте першу або поверніть стандартний список.",
+    empty:
+      "Жодної групи. Порожній список не зберігається: «Зберегти синоніми» поверне стандартний список магазину. Додайте групу, щоб пошук працював за вашим.",
     submit: "Зберегти синоніми",
     saving: "Збереження…",
     restoreDefaults: "Повернути стандартний список",
@@ -4671,6 +4672,10 @@ export const dict = {
       tooLong: (max: number) => `Одне слово — не довше ${max} символів`,
       tooManyGroups: (max: number) => `Не більше ${max} груп`,
     },
+    // Saving a list with no groups left is the server's «restore the defaults»,
+    // so it goes through the same confirmation with its own explanation.
+    emptySaveDescription:
+      "У списку не лишилося жодної групи. Порожній список магазин не зберігає — пошук знову працюватиме за вбудованим словником, і його групи з'являться тут.",
   },
 } as const;
 

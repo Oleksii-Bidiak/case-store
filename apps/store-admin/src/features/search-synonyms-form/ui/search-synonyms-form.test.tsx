@@ -146,6 +146,53 @@ describe("SearchSynonymsForm (TASK-559)", () => {
     expect(bodies).toHaveLength(0);
   });
 
+  it("saving with every group removed asks first — it restores the built-in list", async () => {
+    const bodies = stubSave();
+    renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: s.removeGroupAria(2) }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: s.removeGroupAria(1) }),
+    );
+    expect(screen.getByText(s.empty)).toBeInTheDocument();
+    await submit();
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(s.emptySaveDescription),
+    ).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: s.restoreConfirm }),
+    );
+
+    await waitFor(() => expect(bodies).toEqual([{ groups: [] }]));
+    expect(toast.success).toHaveBeenCalledWith(s.toastRestored);
+    expect(toast.success).not.toHaveBeenCalledWith(s.toastSaved);
+  });
+
+  it("saving only blank rows, then cancelling, sends nothing", async () => {
+    const bodies = stubSave();
+    renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
+
+    await userEvent.clear(row(1));
+    await userEvent.clear(row(2));
+    await submit();
+
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(bodies).toHaveLength(0);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
   it("says so on screen when the search engine did not take the list", async () => {
     stubSave((body) =>
       HttpResponse.json({
