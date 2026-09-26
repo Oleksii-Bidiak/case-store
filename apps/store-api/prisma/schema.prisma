@@ -370,6 +370,16 @@ model Category {
   ogImage         String?    @map("og_image")
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
+  // Audit tombstone (TASK-651, decision B-2 of plan 178). Independent of
+  // `isActive`: `isActive` is the reversible "hide" toggle, `deletedAt` is set
+  // ONCE by `DELETE /admin/categories/:id` and never cleared. Deletion always
+  // tombstones the whole subtree and first moves every product out of it, so a
+  // tombstone never holds a product or a live child — every category read path
+  // filters `deletedAt: null`. Restoring a category is NOT offered by the
+  // decision, which is why the tombstone's `slug` is mangled to
+  // `deleted:<id>:<slug>`: the address is released for a new category instead of
+  // keeping `slug @unique` scoped to live rows.
+  deletedAt       DateTime?  @map("deleted_at")
 
   products Product[]
 
@@ -388,6 +398,7 @@ model Category {
 
   @@index([slug])
   @@index([parentId])
+  @@index([deletedAt])
   @@map("categories")
 }
 
