@@ -2,20 +2,32 @@ import { Suspense, Fragment, cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
+import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import { ProductListView, ProductListSkeleton } from "@/widgets";
 import {
   buildCatalogHeader,
+  buildCatalogListingParams,
   findCategoryNodeBySlug,
+  readSearchParamsRecord,
 } from "@/widgets/product-list";
 import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import type { ProductControllerFindAllParams } from "@/entities/product";
 import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
+import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
+import {
+  createServerQueryClient,
+  dehydrateForClient,
+  prefetchQueries,
+  serverRequestOptions,
+} from "@/shared/api/query-prefetch-server";
 import { JsonLd } from "@/shared/ui";
-import { buildBreadcrumbSchema } from "@/shared/lib/schema";
+import {
+  buildBreadcrumbSchema,
+  buildProductItemListSchema,
+} from "@/shared/lib/schema";
 import {
   buildListingMetadata,
   buildOgImages,
@@ -224,38 +236,38 @@ export default async function ProductsPage({
   // play; this one keeps the redirect true of the page in its own right.
   await redirectLegacyParams(resolved);
 
-  const categorySlug = first(resolved.category);
-  const search = first(resolved.search)?.trim() || undefined;
-  const minPrice = first(resolved.minPrice);
-  const maxPrice = first(resolved.maxPrice);
-  const specs = first(resolved.specs);
-  const page = first(resolved.page);
+  // The listing query of this URL — built by the same function the client view
+  // reads the URL with (TASK-563), so the prefetched page below is the very
+  // cache entry the grid asks for. It carries every rule the listing has
+  // (TASK-513's literal-"true" boolean facets included).
+  const initialParams = buildCatalogListingParams(
+    readSearchParamsRecord(resolved),
+  );
+  const categorySlug = initialParams.category;
+  const search = initialParams.search;
 
-  const initialParams: ProductControllerFindAllParams = {
-    category: categorySlug,
-    brand: first(resolved.brand),
-    device: first(resolved.device),
-    search,
-    sortBy: first(resolved.sortBy) ?? "createdAt",
-    sortOrder: first(resolved.sortOrder) ?? "desc",
-    minPrice: minPrice ? Number(minPrice) : undefined,
-    maxPrice: maxPrice ? Number(maxPrice) : undefined,
-    specs: specs || undefined,
-    // TASK-513 — the two boolean facets the metadata already reads. Only the
-    // literal "true" is a filter (same rule as `buildListingMetadata` and the
-    // API's own boolean transform), so `?inStock=false` stays unfiltered.
-    inStock: first(resolved.inStock) === "true" ? true : undefined,
-    onSale: first(resolved.onSale) === "true" ? true : undefined,
-    page: page ? Number(page) : 1,
-    limit: 20,
-    isActive: true,
-  };
+  // First HTML with the product cards in it (TASK-563): prefetch the grid's
+  // page on the server and hand it over through the PrefetchBoundary below. A
+  // failed prefetch is simply absent from the dehydrated state — the grid then
+  // fetches on the client, as it always did.
+  const queryClient = createServerQueryClient();
+  const listingQuery = getProductControllerFindAllQueryOptions(initialParams, {
+    request: serverRequestOptions(),
+  });
 
   // Category-scoped catalog: resolve the name so the breadcrumb reveals the
   // categories hub + the specific category (and the title matches it).
-  const categoryName = categorySlug
-    ? await resolveCategoryName(categorySlug)
-    : null;
+  const [categoryName] = await Promise.all([
+    categorySlug ? resolveCategoryName(categorySlug) : Promise.resolve(null),
+    prefetchQueries(queryClient, [listingQuery]),
+  ]);
+
+  // ItemList from the same fetch as the grid (TASK-556 tail): the structured
+  // data lists exactly the cards the page shows.
+  const itemList = buildProductItemListSchema(
+    queryClient.getQueryData(listingQuery.queryKey)?.data,
+    SITE_URL,
+  );
 
   const { trail, title, subtitle, currentPath } = buildCatalogHeader({
     categorySlug,
@@ -273,6 +285,7 @@ export default async function ProductsPage({
           })),
         )}
       />
+      {itemList && <JsonLd schema={itemList} />}
 
       {/* Breadcrumbs */}
       <nav
@@ -320,9 +333,11 @@ export default async function ProductsPage({
       {/* The fallback stands in for ProductListView as a whole — chips row,
           toolbar and the 268px filter rail included (TASK-416) — so the grid
           does not render full-width and then shrink into a column. */}
-      <Suspense fallback={<ProductListSkeleton withSidebar />}>
-        <ProductListView initialParams={initialParams} />
-      </Suspense>
+      <PrefetchBoundary state={dehydrateForClient(queryClient)}>
+        <Suspense fallback={<ProductListSkeleton withSidebar />}>
+          <ProductListView initialParams={initialParams} />
+        </Suspense>
+      </PrefetchBoundary>
     </div>
   );
 }

@@ -11,10 +11,19 @@ jest.mock("@/widgets", () => ({
 jest.mock("@/shared/api/generated/categories/categories", () => ({
   categoryControllerGetCategoryTree: jest.fn(),
 }));
-// First product page fetched server-side for the ItemList JSON-LD.
-jest.mock("@/shared/api/generated/products/products", () => ({
-  productControllerFindAll: jest.fn().mockResolvedValue({ data: [] }),
-}));
+// The grid's page, prefetched server-side (TASK-563) — it feeds both the
+// HydrationBoundary and the ItemList JSON-LD. The options builder is stubbed
+// with the generated key shape, so the fetch is an assertable mock.
+jest.mock("@/shared/api/generated/products/products", () => {
+  const findAll = jest.fn().mockResolvedValue({ data: [], meta: {} });
+  return {
+    productControllerFindAll: findAll,
+    getProductControllerFindAllQueryOptions: (params: unknown) => ({
+      queryKey: ["/api/products", params],
+      queryFn: () => findAll(params),
+    }),
+  };
+});
 jest.mock("@/shared/api/seo-settings-server", () => ({
   fetchSeoSettings: jest.fn().mockResolvedValue(null),
 }));
@@ -57,10 +66,20 @@ import CategoryLandingPage, { generateMetadata } from "./page";
 import { notFound, permanentRedirect } from "next/navigation";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import { productControllerFindAll } from "@/shared/api/generated/products/products";
 import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
+import { SITE_URL } from "@/shared/config";
+import {
+  findDehydratedQueryKeys,
+  findJsonLdSchemas,
+} from "@/shared/test/element-tree";
+import { buildCatalogListingParams } from "@/widgets/product-list/model/listing-params";
 
 const getTree = categoryControllerGetCategoryTree as jest.MockedFunction<
   typeof categoryControllerGetCategoryTree
+>;
+const findAll = productControllerFindAll as jest.MockedFunction<
+  typeof productControllerFindAll
 >;
 const resolveRedirect = resolveSlugRedirect as jest.MockedFunction<
   typeof resolveSlugRedirect
@@ -221,5 +240,70 @@ describe("categories/[slug] slug-redirect (TASK-285 Крок W)", () => {
     expect(resolveRedirect).not.toHaveBeenCalled();
     expect(permanentRedirect).not.toHaveBeenCalled();
     expect(notFound).not.toHaveBeenCalled();
+  });
+});
+
+describe("categories/[slug] — the first HTML carries the product cards (TASK-563)", () => {
+  const run = (query: Record<string, string> = {}) =>
+    CategoryLandingPage({
+      params: Promise.resolve({ slug: "chohly" }),
+      searchParams: Promise.resolve(query),
+    });
+
+  it("prefetches the grid's page under the key the locked view reads", async () => {
+    getTree.mockResolvedValue({ data: makeTree() } as never);
+    const query = { category: "other", page: "2", onSale: "true" };
+
+    const tree = await run(query);
+
+    // The segment wins over a `?category=` in the query, exactly as in the view.
+    const expected = buildCatalogListingParams(
+      (key) => query[key as keyof typeof query],
+      { categorySlug: "chohly" },
+    );
+    expect(expected.category).toBe("chohly");
+    expect(findAll).toHaveBeenCalledTimes(1);
+    expect(findAll).toHaveBeenCalledWith(expected);
+    expect(findDehydratedQueryKeys(tree)).toEqual([
+      ["/api/products", expected],
+    ]);
+  });
+
+  it("builds the ItemList from that same page — no second product request", async () => {
+    getTree.mockResolvedValue({ data: makeTree() } as never);
+    findAll.mockResolvedValueOnce({
+      data: [{ id: "p1", name: "Чохол", slug: "chohol", primaryImage: null }],
+      meta: {},
+    } as never);
+
+    const tree = await run();
+
+    const itemList = findJsonLdSchemas(tree).find(
+      (schema) => schema["@type"] === "ItemList",
+    );
+    expect(itemList?.itemListElement).toEqual([
+      {
+        "@type": "ListItem",
+        position: 1,
+        item: {
+          "@type": "Product",
+          name: "Чохол",
+          url: `${SITE_URL}/products/chohol`,
+        },
+      },
+    ]);
+    expect(findAll).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders without the prefetch when the product read fails", async () => {
+    getTree.mockResolvedValue({ data: makeTree() } as never);
+    findAll.mockRejectedValueOnce(new Error("timeout of 5000ms exceeded"));
+
+    const tree = await run();
+
+    expect(findDehydratedQueryKeys(tree)).toEqual([]);
+    expect(findJsonLdSchemas(tree).map((schema) => schema["@type"])).toEqual([
+      "BreadcrumbList",
+    ]);
   });
 });

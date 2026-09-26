@@ -2,20 +2,15 @@
 
 import { useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import {
-  useProductControllerFindAll,
-  type ProductControllerFindAllParams,
-} from "@/entities/product";
+import { useProductControllerFindAll } from "@/entities/product";
 import { ProductCard, Skeleton } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
-
-/** The one filter that tells the PDP's rails apart. */
-export type ProductRailFilter = Pick<
-  ProductControllerFindAllParams,
-  "categoryId" | "deviceModelId"
->;
+import {
+  buildProductRailParams,
+  type ProductRailFilter,
+} from "../model/rail-params";
 
 interface ProductRailProps {
   /** Visible heading; also names the arrow buttons. */
@@ -50,14 +45,11 @@ export function ProductRail({
 }: ProductRailProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { data, isPending } = useProductControllerFindAll({
-    ...filter,
-    isActive: true,
-    page: 1,
-    limit: 9,
-    sortBy: "createdAt",
-    sortOrder: "desc",
-  });
+  // Same builder the PDP route prefetches with (TASK-563) — one key, so the
+  // server-rendered cards are adopted rather than re-fetched.
+  const { data, isPending } = useProductControllerFindAll(
+    buildProductRailParams(filter),
+  );
 
   const scroll = (dir: -1 | 1) =>
     scrollRef.current?.scrollBy({ left: dir * 540, behavior: "smooth" });

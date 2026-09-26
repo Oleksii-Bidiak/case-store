@@ -7,7 +7,11 @@ export { InfoView } from "./info-support";
 export { NotFoundView } from "./not-found";
 export { PromoView } from "./promo";
 export { ContactView } from "./contact";
-export { PopularRail, PopularRailSkeleton } from "./product-grid";
+export {
+  PopularRail,
+  PopularRailSkeleton,
+  firstQueryTabParams,
+} from "./product-grid";
 export { PromoBanner } from "./promo-banner";
 export { Newsletter } from "./newsletter";
 export { RecentlyViewed } from "./recently-viewed";

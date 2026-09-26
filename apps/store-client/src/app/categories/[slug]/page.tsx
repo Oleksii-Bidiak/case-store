@@ -1,5 +1,6 @@
 import { Suspense, Fragment, cache } from "react";
 import type { Metadata } from "next";
+import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import {
@@ -7,15 +8,25 @@ import {
   ProductListSkeleton,
   SubcategoryChips,
 } from "@/widgets";
-import { findCategoryPathBySlug } from "@/widgets/product-list";
-import type { ProductControllerFindAllParams } from "@/entities/product";
+import {
+  buildCatalogListingParams,
+  findCategoryPathBySlug,
+  readSearchParamsRecord,
+} from "@/widgets/product-list";
 import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
-import { productControllerFindAll } from "@/shared/api/generated/products/products";
+import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
+import {
+  createServerQueryClient,
+  dehydrateForClient,
+  prefetchQueries,
+  serverRequestOptions,
+} from "@/shared/api/query-prefetch-server";
 import { JsonLd } from "@/shared/ui";
 import {
   buildBreadcrumbSchema,
-  buildItemListSchema,
+  buildProductItemListSchema,
+  type ItemListProduct,
 } from "@/shared/lib/schema";
 import {
   buildListingMetadata,
@@ -219,31 +230,24 @@ export default async function CategoryLandingPage({
   }
   const node = path.at(-1)!;
 
-  // Filters/sort/pagination ride the query string on top of this route, same
-  // parsing as /products — but the category itself is locked by the segment.
-  const minPrice = first(resolved.minPrice);
-  const maxPrice = first(resolved.maxPrice);
-  const specs = first(resolved.specs);
-  const page = first(resolved.page);
+  // Filters/sort/pagination ride the query string on top of this route, parsed
+  // by the builder /products and the client view share (TASK-563) — but the
+  // category itself is locked by the segment: the route's own slug IS the
+  // category filter (TASK-420), no id round-trip.
+  const initialParams = buildCatalogListingParams(
+    readSearchParamsRecord(resolved),
+    { categorySlug: node.slug },
+  );
 
-  const initialParams: ProductControllerFindAllParams = {
-    // The route's own slug IS the category filter (TASK-420) — no id round-trip.
-    category: node.slug,
-    brand: first(resolved.brand),
-    device: first(resolved.device),
-    search: first(resolved.search)?.trim() || undefined,
-    sortBy: first(resolved.sortBy) ?? "createdAt",
-    sortOrder: first(resolved.sortOrder) ?? "desc",
-    minPrice: minPrice ? Number(minPrice) : undefined,
-    maxPrice: maxPrice ? Number(maxPrice) : undefined,
-    specs: specs || undefined,
-    // TASK-513 — same two boolean facets as /products; only "true" filters.
-    inStock: first(resolved.inStock) === "true" ? true : undefined,
-    onSale: first(resolved.onSale) === "true" ? true : undefined,
-    page: page ? Number(page) : 1,
-    limit: 20,
-    isActive: true,
-  };
+  // First HTML with the product cards in it (TASK-563) — the grid's page,
+  // prefetched under the key the grid will read. A failed prefetch leaves the
+  // grid to fetch on the client, as before.
+  const queryClient = createServerQueryClient();
+  const listingQuery = getProductControllerFindAllQueryOptions(initialParams, {
+    request: serverRequestOptions(),
+  });
+  await prefetchQueries(queryClient, [listingQuery]);
+  const listing = queryClient.getQueryData(listingQuery.queryKey);
 
   // «Головна → [батько →] категорія» — one crumb per tree ancestor, each an
   // ancestor's own landing page (no generic hub crumb).
@@ -256,7 +260,7 @@ export default async function CategoryLandingPage({
     { name: node.name, href: undefined },
   ];
 
-  const schemas = await buildCategoryPageSchemas(path);
+  const schemas = buildCategoryPageSchemas(path, listing?.data);
 
   return (
     // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products catalog page shell (shared grid must align pixel-for-pixel)
@@ -313,14 +317,16 @@ export default async function CategoryLandingPage({
       {/* Direct subcategories — navigation links, not filter toggles */}
       <SubcategoryChips categories={node.children ?? []} />
 
-      <Suspense fallback={<ProductListSkeleton />}>
-        <ProductListView
-          initialParams={initialParams}
-          // Slug for the listing filter, id for the id-addressed side endpoints
-          // (brands-per-category, filterable specs) — TASK-420.
-          lockedCategory={{ id: node.id, slug: node.slug }}
-        />
-      </Suspense>
+      <PrefetchBoundary state={dehydrateForClient(queryClient)}>
+        <Suspense fallback={<ProductListSkeleton />}>
+          <ProductListView
+            initialParams={initialParams}
+            // Slug for the listing filter, id for the id-addressed side
+            // endpoints (brands-per-category, filterable specs) — TASK-420.
+            lockedCategory={{ id: node.id, slug: node.slug }}
+          />
+        </Suspense>
+      </PrefetchBoundary>
     </div>
   );
 }
@@ -329,13 +335,18 @@ export default async function CategoryLandingPage({
  * Build the BreadcrumbList + ItemList JSON-LD graphs for a category landing
  * page. Each block fails independently (null → omitted) so structured data
  * never blocks the page — mirrors the PDP's buildProductPageSchemas.
+ *
+ * The ItemList reads the grid's own prefetched page (TASK-563) — it used to
+ * make a separate fetch of its own, which could list different products than
+ * the cards (always page 1 unfiltered, whatever the URL asked for).
  */
-async function buildCategoryPageSchemas(
+function buildCategoryPageSchemas(
   path: CategoryTreeNodeEntity[],
-): Promise<{
+  products: ItemListProduct[] | undefined,
+): {
   breadcrumb: Record<string, unknown> | null;
   itemList: Record<string, unknown> | null;
-} | null> {
+} | null {
   const node = path.at(-1);
   if (!node) return null;
 
@@ -352,27 +363,8 @@ async function buildCategoryPageSchemas(
     breadcrumb = null;
   }
 
-  // One small server-side fetch of the category's first product page, purely
-  // for the ItemList (must exist in the initial HTML for crawlers) — the grid
-  // itself hydrates client-side via its own query, same split as /products.
-  let itemList: Record<string, unknown> | null = null;
-  try {
-    const { data: products } = await productControllerFindAll({
-      category: node.slug,
-      isActive: true,
-      page: 1,
-      limit: 20,
-    });
-    itemList = buildItemListSchema(
-      products.map((product) => ({
-        name: product.name,
-        url: `${SITE_URL}/products/${product.slug}`,
-        image: product.primaryImage?.url,
-      })),
-    );
-  } catch {
-    itemList = null;
-  }
-
-  return { breadcrumb, itemList };
+  return {
+    breadcrumb,
+    itemList: buildProductItemListSchema(products, SITE_URL),
+  };
 }

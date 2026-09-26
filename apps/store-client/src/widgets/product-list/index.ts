@@ -10,3 +10,12 @@ export {
   type CatalogHeader,
   type Crumb,
 } from "./model/catalog-header";
+// The listing query of a catalogue URL — the server page prefetches with it and
+// the view reads with it, so both hold the same React Query key (TASK-563).
+export {
+  buildCatalogListingParams,
+  readSearchParamsRecord,
+  CATALOG_PAGE_SIZE,
+  type ListingLocks,
+  type ListingParamReader,
+} from "./model/listing-params";

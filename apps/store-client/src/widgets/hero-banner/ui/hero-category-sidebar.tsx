@@ -2,7 +2,10 @@
 
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
-import { useCategoryControllerGetRootCategories } from "@/entities/category";
+import {
+  ACTIVE_ROOT_CATEGORIES_PARAMS,
+  useCategoryControllerGetRootCategories,
+} from "@/entities/category";
 import { Skeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
@@ -26,11 +29,10 @@ const DOT_COLORS = [
  * Client Component: consumes the Orval-generated TanStack Query hook.
  */
 export function HeroCategorySidebar() {
-  const { data, isPending, isError } = useCategoryControllerGetRootCategories({
-    isActive: true,
-    sortBy: "sortOrder",
-    sortOrder: "asc",
-  });
+  // Shared params: the homepage prefetches this very key (TASK-563).
+  const { data, isPending, isError } = useCategoryControllerGetRootCategories(
+    ACTIVE_ROOT_CATEGORIES_PARAMS,
+  );
 
   return (
     <aside

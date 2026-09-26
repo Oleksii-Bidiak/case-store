@@ -23,6 +23,7 @@ import {
 } from "@/features/product-filters";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { findCategoryNodeBySlug } from "../model/catalog-header";
+import { buildCatalogListingParams } from "../model/listing-params";
 import { ProductList } from "./product-list";
 
 // Hydration flag (TASK-534): `false` for the server render and for hydration,
@@ -32,8 +33,13 @@ const clientSnapshot = () => true;
 const serverSnapshot = () => false;
 
 interface ProductListViewProps {
-  /** Server-resolved initial params (from `await searchParams`). */
-  initialParams: ProductControllerFindAllParams;
+  /**
+   * Server-resolved params of the first render. No longer read (TASK-563): the
+   * widget derives its params from the URL through `buildCatalogListingParams`,
+   * the builder the server prefetches with, so the two cannot disagree. Optional
+   * and kept only for `/catalog/[category]/[device]`, which still passes it.
+   */
+  initialParams?: ProductControllerFindAllParams;
   /**
    * Fix the category to the one the route names (TASK-277 — `/categories/[slug]`
    * landing pages). When set: the effective category is always this one
@@ -61,8 +67,6 @@ interface ProductListViewProps {
   lockedDevice?: { slug: string };
 }
 
-const PAGE_SIZE = 20;
-
 /**
  * Desktop sidebar scroll box (TASK-414). A sticky aside with no height cap runs
  * straight off the bottom of a short viewport, and because it is `position:
@@ -86,7 +90,6 @@ const ASIDE_SCROLL_BOX =
  * the sidebar (desktop aside + mobile drawer) and the results grid/list.
  */
 export function ProductListView({
-  initialParams,
   lockedCategory,
   lockedDevice,
 }: ProductListViewProps) {
@@ -96,40 +99,14 @@ export function ProductListView({
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Derive active params from the live URL, falling back to server-resolved
-  // initials (which match the URL on first render).
-  const minPriceRaw = searchParams.get("minPrice");
-  const maxPriceRaw = searchParams.get("maxPrice");
-  const pageRaw = searchParams.get("page");
-
-  const params: ProductControllerFindAllParams = {
-    // The three taxonomy axes ride the URL as SLUGS since TASK-420 —
-    // `?category=phone-cases&brand=apple&device=iphone-15`.
-    category:
-      lockedCategory?.slug ??
-      searchParams.get("category") ??
-      initialParams.category,
-    brand: searchParams.get("brand") ?? initialParams.brand,
-    device:
-      lockedDevice?.slug ?? searchParams.get("device") ?? initialParams.device,
-    search: searchParams.get("search") ?? initialParams.search,
-    sortBy: searchParams.get("sortBy") ?? initialParams.sortBy ?? "createdAt",
-    sortOrder:
-      searchParams.get("sortOrder") ?? initialParams.sortOrder ?? "desc",
-    minPrice: minPriceRaw ? Number(minPriceRaw) : initialParams.minPrice,
-    maxPrice: maxPriceRaw ? Number(maxPriceRaw) : initialParams.maxPrice,
-    specs: searchParams.get("specs") ?? initialParams.specs,
-    // Only the literal "true" turns the filter on (TASK-414): anything else in
-    // the URL — including "false" — means "no availability filter", which is
-    // also what the API's own boolean transform does with it.
-    inStock:
-      searchParams.get("inStock") === "true" ? true : initialParams.inStock,
-    // «Зі знижкою» (TASK-742) — the same literal-"true" rule as `inStock`.
-    onSale: searchParams.get("onSale") === "true" ? true : initialParams.onSale,
-    page: pageRaw ? Number(pageRaw) : (initialParams.page ?? 1),
-    limit: PAGE_SIZE,
-    isActive: true,
-  };
+  // Derive the active params from the live URL through the SAME builder the
+  // server page prefetched the first page with (TASK-563): one set of rules on
+  // both sides gives one React Query key, so the hydrated cards are this
+  // query's own data — see `model/listing-params.ts` for why that matters.
+  const params = buildCatalogListingParams((key) => searchParams.get(key), {
+    categorySlug: lockedCategory?.slug,
+    deviceSlug: lockedDevice?.slug,
+  });
 
   const view: CatalogView =
     searchParams.get("view") === "list" ? "list" : "grid";

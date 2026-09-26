@@ -6,9 +6,11 @@ import { Loader2 } from "lucide-react";
 import {
   useProductControllerFindAll,
   getProductControllerFindAllQueryOptions,
-  type ProductControllerFindAllParams,
 } from "@/entities/product";
-import { useCategoryControllerGetRootCategories } from "@/entities/category";
+import {
+  ACTIVE_ROOT_CATEGORIES_PARAMS,
+  useCategoryControllerGetRootCategories,
+} from "@/entities/category";
 import { Button, ProductCard, Skeleton } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
@@ -18,12 +20,10 @@ import {
   mergeDealPages,
   nextDealsLoadCount,
 } from "../model/deals-pagination";
+import { buildPromoDealsParams } from "../model/deals-params";
 
 const TAB_BASE =
   "h-[38px] rounded-md border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
-/** Page size for the on-sale grid. */
-const DEALS_LIMIT = 12;
 
 /**
  * PromoDeals — the "Товари зі знижкою" section: real root categories as filter
@@ -38,21 +38,13 @@ const DEALS_LIMIT = 12;
 export function PromoDeals() {
   const [categoryId, setCategoryId] = useState<string | null>(null);
 
-  const { data: catData } = useCategoryControllerGetRootCategories({
-    isActive: true,
-    sortBy: "sortOrder",
-    sortOrder: "asc",
-  });
+  // Both keys are the ones `/promo` prefetches on the server (TASK-563).
+  const { data: catData } = useCategoryControllerGetRootCategories(
+    ACTIVE_ROOT_CATEGORIES_PARAMS,
+  );
   const categories = catData?.data ?? [];
 
-  const params: ProductControllerFindAllParams = {
-    isActive: true,
-    onSale: true,
-    limit: DEALS_LIMIT,
-    sortBy: "createdAt",
-    sortOrder: "desc",
-    ...(categoryId ? { categoryId } : {}),
-  };
+  const params = buildPromoDealsParams(categoryId);
 
   const { data, isPending, isError } = useProductControllerFindAll(params);
 

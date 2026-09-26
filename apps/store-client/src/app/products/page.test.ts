@@ -8,6 +8,18 @@ jest.mock("@/widgets", () => ({
 jest.mock("@/shared/api/generated/categories/categories", () => ({
   categoryControllerGetCategoryTree: jest.fn(),
 }));
+// The grid's server prefetch (TASK-563). The options builder is stubbed with the
+// generated key shape, so the fetch is an assertable mock rather than axios.
+jest.mock("@/shared/api/generated/products/products", () => {
+  const findAll = jest.fn().mockResolvedValue({ data: [], meta: {} });
+  return {
+    productControllerFindAll: findAll,
+    getProductControllerFindAllQueryOptions: (params: unknown) => ({
+      queryKey: ["/api/products", params],
+      queryFn: () => findAll(params),
+    }),
+  };
+});
 jest.mock("@/shared/api/seo-settings-server", () => ({
   fetchSeoSettings: jest.fn().mockResolvedValue(null),
 }));
@@ -48,16 +60,25 @@ jest.mock("react", () => {
 });
 
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
+import { productControllerFindAll } from "@/shared/api/generated/products/products";
 import type {
   CategoryTreeNodeEntity,
   PageEntity,
 } from "@/shared/api/generated/models";
 import { fetchPublishedPage } from "@/shared/api/pages-server";
 import { SITE_URL, dict } from "@/shared/config";
+import {
+  findDehydratedQueryKeys,
+  findJsonLdSchemas,
+} from "@/shared/test/element-tree";
+import { buildCatalogListingParams } from "@/widgets/product-list/model/listing-params";
 import ProductsPage, { generateMetadata } from "./page";
 
 const getTree = categoryControllerGetCategoryTree as jest.MockedFunction<
   typeof categoryControllerGetCategoryTree
+>;
+const findAll = productControllerFindAll as jest.MockedFunction<
+  typeof productControllerFindAll
 >;
 const fetchPage = fetchPublishedPage as jest.MockedFunction<
   typeof fetchPublishedPage
@@ -176,5 +197,79 @@ describe("products — owner-editable meta for the unfiltered catalogue (TASK-54
     expect(meta.alternates).toBeUndefined();
     // The preview of a shared search link still names the clean listing.
     expect(meta.openGraph?.url).toBe(`${SITE_URL}/products`);
+  });
+});
+
+describe("products — the first HTML carries the product cards (TASK-563)", () => {
+  const listing = {
+    data: [
+      {
+        id: "p1",
+        name: "Чохол MagSafe",
+        slug: "chohol-magsafe",
+        primaryImage: { url: "https://cdn.example.com/p1.jpg" },
+      },
+      { id: "p2", name: "Скло", slug: "sklo", primaryImage: null },
+    ],
+    meta: { total: 2, page: 1, limit: 20, totalPages: 1 },
+  };
+
+  it("prefetches the grid's page under the key the client view reads", async () => {
+    findAll.mockResolvedValue(listing as never);
+    const query: Record<string, string> = {
+      search: " магніт ",
+      inStock: "true",
+      page: "2",
+    };
+
+    const tree = await ProductsPage(props(query));
+
+    const expected = buildCatalogListingParams((key) => query[key]);
+    expect(findAll).toHaveBeenCalledWith(expected);
+    expect(findDehydratedQueryKeys(tree)).toEqual([
+      ["/api/products", expected],
+    ]);
+  });
+
+  it("describes the same products as an ItemList", async () => {
+    findAll.mockResolvedValue(listing as never);
+
+    const tree = await ProductsPage(props());
+
+    const itemList = findJsonLdSchemas(tree).find(
+      (schema) => schema["@type"] === "ItemList",
+    );
+    expect(itemList?.itemListElement).toEqual([
+      {
+        "@type": "ListItem",
+        position: 1,
+        item: {
+          "@type": "Product",
+          name: "Чохол MagSafe",
+          url: `${SITE_URL}/products/chohol-magsafe`,
+          image: "https://cdn.example.com/p1.jpg",
+        },
+      },
+      {
+        "@type": "ListItem",
+        position: 2,
+        item: {
+          "@type": "Product",
+          name: "Скло",
+          url: `${SITE_URL}/products/sklo`,
+        },
+      },
+    ]);
+  });
+
+  it("still renders when the prefetch fails — the grid fetches on the client, as before", async () => {
+    findAll.mockRejectedValue(new Error("connect ECONNREFUSED"));
+
+    const tree = await ProductsPage(props());
+
+    expect(findDehydratedQueryKeys(tree)).toEqual([]);
+    expect(findJsonLdSchemas(tree).map((schema) => schema["@type"])).toEqual([
+      "BreadcrumbList",
+    ]);
   });
 });

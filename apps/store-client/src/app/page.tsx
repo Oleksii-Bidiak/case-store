@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import {
   HeroBanner,
   TrustStrip,
@@ -8,7 +9,17 @@ import {
   PromoBanner,
   RecentlyViewed,
   Newsletter,
+  firstQueryTabParams,
 } from "@/widgets";
+import { ACTIVE_ROOT_CATEGORIES_PARAMS } from "@/entities/category";
+import { getCategoryControllerGetRootCategoriesQueryOptions } from "@/shared/api/generated/categories/categories";
+import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
+import {
+  createServerQueryClient,
+  dehydrateForClient,
+  prefetchQueries,
+  serverRequestOptions,
+} from "@/shared/api/query-prefetch-server";
 import { JsonLd } from "@/shared/ui";
 import {
   buildOrganizationSchema,
@@ -25,6 +36,15 @@ import {
   resolveSiteName,
   toMetadataTitle,
 } from "@/shared/lib/seo";
+
+/**
+ * Time floor for the prerendered homepage (TASK-563). Catalogue, banner and
+ * carousel writes already purge `/` on demand; this bounds the one case they
+ * cannot reach — a page baked while the API was unreachable (build time), which
+ * would otherwise keep its fallback content until the next admin write. Same
+ * floor as `/categories` and `/promo`.
+ */
+export const revalidate = 3600;
 
 /**
  * Homepage metadata routed through the shared precedence helper (the SeoSettings
@@ -115,6 +135,27 @@ export default async function HomePage() {
   // JSON-LD claiming a different company than the `<title>` (TASK-433).
   const siteName = resolveSiteName(seo);
 
+  // First HTML with links in it (TASK-563): the root categories (the
+  // «Категорії» tiles and the hero's category rail share one key) and, when no
+  // HOME_TABS carousel is published, the «Популярне» rail's first tab — the one
+  // part of the page whose products are otherwise fetched in the browser. A
+  // failed prefetch leaves the widget to fetch on the client, as before.
+  const queryClient = createServerQueryClient();
+  const railParams = firstQueryTabParams(carousels.HOME_TABS);
+  await prefetchQueries(queryClient, [
+    getCategoryControllerGetRootCategoriesQueryOptions(
+      ACTIVE_ROOT_CATEGORIES_PARAMS,
+      { request: serverRequestOptions() },
+    ),
+    ...(railParams
+      ? [
+          getProductControllerFindAllQueryOptions(railParams, {
+            request: serverRequestOptions(),
+          }),
+        ]
+      : []),
+  ]);
+
   return (
     <div className="flex flex-col gap-14 pb-16">
       {/* `logo` (TASK-299) is a recommended Organization property — Google reads it
@@ -131,19 +172,25 @@ export default async function HomePage() {
       />
       <JsonLd schema={buildWebSiteSchema(SITE_URL, siteName)} />
 
-      <HeroBanner
-        heroSlides={banners.HERO_SLIDE}
-        promoTiles={banners.PROMO_TILE}
-      />
-      <TrustStrip />
-      <CategoryNav />
-      <PopularRail carousels={carousels.HOME_TABS} />
-      {/* Owner-approved default (plan 154): admin carousels COEXIST below the
-          PopularRail, grouped with the other product-rail section. */}
-      <RecommendationCarousels carousels={carousels.HOME_RAILS} />
-      <PromoBanner banner={banners.PROMO_BANNER[0]} />
-      <RecentlyViewed />
-      <Newsletter contact={contact} />
+      {/* One boundary around the whole page, not one per widget: the hero's
+          category rail and the «Категорії» tiles read the same key, and both
+          must find it on the server AND during hydration, whatever order their
+          Suspense boundaries hydrate in. */}
+      <PrefetchBoundary state={dehydrateForClient(queryClient)}>
+        <HeroBanner
+          heroSlides={banners.HERO_SLIDE}
+          promoTiles={banners.PROMO_TILE}
+        />
+        <TrustStrip />
+        <CategoryNav />
+        <PopularRail carousels={carousels.HOME_TABS} />
+        {/* Owner-approved default (plan 154): admin carousels COEXIST below the
+            PopularRail, grouped with the other product-rail section. */}
+        <RecommendationCarousels carousels={carousels.HOME_RAILS} />
+        <PromoBanner banner={banners.PROMO_BANNER[0]} />
+        <RecentlyViewed />
+        <Newsletter contact={contact} />
+      </PrefetchBoundary>
     </div>
   );
 }

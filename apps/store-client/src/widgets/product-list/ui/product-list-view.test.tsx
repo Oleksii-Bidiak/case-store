@@ -1,5 +1,11 @@
 import { http, HttpResponse } from "msw";
 import {
+  HydrationBoundary,
+  QueryClient,
+  dehydrate,
+} from "@tanstack/react-query";
+import { getProductControllerFindAllQueryKey } from "@/entities/product";
+import {
   renderWithProviders,
   screen,
   userEvent,
@@ -7,6 +13,10 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import {
+  buildCatalogListingParams,
+  readSearchParamsRecord,
+} from "../model/listing-params";
 import { ProductListView } from "./product-list-view";
 
 // next/navigation is unavailable under jsdom — mock it with a mutable URL so
@@ -442,5 +452,81 @@ describe("ProductListView — mobile filter drawer count (TASK-084)", () => {
     const [path, query] = target.split("?");
     expect(path).toBe("/catalog/chohly/iphone-15");
     expect(new URLSearchParams(query).has("minPrice")).toBe(false);
+  });
+});
+
+describe("ProductListView — adopts the server's prefetch (TASK-563)", () => {
+  /** A client configured like the app's (`app/providers.tsx`: 5-minute staleTime). */
+  const appLikeClient = () =>
+    new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 5 * 60 * 1000 } },
+    });
+
+  /**
+   * What the server page does for one URL: build the params from the awaited
+   * `searchParams` record, fill a query client, dehydrate it.
+   */
+  function serverState(
+    record: Record<string, string>,
+    locks?: Parameters<typeof buildCatalogListingParams>[1],
+  ) {
+    const server = new QueryClient();
+    server.setQueryData(
+      getProductControllerFindAllQueryKey(
+        buildCatalogListingParams(readSearchParamsRecord(record), locks),
+      ),
+      {
+        data: [makeProduct("p-ssr", "Server Case")],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      },
+    );
+    return dehydrate(server);
+  }
+
+  it("renders the prefetched cards on the first render and does not fetch them again", async () => {
+    const productRequests = installCatalogHandlers();
+    // The rules the builder owns: trimmed search, literal-"true" facet, a
+    // blank `specs` read as absent — each one a key mismatch if either side
+    // spelled it differently.
+    currentQuery = "search=%20case%20&inStock=true&specs=&page=1";
+
+    renderWithProviders(
+      <HydrationBoundary
+        state={serverState({
+          search: " case ",
+          inStock: "true",
+          specs: "",
+          page: "1",
+        })}
+      >
+        <ProductListView />
+      </HydrationBoundary>,
+      { queryClient: appLikeClient() },
+    );
+
+    // Synchronously — no skeleton first, i.e. what hydration will see.
+    expect(screen.getByText("Server Case")).toBeInTheDocument();
+    await screen.findByText(/Знайдено товарів: 1/);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(productRequests).toHaveLength(0);
+  });
+
+  it("does the same on a category landing page, where the segment is the category", async () => {
+    const productRequests = installCatalogHandlers();
+    currentPathname = "/categories/cases";
+    currentQuery = "category=ignored";
+
+    renderWithProviders(
+      <HydrationBoundary
+        state={serverState({ category: "ignored" }, { categorySlug: "cases" })}
+      >
+        <ProductListView lockedCategory={{ id: "cat-locked", slug: "cases" }} />
+      </HydrationBoundary>,
+      { queryClient: appLikeClient() },
+    );
+
+    expect(screen.getByText("Server Case")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(productRequests).toHaveLength(0);
   });
 });
