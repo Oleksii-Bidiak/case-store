@@ -45,7 +45,7 @@ function publishedInstant(iso: string | null): string | null {
  * or malformed date renders nothing. Delegates to the shared formatter
  * (TASK-809), so the day is read in Kyiv and not in the process's zone.
  */
-export function formatBlogDate(iso: string | null): string {
+function formatBlogDate(iso: string | null): string {
   const instant = publishedInstant(iso);
   return instant ? formatDate(instant, "short") : "";
 }
@@ -61,7 +61,7 @@ export function formatBlogLongDate(iso: string | null): string {
  * token-driven placeholder gradient across renders even though the backend does
  * not store one.
  */
-export function hueForSlug(slug: string): number {
+function hueForSlug(slug: string): number {
   let hash = 0;
   for (let i = 0; i < slug.length; i++) {
     hash = (hash * 31 + slug.charCodeAt(i)) | 0;

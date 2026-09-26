@@ -4,7 +4,7 @@
  * always renders the same intentional-looking backdrop. Tailwind classes
  * (not raw hex) keep the palette centralised.
  */
-export const PRODUCT_GRADIENTS = [
+const PRODUCT_GRADIENTS = [
   "from-indigo-100 to-sky-100 text-indigo-300",
   "from-rose-100 to-orange-100 text-rose-300",
   "from-emerald-100 to-teal-100 text-emerald-300",

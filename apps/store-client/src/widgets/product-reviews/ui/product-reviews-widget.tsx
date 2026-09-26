@@ -39,7 +39,7 @@ const REVIEW_PAGE_PARAM = "reviewPage";
  * integer — a typo, a stale link, `?reviewPage=0`, `?reviewPage=abc` — falls
  * back to the first page rather than asking the API for nonsense.
  */
-export function resolveReviewPageParam(raw: string | null): number {
+function resolveReviewPageParam(raw: string | null): number {
   const parsed = Number.parseInt(raw ?? "", 10);
   return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1;
 }
