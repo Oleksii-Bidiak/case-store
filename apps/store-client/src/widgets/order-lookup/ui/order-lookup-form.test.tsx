@@ -167,6 +167,70 @@ describe("OrderLookupForm (TASK-483)", () => {
     );
   });
 
+  describe("focus and announcement (TASK-626)", () => {
+    it("moves focus to the result and announces it", async () => {
+      respondWith([order]);
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      await fillAndSubmit(user);
+
+      const region = await screen.findByRole("region", {
+        name: d.resultsRegionAria,
+      });
+      expect(region).toHaveFocus();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        d.resultsAnnounce(1),
+      );
+    });
+
+    it("keeps ONE live region across the swap, so the change is what gets read", async () => {
+      respondWith([order]);
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      const before = screen.getByRole("status");
+      expect(before).toBeEmptyDOMElement();
+
+      await fillAndSubmit(user);
+      await screen.findByRole("region", { name: d.resultsRegionAria });
+
+      expect(screen.getByRole("status")).toBe(before);
+    });
+
+    it("returns focus to the number field on «search again»", async () => {
+      respondWith([order]);
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      await fillAndSubmit(user);
+      await user.click(
+        await screen.findByRole("button", { name: d.searchAgain }),
+      );
+
+      expect(
+        screen.getByRole("textbox", { name: d.fieldNumber }),
+      ).toHaveFocus();
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    });
+
+    it("leaves focus alone on an error — the form stays and the alert speaks", async () => {
+      server.use(
+        http.post(
+          "*/api/orders/lookup",
+          () => new HttpResponse(null, { status: 404 }),
+        ),
+      );
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      await fillAndSubmit(user);
+
+      expect(await screen.findByText(d.errors.notFound)).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: d.submit })).toHaveFocus();
+    });
+  });
+
   it("refuses a number shorter than 8 characters before any request is made", async () => {
     let called = false;
     server.use(

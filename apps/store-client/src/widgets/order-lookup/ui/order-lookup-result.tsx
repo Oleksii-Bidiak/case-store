@@ -27,7 +27,9 @@ function formatDate(value: string): string {
  * future edit wants the street here, it has to go and add the field to a class
  * whose docblock explains why it is missing.
  *
- * Server component: it renders data handed to it and owns no state.
+ * Presentational: it renders data handed to it and owns no state. It runs as a
+ * CLIENT component — its only caller is the `"use client"` `OrderLookupForm`,
+ * and anything imported from a client module is client code.
  */
 export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
   const d = dict.orderLookup;

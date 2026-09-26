@@ -874,6 +874,11 @@ export const dict = {
         word = "товари";
       return `${n} ${word}`;
     },
+    // TASK-540 — the `?specs=` caps the API applies (6 facets, 20 values per
+    // facet, 600 characters). Shown under the characteristics card while some
+    // value cannot be ticked, and linked to those checkboxes via aria-describedby.
+    specLimitReached:
+      "Досягнуто межі фільтра за характеристиками — зніміть одну з позначок, щоб обрати інше.",
   },
 
   product: {
@@ -1458,6 +1463,12 @@ export const dict = {
     // про покупця, а не як недоробка.
     privacyNote:
       "З міркувань безпеки тут показано лише стан замовлення. Повна адреса доставки та контактні дані доступні за посиланням із листа-підтвердження або в особистому кабінеті.",
+    // TASK-626: що чує читач екрана, коли форма змінюється результатом.
+    resultsAnnounce: (count: number) =>
+      count > 1
+        ? `Знайдено замовлень: ${count}. Деталі нижче.`
+        : "Замовлення знайдено. Деталі нижче.",
+    resultsRegionAria: "Результат перевірки замовлення",
   },
 
   account: {
