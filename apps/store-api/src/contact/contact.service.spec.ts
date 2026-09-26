@@ -32,7 +32,7 @@ const contactRepositoryMock = {
   countByStatus: jest.fn(),
   findMatchingUserId: jest.fn(),
   findMatchingUserIds: jest.fn(),
-  findLatestCreatedAtByEmail: jest.fn(),
+  findLatestMessageAgeMsByEmail: jest.fn(),
 };
 
 const pinoLoggerMock = {
@@ -130,7 +130,7 @@ describe('ContactService', () => {
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
     beforeEach(() => {
-      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+      contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(null);
       contactRepositoryMock.create.mockResolvedValue(makeMessage());
     });
 
@@ -145,7 +145,7 @@ describe('ContactService', () => {
       it('does not even consult the cooldown for a bot — no DB read at all', async () => {
         await service.submit({ ...validDto, website: 'x' });
 
-        expect(contactRepositoryMock.findLatestCreatedAtByEmail).not.toHaveBeenCalled();
+        expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).not.toHaveBeenCalled();
       });
 
       it('mints a fresh id per bot submission, so the fake is not a constant to fingerprint', async () => {
@@ -194,15 +194,13 @@ describe('ContactService', () => {
       it('looks the sender up by the lower-cased, trimmed email', async () => {
         await service.submit({ ...validDto, email: '  Ivan@Example.COM ' });
 
-        expect(contactRepositoryMock.findLatestCreatedAtByEmail).toHaveBeenCalledWith(
+        expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).toHaveBeenCalledWith(
           'ivan@example.com',
         );
       });
 
       it('refuses a second message from the same email inside 10 minutes with 429', async () => {
-        contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
-          new Date(NOW.getTime() - 9 * 60 * 1000),
-        );
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(9 * 60 * 1000);
 
         const error = await service.submit(validDto).catch((caught: unknown) => caught);
 
@@ -224,9 +222,7 @@ describe('ContactService', () => {
       ])(
         'carries the REAL remaining wait (written %p ms ago → %p s) (TASK-762)',
         async (agoMs, expected) => {
-          contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
-            new Date(NOW.getTime() - agoMs),
-          );
+          contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(agoMs);
 
           const error = await service.submit(validDto).catch((caught: unknown) => caught);
 
@@ -238,17 +234,26 @@ describe('ContactService', () => {
         },
       );
 
+      it('never holds a sender longer than the window when the row is from the future (TASK-763)', async () => {
+        // A writer whose clock ran five minutes ahead stamped the row "in five
+        // minutes". The old arithmetic added those five minutes to the wait.
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(-5 * 60 * 1000);
+
+        const error = await service.submit(validDto).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(RetryAfterException);
+        expect((error as RetryAfterException).retryAfterSeconds).toBe(600);
+      });
+
       it('accepts the next message once 10 minutes have passed', async () => {
-        contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
-          new Date(NOW.getTime() - 10 * 60 * 1000),
-        );
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(10 * 60 * 1000);
 
         await expect(service.submit(validDto)).resolves.toEqual({ id: 'msg-uuid-1' });
         expect(contactRepositoryMock.create).toHaveBeenCalledTimes(1);
       });
 
       it('accepts the first message from an email that never wrote before', async () => {
-        contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(null);
 
         await expect(service.submit(validDto)).resolves.toEqual({ id: 'msg-uuid-1' });
       });

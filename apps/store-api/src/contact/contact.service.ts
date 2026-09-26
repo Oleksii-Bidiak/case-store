@@ -100,8 +100,11 @@ export class ContactService {
     }
 
     const email = dto.email.trim().toLowerCase();
-    const latest = await this.contactRepository.findLatestCreatedAtByEmail(email);
-    const remainingMs = latest ? CONTACT_EMAIL_COOLDOWN_MS - (Date.now() - latest.getTime()) : 0;
+    // TASK-763: the age comes from the database clock (see the repository), and
+    // a negative age — a row stamped in the future by a skewed writer — counts
+    // as "just now", so no sender is ever held for longer than the window.
+    const ageMs = await this.contactRepository.findLatestMessageAgeMsByEmail(email);
+    const remainingMs = ageMs === null ? 0 : CONTACT_EMAIL_COOLDOWN_MS - Math.max(0, ageMs);
     if (remainingMs > 0) {
       // TASK-762: the REAL remaining wait, not the full window. The copy used to
       // promise "10 minutes from now" to someone who might have one second left.

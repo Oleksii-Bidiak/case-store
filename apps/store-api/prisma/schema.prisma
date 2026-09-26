@@ -1459,6 +1459,10 @@ model ContactMessage {
   updatedAt DateTime             @updatedAt @map("updated_at")
 
   @@index([status, createdAt(sort: Desc)])
+  /// TASK-763: the per-email cooldown probe on every public POST —
+  /// `WHERE email = $1 ORDER BY created_at DESC LIMIT 1`. Exact match only:
+  /// `email` is stored lower(trim()) (TASK-772), so no ILIKE is needed.
+  @@index([email, createdAt(sort: Desc)])
   @@map("contact_messages")
 }
 

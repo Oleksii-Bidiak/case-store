@@ -38,6 +38,8 @@ const prismaMock = {
   // The bulk path uses the CALLBACK form of $transaction — the mock hands the
   // same client back, so a `tx.` call inside is the same spy as a `prisma.` one.
   $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prismaMock)),
+  // The cooldown age is computed in SQL against the database clock (TASK-763).
+  $queryRaw: jest.fn(),
 };
 
 const orderByOfLastFindMany = (): unknown =>
@@ -390,27 +392,41 @@ describe('ContactRepository', () => {
     });
   });
 
-  describe('findLatestCreatedAtByEmail (TASK-452)', () => {
-    it('returns the newest message time for the email, matched case-insensitively', async () => {
-      const latest = new Date('2026-09-19T11:55:00.000Z');
-      prismaMock.contactMessage.findFirst.mockResolvedValue({ createdAt: latest });
+  // What Postgres actually matches — case, the index, the clock — is proven by
+  // test/contact-cooldown.int-spec.ts against a real database; this only pins
+  // the shape of the query and of the answer.
+  describe('findLatestMessageAgeMsByEmail (TASK-452, TASK-763)', () => {
+    /** The SQL text of the last raw query, placeholders and all. */
+    const lastSql = (): string =>
+      (prismaMock.$queryRaw.mock.calls.at(-1)?.[0] as TemplateStringsArray).join('?');
 
-      const result = await repository.findLatestCreatedAtByEmail('ivan@example.com');
+    it('returns the age of the newest message in milliseconds', async () => {
+      prismaMock.$queryRaw.mockResolvedValue([{ age_ms: 61000.5 }]);
 
-      expect(result).toBe(latest);
-      // `mode: 'insensitive'` because `email` is stored as typed: a sender who
-      // wrote `Ivan@Example.com` once must not dodge the cooldown by lower-casing.
-      expect(prismaMock.contactMessage.findFirst).toHaveBeenCalledWith({
-        where: { email: { equals: 'ivan@example.com', mode: 'insensitive' } },
-        orderBy: { createdAt: 'desc' },
-        select: { createdAt: true },
+      await expect(repository.findLatestMessageAgeMsByEmail('ivan@example.com')).resolves.toBe(
+        61000.5,
+      );
+      expect(prismaMock.$queryRaw.mock.calls.at(-1)?.slice(1)).toEqual(['ivan@example.com']);
+    });
+
+    it('matches exactly (no ILIKE) and measures against the database clock', () => {
+      prismaMock.$queryRaw.mockResolvedValue([]);
+
+      return repository.findLatestMessageAgeMsByEmail('ivan@example.com').then(() => {
+        const sql = lastSql();
+        expect(sql).toMatch(/WHERE email = \?/);
+        expect(sql).not.toMatch(/ILIKE|lower\(/i);
+        expect(sql).toMatch(/now\(\) AT TIME ZONE 'UTC'/);
+        expect(sql).toMatch(/ORDER BY created_at DESC\s+LIMIT 1/);
       });
     });
 
     it('returns null when that email never wrote', async () => {
-      prismaMock.contactMessage.findFirst.mockResolvedValue(null);
+      prismaMock.$queryRaw.mockResolvedValue([]);
 
-      await expect(repository.findLatestCreatedAtByEmail('ghost@example.com')).resolves.toBeNull();
+      await expect(
+        repository.findLatestMessageAgeMsByEmail('ghost@example.com'),
+      ).resolves.toBeNull();
     });
   });
 

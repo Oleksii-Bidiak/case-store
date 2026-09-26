@@ -61,7 +61,7 @@ describe('Contact (e2e)', () => {
     countByStatus: jest.fn(),
     findMatchingUserId: jest.fn(),
     findMatchingUserIds: jest.fn(),
-    findLatestCreatedAtByEmail: jest.fn(),
+    findLatestMessageAgeMsByEmail: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -160,7 +160,7 @@ describe('Contact (e2e)', () => {
     };
 
     it('stores a normal submission and returns 201 { data: { id } }', async () => {
-      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+      contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(null);
       contactRepositoryMock.create.mockResolvedValue(makeMessageRow());
 
       const res = await request(app.getHttpServer()).post('/api/contact').send(body).expect(201);
@@ -179,11 +179,11 @@ describe('Contact (e2e)', () => {
       expect(Object.keys(res.body.data)).toEqual(['id']);
       expect(res.body.data.id).toMatch(/^[0-9a-f-]{36}$/);
       expect(contactRepositoryMock.create).not.toHaveBeenCalled();
-      expect(contactRepositoryMock.findLatestCreatedAtByEmail).not.toHaveBeenCalled();
+      expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).not.toHaveBeenCalled();
     });
 
     it('accepts an empty honeypot as a human submission', async () => {
-      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+      contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(null);
       contactRepositoryMock.create.mockResolvedValue(makeMessageRow());
 
       await request(app.getHttpServer())
@@ -195,9 +195,7 @@ describe('Contact (e2e)', () => {
     });
 
     it('refuses a second message from the same email within 10 minutes with 429 CONTACT_COOLDOWN', async () => {
-      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
-        new Date(Date.now() - 60 * 1000),
-      );
+      contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(60 * 1000);
 
       const res = await request(app.getHttpServer())
         .post('/api/contact')
@@ -205,7 +203,7 @@ describe('Contact (e2e)', () => {
         .expect(429);
 
       expect(res.body).toEqual(expect.objectContaining({ error: 'CONTACT_COOLDOWN' }));
-      expect(contactRepositoryMock.findLatestCreatedAtByEmail).toHaveBeenCalledWith(
+      expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).toHaveBeenCalledWith(
         'ivan@example.com',
       );
       expect(contactRepositoryMock.create).not.toHaveBeenCalled();
