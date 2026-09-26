@@ -132,8 +132,11 @@ export interface RichTextPreviewProps {
  */
 export function RichTextPreview({ html, emptyLabel }: RichTextPreviewProps) {
   // Text-based emptiness: Tiptap emits "<p></p>" for a cleared document, which
-  // must show the placeholder too, not an invisible empty paragraph.
-  const isEmpty = !html.replace(/<[^>]*>/g, "").trim();
+  // must show the placeholder too, not an invisible empty paragraph. But an
+  // image, a rule or a table is content without text — a draft made of a
+  // single media-library image must render it, not claim to be empty.
+  const isEmpty =
+    !html.replace(/<[^>]*>/g, "").trim() && !/<(img|hr|table)\b/i.test(html);
 
   return (
     <div

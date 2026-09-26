@@ -99,4 +99,32 @@ describe("RichTextPreview (TASK-266)", () => {
       screen.getByText(dict.contentPreview.emptyContent),
     ).toBeInTheDocument();
   });
+
+  it.each([
+    ['<img src="https://cdn.example.com/a.jpg" alt="Чохол">'],
+    ['<p><img src="https://cdn.example.com/a.jpg" alt="Чохол"></p>'],
+  ])("renders a draft that is only an image: %s", (html) => {
+    render(<RichTextPreview html={html} />);
+
+    expect(screen.getByRole("img", { name: "Чохол" })).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.contentPreview.emptyContent),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders a draft that is only a rule or an empty table", () => {
+    const { rerender } = render(<RichTextPreview html="<hr>" />);
+    expect(screen.getByRole("separator")).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.contentPreview.emptyContent),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <RichTextPreview html="<table><tbody><tr><td></td></tr></tbody></table>" />,
+    );
+    expect(screen.getByRole("table")).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.contentPreview.emptyContent),
+    ).not.toBeInTheDocument();
+  });
 });
