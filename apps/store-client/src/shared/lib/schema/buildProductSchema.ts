@@ -2,11 +2,12 @@ import type {
   PublicProductEntity,
   ProductImageEntity,
 } from "@/shared/api/generated/models";
-// Imported from the MODULE, not the `@/shared/lib/seo` barrel: that barrel also
-// re-exports `indexnow`, which pulls in `@sentry/nextjs`. `shared/lib/index.ts`
-// re-exports this schema module, so a barrel import here would drag Sentry into
-// every component that touches `@/shared/lib` — and under Jest, where
-// `@sentry/nextjs` does not resolve, that takes down the whole suite.
+// Imported from the MODULE, not the `@/shared/lib/seo` barrel. Until TASK-570 the
+// barrel re-exported `indexnow`, which pulls in `@sentry/nextjs`, and
+// `shared/lib/index.ts` re-exports this schema module — a barrel import here
+// would have dragged Sentry into every component touching `@/shared/lib`. The
+// barrel is pure now (guarded by `seo-barrel.test.ts`); the direct import stays
+// as the narrowest dependency.
 import { stripFormatting } from "@/shared/lib/seo/resolveSeo";
 import { RETURN_POLICY } from "@/shared/config/return-policy";
 

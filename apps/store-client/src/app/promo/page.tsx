@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { PromoView } from "@/widgets/promo";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { buildHubMetadata } from "@/shared/lib/seo";
+import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { SITE_URL, dict } from "@/shared/config";
 
 // TASK-435 — admin-managed via the `promo` HUB page row; dictionary fallback.

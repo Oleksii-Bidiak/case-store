@@ -30,11 +30,11 @@ export type { ResolveSiteNameSettings } from "./resolve-site-name";
 export { buildOgImages } from "./og-images";
 export type { OgImage } from "./og-images";
 
-// Listing-hub metadata from the admin-managed `PageKind.HUB` rows (TASK-435) —
-// the six section landing pages get their title/description from the panel, with
-// this route's dictionary strings as the fallback.
-export { buildHubMetadata } from "./hub-metadata";
-export type { HubMetadataInput } from "./hub-metadata";
+// NOT here, on purpose (TASK-570): `buildHubMetadata` and the IndexNow
+// submitter. Both perform requests (server fetchers, Sentry), and this barrel is
+// imported for its pure helpers from places that must not carry either — import
+// them from `@/shared/lib/seo/server`. `seo-barrel.test.ts` walks this file's
+// import graph and fails if a server-only module is reachable from it again.
 
 // Listing canonical/noindex policy (plan 143) — pure, unit-tested; consumed by
 // the `/products` and `/categories/[slug]` `generateMetadata()` call sites.
@@ -44,13 +44,3 @@ export type {
   ListingMetadataInput,
   ListingMetadataResult,
 } from "./listing-metadata";
-
-// IndexNow submission (plan 144) — fire-and-forget instant-index ping for
-// Bing/Seznam, wired into `/api/revalidate`; no-op without INDEXNOW_KEY or
-// outside production.
-export {
-  getIndexNowKey,
-  buildIndexNowPayload,
-  submitToIndexNow,
-} from "./indexnow";
-export type { IndexNowPayload } from "./indexnow";

@@ -10,7 +10,7 @@ import {
   buildBreadcrumbSchema,
   buildItemListSchema,
 } from "@/shared/lib/schema";
-import { buildHubMetadata } from "@/shared/lib/seo";
+import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { SITE_URL, dict } from "@/shared/config";
 
 // TASK-432 — /blog was the only storefront route with no `alternates.canonical`,

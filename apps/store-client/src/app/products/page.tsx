@@ -17,7 +17,6 @@ import { categoryControllerGetCategoryTree } from "@/shared/api/generated/catego
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import {
-  buildHubMetadata,
   buildListingMetadata,
   buildOgImages,
   resolveSeo,
@@ -25,6 +24,7 @@ import {
   toMetadataTitle,
   type ListingFilterParams,
 } from "@/shared/lib/seo";
+import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, dict } from "@/shared/config";
 

@@ -11,7 +11,7 @@ import { fetchFaqItems } from "@/shared/api/faq-server";
 import { fetchPublishedPage } from "@/shared/api/pages-server";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { sanitizeHtml } from "@/shared/lib/sanitize-html";
-import { buildHubMetadata } from "@/shared/lib/seo";
+import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { INFO_SLUG_INLINED_ON_HUB, SITE_URL, dict } from "@/shared/config";
 
 // TASK-435 — the hub's own title/description are admin-managed through the
