@@ -784,16 +784,7 @@
       `start` у store-client), Network → Fast 3G, скроль каталог. **Має бути:** картинки
       нижче екрана вантажаться в міру скролу.
       🎯 ⛔ staging — TASK-457 · 📝 було: не можу запустити локально: не вистачає оперативної памяті
-- [❌ [Violation] Forced reflow while executing JavaScript took 55ms
-1-vwssf0vdy4x.js:2  GET https://<стенд>/catalog?sale=true&_rsc=5CB68i4pnAekjehf 404 (Not Found)
-T @ 1-vwssf0vdy4x.js:2
-await in T
-eR @ 1-vwssf0vdy4x.js:2
-ep @ 1-vwssf0vdy4x.js:2
-(anonymous) @ 1-vwssf0vdy4x.js:2
-(anonymous) @ 1-vwssf0vdy4x.js:2
-C @ 1-vwssf0vdy4x.js:2
-1-vwssf0vdy4x.js:2  GET https://<стенд>/catalog?_rsc=5CB68i4pnAekjehf 404 (Not Found)] **SF-UX-13 — Чиста консоль прод-збірки.** **Зроби:** на прод-збірці відкрий
+- [🔁] **SF-UX-13 — Чиста консоль прод-збірки.** **Зроби:** на прод-збірці відкрий
       головну/каталог/PDP, F12 → Console. **Має бути:** нуль помилок і нуль
       preload-ворнінгів (у dev вони лишаються — відомий артефакт).
       🎯 TASK-419 · 📝 було: тільки помилка у неавторизованого користувача від api/auth/refresh:1

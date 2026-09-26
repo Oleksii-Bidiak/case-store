@@ -62,7 +62,7 @@ export class BannerEntity {
 
   @ApiProperty({
     description: 'Call-to-action link (href)',
-    example: '/catalog?sale=true',
+    example: '/promo',
     type: String,
     nullable: true,
     required: false,

@@ -1651,7 +1651,9 @@ export const dict = {
     imageUrlPlaceholder: "/images/banners/… або https://…",
     ctaLabel: "Текст кнопки",
     ctaHref: "Посилання кнопки",
-    ctaHrefPlaceholder: "/catalog",
+    // TASK-836 — a route the storefront actually has: a bare `/catalog` never
+    // existed and every banner pointing there logged a 404 prefetch.
+    ctaHrefPlaceholder: "/products",
     theme: "Тема / акцент",
     themePlaceholder: "accent, default…",
     // TASK-295: no `sortOrder` label — the order field is gone from this form

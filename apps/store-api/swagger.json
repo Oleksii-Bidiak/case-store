@@ -14651,6 +14651,11 @@
             "type": "string",
             "description": "User last name",
             "example": "Doe"
+          },
+          "hpCheck": {
+            "type": "string",
+            "description": "Leave empty or omit it. Present only so the storefront form can carry a field that people never see; a request that fills it creates no account.",
+            "maxLength": 255
           }
         },
         "required": [
@@ -22917,7 +22922,7 @@
           "ctaHref": {
             "type": "string",
             "description": "Call-to-action link (href)",
-            "example": "/catalog?sale=true",
+            "example": "/promo",
             "nullable": true
           },
           "theme": {
@@ -23144,7 +23149,7 @@
           "ctaHref": {
             "type": "string",
             "description": "Call-to-action link (href)",
-            "example": "/catalog"
+            "example": "/products"
           },
           "theme": {
             "type": "string",
@@ -23220,7 +23225,7 @@
           "ctaHref": {
             "type": "string",
             "description": "Call-to-action link (href)",
-            "example": "/catalog"
+            "example": "/products"
           },
           "theme": {
             "type": "string",
