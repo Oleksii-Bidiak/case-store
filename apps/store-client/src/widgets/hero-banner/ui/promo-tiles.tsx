@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { Badge } from "@/shared/ui";
+import { Badge, BannerBackdrop } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
@@ -14,6 +14,8 @@ type PromoTile = {
   cta?: string;
   href: string;
   accent: Accent;
+  /** Admin banner picture (TASK-740); the accent tint shows without one. */
+  imageUrl?: string;
 };
 
 /** Accent rotation applied to admin banners in placement order. */
@@ -36,6 +38,7 @@ function bannersToTiles(banners: BannerEntity[]): PromoTile[] {
       cta: b.ctaLabel ?? undefined,
       href: b.ctaHref ?? "#",
       accent: themed ?? ACCENT_CYCLE[i % ACCENT_CYCLE.length],
+      imageUrl: b.imageUrl ?? undefined,
     };
   });
 }
@@ -86,8 +89,16 @@ export function PromoTiles({ banners }: PromoTilesProps = {}) {
           <Link
             key={`${tile.title}-${i}`}
             href={tile.href}
-            className={`group flex flex-col rounded-2xl border p-6 transition-shadow hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${accent.surface}`}
+            className={`group relative isolate flex flex-col overflow-hidden rounded-2xl border p-6 transition-shadow hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${accent.surface}`}
           >
+            {/* Admin picture under the copy (TASK-740). The tile's text is
+                foreground-on-background, so the scrim is the background
+                colour — the picture reads as a texture, the copy stays legible. */}
+            <BannerBackdrop
+              src={tile.imageUrl}
+              sizes="(max-width: 639px) 100vw, 420px"
+              scrimClassName="bg-background/80"
+            />
             {tile.badge && (
               <Badge variant={accent.badge} className="w-fit">
                 {tile.badge}
