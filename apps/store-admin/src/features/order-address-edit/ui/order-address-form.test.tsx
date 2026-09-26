@@ -158,3 +158,42 @@ describe("OrderAddressForm — refusals (TASK-622)", () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * TASK-577: `123` used to pass the form (`min(1)`), reach the API and come back
+ * as a 400 — which the conflict mapper of the day read as «замовлення
+ * змінилося». Now the form stops it, under the field, before any request.
+ */
+describe("OrderAddressForm — phone validation (TASK-577)", () => {
+  it("rejects «123» under the phone field and sends nothing", async () => {
+    let patched = false;
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", () => {
+        patched = true;
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+    renderWithProviders(<OrderAddressForm order={makeOrder("PENDING")} />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    const phone = screen.getByLabelText(dict.orderCreate.addressPhone);
+    await userEvent.clear(phone);
+    await userEvent.type(phone, "123");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    expect(
+      await screen.findByText(dict.orderCreate.contactPhoneInvalid),
+    ).toBeInTheDocument();
+    expect(phone).toHaveAttribute("aria-invalid", "true");
+    expect(patched).toBe(false);
+    expect(
+      screen.queryByText(dict.orderStatus.conflictUnknown),
+    ).not.toBeInTheDocument();
+  });
+});
