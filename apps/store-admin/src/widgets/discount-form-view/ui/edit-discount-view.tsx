@@ -19,6 +19,7 @@ import {
   type DiscountEntity,
 } from "@/entities/discount";
 import { dict } from "@/shared/config";
+import { toKyivDateInput } from "@/shared/lib";
 
 interface EditDiscountViewProps {
   discountId: string;
@@ -115,8 +116,11 @@ export function EditDiscountView({ discountId }: EditDiscountViewProps) {
 function mapDiscountToFormValues(
   discount: DiscountEntity,
 ): Partial<DiscountFormInput> {
+  // The KYIV calendar day (TASK-795). `iso.slice(0, 10)` was the UTC day: a
+  // window starting at 00:00 Kyiv on the 1st is 21:00 UTC on the 31st, so the
+  // form reopened a day early and re-saving it moved the start back a day.
   const toDateInput = (iso: string | null): string =>
-    iso ? iso.slice(0, 10) : "";
+    iso ? toKyivDateInput(iso) : "";
 
   return {
     code: discount.code,

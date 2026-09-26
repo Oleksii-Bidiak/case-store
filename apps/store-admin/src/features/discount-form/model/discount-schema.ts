@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CreateDiscountDto, UpdateDiscountDto } from "@/entities/discount";
 import { dict } from "@/shared/config";
+import { fromKyivDateEnd, fromKyivDateStart } from "@/shared/lib";
 
 const e = dict.discountForm.errors;
 
@@ -66,7 +67,8 @@ export const discountSchema = z
     (data) =>
       !data.startsAt ||
       !data.expiresAt ||
-      new Date(data.startsAt) <= new Date(data.expiresAt),
+      // Both are `YYYY-MM-DD`, which orders lexicographically — no zone needed.
+      data.startsAt <= data.expiresAt,
     { path: ["expiresAt"], message: e.dateOrder },
   );
 
@@ -77,7 +79,8 @@ export type DiscountFormValues = z.output<typeof discountSchema>;
  * Map parsed form values to a create/update payload. Blank optional fields are
  * dropped on create (backend stores null) and sent as `null` on update so an
  * admin can explicitly clear a previously-set cap/window. Date strings are
- * widened to ISO datetimes (`YYYY-MM-DD` → start of day UTC) for the API.
+ * widened to ISO instants of the KYIV day: `startsAt` → 00:00:00.000 Kyiv,
+ * `expiresAt` → 23:59:59.999 Kyiv (DST-safe, see `datetime-local.ts`).
  */
 export function discountFormValuesToDto(
   values: DiscountFormValues,
@@ -90,9 +93,18 @@ export function discountFormValuesToDto(
   values: DiscountFormValues,
   options: { isUpdate?: boolean } = {},
 ): CreateDiscountDto | UpdateDiscountDto {
-  const toIso = (date?: string): string | null | undefined => {
-    if (!date) return options.isUpdate ? null : undefined;
-    return new Date(date).toISOString();
+  // A day typed into `<input type="date">` is a KYIV calendar day, and the
+  // window is inclusive at both ends: the code works from 00:00 Kyiv on the
+  // start day through 23:59:59.999 Kyiv on the end day (TASK-795). What stood
+  // here was `new Date(date).toISOString()` — UTC midnight, i.e. 03:00 Kyiv —
+  // so «Діє до 1 вересня» stopped working at 03:00 on 1 September.
+  const toIso = (
+    date: string | undefined,
+    bound: (value: string) => Date | null,
+  ): string | null | undefined => {
+    const instant = date ? bound(date) : null;
+    if (!instant) return options.isUpdate ? null : undefined;
+    return instant.toISOString();
   };
   const orClear = <T>(v: T | undefined): T | null | undefined =>
     v === undefined ? (options.isUpdate ? null : undefined) : v;
@@ -104,8 +116,8 @@ export function discountFormValuesToDto(
     minSpend: orClear(values.minSpend),
     maxRedemptions: orClear(values.maxRedemptions),
     perUserLimit: orClear(values.perUserLimit),
-    startsAt: toIso(values.startsAt),
-    expiresAt: toIso(values.expiresAt),
+    startsAt: toIso(values.startsAt, fromKyivDateStart),
+    expiresAt: toIso(values.expiresAt, fromKyivDateEnd),
     isActive: values.isActive,
     showOnPromoPage: values.showOnPromoPage,
   } as CreateDiscountDto | UpdateDiscountDto;

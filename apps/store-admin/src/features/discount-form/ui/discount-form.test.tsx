@@ -165,8 +165,45 @@ describe("discountFormValuesToDto", () => {
     ).toBe(true);
   });
 
-  it("widens a date-only string to an ISO datetime", () => {
+  // TASK-795: the old assertion here was `new Date("2026-09-01").toISOString()`
+  // — UTC midnight, 03:00 Kyiv — i.e. the test pinned the bug.
+  it("sends «Діє до 1 вересня» as the end of that day in Kyiv", () => {
     const dto = discountFormValuesToDto({ ...base, expiresAt: "2026-09-01" });
-    expect(dto.expiresAt).toBe(new Date("2026-09-01").toISOString());
+    expect(dto.expiresAt).toBe("2026-09-01T20:59:59.999Z");
+  });
+
+  it("sends the start day as 00:00 in Kyiv", () => {
+    const dto = discountFormValuesToDto({ ...base, startsAt: "2026-09-01" });
+    expect(dto.startsAt).toBe("2026-08-31T21:00:00.000Z");
+  });
+
+  it("keeps both bounds on the wall clock across a DST switch", () => {
+    // 25 October 2026: Kyiv falls back from UTC+3 to UTC+2 at 04:00, so the
+    // day starts at +3 and ends at +2 — a hard-coded offset gets one of them wrong.
+    const dto = discountFormValuesToDto(
+      { ...base, startsAt: "2026-10-25", expiresAt: "2026-10-25" },
+      { isUpdate: true },
+    );
+    expect(dto.startsAt).toBe("2026-10-24T21:00:00.000Z");
+    expect(dto.expiresAt).toBe("2026-10-25T21:59:59.999Z");
+  });
+
+  it("accepts a one-day window (start day = end day)", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<DiscountForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(screen.getByLabelText(dict.discountForm.code), "day");
+    await userEvent.type(screen.getByLabelText(dict.discountForm.value), "5");
+    await userEvent.type(
+      screen.getByLabelText(dict.discountForm.startsAt, { exact: false }),
+      "2026-09-01",
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.discountForm.expiresAt, { exact: false }),
+      "2026-09-01",
+    );
+    await submitForm();
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
   });
 });

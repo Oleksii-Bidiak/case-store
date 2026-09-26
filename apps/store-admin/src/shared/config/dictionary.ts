@@ -421,6 +421,15 @@ export const dict = {
       announceColorCleared: (count: number) =>
         `Прибрано колір у товарах: ${count}`,
       announceColorFailed: "Не вдалося змінити колір товарів",
+
+      // «Скасувати» for the last bulk action (TASK-837, AD-PROD-33). Named like
+      // the reorder undo so the two read as the same kind of control.
+      undo: "Скасувати останню масову дію",
+      announceUndoing: (count: number) => `Повернення ${count} тов.…`,
+      announceUndone: (count: number) =>
+        `Масову дію скасовано, повернуто товарів: ${count}`,
+      announceUndoFailed:
+        "Не вдалося скасувати масову дію повністю. Спробуйте ще раз.",
     },
     back: "← Назад до товарів",
     createHeading: "Створення товару",
@@ -1253,6 +1262,9 @@ export const dict = {
       intInvalid: "Вкажіть ціле число більше 0",
       dateOrder: "Дата початку має передувати даті завершення",
     },
+    // TASK-795: the window is a pair of KYIV calendar days, inclusive.
+    datesHint:
+      "Дні — за київським часом, включно: код діє з 00:00 першого дня до 23:59 останнього.",
   },
 
   // --- Static pages (TASK-153) ------------------------------------------------
