@@ -1,10 +1,5 @@
 import { http, HttpResponse } from "msw";
-import {
-  renderWithProviders,
-  screen,
-  userEvent,
-  within,
-} from "@/shared/test/render";
+import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { ProductListView } from "./product-list-view";
@@ -164,7 +159,7 @@ describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", ()
     expect(lastRequest.searchParams.get("minPrice")).toBe("100");
   });
 
-  it("«Скинути фільтри» clears the other filters but never un-locks the category", async () => {
+  it("«Скинути всі фільтри» clears the other filters but never un-locks the category", async () => {
     const user = userEvent.setup();
     installCatalogHandlers({ empty: true });
     currentPathname = "/categories/cases";
@@ -178,7 +173,7 @@ describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", ()
     );
 
     await user.click(
-      await screen.findByRole("button", { name: dict.catalog.clearFilters }),
+      await screen.findByRole("button", { name: dict.catalog.clearAllFilters }),
     );
 
     expect(mockReplace).toHaveBeenCalled();
@@ -223,7 +218,7 @@ describe("ProductListView — filters (TASK-414)", () => {
   // The regression that motivated the shared filter set: «Скинути фільтри»
   // cleared four params and left the device, spec and availability selections
   // applied — visible in the chips row, unreachable from the reset.
-  it("«Скинути фільтри» clears EVERY filter, not just the four it used to", async () => {
+  it("«Скинути всі фільтри» clears EVERY filter, not just the four it used to", async () => {
     const user = userEvent.setup();
     installCatalogHandlers({ empty: true });
     currentQuery =
@@ -233,17 +228,11 @@ describe("ProductListView — filters (TASK-414)", () => {
     renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
     await screen.findByText(dict.catalog.emptyHeading);
 
-    // The sidebar panel carries a reset button with the SAME label, and it
-    // deliberately leaves the category alone (its control is the chips row).
-    // The one under test is the empty state's, which clears the lot — so pick
-    // it by its container rather than by a label the two share.
-    const emptyState = screen
-      .getByText(dict.catalog.emptyHeading)
-      .closest("div")!;
+    // The empty state's reset clears the lot, category included; since
+    // TASK-516 it is NAMED differently from the panel's, which keeps the
+    // category — so it is found by its own name, no container scoping needed.
     await user.click(
-      within(emptyState).getByRole("button", {
-        name: dict.catalog.clearFilters,
-      }),
+      screen.getByRole("button", { name: dict.catalog.clearAllFilters }),
     );
 
     const target = mockReplace.mock.calls.at(-1)![0] as string;
@@ -260,6 +249,24 @@ describe("ProductListView — filters (TASK-414)", () => {
     ]) {
       expect(params.has(key)).toBe(false);
     }
+  });
+
+  // TASK-516: two buttons that do different things (the panel keeps the
+  // category, the empty state does not) must not share an accessible name.
+  it("names the empty state's reset apart from the panel's", async () => {
+    installCatalogHandlers({ empty: true });
+    currentQuery = "category=chargers&minPrice=100";
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    expect(dict.catalog.clearAllFilters).not.toBe(dict.filters.clear);
+    expect(
+      screen.getAllByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByRole("button", { name: dict.filters.clear }),
+    ).toHaveLength(1);
   });
 
   it("badges the mobile filters button with the spec facets the old count missed", async () => {

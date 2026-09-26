@@ -518,6 +518,11 @@ export const dict = {
       // can express, and the reason /search does not reuse the catalogue sort.
       sortRelevance: "За релевантністю",
     },
+    // TASK-516 — the empty state's reset clears EVERYTHING, category included,
+    // while the panel's `filters.clear` deliberately keeps the category (its
+    // control is the chips row). Two behaviours, so two names: a screen reader
+    // must not meet two identically named buttons that do different things.
+    clearAllFilters: "Скинути всі фільтри",
   },
 
   // Info & support hub (/info, Info.dc.html import). Content is static (stub)
