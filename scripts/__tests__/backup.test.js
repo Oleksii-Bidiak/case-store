@@ -10,6 +10,7 @@
 //            (swallows stdin, prints a table of contents) and `tar czf -` of the
 //            uploads volume. What the tar call emits is chosen by STUB_UPLOADS:
 //              valid     — a real gzip tar of a temp directory with files in it
+//              empty     — a real gzip tar of an empty directory (a fresh shop)
 //              garbage   — bytes that are not gzip at all
 //              truncated — the first half of a real gzip tar
 //   age    — `age -r KEY -o OUT IN` just copies IN to OUT.
@@ -82,6 +83,11 @@ case "$args" in
     case "\${STUB_UPLOADS:-valid}" in
       valid)
         tar czf - -C "$STUB_UPLOADS_SRC" .
+        ;;
+      empty)
+        tmp="$(mktemp -d)"
+        tar czf - -C "$tmp" .
+        rmdir "$tmp"
         ;;
       garbage)
         printf 'this is not a gzip archive, it only has a size\\n'
@@ -201,6 +207,19 @@ test('a readable uploads archive: exits 0 and counts the files in it', { skip },
   const files = listDir(r.backupDir);
   assert.ok(files.some((f) => /^db-.*\.dump\.age$/.test(f)), `no db .age in ${files}`);
   assert.ok(files.some((f) => /^uploads-.*\.tar\.gz\.age$/.test(f)), `no uploads .age in ${files}`);
+  assert.deepEqual(listDir(r.tmpDir), [], 'plaintext work dir left behind');
+});
+
+// The other side of the integrity check: a shop with no uploads yet produces a
+// readable archive with nothing in it, and that must stay a successful backup.
+test('an empty but readable uploads archive: exits 0 with 0 files', { skip }, () => {
+  const r = runBackup('empty');
+  assert.equal(r.status, 0, r.output);
+  assert.match(r.output, /ok — 0 file\(s\)/);
+  assert.ok(
+    listDir(r.backupDir).some((f) => /^uploads-.*\.tar\.gz\.age$/.test(f)),
+    'no uploads .age for an empty archive',
+  );
   assert.deepEqual(listDir(r.tmpDir), [], 'plaintext work dir left behind');
 });
 
