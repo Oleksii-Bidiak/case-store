@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { OrderHistoryNote, OrderStatus, PaymentStatus } from '@prisma/client';
+import { ProductsReportRepository } from '../analytics/reports/products-report.repository';
 import { DashboardRepository } from './dashboard.repository';
 import { PrismaService } from '../prisma';
 
@@ -47,7 +48,11 @@ describe('DashboardRepository — the rating-abuse signal (TASK-589)', () => {
     reviewGroupBy.mockResolvedValue([]);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [DashboardRepository, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        DashboardRepository,
+        ProductsReportRepository,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
     }).compile();
     repo = module.get(DashboardRepository);
   });
@@ -203,7 +208,11 @@ describe('DashboardRepository — the «Недоступні позиції» ti
     orderCount.mockResolvedValue(0);
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [DashboardRepository, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        DashboardRepository,
+        ProductsReportRepository,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
     }).compile();
     repo = module.get(DashboardRepository);
   });
@@ -277,7 +286,11 @@ describe('DashboardRepository — the «Оплачено після скасув
     jest.clearAllMocks();
     orderCount.mockResolvedValue(0);
     const module: TestingModule = await Test.createTestingModule({
-      providers: [DashboardRepository, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        DashboardRepository,
+        ProductsReportRepository,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
     }).compile();
     repo = module.get(DashboardRepository);
   });
@@ -356,7 +369,11 @@ describe('DashboardRepository — what counts as money still owed (review of pla
     orderAggregate.mockResolvedValue({ _sum: { total: null } });
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [DashboardRepository, { provide: PrismaService, useValue: prismaMock }],
+      providers: [
+        DashboardRepository,
+        ProductsReportRepository,
+        { provide: PrismaService, useValue: prismaMock },
+      ],
     }).compile();
     repo = module.get(DashboardRepository);
   });

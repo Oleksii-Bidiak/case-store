@@ -9,6 +9,7 @@ import {
   OrderHistoryChangeType,
   ReviewTextStatus,
 } from '@prisma/client';
+import { ProductsReportRepository } from '../src/analytics/reports/products-report.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
 import { PrismaService } from '../src/prisma';
@@ -51,7 +52,7 @@ describe('DashboardRepository (integration)', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, DashboardRepository],
+      providers: [PrismaService, DashboardRepository, ProductsReportRepository],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -195,6 +196,41 @@ describe('DashboardRepository (integration)', () => {
       expect(topProducts.find((p) => p.productId === unpaidProductId)).toBeUndefined();
       // A product whose only order is CANCELLED must not appear.
       expect(topProducts.find((p) => p.productId === cancelledProductId)).toBeUndefined();
+    });
+
+    it('keeps a product whose order was partly refunded — the report leaders’ base (TASK-688)', async () => {
+      const partial = await prisma.product.create({
+        data: {
+          name: 'Dash Partial',
+          slug: `dash-partial-${randomUUID()}`,
+          price: '5.00',
+          categoryId,
+        },
+      });
+      let orderId: string | undefined;
+      try {
+        ({ id: orderId } = await prisma.order.create({
+          data: {
+            userId,
+            status: OrderStatus.DELIVERED,
+            paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+            subtotal: '500.00',
+            total: '500.00',
+            items: { create: [{ productId: partial.id, quantity: 50, price: '10.00' }] },
+          },
+        }));
+
+        const { topProducts } = (await repo.getSummary({ topProductsRankedBy: 'units' })).products;
+        // Before TASK-688 the PAID-only join dropped it; one refunded line
+        // does not un-sell the other forty-nine.
+        expect(topProducts.find((p) => p.productId === partial.id)).toMatchObject({
+          unitsSold: 50,
+          totalRevenue: 500,
+        });
+      } finally {
+        if (orderId) await prisma.order.delete({ where: { id: orderId } });
+        await prisma.product.delete({ where: { id: partial.id } });
+      }
     });
 
     it('reports units sold beside the revenue (TASK-684)', async () => {

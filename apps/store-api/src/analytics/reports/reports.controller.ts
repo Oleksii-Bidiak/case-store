@@ -10,7 +10,10 @@ import { CatalogueReportService } from './catalogue-report.service';
 import { CategoryReportQueryDto } from './dto/category-report-query.dto';
 import { PeriodQueryDto } from './dto/period-query.dto';
 import { BrandReportEntity, CategoryReportEntity } from './entities/catalogue-report.entity';
+import { ProductsReportQueryDto } from './dto/products-report-query.dto';
+import { ProductsReportEntity } from './entities/products-report.entity';
 import { SalesReportEntity } from './entities/sales-report.entity';
+import { ProductsReportService } from './products-report.service';
 import { SalesReportService } from './sales-report.service';
 
 class SalesReportEnvelope {
@@ -21,6 +24,11 @@ class SalesReportEnvelope {
 class CategoryReportEnvelope {
   @ApiProperty({ type: CategoryReportEntity })
   data!: CategoryReportEntity;
+}
+
+class ProductsReportEnvelope {
+  @ApiProperty({ type: ProductsReportEntity })
+  data!: ProductsReportEntity;
 }
 
 class BrandReportEnvelope {
@@ -50,6 +58,7 @@ export class ReportsController {
   constructor(
     private readonly salesReportService: SalesReportService,
     private readonly catalogueReportService: CatalogueReportService,
+    private readonly productsReportService: ProductsReportService,
   ) {}
 
   /** «Продажі за категоріями» — roots, or the children of `parentId`, each over its subtree. */
@@ -74,6 +83,29 @@ export class ReportsController {
     @CurrentActor() actor: PermissionActor,
   ): Promise<{ data: CategoryReportEntity }> {
     return { data: await this.catalogueReportService.getCategoryReport(query, actor) };
+  }
+
+  /** «Лідери й аутсайдери» — best sellers and published products that sold nothing. */
+  @Get('products')
+  @RequirePermission('analytics:read')
+  @ApiOperation({
+    summary: 'Best sellers of the period and published products with no sale in it',
+    description:
+      'Leaders are ranked by gross amount with analytics:revenue and by units without it (and ' +
+      'then carry no `revenue`), each compared with its own previous-range sales. Outsiders are ' +
+      'products on sale (active, not deleted, active category) that existed in the period and ' +
+      'sold nothing in it, oldest first, with the total count.',
+    operationId: 'getProductsReport',
+  })
+  @ApiResponse({ status: 200, description: 'Products report', type: ProductsReportEnvelope })
+  @ApiResponse({ status: 400, description: 'The period or limit cannot be answered' })
+  @ApiResponse({ status: 401, description: 'Unauthorized — missing or invalid token' })
+  @ApiResponse({ status: 403, description: 'Forbidden — analytics:read required' })
+  async getProducts(
+    @Query() query: ProductsReportQueryDto,
+    @CurrentActor() actor: PermissionActor,
+  ): Promise<{ data: ProductsReportEntity }> {
+    return { data: await this.productsReportService.getProductsReport(query, actor) };
   }
 
   /** «Продажі за брендами» — flat, with «Без бренду» as `brandId: null`. */

@@ -7,6 +7,7 @@ import {
   Prisma,
   ReviewTextStatus,
 } from '@prisma/client';
+import { ProductsReportRepository } from '../analytics/reports/products-report.repository';
 import { PrismaService } from '../prisma';
 import { moderationQueueWhere } from '../review/review.constants';
 import {
@@ -62,14 +63,6 @@ interface DailyRow {
   value: number;
 }
 
-/** Raw-query row shape for the top-products query. */
-interface TopProductRow {
-  productId: string;
-  name: string;
-  totalRevenue: number;
-  unitsSold: number;
-}
-
 /**
  * Read-only repository assembling all admin-dashboard metrics from existing
  * tables. No writes, no migrations — every method is an aggregate query.
@@ -82,7 +75,10 @@ interface TopProductRow {
  */
 @Injectable()
 export class DashboardRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly productsReportRepository: ProductsReportRepository,
+  ) {}
 
   /**
    * Run every NON-money metric query in parallel and assemble the summary
@@ -620,49 +616,25 @@ export class DashboardRepository {
   }
 
   /**
-   * Top products by total revenue earned.
+   * Top products, all time — the SAME query as the `/analytics` leaders
+   * (`ProductsReportRepository.getLeaders`, TASK-688), over no date bound.
    *
-   * Revenue is `SUM(price * quantity)` — multiplying by quantity matters, since
-   * a line of 3 units at $10 earns $30, not $10. Prisma's `groupBy` can only
-   * `_sum` a single column, so a raw query is used. The product name is joined
-   * in the same query (no second lookup, no N+1).
+   * Revenue is `SUM(price * quantity)` over lines of the sales base (PAID,
+   * PARTIALLY_REFUNDED, REFUNDED). Before TASK-688 this counted PAID lines only,
+   * so an order with one line refunded took all its lines out of the ranking,
+   * and "top 5" here disagreed with the report's leaders.
    *
-   * Only items from PAID orders count: the `INNER JOIN orders` filters
-   * `payment_status = 'PAID'` so top-products revenue stays consistent with
-   * `getTotalRevenue` (TASK-152 — earned revenue, not merely accepted orders;
-   * order status is no longer a payment proxy after the TASK-151 decoupling).
-   *
-   * `unitsSold` (TASK-684) is `SUM(quantity)` over the same PAID lines — the
-   * operational half of the row, which a caller without `analytics:revenue`
-   * still sees. `rankedBy` picks the ORDER BY, and with it which five products
-   * make the cut: ranked by units, a tie falls back to the product id rather
-   * than to revenue, so nothing about money decides the list. The PAID-only base
-   * is deliberately untouched here; TASK-688/694 move it.
+   * `rankedBy` picks the list itself, not just its order (TASK-684): ranked by
+   * units, a tie falls back to the product id, so nothing about money decides
+   * a list shown to someone who may not see money.
    */
   private async getTopProducts(limit: number, rankedBy: TopProductsRanking): Promise<TopProduct[]> {
-    const orderBy =
-      rankedBy === 'revenue'
-        ? Prisma.sql`ORDER BY "totalRevenue" DESC`
-        : Prisma.sql`ORDER BY "unitsSold" DESC, oi.product_id ASC`;
-    const rows = await this.prisma.$queryRaw<TopProductRow[]>`
-      SELECT oi.product_id AS "productId",
-             p.name AS name,
-             SUM(oi.price * oi.quantity)::float8 AS "totalRevenue",
-             SUM(oi.quantity)::int AS "unitsSold"
-      FROM order_items oi
-      INNER JOIN orders o
-        ON o.id = oi.order_id
-        AND o.payment_status = 'PAID'
-      JOIN products p ON p.id = oi.product_id
-      GROUP BY oi.product_id, p.name
-      ${orderBy}
-      LIMIT ${limit}
-    `;
+    const rows = await this.productsReportRepository.getLeaders(null, limit, rankedBy);
     return rows.map((row) => ({
       productId: row.productId,
       name: row.name,
-      totalRevenue: Number(row.totalRevenue),
-      unitsSold: Number(row.unitsSold),
+      totalRevenue: Number(row.revenue),
+      unitsSold: Number(row.units),
     }));
   }
 

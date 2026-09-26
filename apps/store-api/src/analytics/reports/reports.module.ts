@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma';
 import { CatalogueReportService } from './catalogue-report.service';
 import { CatalogueRepository } from './catalogue.repository';
+import { ProductsReportRepository } from './products-report.repository';
+import { ProductsReportService } from './products-report.service';
 import { ReportCache } from './report-cache';
 import { ReportsController } from './reports.controller';
 import { SalesReportService } from './sales-report.service';
@@ -16,9 +18,10 @@ import { SalesRepository } from './sales.repository';
  * caller's money right (`report-cache.ts`). `CacheService` comes from the
  * global `RedisCacheModule`.
  *
- * `SalesRepository` is exported because the dashboard's revenue tile moves onto
- * the same formula (TASK-694): one query answers "how much did I earn" on both
- * screens, or the two screens give two answers.
+ * `SalesRepository` and `ProductsReportRepository` are exported for the
+ * dashboard: its revenue tile (TASK-694) and its top products (TASK-688) read
+ * the same queries as the reports — one query answers "how much did I earn" and
+ * "what sells best" on both screens, or the two screens give two answers.
  */
 @Module({
   imports: [PrismaModule],
@@ -29,7 +32,9 @@ import { SalesRepository } from './sales.repository';
     SalesReportService,
     CatalogueRepository,
     CatalogueReportService,
+    ProductsReportRepository,
+    ProductsReportService,
   ],
-  exports: [ReportCache, SalesRepository],
+  exports: [ReportCache, SalesRepository, ProductsReportRepository],
 })
 export class ReportsModule {}

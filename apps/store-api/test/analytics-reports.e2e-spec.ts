@@ -12,6 +12,7 @@ import { PermissionRepository } from '../src/auth/permissions';
 import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import type { SalesDay, SalesTotals } from '../src/analytics/reports/sales.repository';
 import { CatalogueRepository } from '../src/analytics/reports/catalogue.repository';
+import { ProductsReportRepository } from '../src/analytics/reports/products-report.repository';
 import type {
   BrandSalesRow,
   CategorySalesRow,
@@ -73,6 +74,13 @@ describe('Admin Analytics Reports (e2e)', () => {
     categoryExists: jest.fn().mockResolvedValue(true),
   };
 
+  const leaderRow = { productId: 'prod-1', name: 'Чохол', units: 6, orders: 3, revenue: 1200 };
+  const productsRepositoryMock = {
+    getLeaders: jest.fn().mockResolvedValue([leaderRow]),
+    getSalesOf: jest.fn().mockResolvedValue([]),
+    getOutsiders: jest.fn().mockResolvedValue({ total: 0, rows: [] }),
+  };
+
   const permissionRepositoryMock = createPermissionRepositoryMock();
 
   const authRepositoryMock = {
@@ -122,6 +130,8 @@ describe('Admin Analytics Reports (e2e)', () => {
       .useValue(salesRepositoryMock)
       .overrideProvider(CatalogueRepository)
       .useValue(catalogueRepositoryMock)
+      .overrideProvider(ProductsReportRepository)
+      .useValue(productsRepositoryMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -159,6 +169,54 @@ describe('Admin Analytics Reports (e2e)', () => {
   // The reports cache in memory for the whole suite (REDIS_HOST=''), so each
   // case below asks a period of its own — a cached answer from a previous case
   // must not be what is asserted.
+  describe('GET /api/admin/analytics/reports/products (TASK-688)', () => {
+    const URL = '/api/admin/analytics/reports/products';
+    const MANAGER = () => `Bearer ${tokenFor('manager-e2e-1', UserRole.MANAGER)}`;
+
+    it('ranks by units and sends no revenue to a reader', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['analytics:read']);
+
+      const response = await request(app.getHttpServer())
+        .get(URL)
+        .query({ preset: '7d', limit: 5 })
+        .set('Authorization', MANAGER())
+        .expect(200);
+
+      expect(productsRepositoryMock.getLeaders).toHaveBeenCalledWith(expect.anything(), 5, 'units');
+      expect(response.body.data.rankedBy).toBe('units');
+      expect(response.body.data.leaders[0]).toMatchObject({
+        productId: 'prod-1',
+        units: { current: 6 },
+      });
+      expect(response.text).not.toContain('revenue');
+    });
+
+    it('ranks by money and shows it to a holder of analytics:revenue', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['analytics:read', 'analytics:revenue']);
+
+      const response = await request(app.getHttpServer())
+        .get(URL)
+        .query({ preset: '30d' })
+        .set('Authorization', MANAGER())
+        .expect(200);
+
+      expect(productsRepositoryMock.getLeaders).toHaveBeenCalledWith(
+        expect.anything(),
+        10,
+        'revenue',
+      );
+      expect(response.body.data.leaders[0].revenue.current).toBe(1200);
+    });
+
+    it.each([['0'], ['51'], ['abc']])('returns 400 for limit=%s', async (limit) => {
+      await request(app.getHttpServer())
+        .get(URL)
+        .query({ limit })
+        .set('Authorization', `Bearer ${tokenFor('admin-e2e-1', UserRole.ADMIN)}`)
+        .expect(400);
+    });
+  });
+
   describe('GET /api/admin/analytics/reports/categories and /brands (TASK-687)', () => {
     const MANAGER = () => `Bearer ${tokenFor('manager-e2e-1', UserRole.MANAGER)}`;
 

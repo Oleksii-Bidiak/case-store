@@ -13984,52 +13984,6 @@
         ]
       }
     },
-    "/api/admin/analytics/traffic": {
-      "get": {
-        "operationId": "getTrafficSummary",
-        "parameters": [
-          {
-            "name": "days",
-            "required": false,
-            "in": "query",
-            "description": "Window length in days (1–90)",
-            "schema": {
-              "minimum": 1,
-              "maximum": 90,
-              "default": 7,
-              "type": "number"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Traffic summary",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/TrafficSummaryEnvelope"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Unauthorized — missing or invalid token"
-          },
-          "403": {
-            "description": "Forbidden — analytics access required"
-          }
-        },
-        "security": [
-          {
-            "access-token": []
-          }
-        ],
-        "summary": "Storefront traffic summary (admin)",
-        "tags": [
-          "Analytics"
-        ]
-      }
-    },
     "/api/admin/analytics/reports/categories": {
       "get": {
         "description": "Rows are the root categories, or the children of `parentId`, each summed over its whole subtree; an expansion ends with a `direct` row for products placed on the expanded category itself. Attribution uses the CURRENT catalogue (`basis: current-catalogue`). `revenue` is absent without analytics:revenue, and rows are then ranked by units.",
@@ -14105,6 +14059,85 @@
           }
         ],
         "summary": "Sold units, orders and (with analytics:revenue) gross amount by category subtree",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
+    "/api/admin/analytics/reports/products": {
+      "get": {
+        "description": "Leaders are ranked by gross amount with analytics:revenue and by units without it (and then carry no `revenue`), each compared with its own previous-range sales. Outsiders are products on sale (active, not deleted, active category) that existed in the period and sold nothing in it, oldest first, with the total count.",
+        "operationId": "getProductsReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Rows in each list (leaders and outsiders)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Products report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductsReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period or limit cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Best sellers of the period and published products with no sale in it",
         "tags": [
           "Admin Analytics Reports"
         ]
@@ -14241,6 +14274,52 @@
         "summary": "Sales, refunds and net revenue for a period, compared with the previous one",
         "tags": [
           "Admin Analytics Reports"
+        ]
+      }
+    },
+    "/api/admin/analytics/traffic": {
+      "get": {
+        "operationId": "getTrafficSummary",
+        "parameters": [
+          {
+            "name": "days",
+            "required": false,
+            "in": "query",
+            "description": "Window length in days (1–90)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 90,
+              "default": 7,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Traffic summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrafficSummaryEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Storefront traffic summary (admin)",
+        "tags": [
+          "Analytics"
         ]
       }
     },
@@ -27554,82 +27633,6 @@
           "data"
         ]
       },
-      "TrafficSummaryEntity": {
-        "type": "object",
-        "properties": {
-          "configured": {
-            "type": "boolean",
-            "description": "Analytics credentials are present on the server"
-          },
-          "available": {
-            "type": "boolean",
-            "description": "The analytics service answered this request"
-          },
-          "rangeDays": {
-            "type": "number",
-            "description": "Length of the reported window, in days",
-            "example": 7
-          },
-          "pageviews": {
-            "type": "number",
-            "description": "Page views in the window",
-            "nullable": true,
-            "example": 1240
-          },
-          "visitors": {
-            "type": "number",
-            "description": "Unique visitors in the window",
-            "nullable": true,
-            "example": 380
-          },
-          "visits": {
-            "type": "number",
-            "description": "Sessions in the window",
-            "nullable": true,
-            "example": 460
-          },
-          "bounceRate": {
-            "type": "number",
-            "description": "Share of single-page sessions, 0…1",
-            "nullable": true,
-            "example": 0.42
-          },
-          "avgVisitSeconds": {
-            "type": "number",
-            "description": "Average session length in seconds",
-            "nullable": true,
-            "example": 96
-          },
-          "previousVisitors": {
-            "type": "number",
-            "description": "Visitors in the PREVIOUS window of equal length, for comparison",
-            "nullable": true,
-            "example": 351
-          }
-        },
-        "required": [
-          "configured",
-          "available",
-          "rangeDays",
-          "pageviews",
-          "visitors",
-          "visits",
-          "bounceRate",
-          "avgVisitSeconds",
-          "previousVisitors"
-        ]
-      },
-      "TrafficSummaryEnvelope": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "$ref": "#/components/schemas/TrafficSummaryEntity"
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
       "ReportPreset": {
         "type": "string",
         "enum": [
@@ -27818,6 +27821,141 @@
           "data"
         ]
       },
+      "LeaderRowEntity": {
+        "type": "object",
+        "properties": {
+          "units": {
+            "description": "Units sold",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "orders": {
+            "description": "Orders with at least one such line",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "revenue": {
+            "description": "Gross line amount (price × quantity, before order discounts, shipping and refunds). ABSENT — not null — without analytics:revenue: the API cuts the money, not the screen.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "productId": {
+            "type": "string",
+            "example": "3f1c…"
+          },
+          "name": {
+            "type": "string",
+            "example": "Чохол MagSafe для iPhone 16"
+          }
+        },
+        "required": [
+          "units",
+          "orders",
+          "productId",
+          "name"
+        ]
+      },
+      "OutsiderRowEntity": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "example": "9a2b…"
+          },
+          "name": {
+            "type": "string",
+            "example": "Скло для iPad Air"
+          },
+          "stock": {
+            "type": "number",
+            "description": "Units in stock now",
+            "example": 14
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the product was created (ISO)",
+            "example": "2026-03-02T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "productId",
+          "name",
+          "stock",
+          "createdAt"
+        ]
+      },
+      "OutsidersEntity": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "How many published products sold nothing in the period",
+            "example": 37
+          },
+          "rows": {
+            "description": "The oldest of them first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutsiderRowEntity"
+            }
+          }
+        },
+        "required": [
+          "total",
+          "rows"
+        ]
+      },
+      "ProductsReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "rankedBy": {
+            "type": "string",
+            "enum": [
+              "revenue",
+              "units"
+            ],
+            "description": "What the leaders are ranked by"
+          },
+          "leaders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaderRowEntity"
+            }
+          },
+          "outsiders": {
+            "$ref": "#/components/schemas/OutsidersEntity"
+          }
+        },
+        "required": [
+          "period",
+          "rankedBy",
+          "leaders",
+          "outsiders"
+        ]
+      },
+      "ProductsReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProductsReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "BrandReportRowEntity": {
         "type": "object",
         "properties": {
@@ -28000,6 +28138,82 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/SalesReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "TrafficSummaryEntity": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "description": "Analytics credentials are present on the server"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "The analytics service answered this request"
+          },
+          "rangeDays": {
+            "type": "number",
+            "description": "Length of the reported window, in days",
+            "example": 7
+          },
+          "pageviews": {
+            "type": "number",
+            "description": "Page views in the window",
+            "nullable": true,
+            "example": 1240
+          },
+          "visitors": {
+            "type": "number",
+            "description": "Unique visitors in the window",
+            "nullable": true,
+            "example": 380
+          },
+          "visits": {
+            "type": "number",
+            "description": "Sessions in the window",
+            "nullable": true,
+            "example": 460
+          },
+          "bounceRate": {
+            "type": "number",
+            "description": "Share of single-page sessions, 0…1",
+            "nullable": true,
+            "example": 0.42
+          },
+          "avgVisitSeconds": {
+            "type": "number",
+            "description": "Average session length in seconds",
+            "nullable": true,
+            "example": 96
+          },
+          "previousVisitors": {
+            "type": "number",
+            "description": "Visitors in the PREVIOUS window of equal length, for comparison",
+            "nullable": true,
+            "example": 351
+          }
+        },
+        "required": [
+          "configured",
+          "available",
+          "rangeDays",
+          "pageviews",
+          "visitors",
+          "visits",
+          "bounceRate",
+          "avgVisitSeconds",
+          "previousVisitors"
+        ]
+      },
+      "TrafficSummaryEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TrafficSummaryEntity"
           }
         },
         "required": [
