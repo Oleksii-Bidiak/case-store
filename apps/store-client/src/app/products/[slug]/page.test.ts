@@ -8,8 +8,13 @@ jest.mock("@/widgets", () => ({
 jest.mock("@/shared/api/generated/products/products", () => ({
   productControllerFindBySlug: jest.fn(),
 }));
+// A populated global FAQ — the PDP must emit none of it (TASK-555).
 jest.mock("@/shared/api/faq-server", () => ({
-  fetchFaqItems: jest.fn().mockResolvedValue([]),
+  fetchFaqItems: jest
+    .fn()
+    .mockResolvedValue([
+      { question: "Скільки коштує доставка?", answer: "[вартість]" },
+    ]),
 }));
 jest.mock("@/shared/api/seo-settings-server", () => ({
   fetchSeoSettings: jest.fn().mockResolvedValue(null),
@@ -30,6 +35,7 @@ import ProductDetailPage, { generateMetadata } from "./page";
 import { permanentRedirect } from "next/navigation";
 import { productControllerFindBySlug } from "@/shared/api/generated/products/products";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import { fetchFaqItems } from "@/shared/api/faq-server";
 
 const findBySlug = productControllerFindBySlug as jest.MockedFunction<
   typeof productControllerFindBySlug
@@ -89,6 +95,48 @@ describe("products/[slug] slug-redirect (TASK-285)", () => {
 
     expect(resolveRedirect).not.toHaveBeenCalled();
     expect(permanentRedirect).not.toHaveBeenCalled();
+  });
+});
+
+/** Every `schema` prop of a JsonLd element anywhere in a rendered tree. */
+function jsonLdSchemas(node: unknown): Record<string, unknown>[] {
+  if (!node || typeof node !== "object") return [];
+  if (Array.isArray(node)) return node.flatMap(jsonLdSchemas);
+  const props = (node as { props?: Record<string, unknown> }).props;
+  if (!props) return [];
+  const own =
+    props.schema && typeof props.schema === "object"
+      ? [props.schema as Record<string, unknown>]
+      : [];
+  return [...own, ...jsonLdSchemas(props.children)];
+}
+
+describe("products/[slug] structured data (TASK-555)", () => {
+  it("emits Product and BreadcrumbList but no FAQPage — the FAQ is not on this page", async () => {
+    findBySlug.mockResolvedValue({
+      data: {
+        id: "product-1",
+        name: "Чохол",
+        slug: "chohol",
+        description: null,
+        price: "29.99",
+        inStock: true,
+        ratingCount: 0,
+        ratingAverage: null,
+        metaTitle: null,
+        metaDescription: null,
+      },
+      images: [],
+      category: { id: "cat-1", name: "Чохли", slug: "chohly" },
+    } as never);
+
+    const tree = await ProductDetailPage({
+      params: Promise.resolve({ slug: "chohol" }),
+    });
+
+    const types = jsonLdSchemas(tree).map((schema) => schema["@type"]);
+    expect(types).toEqual(["Product", "BreadcrumbList"]);
+    expect(fetchFaqItems).not.toHaveBeenCalled();
   });
 });
 

@@ -5,11 +5,7 @@ import { ProductDetailView, ProductDetailSkeleton } from "@/widgets";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { productControllerFindBySlug } from "@/shared/api/generated/products/products";
 import { JsonLd } from "@/shared/ui";
-import {
-  buildProductSchema,
-  buildBreadcrumbSchema,
-  buildFaqPageSchema,
-} from "@/shared/lib/schema";
+import { buildProductSchema, buildBreadcrumbSchema } from "@/shared/lib/schema";
 import {
   buildOgImages,
   resolveSeo,
@@ -17,7 +13,6 @@ import {
   toMetadataTitle,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { fetchFaqItems } from "@/shared/api/faq-server";
 import { SITE_URL, CURRENCY, dict } from "@/shared/config";
 
 interface ProductDetailPageProps {
@@ -129,7 +124,6 @@ export default async function ProductDetailPage({
     <div className="mx-auto w-full max-w-7xl px-4 py-8">
       {schemas?.product && <JsonLd schema={schemas.product} />}
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
-      {schemas?.faq && <JsonLd schema={schemas.faq} />}
       <Suspense fallback={<ProductDetailSkeleton />}>
         <ProductDetailView slug={slug} />
       </Suspense>
@@ -145,14 +139,14 @@ export default async function ProductDetailPage({
 async function buildProductPageSchemas(slug: string): Promise<{
   product: Record<string, unknown>;
   breadcrumb: Record<string, unknown>;
-  faq: Record<string, unknown> | null;
 } | null> {
   try {
-    // FAQ is the global, admin-managed list (plan 116 Decision 3 — one reusable
-    // list, not per-product) fetched alongside the product. The visible FAQ
-    // accordion lives on the /info hub; the PDP only emits the FAQPage JSON-LD
-    // (structured data) from the same source so it stays a single source of
-    // truth. Null on failure → the block is simply omitted.
+    // No FAQPage here (TASK-555). The PDP used to emit one from the GLOBAL FAQ
+    // list on every product — structured data asserting questions and answers
+    // the reader cannot see on this page (Google's guidelines call that out as
+    // grounds for a manual action), including `[вартість]`-style placeholders.
+    // The FAQ is visible on /info, and that is the one page that marks it up.
+    //
     // The SEO singleton joins the fetch for one reason: `fallbackBrandName`
     // below is the brand of a product that has none of its own, and that
     // fallback is the store's name — admin-managed since TASK-433, so it can no
@@ -161,23 +155,11 @@ async function buildProductPageSchemas(slug: string): Promise<{
     // (This comment claimed "FALLBACK" before TASK-437 while the schema builder
     // emitted the store name unconditionally — the rename is what makes the two
     // agree.)
-    const [{ data: product, images, category }, faqItems, seo] =
-      await Promise.all([
-        productControllerFindBySlug(slug),
-        fetchFaqItems(),
-        fetchSeoSettings(),
-      ]);
+    const [{ data: product, images, category }, seo] = await Promise.all([
+      productControllerFindBySlug(slug),
+      fetchSeoSettings(),
+    ]);
     const canonical = `${SITE_URL}/products/${product.slug}`;
-
-    const faq =
-      faqItems && faqItems.length > 0
-        ? buildFaqPageSchema(
-            faqItems.map((item) => ({
-              question: item.question,
-              answer: item.answer,
-            })),
-          )
-        : null;
 
     return {
       product: buildProductSchema({
@@ -196,7 +178,6 @@ async function buildProductPageSchemas(slug: string): Promise<{
         },
         { name: product.name, item: canonical },
       ]),
-      faq,
     };
   } catch {
     return null;
