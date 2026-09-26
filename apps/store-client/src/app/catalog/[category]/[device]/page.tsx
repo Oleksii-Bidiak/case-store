@@ -25,6 +25,7 @@ import {
   toMetadataTitle,
   type ListingFilterParams,
 } from "@/shared/lib/seo";
+import { StaleCanonicalGuard } from "@/shared/lib/seo/stale-canonical-guard";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { SITE_URL, dict } from "@/shared/config";
@@ -152,6 +153,27 @@ function readFilters(resolved: {
 }
 
 /**
+ * The canonical/robots policy for one view of a compat page. Shared by
+ * `generateMetadata` and the body, which hands the same canonical to
+ * `StaleCanonicalGuard` — the two must name the same URL, or the guard would
+ * wait for a tag that never comes.
+ */
+function compatListingMeta(
+  categorySlug: string,
+  modelSlug: string,
+  resolved: { [key: string]: string | string[] | undefined },
+) {
+  return buildListingMetadata({
+    basePath: `/catalog/${categorySlug}/${modelSlug}`,
+    page: Number(first(resolved.page)),
+    filters: readFilters(resolved),
+    // Where a FILTERED view of this page consolidates — the category, not the
+    // unfiltered compat page (B-10 §5 keeps the indexable set to one dimension).
+    filteredCanonicalPath: `/categories/${categorySlug}`,
+  });
+}
+
+/**
  * Metadata for a compatibility landing page.
  *
  * Title/description precedence is the shared `resolveSeo` chain with the DEVICE
@@ -207,14 +229,11 @@ export async function generateMetadata({
     },
   });
 
-  const listingMeta = buildListingMetadata({
-    basePath: `/catalog/${page.categorySlug}/${model.slug}`,
-    page: Number(first(resolvedParams.page)),
-    filters: readFilters(resolvedParams),
-    // Where a FILTERED view of this page consolidates — the category, not the
-    // unfiltered compat page (B-10 §5 keeps the indexable set to one dimension).
-    filteredCanonicalPath: `/categories/${page.categorySlug}`,
-  });
+  const listingMeta = compatListingMeta(
+    page.categorySlug,
+    model.slug,
+    resolvedParams,
+  );
 
   const siteName = resolveSiteName(seo);
   const title = toMetadataTitle(seoMeta, {
@@ -337,9 +356,21 @@ export default async function CompatLandingPage({
 
   const schemas = await buildCompatPageSchemas(page, trail);
 
+  // Always set on this route: self when unfiltered, the category when filtered.
+  const { canonicalPath } = compatListingMeta(
+    page.categorySlug,
+    model.slug,
+    resolved,
+  );
+
   return (
     // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products catalog page shell (shared grid must align pixel-for-pixel)
     <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8">
+      {/* TASK-835 — a facet ticked before the head hydrates would otherwise
+          leave the old canonical next to the new one. */}
+      {canonicalPath && (
+        <StaleCanonicalGuard href={`${SITE_URL}${canonicalPath}`} />
+      )}
       {schemas.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       {schemas.itemList && <JsonLd schema={schemas.itemList} />}
 

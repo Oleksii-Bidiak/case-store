@@ -59,6 +59,7 @@ import { categoryControllerGetCategoryTree } from "@/shared/api/generated/catego
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { SITE_URL, dict } from "@/shared/config";
 import { ProductListView } from "@/widgets";
+import { StaleCanonicalGuard } from "@/shared/lib/seo/stale-canonical-guard";
 import CompatLandingPage, { generateMetadata } from "./page";
 
 const findPage = catalogLandingControllerFindCompatPage as jest.MockedFunction<
@@ -379,6 +380,26 @@ describe("catalog/[category]/[device] — metadata (TASK-490)", () => {
       { url: "https://cdn.example.com/chohly.jpg", alt: og.title },
     ]);
   });
+
+  // TASK-835 — the body's stale-canonical guard must wait for exactly the tag
+  // generateMetadata emits, or it would never act (or act on the wrong one).
+  it.each([
+    ["unfiltered", {}],
+    ["filtered", { inStock: "true" }],
+  ])(
+    "hands the %s view's canonical to the stale-canonical guard",
+    async (_label, searchParams: Record<string, string>) => {
+      findPage.mockResolvedValue(pair() as never);
+
+      const [result, tree] = await Promise.all([
+        meta("chohly", "iphone-15-pro", searchParams),
+        run("chohly", "iphone-15-pro", searchParams),
+      ]);
+
+      const guard = findElement(tree, StaleCanonicalGuard);
+      expect(guard?.props.href).toBe(result.alternates?.canonical);
+    },
+  );
 
   it("falls back to a bare title when there is no such page", async () => {
     findPage.mockRejectedValue(notFoundError());

@@ -134,6 +134,9 @@ test.describe("compat landing robots (TASK-835)", () => {
     // The owner's own steps: open the clean page, tick a facet, read the head.
     // The facet is applied by a client-side navigation, so this is the path on
     // which a stale <head> would survive.
+    // The guard removes a DOM node; React must never trip over that.
+    const pageErrors: string[] = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
     await page.goto(COMPAT_PATH);
     await expect(page.locator('head link[rel="canonical"]')).toHaveAttribute(
       "href",
@@ -154,11 +157,14 @@ test.describe("compat landing robots (TASK-835)", () => {
       "content",
       "noindex, follow",
     );
-    // For a moment after the navigation the head holds BOTH canonicals — the
-    // new one is inserted before the old one is removed (measured on a
-    // production build, 2026-09-26). So poll for the settled state: exactly one
-    // canonical, pointing at the category. A strict-mode locator assertion here
-    // would fail on that overlap instead of waiting it out.
+    // This test ticks the facet as soon as the checkbox is interactive — on
+    // `next dev` that is ~150–200 ms BEFORE React hydrates the head's metadata
+    // tags. React then never owns the server-rendered self-canonical and never
+    // removes it; without `StaleCanonicalGuard` the head kept BOTH canonicals
+    // for good (the verifier's red run, 2026-09-26). The guard drops the orphan
+    // once the new canonical has arrived — so poll for that settled state:
+    // exactly one canonical, pointing at the category. A strict-mode locator
+    // assertion would fail on the brief overlap instead of waiting it out.
     await expect
       .poll(() =>
         page
@@ -170,5 +176,21 @@ test.describe("compat landing robots (TASK-835)", () => {
       .toEqual([
         expect.stringMatching(new RegExp(`/categories/${E2E_CATEGORY_SLUG}$`)),
       ]);
+
+    // Untick it: back to the indexable view — one self-canonical, no robots.
+    await inStockOnly.focus();
+    await page.keyboard.press("Space");
+    await expect(page).not.toHaveURL(/[?&]inStock=true/);
+    await expect
+      .poll(() =>
+        page
+          .locator('head link[rel="canonical"]')
+          .evaluateAll((links) =>
+            links.map((link) => link.getAttribute("href")),
+          ),
+      )
+      .toEqual([expect.stringMatching(new RegExp(`${COMPAT_PATH}$`))]);
+    await expect(page.locator('head meta[name="robots"]')).toHaveCount(0);
+    expect(pageErrors).toEqual([]);
   });
 });
