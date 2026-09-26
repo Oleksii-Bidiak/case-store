@@ -6,13 +6,14 @@ import {
   waitFor,
   fireEvent,
   userEvent,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { makeCart, makeCartItem } from "@/shared/test/msw-handlers";
 import { getGetCartQueryKey, type GetCart200 } from "@/entities/cart";
 import { dict } from "@/shared/config";
-import { Toaster } from "@/shared/ui";
-import { CartItemRow } from "./cart-item-row";
+import { Sheet, SheetContent, SheetTitle, Toaster } from "@/shared/ui";
+import { CART_SHEET_TOASTER_ID, CartItemRow } from "./cart-item-row";
 
 /**
  * TASK-418 is the storefront's first toast with an ACTION, so the undo tests
@@ -873,6 +874,106 @@ describe("CartItemRow", () => {
         screen.queryByRole("button", { name: dict.cart.undoRemove }),
       ).not.toBeInTheDocument();
       expect(toastSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── undo reachable inside a modal host (TASK-497) ────────────────────────
+  // The mini-cart sheet is a modal Radix dialog: everything outside it is
+  // aria-hidden and out of the focus trap, the global toaster included. Routed
+  // to a toaster inside the dialog, the same toast is in its tab order.
+  describe("undo inside a modal host", () => {
+    function renderInModal() {
+      return renderWithProviders(
+        <>
+          <Sheet open>
+            <SheetContent aria-describedby={undefined}>
+              <SheetTitle>{dict.cart.title}</SheetTitle>
+              <ul>
+                <CartItemRow
+                  item={makeCartItem({
+                    id: "item-7",
+                    productId: "product-9",
+                    productName: "Doomed Item",
+                  })}
+                  undoToasterId={CART_SHEET_TOASTER_ID}
+                />
+              </ul>
+              <Toaster id={CART_SHEET_TOASTER_ID} />
+            </SheetContent>
+          </Sheet>
+          {/* The app's global toaster, outside the dialog. */}
+          <Toaster />
+        </>,
+      );
+    }
+
+    it("puts «Повернути» inside the dialog, exposed to assistive tech", async () => {
+      const user = userEvent.setup();
+      server.use(
+        http.delete("*/api/cart/items/:itemId", () =>
+          HttpResponse.json(makeCart([])),
+        ),
+      );
+
+      renderInModal();
+      await user.click(
+        screen.getByRole("button", {
+          name: dict.cart.removeNamedAria("Doomed Item"),
+        }),
+      );
+
+      const dialog = screen.getByRole("dialog");
+      // Role queries skip aria-hidden subtrees — finding it proves it is exposed.
+      expect(
+        await within(dialog).findByRole("button", {
+          name: dict.cart.undoRemove,
+        }),
+      ).toBeInTheDocument();
+      // Shown once, in the dialog's toaster — not duplicated in the global one.
+      expect(
+        screen.getAllByText(dict.cart.removedToast("Doomed Item")),
+      ).toHaveLength(1);
+      expect(toastSpy).toHaveBeenCalledWith(
+        dict.cart.removedToast("Doomed Item"),
+        expect.objectContaining({ toasterId: CART_SHEET_TOASTER_ID }),
+      );
+    });
+
+    it("can be reached with Tab and pressed with Enter, restoring the line", async () => {
+      const user = userEvent.setup();
+      let restored = false;
+      server.use(
+        http.delete("*/api/cart/items/:itemId", () =>
+          HttpResponse.json(makeCart([])),
+        ),
+        http.post("*/api/cart/items", () => {
+          restored = true;
+          return HttpResponse.json(
+            makeCart([makeCartItem({ id: "item-99", productId: "product-9" })]),
+            { status: 201 },
+          );
+        }),
+      );
+
+      renderInModal();
+      await user.click(
+        screen.getByRole("button", {
+          name: dict.cart.removeNamedAria("Doomed Item"),
+        }),
+      );
+      const undo = await within(screen.getByRole("dialog")).findByRole(
+        "button",
+        { name: dict.cart.undoRemove },
+      );
+
+      // Walk the dialog's tab order the way a keyboard user would.
+      for (let i = 0; i < 25 && document.activeElement !== undo; i += 1) {
+        await user.tab();
+      }
+      expect(undo).toHaveFocus();
+
+      await user.keyboard("{Enter}");
+      await waitFor(() => expect(restored).toBe(true));
     });
   });
 });
