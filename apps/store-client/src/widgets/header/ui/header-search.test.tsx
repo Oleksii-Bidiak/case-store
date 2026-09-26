@@ -3,6 +3,7 @@ import { act } from "@testing-library/react";
 import {
   renderWithProviders,
   screen,
+  waitFor,
   within,
   userEvent,
 } from "@/shared/test/render";
@@ -693,6 +694,42 @@ describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () 
     // nothing is in flight and nothing has arrived — the popup must not
     // announce a verdict it cannot have.
     expect(screen.getByText(dict.search.loading)).toBeInTheDocument();
+    expect(screen.queryByText(dict.search.empty)).not.toBeInTheDocument();
+  });
+
+  it("keeps the previous suggestions on screen while the next query is in flight", async () => {
+    let nextRequested = false;
+    server.use(
+      http.get("*/api/categories/tree", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/search/suggest", async ({ request }) => {
+        const q = new URL(request.url).searchParams.get("q");
+        if (q === "ч") return HttpResponse.json({ data: [makeSuggestion()] });
+        nextRequested = true;
+        await delay("infinite");
+        return HttpResponse.json({ data: [] });
+      }),
+      http.get("*/api/blog", async ({ request }) => {
+        const q = new URL(request.url).searchParams.get("q");
+        if (q === "ч") {
+          return HttpResponse.json({ data: [makeBlogPost()], meta: {} });
+        }
+        await delay("infinite");
+        return HttpResponse.json({ data: [], meta: {} });
+      }),
+    );
+
+    const { user } = await typeQuery("ч");
+    await screen.findByText("Чохол iPhone 15 Pro");
+    await screen.findByText("Як обрати чохол для iPhone");
+
+    await user.keyboard("о");
+    await waitFor(() => expect(nextRequested).toBe(true));
+
+    // keepPreviousData: the rows for «ч» stay put while «чо» is loading — the
+    // popup neither empties nor blinks through the loading row between letters.
+    expect(screen.getByText("Чохол iPhone 15 Pro")).toBeInTheDocument();
+    expect(screen.getByText("Як обрати чохол для iPhone")).toBeInTheDocument();
+    expect(screen.queryByText(dict.search.loading)).not.toBeInTheDocument();
     expect(screen.queryByText(dict.search.empty)).not.toBeInTheDocument();
   });
 
