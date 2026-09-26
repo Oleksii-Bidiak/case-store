@@ -46,8 +46,13 @@ function first(value: string | string[] | undefined): string | undefined {
 /**
  * Resolve the category's ancestor path by slug from the public tree
  * (server-side). The tree is active-only, so an inactive or unknown slug
- * resolves to null. Null on any fetch failure too — the caller decides
- * between metadata fallback and `notFound()`.
+ * resolves to null — the page's `notFound()` (after the redirect ledger).
+ *
+ * A failed tree read is NOT null (TASK-793): it used to be, and every
+ * `/categories/<slug>` URL in the sitemap then answered HTTP 404 through a 502 or
+ * a timeout — the signal that makes a crawler drop the URL. The error now
+ * propagates to the error boundary (a 5xx the crawler retries), the rule the
+ * compat landing pages have followed since TASK-490.
  *
  * React `cache()` (TASK-703): `generateMetadata` and the page body both resolve
  * the path, and the tree read is axios, which Next's `fetch` dedup does not see —
@@ -55,12 +60,8 @@ function first(value: string | string[] | undefined): string | undefined {
  */
 const resolveCategoryPath = cache(
   async (slug: string): Promise<CategoryTreeNodeEntity[] | null> => {
-    try {
-      const { data } = await categoryControllerGetCategoryTree();
-      return findCategoryPathBySlug(data ?? [], slug);
-    } catch {
-      return null;
-    }
+    const { data } = await categoryControllerGetCategoryTree();
+    return findCategoryPathBySlug(data ?? [], slug);
   },
 );
 

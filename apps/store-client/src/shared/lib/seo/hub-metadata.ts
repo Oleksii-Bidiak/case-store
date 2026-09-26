@@ -63,7 +63,11 @@ export async function buildHubMetadata({
   robots,
 }: HubMetadataInput): Promise<Metadata> {
   const [page, seo] = await Promise.all([
-    fetchPublishedPage(slug, "HUB"),
+    // The page reader throws on anything but a 404 since TASK-793 (an outage
+    // must not 404 a document route). A hub is a route implemented in code, not
+    // a document: with the API down it still renders, so its meta tags fall to
+    // the dictionary tier instead of taking the listing down with them.
+    fetchPublishedPage(slug, "HUB").catch(() => null),
     fetchSeoSettings(),
   ]);
 

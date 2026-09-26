@@ -52,7 +52,10 @@ async function getFaqs(): Promise<readonly InfoFaq[]> {
  * the client just to re-clean already-sanitized admin HTML would be pure weight.
  */
 async function getAbout(): Promise<InfoAbout | null> {
-  const page = await fetchPublishedPage(INFO_SLUG_INLINED_ON_HUB, "INFO");
+  // The reader throws on an outage since TASK-793; this route renders anyway.
+  const page = await fetchPublishedPage(INFO_SLUG_INLINED_ON_HUB, "INFO").catch(
+    () => null,
+  );
   if (!page) return null;
   return {
     heading: page.title,

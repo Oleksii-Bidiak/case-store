@@ -87,6 +87,41 @@ afterEach(() => {
   ).__requestMemos?.forEach((memo) => memo.clear());
 });
 
+describe("categories/[slug] — an API outage is not a 404 (TASK-793)", () => {
+  const props = {
+    params: Promise.resolve({ slug: "chohly" }),
+    searchParams: Promise.resolve({}),
+  };
+
+  it("rethrows a failed tree read from the page instead of calling notFound()", async () => {
+    getTree.mockRejectedValue({ response: { status: 502 } });
+
+    await expect(CategoryLandingPage(props)).rejects.toEqual({
+      response: { status: 502 },
+    });
+    expect(notFound).not.toHaveBeenCalled();
+    expect(resolveRedirect).not.toHaveBeenCalled();
+  });
+
+  it("rethrows from generateMetadata too, rather than a 404-shaped fallback", async () => {
+    getTree.mockRejectedValue(new Error("timeout of 5000ms exceeded"));
+
+    await expect(generateMetadata(props)).rejects.toThrow("timeout");
+  });
+
+  it("still 404s a slug the tree genuinely does not have", async () => {
+    getTree.mockResolvedValue({ data: makeTree() } as never);
+    resolveRedirect.mockResolvedValue(null);
+
+    await expect(
+      CategoryLandingPage({
+        params: Promise.resolve({ slug: "nope" }),
+        searchParams: Promise.resolve({}),
+      }),
+    ).rejects.toThrow("NEXT_NOT_FOUND");
+  });
+});
+
 describe("categories/[slug] — link preview (TASK-568/569)", () => {
   const props = {
     params: Promise.resolve({ slug: "chohly" }),

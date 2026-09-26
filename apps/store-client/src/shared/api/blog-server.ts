@@ -93,23 +93,24 @@ export async function fetchPublishedPosts(
 
 /**
  * Fetch a single PUBLISHED post by slug, tagged for on-demand revalidation.
- * Returns null on 404 (draft / scheduled / missing) or any transport error so
- * the caller can render a Next.js `notFound()`.
+ * Returns null on a 404 (draft / scheduled / missing) so the caller can render a
+ * Next.js `notFound()`, and THROWS on any other failure (TASK-793, same rule as
+ * `pages-server.ts`): a 502 or a timeout used to become `null` too, so an API
+ * outage answered HTTP 404 on every `/blog/<slug>` URL in the sitemap.
  */
 export async function fetchPublishedPost(
   slug: string,
 ): Promise<BlogPostEntity | null> {
-  try {
-    const res = await serverFetch(
-      `${API_BASE_URL}/api/blog/${encodeURIComponent(slug)}`,
-      { next: { tags: [BLOG_COLLECTION_TAG, blogDetailTag(slug)] } },
-    );
-    if (!res.ok) return null;
-    const body = (await res.json()) as BlogPostResponseEnvelope;
-    return body.data ?? null;
-  } catch {
-    return null;
+  const url = `${API_BASE_URL}/api/blog/${encodeURIComponent(slug)}`;
+  const res = await serverFetch(url, {
+    next: { tags: [BLOG_COLLECTION_TAG, blogDetailTag(slug)] },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Blog post read failed: ${res.status} ${url}`);
   }
+  const body = (await res.json()) as BlogPostResponseEnvelope;
+  return body.data ?? null;
 }
 
 /**

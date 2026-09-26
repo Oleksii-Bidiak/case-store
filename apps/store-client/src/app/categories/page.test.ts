@@ -136,6 +136,19 @@ describe("categories hub generateMetadata", () => {
     expect(meta.openGraph).toBeDefined();
   });
 
+  // TASK-793 — the page reader THROWS on an outage now (a document route must
+  // 5xx, not 404). A hub is code, not a document: it keeps rendering on the
+  // dictionary tier.
+  it("keeps rendering on the dictionary strings when the hub row read throws", async () => {
+    fetchPage.mockRejectedValue(new Error("Page read failed: 502"));
+    fetchSeo.mockResolvedValue(settings);
+
+    const meta = await generateMetadata();
+
+    expect(meta.description).toBe(dict.meta.categoriesDescription);
+    expect(meta.alternates?.canonical).toMatch(/\/categories$/);
+  });
+
   // TASK-437 — a hub row is a Page row, so it can carry its own `ogImage`. Wiring
   // it here is what keeps the new field from being editable in the panel and dead
   // on the six hubs.

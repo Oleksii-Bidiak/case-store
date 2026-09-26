@@ -31,7 +31,10 @@ import { INFO_SLUG_INLINED_ON_HUB, SITE_URL, dict } from "@/shared/config";
  * mismatch) and that a HUB row — which has no address of its own — never can.
  */
 
-/** Fetch a published INFO page by slug; null on 404 / wrong kind / API error. */
+/**
+ * Fetch a published INFO page by slug; null on 404 / wrong kind. An API error
+ * THROWS (TASK-793) — an outage renders the error boundary (5xx), never a 404.
+ */
 const getPage = (slug: string) => fetchPublishedPage(slug, "INFO");
 
 /** Other published help pages (for the sibling grid). Never throws. */
