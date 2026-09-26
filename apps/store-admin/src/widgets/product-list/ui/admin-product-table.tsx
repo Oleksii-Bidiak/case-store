@@ -17,6 +17,7 @@ import { ProductStatusToggle } from "@/features/product-status-toggle";
 import { useProductBulkStatus } from "@/features/product-bulk-status";
 import { useProductBulkColor } from "@/features/product-bulk-color";
 import { useProductBulkGroup } from "@/features/product-bulk-group";
+import { useProductBulkUndo } from "@/features/product-bulk-undo";
 import { ProductDeleteAction } from "@/features/product-delete";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
@@ -27,6 +28,7 @@ import {
   Button,
   Checkbox,
   LiveAnnouncer,
+  ReorderUndoButton,
   SortableColumnHeader,
   Table,
   TableBody,
@@ -214,7 +216,19 @@ function AdminProductTableView() {
     },
   });
 
-  const bulk = useProductBulkStatus({ onSuccess: selection.clear });
+  // ── «Скасувати» for the last bulk action (TASK-837 / AD-PROD-33) ─────────
+  // Each action snapshots the selected rows right before it writes (`prepare`)
+  // and offers the undo only once the server has confirmed (`commit`). The undo
+  // replays the forward endpoints per previous value — see the hook for what
+  // that does not promise (atomicity, a lossless colour restore).
+  const bulkUndo = useProductBulkUndo();
+
+  const bulk = useProductBulkStatus({
+    onSuccess: () => {
+      selection.clear();
+      bulkUndo.commit();
+    },
+  });
 
   // ── bulk «Перемістити до групи» (TASK-423 / AD-PROD-33) ───────────────────
   const [isGroupDialogOpen, setGroupDialogOpen] = useState(false);
@@ -228,6 +242,7 @@ function AdminProductTableView() {
     onSuccess: () => {
       selection.clear();
       setGroupDialogOpen(false);
+      bulkUndo.commit();
     },
   });
 
@@ -241,12 +256,21 @@ function AdminProductTableView() {
     onSuccess: () => {
       selection.clear();
       setColorDialogOpen(false);
+      bulkUndo.commit();
     },
   });
 
   const selectedIds = [...selection.selectedIds];
   const isMutating =
-    bulk.isPending || bulkGroup.isPending || bulkColor.isPending;
+    bulk.isPending ||
+    bulkGroup.isPending ||
+    bulkColor.isPending ||
+    bulkUndo.isPending;
+
+  const setStatus = (isActive: boolean) => {
+    bulkUndo.prepare("status", selectedIds, products, isActive);
+    bulk.setStatus(selectedIds, isActive);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -301,11 +325,11 @@ function AdminProductTableView() {
         actions={[
           {
             label: dict.products.bulk.activate(selection.selectedCount),
-            onClick: () => bulk.setStatus(selectedIds, true),
+            onClick: () => setStatus(true),
           },
           {
             label: dict.products.bulk.deactivate(selection.selectedCount),
-            onClick: () => bulk.setStatus(selectedIds, false),
+            onClick: () => setStatus(false),
           },
           // TASK-423 / AD-PROD-33. Note what is NOT here: a bulk delete. Product
           // deletion is a soft delete that mangles slug and sku, and is not
@@ -326,6 +350,16 @@ function AdminProductTableView() {
         ]}
       />
 
+      {(bulkUndo.canUndo || bulkUndo.isPending) && (
+        <div className="flex">
+          <ReorderUndoButton
+            canUndo={bulkUndo.canUndo}
+            onUndo={bulkUndo.undo}
+            label={dict.products.bulk.undo}
+          />
+        </div>
+      )}
+
       {/* TASK-812: the deactivate / clear-colour AlertDialogs (portalled). */}
       {bulk.confirmDialog}
       {bulkColor.confirmDialog}
@@ -337,7 +371,10 @@ function AdminProductTableView() {
         groups={groupsQuery.data?.data ?? []}
         isLoadingGroups={groupsQuery.isLoading}
         isPending={bulkGroup.isPending}
-        onConfirm={(groupId) => bulkGroup.setGroup(selectedIds, groupId)}
+        onConfirm={(groupId) => {
+          bulkUndo.prepare("group", selectedIds, products, groupId);
+          bulkGroup.setGroup(selectedIds, groupId);
+        }}
       />
 
       <SetColorDialog
@@ -349,7 +386,10 @@ function AdminProductTableView() {
         // neighbourhood whose spelling they should match.
         suggestions={colorsInUse(products)}
         isPending={bulkColor.isPending}
-        onConfirm={(color) => bulkColor.setColor(selectedIds, color)}
+        onConfirm={(color) => {
+          bulkUndo.prepare("color", selectedIds, products, color);
+          bulkColor.setColor(selectedIds, color);
+        }}
       />
 
       {isLoading ? (

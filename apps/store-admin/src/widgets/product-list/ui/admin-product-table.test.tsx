@@ -1071,3 +1071,229 @@ describe("AdminProductTable — bulk status confirm (TASK-812)", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });
+
+/**
+ * «Скасувати» for the last bulk action (TASK-837 / AD-PROD-33).
+ *
+ * The undo replays the FORWARD endpoints, once per distinct previous value — so
+ * the assertions are on the request bodies of the replay: which ids go back to
+ * which value, and that rows which never changed are not written at all.
+ */
+describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
+  const P1 = "iPhone 15 Pro Case";
+  const P2 = "Galaxy S24 Case";
+
+  /** Two rows whose previous values differ on every undoable field. */
+  function stubTwoRows() {
+    server.use(
+      http.get("*/api/products/admin/list", () =>
+        HttpResponse.json({
+          data: [
+            {
+              ...makeProductRow(),
+              isActive: true,
+              groupId: "group-a",
+              attributes: { Колір: "Чорний" },
+            },
+            {
+              ...makeProductRow(),
+              id: "product-2",
+              name: P2,
+              slug: "galaxy-s24-case",
+              isActive: false,
+              groupId: null,
+              attributes: {},
+            },
+          ],
+          meta: { total: 2, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+      ...categoryTreeHandlers(),
+      http.get("*/api/product-groups", () =>
+        HttpResponse.json({
+          data: [
+            { id: "group-a", name: "Чохли Clear", isActive: true, axes: [] },
+            { id: "group-b", name: "Чохли Silicone", isActive: true, axes: [] },
+          ],
+        }),
+      ),
+    );
+  }
+
+  /** Record every body sent to one bulk endpoint. */
+  function recordPatch(path: string, status = 200) {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch(`*/api/products/${path}`, async ({ request }) => {
+        bodies.push(await request.json());
+        return status === 200
+          ? HttpResponse.json({ data: { updatedCount: 1 } })
+          : HttpResponse.json({ message: "boom" }, { status });
+      }),
+    );
+    return bodies;
+  }
+
+  async function selectBoth() {
+    for (const name of [P1, P2]) {
+      await userEvent.click(
+        screen.getByRole("checkbox", {
+          name: dict.products.bulk.selectRow(name),
+        }),
+      );
+    }
+  }
+
+  const undoButton = () =>
+    screen.findByRole("button", { name: dict.products.bulk.undo });
+
+  it("offers no undo before any bulk action", async () => {
+    stubTwoRows();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(
+      screen.queryByRole("button", { name: dict.products.bulk.undo }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("activate → undo deactivates only the row that was inactive before", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("status");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({
+      ids: ["product-1", "product-2"],
+      isActive: true,
+    });
+
+    await userEvent.click(await undoButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    // product-1 was already active — nothing to put back, so it is not written.
+    expect(bodies[1]).toEqual({ ids: ["product-2"], isActive: false });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: dict.products.bulk.undo }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+      dict.products.bulk.announceUndone(1),
+    );
+  });
+
+  it("move to group → undo sends one request per previous group, null included", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("group");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(2) }),
+    );
+    await userEvent.click(
+      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Чохли Silicone" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+
+    await userEvent.click(await undoButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(3));
+    expect(bodies.slice(1)).toEqual([
+      { ids: ["product-1"], groupId: "group-a" },
+      { ids: ["product-2"], groupId: null },
+    ]);
+  });
+
+  it("set colour → undo restores each row's previous colour (or clears it)", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("color");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.setColor(2) }),
+    );
+    await userEvent.type(
+      await screen.findByLabelText(dict.products.bulk.colorDialogLabel),
+      "Білий",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+
+    await userEvent.click(await undoButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(3));
+    expect(bodies.slice(1)).toEqual([
+      { ids: ["product-1"], color: "Чорний" },
+      { ids: ["product-2"], color: null },
+    ]);
+  });
+
+  it("offers nothing after a cancelled action", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("status");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.deactivate(2) }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: dict.common.cancel,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(bodies).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", { name: dict.products.bulk.undo }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("a failed undo keeps the offer and says so", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("status");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+
+    // The replay hits a failing server.
+    const failed = recordPatch("status", 500);
+    await userEvent.click(await undoButton());
+
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-assertive")).toHaveTextContent(
+        dict.products.bulk.announceUndoFailed,
+      ),
+    );
+    expect(failed).toEqual([{ ids: ["product-2"], isActive: false }]);
+    // Still on offer — a second press retries what is left.
+    expect(await undoButton()).not.toHaveAttribute("aria-disabled", "true");
+  });
+});
