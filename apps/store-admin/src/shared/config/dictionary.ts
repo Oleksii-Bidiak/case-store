@@ -1954,12 +1954,12 @@ export const dict = {
     // instead, so the parsing stays out of this constants module.
     defaultMetaTitlePlaceholder: "Ваш магазин — аксесуари для смартфонів",
     defaultMetaTitleHint:
-      "Заголовок, який показується у вкладці браузера та в результатах пошуку, коли у сторінки немає власного заголовка. Залиште порожнім — і заголовок згенерується автоматично з назви сторінки.",
+      "Заголовок у вкладці браузера та в результатах пошуку для сторінок, у яких немає ні власного SEO-заголовка, ні назви (наприклад, головна). Сторінка з назвою завжди бере заголовок з назви за шаблоном нижче.",
     defaultMetaDescription: "Опис сайту за замовчуванням",
     defaultMetaDescriptionPlaceholder:
       "Мультибрендовий магазин аксесуарів та Apple-техніки. Доставка по Україні.",
     defaultMetaDescriptionHint:
-      "Короткий опис магазину (1–2 речення), який Google показує під заголовком у результатах пошуку — коли у сторінки немає власного опису.",
+      "Короткий опис магазину (1–2 речення), який Google показує під заголовком у результатах пошуку — для сторінок, у яких немає ні власного SEO-опису, ні тексту, з якого його можна взяти.",
     titleTemplate: "Шаблон заголовка сторінки",
     titleTemplatePlaceholder: "%s | Ваш магазин",
     titleTemplateHint:
@@ -2018,6 +2018,13 @@ export const dict = {
     // hint: the owner WILL change this field expecting the logo to follow.
     siteNameLogoNote:
       "Напис у самому логотипі поки змінюється в коді — якщо ви завантажили логотип-картинку, він теж лишиться без змін. Напишіть розробнику, якщо треба оновити і його.",
+    // TASK-552: two SERP samples in the real tier order (own → name → default).
+    previewNamedHeading: "Сторінка з назвою (товар, категорія, стаття)",
+    previewNamedNote: (name: string) =>
+      `Приклад — товар «${name}» без власних SEO-полів: заголовок і опис беруться з самої сторінки, заголовок — за шаблоном. Значення за замовчуванням тут не з'являються: зміст сторінки завжди важливіший.`,
+    previewUnnamedHeading: "Сторінка без власного змісту",
+    previewUnnamedNote:
+      "Приклад — сторінка без SEO-полів і без назви чи опису (наприклад, головна або загальний список). Лише тут показуються заголовок і опис за замовчуванням.",
   },
 
   // --- Store logo upload (TASK-299) -------------------------------------------
@@ -2476,6 +2483,31 @@ export const dict = {
     // therefore reports the EFFECT, which is true either way, and never guesses
     // at the cause.
     ratingNotCounted: "Оцінка не враховується",
+
+    // --- Why a row is withdrawn, from the server (TASK-1004, API TASK-596/599) --
+    // `hiddenReason` names the lever that put the author's contribution down, so
+    // the badge says WHO did it instead of inferring it from `ratingVisible` —
+    // and each lever is lifted by a different hand (a moderator, an un-ban,
+    // nobody), which is exactly what the operator needs to know before acting.
+    hiddenByModerator: "Приховано модератором",
+    hiddenByBan: "Автора заблоковано",
+    hiddenByDeletion: "Акаунт видалено",
+    // The review-author visibility filter (`?visibility=`, API default `visible`).
+    // Without it the withdrawn rows — and so the «повернути» button — were
+    // unreachable from the queue.
+    filterVisibilityAria: "Фільтр за видимістю автора",
+    filterVisibilityVisible: "Лише видимі",
+    filterVisibilityHidden: "Приховані",
+    filterVisibilityAll: "Видимі й приховані",
+    // `?status=all` — every text verdict plus ratings without text (TASK-601).
+    filterAll: "Усі",
+    // Deep-link narrowing from the dashboard's rating-abuse card (TASK-601):
+    // removable chips, since no control on this screen sets them.
+    productChip: (product: string) => `Товар: ${product}`,
+    productChipAria: (product: string) =>
+      `Прибрати фільтр за товаром ${product}`,
+    ipChip: (ip: string) => `IP: ${ip}`,
+    ipChipAria: (ip: string) => `Прибрати фільтр за IP-адресою ${ip}`,
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------
@@ -2685,6 +2717,16 @@ export const dict = {
     // не дає. Називаємо справжню причину і того, хто може її усунути.
     forbidden:
       "У вас немає права на цю дію — зміну не збережено. Якщо вона потрібна, попросіть власника магазину надати доступ.",
+    // TASK-621: рядок історії про подію оплати, яку магазин відхилив. Раніше
+    // таймлайн показував «Оплачено → Оплачено» — ніби нічого не сталося.
+    // `requested` — чого просила подія; `current` — що лишилось насправді.
+    paymentEventRefusedLabel: (requested: string, current: string) =>
+      `Відхилено подію оплати: «${requested}» (статус оплати лишився «${current}»)`,
+    // Рядки, записані до TASK-621, не зберегли, чого просила подія.
+    paymentEventRefusedLegacyLabel: (current: string) =>
+      `Відхилено подію оплати (статус оплати лишився «${current}»)`,
+    paymentEventRefusedHistoryNote:
+      "Платіжна система повідомила про зміну, яку магазин не прийняв: такий перехід статусу оплати заборонений. Гроші й статус не змінились; подробиці — в журналі сервера.",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
@@ -4102,8 +4144,7 @@ export const dict = {
       "Заповніть назву або SEO-заголовок, щоб побачити, як сторінка виглядатиме в пошуку Google.",
     // Self-referential preview on /settings/seo (Design Decision 4) — a sample
     // page standing in for "a real page with no title/description of its own".
-    sampleNote:
-      "Це приклад: так виглядатиме сторінка, у якої немає власного заголовка чи опису.",
+    // Its notes live in `seoSettingsForm.preview*` since TASK-552.
     samplePageName: "Чохол для iPhone 15",
     samplePageDescription:
       "Надійний силіконовий чохол для iPhone 15 із захистом кутів та підтримкою MagSafe. Доставка по Україні.",
