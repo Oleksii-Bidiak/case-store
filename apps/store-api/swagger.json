@@ -13978,11 +13978,17 @@
           "202": {
             "description": "Refund requested. The payment becomes REFUNDED only when the provider confirms it by callback — do not treat this response as confirmation."
           },
+          "400": {
+            "description": "Amount is not a two-decimal string, or exceeds what the attempt charged"
+          },
           "403": {
             "description": "Forbidden — payments:refund required"
           },
           "404": {
             "description": "Payment not found"
+          },
+          "409": {
+            "description": "The attempt is not SUCCEEDED — nothing to refund"
           }
         },
         "security": [

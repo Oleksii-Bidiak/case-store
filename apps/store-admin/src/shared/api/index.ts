@@ -57,6 +57,14 @@ export * from "./generated/search/search";
 export * from "./generated/analytics/analytics";
 // TASK-441 — the internal media library.
 export * from "./generated/media/media";
+// TASK-371 — the admin payment card: attempt history + refund. Named, not `*`:
+// the same generated file also carries the storefront's checkout mutation,
+// which has no business being reachable from the admin panel.
+export {
+  useAdminListOrderPayments,
+  getAdminListOrderPaymentsQueryKey,
+  useAdminRefundPayment,
+} from "./generated/payments/payments";
 
 // Generated DTO / entity types
 export * from "./generated/models";

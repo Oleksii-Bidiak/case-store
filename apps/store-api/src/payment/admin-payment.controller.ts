@@ -69,7 +69,8 @@ export class AdminPaymentController {
   /**
    * GET /api/admin/payments/orders/:orderId
    *
-   * Every attempt made against one order, oldest first.
+   * Every attempt made against one order, newest first (`PaymentRepository.findByOrderId`
+   * orders by `createdAt desc`; the admin card lists them in that order, TASK-371).
    *
    * There are usually several. A declined card cannot be retried under the same
    * provider order id, so each retry opens a NEW attempt — a failed row followed
@@ -114,8 +115,13 @@ export class AdminPaymentController {
       'Refund requested. The payment becomes REFUNDED only when the provider confirms it ' +
       'by callback — do not treat this response as confirmation.',
   })
+  @ApiResponse({
+    status: 400,
+    description: 'Amount is not a two-decimal string, or exceeds what the attempt charged',
+  })
   @ApiResponse({ status: 403, description: 'Forbidden — payments:refund required' })
   @ApiResponse({ status: 404, description: 'Payment not found' })
+  @ApiResponse({ status: 409, description: 'The attempt is not SUCCEEDED — nothing to refund' })
   async refund(
     @Param('paymentId') paymentId: string,
     @Body() dto: RefundRequestDto,

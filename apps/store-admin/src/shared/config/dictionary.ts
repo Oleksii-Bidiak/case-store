@@ -2244,7 +2244,6 @@ export const dict = {
     refundedLabel: "Повернуто",
     refundedOfTotal: (refunded: string, total: string) =>
       `${refunded} з ${total}`,
-
     // --- Operator-created (phone) orders (TASK-341) ---------------------------
     createHeading: "Нове замовлення",
     createMetaTitle: "Нове замовлення — Адмін",

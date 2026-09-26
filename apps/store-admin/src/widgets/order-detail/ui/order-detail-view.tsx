@@ -37,6 +37,7 @@ import { formatCurrency, formatDateTime, formatTime } from "@/shared/lib";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import { useNow } from "@/shared/lib/use-now";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
+import { OrderPaymentAttempts } from "./order-payment-attempts";
 import { OrderReturnsSection } from "./order-returns-section";
 import { OrderTimeline } from "./order-timeline";
 
@@ -262,14 +263,12 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 </div>
               </>
             ) : null}
-            {/* An honest blank rather than a card that implies there were no
-                payment attempts. The method, the attempt history and the refund
-                button need `Order.paymentMethod` on the entity plus the admin
-                payments endpoints — none of which the merged backend exposes
-                yet. See this file's note and the report for the exact contract. */}
-            <p className="text-xs text-muted-foreground">
-              {dict.orders.paymentAttemptsUnavailable}
-            </p>
+            {/* TASK-371: the LiqPay attempts behind the money above, newest
+                first, with «Повернути кошти» on a successful one. Renders
+                nothing without `payments:read`; the refund needs
+                `payments:refund` on top. It replaces the placeholder that stood
+                here while the admin payments endpoints had no screen. */}
+            <OrderPaymentAttempts order={order} />
           </section>
 
           {/* TASK-724: the order's return requests, each linked to its page —
