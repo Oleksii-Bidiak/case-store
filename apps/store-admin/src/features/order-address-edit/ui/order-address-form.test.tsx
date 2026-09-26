@@ -160,6 +160,131 @@ describe("OrderAddressForm — refusals (TASK-622)", () => {
 });
 
 /**
+ * TASK-629: the card polls every minute and `keepDirtyValues` keeps a
+ * half-typed correction while the `order` prop moves on. The save must carry
+ * the version the operator started correcting — sending the refetched one would
+ * overwrite a colleague's concurrent edit without a 409.
+ */
+describe("OrderAddressForm — the lock token under polling (TASK-629)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+
+  function capturePatch(bodies: Array<Record<string, unknown>>) {
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({
+          data: {
+            ...makeOrder("PENDING"),
+            updatedAt: "2026-06-01T10:05:00.000Z",
+          },
+        });
+      }),
+    );
+  }
+
+  function refetched(updatedAt: string): OrderEntity {
+    return { ...makeOrder("PENDING"), updatedAt } as OrderEntity;
+  }
+
+  it("sends the version the operator started correcting, not one a refetch brought in", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies);
+    const { rerender } = renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Lviv");
+    // A colleague's save arrives with the minute poll.
+    rerender(
+      <OrderAddressForm order={refetched("2026-06-01T10:00:30.000Z")} />,
+    );
+    expect(city).toHaveValue("Lviv");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      expectedUpdatedAt: "2026-06-01T10:00:00.000Z",
+    });
+  });
+
+  it("takes the refreshed version when the refetch lands before any typing", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies);
+    const { rerender } = renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    rerender(
+      <OrderAddressForm order={refetched("2026-06-01T10:00:30.000Z")} />,
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Lviv");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      expectedUpdatedAt: "2026-06-01T10:00:30.000Z",
+    });
+  });
+
+  it("starts the next correction from the version its own save made", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies);
+    const { rerender } = renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.orderCreate.addressCity),
+      " (центр)",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    // The detail refetch hands the card its own save back.
+    rerender(
+      <OrderAddressForm order={refetched("2026-06-01T10:05:00.000Z")} />,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.orderCreate.addressAddress1),
+      ", кв. 2",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toMatchObject({
+      expectedUpdatedAt: "2026-06-01T10:05:00.000Z",
+    });
+  });
+});
+
+/**
  * TASK-577: `123` used to pass the form (`min(1)`), reach the API and come back
  * as a 400 — which the conflict mapper of the day read as «замовлення
  * змінилося». Now the form stops it, under the field, before any request.

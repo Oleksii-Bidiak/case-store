@@ -86,7 +86,10 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   // (only while the tab is visible — TanStack's default). The two forms on the
   // card are safe under it: both seed through RHF `values` with
   // `keepDirtyValues` (forms.md Rule 2a), so a refetch refreshes untouched fields
-  // and leaves a half-typed ТТН or address alone.
+  // and leaves a half-typed ТТН or address alone. The poll also moves
+  // `order.updatedAt` — the optimistic-lock token — under a dirty form, so both
+  // forms send the version the operator started editing (`useEditLockToken`),
+  // not the latest one, or a colleague's save would be overwritten without a 409.
   const { data, dataUpdatedAt, isLoading, isError, error } =
     useAdminOrderControllerFindById(orderId, {
       query: { ...OPERATIONAL_LIST_QUERY, refetchInterval: ORDER_REFETCH_MS },

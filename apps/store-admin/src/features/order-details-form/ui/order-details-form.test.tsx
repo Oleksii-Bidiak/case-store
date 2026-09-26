@@ -170,6 +170,133 @@ describe("OrderDetailsForm — cache invalidation (TASK-400)", () => {
   });
 });
 
+// ─── The lock token under a polling card (TASK-629) ───────────────────────────
+
+/**
+ * The card refetches the order every minute, and `keepDirtyValues` keeps the
+ * operator's typing while the `order` prop — and its `updatedAt` — move on. A
+ * form that sent the prop's latest `updatedAt` would carry a colleague's token
+ * with the operator's text, and the colleague's note would be overwritten with
+ * no 409. The token is the one the operator started editing.
+ */
+describe("OrderDetailsForm — the lock token under polling (TASK-629)", () => {
+  const COLLEAGUE_SAVED = {
+    ...ORDER,
+    updatedAt: "2026-06-01T10:00:30.000Z",
+    internalNotes: "Нотатка колеги",
+  } as unknown as OrderEntity;
+
+  async function typeNotes(text: string) {
+    await userEvent.type(
+      screen.getByLabelText(dict.orders.internalNotes),
+      text,
+    );
+  }
+
+  async function save() {
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.detailsSave }),
+    );
+  }
+
+  it("sends the version the operator started editing, not one a refetch brought in", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies);
+
+    const { rerender } = renderWithProviders(
+      <OrderDetailsForm order={ORDER} />,
+      { auth: WRITER },
+    );
+    await typeNotes("Моя нотатка");
+    // The minute poll lands a colleague's save while the operator is typing.
+    rerender(<OrderDetailsForm order={COLLEAGUE_SAVED} />);
+    // Their text survives (forms.md Rule 2a)…
+    expect(screen.getByLabelText(dict.orders.internalNotes)).toHaveValue(
+      "Моя нотатка",
+    );
+    await save();
+
+    // …and the save is judged against what they saw, so the server answers
+    // 409 instead of silently overwriting «Нотатка колеги».
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ expectedUpdatedAt: ORDER.updatedAt });
+  });
+
+  it("takes the refreshed version while the form is still clean", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies);
+
+    const { rerender } = renderWithProviders(
+      <OrderDetailsForm order={ORDER} />,
+      { auth: WRITER },
+    );
+    // The refetch lands BEFORE the operator touches anything: what they then
+    // edit is the colleague's version, so that is the token.
+    rerender(<OrderDetailsForm order={COLLEAGUE_SAVED} />);
+    await typeNotes(" + моє");
+    await save();
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      expectedUpdatedAt: COLLEAGUE_SAVED.updatedAt,
+    });
+  });
+
+  it("after a 409 the retry is made over the refetched version, not the refused one", async () => {
+    const REFETCHED = "2026-06-01T10:01:00.000Z";
+    const bodies: Array<Record<string, unknown>> = [];
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        if (bodies.length === 1) {
+          return HttpResponse.json(
+            {
+              statusCode: 409,
+              error: "ORDER_STALE",
+              message: "Order was modified",
+            },
+            { status: 409 },
+          );
+        }
+        return HttpResponse.json({
+          data: { ...ORDER, updatedAt: "2026-06-01T10:02:00.000Z" },
+        });
+      }),
+    );
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    // What the conflict's refetch finds in the cache.
+    queryClient.setQueryData(
+      getAdminOrderControllerFindByIdQueryKey(ORDER_ID),
+      {
+        data: { ...ORDER, updatedAt: REFETCHED },
+      },
+    );
+
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, {
+      queryClient,
+      auth: WRITER,
+    });
+    await typeNotes("Моя нотатка");
+    await save();
+    await waitFor(() =>
+      expect(sonnerToast.error).toHaveBeenCalledWith(
+        dict.orderStatus.conflict.ORDER_STALE,
+        expect.anything(),
+      ),
+    );
+
+    await save();
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[0]).toMatchObject({ expectedUpdatedAt: ORDER.updatedAt });
+    expect(bodies[1]).toMatchObject({ expectedUpdatedAt: REFETCHED });
+  });
+});
+
 // ─── The waybill rule must not take the notes hostage (TASK-426) ──────────────
 
 describe("OrderDetailsForm — an order carrying a legacy waybill", () => {

@@ -22,6 +22,7 @@ import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { Button, Input, Label } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { useEditLockToken } from "@/shared/lib/use-edit-lock-token";
 import {
   addressValuesToDto,
   mapOrderToAddressValues,
@@ -79,6 +80,16 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
     resetOptions: { keepDirtyValues: true },
   });
 
+  // TASK-629: the card polls, so `order.updatedAt` moves while the operator
+  // types. Send the version they started editing, or a colleague's save that
+  // landed meanwhile is overwritten without a 409 — see `useEditLockToken`.
+  // `dirtyFields`, not `isDirty`: a values-driven reset drops `isDirty` for a
+  // render even though the typed text is kept, which would let go of the token.
+  const lock = useEditLockToken(
+    Object.keys(form.formState.dirtyFields).length > 0,
+    order.updatedAt,
+  );
+
   // 409 → conflict sentence, 403 → «немає права» (TASK-622). A 400 is neither:
   // it used to read as «замовлення змінилося», because any coded body counted.
   const conflict = orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
@@ -113,11 +124,19 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
             values,
             order.shippingAddress as Record<string, unknown> | null,
           ),
-          expectedUpdatedAt: order.updatedAt,
+          expectedUpdatedAt: lock.token,
         },
       },
       {
-        onSuccess: () => {
+        onSuccess: (response) => {
+          // Drop the dirty flags (and with them the held lock token), so the
+          // next edit starts from the saved address and the version it made.
+          // `keepDirtyValues: false` overrides the form-level reset option,
+          // which would otherwise keep the very flags this reset drops.
+          form.reset(mapOrderToAddressValues(response.data), {
+            keepDirtyValues: false,
+          });
+          lock.rebase(response.data.updatedAt);
           void queryClient.invalidateQueries({
             queryKey: getAdminOrderControllerFindByIdQueryKey(order.id),
           });
@@ -138,9 +157,18 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
         onError: (error) => {
           const message = orderConflictMessage(error as ApiErrorLike);
           if (message) {
-            void queryClient.invalidateQueries({
-              queryKey: getAdminOrderControllerFindByIdQueryKey(order.id),
-            });
+            // Told the order changed; the next save is made over the refetched
+            // version, so it becomes the held token (TASK-629) — otherwise every
+            // retry would send the refused one again.
+            const key = getAdminOrderControllerFindByIdQueryKey(order.id);
+            void queryClient
+              .invalidateQueries({ queryKey: key })
+              .then(() =>
+                lock.rebase(
+                  queryClient.getQueryData<{ data?: OrderEntity }>(key)?.data
+                    ?.updatedAt,
+                ),
+              );
             toast.error(message);
             return;
           }
@@ -202,7 +230,9 @@ function OrderAddressEditor({ order }: OrderAddressFormProps) {
           variant="ghost"
           size="sm"
           onClick={() => {
-            form.reset(mapOrderToAddressValues(order));
+            form.reset(mapOrderToAddressValues(order), {
+              keepDirtyValues: false,
+            });
             setEditing(false);
           }}
         >
