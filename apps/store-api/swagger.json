@@ -847,6 +847,29 @@
         ]
       }
     },
+    "/api/addon-services/active": {
+      "get": {
+        "description": "Public, active-only, ordered by name. Backs the «Додаткові сервіси» block on the storefront's /info page. `price` is the catalog price; a product may override it.",
+        "operationId": "addonServiceControllerFindActive",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Active add-on services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAddonServiceListResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List the add-on services the store currently offers, with catalog prices",
+        "tags": [
+          "AddonServices"
+        ]
+      }
+    },
     "/api/addon-services/resolved-for-product/{productId}": {
       "get": {
         "operationId": "addonServiceControllerResolveForProduct",
@@ -15053,6 +15076,53 @@
         },
         "required": [
           "quantity"
+        ]
+      },
+      "PublicAddonServiceEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Add-on service unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Service name",
+            "example": "Гарантійний сертифікат (24 міс.)"
+          },
+          "description": {
+            "type": "string",
+            "description": "What the service covers",
+            "example": "Продовжена гарантія на 24 місяці.",
+            "nullable": true
+          },
+          "price": {
+            "type": "string",
+            "description": "Catalog price as a two-decimal string",
+            "example": "499.00"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "price"
+        ]
+      },
+      "PublicAddonServiceListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Active add-on services, ordered by name",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicAddonServiceEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "ResolvedAddonListResponse": {

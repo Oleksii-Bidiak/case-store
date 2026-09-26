@@ -10,9 +10,11 @@ import { AddonApplicabilityResolver } from './addon-applicability.resolver';
 import {
   AddonServiceDeltaEntity,
   AddonServiceEntity,
+  PublicAddonServiceEntity,
   ResolvedAddonEntity,
   ResolvedCategoryTemplateEntity,
 } from './entities';
+import { RevalidationNotifier } from '../publishing';
 import {
   AddonServiceListQueryDto,
   CreateAddonServiceDto,
@@ -37,6 +39,14 @@ interface PaginatedAddonServicesResponse {
 }
 
 /**
+ * Storefront cache tag for the public add-on list (TASK-561). The storefront's
+ * `addon-services-server.ts` tags its fetch with the same string, so every
+ * catalog write here purges `/info`'s «Додаткові сервіси» block at once instead
+ * of leaving a changed price on the page until the next deploy.
+ */
+export const ADDON_SERVICES_TAG = 'addon-services';
+
+/**
  * Business logic for add-on services (TASK-174).
  *
  * Thin over the repository for catalog CRUD (mirrors `BrandService`), plus the
@@ -51,6 +61,7 @@ export class AddonServiceService {
     private readonly resolver: AddonApplicabilityResolver,
     private readonly categoryRepository: CategoryRepository,
     private readonly productRepository: ProductRepository,
+    private readonly revalidation: RevalidationNotifier,
   ) {}
 
   // ─── Catalog CRUD ─────────────────────────────────────────────────────────
@@ -59,6 +70,17 @@ export class AddonServiceService {
   async findAllActive(): Promise<{ data: AddonServiceEntity[] }> {
     const services = await this.addonServiceRepository.findAllActive();
     return { data: services.map((service) => AddonServiceEntity.fromPrisma(service)) };
+  }
+
+  /**
+   * The same active list, in its PUBLIC shape (TASK-561) — `/info` lists these
+   * with their catalog prices instead of three services and prices the page used
+   * to invent. Same repository read as the admin picker, so what the storefront
+   * advertises is exactly what an admin can attach to a product.
+   */
+  async findPublicActive(): Promise<PublicAddonServiceEntity[]> {
+    const services = await this.addonServiceRepository.findAllActive();
+    return services.map((service) => PublicAddonServiceEntity.fromPrisma(service));
   }
 
   async findAllAdmin(query: AddonServiceListQueryDto): Promise<PaginatedAddonServicesResponse> {
@@ -96,6 +118,7 @@ export class AddonServiceService {
       isActive: dto.isActive,
     };
     const service = await this.addonServiceRepository.create(input);
+    await this.revalidation.revalidate({ tags: [ADDON_SERVICES_TAG] });
     return AddonServiceEntity.fromPrisma(service);
   }
 
@@ -109,6 +132,7 @@ export class AddonServiceService {
       isActive: dto.isActive,
     };
     const service = await this.addonServiceRepository.update(id, input);
+    await this.revalidation.revalidate({ tags: [ADDON_SERVICES_TAG] });
     return AddonServiceEntity.fromPrisma(service);
   }
 
@@ -120,6 +144,7 @@ export class AddonServiceService {
   async setActive(id: string, isActive: boolean): Promise<AddonServiceEntity> {
     await this.findById(id);
     const service = await this.addonServiceRepository.setActive(id, isActive);
+    await this.revalidation.revalidate({ tags: [ADDON_SERVICES_TAG] });
     return AddonServiceEntity.fromPrisma(service);
   }
 
