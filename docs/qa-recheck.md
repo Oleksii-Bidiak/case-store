@@ -2237,3 +2237,4 @@
 - **TASK-560** — SF-CNT-39
 - **TASK-561** — SF-CNT-40
 - **TASK-565** — AD-CNT-44
+- **TASK-534** — SF-UX-13

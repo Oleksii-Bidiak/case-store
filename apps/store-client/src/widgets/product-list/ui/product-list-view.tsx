@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { keepPreviousData } from "@tanstack/react-query";
 import { SlidersHorizontal } from "lucide-react";
@@ -24,6 +24,12 @@ import {
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { findCategoryNodeBySlug } from "../model/catalog-header";
 import { ProductList } from "./product-list";
+
+// Hydration flag (TASK-534): `false` for the server render and for hydration,
+// `true` for every client render after that — and for a fresh client mount.
+const subscribeNever = () => () => {};
+const clientSnapshot = () => true;
+const serverSnapshot = () => false;
 
 interface ProductListViewProps {
   /** Server-resolved initial params (from `await searchParams`). */
@@ -207,7 +213,20 @@ export function ProductListView({
   // row can offer a second, "narrow to a subcategory" level without a second
   // request (TASK-236). Only active categories are returned.
   const { data: categoriesData } = useCategoryControllerGetCategoryTree();
-  const categories = categoriesData?.data ?? [];
+  // TASK-534: the tree is not prefetched on the server, so the server always
+  // renders this widget without it (no chips row). On the client the header's
+  // category menu can have fetched the same tree before this Suspense boundary
+  // hydrates, and rendering the chips then made the first child disagree with
+  // the server's (the toolbar) — «Hydration failed», the whole subtree thrown
+  // away. Until hydration is done, render exactly what the server had: no tree.
+  // If the tree is ever prefetched into a HydrationBoundary (TASK-563), the
+  // server has it too and this gate must go, or it becomes the mismatch.
+  const hydrated = useSyncExternalStore(
+    subscribeNever,
+    clientSnapshot,
+    serverSnapshot,
+  );
+  const categories = hydrated ? (categoriesData?.data ?? []) : [];
 
   // Slug → id, once, for the id-addressed side endpoints (brands-per-category,
   // filterable specs) that the TASK-420 URL migration did not touch. Resolved
