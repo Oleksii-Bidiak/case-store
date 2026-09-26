@@ -18,7 +18,7 @@
  *     to a narrower filter instead of an error page.
  *
  * A value may contain `:` but NOT `,` or `;` — those are the separators and
- * there is no escape form (see the BACKLOG follow-up).
+ * there is no escape form: the admin refuses such a facet option (TASK-514).
  */
 
 import type { AttributeDefinitionEntity } from "@/entities/category";
@@ -96,10 +96,30 @@ export interface SpecFacetSelection {
   values: string[];
 }
 
+/*
+ * The server's caps on `?specs=` (TASK-540), mirrored from
+ * `apps/store-api/src/product/dto/product-list-query.dto.ts`:
+ * `MAX_SPEC_FACETS`, `MAX_SPEC_VALUES_PER_FACET` and the `@MaxLength(600)` on
+ * the raw param. The first two are silently cut there — a 21st value would be
+ * drawn ticked while the grid ignored it — and the third is the ONE rule the
+ * server enforces with a 400 instead of degrading. So the client refuses to
+ * build a param past any of them rather than letting the controls and the grid
+ * disagree.
+ */
+export const MAX_SPEC_FACETS = 6;
+export const MAX_SPEC_VALUES_PER_FACET = 20;
+export const MAX_SPEC_PARAM_LENGTH = 600;
+
 /**
  * Parse a `specs` param into the selected facets. Returns `[]` for missing or
  * wholly malformed input. A repeated key MERGES (the server merges too: two
  * AND-ed conditions on one spec definition can never both match).
+ *
+ * The caps are applied exactly where the server applies them (TASK-540): the
+ * facet ceiling counts NEW keys only (a repeat merges and costs nothing), and
+ * the per-facet cap keeps the first values after de-duplication. So what this
+ * returns is what the grid is actually filtered by — a hand-edited URL with a
+ * 21st value shows twenty ticks, not twenty-one.
  */
 export function parseSpecParam(
   raw: string | null | undefined,
@@ -122,13 +142,63 @@ export function parseSpecParam(
       .filter((value) => value !== "");
     if (values.length === 0) continue;
 
-    byKey.set(key, [...(byKey.get(key) ?? []), ...values]);
+    const existing = byKey.get(key);
+    if (existing) {
+      existing.push(...values);
+      continue;
+    }
+    if (byKey.size >= MAX_SPEC_FACETS) continue;
+    byKey.set(key, [...values]);
   }
 
   return [...byKey.entries()].map(([key, values]) => ({
     key,
-    values: [...new Set(values)],
+    values: [...new Set(values)].slice(0, MAX_SPEC_VALUES_PER_FACET),
   }));
+}
+
+/** The facets with `value` added to `key` — no cap checks, see below. */
+function withValueAdded(
+  facets: SpecFacetSelection[],
+  key: string,
+  value: string,
+): SpecFacetSelection[] {
+  const known = facets.some((facet) => facet.key === key);
+  // Rewrite the facet IN PLACE rather than dropping and re-appending it: the
+  // param is what the shopper sees in the address bar and copies into a message,
+  // and re-appending would shuffle the facet order on every single tick.
+  return known
+    ? facets.map((facet) =>
+        facet.key === key ? { key, values: [...facet.values, value] } : facet,
+      )
+    : [...facets, { key, values: [value] }];
+}
+
+/**
+ * Whether ticking `value` in facet `key` would still give a param the server
+ * applies in full (TASK-540): at most {@link MAX_SPEC_FACETS} facets,
+ * {@link MAX_SPEC_VALUES_PER_FACET} values in this one, and
+ * {@link MAX_SPEC_PARAM_LENGTH} characters in all.
+ *
+ * An already-selected value is always «selectable» — unticking only ever
+ * shortens the param, and a control that could not be unticked would trap the
+ * shopper in their own filter.
+ */
+export function canSelectSpecValue(
+  raw: string | null | undefined,
+  key: string,
+  value: string,
+): boolean {
+  const facets = parseSpecParam(raw);
+  const current = selectedSpecValues(facets, key);
+  if (current.includes(value)) return true;
+
+  const isNewFacet = !facets.some((facet) => facet.key === key);
+  if (isNewFacet && facets.length >= MAX_SPEC_FACETS) return false;
+  if (current.length >= MAX_SPEC_VALUES_PER_FACET) return false;
+
+  const next = toSpecParam(withValueAdded(facets, key, value)) ?? "";
+  return next.length <= MAX_SPEC_PARAM_LENGTH;
 }
 
 /**
@@ -159,6 +229,11 @@ export function selectedSpecValues(
  * rebuilt the entire param from the facet being clicked, so ticking a value in
  * the second facet silently dropped the first one's selection. Here the other
  * facets are carried through untouched.
+ *
+ * Adding a value past the server's caps is a no-op (TASK-540 — see
+ * {@link canSelectSpecValue}): the param comes back as it was, so the URL, the
+ * ticks and the grid keep describing the same slice. The panel disables such a
+ * control in the first place; this is the guarantee behind it.
  */
 export function toggleSpecValue(
   raw: string | null | undefined,
@@ -167,21 +242,21 @@ export function toggleSpecValue(
 ): string | undefined {
   const facets = parseSpecParam(raw);
   const current = selectedSpecValues(facets, key);
-  const nextValues = current.includes(value)
-    ? current.filter((entry) => entry !== value)
-    : [...current, value];
 
-  // Rewrite the facet IN PLACE rather than dropping and re-appending it: the
-  // param is what the shopper sees in the address bar and copies into a message,
-  // and re-appending would shuffle the facet order on every single tick.
-  const known = facets.some((facet) => facet.key === key);
-  const next = known
-    ? facets.map((facet) =>
-        facet.key === key ? { key, values: nextValues } : facet,
-      )
-    : [...facets, { key, values: nextValues }];
+  if (current.includes(value)) {
+    return toSpecParam(
+      facets.map((facet) =>
+        facet.key === key
+          ? { key, values: current.filter((entry) => entry !== value) }
+          : facet,
+      ),
+    );
+  }
 
-  return toSpecParam(next);
+  if (!canSelectSpecValue(raw, key, value)) {
+    return toSpecParam(facets);
+  }
+  return toSpecParam(withValueAdded(facets, key, value));
 }
 
 /** Remove ONE value from the param (used by the removable chips). */

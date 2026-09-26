@@ -716,3 +716,112 @@ describe("SpecFacets — multi-select (TASK-414)", () => {
     });
   });
 });
+
+/**
+ * TASK-540 — the API cuts `?specs=` at 20 values per facet and 6 facets, and
+ * answers 400 past 600 characters. A control that could be ticked past those
+ * caps would be drawn checked while the grid ignored it.
+ */
+describe("SpecFacets — the server's ?specs= caps (TASK-540)", () => {
+  const twentyOne = Array.from({ length: 21 }, (_, i) => `V${i + 1}`);
+  const manyFacet = facet("material", "Матеріал", twentyOne);
+  const twentySelected = `material:${twentyOne.slice(0, 20).join(",")}`;
+
+  it("disables a 21st value in a facet, with a note saying why", async () => {
+    stubFacets([manyFacet]);
+
+    renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{ specs: twentySelected }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    const blocked = await screen.findByRole("checkbox", {
+      name: control("V21"),
+    });
+    expect(blocked).toBeDisabled();
+    expect(blocked).toHaveAccessibleDescription(dict.filters.specLimitReached);
+    expect(screen.getByText(dict.filters.specLimitReached)).toBeVisible();
+  });
+
+  it("keeps every ticked value enabled, so the shopper can always untick", async () => {
+    stubFacets([manyFacet]);
+    const onFilterChange = jest.fn();
+
+    renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{ specs: twentySelected }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+
+    const ticked = await screen.findByRole("checkbox", {
+      name: control("V20"),
+    });
+    expect(ticked).toBeEnabled();
+    await userEvent.click(ticked);
+    expect(onFilterChange).toHaveBeenCalledWith({
+      specs: `material:${twentyOne.slice(0, 19).join(",")}`,
+    });
+  });
+
+  it("shows no note and no disabled control below the caps", async () => {
+    stubFacets([materialFacet]);
+
+    renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{ specs: "material:Силікон" }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("checkbox", { name: control("Шкіра") }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByText(dict.filters.specLimitReached),
+    ).not.toBeInTheDocument();
+  });
+
+  it("disables a value whose tick would push ?specs= past 600 characters", async () => {
+    // Two long values already selected leave no room for a third.
+    const long = (n: number) => `${"Д".repeat(290)}${n}`;
+    stubFacets([facet("material", "Матеріал", [long(1), long(2), long(3)])]);
+
+    renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{ specs: `material:${long(1)},${long(2)}` }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("checkbox", { name: control(long(3)) }),
+    ).toBeDisabled();
+  });
+
+  it("disables an unticked colour past the caps too", async () => {
+    const colours = Array.from({ length: 21 }, (_, i) => `Колір${i + 1}`);
+    stubFacets([facet("color", "Колір", colours)]);
+
+    renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{ specs: `color:${colours.slice(0, 20).join(",")}` }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("checkbox", { name: control("Колір21") }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("checkbox", { name: control("Колір1") }),
+    ).toBeEnabled();
+  });
+});

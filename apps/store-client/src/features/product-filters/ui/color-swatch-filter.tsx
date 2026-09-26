@@ -17,6 +17,13 @@ interface ColorSwatchFilterProps {
   /** Colours currently ticked in the URL. */
   selected: string[];
   onToggle: (value: string) => void;
+  /**
+   * Whether an unticked colour may still be added (TASK-540 — the `?specs=`
+   * caps). Omitted = always. A ticked colour is never disabled.
+   */
+  canSelect?: (value: string) => boolean;
+  /** Id of the note explaining why a colour is disabled. */
+  describedBy?: string;
 }
 
 /**
@@ -49,12 +56,15 @@ export function ColorSwatchFilter({
   values,
   selected,
   onToggle,
+  canSelect,
+  describedBy,
 }: ColorSwatchFilterProps) {
   return (
     <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto overscroll-contain py-0.5">
       {values.map(({ value, count }) => {
         const swatch = colorSwatch(value);
         const isSelected = selected.includes(value);
+        const isDisabled = !isSelected && canSelect?.(value) === false;
         const id = `${idPrefix}-${value}`;
 
         return (
@@ -63,17 +73,19 @@ export function ColorSwatchFilter({
             htmlFor={id}
             // `text-sm`, matching `FilterCheckbox`'s label: a colour chip is a
             // filter row in a different shape, not a different typographic rank.
-            className={`flex cursor-pointer items-center gap-2 rounded-full border py-1 pl-1 pr-2.5 text-sm transition-colors ${
+            className={`flex items-center gap-2 rounded-full border py-1 pl-1 pr-2.5 text-sm transition-colors ${
               isSelected
                 ? "border-primary bg-primary/10 font-semibold text-foreground"
                 : "border-border text-muted-foreground hover:text-foreground"
-            }`}
+            } ${isDisabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"}`}
           >
             <input
               id={id}
               type="checkbox"
               className="peer sr-only"
               checked={isSelected}
+              disabled={isDisabled}
+              aria-describedby={isDisabled ? describedBy : undefined}
               onChange={() => onToggle(value)}
             />
             <span
