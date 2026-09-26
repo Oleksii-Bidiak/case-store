@@ -228,6 +228,9 @@ export default async function CategoryLandingPage({
     minPrice: minPrice ? Number(minPrice) : undefined,
     maxPrice: maxPrice ? Number(maxPrice) : undefined,
     specs: specs || undefined,
+    // TASK-513 — same two boolean facets as /products; only "true" filters.
+    inStock: first(resolved.inStock) === "true" ? true : undefined,
+    onSale: first(resolved.onSale) === "true" ? true : undefined,
     page: page ? Number(page) : 1,
     limit: 20,
     isActive: true,

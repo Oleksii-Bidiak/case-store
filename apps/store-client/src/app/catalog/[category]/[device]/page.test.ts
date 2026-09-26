@@ -36,6 +36,7 @@ import { notFound, permanentRedirect } from "next/navigation";
 import { catalogLandingControllerFindCompatPage } from "@/shared/api/generated/catalog/catalog";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { SITE_URL, dict } from "@/shared/config";
+import { ProductListView } from "@/widgets";
 import CompatLandingPage, { generateMetadata } from "./page";
 
 const findPage = catalogLandingControllerFindCompatPage as jest.MockedFunction<
@@ -206,6 +207,53 @@ describe("catalog/[category]/[device] — existence (TASK-490)", () => {
       "NEXT_NOT_FOUND",
     );
     expect(notFound).not.toHaveBeenCalled();
+  });
+});
+
+/** Depth-first search of a rendered element tree for the first element of `type`. */
+function findElement(
+  node: unknown,
+  type: unknown,
+): { props: Record<string, unknown> } | null {
+  if (!node || typeof node !== "object") return null;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const hit = findElement(child, type);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  const element = node as { type?: unknown; props?: Record<string, unknown> };
+  if (element.type === type && element.props) {
+    return { props: element.props };
+  }
+  return findElement(element.props?.children, type);
+}
+
+describe("catalog/[category]/[device] — boolean facets reach the grid (TASK-513)", () => {
+  it("passes inStock/onSale=true from the URL into the grid's initial params", async () => {
+    findPage.mockResolvedValue(pair() as never);
+
+    const tree = await run("chohly", "iphone-15-pro", {
+      inStock: "true",
+      onSale: "true",
+    });
+
+    const grid = findElement(tree, ProductListView);
+    expect(grid?.props.initialParams).toEqual(
+      expect.objectContaining({ inStock: true, onSale: true }),
+    );
+  });
+
+  it('treats "false" as no filter, like the metadata does', async () => {
+    findPage.mockResolvedValue(pair() as never);
+
+    const tree = await run("chohly", "iphone-15-pro", { inStock: "false" });
+
+    const grid = findElement(tree, ProductListView);
+    expect(grid?.props.initialParams).toEqual(
+      expect.objectContaining({ inStock: undefined, onSale: undefined }),
+    );
   });
 });
 

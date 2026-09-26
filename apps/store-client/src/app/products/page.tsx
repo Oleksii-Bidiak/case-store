@@ -239,6 +239,11 @@ export default async function ProductsPage({
     minPrice: minPrice ? Number(minPrice) : undefined,
     maxPrice: maxPrice ? Number(maxPrice) : undefined,
     specs: specs || undefined,
+    // TASK-513 — the two boolean facets the metadata already reads. Only the
+    // literal "true" is a filter (same rule as `buildListingMetadata` and the
+    // API's own boolean transform), so `?inStock=false` stays unfiltered.
+    inStock: first(resolved.inStock) === "true" ? true : undefined,
+    onSale: first(resolved.onSale) === "true" ? true : undefined,
     page: page ? Number(page) : 1,
     limit: 20,
     isActive: true,
