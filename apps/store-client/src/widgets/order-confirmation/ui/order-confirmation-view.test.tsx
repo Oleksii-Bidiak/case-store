@@ -73,6 +73,46 @@ describe("OrderConfirmationView", () => {
     expect(badge).not.toHaveClass("bg-muted");
   });
 
+  // ── TASK-609: the return door on the page the email links to ──────────────
+  describe("return request", () => {
+    const trigger = dict.returnRequest.triggerAria("#ORDER-1");
+
+    it("offers a return on a delivered order", async () => {
+      server.use(
+        http.get("*/api/orders/:id", () =>
+          HttpResponse.json(makeOrder({ status: "DELIVERED" })),
+        ),
+      );
+
+      renderWithProviders(<OrderConfirmationView orderId="order-1" />, authed);
+
+      expect(
+        await screen.findByRole("button", { name: trigger }),
+      ).toBeInTheDocument();
+    });
+
+    it.each(["PENDING", "SHIPPED", "CANCELLED"] as const)(
+      "offers nothing on a %s order",
+      async (status) => {
+        server.use(
+          http.get("*/api/orders/:id", () =>
+            HttpResponse.json(makeOrder({ status })),
+          ),
+        );
+
+        renderWithProviders(
+          <OrderConfirmationView orderId="order-1" />,
+          authed,
+        );
+        await screen.findByRole("heading", { name: dict.order.thankYou });
+
+        expect(
+          screen.queryByRole("button", { name: trigger }),
+        ).not.toBeInTheDocument();
+      },
+    );
+  });
+
   it("localizes the country code instead of rendering the raw ISO value", async () => {
     server.use(
       http.get("*/api/orders/:id", () => HttpResponse.json(makeOrder())),
