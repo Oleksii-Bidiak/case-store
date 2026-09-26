@@ -4,10 +4,9 @@ import type {
   UpdateBlogCategoryDto,
 } from "@/entities/blog";
 import { dict } from "@/shared/config";
+import { SLUG_PATTERN } from "@/shared/lib/slug";
 
 const e = dict.blogCategoryForm.errors;
-
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * Validation schema for the admin blog-category form.
@@ -22,7 +21,7 @@ export const blogCategorySchema = z.object({
     .string()
     .trim()
     .max(255, e.slugMax)
-    .regex(SLUG_PATTERN, e.slugPattern)
+    .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
     .optional()
     .or(z.literal("")),
 });

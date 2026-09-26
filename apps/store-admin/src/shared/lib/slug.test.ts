@@ -1,4 +1,23 @@
-import { slugify } from "./slug";
+import { SLUG_PATTERN, slugify } from "./slug";
+
+describe("SLUG_PATTERN (TASK-811)", () => {
+  it.each(["iphone-15", "a", "case-2-in-1", "abc123"])("accepts %s", (slug) => {
+    expect(SLUG_PATTERN.test(slug)).toBe(true);
+  });
+
+  it.each(["Spigen", "a--b", "-a", "a-", "a b", "чохол", "a_b", ""])(
+    "rejects %j",
+    (slug) => {
+      expect(SLUG_PATTERN.test(slug)).toBe(false);
+    },
+  );
+
+  it("accepts whatever slugify produces from a real name", () => {
+    expect(SLUG_PATTERN.test(slugify("Чохол Spigen — iPhone 15 Pro!"))).toBe(
+      true,
+    );
+  });
+});
 
 describe("slugify", () => {
   it("converts a simple name to a slug", () => {

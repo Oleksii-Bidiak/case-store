@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { CreatePageDto, UpdatePageDto } from "@/entities/page";
 import { dict, hubRouteForSlug } from "@/shared/config";
+import { SLUG_PATTERN } from "@/shared/lib/slug";
+import { seoTextFields } from "@/shared/lib/seo-fields-schema";
 import { fromKyivDateTimeLocal } from "@/shared/lib";
 import {
   KEYWORDS_MAX_COUNT,
@@ -10,8 +12,6 @@ import {
 
 const e = dict.pageForm.errors;
 const seoErrors = dict.seoFields.errors;
-
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** Publish lifecycle values — mirror of the API's PublishStatus enum. */
 export const PAGE_STATUS = ["DRAFT", "SCHEDULED", "PUBLISHED"] as const;
@@ -39,7 +39,7 @@ export const pageSchema = z
       .string()
       .trim()
       .max(255, e.slugMax)
-      .regex(SLUG_PATTERN, e.slugPattern)
+      .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
       .optional()
       .or(z.literal("")),
 
@@ -57,19 +57,7 @@ export const pageSchema = z
       .optional()
       .or(z.literal("")),
 
-    metaTitle: z
-      .string()
-      .trim()
-      .max(255, e.metaTitleMax)
-      .optional()
-      .or(z.literal("")),
-
-    metaDescription: z
-      .string()
-      .trim()
-      .max(500, e.metaDescriptionMax)
-      .optional()
-      .or(z.literal("")),
+    ...seoTextFields(),
 
     // TASK-437 — internal tags as one comma-separated field, validated on the
     // PARSED list (see the product form's twin).

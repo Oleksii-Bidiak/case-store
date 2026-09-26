@@ -302,6 +302,8 @@ export const dict = {
     // там, де без неї лишилося б порожнє місце, — щоб відсутність контролу
     // читалась як «так задумано», а не як поломка.
     viewOnly: "Ви можете переглядати, але не змінювати.",
+    // TASK-812: heading of the shared AlertDialog confirm (replaces window.confirm).
+    confirmTitle: "Підтвердіть дію",
   },
 
   // --- Products (TASK-115) ----------------------------------------------------
@@ -761,7 +763,6 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       descriptionMax: "Опис має містити не більше 20000 символів",
       priceRequired: "Вкажіть ціну",
       priceNumber: "Ціна має бути числом",
@@ -774,8 +775,6 @@ export const dict = {
       groupInvalid: "Оберіть коректну групу",
       brandInvalid: "Оберіть коректний бренд",
       positionInt: "Порядок позиції має бути цілим числом ≥ 0",
-      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
 
     // Type-to-filter pickers (TASK-423). The category, group and brand selects
@@ -945,12 +944,9 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       descriptionMax: "Опис має містити не більше 2000 символів",
       imageUrl: "Вкажіть коректний URL",
       parentInvalid: "Оберіть коректну категорію",
-      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
     // TASK-424: the image field accepts a FILE as well as a link. «Прибрати» is
     // deliberately not «Видалити» — it clears this form's field and nothing else.
@@ -1041,7 +1037,6 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
     },
   },
 
@@ -1075,11 +1070,8 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       seriesMax: "Серія має містити не більше 255 символів",
       yearInt: "Рік має бути коректним (1990–2100)",
-      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
       descriptionMax: "Опис має містити не більше 2000 символів",
     },
   },
@@ -1362,10 +1354,7 @@ export const dict = {
       titleMax: "Заголовок має містити не більше 255 символів",
       contentRequired: "Додайте вміст сторінки",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       excerptMax: "Короткий опис має містити не більше 500 символів",
-      metaTitleMax: "SEO заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO опис має містити не більше 500 символів",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої сторінки",
       // TASK-435 — a hub row whose slug names no hub renders nowhere.
       hubSlugRequired: "Оберіть розділ, для якого задаються мета-теги",
@@ -1483,7 +1472,6 @@ export const dict = {
       titleRequired: "Вкажіть заголовок",
       titleMax: "Заголовок має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       excerptRequired: "Додайте короткий опис",
       excerptMax: "Короткий опис має містити не більше 500 символів",
       contentRequired: "Додайте текст статті",
@@ -1493,8 +1481,6 @@ export const dict = {
       coverUrl: "Вкажіть коректний URL обкладинки",
       readingInt: "Час читання має бути додатним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої статті",
-      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
     // TASK-424: the cover accepts a FILE as well as a link.
     coverUpload: {
@@ -1581,7 +1567,6 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 120 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
     },
   },
 
@@ -1783,8 +1768,6 @@ export const dict = {
       nameRequired: "Вкажіть назву бренду",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern:
-        "Slug має бути у нижньому регістрі: лише літери, цифри та дефіси",
       logoUrl: "Вкажіть коректний URL логотипа",
     },
     // TASK-424: the brand logo accepts a FILE as well as a link.
@@ -2682,6 +2665,12 @@ export const dict = {
     // Лише коли «Кошти повернено» немає в списку, а гроші надходили (TASK-842).
     paymentTransitionsHintFullRefund:
       "Повне повернення коштів можливе після скасування замовлення.",
+    // TASK-622: 403 на зміні замовлення чи оплати. Раніше мапер конфліктів
+    // бачив у тілі поле `error` («Forbidden») і казав «замовлення змінилося,
+    // оновіть сторінку» — оператор оновлював вічно, бо перезавантаження права
+    // не дає. Називаємо справжню причину і того, хто може її усунути.
+    forbidden:
+      "У вас немає права на цю дію — зміну не збережено. Якщо вона потрібна, попросіть власника магазину надати доступ.",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
@@ -4487,6 +4476,11 @@ export const dict = {
       keywordLength: (max: number) =>
         `Один тег має містити не більше ${max} символів`,
       ogImageUrl: "Вкажіть коректний URL картинки (http:// або https://)",
+      // TASK-811: one copy for all eight entity forms (was eight/five copies,
+      // one of which had already drifted to a different wording).
+      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
+      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
+      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
     // TASK-728: the OG field takes a FILE and a media-library pick as well as a
     // link — the same three paths the neighbouring image fields offer.
