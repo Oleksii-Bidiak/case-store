@@ -44,14 +44,14 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-1017**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-1018**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
 > лічильник живе у файлі, який кожна гілка редагує окремо. Ревʼю-хвости 181 — 634–641.)
 > (План 183 узяв 588–597. Спершу він узяв був 585–594, але хвиля 177 змерджилась у develop під час
 > роботи й забрала 584–587 — довелось перенумерувати, рівно як описано в TASK-545.)
-> (Хвиля 194 (частина I) узяла блок TASK-1200…1217 під сусідні знахідки — при мержі перевірити колізії.)
+> (Хвиля 194 (частина I) узяла блок TASK-1200…1217 під сусідні знахідки — змержено в develop 2026-09-26, колізій немає; ревʼю мержу додало TASK-1017.)
 
 ### Етап 0 — Config & docs cleanup
 
@@ -1348,6 +1348,7 @@
 | TASK-1215 | [знайдено в TASK-328] `apps/store-api/package.json` → `prisma.seed` — мертвий конфіг у Prisma 7 (`db seed` читає лише `migrations.seed` з `prisma.config.ts`), а `docs/seed-guide.md` §6 посилається на нього як на джерело. Прибрати ключ або посилання | ⬜ | [194](docs/plans/194-ci-ops-docs-architecture.md) |
 | TASK-1216 | [знайдено в TASK-564] `docs/session-runbook.md:78/88/138` — «міграції Prisma лише через `npm run db:migrate`» без `-- --name <name>`: буквально в агентній оболонці це зависання з lock (`docs/dev-traps.md` §2). Дописати `--name` (не `</dev/null` — він не допомагає) | ⬜ | [194](docs/plans/194-ci-ops-docs-architecture.md) |
 | TASK-1217 | [процес, знайдено в TASK-526] `git commit -- <paths>` + lint-staged лишає в **індексі** до-Prettier версію файла (`MM` у `git status`), хоча HEAD і робоча копія відформатовані — наступний безшляховий коміт іншого агента мовчки закомітить застарілу копію. Так після TASK-611 стоїть `.claude/skills/tdd/SKILL.md`. Ресинк `git add -- <file>` після коміту або правило/хук у скілі коміту | ⬜ | [194](docs/plans/194-ci-ops-docs-architecture.md) |
+| TASK-1017 | [ops, знайдено на ревʼю хвилі 194] Healthcheck `caddy` у `docker-compose.prod.yml` питає лише admin API (`127.0.0.1:2019/config/`): контейнер `healthy`, навіть коли зламано TLS (сертифікат не видано/протух) або проксі до апстрімів — `docker compose ps` показує зелений стек, а сайт недоступний. TASK-829 лише виправив адресу, межа була й раніше. Проба через справжній `:443` на `/health` API, або межу явно описано в `docs/deploy/06-day-to-day.md` (зовнішній аптайм-монітор як єдиний сигнал) | ⬜ | [194](docs/plans/194-ci-ops-docs-architecture.md) |
 
 ### План 195 — Адмінка: функції й хвости (до макетів) ([план](docs/plans/195-admin-functions.md))
 
@@ -1519,6 +1520,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-1017**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-1018**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
