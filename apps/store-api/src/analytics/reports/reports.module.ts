@@ -1,5 +1,9 @@
 import { Module } from '@nestjs/common';
+import { PrismaModule } from '../../prisma';
 import { ReportCache } from './report-cache';
+import { ReportsController } from './reports.controller';
+import { SalesReportService } from './sales-report.service';
+import { SalesRepository } from './sales.repository';
 
 /**
  * `/analytics` reports (plan 188, TASK-685…690).
@@ -9,9 +13,15 @@ import { ReportCache } from './report-cache';
  * also used by the dashboard, TASK-694) and the cache whose key carries the
  * caller's money right (`report-cache.ts`). `CacheService` comes from the
  * global `RedisCacheModule`.
+ *
+ * `SalesRepository` is exported because the dashboard's revenue tile moves onto
+ * the same formula (TASK-694): one query answers "how much did I earn" on both
+ * screens, or the two screens give two answers.
  */
 @Module({
-  providers: [ReportCache],
-  exports: [ReportCache],
+  imports: [PrismaModule],
+  controllers: [ReportsController],
+  providers: [ReportCache, SalesRepository, SalesReportService],
+  exports: [ReportCache, SalesRepository],
 })
 export class ReportsModule {}

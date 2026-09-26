@@ -14030,6 +14030,73 @@
         ]
       }
     },
+    "/api/admin/analytics/reports/sales": {
+      "get": {
+        "description": "Sales = Σ totals of orders created in the period whose payment is PAID, PARTIALLY_REFUNDED or REFUNDED. Refunds = money returned in the period (refunded returns by resolution date, plus full payment refunds not covered by returns, by the date the payment became REFUNDED). Net = sales − refunds; average order value = net ÷ orders. Days are Kyiv calendar days.",
+        "operationId": "getSalesReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sales report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read and analytics:revenue required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Sales, refunds and net revenue for a period, compared with the previous one",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
     "/api/csrf-token": {
       "get": {
         "operationId": "CsrfController_getToken",
@@ -27410,6 +27477,198 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/TrafficSummaryEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "ReportPreset": {
+        "type": "string",
+        "enum": [
+          "7d",
+          "30d",
+          "90d",
+          "this-month",
+          "last-month",
+          "custom"
+        ]
+      },
+      "ReportPeriodEntity": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReportPreset"
+              }
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "First Kyiv day, included",
+            "example": "2026-08-01"
+          },
+          "to": {
+            "type": "string",
+            "description": "Last Kyiv day, included",
+            "example": "2026-08-31"
+          },
+          "days": {
+            "type": "number",
+            "description": "Days in the period",
+            "example": 31
+          },
+          "previousFrom": {
+            "type": "string",
+            "description": "First day of the comparison range",
+            "example": "2026-07-01"
+          },
+          "previousTo": {
+            "type": "string",
+            "description": "Last day of the comparison range",
+            "example": "2026-07-31"
+          },
+          "previousDays": {
+            "type": "number",
+            "description": "Days in the comparison range",
+            "example": 31
+          }
+        },
+        "required": [
+          "preset",
+          "from",
+          "to",
+          "days",
+          "previousFrom",
+          "previousTo",
+          "previousDays"
+        ]
+      },
+      "ComparedValueEntity": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "number",
+            "example": 42000
+          },
+          "previous": {
+            "type": "number",
+            "example": 38000
+          },
+          "changePct": {
+            "type": "number",
+            "description": "Change against `previous`, in percent (one decimal); null when previous is 0",
+            "nullable": true,
+            "example": 10.5
+          }
+        },
+        "required": [
+          "current",
+          "previous",
+          "changePct"
+        ]
+      },
+      "SalesDayEntity": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Kyiv calendar day",
+            "example": "2026-08-01"
+          },
+          "sales": {
+            "type": "number",
+            "description": "Σ totals of the orders created that day",
+            "example": 1200
+          },
+          "refunds": {
+            "type": "number",
+            "description": "Money that went back that day",
+            "example": 300
+          },
+          "net": {
+            "type": "number",
+            "description": "sales − refunds; negative on a day of refunds only",
+            "example": 900
+          }
+        },
+        "required": [
+          "date",
+          "sales",
+          "refunds",
+          "net"
+        ]
+      },
+      "SalesReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "sales": {
+            "description": "Σ totals of paid (incl. later refunded) orders created in the period",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "refunds": {
+            "description": "Money returned in the period: refunded returns plus full refunds of payment",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "net": {
+            "description": "sales − refunds; may be negative",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "orders": {
+            "description": "Paid orders created in the period",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "averageOrderValue": {
+            "description": "net ÷ orders; 0 when there were no orders",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "daily": {
+            "description": "One point per Kyiv day of the period, first to last; empty days are zeros",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesDayEntity"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "sales",
+          "refunds",
+          "net",
+          "orders",
+          "averageOrderValue",
+          "daily"
+        ]
+      },
+      "SalesReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SalesReportEntity"
           }
         },
         "required": [
