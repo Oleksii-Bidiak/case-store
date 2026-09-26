@@ -5,7 +5,7 @@ import type { ChangeEvent, KeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { keepPreviousData } from "@tanstack/react-query";
 import { useSearchSuggest } from "@/entities/search";
-import { useBlogControllerFindAll } from "@/entities/blog";
+import { useBlogControllerSuggest } from "@/entities/blog";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 
 /** Minimum characters before we ask the API for suggestions. */
@@ -144,8 +144,9 @@ export function useSearchAutocomplete({
   );
 
   // Blog-article suggestions (TASK-218) — the same debounced `query`, no second
-  // timer.
-  const { data: blogData, isFetching: blogFetching } = useBlogControllerFindAll(
+  // timer. The light `/api/blog/suggest` (TASK-543), not the list endpoint:
+  // that one carried every article's full body just to show its title.
+  const { data: blogData, isFetching: blogFetching } = useBlogControllerSuggest(
     { q: query, limit: BLOG_SUGGEST_LIMIT },
     { query: { enabled, placeholderData: keepPreviousData } },
   );

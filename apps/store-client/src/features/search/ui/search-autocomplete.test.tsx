@@ -9,7 +9,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import type { BlogPostEntity } from "@/entities/blog";
+import type { BlogPostSuggestionEntity } from "@/entities/blog";
 import type { SearchSuggestionEntity } from "@/entities/search";
 import { SearchAutocomplete } from "./search-autocomplete";
 
@@ -33,26 +33,15 @@ function suggestion(
   };
 }
 
-function blogPost(overrides: Partial<BlogPostEntity> = {}): BlogPostEntity {
+/** A `/api/blog/suggest` row (TASK-543) — no body, no category, no author. */
+function blogPost(
+  overrides: Partial<BlogPostSuggestionEntity> = {},
+): BlogPostSuggestionEntity {
   return {
     id: "post-1",
     slug: "how-to-pick-a-case",
     title: "Як обрати чохол для iPhone",
-    excerpt: "Гайд із вибору чохла.",
-    content: "",
     coverImageUrl: null,
-    coverBlurDataUrl: null,
-    authorName: "Олег Пилипенко",
-    author: null,
-    readingMinutes: 6,
-    featured: false,
-    listed: true,
-    category: { id: "cat-1", slug: "guides", name: "Гайди" },
-    status: "PUBLISHED",
-    publishedAt: "2026-06-28T09:00:00.000Z",
-    scheduledAt: null,
-    createdAt: "2026-06-01T00:00:00.000Z",
-    updatedAt: "2026-06-01T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -60,16 +49,11 @@ function blogPost(overrides: Partial<BlogPostEntity> = {}): BlogPostEntity {
 /** Register the two endpoints the autocomplete hits, for any query. */
 function mockSuggest(
   rows: SearchSuggestionEntity[],
-  posts: BlogPostEntity[] = [],
+  posts: BlogPostSuggestionEntity[] = [],
 ) {
   server.use(
     http.get("*/api/search/suggest", () => HttpResponse.json({ data: rows })),
-    http.get("*/api/blog", () =>
-      HttpResponse.json({
-        data: posts,
-        meta: { total: posts.length, page: 1, limit: 5, totalPages: 1 },
-      }),
-    ),
+    http.get("*/api/blog/suggest", () => HttpResponse.json({ data: posts })),
   );
 }
 
@@ -206,6 +190,26 @@ describe("SearchAutocomplete — the pill's behaviour at every width (TASK-805/5
     expect(within(productList()).getAllByRole("option")).toHaveLength(1);
   });
 
+  // TASK-543: the article rows come from the light suggest endpoint, never the
+  // list endpoint that carries every article's body (the unhandled-request
+  // policy would also fail the test on a stray `/api/blog` call).
+  it("asks the light blog suggest endpoint for at most 5 articles", async () => {
+    const seen: URLSearchParams[] = [];
+    server.use(
+      http.get("*/api/search/suggest", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/blog/suggest", ({ request }) => {
+        seen.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ data: [blogPost()] });
+      }),
+    );
+
+    await typeQuery("чохол");
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+
+    expect(seen.at(-1)?.get("q")).toBe("чохол");
+    expect(seen.at(-1)?.get("limit")).toBe("5");
+  });
+
   it("caps the blog section at 5 articles", async () => {
     mockSuggest(
       [],
@@ -277,9 +281,9 @@ describe("SearchAutocomplete — the pill's behaviour at every width (TASK-805/5
         await delay("infinite");
         return HttpResponse.json({ data: [] });
       }),
-      http.get("*/api/blog", async () => {
+      http.get("*/api/blog/suggest", async () => {
         await delay("infinite");
-        return HttpResponse.json({ data: [], meta: {} });
+        return HttpResponse.json({ data: [] });
       }),
     );
 
@@ -304,12 +308,11 @@ describe("SearchAutocomplete — the pill's behaviour at every width (TASK-805/5
         await delay("infinite");
         return HttpResponse.json({ data: [] });
       }),
-      http.get("*/api/blog", async ({ request }) => {
+      http.get("*/api/blog/suggest", async ({ request }) => {
         const q = new URL(request.url).searchParams.get("q");
-        if (q === "ч")
-          return HttpResponse.json({ data: [blogPost()], meta: {} });
+        if (q === "ч") return HttpResponse.json({ data: [blogPost()] });
         await delay("infinite");
-        return HttpResponse.json({ data: [], meta: {} });
+        return HttpResponse.json({ data: [] });
       }),
     );
 
