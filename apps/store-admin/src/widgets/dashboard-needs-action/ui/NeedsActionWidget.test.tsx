@@ -124,15 +124,16 @@ describe("NeedsActionWidget (TASK-248)", () => {
       "/orders?unpaidInTransit=true",
     );
 
-    // TASK-251: the ">48h in PENDING" card deep-links to the PENDING list. Its
-    // label contains regex-special chars, so match the text node and walk to the
-    // enclosing anchor rather than building a RegExp from the label.
+    // TASK-251 / TASK-607: the ">48h in PENDING" card deep-links to the list
+    // filtered by the SAME predicate it counts (`pendingOverdue`), not to every
+    // PENDING order. Its label contains regex-special chars, so match the text
+    // node and walk to the enclosing anchor rather than building a RegExp.
     const pendingOver48hLink = screen
       .getByText(dict.dashboard.needsActionPendingOver48h)
       .closest("a") as HTMLElement;
     expect(pendingOver48hLink).toHaveAttribute(
       "href",
-      "/orders?status=PENDING",
+      "/orders?pendingOverdue=true",
     );
     // Its count is toned as a warning (non-zero).
     expect(within(pendingOver48hLink).getByText("2")).toHaveClass(

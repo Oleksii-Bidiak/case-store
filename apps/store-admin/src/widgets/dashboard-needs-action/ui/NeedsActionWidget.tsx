@@ -132,12 +132,16 @@ export function NeedsActionWidget() {
           count={counts.unpaidInTransit}
           href="/orders?unpaidInTransit=true"
         />
-        {/* TASK-251: PENDING orders sitting longer than 48h — a subset of new
-            orders, so it deep-links to the same PENDING-filtered list. */}
+        {/* TASK-251: PENDING orders sitting longer than 48h. TASK-607: it
+            used to open `?status=PENDING` — ALL new orders — so the operator
+            saw 3 on the tile and 27 rows after the click. The list has the
+            exact predicate (`pendingOverdue`, the same condition as the
+            dashboard's `pendingOver48hWhere`), so the click opens what the
+            tile counts, like `hasUnavailableItems` below. */}
         <NeedsActionCard
           label={dict.dashboard.needsActionPendingOver48h}
           count={counts.pendingOver48h}
-          href="/orders?status=PENDING"
+          href="/orders?pendingOverdue=true"
         />
         {/* TASK-446: situations worth OPENING, not reviews to moderate — a
             product that collected a burst of ratings in an hour, an address
@@ -151,9 +155,7 @@ export function NeedsActionWidget() {
         />
         {/* TASK-470: orders holding a line that can no longer be supplied. The
             deep link carries the SAME predicate the tile counts
-            (`hasUnavailableItems`), not an approximation of it — the mistake
-            `pendingOver48h` still makes, where the tile counts one thing and the
-            click opens another (see the report). */}
+            (`hasUnavailableItems`), not an approximation of it. */}
         <NeedsActionCard
           label={dict.dashboard.needsActionUnavailableItems}
           count={counts.unavailableItems}
