@@ -38,7 +38,7 @@ describe('AddonServiceService (TASK-174)', () => {
   };
   const resolver = { resolveForProduct: jest.fn(), resolveTemplateForCategory: jest.fn() };
   const categoryRepository = { findById: jest.fn() };
-  const productRepository = { findById: jest.fn() };
+  const productRepository = { findById: jest.fn(), findPublicById: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -150,6 +150,56 @@ describe('AddonServiceService (TASK-174)', () => {
 
       expect(resolved.source).toBe('inherited');
       expect(resolved.sourceCategoryName).toBe('Смартфони');
+    });
+  });
+
+  describe('resolved add-ons for a product (TASK-781)', () => {
+    const product = { id: 'p1', categoryId: 'cat-1', deletedAt: null };
+    const resolvedAddon = {
+      addonServiceId: 'svc-a',
+      name: 'Warranty',
+      description: null,
+      price: '499.00',
+      source: 'inherited',
+    };
+
+    it('public: resolves only a publicly visible product (the shared predicate read)', async () => {
+      productRepository.findPublicById.mockResolvedValue(product);
+      resolver.resolveForProduct.mockResolvedValue([resolvedAddon]);
+
+      const addons = await addonServiceService.resolveForProduct('p1');
+
+      expect(productRepository.findPublicById).toHaveBeenCalledWith('p1');
+      expect(productRepository.findById).not.toHaveBeenCalled();
+      expect(addons).toHaveLength(1);
+    });
+
+    it('public: a draft / hidden product answers 404 exactly like a nonexistent id — no prices leak', async () => {
+      productRepository.findPublicById.mockResolvedValue(null);
+
+      await expect(addonServiceService.resolveForProduct('draft-1')).rejects.toThrow(
+        new NotFoundException('Product not found'),
+      );
+      expect(resolver.resolveForProduct).not.toHaveBeenCalled();
+    });
+
+    it('admin: resolves a draft too — the operator configures add-ons before publishing', async () => {
+      productRepository.findById.mockResolvedValue({ ...product, isActive: false });
+      resolver.resolveForProduct.mockResolvedValue([resolvedAddon]);
+
+      const addons = await addonServiceService.resolveForProductForAdmin('p1');
+
+      expect(productRepository.findById).toHaveBeenCalledWith('p1');
+      expect(productRepository.findPublicById).not.toHaveBeenCalled();
+      expect(addons).toHaveLength(1);
+    });
+
+    it('admin: still 404 for a missing or soft-deleted product', async () => {
+      productRepository.findById.mockResolvedValue(null);
+
+      await expect(addonServiceService.resolveForProductForAdmin('gone')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { ReviewHiddenReason, UserRole } from '@prisma/client';
 import { StaffService } from './staff.service';
 import { StaffRepository } from './staff.repository';
 import { UserRepository } from '../user/user.repository';
@@ -439,7 +439,10 @@ describe('StaffService', () => {
 
       expect(staff.isActive).toBe(false);
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(managerRow.id);
-      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith(managerRow.id);
+      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith(
+        managerRow.id,
+        ReviewHiddenReason.BAN,
+      );
     });
 
     it('refuses an admin deactivating ANOTHER ADMIN', async () => {
@@ -472,7 +475,10 @@ describe('StaffService', () => {
       const staff = await service.setStatus(managerRow.id, true, deputyActor);
 
       expect(staff.isActive).toBe(true);
-      expect(reviewServiceMock.unhideAuthor).toHaveBeenCalledWith(managerRow.id);
+      expect(reviewServiceMock.unhideAuthor).toHaveBeenCalledWith(
+        managerRow.id,
+        ReviewHiddenReason.BAN,
+      );
     });
 
     it('is 404 for a customer id — shoppers are switched off on /api/users', async () => {
@@ -510,6 +516,11 @@ describe('StaffService', () => {
         managerRow.email,
       );
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(managerRow.id);
+      // TASK-603: the same withdrawal as switching the account off, for good.
+      expect(reviewServiceMock.hideAuthor).toHaveBeenCalledWith(
+        managerRow.id,
+        ReviewHiddenReason.DELETED,
+      );
     });
 
     it('refuses an admin deleting ANOTHER ADMIN', async () => {

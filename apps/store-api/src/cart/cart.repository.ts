@@ -14,16 +14,21 @@ export interface AddToCartInput {
 }
 
 /**
- * Input for updating a cart item's quantity.
+ * Input for updating a cart item's quantity. The line is addressed within its
+ * cart, so an item id from another cart never matches.
  */
 export interface UpdateCartItemInput {
+  cartId: string;
+  itemId: string;
+  /** The new absolute quantity of the line. */
   quantity: number;
 }
 
 /**
- * A single already-clamped line to write into the user's cart during a merge.
- * The quantity is absolute (final) — the service has summed and clamped it
- * against stock / MAX_QUANTITY before handing it to the repository.
+ * A single final line to write into the user's cart during a merge.
+ * The quantity is absolute (final) — the service has already applied the merge
+ * rule (the larger quantity, capped at MAX_QUANTITY — TASK-777) before handing it
+ * to the repository.
  */
 export interface MergeCartLine {
   productId: string;
@@ -36,6 +41,26 @@ export interface MergeCartLine {
    */
   addonServiceIds: string[];
 }
+
+/**
+ * The product fields the cart's purchasability rule needs (TASK-297, TASK-778):
+ * its own status, its category's status, and its stock. A subset of the
+ * `CART_ITEMS_INCLUDE` product shape, so a loaded line and a fresh read can be
+ * handed to the same check.
+ */
+export interface PurchasableProduct {
+  name: string;
+  stock: number;
+  isActive: boolean;
+  category: { isActive: boolean };
+}
+
+const PURCHASABLE_PRODUCT_SELECT = {
+  name: true,
+  stock: true,
+  isActive: true,
+  category: { select: { isActive: true } },
+} satisfies Prisma.ProductSelect;
 
 /**
  * Cart with its items and related product (position) details.
@@ -154,20 +179,15 @@ export class CartRepository {
   }
 
   /**
-   * Find a cart by its ID, including all items with product/variant details.
-   * Returns null if the cart does not exist.
-   */
-  findById(cartId: string): Promise<CartWithItems | null> {
-    return this.prisma.cart.findUnique({
-      where: { id: cartId },
-      include: CART_ITEMS_INCLUDE,
-    }) as Promise<CartWithItems | null>;
-  }
-
-  /**
    * Find an existing cart for the given identity, or create one if it doesn't
    * exist. A user identity upserts by `userId`; a token identity upserts by
    * `token`. Uses upsert to avoid race conditions between find and create.
+   *
+   * Only write paths call this (a read never creates a cart, TASK-776), and it
+   * touches `updatedAt` on an existing cart: the guest-cart cleanup deletes
+   * empty carts by `updatedAt`, so a cart about to receive a line must look
+   * fresh, or a sweep landing between this call and the line write would
+   * delete it under the shopper.
    */
   findOrCreate(identity: ResolvedCartIdentity): Promise<CartWithItems> {
     const where =
@@ -177,10 +197,22 @@ export class CartRepository {
 
     return this.prisma.cart.upsert({
       where,
-      update: {},
+      update: { updatedAt: new Date() },
       create,
       include: CART_ITEMS_INCLUDE,
     }) as Promise<CartWithItems>;
+  }
+
+  /**
+   * Delete guest carts (no owner) that hold no lines and were last touched
+   * before `cutoff` (TASK-776). Returns the number of carts removed. A cart with
+   * even one line is never touched, and neither is any user's cart.
+   */
+  async deleteStaleEmptyGuestCarts(cutoff: Date): Promise<number> {
+    const { count } = await this.prisma.cart.deleteMany({
+      where: { userId: null, updatedAt: { lt: cutoff }, items: { none: {} } },
+    });
+    return count;
   }
 
   /**
@@ -208,13 +240,13 @@ export class CartRepository {
   }
 
   /**
-   * Atomically merge a set of already-clamped lines into the user's cart and
+   * Atomically merge a set of final lines into the user's cart and
    * delete the guest cart, in a single transaction. Either every line is
    * written and the guest cart removed, or nothing changes — there is no
    * partially-merged state and no orphaned guest cart left behind on failure.
    *
-   * Quantities are absolute: the service has already summed the guest and user
-   * quantities and clamped them against stock / MAX_QUANTITY.
+   * Quantities are absolute: the service has already applied the merge rule
+   * (`CartService.mergedQuantity`, TASK-777).
    */
   async mergeGuestCartIntoUser(params: {
     userCartId: string;
@@ -270,7 +302,7 @@ export class CartRepository {
    * so there is no nullable variant to special-case.
    *
    * `mode: 'increment'` adds to the existing quantity (add-to-cart); `mode:
-   * 'set'` writes the absolute quantity (merge, where the service pre-clamps).
+   * 'set'` writes the absolute quantity (merge, final quantity from the service).
    */
   private writeCartLine(
     tx: Prisma.TransactionClient,
@@ -289,12 +321,41 @@ export class CartRepository {
   /**
    * Add an item to a specific cart. If the same product position already exists,
    * increment the quantity instead of creating a duplicate. Returns the full
-   * updated cart with items.
+   * updated cart with items, or `null` when the product no longer exists.
+   *
+   * Atomic check-then-write (TASK-779): the cart row is locked
+   * (`SELECT … FOR UPDATE`) before anything is read, so two adds to the same
+   * cart run one after the other. The product and the line's CURRENT quantity
+   * are then read inside that lock and handed to `assertPurchasable` with the
+   * resulting quantity; if it throws, the transaction rolls back and nothing is
+   * written. Before this, two racing adds at `stock = 1` both read "0 in the
+   * cart" and both incremented, leaving 2 units the checkout would refuse.
+   * The rule itself stays in the service — the repository only guarantees that
+   * the check and the write see the same state.
    */
-  async addItem(input: AddToCartInput): Promise<CartWithItems> {
+  async addItem(
+    input: AddToCartInput,
+    assertPurchasable: (product: PurchasableProduct, resultingQuantity: number) => void,
+  ): Promise<CartWithItems | null> {
     const { cartId, productId, quantity } = input;
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM carts WHERE id = ${cartId} FOR UPDATE`;
+
+      const product = await tx.product.findUnique({
+        where: { id: productId },
+        select: PURCHASABLE_PRODUCT_SELECT,
+      });
+      if (!product) {
+        return null;
+      }
+
+      const line = await tx.cartItem.findUnique({
+        where: { cartId_productId: { cartId, productId } },
+        select: { quantity: true },
+      });
+      assertPurchasable(product, (line?.quantity ?? 0) + quantity);
+
       // Add the line, incrementing the quantity if the same product already
       // exists in this cart.
       await this.writeCartLine(tx, cartId, productId, quantity, 'increment');
@@ -310,13 +371,38 @@ export class CartRepository {
   }
 
   /**
-   * Update a cart item's quantity.
-   * Returns the updated cart item record.
+   * Set a cart line's quantity. Returns the updated line, or `null` when the
+   * line is no longer in the cart.
+   *
+   * The same atomic check-then-write as `addItem` (TASK-779): the cart row is
+   * locked first, the line's product is read inside that lock and handed to
+   * `assertPurchasable` with the new quantity; if it throws, nothing is written.
+   * Before this the update checked the cart the service had read earlier, so
+   * stock that shrank in between was never seen.
    */
-  updateItem(itemId: string, input: UpdateCartItemInput): Promise<CartItem> {
-    return this.prisma.cartItem.update({
-      where: { id: itemId },
-      data: { quantity: input.quantity },
+  async updateItem(
+    input: UpdateCartItemInput,
+    assertPurchasable: (product: PurchasableProduct, resultingQuantity: number) => void,
+  ): Promise<CartItem | null> {
+    const { cartId, itemId, quantity } = input;
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM carts WHERE id = ${cartId} FOR UPDATE`;
+
+      const line = await tx.cartItem.findFirst({
+        where: { id: itemId, cartId },
+        select: { product: { select: PURCHASABLE_PRODUCT_SELECT } },
+      });
+      if (!line) {
+        return null;
+      }
+
+      assertPurchasable(line.product, quantity);
+
+      return tx.cartItem.update({
+        where: { id: itemId },
+        data: { quantity },
+      });
     });
   }
 
@@ -335,17 +421,6 @@ export class CartRepository {
   async clearItems(cartId: string): Promise<void> {
     await this.prisma.cartItem.deleteMany({
       where: { cartId },
-    });
-  }
-
-  /**
-   * Find a specific cart item by cart ID and product (position) ID.
-   * Used by the service to check if an item already exists before adding.
-   * Returns null if the item is not found.
-   */
-  findItem(cartId: string, productId: string): Promise<CartItem | null> {
-    return this.prisma.cartItem.findUnique({
-      where: { cartId_productId: { cartId, productId } },
     });
   }
 

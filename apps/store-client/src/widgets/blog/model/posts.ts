@@ -16,6 +16,10 @@ export interface BlogPostView {
   title: string;
   excerpt: string;
   author: string;
+  /** Author role from the API (TASK-554); null = the line is not shown. */
+  authorRole: string | null;
+  /** Author bio from the API (TASK-554); null = the line is not shown. */
+  authorBio: string | null;
   /** Short display date, e.g. "28 черв. 2026". */
   date: string;
   /** ISO publish instant (for JSON-LD / sitemap `datePublished`). */
@@ -93,6 +97,12 @@ export function hueForSlug(slug: string): number {
   return Math.abs(hash) % 360;
 }
 
+/** A trimmed non-empty string, or null — blank author fields are not rendered. */
+function presentText(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
 /** Map an API blog-post entity onto the presentational view-model. */
 export function toBlogPostView(entity: BlogPostEntity): BlogPostView {
   return {
@@ -102,6 +112,8 @@ export function toBlogPostView(entity: BlogPostEntity): BlogPostView {
     title: entity.title,
     excerpt: entity.excerpt,
     author: entity.authorName,
+    authorRole: presentText(entity.author?.role),
+    authorBio: presentText(entity.author?.bio),
     date: formatBlogDate(entity.publishedAt ?? null),
     publishedAt: entity.publishedAt ?? null,
     read: entity.readingMinutes ? `${entity.readingMinutes} хв` : "",

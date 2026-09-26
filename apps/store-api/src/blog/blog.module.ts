@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { BlogRepository } from './blog.repository';
 import { BlogService } from './blog.service';
+import { BlogPublisher } from './blog.publisher';
 import { BlogController } from './blog.controller';
 import { AdminBlogController } from './admin-blog.controller';
 import { PUBLISHABLE_REPOSITORY } from '../publishing';
@@ -18,12 +19,15 @@ import { SearchModule } from '../search/search.module';
   providers: [
     BlogRepository,
     BlogService,
-    // Register BlogRepository as a scheduled publisher under the shared token so
+    BlogPublisher,
+    // Register BlogPublisher as a scheduled publisher under the shared token so
     // the PublishingScheduler flips due SCHEDULED posts live. The scheduler
     // collects every module's token provider via DiscoveryService — Nest has no
     // Angular-style `multi`, so one `useExisting` alias per content module is the
     // registration mechanism (see docs/plans/104-publishing-foundation.md).
-    { provide: PUBLISHABLE_REPOSITORY, useExisting: BlogRepository },
+    // BlogPublisher, not BlogRepository (TASK-525): the publisher also indexes
+    // what it flips, so a post published by the cron reaches search on that tick.
+    { provide: PUBLISHABLE_REPOSITORY, useExisting: BlogPublisher },
   ],
   exports: [BlogService],
 })

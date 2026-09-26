@@ -49,7 +49,7 @@ function arrange(options: { resolved?: unknown[]; deltas?: unknown[] }) {
   const { resolved = [], deltas = [] } = options;
 
   server.use(
-    http.get("*/api/addon-services/resolved-for-product/:productId", () =>
+    http.get("*/api/addon-services/admin/resolved-for-product/:productId", () =>
       HttpResponse.json({ data: resolved }),
     ),
     http.get("*/api/addon-services/deltas/product/:productId", () =>

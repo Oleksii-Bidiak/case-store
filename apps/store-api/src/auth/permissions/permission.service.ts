@@ -12,6 +12,42 @@ export interface EffectivePermissions {
   isAdmin: boolean;
   /** Every permission the caller currently holds. For an admin: the whole catalogue. */
   permissions: string[];
+  /**
+   * The same keys with their Ukrainian catalogue labels (TASK-725), in catalogue
+   * order — which is zone order, so a reader sees «Замовлення» rights together.
+   * The labels live only in the API catalogue, and the staff endpoints that
+   * would otherwise expose them need `staff:read`, which no manager can hold; so
+   * the caller's own profile gets them here. A key with no catalogue entry (a
+   * stale row) is labelled with the key itself rather than dropped.
+   */
+  entries: PermissionEntry[];
+}
+
+/** One held permission with its display label (TASK-725). */
+export interface PermissionEntry {
+  key: string;
+  label: string;
+}
+
+/** Derive `entries` from `permissions`, so the two can never disagree. */
+function withEntries(value: Omit<EffectivePermissions, 'entries'>): EffectivePermissions {
+  return { ...value, entries: toPermissionEntries(value.permissions) };
+}
+
+/** Catalogue position and label per key — built once, read per request. */
+const CATALOGUE_INDEX: ReadonlyMap<string, { order: number; label: string }> = new Map(
+  PERMISSIONS.map((permission, order) => [permission.key, { order, label: permission.label }]),
+);
+
+/**
+ * Label `keys` from the catalogue, in catalogue order; unknown keys go last,
+ * alphabetically, labelled with the key.
+ */
+export function toPermissionEntries(keys: readonly string[]): PermissionEntry[] {
+  const rank = (key: string) => CATALOGUE_INDEX.get(key)?.order ?? Number.MAX_SAFE_INTEGER;
+  return [...new Set(keys)]
+    .sort((a, b) => rank(a) - rank(b) || a.localeCompare(b))
+    .map((key) => ({ key, label: CATALOGUE_INDEX.get(key)?.label ?? key }));
 }
 
 /**
@@ -112,32 +148,37 @@ export class PermissionService {
     const actor = await this.repository.findActor(userId);
 
     if (!actor) {
-      return { role: UserRole.CUSTOMER, isOwner: false, isAdmin: false, permissions: [] };
+      return withEntries({
+        role: UserRole.CUSTOMER,
+        isOwner: false,
+        isAdmin: false,
+        permissions: [],
+      });
     }
 
     const isAdmin = actor.role === UserRole.ADMIN;
 
     if (actor.isOwner || isAdmin) {
-      return {
+      return withEntries({
         role: actor.role,
         isOwner: actor.isOwner,
         isAdmin,
         permissions: PERMISSIONS.map((permission) => permission.key),
-      };
+      });
     }
 
     if (actor.role === UserRole.CUSTOMER) {
       // Mirrors actorHasPermission: a demoted account's surviving rows are not
       // rights, so the panel must not render as though they were.
-      return { role: actor.role, isOwner: false, isAdmin: false, permissions: [] };
+      return withEntries({ role: actor.role, isOwner: false, isAdmin: false, permissions: [] });
     }
 
-    return {
+    return withEntries({
       role: actor.role,
       isOwner: false,
       isAdmin: false,
       permissions: [...actor.permissions].sort(),
-    };
+    });
   }
 
   /** True when `key` names a permission that exists in the code catalogue. */

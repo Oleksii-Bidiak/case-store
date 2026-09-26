@@ -29,7 +29,8 @@ export interface UpdateUserInput {
   email?: string;
   firstName?: string;
   lastName?: string;
-  phone?: string;
+  /** `null` removes the number (TASK-799). */
+  phone?: string | null;
 }
 
 /**

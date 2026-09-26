@@ -13,9 +13,25 @@ export function buildDiscountsData() {
     startsAt?: Date;
     expiresAt?: Date;
     isActive: boolean;
+    /** TASK-731: listed on the storefront «Акції» page (a private code still applies by code). */
+    showOnPromoPage: boolean;
   }[] = [
-    { code: 'WELCOME10', type: 'PERCENT', value: 10, perUserLimit: 1, isActive: true },
-    { code: 'SUMMER500', type: 'FIXED', value: 500, minSpend: 3000, isActive: true },
+    {
+      code: 'WELCOME10',
+      type: 'PERCENT',
+      value: 10,
+      perUserLimit: 1,
+      isActive: true,
+      showOnPromoPage: true,
+    },
+    {
+      code: 'SUMMER500',
+      type: 'FIXED',
+      value: 500,
+      minSpend: 3000,
+      isActive: true,
+      showOnPromoPage: true,
+    },
     {
       code: 'VIP20',
       type: 'PERCENT',
@@ -23,6 +39,8 @@ export function buildDiscountsData() {
       maxRedemptions: 100,
       perUserLimit: 1,
       isActive: true,
+      // The demo PRIVATE code: works at checkout, absent from the «Акції» page.
+      showOnPromoPage: false,
     },
     {
       code: 'EXPIRED15',
@@ -31,8 +49,9 @@ export function buildDiscountsData() {
       startsAt: new Date(now - 60 * day),
       expiresAt: new Date(now - 5 * day),
       isActive: true,
+      showOnPromoPage: true,
     },
-    { code: 'OLDPROMO', type: 'FIXED', value: 200, isActive: false },
+    { code: 'OLDPROMO', type: 'FIXED', value: 200, isActive: false, showOnPromoPage: false },
   ];
 
   return discountsData;

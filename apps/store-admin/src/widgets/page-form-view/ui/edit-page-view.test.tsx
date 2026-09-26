@@ -33,6 +33,14 @@ jest.mock("@/shared/ui/rich-text-editor", () => ({
   ),
 }));
 
+const toastError = jest.fn();
+jest.mock("@/shared/ui/toast", () => ({
+  toast: {
+    success: jest.fn(),
+    error: (...args: unknown[]) => toastError(...args),
+  },
+}));
+
 const PAGE_ID = "page-uuid-1";
 
 function makePage(
@@ -174,6 +182,40 @@ describe("EditPageView — slug-rename guard (TASK-285)", () => {
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
     expect(confirmSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // TASK-566 — a slug is unique per kind; the refusal names the tab holding the owner.
+  it("names the kind in the toast when the address is already taken", async () => {
+    const page = { ...makePage("DRAFT"), kind: "INFO" };
+    server.use(
+      http.get(`*/api/admin/pages/${PAGE_ID}`, () =>
+        HttpResponse.json({ data: page }),
+      ),
+      http.put(`*/api/admin/pages/${PAGE_ID}`, () =>
+        HttpResponse.json(
+          {
+            error: "PAGE_SLUG_TAKEN",
+            message: 'Slug "oplata" is already taken by an INFO page',
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    renderWithProviders(<EditPageView pageId={PAGE_ID} />);
+    await waitFor(() =>
+      expect(screen.getByLabelText(dict.pageForm.slug)).toHaveValue(page.slug),
+    );
+
+    const slugField = screen.getByLabelText(dict.pageForm.slug);
+    await userEvent.clear(slugField);
+    await userEvent.type(slugField, "oplata");
+    await submit();
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        dict.pages.toastSlugTaken(dict.pages.kindInfo),
+      ),
+    );
   });
 
   it("never confirms a slug change on a DRAFT page", async () => {

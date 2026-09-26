@@ -10,6 +10,8 @@ import {
   getListStaffQueryKey,
   groupByZone,
   PermissionZoneGrid,
+  samePermissionSet,
+  useApplyPermissionTemplate,
   useCreateStaff,
   useGrantableCatalogue,
   useListPermissionTemplates,
@@ -80,14 +82,19 @@ interface CreateStaffWizardProps {
  * than the API and hid hiring from deputies altogether. Hiding the option and
  * widening the button is the pair that matches the server exactly.
  *
- * ## Two requests, and what happens if the second one fails
+ * ## Up to three requests, and what happens if a later one fails
  *
- * `POST /api/admin/staff` then `PUT /api/admin/staff/:id/permissions`. There is
- * no transactional "create with permissions" endpoint and inventing one for this
- * screen would put the catalogue's validation in two places. If the second call
- * fails the account still exists — so the toast says so and points at the card,
- * rather than reporting a failure that would send the operator back to create a
- * duplicate account.
+ * `POST /api/admin/staff`, then — when a template was chosen —
+ * `POST /api/admin/permission-templates/:id/apply` (TASK-638), then
+ * `PUT /api/admin/staff/:id/permissions` only if the ticks were changed on top
+ * of the template (or no template was chosen and something is ticked). Apply,
+ * not a client-side copy + PUT, because the apply route's audit row NAMES the
+ * template; a PUT of the same keys reads in the log as `[] → [...]` from
+ * nowhere. There is no transactional "create with permissions" endpoint and
+ * inventing one for this screen would put the catalogue's validation in two
+ * places. If a later call fails the account still exists — so the toast says so
+ * and points at the card, rather than reporting a failure that would send the
+ * operator back to create a duplicate account.
  */
 export function CreateStaffWizard({
   open,
@@ -99,6 +106,7 @@ export function CreateStaffWizard({
 
   const createStaff = useCreateStaff();
   const setPermissions = useUpdateStaffPermissions();
+  const applyTemplate = useApplyPermissionTemplate();
 
   const [step, setStep] = useState<Step>("account");
   const [email, setEmail] = useState("");
@@ -125,7 +133,10 @@ export function CreateStaffWizard({
   const templates = templatesData?.data ?? [];
 
   const groups: ZoneGroup[] = groupByZone(catalogue, zones);
-  const isPending = createStaff.isPending || setPermissions.isPending;
+  const isPending =
+    createStaff.isPending ||
+    applyTemplate.isPending ||
+    setPermissions.isPending;
 
   const reset = () => {
     setStep("account");
@@ -220,27 +231,60 @@ export function CreateStaffWizard({
 
           if (
             role === CreateStaffDtoRole.ADMIN ||
-            created.data.level >= ACCESS_LEVEL.ADMIN ||
-            granted.size === 0
+            created.data.level >= ACCESS_LEVEL.ADMIN
           ) {
             finish();
             return;
           }
 
-          setPermissions.mutate(
-            { id: staffId, data: { permissions: [...granted].sort() } },
+          const failed = () => {
+            void queryClient.invalidateQueries({
+              queryKey: getListStaffQueryKey(),
+            });
+            // The account exists. Saying "не вдалося створити" here is how an
+            // operator ends up with two accounts for one person.
+            toast.error(d.createPermissionsFailed);
+            close(false);
+            router.push(`/staff/${staffId}`);
+          };
+
+          const writeTicks = () => {
+            setPermissions.mutate(
+              { id: staffId, data: { permissions: [...granted].sort() } },
+              { onSuccess: finish, onError: failed },
+            );
+          };
+
+          const chosen = templates.find(
+            (template) => template.id === templateId,
+          );
+
+          if (!chosen) {
+            if (granted.size === 0) {
+              finish();
+              return;
+            }
+            writeTicks();
+            return;
+          }
+
+          // A template was chosen: APPLY it (TASK-638) rather than PUT its keys,
+          // so the audit row names the template — «застосовано шаблон
+          // "Оператор"» — instead of an anonymous `[] → [...]`. If the operator
+          // then changed ticks on step 3, those edits follow as an ordinary
+          // permission write, which is its own honest row: the template, then
+          // what was changed on top of it.
+          applyTemplate.mutate(
+            { id: chosen.id, data: { userId: staffId } },
             {
-              onSuccess: finish,
-              onError: () => {
-                void queryClient.invalidateQueries({
-                  queryKey: getListStaffQueryKey(),
-                });
-                // The account exists. Saying "не вдалося створити" here is how an
-                // operator ends up with two accounts for one person.
-                toast.error(d.createPermissionsFailed);
-                close(false);
-                router.push(`/staff/${staffId}`);
+              onSuccess: () => {
+                if (samePermissionSet([...granted], chosen.permissions)) {
+                  finish();
+                  return;
+                }
+                writeTicks();
               },
+              onError: failed,
             },
           );
         },

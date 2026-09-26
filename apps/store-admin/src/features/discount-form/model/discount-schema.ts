@@ -56,6 +56,7 @@ export const discountSchema = z
     expiresAt: z.string().trim().optional(),
 
     isActive: z.boolean().optional(),
+    showOnPromoPage: z.boolean().optional(),
   })
   .refine(
     (data) => data.type !== "PERCENT" || (data.value >= 1 && data.value <= 100),
@@ -106,5 +107,6 @@ export function discountFormValuesToDto(
     startsAt: toIso(values.startsAt),
     expiresAt: toIso(values.expiresAt),
     isActive: values.isActive,
+    showOnPromoPage: values.showOnPromoPage,
   } as CreateDiscountDto | UpdateDiscountDto;
 }

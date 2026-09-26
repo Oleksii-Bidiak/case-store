@@ -55,12 +55,21 @@ describe('ProductDeviceCompatRepository', () => {
   });
 
   describe('setDeviceCompatForGroup', () => {
-    it('applies the set to every sibling position and returns the count', async () => {
-      prismaMock.product.findMany.mockResolvedValue([{ id: 'p1' }, { id: 'p2' }, { id: 'p3' }]);
+    it('applies the set to every sibling position and returns each position with its slug and isActive', async () => {
+      const positions = [
+        { id: 'p1', slug: 'case-red', isActive: true },
+        { id: 'p2', slug: 'case-blue', isActive: false },
+        { id: 'p3', slug: 'case-green', isActive: true },
+      ];
+      prismaMock.product.findMany.mockResolvedValue(positions);
 
       const result = await repo.setDeviceCompatForGroup('g1', ['m1']);
 
-      expect(result).toEqual({ updatedCount: 3, productIds: ['p1', 'p2', 'p3'] });
+      expect(result).toEqual({ updatedCount: 3, positions });
+      expect(prismaMock.product.findMany).toHaveBeenCalledWith({
+        where: { groupId: 'g1', deletedAt: null },
+        select: { id: true, slug: true, isActive: true },
+      });
       expect(prismaMock.productDeviceCompat.deleteMany).toHaveBeenCalledWith({
         where: { productId: { in: ['p1', 'p2', 'p3'] } },
       });
@@ -79,7 +88,7 @@ describe('ProductDeviceCompatRepository', () => {
 
       const result = await repo.setDeviceCompatForGroup('empty', ['m1']);
 
-      expect(result).toEqual({ updatedCount: 0, productIds: [] });
+      expect(result).toEqual({ updatedCount: 0, positions: [] });
       expect(prismaMock.$transaction).not.toHaveBeenCalled();
     });
   });

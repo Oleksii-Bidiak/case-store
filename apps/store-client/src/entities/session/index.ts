@@ -15,6 +15,11 @@ export {
   // TASK-342 — email verification: request a link, confirm a token.
   useAuthControllerRequestEmailVerification,
   useAuthControllerConfirmEmailVerification,
+  // TASK-396 — change the sign-in address: request (password + new address),
+  // confirm from the new inbox, revert from the old one.
+  useRequestEmailChange,
+  useConfirmEmailChange,
+  useRevertEmailChange,
 } from "@/shared/api/generated/auth/auth";
 
 export type {

@@ -4,6 +4,7 @@ import { AddonServiceController } from './addon-service.controller';
 import { AdminAddonServiceController } from './admin-addon-service.controller';
 import { AddonServiceService } from './addon-service.service';
 import { PermissionGuard } from '../auth/permissions';
+import { REQUIRE_PERMISSION_KEY } from '../auth/permissions/require-permission.decorator';
 
 /**
  * Controller-level unit tests (TASK-174): every route delegates to the service
@@ -17,6 +18,7 @@ describe('AddonService controllers (TASK-174)', () => {
 
   const addonServiceService = {
     resolveForProduct: jest.fn(),
+    resolveForProductForAdmin: jest.fn(),
     findAllAdmin: jest.fn(),
     findAllActive: jest.fn(),
     findById: jest.fn(),
@@ -108,6 +110,21 @@ describe('AddonService controllers (TASK-174)', () => {
       expect(addonServiceService.setCategoryTemplate).toHaveBeenCalledWith('cat-1', {
         addonServiceIds: [],
       });
+    });
+
+    it('resolves any non-deleted product for the panel/card under products:read (TASK-781)', async () => {
+      const addons = [{ addonServiceId: 'svc-a', name: 'Warranty', price: '499.00' }];
+      addonServiceService.resolveForProductForAdmin.mockResolvedValue(addons);
+
+      expect(await adminController.adminResolveForProduct('p1')).toEqual({ data: addons });
+      expect(addonServiceService.resolveForProductForAdmin).toHaveBeenCalledWith('p1');
+      expect(addonServiceService.resolveForProduct).not.toHaveBeenCalled();
+      expect(
+        Reflect.getMetadata(
+          REQUIRE_PERMISSION_KEY,
+          AdminAddonServiceController.prototype.adminResolveForProduct,
+        ),
+      ).toBe('products:read');
     });
 
     it('delegates the product-delta upsert and clear routes', async () => {

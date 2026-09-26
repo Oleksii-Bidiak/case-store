@@ -27,6 +27,9 @@ import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from
 import { reorderErrorToHttp } from '../common/reorder';
 import { HUB_SLUGS, PAGE_ROOT_PATHS, hubRouteForSlug, revalidatePathsForPage } from './hub-routes';
 
+/** Stable `error` code of the 409 raised for a page address already in use (TASK-566). */
+export const PAGE_SLUG_TAKEN = 'PAGE_SLUG_TAKEN';
+
 /** A page identified well enough to purge its storefront routes. */
 interface PageRef {
   slug: string;
@@ -136,9 +139,9 @@ export class PageService {
     const kind = dto.kind ?? PageKind.LEGAL;
     this.assertHubSlug(kind, slug);
 
-    const existing = await this.pageRepository.findBySlugAny(slug);
+    const existing = await this.pageRepository.findBySlugAny(slug, kind);
     if (existing) {
-      throw new ConflictException('Slug is already taken');
+      throw this.slugTaken(existing.slug, existing.kind);
     }
 
     const publishState = resolvePublishState(
@@ -173,24 +176,18 @@ export class PageService {
       }
       return entity;
     } catch (error) {
-      this.rethrowUniqueConflict(error);
+      this.rethrowUniqueConflict(error, { slug, kind });
     }
   }
 
   /**
-   * Update a page (admin). Guards slug uniqueness when the slug is changed.
+   * Update a page (admin). Guards uniqueness whenever the page's address —
+   * slug or kind — changes.
    */
   async update(id: string, dto: UpdatePageDto): Promise<PageEntity> {
     const page = await this.pageRepository.findById(id);
     if (!page) {
       throw new NotFoundException('Page not found');
-    }
-
-    if (dto.slug !== undefined && dto.slug !== page.slug) {
-      const existing = await this.pageRepository.findBySlugAny(dto.slug);
-      if (existing && existing.id !== id) {
-        throw new ConflictException('Slug is already taken');
-      }
     }
 
     // The kind and slug this row will HAVE after the write — either may be
@@ -200,15 +197,30 @@ export class PageService {
     const nextSlug = dto.slug ?? page.slug;
     this.assertHubSlug(nextKind, nextSlug);
 
+    // A slug is unique per kind (TASK-566), so the address to check is the one
+    // the row moves TO — a kind change that keeps the slug can collide too.
+    const isAddressChange = nextKind !== page.kind || nextSlug !== page.slug;
+    if (isAddressChange) {
+      const existing = await this.pageRepository.findBySlugAny(nextSlug, nextKind);
+      if (existing && existing.id !== id) {
+        throw this.slugTaken(existing.slug, existing.kind);
+      }
+    }
+
     const wasPublished = page.status === PublishStatus.PUBLISHED;
 
     // Record a 301 redirect only when the page was publicly visible BEFORE
-    // this write and the slug is actually changing (plan 147 §Design
-    // Decision 3) — a draft's URL was never reachable, so no redirect.
-    const isSlugRename = dto.slug !== undefined && dto.slug !== page.slug;
+    // this write and its address is actually changing (plan 147 §Design
+    // Decision 3) — a draft's URL was never reachable, so no redirect. A kind
+    // change moves the page between `/legal` and `/info` just as a rename does,
+    // so it is recorded too (TASK-566). A HUB row is on neither side: it has no
+    // address of its own, so there is nothing to redirect from or to.
     const slugRename =
-      wasPublished && isSlugRename && dto.slug !== undefined
-        ? { oldSlug: page.slug, newSlug: dto.slug }
+      wasPublished && isAddressChange && page.kind !== PageKind.HUB && nextKind !== PageKind.HUB
+        ? {
+            from: { kind: page.kind, slug: page.slug },
+            to: { kind: nextKind, slug: nextSlug },
+          }
         : undefined;
 
     const input: UpdatePageInput = {
@@ -259,7 +271,7 @@ export class PageService {
       }
       return entity;
     } catch (error) {
-      this.rethrowUniqueConflict(error);
+      this.rethrowUniqueConflict(error, { slug: nextSlug, kind: nextKind });
     }
   }
 
@@ -428,13 +440,29 @@ export class PageService {
   }
 
   /**
-   * Re-throw a Prisma unique-constraint violation (slug) as ConflictException;
-   * any other error is re-thrown unchanged. `never` return keeps the call site
-   * exhaustive for the type checker.
+   * The 409 for an address another page already holds (TASK-566). It names the
+   * kind of the OWNING row: uniqueness is per kind, and the admin panel shows
+   * each kind on its own tab, so "Slug is already taken" alone sent operators
+   * hunting through a tab that did not list the culprit. `error` is a stable
+   * code the panel can key its own UA sentence off.
    */
-  private rethrowUniqueConflict(error: unknown): never {
+  private slugTaken(slug: string, kind: PageKind): ConflictException {
+    const article = kind === PageKind.INFO ? 'an' : 'a';
+    return new ConflictException({
+      error: PAGE_SLUG_TAKEN,
+      message: `Slug "${slug}" is already taken by ${article} ${kind} page`,
+    });
+  }
+
+  /**
+   * Re-throw a Prisma unique-constraint violation on `(kind, slug)` as the same
+   * ConflictException the pre-check raises — the race between check and write
+   * lands on the address this call was writing. Any other error is re-thrown
+   * unchanged. `never` return keeps the call site exhaustive for the type checker.
+   */
+  private rethrowUniqueConflict(error: unknown, address: { slug: string; kind: PageKind }): never {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      throw new ConflictException('Slug is already taken');
+      throw this.slugTaken(address.slug, address.kind);
     }
     throw error;
   }

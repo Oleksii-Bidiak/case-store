@@ -8,7 +8,8 @@ import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
-import { MeiliClient } from '../src/search';
+import { JwtService } from '@nestjs/jwt';
+import { BlogSearchService, MeiliClient, SearchService } from '../src/search';
 
 /**
  * E2E tests for the Search module (TASK-075).
@@ -118,7 +119,7 @@ describe('Search (e2e)', () => {
     indexDocuments: jest.fn(async () => undefined),
     deleteDocument: jest.fn(async () => undefined),
     clearDocuments: jest.fn(async () => undefined),
-    search: jest.fn(async () => ({ hits: [], estimatedTotalHits: 0 })),
+    search: jest.fn(async () => ({ hits: [], totalHits: 0 })),
   };
 
   beforeAll(async () => {
@@ -159,7 +160,7 @@ describe('Search (e2e)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     meiliClientMock.isConfigured.mockReturnValue(true);
-    meiliClientMock.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+    meiliClientMock.search.mockResolvedValue({ hits: [], totalHits: 0 });
     prismaServiceMock.product.findMany.mockResolvedValue([]);
     prismaServiceMock.product.count.mockResolvedValue(0);
     prismaServiceMock.product.findFirst.mockResolvedValue(null);
@@ -171,7 +172,7 @@ describe('Search (e2e)', () => {
     it('hydrates ranked Meili hit ids into product cards', async () => {
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }],
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
 
@@ -186,6 +187,38 @@ describe('Search (e2e)', () => {
       // Public entity never leaks raw stock.
       expect(res.body.data[0]).not.toHaveProperty('stock');
       expect(res.body.meta).toMatchObject({ total: 1, page: 1, limit: 20 });
+    });
+
+    // TASK-537 — the results page draws numbered pages from meta.totalPages, so
+    // the engine is asked by page number (exact totalHits), never limit/offset
+    // (an estimate that overshot into empty pages).
+    it('pages by number and reports the engine exact total', async () => {
+      meiliClientMock.search.mockResolvedValue({ hits: [{ id: 'product-1' }], totalHits: 21 });
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'чохол', page: 2 })
+        .expect(200);
+
+      expect(meiliClientMock.search).toHaveBeenCalledWith(
+        'чохол',
+        expect.objectContaining({ page: 2, hitsPerPage: 20 }),
+      );
+      expect(res.body.meta).toEqual({ total: 21, page: 2, limit: 20, totalPages: 2 });
+    });
+
+    it('answers a page past the end from the engine instead of swapping in Postgres', async () => {
+      meiliClientMock.search.mockResolvedValue({ hits: [], totalHits: 21 });
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'чохол', page: 9 })
+        .expect(200);
+
+      expect(res.body.data).toEqual([]);
+      expect(res.body.meta).toEqual({ total: 21, page: 9, limit: 20, totalPages: 2 });
+      expect(prismaServiceMock.product.count).not.toHaveBeenCalled();
     });
   });
 
@@ -229,7 +262,7 @@ describe('Search (e2e)', () => {
     it('accepts the catalogue filter params and narrows the engine query with them', async () => {
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }],
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
 
@@ -268,7 +301,7 @@ describe('Search (e2e)', () => {
     it('accepts the slug-shaped filter params and resolves them to ids', async () => {
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }],
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
 
@@ -373,6 +406,28 @@ describe('Search (e2e)', () => {
       expect(res.body.data[0]).toMatchObject({ id: 'product-1' });
       expect(res.body.meta).toMatchObject({ total: 1, page: 1, totalPages: 1 });
     });
+
+    it('answers ip15-1 with IP15-1 — the code lookup ignores case (TASK-542)', async () => {
+      // No exact-case row, one case-insensitive one: the shopper typed the
+      // code in lower case. The engine indexes no `sku`, so this lookup is the
+      // only thing that can answer it while Meilisearch is up.
+      prismaServiceMock.product.findFirst.mockResolvedValue(null);
+      prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/search')
+        .query({ q: 'ip15-1' })
+        .expect(200);
+
+      expect(prismaServiceMock.product.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { sku: { equals: 'ip15-1', mode: 'insensitive' }, deletedAt: null },
+        }),
+      );
+      expect(meiliClientMock.search).not.toHaveBeenCalled();
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).toMatchObject({ id: 'product-1', sku: 'IP15-1' });
+    });
   });
 
   describe('GET /api/search/suggest', () => {
@@ -382,7 +437,7 @@ describe('Search (e2e)', () => {
       // so a stale hit for a withdrawn category never reaches the dropdown (TASK-297).
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }],
-        estimatedTotalHits: 1,
+        totalHits: 1,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow()]);
 
@@ -409,7 +464,7 @@ describe('Search (e2e)', () => {
       // vanishes from the suggestions instead of linking to a dead PDP.
       meiliClientMock.search.mockResolvedValue({
         hits: [{ id: 'product-1' }, { id: 'withdrawn-product' }],
-        estimatedTotalHits: 2,
+        totalHits: 2,
       });
       prismaServiceMock.product.findMany.mockResolvedValue([makeProductRow({ id: 'product-1' })]);
 
@@ -433,6 +488,33 @@ describe('Search (e2e)', () => {
   describe('POST /api/admin/search/reindex', () => {
     it('requires authentication (401 without a token)', async () => {
       await request(app.getHttpServer()).post('/api/admin/search/reindex').expect(401);
+    });
+
+    // TASK-525 — the one repair action used to rebuild the products index only,
+    // so a drifted `blog_posts` index was repaired by nothing short of a restart.
+    it('rebuilds the products AND the blog index and reports both counts', async () => {
+      const products = jest.spyOn(app.get(SearchService), 'reindexAll').mockResolvedValue(178);
+      const blog = jest.spyOn(app.get(BlogSearchService), 'reindexAll').mockResolvedValue(12);
+      const token = app
+        .get(JwtService)
+        .sign(
+          { sub: 'admin-e2e-1', email: 'admin-e2e-1@example.com', role: 'ADMIN' },
+          { secret: process.env.JWT_SECRET, expiresIn: '15m' },
+        );
+
+      try {
+        const res = await request(app.getHttpServer())
+          .post('/api/admin/search/reindex')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(res.body).toEqual({ data: { indexed: 178, blogPosts: 12 } });
+        expect(products).toHaveBeenCalledTimes(1);
+        expect(blog).toHaveBeenCalledTimes(1);
+      } finally {
+        products.mockRestore();
+        blog.mockRestore();
+      }
     });
   });
 });

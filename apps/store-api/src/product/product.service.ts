@@ -972,17 +972,19 @@ export class ProductService {
     }
 
     await this.assertDeviceModelsExist(deviceModelIds);
-    const { updatedCount, productIds } = await this.deviceCompatRepository.setDeviceCompatForGroup(
+    const { updatedCount, positions } = await this.deviceCompatRepository.setDeviceCompatForGroup(
       groupId,
       deviceModelIds,
     );
 
     // Every affected position may change on any list page and its detail caches;
-    // bust the list prefix once and re-index each position.
+    // bust the list prefix once, then evict BOTH detail keys of each position —
+    // the public PDP is cached by slug (TASK-826) — and index or de-index it by
+    // its real isActive, exactly as the single-product updateDeviceCompat does.
     await this.invalidateProductLists();
-    for (const id of productIds) {
-      await this.cache.del(productDetailIdKey(id));
-      await this.syncSearchIndex({ id, isActive: true });
+    for (const position of positions) {
+      await this.evictProductDetail(position.id, position.slug);
+      await this.syncSearchIndex(position);
     }
 
     return { updatedCount };

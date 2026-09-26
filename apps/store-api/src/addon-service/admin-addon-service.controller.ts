@@ -34,6 +34,7 @@ import {
   ResolvedCategoryTemplateEntity,
 } from './entities';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import { ResolvedAddonListResponse } from './addon-service.controller';
 
 class AddonServiceResponseEnvelope {
   @ApiProperty({ type: AddonServiceEntity })
@@ -158,6 +159,30 @@ export class AdminAddonServiceController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAllActive(): Promise<AddonServiceListResponse> {
     return this.addonServiceService.findAllActive();
+  }
+
+  /**
+   * The admin twin of the public `resolved-for-product/:productId` (TASK-781).
+   * The public route now answers 404 for a draft — correct for a shopper, but
+   * the product panel and the read-only product card configure and show the
+   * add-ons of drafts too. Gated by `products:read` rather than the class-level
+   * `addons:write`: the product card is a READ that a products-only reader may
+   * open, and must not break for them (see `AdminProductCardView`).
+   */
+  @Get('admin/resolved-for-product/:productId')
+  @RequirePermission('products:read')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Resolve the add-on services applicable to any non-deleted product (admin)',
+    operationId: 'addonServiceControllerAdminResolveForProduct',
+  })
+  @ApiParam({ name: 'productId', description: 'Product UUID' })
+  @ApiResponse({ status: 200, description: 'Resolved add-ons', type: ResolvedAddonListResponse })
+  @ApiResponse({ status: 404, description: 'Product not found' })
+  async adminResolveForProduct(
+    @Param('productId') productId: string,
+  ): Promise<ResolvedAddonListResponse> {
+    return { data: await this.addonServiceService.resolveForProductForAdmin(productId) };
   }
 
   @Get('admin/:id')

@@ -95,6 +95,7 @@ describe('Discount (e2e)', () => {
       startsAt: null,
       expiresAt: null,
       isActive: true,
+      showOnPromoPage: true,
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
       updatedAt: new Date('2026-01-01T00:00:00.000Z'),
       ...overrides,
@@ -185,6 +186,20 @@ describe('Discount (e2e)', () => {
         amount: '20.00',
         newTotal: '180.00',
       });
+    });
+
+    it('200 for a private (unpublished) code entered by code (TASK-731)', async () => {
+      discountRepositoryMock.findByCode.mockResolvedValue(
+        makeDiscount({ code: 'PARTNER', showOnPromoPage: false }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .post('/api/cart/discount/preview')
+        .set('Authorization', `Bearer ${token(testCustomer.id, 'CUSTOMER')}`)
+        .send({ code: 'partner' })
+        .expect(200);
+
+      expect(res.body.data).toMatchObject({ code: 'PARTNER', amount: '20.00' });
     });
 
     it('400 DISCOUNT_NOT_FOUND for an unknown code', async () => {
@@ -305,6 +320,28 @@ describe('Discount (e2e)', () => {
       expect(discountRepositoryMock.create).toHaveBeenCalled();
     });
 
+    it('201 create is private by default and publishes on request (TASK-731)', async () => {
+      discountRepositoryMock.findByCode.mockResolvedValue(null);
+      discountRepositoryMock.create.mockImplementation((input: Record<string, unknown>) =>
+        Promise.resolve(makeDiscount(input)),
+      );
+      const auth = `Bearer ${token(testAdmin.id, 'ADMIN')}`;
+
+      const priv = await request(app.getHttpServer())
+        .post('/api/admin/discounts')
+        .set('Authorization', auth)
+        .send({ code: 'PARTNER', type: 'PERCENT', value: 5 })
+        .expect(201);
+      expect(priv.body.data.showOnPromoPage).toBe(false);
+
+      const pub = await request(app.getHttpServer())
+        .post('/api/admin/discounts')
+        .set('Authorization', auth)
+        .send({ code: 'PUBLIC5', type: 'PERCENT', value: 5, showOnPromoPage: true })
+        .expect(201);
+      expect(pub.body.data.showOnPromoPage).toBe(true);
+    });
+
     it('400 create with an out-of-range percent value', async () => {
       discountRepositoryMock.findByCode.mockResolvedValue(null);
 
@@ -313,6 +350,155 @@ describe('Discount (e2e)', () => {
         .set('Authorization', `Bearer ${token(testAdmin.id, 'ADMIN')}`)
         .send({ code: 'BIG', type: 'PERCENT', value: 150 })
         .expect(400);
+    });
+
+    it('400 (not 500) create with minSpend: null (TASK-797)', async () => {
+      discountRepositoryMock.findByCode.mockResolvedValue(null);
+      discountRepositoryMock.create.mockResolvedValue(makeDiscount({ code: 'NULLMIN' }));
+
+      const res = await request(app.getHttpServer())
+        .post('/api/admin/discounts')
+        .set('Authorization', `Bearer ${token(testAdmin.id, 'ADMIN')}`)
+        .send({ code: 'NULLMIN', type: 'PERCENT', value: 5, minSpend: null })
+        .expect(400);
+
+      expect(JSON.stringify(res.body.message)).toContain('minSpend');
+      expect(discountRepositoryMock.create).not.toHaveBeenCalled();
+    });
+
+    // ─── PATCH /api/admin/discounts/:id (TASK-823) ──────────────────────────
+    //
+    // The admin form sends `null` for a cleared field, and the DTO is a
+    // PartialType — so what matters end to end is how the three states (not
+    // sent / null / value) cross the ValidationPipe into the write.
+    describe('PATCH /api/admin/discounts/:id', () => {
+      const stored = () =>
+        makeDiscount({
+          minSpend: new Prisma.Decimal('500'),
+          maxRedemptions: 100,
+          startsAt: new Date('2026-10-01T00:00:00.000Z'),
+          expiresAt: new Date('2026-12-31T00:00:00.000Z'),
+        });
+      const adminAuth = () => `Bearer ${token(testAdmin.id, 'ADMIN')}`;
+      const patch = (body: Record<string, unknown>, id = 'd-e2e-1') =>
+        request(app.getHttpServer())
+          .patch(`/api/admin/discounts/${id}`)
+          .set('Authorization', adminAuth())
+          .send(body);
+
+      beforeEach(() => {
+        discountRepositoryMock.findById.mockResolvedValue(stored());
+        discountRepositoryMock.findByCode.mockResolvedValue(null);
+        discountRepositoryMock.update.mockImplementation(
+          (_id: string, input: Record<string, unknown>) =>
+            Promise.resolve({ ...stored(), ...input }),
+        );
+      });
+
+      it('401 without a token', async () => {
+        await request(app.getHttpServer())
+          .patch('/api/admin/discounts/d-e2e-1')
+          .send({ isActive: false })
+          .expect(401);
+      });
+
+      it('403 for a customer, and nothing is written', async () => {
+        await request(app.getHttpServer())
+          .patch('/api/admin/discounts/d-e2e-1')
+          .set('Authorization', `Bearer ${token(testCustomer.id, 'CUSTOMER')}`)
+          .send({ isActive: false })
+          .expect(403);
+
+        expect(discountRepositoryMock.update).not.toHaveBeenCalled();
+      });
+
+      it('200 writes only the field that was sent', async () => {
+        const res = await patch({ isActive: false }).expect(200);
+
+        expect(discountRepositoryMock.update).toHaveBeenCalledWith('d-e2e-1', { isActive: false });
+        expect(res.body.data).toMatchObject({ id: 'd-e2e-1', isActive: false, minSpend: '500' });
+      });
+
+      it('200 clears nullable fields sent as null (the admin form does this)', async () => {
+        const res = await patch({
+          minSpend: null,
+          maxRedemptions: null,
+          perUserLimit: null,
+          startsAt: null,
+          expiresAt: null,
+        }).expect(200);
+
+        expect(discountRepositoryMock.update).toHaveBeenCalledWith('d-e2e-1', {
+          minSpend: null,
+          maxRedemptions: null,
+          perUserLimit: null,
+          startsAt: null,
+          expiresAt: null,
+        });
+        expect(res.body.data).toMatchObject({ minSpend: null, startsAt: null, expiresAt: null });
+      });
+
+      it('200 clearing startsAt lets an expiry before the stored start through (TASK-798)', async () => {
+        await patch({ startsAt: null, expiresAt: '2026-09-01T00:00:00.000Z' }).expect(200);
+
+        expect(discountRepositoryMock.update).toHaveBeenCalledWith('d-e2e-1', {
+          startsAt: null,
+          expiresAt: new Date('2026-09-01T00:00:00.000Z'),
+        });
+      });
+
+      it('200 normalizes a renamed code to uppercase before checking and writing it', async () => {
+        await patch({ code: '  autumn15 ' }).expect(200);
+
+        expect(discountRepositoryMock.findByCode).toHaveBeenCalledWith('AUTUMN15');
+        expect(discountRepositoryMock.update).toHaveBeenCalledWith('d-e2e-1', {
+          code: 'AUTUMN15',
+        });
+      });
+
+      it('400 when the new code belongs to another discount, and nothing is written', async () => {
+        discountRepositoryMock.findByCode.mockResolvedValue(
+          makeDiscount({ id: 'd-e2e-2', code: 'TAKEN' }),
+        );
+
+        const res = await patch({ code: 'taken' }).expect(400);
+
+        expect(JSON.stringify(res.body.message)).toContain('TAKEN');
+        expect(discountRepositoryMock.update).not.toHaveBeenCalled();
+      });
+
+      it('400 for a PERCENT value above 100 on the merged definition', async () => {
+        await patch({ value: 150 }).expect(400);
+
+        expect(discountRepositoryMock.update).not.toHaveBeenCalled();
+      });
+
+      it('400 for a start after the STORED expiry', async () => {
+        const res = await patch({ startsAt: '2027-01-01T00:00:00.000Z' }).expect(400);
+
+        expect(JSON.stringify(res.body.message)).toContain('startsAt must be before expiresAt');
+        expect(discountRepositoryMock.update).not.toHaveBeenCalled();
+      });
+
+      it('400 for a date that is not ISO 8601', async () => {
+        await patch({ expiresAt: 'next friday' }).expect(400);
+
+        expect(discountRepositoryMock.update).not.toHaveBeenCalled();
+      });
+
+      it('400 for a field the DTO does not declare — the redemption counter is not writable', async () => {
+        await patch({ redeemedCount: 0 }).expect(400);
+
+        expect(discountRepositoryMock.update).not.toHaveBeenCalled();
+      });
+
+      it('404 for an unknown id', async () => {
+        discountRepositoryMock.findById.mockResolvedValue(null);
+
+        await patch({ isActive: false }, 'missing').expect(404);
+
+        expect(discountRepositoryMock.update).not.toHaveBeenCalled();
+      });
     });
 
     it('200 deactivate for an admin', async () => {

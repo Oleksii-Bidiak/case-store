@@ -388,3 +388,112 @@ describe('validateEnv — TOTP_ENCRYPTION_KEY treats empty as unset', () => {
     expect(validateEnv({ ...base, TOTP_ENCRYPTION_KEY: key }).TOTP_ENCRYPTION_KEY).toBe(key);
   });
 });
+
+/**
+ * TASK-758 — the API image-host allow-list for rich text. It mirrors the
+ * storefront's NEXT_PUBLIC_IMAGE_HOSTS (compose passes that same value), so it
+ * takes the same shape: bare hostnames, comma-separated. A scheme or a wildcard
+ * is refused at start-up rather than silently matching nothing.
+ */
+describe('validateEnv — IMAGE_HOSTS is a bare hostname list', () => {
+  const base = {
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+  };
+
+  it('is optional', () => {
+    expect(validateEnv({ ...base }).IMAGE_HOSTS).toBeUndefined();
+  });
+
+  // compose writes `${NEXT_PUBLIC_IMAGE_HOSTS:-}`: an empty string, not an absent key.
+  it('accepts an empty string', () => {
+    expect(() => validateEnv({ ...base, IMAGE_HOSTS: '' })).not.toThrow();
+  });
+
+  it('accepts a comma-separated list of bare hostnames', () => {
+    const hosts = 'cdn.mystore.ua, images.brand.com';
+    expect(validateEnv({ ...base, IMAGE_HOSTS: hosts }).IMAGE_HOSTS).toBe(hosts);
+  });
+
+  it.each([
+    ['a scheme', 'https://cdn.mystore.ua'],
+    ['a path', 'cdn.mystore.ua/images'],
+    ['a port', 'cdn.mystore.ua:8443'],
+    ['a wildcard', '*.mystore.ua'],
+  ])('rejects %s', (_what, value) => {
+    expect(() => validateEnv({ ...base, IMAGE_HOSTS: value })).toThrow(/IMAGE_HOSTS/);
+  });
+});
+
+/**
+ * TASK-790: every *_EXPIRATION is `<integer><s|m|h|d>` or the API refuses to
+ * start. A bare "60" used to boot and was silently read as seven days.
+ */
+describe('validateEnv — durations must carry a unit', () => {
+  const baseConfig = {
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+  };
+
+  const names = [
+    'JWT_EXPIRATION',
+    'JWT_REFRESH_EXPIRATION',
+    'PASSWORD_RESET_TOKEN_EXPIRATION',
+    'EMAIL_VERIFICATION_TOKEN_EXPIRATION',
+  ];
+
+  it.each(names)('accepts "15m" for %s', (name) => {
+    expect(() => validateEnv({ ...baseConfig, [name]: '15m' })).not.toThrow();
+  });
+
+  it.each(names)('accepts %s left unset (the service default applies)', (name) => {
+    const result = validateEnv({ ...baseConfig });
+    expect((result as unknown as Record<string, unknown>)[name]).toBeUndefined();
+  });
+
+  it.each(names)('refuses a bare "60" for %s, naming the variable', (name) => {
+    expect(() => validateEnv({ ...baseConfig, [name]: '60' })).toThrow(
+      new RegExp(`${name} must be a whole number followed by a unit`),
+    );
+  });
+
+  it.each(['1w', '15 m', '1.5h', 'h', '', '-1d', '7days'])(
+    'refuses %p for JWT_REFRESH_EXPIRATION',
+    (value) => {
+      expect(() => validateEnv({ ...baseConfig, JWT_REFRESH_EXPIRATION: value })).toThrow(
+        /JWT_REFRESH_EXPIRATION must be a whole number/,
+      );
+    },
+  );
+});
+
+/**
+ * TASK-627: what the reservation deadline does. Two values and only two — a typo
+ * must fail the boot, not quietly fall back to one behaviour or the other.
+ */
+describe('validateEnv — ORDER_RESERVATION_EXPIRY', () => {
+  const baseConfig = {
+    NODE_ENV: 'test',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+  };
+
+  it('is optional — unset keeps the cancel behaviour', () => {
+    expect(() => validateEnv({ ...baseConfig })).not.toThrow();
+  });
+
+  it.each(['cancel', 'release'])('accepts %p', (value) => {
+    expect(() => validateEnv({ ...baseConfig, ORDER_RESERVATION_EXPIRY: value })).not.toThrow();
+  });
+
+  it.each(['Release', 'keep', 'true'])('refuses %p, naming the variable', (value) => {
+    expect(() => validateEnv({ ...baseConfig, ORDER_RESERVATION_EXPIRY: value })).toThrow(
+      /ORDER_RESERVATION_EXPIRY/,
+    );
+  });
+});

@@ -84,18 +84,20 @@ function stubCard(
         ],
       }),
     ),
-    http.get(`*/api/addon-services/resolved-for-product/${PRODUCT_ID}`, () =>
-      HttpResponse.json({
-        data: [
-          {
-            addonServiceId: "svc-1",
-            name: "Встановлення скла",
-            description: null,
-            price: "150.00",
-            source: "template",
-          },
-        ],
-      }),
+    http.get(
+      `*/api/addon-services/admin/resolved-for-product/${PRODUCT_ID}`,
+      () =>
+        HttpResponse.json({
+          data: [
+            {
+              addonServiceId: "svc-1",
+              name: "Встановлення скла",
+              description: null,
+              price: "150.00",
+              source: "template",
+            },
+          ],
+        }),
     ),
     http.get("*/api/categories/admin/tree", () =>
       HttpResponse.json({

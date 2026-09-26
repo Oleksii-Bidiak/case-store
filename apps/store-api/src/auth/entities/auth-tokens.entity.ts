@@ -1,26 +1,24 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 /**
- * Domain entity representing an authentication token pair.
+ * The body of a successful register / login / refresh — what the client
+ * actually receives (TASK-825).
  *
- * This is a clean domain entity — not a Prisma model.
- * It is returned by AuthService methods (register, login, refresh)
- * and contains only the data that should be exposed to the client.
+ * Only the access token. The refresh token is delivered as an HttpOnly cookie
+ * and never appears in a body; this class used to declare it anyway, as a
+ * REQUIRED string, so Orval generated a `refreshToken: string` in both apps that
+ * no response ever filled — destructure it and you get `undefined`, and the
+ * natural next step with a "token" is `localStorage`, exactly where a refresh
+ * token must never go.
  *
- * Note: The refreshToken is set as an HttpOnly cookie by the controller,
- * so it is included here for internal use but the controller decides
- * how to deliver each token.
+ * Internally AuthService returns an {@link IssuedSession}, which carries the
+ * refresh token and the owner's id for the controller alone.
  */
 export class AuthTokens {
   @ApiProperty({
-    description: 'JWT access token',
+    description:
+      'JWT access token. The refresh token is set as an HttpOnly cookie, never sent here.',
     example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
   })
   accessToken!: string;
-
-  @ApiProperty({
-    description: 'JWT refresh token (set as HttpOnly cookie)',
-    example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...',
-  })
-  refreshToken!: string;
 }

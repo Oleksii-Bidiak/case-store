@@ -1,10 +1,17 @@
 import * as React from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
+import type { Editor } from "@tiptap/react";
 
 // Import the module, NOT `./index`: the barrel wraps this component in
 // `next/dynamic({ ssr: false, loading: () => null })`, which renders nothing at
 // all under jsdom.
-import { RichTextEditor } from "./rich-text-editor";
+import { MAX_TABLE_COLSPAN, RichTextEditor } from "./rich-text-editor";
 
 const EDITOR_LABEL = "Текстовий редактор";
 
@@ -672,6 +679,210 @@ describe("RichTextEditor", () => {
       fireEvent.click(screen.getByLabelText("Горизонтальна лінія"));
       await waitFor(() => expect(onChange).toHaveBeenCalled());
       expect(onChange.mock.calls.at(-1)?.[0]).toContain('colspan="2"');
+    });
+  });
+
+  /**
+   * TASK-548 — the server keeps `caption`/`colgroup`/`col`/`tfoot` now, so the
+   * editor has to carry them through a round trip too, or the loss the
+   * sanitizer stopped would simply move to the first admin edit. A caption was
+   * worse than lost: prosemirror-tables parsed its text as an extra FIRST ROW
+   * with a phantom empty cell — a structural edit nobody asked for.
+   */
+  describe("table caption and footer survive the round trip (TASK-548)", () => {
+    const CAPTIONED =
+      "<p>До</p><table><caption>Розміри <b>чохлів</b></caption>" +
+      '<colgroup><col span="2"></colgroup>' +
+      "<thead><tr><th>A</th><th>B</th></tr></thead>" +
+      "<tbody><tr><td>1</td><td>2</td></tr></tbody>" +
+      "<tfoot><tr><td>Σ</td><td>3</td></tr></tfoot></table>";
+
+    async function emitted(onChange: jest.Mock): Promise<string> {
+      fireEvent.click(screen.getByLabelText("Горизонтальна лінія"));
+      await waitFor(() => expect(onChange).toHaveBeenCalled());
+      return onChange.mock.calls.at(-1)?.[0] as string;
+    }
+
+    it("shows the caption above the table, outside the editable cells", async () => {
+      render(<RichTextEditor value={CAPTIONED} onChange={jest.fn()} />);
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() =>
+        expect(editable.querySelector("caption")).not.toBeNull(),
+      );
+
+      const caption = editable.querySelector("caption")!;
+      expect(caption).toHaveTextContent("Розміри чохлів");
+      expect(caption).toHaveAttribute("contenteditable", "false");
+      // Three rows — head, body, foot — and not a fourth made of caption text.
+      expect(editable.querySelectorAll("tr")).toHaveLength(3);
+    });
+
+    it("writes the caption back as the table's first child and keeps every row", async () => {
+      const onChange = jest.fn();
+      render(<RichTextEditor value={CAPTIONED} onChange={onChange} />);
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() =>
+        expect(editable.querySelector("caption")).not.toBeNull(),
+      );
+
+      const html = await emitted(onChange);
+      expect(html).toMatch(/<table[^>]*><caption>Розміри чохлів<\/caption>/);
+      // The footer row survives as the last row — like `<thead>`, the section
+      // is parsed away but its cells and text are kept.
+      expect(html.match(/<tr>/g)).toHaveLength(3);
+      expect(html).toContain("<p>Σ</p>");
+      expect(html).not.toMatch(/<td[^>]*><p><\/p><\/td>/);
+    });
+
+    it("writes no caption for a table that had none", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value="<table><tbody><tr><td>1</td></tr></tbody></table>"
+          onChange={onChange}
+        />,
+      );
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() =>
+        expect(editable.querySelector("table")).not.toBeNull(),
+      );
+
+      expect(editable.querySelector("caption")).toBeNull();
+      expect(await emitted(onChange)).not.toContain("<caption");
+    });
+  });
+
+  /** TASK-548 — merged cells can be made in the editor, not only imported. */
+  describe("merge and split cells (TASK-548)", () => {
+    const MERGE = "Об'єднати клітинки";
+    const SPLIT = "Розділити клітинку";
+
+    /** The Tiptap instance behind the editable surface (Tiptap sets `dom.editor`). */
+    function editorOf(editable: HTMLElement): Editor {
+      return (editable as HTMLElement & { editor: Editor }).editor;
+    }
+
+    /** Document positions of every cell, in document order. */
+    function cellPositions(editor: Editor): number[] {
+      const positions: number[] = [];
+      editor.state.doc.descendants((node, pos) => {
+        const role = node.type.spec.tableRole;
+        if (role === "cell" || role === "header_cell") positions.push(pos);
+      });
+      return positions;
+    }
+
+    it("merges a selection of cells into one spanning cell", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value="<table><tbody><tr><td>a</td><td>b</td></tr><tr><td>c</td><td>d</td></tr></tbody></table>"
+          onChange={onChange}
+        />,
+      );
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() =>
+        expect(editable.querySelectorAll("td")).toHaveLength(4),
+      );
+      // A caret in one cell has nothing to merge with.
+      expect(screen.getByLabelText(MERGE)).toBeDisabled();
+
+      const editor = editorOf(editable);
+      const [first, second] = cellPositions(editor);
+      act(() => {
+        editor.commands.setCellSelection({
+          anchorCell: first,
+          headCell: second,
+        });
+      });
+      await waitFor(() => expect(screen.getByLabelText(MERGE)).toBeEnabled());
+
+      fireEvent.click(screen.getByLabelText(MERGE));
+
+      await waitFor(() =>
+        expect(editable.querySelectorAll("td")).toHaveLength(3),
+      );
+      expect(editable.querySelector("td")).toHaveAttribute("colspan", "2");
+      expect(onChange.mock.calls.at(-1)?.[0]).toContain('colspan="2"');
+    });
+
+    it("splits a merged cell back into its cells", async () => {
+      const onChange = jest.fn();
+      render(
+        <RichTextEditor
+          value={
+            "<table><tbody>" +
+            '<tr><th colspan="2">Параметри</th></tr>' +
+            "<tr><td>Вага</td><td>120 г</td></tr>" +
+            "</tbody></table>"
+          }
+          onChange={onChange}
+        />,
+      );
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() =>
+        expect(editable.querySelector("th")).toHaveAttribute("colspan", "2"),
+      );
+      // Outside a merged cell there is nothing to split.
+      expect(screen.getByLabelText(SPLIT)).toBeDisabled();
+
+      const editor = editorOf(editable);
+      const [header] = cellPositions(editor);
+      act(() => {
+        // Inside the header cell's paragraph: cell → paragraph → text.
+        editor.commands.setTextSelection(header + 2);
+      });
+      await waitFor(() => expect(screen.getByLabelText(SPLIT)).toBeEnabled());
+
+      fireEvent.click(screen.getByLabelText(SPLIT));
+
+      await waitFor(() =>
+        expect(editable.querySelectorAll("th")).toHaveLength(2),
+      );
+      expect(onChange.mock.calls.at(-1)?.[0]).not.toContain('colspan="2"');
+    });
+
+    it("refuses a merge wider than the server keeps a colspan", async () => {
+      const row = (n: number) =>
+        "<tr>" +
+        Array.from({ length: n }, (_, i) => `<td>${i}</td>`).join("") +
+        "</tr>";
+      render(
+        <RichTextEditor
+          value={`<table><tbody>${row(MAX_TABLE_COLSPAN + 1)}</tbody></table>`}
+          onChange={jest.fn()}
+        />,
+      );
+      const editable = await screen.findByLabelText(EDITOR_LABEL);
+      await waitFor(() =>
+        expect(editable.querySelectorAll("td")).toHaveLength(
+          MAX_TABLE_COLSPAN + 1,
+        ),
+      );
+
+      const editor = editorOf(editable);
+      const cells = cellPositions(editor);
+      // The whole row would become one cell with colspan 21 — the server would
+      // clamp it to 20 and the row would come back a column short.
+      act(() => {
+        editor.commands.setCellSelection({
+          anchorCell: cells[0],
+          headCell: cells[cells.length - 1],
+        });
+      });
+      await waitFor(() =>
+        expect(editor.state.selection.constructor.name).toBe("CellSelection"),
+      );
+      expect(screen.getByLabelText(MERGE)).toBeDisabled();
+
+      // One cell fewer fits exactly at the bound.
+      act(() => {
+        editor.commands.setCellSelection({
+          anchorCell: cells[0],
+          headCell: cells[cells.length - 2],
+        });
+      });
+      await waitFor(() => expect(screen.getByLabelText(MERGE)).toBeEnabled());
     });
   });
 });

@@ -33,12 +33,32 @@ export const ACCOUNT_LOCKED_MAIL_TYPE = 'account-locked';
 export const EMAIL_VERIFICATION_MAIL_TYPE = 'email-verification';
 
 /**
+ * `MailOutbox.type` for the letter that proves a NEW address before it becomes
+ * the login (TASK-396). Recipient = the new address, carried in the payload.
+ */
+export const EMAIL_CHANGE_CONFIRM_MAIL_TYPE = 'email-change-confirm';
+
+/**
+ * `MailOutbox.type` for the warning, with a revert link, sent to the OLD address
+ * when a change is requested (TASK-396).
+ */
+export const EMAIL_CHANGE_NOTICE_MAIL_TYPE = 'email-change-notice';
+
+/**
  * `MailOutbox.type` value for the "your order has shipped" notice (TASK-335).
  *
  * Until it existed, a parcel left the warehouse and the customer found out by
  * refreshing the site — if they thought to.
  */
 export const ORDER_SHIPPED_MAIL_TYPE = 'order-shipped';
+
+/**
+ * `MailOutbox.type` value for «оплату не отримано» (TASK-352 (b), decision B-11
+ * №2): the ONE letter sent after the reconcile worker cancels an online order
+ * whose reservation lapsed unpaid. Enqueued only once the cancellation has
+ * really happened.
+ */
+export const ORDER_PAYMENT_EXPIRED_MAIL_TYPE = 'order-payment-expired';
 
 /** Aggregate outcome of a single {@link MailOutboxService.dispatchDue} run. */
 export interface DispatchResult {

@@ -6,7 +6,8 @@ import {
   ProductVariantSummaryEntity,
   type VariantSiblingInput,
 } from './product-variant-summary.entity';
-import { ProductSpecEntity, buildProductSpecs, type SpecValueRow } from './product-spec.entity';
+import { ProductSpecEntity } from './product-spec.entity';
+import { mapSharedProductFields, type ProductSource } from './product-source';
 import { LOW_STOCK_THRESHOLD } from '../product.constants';
 
 /**
@@ -235,86 +236,21 @@ export class PublicProductEntity {
    * `inStock`/`lowStock`, and deliberately omits `stock` from the result so the
    * raw inventory count never reaches a public response.
    */
-  static fromPrisma(product: {
-    id: string;
-    name: string;
-    slug: string;
-    description: string | null;
-    price: { toString(): string };
-    compareAtPrice: { toString(): string } | null;
-    sku: string | null;
-    stock: number;
-    categoryId: string;
-    groupId?: string | null;
-    brand?: { id: string; name: string; slug: string; logo: string | null } | null;
-    attributes?: unknown;
-    positionOrder?: number;
-    isActive: boolean;
-    metaTitle?: string | null;
-    metaDescription?: string | null;
-    keywords?: string[];
-    ogImage?: string | null;
-    createdAt: Date;
-    updatedAt: Date;
-    ratingAverage?: number | null;
-    ratingCount?: number;
-    primaryImage?: {
-      id: string;
-      url: string;
-      alt: string | null;
-      blurDataUrl?: string | null;
-      sortOrder: number;
-      isPrimary: boolean;
-    } | null;
-    /**
-     * Active sibling positions of this product's variant group (supplied by the
-     * list query). When omitted or empty — e.g. on the detail path or a
-     * standalone product — the summary derives from the product itself.
-     */
-    variantSiblings?: VariantSiblingInput[];
-    compatibleDeviceModels?: Array<{
-      id: string;
-      name: string;
-      slug: string;
-      brandName: string;
-    }>;
-    /**
-     * Structured spec-value rows (joined with their definition) for the detail
-     * path (TASK-191). Absent on list responses — specs/highlights are then
-     * empty arrays.
-     */
-    specValues?: SpecValueRow[];
-  }): PublicProductEntity {
-    const entity = new PublicProductEntity();
-    entity.id = product.id;
-    entity.name = product.name;
-    entity.slug = product.slug;
-    entity.description = product.description;
-    entity.price = product.price.toString();
-    entity.compareAtPrice = product.compareAtPrice ? product.compareAtPrice.toString() : null;
-    entity.sku = product.sku;
+  static fromPrisma(
+    product: ProductSource & {
+      /**
+       * Active sibling positions of this product's variant group (supplied by the
+       * list query). When omitted or empty — e.g. on the detail path or a
+       * standalone product — the summary derives from the product itself.
+       */
+      variantSiblings?: VariantSiblingInput[];
+    },
+  ): PublicProductEntity {
+    const entity = Object.assign(new PublicProductEntity(), mapSharedProductFields(product));
     // Derive public availability signals from stock; the raw count is never
     // assigned to the entity, so it never reaches the JSON response.
     entity.inStock = product.stock > 0;
     entity.lowStock = product.stock > 0 && product.stock <= LOW_STOCK_THRESHOLD;
-    entity.categoryId = product.categoryId;
-    entity.groupId = product.groupId ?? null;
-    entity.brand = product.brand ? ProductBrandEntity.fromPrisma(product.brand) : null;
-    entity.attributes = (product.attributes as Record<string, string> | null) ?? {};
-    entity.positionOrder = product.positionOrder ?? 0;
-    entity.isActive = product.isActive;
-    entity.metaTitle = product.metaTitle ?? null;
-    entity.metaDescription = product.metaDescription ?? null;
-    entity.keywords = product.keywords ?? [];
-    entity.ogImage = product.ogImage ?? null;
-    entity.createdAt = product.createdAt;
-    entity.updatedAt = product.updatedAt;
-    entity.ratingAverage =
-      product.ratingAverage != null ? Math.round(product.ratingAverage * 10) / 10 : null;
-    entity.ratingCount = product.ratingCount ?? 0;
-    entity.primaryImage = product.primaryImage
-      ? ProductImageEntity.fromPrisma(product.primaryImage)
-      : null;
     // Build the variant summary from the group's active siblings when provided
     // (list path); otherwise treat the product as its own sole variant.
     const siblings: VariantSiblingInput[] =
@@ -334,12 +270,6 @@ export class PublicProductEntity {
       product.groupId ?? null,
       siblings,
     );
-    entity.compatibleDeviceModels = (product.compatibleDeviceModels ?? []).map((m) =>
-      ProductCompatibleDeviceEntity.fromSummary(m),
-    );
-    const { specs, highlights } = buildProductSpecs(product.specValues);
-    entity.specs = specs;
-    entity.highlights = highlights;
     return entity;
   }
 }

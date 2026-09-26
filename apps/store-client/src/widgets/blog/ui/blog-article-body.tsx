@@ -1,4 +1,3 @@
-import { dict } from "@/shared/config";
 import { RICH_TEXT_PROSE } from "@/shared/ui";
 import { authorInitial, type BlogPostView } from "../model/posts";
 
@@ -30,12 +29,18 @@ export function BlogArticleBody({
           <b className="block font-display text-base text-foreground">
             {post.author}
           </b>
-          <span className="my-0.5 mb-2 block text-[13px] font-semibold text-primary">
-            {dict.blog.article.authorRolePlaceholder}
-          </span>
-          <p className="text-sm leading-[1.6] text-muted-foreground">
-            {dict.blog.article.authorBioPlaceholder}
-          </p>
+          {/* Role and bio come from the post's Author (TASK-554); a missing
+              one is left out rather than filled with a stock sentence. */}
+          {post.authorRole && (
+            <span className="my-0.5 mb-2 block text-[13px] font-semibold text-primary">
+              {post.authorRole}
+            </span>
+          )}
+          {post.authorBio && (
+            <p className="text-sm leading-[1.6] text-muted-foreground">
+              {post.authorBio}
+            </p>
+          )}
         </div>
       </div>
     </article>

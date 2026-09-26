@@ -608,6 +608,46 @@ describe('access model migration (TASK-474)', () => {
 });
 
 /**
+ * The empty «Менеджер (як було)» (TASK-635, plan 192).
+ *
+ * The access-model migration above creates the template unconditionally, so on
+ * every shop whose role matrix was never filled it came out EMPTY — and applying
+ * a template replaces a person's set, so applying it strips them bare. The
+ * applied migration cannot be edited; a later one removes the template, and only
+ * where it holds nothing.
+ */
+describe('removing the empty manager template (TASK-635)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const statement = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_drop_empty_manager_as_was_template'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_drop_empty_manager_as_was_template migration under ${MIGRATIONS_ROOT}.`,
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8')
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('--'))
+      .join('\n');
+  })();
+
+  it('targets the template by exactly the name the code uses', () => {
+    expect(statement).toContain(`'${MANAGER_BACKFILL_TEMPLATE_NAME}'`);
+  });
+
+  it('deletes only a template with no items — a filled one is a shop’s real history', () => {
+    expect(statement).toMatch(/DELETE FROM "permission_templates"/);
+    expect(statement).toMatch(/NOT EXISTS\s*\(\s*SELECT 1\s+FROM "permission_template_items"/);
+    // Nothing else is deleted: no items, no people's rows.
+    expect(statement).not.toContain('DELETE FROM "permission_template_items"');
+    expect(statement).not.toContain('user_permissions');
+  });
+});
+
+/**
  * The customer-card split (TASK-479, plan 181, invariant 7).
  *
  * `customers:read` used to buy two purchases at once: the list plus the contact
@@ -738,11 +778,12 @@ describe('customers:card permission backfill migration (TASK-479)', () => {
     // everybody who already works here and misses everybody hired afterwards —
     // two groups with different access from the same tick.
     //
-    // «Менеджер (як було)» is the concrete case: the TASK-474 migration created
-    // it one migration before this key existed, and `docs/admin-guide.md` tells
-    // the owner it holds exactly what the MANAGER role used to. Without the
-    // second statement that sentence is false in the same release that created
-    // the template.
+    // «Менеджер (як було)» is the concrete case where it exists: the TASK-474
+    // migration created it one migration before this key existed, and
+    // `docs/admin-guide.md` tells the owner it holds what the MANAGER role used
+    // to. Without the second statement that sentence is false in the same
+    // release that created the template. (Where the role matrix was empty the
+    // template came out empty and TASK-635 removes it — see below.)
     expect(statement).toContain('"permission_template_items"');
     expect(statement).toContain('"template_id"');
     // Both halves idempotent, not just the first.
@@ -860,5 +901,62 @@ describe('returns permission backfill migration, per person (plan 180 × 181)', 
   it('never names a role at all — an admin passes by level, not by row', () => {
     expect(statement).not.toContain('ADMIN');
     expect(statement).not.toContain('MANAGER');
+  });
+});
+
+/**
+ * The media backfill, per person (TASK-614, plan 192).
+ *
+ * `…_backfill_media_permissions` wrote to `role_permissions` and, measured on
+ * every database anyone had, inserted nothing: the matrix held one row for the
+ * whole shop. After plan 181 content-write grants are rows on PEOPLE, and nothing
+ * followed them with the media picker. This file is the per-person half, shaped
+ * exactly like the returns one above — and pinned the same way, so its keys and
+ * the catalogue cannot drift apart.
+ */
+describe('media permission backfill migration, per person (TASK-614)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_backfill_media_permissions_per_user'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_backfill_media_permissions_per_user migration under ${MIGRATIONS_ROOT}. ` +
+          'Without it the media backfill only ever read the role matrix plan 181 dropped, ' +
+          'so nobody granted a content-write key on the staff screen gets the picker.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  const statement = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('grants exactly the media keys, read off exactly the declared sources', () => {
+    for (const key of [...MEDIA_PERMISSIONS, ...MEDIA_BACKFILL_SOURCE_PERMISSIONS]) {
+      expect(statement).toContain(`'${key}'`);
+    }
+    const quoted = new Set(statement.match(/'[a-z]+:[a-z]+'/g) ?? []);
+    const allowed = new Set(
+      [...MEDIA_PERMISSIONS, ...MEDIA_BACKFILL_SOURCE_PERMISSIONS].map((key) => `'${key}'`),
+    );
+    expect([...quoted].filter((token) => !allowed.has(token))).toEqual([]);
+  });
+
+  it('grants to a PERSON and to TEMPLATES, never to a role', () => {
+    expect(statement).toContain('"user_permissions"');
+    expect(statement).toContain('"permission_template_items"');
+    expect(statement).not.toContain('role_permissions');
+    expect(statement).not.toContain('"allowed"');
+    expect(statement).not.toContain('ADMIN');
+    expect(statement).not.toContain('MANAGER');
+  });
+
+  it('is idempotent in BOTH halves, so a restore-then-migrate cannot fail', () => {
+    expect(statement.match(/ON CONFLICT[\s\S]*?DO NOTHING/g) ?? []).toHaveLength(2);
   });
 });

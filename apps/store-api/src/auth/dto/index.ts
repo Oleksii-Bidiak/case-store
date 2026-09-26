@@ -4,3 +4,8 @@ export { RequestPasswordResetDto } from './request-password-reset.dto';
 export { ConfirmPasswordResetDto } from './confirm-password-reset.dto';
 export { ChangePasswordDto } from './change-password.dto';
 export { ConfirmEmailVerificationDto } from './confirm-email-verification.dto';
+export {
+  RequestEmailChangeDto,
+  EmailChangeTokenDto,
+  OperatorEmailChangeDto,
+} from './email-change.dto';

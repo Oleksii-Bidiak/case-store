@@ -4,8 +4,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
 import { EmailVerificationService } from './email-verification.service';
+import { EmailChangeService } from './email-change.service';
 import { AuthController } from './auth.controller';
 import { RefreshTokenCleanupService } from './refresh-token-cleanup.service';
+import { GuestStateMergeService } from './guest-state-merge.service';
 import { JwtAccessStrategy, JwtRefreshStrategy, GoogleStrategy } from './strategies';
 import { GoogleAuthGuard } from './guards';
 import { GoogleOAuthStateStore } from './oauth/google-oauth-state.store';
@@ -27,8 +29,12 @@ import { WishlistModule } from '../wishlist/wishlist.module';
           // `number | ms.StringValue`, where StringValue is a template-literal
           // union such as `${number}m`. A value read from the environment at
           // runtime can never be narrowed to that statically, so the cast is
-          // unavoidable; the format itself is validated at boot by
-          // config/env.validation.ts.
+          // unavoidable. What makes the cast honest is the boot check: until
+          // TASK-790 env.validation.ts only asserted "is a string", so this
+          // comment claimed a guarantee nobody enforced. It now `@Matches` the
+          // shared DURATION_PATTERN (auth/duration.util.ts) — `<n><s|m|h|d>`,
+          // a subset of what jsonwebtoken's `ms` accepts — and refuses to start
+          // on anything else.
           expiresIn: configService.get<string>(
             'JWT_EXPIRATION',
             '15m',
@@ -47,7 +53,11 @@ import { WishlistModule } from '../wishlist/wishlist.module';
     AuthRepository,
     AuthService,
     EmailVerificationService,
+    // Changing the sign-in address (TASK-396).
+    EmailChangeService,
     RefreshTokenCleanupService,
+    // Merges a guest cart + wishlist on sign-in (TASK-824, moved out of the controller).
+    GuestStateMergeService,
     JwtAccessStrategy,
     JwtRefreshStrategy,
     // Google OAuth (TASK-168). GoogleStrategy always constructs (inert
@@ -57,6 +67,7 @@ import { WishlistModule } from '../wishlist/wishlist.module';
     GoogleStrategy,
     GoogleAuthGuard,
   ],
-  exports: [AuthRepository, AuthService, EmailVerificationService],
+  // EmailChangeService is exported for the operator route on UserController.
+  exports: [AuthRepository, AuthService, EmailVerificationService, EmailChangeService],
 })
 export class AuthModule {}

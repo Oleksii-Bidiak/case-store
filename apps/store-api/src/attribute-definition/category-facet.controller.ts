@@ -47,6 +47,9 @@ export class CategoryFacetController {
    * price, search, availability, the other facets) because the counts are
    * relative to them: a facet endpoint that ignored them would publish numbers
    * the listing immediately contradicts.
+   *
+   * At most `MAX_SPEC_FACETS` facets, in template order, and an active facet
+   * (one named in `specs`) is always among them (TASK-707).
    */
   @Get(':id/filterable-specs')
   @ApiOperation({

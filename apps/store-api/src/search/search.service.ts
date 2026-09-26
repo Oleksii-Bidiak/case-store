@@ -3,7 +3,12 @@ import { PinoLogger } from 'nestjs-pino';
 import { ProductRepository, ProductIndexSource } from '../product/product.repository';
 import { CategoryRepository } from '../category/category.repository';
 import { PublicProductEntity } from '../product/entities';
-import { MeiliClient, ProductSearchDocument, IndexSettings } from './meili.client';
+import {
+  MeiliClient,
+  ProductSearchDocument,
+  IndexSettings,
+  SEARCH_MAX_TOTAL_HITS,
+} from './meili.client';
 import { UA_EN_SYNONYMS, extractSearchSynonymTerms } from './search-synonyms';
 import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import { SearchSuggestionEntity } from './entities';
@@ -29,9 +34,30 @@ const REINDEX_BATCH = 100;
  * typo tolerance itself covers misspellings («афйон» → «айфон»). Since the
  * catalogue is Ukrainian (TASK-366/367) that injection mostly runs the other way
  * — «Чохол …» gains `case`/`cases` — see `search-synonyms.ts`.
+ *
+ * `sku` (TASK-522) sits right after `name`: under the `attribute` ranking rule
+ * a hit on an article number outranks a mention in a description. It is the one
+ * attribute exempt from typo tolerance — «IP16» is one typo from «IP15», and a
+ * code one character off names a different part (a wrong fit), not a misspelt
+ * word. A settings change only reaches a live index through a reindex:
+ * `npm run search:reindex` (see `src/scripts/search-reindex.ts`).
+ *
+ * `keywords` (TASK-558) follow `sku`: they are the admin's own tags (TASK-437) —
+ * «ударостійкий», «подарунок» — a deliberate "this product IS about X", which
+ * should outrank X merely being mentioned in a description. They stay
+ * typo-tolerant (they are words, not codes) and feed `searchTerms` too, so a tag
+ * typed in the other script still matches. Same reindex step as `sku`.
  */
 export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
-  searchableAttributes: ['name', 'description', 'categoryName', 'brandName', 'searchTerms'],
+  searchableAttributes: [
+    'name',
+    'sku',
+    'keywords',
+    'description',
+    'categoryName',
+    'brandName',
+    'searchTerms',
+  ],
   // `price` and `inStock` joined the facets in TASK-417: the results page now
   // carries the catalogue's filter panel, and a price or availability filter has
   // to narrow the ENGINE's answer — filtering the hydrated page afterwards would
@@ -49,8 +75,11 @@ export const PRODUCTS_INDEX_SETTINGS: IndexSettings = {
   typoTolerance: {
     enabled: true,
     minWordSizeForTypos: { oneTypo: 4, twoTypos: 8 },
+    disableOnAttributes: ['sku'],
   },
   synonyms: UA_EN_SYNONYMS,
+  // The deepest result the `/search` page list can reach (TASK-537).
+  pagination: { maxTotalHits: SEARCH_MAX_TOTAL_HITS },
 };
 
 /**
@@ -137,6 +166,9 @@ export interface SearchResults {
  */
 @Injectable()
 export class SearchService implements OnModuleInit {
+  /** The full reindex currently running, if any — see {@link reindexAll}. */
+  private reindexInFlight: Promise<number> | null = null;
+
   constructor(
     private readonly meili: MeiliClient,
     private readonly productRepository: ProductRepository,
@@ -222,8 +254,23 @@ export class SearchService implements OnModuleInit {
    * way to BREAK a working search, which is the opposite of what a repair
    * operation should be able to do. Upsert-then-prune never empties the index:
    * a failure part-way through leaves the previous documents in place.
+   *
+   * Single-flight (TASK-522): a call made while a pass is running joins that
+   * pass instead of starting a second one. The boot reindex, the admin button
+   * and `npm run search:reindex` (which boots its own copy of the app, and with
+   * it a boot reindex) all meet here; two concurrent passes doubled the engine
+   * work and raced their prunes.
    */
-  async reindexAll(): Promise<number> {
+  reindexAll(): Promise<number> {
+    if (!this.reindexInFlight) {
+      this.reindexInFlight = this.runReindex().finally(() => {
+        this.reindexInFlight = null;
+      });
+    }
+    return this.reindexInFlight;
+  }
+
+  private async runReindex(): Promise<number> {
     if (!this.meili.isConfigured()) return 0;
     await this.ensureIndex();
 
@@ -304,18 +351,37 @@ export class SearchService implements OnModuleInit {
     if (exact) return exact;
 
     if (this.meili.isConfigured()) {
+      // page/hitsPerPage, not limit/offset (TASK-537): the results page draws a
+      // clickable list of numbered pages from `meta.totalPages`, and only this
+      // mode makes the engine count exactly. The old `estimatedTotalHits` could
+      // overshoot into a page with no hits — which then fell through to Postgres
+      // and showed a different set, with a different total, under that URL.
       const result = await this.meili.search(query, {
-        limit: pageSize,
-        offset: (pageNum - 1) * pageSize,
+        page: pageNum,
+        hitsPerPage: pageSize,
         filter: this.buildMeiliFilter(filters),
         sort: MEILI_SORT[filters.sort ?? 'relevance'],
       });
-      // An EMPTY hit list falls through to Postgres, exactly like an error
-      // (TASK-376). Zero hits is a perfectly valid Meilisearch response, so the
-      // old `if (result)` trusted a stale or still-empty index and answered
-      // "nothing found" over a full catalogue — the state a freshly seeded
-      // server is in, since seeding writes straight to Postgres. The cost is one
-      // extra query in the rare case where there genuinely is no match.
+      // A page-mode answer always carries `totalHits`; should one ever lack it,
+      // count only what is provably there (never an estimate that overshoots).
+      const totalHits =
+        result?.totalHits ??
+        (result && result.hits.length > 0 ? (pageNum - 1) * pageSize + result.hits.length : 0);
+      // An EMPTY hit list with NO matches at all falls through to Postgres,
+      // exactly like an error (TASK-376). Zero hits is a perfectly valid
+      // Meilisearch response, so the old `if (result)` trusted a stale or
+      // still-empty index and answered "nothing found" over a full catalogue —
+      // the state a freshly seeded server is in, since seeding writes straight to
+      // Postgres. The cost is one extra query in the rare case where there
+      // genuinely is no match.
+      //
+      // Matches but no hits on THIS page is different: the engine has answered,
+      // the page is past the end (a stale bookmark, a hand-edited URL, or a page
+      // beyond `maxTotalHits`). Say so with the engine's own total instead of
+      // swapping in Postgres' result set under the same URL.
+      if (result && result.hits.length === 0 && totalHits > 0) {
+        return { data: [], meta: this.buildMeta(totalHits, pageNum, pageSize) };
+      }
       if (result && result.hits.length > 0) {
         const ids = result.hits.map((hit) => hit.id);
         const products = await this.productRepository.findByIdsForCards(ids);
@@ -330,7 +396,7 @@ export class SearchService implements OnModuleInit {
         // catalogue would be a lie told by a stale index, so let Postgres have
         // the query — the same rule the blog path applies.
         if (data.length > 0) {
-          return { data, meta: this.buildMeta(result.estimatedTotalHits, pageNum, pageSize) };
+          return { data, meta: this.buildMeta(totalHits, pageNum, pageSize) };
         }
       }
     }
@@ -350,13 +416,20 @@ export class SearchService implements OnModuleInit {
    *  - only on page 1 with NO facet applied — an SKU already identifies a single
    *    product, so paging or narrowing it further is meaningless and would make
    *    a filtered result set contradict its own filters;
+   *  - case-insensitive (TASK-542): `ip15-1` finds `IP15-1`, exactly as the
+   *    Postgres fallback's `contains` would, so the answer no longer depends on
+   *    whether the engine is up;
    *  - the hit is re-read through `findByIdsForCards`, which gates on
    *    `isActive` + an active category, so a withdrawn product never surfaces
    *    through its code.
    *
-   * The index itself still carries no `sku` (`ProductIndexSource` does not
-   * expose one — TASK-522), so this is also the only path that can answer such a
-   * query while the engine is up.
+   * Kept after TASK-522 put `sku` into the index, on purpose. The engine answers
+   * a PARTIAL code («RN13» → «RN13PRO-BK») and a code inside a phrase, which it
+   * could not before — but it cannot answer a whole code with exactly one
+   * position: the hyphen splits `IP15-1` into two words and the last word is
+   * matched as a prefix, so the engine returns `IP15-1` together with `IP15-10`,
+   * `IP15-12`… SF-SRCH-09 («знаходить рівно цей товар») needs the single hit,
+   * and only this lookup gives it.
    */
   private async findByExactSku(
     query: string,
@@ -366,7 +439,7 @@ export class SearchService implements OnModuleInit {
   ): Promise<SearchResults | null> {
     if (page !== 1 || !looksLikeSku(query) || hasFacets(filters)) return null;
 
-    const match = await this.productRepository.findBySku(query);
+    const match = await this.productRepository.findBySkuIgnoringCase(query);
     if (!match) return null;
 
     const [card] = await this.productRepository.findByIdsForCards([match.id]);
@@ -517,6 +590,8 @@ export class SearchService implements OnModuleInit {
       name: source.name,
       description: source.description,
       slug: source.slug,
+      sku: source.sku,
+      keywords: source.keywords,
       price: Number(source.price.toString()),
       compareAtPrice:
         source.compareAtPrice != null ? Number(source.compareAtPrice.toString()) : null,
@@ -530,8 +605,12 @@ export class SearchService implements OnModuleInit {
       inStock: source.stock > 0,
       isActive: source.isActive,
       createdAt: source.createdAt.getTime(),
+      // The code feeds the cross-script terms too (TASK-522): a code that spells
+      // out what the product fits («GLASS-IPHONE-15») must be findable in the
+      // other script («айфон») even when the name does not say it. The admin tags
+      // likewise (TASK-558): a "MagSafe" tag must answer «магсейф».
       searchTerms: extractSearchSynonymTerms(
-        `${source.name} ${source.categoryName} ${source.brandName ?? ''}`,
+        `${source.name} ${source.categoryName} ${source.brandName ?? ''} ${source.sku ?? ''} ${source.keywords.join(' ')}`,
       ),
     };
   }

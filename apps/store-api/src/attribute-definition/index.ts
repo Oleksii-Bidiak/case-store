@@ -7,7 +7,13 @@ export {
   UpdateAttributeDefinitionInput,
   FacetValueCount,
 } from './attribute-definition.repository';
-export { AttributeDefinitionEntity, FacetValueCountEntity, FilterableSpecEntity } from './entities';
+export {
+  AttributeDefinitionEntity,
+  FacetValueCountEntity,
+  FilterableSpecEntity,
+  FacetCeilingCategoryEntity,
+  FacetCeilingReportEntity,
+} from './entities';
 export {
   CreateAttributeDefinitionDto,
   UpdateAttributeDefinitionDto,

@@ -8,12 +8,20 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OrderHistoryNote, OrderStatus, PaymentStatus, PaymentAttemptStatus } from '@prisma/client';
+import {
+  OrderHistoryNote,
+  OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
+  PaymentAttemptStatus,
+} from '@prisma/client';
 import { OrderRepository } from './order.repository';
 import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
 import { OrderEntity, PublicOrderEntity, type PublicOrderRow } from './entities';
 import { CartRepository, CartWithItems } from '../cart/cart.repository';
+import { createCartRepositoryMock } from '../../test/cart-repository.mock';
+import { CartEntity } from '../cart/entities/cart.entity';
 import { UserRepository } from '../user/user.repository';
 import { MailOutboxService } from '../mail-outbox';
 import {
@@ -84,6 +92,7 @@ const cartWithItems: CartWithItems = {
       quantity: 2,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-1',
         name: 'iPhone 15 Pro Case',
@@ -94,6 +103,7 @@ const cartWithItems: CartWithItems = {
         // TASK-297: checkout re-checks the owning category's status too.
         category: { isActive: true },
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -103,6 +113,7 @@ const cartWithItems: CartWithItems = {
       quantity: 1,
       createdAt: now,
       updatedAt: now,
+      addons: [],
       product: {
         id: 'product-uuid-2',
         name: 'Screen Protector',
@@ -112,6 +123,7 @@ const cartWithItems: CartWithItems = {
         isActive: true,
         category: { isActive: true },
         slug: 'test-product',
+        categoryId: 'cat-1',
         images: [],
       },
     },
@@ -163,6 +175,7 @@ const makeOrder = (overrides: Partial<OrderWithItems> = {}): OrderWithItems => (
         slug: 'iphone-15-pro-case',
         images: [],
       },
+      addons: [],
     },
   ],
   ...overrides,
@@ -186,23 +199,22 @@ const orderRepositoryMock = {
   // TASK-341: operator-created orders + pre-shipment address correction.
   findOrderableProducts: jest.fn(),
   createManual: jest.fn(),
-  updateShippingAddress: jest.fn(),
   claimGuestOrders: jest.fn(),
   updateStatus: jest.fn(),
   cancelAndRestock: jest.fn(),
   reviveAndReserve: jest.fn(),
+  // TASK-627: ORDER_RESERVATION_EXPIRY=release.
+  releaseReservation: jest.fn(),
   updatePaymentStatus: jest.fn(),
+  // TASK-620: who set the REFUNDED mark a correction would lift.
+  findLastPaymentMark: jest.fn(),
   // TASK-330: the payment seam — the order module reads the attempt it is told
   // about and writes the whole application in one go.
   findPaymentWithOrder: jest.fn(),
   applyPaymentOutcome: jest.fn(),
 };
 
-const cartRepositoryMock = {
-  findByUserId: jest.fn(),
-  // TASK-338: a guest's cart is found by the cookie token, not a user id.
-  findByToken: jest.fn(),
-};
+const cartRepositoryMock = createCartRepositoryMock();
 
 // TASK-338: GUEST_ORDER_TOKEN_TTL_DAYS and STORE_CLIENT_URL. Defaults to the
 // service's own fallback when a key is not seeded, mirroring ConfigService.
@@ -223,6 +235,8 @@ const mailOutboxServiceMock = {
   enqueueOrderConfirmation: jest.fn(),
   // TASK-335: the "your parcel is on its way" notice.
   enqueueOrderShipped: jest.fn(),
+  // TASK-352 (b): «оплату не отримано».
+  enqueueOrderPaymentExpired: jest.fn(),
 };
 
 /** Fake transaction client handed to the createFromCart afterCreate hook. */
@@ -527,6 +541,50 @@ describe('OrderService', () => {
         // TASK-103: createFromCart now also receives the in-transaction
         // afterCreate callback (mail-outbox enqueue) as a second argument.
         expect.any(Function),
+      );
+    });
+
+    it('recomputes the discount on the same subtotal the cart (and so the preview) shows (TASK-807)', async () => {
+      // The discount preview reads cart.totals.subtotal (CartEntity); checkout
+      // recomputes from the raw cart rows. Prices that float-multiply badly
+      // (0.07 × 3, 19.99 × 7) must still land on one number in both places.
+      const trickyCart: CartWithItems = {
+        ...cartWithItems,
+        items: [
+          {
+            ...cartWithItems.items[0],
+            quantity: 3,
+            product: {
+              ...cartWithItems.items[0].product,
+              price: { toString: () => '0.07' } as never,
+            },
+          },
+          {
+            ...cartWithItems.items[1],
+            quantity: 7,
+            product: {
+              ...cartWithItems.items[1].product,
+              price: { toString: () => '19.99' } as never,
+            },
+          },
+        ],
+      };
+      const discountDto: CreateOrderDto = { shippingAddress: address, discountCode: 'SUMMER10' };
+      cartRepositoryMock.findByUserId.mockResolvedValue(trickyCart);
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+      discountServiceMock.computeDiscount.mockResolvedValue({
+        discount: { id: 'd1', code: 'SUMMER10' },
+        amount: '3.00',
+      });
+
+      await service.createOrder(userActor, discountDto);
+
+      const previewSubtotal = CartEntity.fromPrisma(trickyCart).totals.subtotal;
+      expect(previewSubtotal).toBe('140.14');
+      expect(discountServiceMock.computeDiscount).toHaveBeenCalledWith(
+        'SUMMER10',
+        previewSubtotal,
+        USER_ID,
       );
     });
 
@@ -1238,6 +1296,79 @@ describe('OrderService', () => {
     });
   });
 
+  // ─── updateStatus — shipping without a confirmed payment (TASK-788) ─────────
+  // Decision B-1: shipping an online-paid order whose money has not arrived is
+  // allowed — but it must leave a trace, so "why did we send this" has an
+  // answer a month later. The note is decided from the server's own read of the
+  // payment, not from what the client claims.
+
+  describe('updateStatus — shipping without a confirmed payment (TASK-788)', () => {
+    const seed = (current: Partial<OrderWithItems>) => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PROCESSING, ...current }),
+      );
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, ...current }),
+      );
+    };
+    const optionsPassed = () =>
+      orderRepositoryMock.updateStatus.mock.calls[0][5] as { note?: OrderHistoryNote };
+
+    it.each([PaymentStatus.PENDING, PaymentStatus.FAILED])(
+      'notes SHIPPED_UNPAID on an ONLINE order whose payment is %s',
+      async (paymentStatus) => {
+        seed({ paymentMethod: PaymentMethod.ONLINE, paymentStatus });
+
+        await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID, {
+          confirmUnpaidShipment: true,
+        });
+
+        expect(optionsPassed().note).toBe(OrderHistoryNote.SHIPPED_UNPAID);
+      },
+    );
+
+    it('notes it from the payment state even when the client sent no confirmation', async () => {
+      seed({ paymentMethod: PaymentMethod.ONLINE, paymentStatus: PaymentStatus.PENDING });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+      expect(optionsPassed().note).toBe(OrderHistoryNote.SHIPPED_UNPAID);
+    });
+
+    it.each([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED])(
+      'writes no note when the money arrived (%s) — even if the client asked to confirm',
+      async (paymentStatus) => {
+        seed({ paymentMethod: PaymentMethod.ONLINE, paymentStatus });
+
+        await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID, {
+          confirmUnpaidShipment: true,
+        });
+
+        expect(optionsPassed().note).toBeUndefined();
+      },
+    );
+
+    it('writes no note for cash on delivery — unpaid at shipment is the normal case', async () => {
+      seed({ paymentMethod: PaymentMethod.ON_DELIVERY, paymentStatus: PaymentStatus.PENDING });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.SHIPPED, ADMIN_ID);
+
+      expect(optionsPassed().note).toBeUndefined();
+    });
+
+    it('writes no note for a move that is not a shipment', async () => {
+      seed({
+        status: OrderStatus.CONFIRMED,
+        paymentMethod: PaymentMethod.ONLINE,
+        paymentStatus: PaymentStatus.PENDING,
+      });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.PROCESSING, ADMIN_ID);
+
+      expect(optionsPassed().note).toBeUndefined();
+    });
+  });
+
   // ─── updateStatus — product cache eviction on pre-shipment boundary (TASK-254) ─
   // A plain status transition that crosses the pre-shipment boundary changes the
   // affected products' DERIVED reservedQty/physicalQty (via getReservedQtyByProductId)
@@ -1336,6 +1467,142 @@ describe('OrderService', () => {
   });
 
   // ─── adminUpdatePaymentStatus (admin) (TASK-151) ──────────────────────────────
+  // ─── TASK-620: correcting a mistaken REFUNDED mark (decision B-11 №7) ───────
+  // REFUNDED stays terminal for FACTS (rule 4). The one exception is an
+  // operator's own typo: a REFUNDED the operator set may be corrected back to
+  // PAID / PARTIALLY_REFUNDED, under its own key, with a reason. A REFUNDED the
+  // provider reported (LiqPay `reversed`, changedBy null) is a fact about money
+  // and nobody lifts it.
+
+  describe('adminCorrectRefundedPayment (TASK-620)', () => {
+    const refundedOrder = () =>
+      makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: PaymentStatus.REFUNDED });
+
+    it.each([PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED])(
+      'corrects an operator-set REFUNDED to %s, guarded on REFUNDED still holding',
+      async (target) => {
+        orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+        orderRepositoryMock.findLastPaymentMark.mockResolvedValue({ changedBy: 'admin-uuid-7' });
+        orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
+          makeOrder({ status: OrderStatus.CANCELLED, paymentStatus: target }),
+        );
+
+        const result = await service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          target,
+          'Помилково натиснув «Кошти повернено»',
+          ADMIN_ID,
+        );
+
+        expect(orderRepositoryMock.findLastPaymentMark).toHaveBeenCalledWith(
+          'order-uuid-1',
+          PaymentStatus.REFUNDED,
+        );
+        expect(orderRepositoryMock.updatePaymentStatus).toHaveBeenCalledWith(
+          'order-uuid-1',
+          target,
+          ADMIN_ID,
+          { expectedFrom: PaymentStatus.REFUNDED },
+        );
+        expect(result.paymentStatus).toBe(target);
+      },
+    );
+
+    it('refuses to lift a REFUNDED the provider reported (409), writing nothing', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+      orderRepositoryMock.findLastPaymentMark.mockResolvedValue({ changedBy: null });
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PAID,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_CORRECTION_PROVIDER_REFUND },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('refuses when no REFUNDED mark is on record at all (409)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+      orderRepositoryMock.findLastPaymentMark.mockResolvedValue(null);
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PAID,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_CORRECTION_PROVIDER_REFUND },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('refuses on an order whose payment is not REFUNDED (409)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.DELIVERED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PARTIALLY_REFUNDED,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('refuses a target other than PAID / PARTIALLY_REFUNDED (409)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+      orderRepositoryMock.findLastPaymentMark.mockResolvedValue({ changedBy: 'admin-uuid-7' });
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PENDING,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+      expect(orderRepositoryMock.updatePaymentStatus).not.toHaveBeenCalled();
+    });
+
+    it('answers 409 when the payment moved between the read and the write', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(refundedOrder());
+      orderRepositoryMock.findLastPaymentMark.mockResolvedValue({ changedBy: 'admin-uuid-7' });
+      orderRepositoryMock.updatePaymentStatus.mockResolvedValue(null);
+
+      await expect(
+        service.adminCorrectRefundedPayment(
+          'order-uuid-1',
+          PaymentStatus.PAID,
+          'причина',
+          ADMIN_ID,
+        ),
+      ).rejects.toMatchObject({
+        response: { error: OrderErrorCode.PAYMENT_TRANSITION_INVALID },
+      });
+    });
+
+    it('throws NotFoundException for an unknown order', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(
+        service.adminCorrectRefundedPayment('missing', PaymentStatus.PAID, 'причина', ADMIN_ID),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
   // The admin sets payment status directly and independently of the order status.
 
   describe('adminUpdatePaymentStatus', () => {
@@ -1791,18 +2058,34 @@ describe('OrderService', () => {
       expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
 
-    it('belt-and-braces: does NOT restock a live order whose flag is somehow still set (no double credit)', async () => {
-      // Anomalous state (only reachable by edits outside the service): a live
-      // PENDING order with restockedAt set. Cancelling it must NOT credit stock.
+    // TASK-627: a live order with `restockedAt` set is no longer an anomaly — it
+    // is what ORDER_RESERVATION_EXPIRY=release leaves behind. Cancelling it goes
+    // through the same repository path as any pre-shipment cancel, which holds
+    // the "never credit twice" rule itself (it credits no stock for an order whose
+    // hold is already released) and gives the promo slot back.
+    it('cancels a released live order through cancelAndRestock (which credits nothing twice)', async () => {
       seed({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING, restockedAt });
 
       await service.updateStatus('order-uuid-1', OrderStatus.CANCELLED, ADMIN_ID);
 
-      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
-      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+      expect(orderRepositoryMock.cancelAndRestock).toHaveBeenCalledWith(
         'order-uuid-1',
-        OrderStatus.PENDING,
-        OrderStatus.CANCELLED,
+        ADMIN_ID,
+        expect.anything(),
+      );
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+    });
+
+    // A released order that the operator confirms must get its stock back first:
+    // the revive path re-reserves (or refuses with 409 if the stock is gone).
+    it('re-reserves a released live order when the operator advances it (PENDING → CONFIRMED)', async () => {
+      seed({ status: OrderStatus.PENDING, paymentStatus: PaymentStatus.PENDING, restockedAt });
+
+      await service.updateStatus('order-uuid-1', OrderStatus.CONFIRMED, ADMIN_ID);
+
+      expect(orderRepositoryMock.reviveAndReserve).toHaveBeenCalledWith(
+        'order-uuid-1',
+        OrderStatus.CONFIRMED,
         PaymentStatus.PENDING,
         ADMIN_ID,
         expect.anything(),
@@ -2077,11 +2360,13 @@ describe('OrderService', () => {
 
   // ─── Pre-shipment address correction (TASK-341) ──────────────────────────────
 
-  describe('adminUpdateShippingAddress', () => {
+  // TASK-786: the address is one more field of the same admin edit — one
+  // service call, one conditional write, one version check.
+  describe('adminUpdateDetails — shipping address', () => {
     const newAddress = { ...address, city: 'Львів' };
 
     beforeEach(() => {
-      orderRepositoryMock.updateShippingAddress.mockResolvedValue(makeOrder());
+      orderRepositoryMock.updateDetails.mockResolvedValue(makeOrder());
     });
 
     it.each([OrderStatus.PENDING, OrderStatus.CONFIRMED, OrderStatus.PROCESSING])(
@@ -2089,50 +2374,82 @@ describe('OrderService', () => {
       async (status) => {
         orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
 
-        await service.adminUpdateShippingAddress('order-uuid-1', newAddress);
+        await service.adminUpdateDetails('order-uuid-1', { shippingAddress: newAddress });
 
-        expect(orderRepositoryMock.updateShippingAddress).toHaveBeenCalledWith(
+        expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
           'order-uuid-1',
-          newAddress,
+          { shippingAddress: newAddress },
           expect.anything(),
         );
       },
     );
 
     it.each([OrderStatus.SHIPPED, OrderStatus.DELIVERED])(
-      'refuses once the parcel is with the courier (%s)',
+      'refuses once the parcel is with the courier (%s) — and writes nothing else either',
       async (status) => {
         orderRepositoryMock.findById.mockResolvedValue(makeOrder({ status }));
 
         // Editing the order would not move the parcel — it would only make the
         // record disagree with reality, and the record is what support reads.
+        // The waybill in the same request is refused with it: no half-applied edit.
         await expect(
-          service.adminUpdateShippingAddress('order-uuid-1', newAddress),
+          service.adminUpdateDetails('order-uuid-1', {
+            shippingAddress: newAddress,
+            trackingNumber: '20450000000001',
+          }),
         ).rejects.toThrow(ConflictException);
-        expect(orderRepositoryMock.updateShippingAddress).not.toHaveBeenCalled();
+        expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
       },
     );
 
-    it('rejects a stale edit before touching the address', async () => {
+    it('writes the address and the waybill in ONE guarded write with the caller’s version', async () => {
+      const expectedUpdatedAt = new Date('2026-07-28T10:15:30.000Z');
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PROCESSING, updatedAt: expectedUpdatedAt }),
+      );
+
+      await service.adminUpdateDetails(
+        'order-uuid-1',
+        { shippingAddress: newAddress, trackingNumber: '20450000000001', internalNotes: 'x' },
+        { expectedUpdatedAt },
+      );
+
+      // Was two calls — the address with the lock, then the waybill WITHOUT it,
+      // so a concurrent operator's waybill was silently overwritten.
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledTimes(1);
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-uuid-1',
+        { shippingAddress: newAddress, trackingNumber: '20450000000001', internalNotes: 'x' },
+        { expectedUpdatedAt },
+      );
+    });
+
+    it('rejects a stale edit before touching anything', async () => {
       orderRepositoryMock.findById.mockResolvedValue(
         makeOrder({ status: OrderStatus.PENDING, updatedAt: new Date('2026-07-28T10:20:00.000Z') }),
       );
 
       await expect(
-        service.adminUpdateShippingAddress('order-uuid-1', newAddress, {
-          expectedUpdatedAt: new Date('2026-07-28T10:15:30.000Z'),
-        }),
+        service.adminUpdateDetails(
+          'order-uuid-1',
+          { shippingAddress: newAddress, trackingNumber: '20450000000001' },
+          { expectedUpdatedAt: new Date('2026-07-28T10:15:30.000Z') },
+        ),
       ).rejects.toMatchObject({ response: { error: 'ORDER_STALE' } });
 
-      expect(orderRepositoryMock.updateShippingAddress).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
     });
 
-    it('throws NotFoundException when the order does not exist', async () => {
-      orderRepositoryMock.findById.mockResolvedValue(null);
-
-      await expect(service.adminUpdateShippingAddress('missing', newAddress)).rejects.toThrow(
-        NotFoundException,
+    it('sends the shipment notice only after the write succeeded', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, trackingNumber: null }),
       );
+      orderRepositoryMock.updateDetails.mockRejectedValue(new ConflictException('stale'));
+
+      await expect(
+        service.adminUpdateDetails('order-uuid-1', { trackingNumber: '20450000000001' }),
+      ).rejects.toThrow(ConflictException);
+      expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
     });
   });
 
@@ -2207,6 +2524,102 @@ describe('OrderService', () => {
 
       expect(mailOutboxServiceMock.enqueueOrderShipped).not.toHaveBeenCalled();
       expect(pinoLoggerMock.warn).toHaveBeenCalled();
+    });
+  });
+
+  // ─── «оплату не отримано» (TASK-352 (b), decision B-11 №2) ────────────────────
+
+  describe('notifyPaymentExpired', () => {
+    const cancelled = () => OrderEntity.fromPrisma(makeOrder({ status: OrderStatus.CANCELLED }));
+
+    it('enqueues one letter with the items and the way back to the shop', async () => {
+      configValues.set('STORE_CLIENT_URL', 'https://shop.example.com/');
+      orderRepositoryMock.findRecipient.mockResolvedValue({
+        email: 'buyer@example.com',
+        name: 'Olena',
+      });
+      const order = cancelled();
+
+      await service.notifyPaymentExpired(order);
+
+      expect(mailOutboxServiceMock.enqueueOrderPaymentExpired).toHaveBeenCalledTimes(1);
+      expect(mailOutboxServiceMock.enqueueOrderPaymentExpired).toHaveBeenCalledWith({
+        to: 'buyer@example.com',
+        customerName: 'Olena',
+        order: {
+          id: order.id,
+          items: order.items.map((item) => ({
+            name: item.productName,
+            quantity: item.quantity,
+            url: `https://shop.example.com/products/${item.productSlug}`,
+          })),
+        },
+        reorderUrl: 'https://shop.example.com/catalog',
+      });
+    });
+
+    it('omits the links on a dev box without STORE_CLIENT_URL', async () => {
+      orderRepositoryMock.findRecipient.mockResolvedValue({ email: 'buyer@example.com' });
+
+      await service.notifyPaymentExpired(cancelled());
+
+      const payload = mailOutboxServiceMock.enqueueOrderPaymentExpired.mock.calls[0][0];
+      expect(payload).not.toHaveProperty('reorderUrl');
+      expect(payload.order.items[0]).not.toHaveProperty('url');
+    });
+
+    it('sends nothing when the order has no email on file', async () => {
+      orderRepositoryMock.findRecipient.mockResolvedValue(null);
+
+      await service.notifyPaymentExpired(cancelled());
+
+      expect(mailOutboxServiceMock.enqueueOrderPaymentExpired).not.toHaveBeenCalled();
+    });
+
+    it('never throws — the cancellation already stands', async () => {
+      orderRepositoryMock.findRecipient.mockResolvedValue({ email: 'buyer@example.com' });
+      mailOutboxServiceMock.enqueueOrderPaymentExpired.mockRejectedValue(new Error('outbox down'));
+
+      await expect(service.notifyPaymentExpired(cancelled())).resolves.toBeUndefined();
+      expect(pinoLoggerMock.error).toHaveBeenCalled();
+    });
+  });
+
+  // ─── ORDER_RESERVATION_EXPIRY=release (TASK-627) ─────────────────────────────
+
+  describe('releaseExpiredReservation', () => {
+    const NOW = new Date('2026-09-24T12:00:00.000Z');
+
+    it('hands the deadline it acted on to the repository and reports a release', async () => {
+      orderRepositoryMock.releaseReservation.mockResolvedValue(true);
+
+      await expect(service.releaseExpiredReservation('order-uuid-1', NOW)).resolves.toBe(true);
+
+      expect(orderRepositoryMock.releaseReservation).toHaveBeenCalledWith('order-uuid-1', NOW);
+      expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'order.reservation_released', orderId: 'order-uuid-1' }),
+        expect.any(String),
+      );
+    });
+
+    it('reports false, and logs nothing as done, when the order moved first', async () => {
+      orderRepositoryMock.releaseReservation.mockResolvedValue(false);
+
+      await expect(service.releaseExpiredReservation('order-uuid-1', NOW)).resolves.toBe(false);
+
+      expect(pinoLoggerMock.info).not.toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'order.reservation_released' }),
+        expect.any(String),
+      );
+    });
+
+    it('never touches the order status — the order stays alive', async () => {
+      orderRepositoryMock.releaseReservation.mockResolvedValue(true);
+
+      await service.releaseExpiredReservation('order-uuid-1', NOW);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
+      expect(orderRepositoryMock.cancelAndRestock).not.toHaveBeenCalled();
     });
   });
 
@@ -2868,6 +3281,7 @@ describe('OrderService', () => {
         paymentStatus: PaymentStatus.PENDING,
         paidAt: null,
         reservationExpiresAt: new Date('2026-07-28T10:45:00.000Z'),
+        restockedAt: null,
         ...order,
       },
     });
@@ -2897,6 +3311,52 @@ describe('OrderService', () => {
 
       await expect(service.applyPaymentEvent(makeEvent())).rejects.toThrow(NotFoundException);
       expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+    });
+
+    // ── TASK-627: a success on an order whose hold was released ───────────────
+    // ORDER_RESERVATION_EXPIRY=release leaves a live order with `restockedAt` set.
+    // The plan names which of the two states it was decided against: the
+    // repository joins it to the conditional write (a release committed in
+    // between must not be paid over as if the stock were still held) and, for
+    // `released`, re-reserves the lines in the same transaction.
+    describe('stock hold on a success (TASK-627)', () => {
+      it('plans a re-reserve when the order’s hold was released', async () => {
+        seed(makePayment({ restockedAt: new Date('2026-09-24T11:00:00.000Z') }));
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().stockHold).toBe('released');
+        // The money and the confirmation land exactly as for a held order.
+        expect(lastPlan().paymentStatusChange).toEqual({
+          from: PaymentStatus.PENDING,
+          to: PaymentStatus.PAID,
+        });
+        expect(lastPlan().statusChange).toEqual({
+          from: OrderStatus.PENDING,
+          to: OrderStatus.CONFIRMED,
+        });
+      });
+
+      it('pins the hold as held when nothing was released', async () => {
+        seed(makePayment());
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().stockHold).toBe('held');
+      });
+
+      it('leaves the hold out for a success on a CANCELLED order (TASK-619 owns that)', async () => {
+        seed(
+          makePayment({
+            status: OrderStatus.CANCELLED,
+            restockedAt: new Date('2026-09-24T11:00:00.000Z'),
+          }),
+        );
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().stockHold).toBeUndefined();
+      });
     });
 
     // The read is unlocked; the repository writes only if these still hold, so a

@@ -16,6 +16,8 @@ import {
   orderConflictMessage,
   type ApiErrorLike,
 } from "@/features/order-status-update";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import { Button, Input, Label, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import {
@@ -55,8 +57,54 @@ interface OrderDetailsFormProps {
  * such an order answered 400 to a save of its internal notes: a field the
  * operator was editing, refused over a field they never touched. The mapper
  * omits an unchanged waybill, and the schema grandfathers it on screen.
+ *
+ * ── Without `orders:write` it is not a form (TASK-715) ────────────────────────
+ * The PATCH answers 403 to anyone else, so inputs and «Зберегти» would only be a
+ * way to lose typing. A read-only operator still needs the waybill to answer the
+ * phone, so the two values are shown as text instead.
+ *
+ * Neither branch renders while the grant set is still loading: `can()` answers
+ * false in that window for everyone, and choosing the text view on it flashed a
+ * read-only card at every writer (the owner too) before swapping in the form.
  */
 export function OrderDetailsForm({ order }: OrderDetailsFormProps) {
+  const { can, arePermissionsLoading } = useAuth();
+  if (arePermissionsLoading) return null;
+  if (!can(PERM.ordersWrite)) return <OrderDetailsReadOnly order={order} />;
+  return <OrderDetailsEditor order={order} />;
+}
+
+/** The same two values, as text — for a session that may read but not write. */
+function OrderDetailsReadOnly({ order }: OrderDetailsFormProps) {
+  const { trackingNumber, internalNotes } = mapOrderToDetailsValues(order);
+  return (
+    <dl className="flex flex-col gap-3 text-sm">
+      <div className="flex flex-col gap-1">
+        <dt className="font-medium text-foreground">
+          {dict.orders.trackingNumber}
+        </dt>
+        <dd className="text-muted-foreground">
+          {trackingNumber || dict.orders.detailsValueEmpty}
+        </dd>
+      </div>
+      <div className="flex flex-col gap-1">
+        <dt className="font-medium text-foreground">
+          {dict.orders.internalNotes}
+        </dt>
+        <dd className="flex flex-col gap-1">
+          <span className="whitespace-pre-wrap text-muted-foreground">
+            {internalNotes || dict.orders.detailsValueEmpty}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {dict.orders.internalNotesHint}
+          </span>
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
   const queryClient = useQueryClient();
   const updateDetails = useAdminOrderControllerUpdateDetails();
 

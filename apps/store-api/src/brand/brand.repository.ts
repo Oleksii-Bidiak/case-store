@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Brand, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
 
 /**
  * Parameters for the paginated admin brand list.
@@ -89,12 +90,7 @@ export class BrandRepository {
 
     if (categoryIds !== undefined) {
       where.products = {
-        some: {
-          isActive: true,
-          deletedAt: null,
-          categoryId: { in: categoryIds },
-          category: { isActive: true },
-        },
+        some: { ...PUBLIC_PRODUCT_WHERE, categoryId: { in: categoryIds } },
       };
     }
 

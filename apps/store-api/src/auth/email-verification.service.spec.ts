@@ -66,6 +66,8 @@ function tokenRow(overrides: Record<string, unknown> = {}) {
     expiresAt: new Date(Date.now() + 60_000),
     usedAt: null,
     createdAt: new Date(),
+    purpose: 'VERIFY',
+    previousEmail: null,
     user: activeUser,
     ...overrides,
   };
@@ -182,11 +184,23 @@ describe('EmailVerificationService (TASK-342)', () => {
       ['expired', tokenRow({ expiresAt: new Date(Date.now() - 1000) })],
       ['owned by a banned account', tokenRow({ user: { ...activeUser, isActive: false } })],
       ['owned by a deleted account', tokenRow({ user: { ...activeUser, deletedAt: new Date() } })],
+      // TASK-396: an address-change link is not a verification link, whatever it proves.
+      ['an EMAIL_CHANGE link', tokenRow({ purpose: 'EMAIL_CHANGE' })],
+      ['an EMAIL_CHANGE_REVERT link', tokenRow({ purpose: 'EMAIL_CHANGE_REVERT' })],
     ])('rejects a token that is %s, with one generic message', async (_label, row) => {
       authRepositoryMock.findEmailVerificationToken.mockResolvedValue(row);
 
       await expect(service.confirm('raw')).rejects.toThrow('Invalid or expired verification link');
       expect(authRepositoryMock.markEmailVerified).not.toHaveBeenCalled();
+    });
+
+    it('leaves an address-change link UNBURNED when it is pasted into the verify page (TASK-396)', async () => {
+      authRepositoryMock.findEmailVerificationToken.mockResolvedValue(
+        tokenRow({ purpose: 'EMAIL_CHANGE', email: 'new@example.com' }),
+      );
+
+      await expect(service.confirm('raw')).rejects.toBeInstanceOf(BadRequestException);
+      expect(authRepositoryMock.markEmailVerificationTokenUsed).not.toHaveBeenCalled();
     });
   });
 

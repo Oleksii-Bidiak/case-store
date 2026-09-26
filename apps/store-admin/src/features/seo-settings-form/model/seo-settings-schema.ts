@@ -47,7 +47,9 @@ function isHttpUrl(value: string): boolean {
  *
  * Text fields use the same blank-to-clear pattern as site-contact: an empty
  * string is valid (the field is simply not sent), a non-empty value must satisfy
- * its format. `noindexSite` is a boolean checkbox. `additionalSameAsLinks` is a
+ * its format. `noindexSite` has had no control since TASK-307 (it is a
+ * database-only emergency switch now): the form carries the loaded value and
+ * sends it back unchanged, so a save never flips it. `additionalSameAsLinks` is a
  * single newline-separated textarea (Decision 4) — validated line-by-line as a
  * URL, then split into an array by the mapper.
  */

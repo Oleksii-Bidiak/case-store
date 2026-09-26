@@ -23,6 +23,7 @@ export async function seedDiscounts(prisma: PrismaClient) {
         startsAt: d.startsAt ?? null,
         expiresAt: d.expiresAt ?? null,
         isActive: d.isActive,
+        showOnPromoPage: d.showOnPromoPage,
       },
       create: {
         code: d.code,
@@ -34,6 +35,7 @@ export async function seedDiscounts(prisma: PrismaClient) {
         startsAt: d.startsAt ?? null,
         expiresAt: d.expiresAt ?? null,
         isActive: d.isActive,
+        showOnPromoPage: d.showOnPromoPage,
       },
     });
   }

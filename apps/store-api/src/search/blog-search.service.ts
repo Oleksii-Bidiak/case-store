@@ -5,6 +5,7 @@ import { BlogRepository, type BlogPostWithCategory } from '../blog/blog.reposito
 import {
   MeiliClient,
   BLOG_POSTS_INDEX,
+  SEARCH_MAX_TOTAL_HITS,
   type BlogPostSearchDocument,
   type IndexSettings,
 } from './meili.client';
@@ -22,10 +23,17 @@ const REINDEX_BATCH = 100;
  * «павербнак» must not get typo-corrected products next to an empty article
  * list. `excerpt` is searchable but ranks after the title; `searchTerms` carries
  * the cross-script equivalents, last, for the same reason it does on products.
+ *
+ * `keywords` (TASK-558) — the admin's tags (TASK-437) — rank right after the
+ * title, exactly as they follow the name/article number on products: a tag is a
+ * deliberate statement of what the article is about, a word in the excerpt is
+ * not. A settings change reaches a live index through `npm run search:reindex`.
  */
 export const BLOG_POSTS_INDEX_SETTINGS: IndexSettings = {
-  searchableAttributes: ['title', 'excerpt', 'categoryName', 'searchTerms'],
-  filterableAttributes: ['categorySlug'],
+  searchableAttributes: ['title', 'keywords', 'excerpt', 'categoryName', 'searchTerms'],
+  // `listed` (TASK-537): filtered in the engine so its exact total matches what
+  // the hub shows — see `BlogPostSearchDocument.listed`.
+  filterableAttributes: ['categorySlug', 'listed'],
   sortableAttributes: ['publishedAt'],
   rankingRules: ['words', 'typo', 'proximity', 'attribute', 'sort', 'exactness'],
   typoTolerance: {
@@ -33,15 +41,29 @@ export const BLOG_POSTS_INDEX_SETTINGS: IndexSettings = {
     minWordSizeForTypos: { oneTypo: 4, twoTypos: 8 },
   },
   synonyms: UA_EN_SYNONYMS,
+  // The deepest result the hub's page list can reach (TASK-537).
+  pagination: { maxTotalHits: SEARCH_MAX_TOTAL_HITS },
 };
 
-/** One page of a blog index query. */
+/**
+ * One page of a blog index query. Addressed by page NUMBER, not offset
+ * (TASK-537): the engine only counts exactly in page/hitsPerPage mode, and the
+ * hub draws its numbered page list from that count.
+ */
 export interface BlogSearchQuery {
   q: string;
   /** Restrict to one category slug (the hub's chip row). */
   categorySlug?: string;
-  offset: number;
+  /** 1-based page number. */
+  page: number;
+  /** Posts per page. */
   limit: number;
+  /**
+   * Keep `listed = false` posts (the sitemap) or drop them (every list surface).
+   * Required, like on the repository reads (TASK-436): the engine must count the
+   * same set the re-read keeps, or the exact total is exact about the wrong set.
+   */
+  includeUnlisted: boolean;
 }
 
 /**
@@ -63,24 +85,33 @@ export interface BlogSearchQuery {
 const SLUG = /^[a-z0-9-]+$/;
 
 /**
- * Build the category clause, or nothing at all.
+ * Build the filter clauses, or nothing at all.
  *
- * The value lands inside a QUOTED Meilisearch filter expression, so a quote in
- * it rewrites the expression. `BlogPostListQueryDto` already rejects anything
- * that is not a slug; this is the second lock, because `BlogSearchQuery` is a
- * plain interface any future caller can satisfy without passing that DTO.
+ * Category: the value lands inside a QUOTED Meilisearch filter expression, so a
+ * quote in it rewrites the expression. `BlogPostListQueryDto` already rejects
+ * anything that is not a slug; this is the second lock, because
+ * `BlogSearchQuery` is a plain interface any future caller can satisfy without
+ * passing that DTO. A non-slug drops the clause rather than throwing: `search`
+ * is best-effort by contract, and a widened engine answer is still re-gated to
+ * PUBLISHED posts on hydration. It can never widen past that.
  *
- * A non-slug drops the clause rather than throwing: `search` is best-effort by
- * contract, and a widened engine answer is still re-gated to PUBLISHED posts on
- * hydration. It can never widen past that.
+ * Listing (TASK-537): unless the caller keeps unlisted posts, the engine drops
+ * them — so its exact total counts the set the re-read keeps.
  */
-function buildCategoryFilter(categorySlug?: string): string[] | undefined {
-  if (!categorySlug || !SLUG.test(categorySlug)) return undefined;
-  return [`categorySlug = "${categorySlug}"`];
+function buildFilter(query: BlogSearchQuery): string[] | undefined {
+  const clauses: string[] = [];
+  if (query.categorySlug && SLUG.test(query.categorySlug)) {
+    clauses.push(`categorySlug = "${query.categorySlug}"`);
+  }
+  if (!query.includeUnlisted) clauses.push('listed = true');
+  return clauses.length > 0 ? clauses : undefined;
 }
 
 @Injectable()
 export class BlogSearchService implements OnModuleInit {
+  /** The full reindex currently running, if any — see {@link reindexAll}. */
+  private reindexInFlight: Promise<number> | null = null;
+
   constructor(
     private readonly meili: MeiliClient,
     private readonly blogRepository: BlogRepository,
@@ -129,8 +160,21 @@ export class BlogSearchService implements OnModuleInit {
    * no longer knows about. Upsert-then-prune, never clear-then-refill, for the
    * reason spelled out on the product reindex (TASK-376): a failure part-way
    * through must not be able to empty a working index.
+   *
+   * Single-flight, like the product reindex (TASK-522): a call made while a
+   * pass is running joins it, so the boot reindex and the reindex script never
+   * run two passes whose prunes race.
    */
-  async reindexAll(): Promise<number> {
+  reindexAll(): Promise<number> {
+    if (!this.reindexInFlight) {
+      this.reindexInFlight = this.runReindex().finally(() => {
+        this.reindexInFlight = null;
+      });
+    }
+    return this.reindexInFlight;
+  }
+
+  private async runReindex(): Promise<number> {
     if (!this.meili.isConfigured()) return 0;
     await this.ensureIndex();
 
@@ -163,10 +207,16 @@ export class BlogSearchService implements OnModuleInit {
   }
 
   /**
-   * Ranked post ids for a query, or `null` when the engine is unconfigured, the
-   * request failed, or it matched nothing. `null` — not an empty page — is
-   * deliberate for the zero-hit case (TASK-376): an empty or stale index must
-   * fall through to Postgres rather than answer "no articles" over a full blog.
+   * Ranked post ids for one page of a query, with the engine's EXACT total
+   * (TASK-537), or `null` when the engine is unconfigured, the request failed,
+   * or it matched nothing at all. `null` — not an empty page — is deliberate for
+   * the zero-match case (TASK-376): an empty or stale index must fall through to
+   * Postgres rather than answer "no articles" over a full blog.
+   *
+   * Matches but no hits on the requested page is NOT that case: the engine has
+   * answered and the page is past the end, so it comes back as `ids: []` with
+   * the real total — a fallback there would put Postgres' different set and
+   * total under the same URL.
    */
   async search(query: BlogSearchQuery): Promise<BlogSearchHits | null> {
     const q = (query.q ?? '').trim();
@@ -175,15 +225,22 @@ export class BlogSearchService implements OnModuleInit {
     const result = await this.meili.search<BlogPostSearchDocument>(
       q,
       {
-        limit: query.limit,
-        offset: query.offset,
-        filter: buildCategoryFilter(query.categorySlug),
+        page: query.page,
+        hitsPerPage: query.limit,
+        filter: buildFilter(query),
       },
       BLOG_POSTS_INDEX,
     );
-    if (!result || result.hits.length === 0) return null;
+    if (!result) return null;
 
-    return { ids: result.hits.map((hit) => hit.id), total: result.estimatedTotalHits };
+    const ids = result.hits.map((hit) => hit.id);
+    // A page-mode answer always carries `totalHits`; should one ever lack it,
+    // count only what is provably there (never an estimate that overshoots).
+    const total =
+      result.totalHits ?? (ids.length > 0 ? (query.page - 1) * query.limit + ids.length : 0);
+    if (total === 0) return null;
+
+    return { ids, total };
   }
 
   /**
@@ -215,18 +272,24 @@ export class BlogSearchService implements OnModuleInit {
 /**
  * Build a blog search document from a post row. The body is NOT indexed: it is
  * sanitized HTML, so indexing it would put tag names and attribute values into
- * the searchable text; the title, excerpt and category are what a reader
- * actually searches by.
+ * the searchable text; the title, the admin's tags, the excerpt and the
+ * category are what a reader actually searches by.
  */
 function toDocument(post: BlogPostWithCategory): BlogPostSearchDocument {
+  const keywords = post.keywords ?? [];
   return {
     id: post.id,
     title: post.title,
+    keywords,
     excerpt: post.excerpt,
     slug: post.slug,
     categorySlug: post.category.slug,
     categoryName: post.category.name,
     publishedAt: post.publishedAt ? post.publishedAt.getTime() : 0,
-    searchTerms: extractSearchSynonymTerms(`${post.title} ${post.category.name}`),
+    listed: post.listed,
+    // Tags feed the cross-script terms too (TASK-558), as they do on products.
+    searchTerms: extractSearchSynonymTerms(
+      `${post.title} ${post.category.name} ${keywords.join(' ')}`,
+    ),
   };
 }

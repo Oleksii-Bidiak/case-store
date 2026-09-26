@@ -39,18 +39,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/AuthResponseEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "data": {
-                          "$ref": "#/components/schemas/AuthTokens"
-                        }
-                      }
-                    }
-                  ]
+                  "$ref": "#/components/schemas/AuthResponseEnvelope"
                 }
               }
             }
@@ -88,18 +77,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/AuthResponseEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "data": {
-                          "$ref": "#/components/schemas/AuthTokens"
-                        }
-                      }
-                    }
-                  ]
+                  "$ref": "#/components/schemas/AuthResponseEnvelope"
                 }
               }
             }
@@ -240,18 +218,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/AuthResponseEnvelope"
-                    },
-                    {
-                      "properties": {
-                        "data": {
-                          "$ref": "#/components/schemas/AuthTokens"
-                        }
-                      }
-                    }
-                  ]
+                  "$ref": "#/components/schemas/AuthResponseEnvelope"
                 }
               }
             }
@@ -361,6 +328,128 @@
           }
         },
         "summary": "Confirm an email address with a single-use token",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/email-change/request": {
+      "post": {
+        "operationId": "requestEmailChange",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestEmailChangeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Confirmation link sent to the new address; notice sent to the current one",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid address, or the address you already have"
+          },
+          "401": {
+            "description": "Not signed in, or the current password is wrong"
+          },
+          "409": {
+            "description": "The address belongs to another account"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Request a change of the sign-in email (requires the current password)",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/email-change/confirm": {
+      "post": {
+        "operationId": "confirmEmailChange",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailChangeTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The new address is the login; all sessions were signed out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, used, expired or superseded link"
+          },
+          "409": {
+            "description": "The address was registered by someone else meanwhile"
+          }
+        },
+        "summary": "Confirm a change of the sign-in email with the emailed token",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/auth/email-change/revert": {
+      "post": {
+        "operationId": "revertEmailChange",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmailChangeTokenDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The old address is the login again; all sessions were signed out",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid, used or expired link"
+          },
+          "409": {
+            "description": "The old address now belongs to another account"
+          }
+        },
+        "summary": "Undo a change of the sign-in email from the link sent to the old address",
         "tags": [
           "Auth"
         ]
@@ -891,6 +980,46 @@
           }
         ],
         "summary": "List active add-on services for the admin pickers (admin)",
+        "tags": [
+          "AddonServices"
+        ]
+      }
+    },
+    "/api/addon-services/admin/resolved-for-product/{productId}": {
+      "get": {
+        "operationId": "addonServiceControllerAdminResolveForProduct",
+        "parameters": [
+          {
+            "name": "productId",
+            "required": true,
+            "in": "path",
+            "description": "Product UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resolved add-ons",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResolvedAddonListResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Product not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Resolve the add-on services applicable to any non-deleted product (admin)",
         "tags": [
           "AddonServices"
         ]
@@ -1976,7 +2105,8 @@
                 "PAGE",
                 "BLOG_POST",
                 "PRODUCT",
-                "CATEGORY"
+                "CATEGORY",
+                "DEVICE_MODEL"
               ]
             }
           },
@@ -1988,6 +2118,17 @@
             "schema": {
               "maxLength": 255,
               "example": "stara-adresa",
+              "type": "string"
+            }
+          },
+          {
+            "name": "scope",
+            "required": false,
+            "in": "query",
+            "description": "Namespace of the dead address — for PAGE the page kind (LEGAL / INFO) whose route was requested. Omit for other entities.",
+            "schema": {
+              "maxLength": 32,
+              "example": "LEGAL",
               "type": "string"
             }
           }
@@ -2235,7 +2376,7 @@
             "access-token": []
           }
         ],
-        "summary": "Rebuild the product search index (admin)",
+        "summary": "Rebuild the product and blog search indexes (admin)",
         "tags": [
           "Search"
         ]
@@ -3572,7 +3713,7 @@
             "description": "Images reordered"
           },
           "400": {
-            "description": "Invalid payload (e.g. >1 primary)"
+            "description": "Invalid payload (>1 primary, or an image listed twice)"
           },
           "401": {
             "description": "Unauthenticated"
@@ -3581,7 +3722,7 @@
             "description": "Forbidden — admin access required"
           },
           "404": {
-            "description": "Product not found"
+            "description": "Product not found, or an image id that is not one of its images"
           }
         },
         "security": [
@@ -5037,6 +5178,49 @@
         ]
       }
     },
+    "/api/categories/{categoryId}/facet-ceiling": {
+      "get": {
+        "operationId": "attributeDefinitionControllerFacetCeiling",
+        "parameters": [
+          {
+            "name": "categoryId",
+            "required": true,
+            "in": "path",
+            "description": "Category UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FacetCeilingReportResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          },
+          "404": {
+            "description": "Category not found"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List categories of a subtree that declare more facets than the storefront shows",
+        "tags": [
+          "Attribute Definitions"
+        ]
+      }
+    },
     "/api/categories/{categoryId}/attribute-definitions/reorder": {
       "patch": {
         "operationId": "attributeDefinitionControllerReorder",
@@ -6313,6 +6497,65 @@
         ]
       }
     },
+    "/api/users/{id}/email": {
+      "post": {
+        "operationId": "changeUserEmail",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "User UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperatorEmailChangeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Address changed, left unverified; verification link sent; sessions ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid address, missing reason, or the same address"
+          },
+          "403": {
+            "description": "Forbidden — owner-only, or your own account"
+          },
+          "404": {
+            "description": "No customer with this id"
+          },
+          "409": {
+            "description": "The address belongs to another account"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Change a customer's sign-in email (owner-only; the new address must be verified)",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
     "/api/products/{productId}/reviews": {
       "post": {
         "operationId": "reviewControllerSubmit",
@@ -6533,8 +6776,38 @@
               "enum": [
                 "pending",
                 "approved",
-                "rejected"
+                "rejected",
+                "all"
               ]
+            }
+          },
+          {
+            "name": "visibility",
+            "required": false,
+            "in": "query",
+            "description": "Filter by the moderator’s account-wide hide (TASK-596): `visible` — authors nobody has withdrawn (the queue, default); `hidden` — rows of withdrawn accounts only; `all` — both",
+            "schema": {
+              "$ref": "#/components/schemas/ReviewAuthorVisibility"
+            }
+          },
+          {
+            "name": "productId",
+            "required": false,
+            "in": "query",
+            "description": "Only reviews of this product (TASK-601) — what the rating-abuse card links to for a burst of ratings on one product",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "name": "createdIp",
+            "required": false,
+            "in": "query",
+            "description": "Only reviews submitted from this address (TASK-601) — what the rating-abuse card links to for a run of 1★ from one IP. Rows written before addresses were recorded never match",
+            "schema": {
+              "example": "203.0.113.42",
+              "type": "string"
             }
           },
           {
@@ -11765,7 +12038,7 @@
             "name": "dateFrom",
             "required": false,
             "in": "query",
-            "description": "Include orders created on or after this ISO date",
+            "description": "Include orders created on or after the START of this calendar day in Kyiv (Europe/Kyiv)",
             "schema": {
               "example": "2026-01-01",
               "type": "string"
@@ -11775,7 +12048,7 @@
             "name": "dateTo",
             "required": false,
             "in": "query",
-            "description": "Include orders created on or before this ISO date",
+            "description": "Include orders created on or before the END of this calendar day in Kyiv (Europe/Kyiv) — dateFrom = dateTo = a day returns that whole day",
             "schema": {
               "example": "2026-12-31",
               "type": "string"
@@ -11890,6 +12163,16 @@
             "required": false,
             "in": "query",
             "description": "Filter to open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the order lost its reservation to the TTL worker (TASK-470). Deep-link target of the dashboard «Недоступні позиції» tile, and the same predicate it counts.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "paidAfterCancel",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders paid AFTER they were cancelled — still CANCELLED, payment PAID, with the PAID_AFTER_CANCEL history note (a late LiqPay success after the reservation lapsed). Deep-link target of the dashboard «Оплачено після скасування» tile and the same predicate it counts (TASK-352). The operator decides: revive the order or refund.",
             "schema": {
               "example": true,
               "type": "boolean"
@@ -12051,7 +12334,7 @@
             "name": "dateFrom",
             "required": false,
             "in": "query",
-            "description": "Include orders created on or after this ISO date",
+            "description": "Include orders created on or after the START of this calendar day in Kyiv (Europe/Kyiv)",
             "schema": {
               "example": "2026-01-01",
               "type": "string"
@@ -12061,7 +12344,7 @@
             "name": "dateTo",
             "required": false,
             "in": "query",
-            "description": "Include orders created on or before this ISO date",
+            "description": "Include orders created on or before the END of this calendar day in Kyiv (Europe/Kyiv) — dateFrom = dateTo = a day returns that whole day",
             "schema": {
               "example": "2026-12-31",
               "type": "string"
@@ -12154,6 +12437,16 @@
             "required": false,
             "in": "query",
             "description": "Filter to open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the order lost its reservation to the TTL worker (TASK-470). Deep-link target of the dashboard «Недоступні позиції» tile, and the same predicate it counts.",
+            "schema": {
+              "example": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "paidAfterCancel",
+            "required": false,
+            "in": "query",
+            "description": "Filter to orders paid AFTER they were cancelled — still CANCELLED, payment PAID, with the PAID_AFTER_CANCEL history note (a late LiqPay success after the reservation lapsed). Deep-link target of the dashboard «Оплачено після скасування» tile and the same predicate it counts (TASK-352). The operator decides: revive the order or refund.",
             "schema": {
               "example": true,
               "type": "boolean"
@@ -12519,6 +12812,65 @@
           }
         ],
         "summary": "Update order payment status (admin)",
+        "tags": [
+          "Admin Orders"
+        ]
+      }
+    },
+    "/api/admin/orders/{orderId}/payment-correction": {
+      "post": {
+        "operationId": "adminOrderControllerCorrectPaymentStatus",
+        "parameters": [
+          {
+            "name": "orderId",
+            "required": true,
+            "in": "path",
+            "description": "Order UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CorrectPaymentStatusDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Payment mark corrected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminOrderResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing reason, or a target other than PAID / PARTIALLY_REFUNDED"
+          },
+          "403": {
+            "description": "Forbidden — payments:correct required"
+          },
+          "404": {
+            "description": "Order not found"
+          },
+          "409": {
+            "description": "ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND — the REFUNDED mark was reported by the payment provider, not set by an operator; or ORDER_PAYMENT_TRANSITION_INVALID — the payment is not REFUNDED (or changed underneath the write)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Correct a mistaken REFUNDED payment mark (admin)",
         "tags": [
           "Admin Orders"
         ]
@@ -14047,27 +14399,64 @@
         "properties": {
           "accessToken": {
             "type": "string",
-            "description": "JWT access token",
-            "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-          },
-          "refreshToken": {
-            "type": "string",
-            "description": "JWT refresh token (set as HttpOnly cookie)",
+            "description": "JWT access token. The refresh token is set as an HttpOnly cookie, never sent here.",
             "example": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
           }
         },
         "required": [
-          "accessToken",
-          "refreshToken"
+          "accessToken"
         ]
       },
       "AuthResponseEnvelope": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AuthTokens"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "MessageResponse": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "example": "Logged out"
+          }
+        },
+        "required": [
+          "message"
+        ]
       },
       "MessageResponseEnvelope": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/MessageResponse"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "PermissionEntryEntity": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "orders:read"
+          },
+          "label": {
+            "type": "string",
+            "example": "Переглядати замовлення"
+          }
+        },
+        "required": [
+          "key",
+          "label"
+        ]
       },
       "EffectivePermissionsEntity": {
         "type": "object",
@@ -14100,13 +14489,21 @@
             "items": {
               "type": "string"
             }
+          },
+          "entries": {
+            "description": "The same keys with their Ukrainian catalogue labels, in catalogue (zone) order — for the caller’s own profile screen (TASK-725). A key missing from the catalogue is labelled with the key itself.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionEntryEntity"
+            }
           }
         },
         "required": [
           "role",
           "isOwner",
           "isAdmin",
-          "permissions"
+          "permissions",
+          "entries"
         ]
       },
       "PermissionsResponseEnvelope": {
@@ -14258,6 +14655,39 @@
           "token": {
             "type": "string",
             "description": "The single-use verification token from the emailed link",
+            "example": "a1b2c3d4e5f6..."
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "RequestEmailChangeDto": {
+        "type": "object",
+        "properties": {
+          "newEmail": {
+            "type": "string",
+            "description": "The address to sign in with from now on. Nothing changes until the link sent to it is clicked.",
+            "example": "new-address@example.com",
+            "maxLength": 254
+          },
+          "currentPassword": {
+            "type": "string",
+            "description": "The password currently on the account — a session alone is not enough",
+            "example": "OldP@ssw0rd"
+          }
+        },
+        "required": [
+          "newEmail",
+          "currentPassword"
+        ]
+      },
+      "EmailChangeTokenDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "The single-use token from the emailed link",
             "example": "a1b2c3d4e5f6..."
           }
         },
@@ -14446,7 +14876,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "description": "Cart unique identifier",
+            "description": "Cart unique identifier. An empty string while the cart has not been saved yet — a read never creates one (TASK-776); the first added item does.",
             "example": "550e8400-e29b-41d4-a716-446655440000"
           },
           "userId": {
@@ -14494,7 +14924,14 @@
       },
       "CartResponseEnvelope": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CartEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
       },
       "AddToCartDto": {
         "type": "object",
@@ -14508,7 +14945,8 @@
             "type": "number",
             "description": "Quantity to add (1-99)",
             "example": 1,
-            "default": 1
+            "minimum": 1,
+            "maximum": 99
           }
         },
         "required": [
@@ -14522,7 +14960,9 @@
           "quantity": {
             "type": "number",
             "description": "New quantity for the cart item (1-99)",
-            "example": 3
+            "example": 3,
+            "minimum": 1,
+            "maximum": 99
           }
         },
         "required": [
@@ -15677,6 +16117,11 @@
             "type": "string",
             "description": "The current live slug the old address permanently redirects to",
             "example": "nova-adresa"
+          },
+          "newScope": {
+            "type": "string",
+            "description": "Namespace of the live address — for PAGE the page kind (LEGAL / INFO) whose route serves newSlug. Absent for single-namespace entities.",
+            "example": "INFO"
           }
         },
         "required": [
@@ -16261,10 +16706,16 @@
             "type": "number",
             "description": "Number of products re-indexed",
             "example": 128
+          },
+          "blogPosts": {
+            "type": "number",
+            "description": "Number of published blog posts re-indexed",
+            "example": 12
           }
         },
         "required": [
-          "indexed"
+          "indexed",
+          "blogPosts"
         ]
       },
       "ReindexResponseEnvelope": {
@@ -17557,6 +18008,67 @@
           "sortOrder"
         ]
       },
+      "DeviceModelListItemEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Device model unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "deviceBrandId": {
+            "type": "string",
+            "description": "Owning device brand ID",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Device model name",
+            "example": "iPhone 15 Pro"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL-friendly slug",
+            "example": "iphone-15-pro"
+          }
+        },
+        "required": [
+          "id",
+          "deviceBrandId",
+          "name",
+          "slug"
+        ]
+      },
+      "DeviceBrandListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Active device brands",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceBrandEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "DeviceModelListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Active device models (id, brand, name, slug)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeviceModelListItemEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "DeviceModelEntity": {
         "type": "object",
         "properties": {
@@ -17627,36 +18139,6 @@
           "name",
           "slug",
           "isActive"
-        ]
-      },
-      "DeviceBrandListResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "description": "Active device brands",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DeviceBrandEntity"
-            }
-          }
-        },
-        "required": [
-          "data"
-        ]
-      },
-      "DeviceModelListResponse": {
-        "type": "object",
-        "properties": {
-          "data": {
-            "description": "Active device models",
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/DeviceModelEntity"
-            }
-          }
-        },
-        "required": [
-          "data"
         ]
       },
       "DeviceBrandResponseEnvelope": {
@@ -18055,6 +18537,74 @@
             "example": {
               "id": "550e8400-e29b-41d4-a716-446655440000"
             }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "FacetCeilingCategoryEntity": {
+        "type": "object",
+        "properties": {
+          "categoryId": {
+            "type": "string",
+            "description": "Category UUID",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "categoryName": {
+            "type": "string",
+            "description": "Category name",
+            "example": "Зарядки"
+          },
+          "facetCount": {
+            "type": "number",
+            "description": "How many facets the category declares (own + inherited)",
+            "example": 7
+          },
+          "overflowLabels": {
+            "description": "Labels of the facets past the ceiling in template order — the ones the storefront drops first when every facet has values (an ACTIVE facet is still always offered)",
+            "example": [
+              "Комплектація"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "categoryId",
+          "categoryName",
+          "facetCount",
+          "overflowLabels"
+        ]
+      },
+      "FacetCeilingReportEntity": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Most facets the storefront offers per category (MAX_SPEC_FACETS)",
+            "example": 6
+          },
+          "categories": {
+            "description": "Categories of the subtree over the ceiling; empty when none is",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FacetCeilingCategoryEntity"
+            }
+          }
+        },
+        "required": [
+          "limit",
+          "categories"
+        ]
+      },
+      "FacetCeilingReportResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FacetCeilingReportEntity"
           }
         },
         "required": [
@@ -18681,7 +19231,14 @@
       },
       "WishlistResponseEnvelope": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WishlistEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
       },
       "AddToWishlistDto": {
         "type": "object",
@@ -19237,10 +19794,33 @@
           },
           "phone": {
             "type": "string",
-            "description": "User phone number. Stored normalised, as digits only.",
-            "example": "+380991234567"
+            "description": "User phone number: 9 to 15 digits, any country code, separators allowed. Stored normalised, as digits only. Omit the field to leave the number unchanged; send `null` (or an empty string) to REMOVE it. Anything else that is not a dialable number — e.g. `----------` — is refused with 400, never stored as empty.",
+            "example": "+380991234567",
+            "nullable": true
           }
         }
+      },
+      "OperatorEmailChangeDto": {
+        "type": "object",
+        "properties": {
+          "newEmail": {
+            "type": "string",
+            "description": "The customer’s new address. It is NOT marked verified — a verification link is sent to it.",
+            "example": "new-address@example.com",
+            "maxLength": 254
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the address is being changed — who asked and how they were identified",
+            "example": "Клієнт телефонував 24.09, втратив доступ до пошти; звірили номер замовлення",
+            "minLength": 5,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "newEmail",
+          "reason"
+        ]
       },
       "ReviewReplyEntity": {
         "type": "object",
@@ -19518,6 +20098,15 @@
           }
         }
       },
+      "ReviewHiddenReason": {
+        "type": "string",
+        "enum": [
+          "BAN",
+          "MODERATOR",
+          "DELETED"
+        ],
+        "description": "Why the author’s contribution was withdrawn — BAN (account switched off; lifted by the un-ban), MODERATOR (lifted only by a moderator’s restore), DELETED (account soft-deleted). Null when not withdrawn"
+      },
       "AdminReviewEntity": {
         "type": "object",
         "properties": {
@@ -19583,6 +20172,29 @@
             "description": "Whether this rating counts toward the product's average",
             "example": true
           },
+          "hiddenAt": {
+            "type": "string",
+            "description": "When the author’s contribution was withdrawn; null when it was not",
+            "format": "date-time",
+            "nullable": true,
+            "example": null
+          },
+          "hiddenReason": {
+            "description": "Why the author’s contribution was withdrawn — BAN (account switched off; lifted by the un-ban), MODERATOR (lifted only by a moderator’s restore), DELETED (account soft-deleted). Null when not withdrawn",
+            "nullable": true,
+            "example": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReviewHiddenReason"
+              }
+            ]
+          },
+          "createdIp": {
+            "type": "string",
+            "description": "Address the review was submitted from; null when unknown (rows older than the column). Admin projection only",
+            "nullable": true,
+            "example": "203.0.113.42"
+          },
           "userEmail": {
             "type": "string",
             "description": "Author email address",
@@ -19610,6 +20222,9 @@
           "reply",
           "textStatus",
           "ratingVisible",
+          "hiddenAt",
+          "hiddenReason",
+          "createdIp",
           "userEmail",
           "productName",
           "productSku"
@@ -19733,6 +20348,14 @@
         },
         "required": [
           "data"
+        ]
+      },
+      "ReviewAuthorVisibility": {
+        "type": "string",
+        "enum": [
+          "visible",
+          "hidden",
+          "all"
         ]
       },
       "BulkReviewModerationDto": {
@@ -21278,7 +21901,8 @@
           "content": {
             "type": "string",
             "description": "Page body as HTML (Tiptap output)",
-            "example": "<h2>Section</h2><p>Content…</p>"
+            "example": "<h2>Section</h2><p>Content…</p>",
+            "maxLength": 100000
           },
           "slug": {
             "type": "string",
@@ -21367,7 +21991,8 @@
           "content": {
             "type": "string",
             "description": "Page body as HTML (Tiptap output)",
-            "example": "<h2>Section</h2><p>Content…</p>"
+            "example": "<h2>Section</h2><p>Content…</p>",
+            "maxLength": 100000
           },
           "slug": {
             "type": "string",
@@ -21423,6 +22048,39 @@
             "example": 10
           }
         }
+      },
+      "BlogPostAuthorSummary": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Author id",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Author display name",
+            "example": "Ірина Ткач"
+          },
+          "role": {
+            "type": "string",
+            "description": "Short role shown under the name",
+            "example": "Редакторка гайдів",
+            "nullable": true
+          },
+          "bio": {
+            "type": "string",
+            "description": "Plain-text bio shown in the article author card",
+            "example": "Пише покрокові гайди про зарядки, павербанки й аудіо.",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "role",
+          "bio"
+        ]
       },
       "BlogPostCategorySummary": {
         "type": "object",
@@ -21491,8 +22149,18 @@
           },
           "authorName": {
             "type": "string",
-            "description": "Author display name",
+            "description": "Author display name (the byline)",
             "example": "Олег Пилипенко"
+          },
+          "author": {
+            "description": "The linked author with role and bio (TASK-554). Null only for a post with a blank byline.",
+            "nullable": true,
+            "type": "object",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BlogPostAuthorSummary"
+              }
+            ]
           },
           "readingMinutes": {
             "type": "number",
@@ -21591,6 +22259,7 @@
           "excerpt",
           "content",
           "authorName",
+          "author",
           "featured",
           "listed",
           "category",
@@ -21873,7 +22542,8 @@
           "content": {
             "type": "string",
             "description": "Post body as HTML (Tiptap output)",
-            "example": "<h2>Дизайн</h2><p>Текст…</p>"
+            "example": "<h2>Дизайн</h2><p>Текст…</p>",
+            "maxLength": 100000
           },
           "excerpt": {
             "type": "string",
@@ -21988,7 +22658,8 @@
           "content": {
             "type": "string",
             "description": "Post body as HTML (Tiptap output)",
-            "example": "<h2>Дизайн</h2><p>Текст…</p>"
+            "example": "<h2>Дизайн</h2><p>Текст…</p>",
+            "maxLength": 100000
           },
           "excerpt": {
             "type": "string",
@@ -24151,7 +24822,7 @@
           },
           "restockedAt": {
             "type": "string",
-            "description": "When reserved stock was auto-returned to inventory on cancellation (TASK-228), or null while the order still holds stock / was never restocked. Set once when a pre-shipment order is cancelled and cleared back to null if the order is revived.",
+            "description": "When reserved stock was auto-returned to inventory on cancellation (TASK-228), or null while the order still holds stock / was never restocked. Set once when a pre-shipment order is cancelled and cleared back to null if the order is revived. With ORDER_RESERVATION_EXPIRY=release (TASK-627) it is also set on a LIVE unpaid order whose reservation deadline passed (stock returned, order kept open) and cleared when a payment or the operator re-reserves the stock.",
             "format": "date-time",
             "nullable": true,
             "example": "2024-01-01T00:00:00.000Z"
@@ -24720,6 +25391,16 @@
             "nullable": true,
             "example": "550e8400-e29b-41d4-a716-446655440002"
           },
+          "note": {
+            "type": "string",
+            "description": "A flag on the row for an event the operator must see (TASK-932 / TASK-788): PAID_AFTER_CANCEL on a payment row — the money arrived after the order was cancelled; SHIPPED_UNPAID on a status row — shipped while the online payment was unconfirmed. Null on an ordinary row.",
+            "enum": [
+              "PAID_AFTER_CANCEL",
+              "SHIPPED_UNPAID"
+            ],
+            "nullable": true,
+            "example": null
+          },
           "changedAt": {
             "format": "date-time",
             "type": "string",
@@ -24736,6 +25417,7 @@
           "fromPaymentStatus",
           "toPaymentStatus",
           "changedBy",
+          "note",
           "changedAt"
         ]
       },
@@ -25108,6 +25790,11 @@
             "description": "The order's `updatedAt` as the client last read it. When supplied and no longer current, the request is rejected with 409 ORDER_STALE (another admin changed the order first). Omit for system-driven changes.",
             "format": "date-time",
             "example": "2026-07-28T10:15:30.000Z"
+          },
+          "confirmUnpaidShipment": {
+            "type": "boolean",
+            "description": "The operator confirmed shipping an ONLINE order whose payment is not confirmed yet (the admin dialog «Оплату не підтверджено — відправляти?»). Such a move is recorded in the order history with note SHIPPED_UNPAID — decided from the payment state, with or without this flag.",
+            "example": true
           }
         },
         "required": [
@@ -25163,6 +25850,38 @@
         },
         "required": [
           "paymentStatus"
+        ]
+      },
+      "PaymentCorrectionTarget": {
+        "type": "string",
+        "enum": [
+          "PAID",
+          "PARTIALLY_REFUNDED"
+        ],
+        "description": "What the mistaken REFUNDED mark should have been"
+      },
+      "CorrectPaymentStatusDto": {
+        "type": "object",
+        "properties": {
+          "paymentStatus": {
+            "description": "What the mistaken REFUNDED mark should have been",
+            "example": "PAID",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PaymentCorrectionTarget"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the mark is being corrected — required, stored in the action log",
+            "example": "Помилково натиснула «Кошти повернено» замість «Частково повернено»",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "paymentStatus",
+          "reason"
         ]
       },
       "ReturnItemEntity": {
@@ -25770,6 +26489,11 @@
             "description": "Whether the code is active",
             "example": true
           },
+          "showOnPromoPage": {
+            "type": "boolean",
+            "description": "Whether the code is published on the storefront «Акції» page / GET /discounts/active (TASK-731)",
+            "example": true
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -25795,6 +26519,7 @@
           "startsAt",
           "expiresAt",
           "isActive",
+          "showOnPromoPage",
           "createdAt",
           "updatedAt"
         ]
@@ -25927,6 +26652,12 @@
             "description": "Whether the code is active",
             "example": true,
             "default": true
+          },
+          "showOnPromoPage": {
+            "type": "boolean",
+            "description": "Publish the code on the storefront «Акції» page and in GET /discounts/active (TASK-731). An unpublished code is private but still applies when entered by code.",
+            "example": false,
+            "default": false
           }
         },
         "required": [
@@ -25987,6 +26718,12 @@
             "description": "Whether the code is active",
             "example": true,
             "default": true
+          },
+          "showOnPromoPage": {
+            "type": "boolean",
+            "description": "Publish the code on the storefront «Акції» page and in GET /discounts/active (TASK-731). An unpublished code is private but still applies when entered by code.",
+            "example": false,
+            "default": false
           }
         }
       },
@@ -26490,6 +27227,35 @@
           "operations"
         ]
       },
+      "RatingAbuseSignalsDto": {
+        "type": "object",
+        "properties": {
+          "productIds": {
+            "description": "Products with more than 10 ratings in the last hour",
+            "example": [
+              "3f2b8c1e-0d6a-4d7e-9b1a-2c4e6f8a0b1c"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "createdIps": {
+            "description": "Addresses behind 3 or more 1★ ratings in the last 24 hours, not counting rows on the products listed above (one abuser on one product is one situation, not two)",
+            "example": [
+              "203.0.113.42"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "productIds",
+          "createdIps"
+        ]
+      },
       "NeedsActionDto": {
         "type": "object",
         "properties": {
@@ -26523,10 +27289,23 @@
             "description": "Things that look like rating abuse: products with more than 10 ratings in the last hour, plus IP addresses behind 3 or more 1★ ratings in the last 24 hours",
             "example": 2
           },
+          "ratingAbuseSignals": {
+            "description": "The flagged rating-abuse situations by name (TASK-601) — what the card links to. `ratingAbuse` is the sum of the two list lengths",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RatingAbuseSignalsDto"
+              }
+            ]
+          },
           "unavailableItems": {
             "type": "number",
             "description": "Open orders holding at least one line that can no longer be supplied — the product is deleted, unpublished or oversold, or the reservation TTL released the order (TASK-470)",
             "example": 3
+          },
+          "paidAfterCancel": {
+            "type": "number",
+            "description": "Orders paid AFTER they were cancelled — still CANCELLED, payment PAID, history note PAID_AFTER_CANCEL (a late LiqPay success after the reservation lapsed). The operator decides: revive the order or refund (TASK-352)",
+            "example": 0
           }
         },
         "required": [
@@ -26536,7 +27315,9 @@
           "failedMails",
           "pendingOver48h",
           "ratingAbuse",
-          "unavailableItems"
+          "ratingAbuseSignals",
+          "unavailableItems",
+          "paidAfterCancel"
         ]
       },
       "NeedsActionResponse": {
@@ -26626,9 +27407,29 @@
           "data"
         ]
       },
+      "CsrfToken": {
+        "type": "object",
+        "properties": {
+          "csrfToken": {
+            "type": "string",
+            "example": "a1b2c3…",
+            "description": "Echo this in the x-csrf-token header"
+          }
+        },
+        "required": [
+          "csrfToken"
+        ]
+      },
       "CsrfTokenResponseEnvelope": {
         "type": "object",
-        "properties": {}
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CsrfToken"
+          }
+        },
+        "required": [
+          "data"
+        ]
       },
       "SubscribeDto": {
         "type": "object",

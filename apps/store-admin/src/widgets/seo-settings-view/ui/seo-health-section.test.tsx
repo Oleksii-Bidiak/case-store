@@ -157,6 +157,20 @@ describe("SeoHealthSection — noindex banner (TASK-269)", () => {
     expect(screen.queryByText(h.noindexOkLabel)).not.toBeInTheDocument();
   });
 
+  // TASK-718: the toggle the old advice pointed at was removed (TASK-307) —
+  // the banner must not send the operator to a control that does not exist.
+  it("tells the operator to call the developer, not to flip a removed toggle", async () => {
+    stubHealth();
+    renderWithProviders(
+      <SeoHealthSection settings={makeSettings({ noindexSite: true })} />,
+    );
+
+    const body = await screen.findByText(h.noindexWarningBody);
+    expect(body).toHaveTextContent(/зверніться до розробника/);
+    expect(body).toHaveTextContent(/у базі даних/);
+    expect(body).not.toHaveTextContent(/Приховати сайт/);
+  });
+
   it("renders the neutral visible line when noindexSite is false", async () => {
     stubHealth();
     renderWithProviders(

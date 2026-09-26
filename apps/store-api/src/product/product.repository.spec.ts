@@ -2,6 +2,7 @@ import { OrderStatus, SlugRedirectEntity } from '@prisma/client';
 import { ProductRepository } from './product.repository';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
+import { PUBLIC_PRODUCT_WHERE } from './product-visibility';
 
 // ─── Mock PrismaService ──────────────────────────────────────────────────────
 
@@ -112,6 +113,20 @@ describe('ProductRepository (soft-delete behaviour)', () => {
     });
   });
 
+  describe('findPublicById (TASK-781)', () => {
+    it('reads through the shared public predicate, so a draft answers like a missing id', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+
+      const result = await repository.findPublicById('product-1');
+
+      expect(result).toBeNull();
+      expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
+        where: { id: 'product-1', ...PUBLIC_PRODUCT_WHERE },
+        include: { brand: { select: { id: true, name: true, slug: true, logo: true } } },
+      });
+    });
+  });
+
   describe('findBySlug', () => {
     it('should exclude soft-deleted products', async () => {
       prismaMock.product.findFirst.mockResolvedValue(null);
@@ -136,6 +151,67 @@ describe('ProductRepository (soft-delete behaviour)', () => {
     });
   });
 
+  // ─── findBySkuIgnoringCase — the search article-number lookup (TASK-542) ─────
+  // A shopper typing `ip15-1` means `IP15-1`. The Postgres fallback's `contains`
+  // was already case-insensitive, so the exact-code pre-pass must be too, or the
+  // answer depends on whether Meilisearch is up.
+
+  describe('findBySkuIgnoringCase', () => {
+    it('returns the exact-case match without a second query', async () => {
+      const exact = { id: 'p-exact', sku: 'IP15-1' };
+      prismaMock.product.findFirst.mockResolvedValue(exact as never);
+
+      await expect(repository.findBySkuIgnoringCase('IP15-1')).resolves.toBe(exact);
+
+      expect(prismaMock.product.findFirst).toHaveBeenCalledWith({
+        where: { sku: 'IP15-1', deletedAt: null },
+      });
+      expect(prismaMock.product.findMany).not.toHaveBeenCalled();
+    });
+
+    it('finds IP15-1 for the query ip15-1', async () => {
+      const row = { id: 'p-1', sku: 'IP15-1' };
+      prismaMock.product.findFirst.mockResolvedValue(null);
+      prismaMock.product.findMany.mockResolvedValue([row] as never);
+
+      await expect(repository.findBySkuIgnoringCase('ip15-1')).resolves.toBe(row);
+
+      expect(prismaMock.product.findMany).toHaveBeenCalledWith({
+        where: { sku: { equals: 'ip15-1', mode: 'insensitive' }, deletedAt: null },
+        take: 2,
+      });
+    });
+
+    it('answers null when the code names two positions that differ only by case', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+      prismaMock.product.findMany.mockResolvedValue([
+        { id: 'p-1', sku: 'AB-1' },
+        { id: 'p-2', sku: 'ab-1' },
+      ] as never);
+
+      await expect(repository.findBySkuIgnoringCase('Ab-1')).resolves.toBeNull();
+    });
+
+    it('answers null when nothing matches', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+      prismaMock.product.findMany.mockResolvedValue([]);
+
+      await expect(repository.findBySkuIgnoringCase('zz-9')).resolves.toBeNull();
+    });
+
+    it('escapes LIKE metacharacters so the code is matched literally', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+      prismaMock.product.findMany.mockResolvedValue([]);
+
+      await repository.findBySkuIgnoringCase('ab_1%\\x');
+
+      expect(prismaMock.product.findMany).toHaveBeenCalledWith({
+        where: { sku: { equals: 'ab\\_1\\%\\\\x', mode: 'insensitive' }, deletedAt: null },
+        take: 2,
+      });
+    });
+  });
+
   // ─── findBySlugWithRelations — public detail read (TASK-145) ─────────────────
   // The public PDP endpoint must hide deactivated products: the default query
   // filters `isActive: true`. The `activeOnly: false` override (reserved for the
@@ -148,12 +224,25 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       await repository.findBySlugWithRelations('clear-case');
 
       const findFirstArgs = prismaMock.product.findFirst.mock.calls[0][0];
-      expect(findFirstArgs.where).toEqual({
-        slug: 'clear-case',
-        isActive: true,
-        category: { isActive: true },
-        deletedAt: null,
-      });
+      expect(findFirstArgs.where).toEqual({ slug: 'clear-case', ...PUBLIC_PRODUCT_WHERE });
+    });
+
+    it('lists only publicly visible sibling positions — a sibling in an inactive category is no variant (TASK-782)', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+
+      await repository.findBySlugWithRelations('clear-case');
+
+      const findFirstArgs = prismaMock.product.findFirst.mock.calls[0][0];
+      expect(findFirstArgs.include.group.include.positions.where).toEqual(PUBLIC_PRODUCT_WHERE);
+    });
+
+    it('keeps the sibling filter public in the admin preview — it previews what the storefront shows (TASK-782)', async () => {
+      prismaMock.product.findFirst.mockResolvedValue(null);
+
+      await repository.findBySlugWithRelations('clear-case', { activeOnly: false });
+
+      const findFirstArgs = prismaMock.product.findFirst.mock.calls[0][0];
+      expect(findFirstArgs.include.group.include.positions.where).toEqual(PUBLIC_PRODUCT_WHERE);
     });
 
     it('should omit BOTH active filters when activeOnly is false (admin preview)', async () => {
@@ -553,15 +642,23 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       });
 
       const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
+      // The full definition guard (filterable + facetable type, TASK-706) is
+      // pinned in product-list-where.spec.ts; here only the per-facet shape.
       expect(findManyArgs.where.AND).toEqual([
         {
           specValues: {
-            some: { value: { in: ['Силікон', 'TPU'] }, definition: { key: 'material' } },
+            some: {
+              value: { in: ['Силікон', 'TPU'] },
+              definition: expect.objectContaining({ key: 'material', isFilterable: true }),
+            },
           },
         },
         {
           specValues: {
-            some: { value: { in: ['Накладка'] }, definition: { key: 'case-type' } },
+            some: {
+              value: { in: ['Накладка'] },
+              definition: expect.objectContaining({ key: 'case-type', isFilterable: true }),
+            },
           },
         },
       ]);
@@ -609,12 +706,13 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       const result = await repository.findAll({ page: 1, limit: 20 });
 
-      // Sibling query is scoped to the page's groups, active and non-deleted.
+      // Sibling query is scoped to the page's groups and to what a shopper may
+      // see — including the category half, so neither a colour dot nor the
+      // «від X ₴» price comes from a position in a withdrawn category (TASK-782).
       const variantQuery = prismaMock.product.findMany.mock.calls[1][0];
       expect(variantQuery.where).toEqual({
         groupId: { in: ['grp-1'] },
-        isActive: true,
-        deletedAt: null,
+        ...PUBLIC_PRODUCT_WHERE,
       });
       expect(result.products[0].variantSiblings).toHaveLength(2);
       expect(result.products[0].variantSiblings?.[0]).not.toHaveProperty('groupId');
@@ -796,12 +894,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       expect(result).toBeNull();
       const findFirstArgs = prismaMock.product.findFirst.mock.calls[0][0];
-      expect(findFirstArgs.where).toEqual({
-        id: 'product-1',
-        isActive: true,
-        deletedAt: null,
-        category: { isActive: true },
-      });
+      expect(findFirstArgs.where).toEqual({ id: 'product-1', ...PUBLIC_PRODUCT_WHERE });
     });
 
     it('findManyForIndex rebuilds only the on-sale catalogue', async () => {
@@ -810,12 +903,48 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       await repository.findManyForIndex(0, 100);
 
       const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
-      expect(findManyArgs.where).toEqual({
-        isActive: true,
-        deletedAt: null,
-        category: { isActive: true },
-      });
+      expect(findManyArgs.where).toEqual(PUBLIC_PRODUCT_WHERE);
     });
+
+    it.each([
+      ['findOneForIndex', 'findFirst'],
+      ['findManyForIndex', 'findMany'],
+    ] as const)(
+      '%s carries the article number and keywords into the index source (TASK-522, TASK-558)',
+      async (method, prismaCall) => {
+        const row = {
+          id: 'product-1',
+          name: 'Чохол Spigen',
+          description: null,
+          price: { toString: () => '10' },
+          compareAtPrice: null,
+          slug: 'chokhol-spigen',
+          sku: 'SPG-IP15-CL',
+          keywords: ['ударостійкий'],
+          categoryId: 'cat-1',
+          brandId: null,
+          stock: 3,
+          isActive: true,
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          category: { name: 'Чохли' },
+          brand: null,
+          images: [],
+          deviceCompat: [],
+        };
+        prismaMock.product[prismaCall].mockResolvedValue(
+          (prismaCall === 'findMany' ? [row] : row) as never,
+        );
+
+        const result =
+          method === 'findOneForIndex'
+            ? await repository.findOneForIndex('product-1')
+            : (await repository.findManyForIndex(0, 100)).items[0];
+
+        expect(result?.sku).toBe('SPG-IP15-CL');
+        // TASK-558: the admin tags ride the same source into the document.
+        expect(result?.keywords).toEqual(['ударостійкий']);
+      },
+    );
 
     it('findIdsByCategoryIds still returns the ACTIVE products of a deactivated category', async () => {
       // These ids are the re-index work list, not a visibility query: they are
@@ -842,12 +971,39 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       await repository.findByIdsForCards(['p1']);
 
       const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
-      expect(findManyArgs.where).toEqual({
-        id: { in: ['p1'] },
-        isActive: true,
-        deletedAt: null,
-        category: { isActive: true },
-      });
+      expect(findManyArgs.where).toEqual({ id: { in: ['p1'] }, ...PUBLIC_PRODUCT_WHERE });
+    });
+
+    it('findByIdsForCards filters variant siblings through the public predicate too (TASK-782)', async () => {
+      prismaMock.product.findMany
+        .mockResolvedValueOnce([{ id: 'p1', groupId: 'grp-1' }])
+        .mockResolvedValueOnce([]);
+      prismaMock.review.groupBy.mockResolvedValue([]);
+      prismaMock.productImage.findMany.mockResolvedValue([]);
+
+      await repository.findByIdsForCards(['p1']);
+
+      const siblingArgs = prismaMock.product.findMany.mock.calls[1][0];
+      expect(siblingArgs.where).toEqual({ groupId: { in: ['grp-1'] }, ...PUBLIC_PRODUCT_WHERE });
+    });
+
+    // TASK-814: the card hydration used to be a character-for-character copy of
+    // the listing's private enrichProducts — a field added to one silently never
+    // reached search results, «Ви переглядали» or the manual carousels.
+    it('findByIdsForCards hydrates through the same enrichProducts pass as the listing (TASK-814)', async () => {
+      const rows = [{ id: 'p1', groupId: null }];
+      prismaMock.product.findMany.mockResolvedValueOnce(rows);
+      const enrichSpy = jest
+        .spyOn(
+          repository as unknown as { enrichProducts: (p: unknown[]) => Promise<unknown[]> },
+          'enrichProducts',
+        )
+        .mockResolvedValue([{ id: 'p1', hydrated: true }]);
+
+      const result = await repository.findByIdsForCards(['p1']);
+
+      expect(enrichSpy).toHaveBeenCalledWith(rows);
+      expect(result).toEqual([{ id: 'p1', hydrated: true }]);
     });
   });
 

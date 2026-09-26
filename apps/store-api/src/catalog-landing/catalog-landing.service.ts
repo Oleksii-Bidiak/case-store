@@ -2,22 +2,8 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CategoryRepository } from '../category/category.repository';
 import { DeviceRepository } from '../device/device.repository';
 import { DeviceModelEntity } from '../device/entities';
-import type { ProductListWhereParams } from '../product/product-list-where';
 import { CatalogLandingRepository } from './catalog-landing.repository';
 import { CompatLandingDetailEntity, CompatLandingPageEntity } from './entities';
-
-/**
- * The visibility scope every compatibility landing page is measured in — the
- * SAME two flags `ProductService.findAll` forces on a public read: live and
- * active products only (`isActive`), and none belonging to a category that was
- * withdrawn from sale (`categoryActiveOnly`, TASK-297).
- *
- * A module constant rather than an inline literal at two call sites, because
- * the list and the single-page check MUST measure the same thing: the moment
- * they disagree, either a page is published that renders empty or a page that
- * renders fine is missing from the sitemap.
- */
-const PUBLIC_SCOPE: ProductListWhereParams = { isActive: true, categoryActiveOnly: true };
 
 /**
  * CatalogLandingService — which compatibility landing pages exist, and what one
@@ -60,9 +46,14 @@ export class CatalogLandingService {
    * Four reads total, none of them per-pair: the compat aggregate, one batched
    * ancestor-chain CTE, one category read for the chains' links, one device-model
    * read for the pairs' models.
+   *
+   * Both the aggregate and the single-page count in {@link getCompatPage} are
+   * measured in the PUBLIC scope only (`PUBLIC_PRODUCT_WHERE` and its SQL twin,
+   * TASK-711) — the moment they disagree, either a page is published that
+   * renders empty or a page that renders fine is missing from the sitemap.
    */
   async getCompatPages(): Promise<CompatLandingPageEntity[]> {
-    const pairs = await this.landingRepository.countCompatPairs(PUBLIC_SCOPE);
+    const pairs = await this.landingRepository.countCompatPairs();
     if (pairs.length === 0) {
       return [];
     }

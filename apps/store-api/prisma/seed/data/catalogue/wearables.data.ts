@@ -1,3 +1,4 @@
+import { STORE_NAME } from '../../lib/store';
 import type { CatalogueEntry } from '../../types';
 
 /** Смарт-годинники, браслети та ремінці — 9 catalogue entries / 17 positions. */
@@ -12,7 +13,7 @@ export const wearables: CatalogueEntry[] = [
     sku: 'WCH-APL-S10',
     categorySlug: 'smart-watches',
     brandSlug: 'apple',
-    metaTitle: 'Купити Apple Watch Series 10 42 мм — ціна в Україні',
+    metaTitle: `Apple Watch Series 10 42 мм — ціна в Україні | ${STORE_NAME}`,
     metaDescription:
       'Apple Watch Series 10 42 мм: ширококутний OLED, датчик кисню, до 18 годин роботи. Офіційна гарантія.',
     specs: {

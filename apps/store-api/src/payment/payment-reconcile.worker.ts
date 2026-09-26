@@ -31,6 +31,21 @@ const POLL_GRACE_MINUTES = 2;
 const BATCH_SIZE = 50;
 
 /**
+ * What the reservation deadline DOES (TASK-627, owner decision 2026-09-24).
+ *
+ * - `cancel` (default) — the order is cancelled and its stock returned; the
+ *   buyer gets one «оплату не отримано» letter (TASK-352 b).
+ * - `release` — only the stock hold is given back (`restockedAt` stamped); the
+ *   order keeps its status, its payment attempts stay open, and no letter is
+ *   sent. A later payment re-reserves the stock if it is still there.
+ *
+ * Anything other than the exact string `release` means `cancel`: the env schema
+ * rejects other values at boot, and a fallback that silently stopped cancelling
+ * would be the worse surprise.
+ */
+export type ReservationExpiryMode = 'cancel' | 'release';
+
+/**
  * PaymentReconcileWorker — the safety net that makes online payment trustworthy.
  *
  * **This is not follow-up work.** LiqPay does not document whether or how often
@@ -48,7 +63,9 @@ const BATCH_SIZE = 50;
  *  2. **Expire** reservations whose deadline has passed with no payment:
  *     the attempts become EXPIRED and the order is cancelled through
  *     `OrderService`, which returns the reserved stock. Cash-on-delivery orders
- *     never have a deadline and so are never touched.
+ *     never have a deadline and so are never touched. With
+ *     ORDER_RESERVATION_EXPIRY=release (TASK-627) only the stock goes back —
+ *     the order and its attempts stay open (see {@link ReservationExpiryMode}).
  *
  * Registered via {@link SchedulerRegistry} rather than `@Cron` so the schedule
  * comes from `PAYMENT_RECONCILE_CRON` at runtime, and takes an injectable
@@ -59,6 +76,7 @@ const BATCH_SIZE = 50;
 export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
   private readonly cronExpression: string;
   private readonly autoCancelEnabled: boolean;
+  private readonly expiryMode: ReservationExpiryMode;
 
   constructor(
     private readonly paymentRepository: PaymentRepository,
@@ -76,6 +94,10 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
     // failure. Only the exact string 'false' disables it, so a typo does not
     // silently switch off stock recovery.
     this.autoCancelEnabled = this.config.get<string>('ORDER_AUTOCANCEL_UNPAID', 'true') !== 'false';
+    this.expiryMode =
+      this.config.get<string>('ORDER_RESERVATION_EXPIRY', 'cancel') === 'release'
+        ? 'release'
+        : 'cancel';
   }
 
   onModuleInit(): void {
@@ -92,6 +114,7 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
         event: 'payment.reconcile.scheduled',
         cron: this.cronExpression,
         autoCancelUnpaid: this.autoCancelEnabled,
+        reservationExpiry: this.expiryMode,
       },
       `Payment reconcile worker scheduled (${this.cronExpression})`,
     );
@@ -183,6 +206,11 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
 
     const now = this.clock.now();
     const due = await this.paymentRepository.findExpiredReservations(now, BATCH_SIZE);
+
+    if (this.expiryMode === 'release') {
+      return this.releaseReservations(due, now);
+    }
+
     let cancelled = 0;
 
     for (const order of due) {
@@ -191,7 +219,14 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
         // attempts EXPIRED is idempotent, so if the cancel below fails the next
         // tick finds the same order (still unpaid and pre-shipment) and retries.
         await this.paymentRepository.markExpiredByOrderId(order.id);
-        await this.orderService.updateStatus(order.id, OrderStatus.CANCELLED, null);
+        const cancelledOrder = await this.orderService.updateStatus(
+          order.id,
+          OrderStatus.CANCELLED,
+          null,
+        );
+        // TASK-352 (b): one «оплату не отримано» letter — reached only when the
+        // cancel above resolved; a cancel that threw skips it with the rest.
+        await this.orderService.notifyPaymentExpired(cancelledOrder);
 
         cancelled += 1;
         this.logger.info(
@@ -211,5 +246,52 @@ export class PaymentReconcileWorker implements OnModuleInit, OnModuleDestroy {
     }
 
     return cancelled;
+  }
+
+  /**
+   * `ORDER_RESERVATION_EXPIRY=release` (TASK-627): give each overdue order's
+   * stock back WITHOUT cancelling it.
+   *
+   * Goes through {@link OrderService.releaseExpiredReservation}, never a direct
+   * write, for the same reason the cancel does. Deliberately NOT done here,
+   * compared with the cancel branch:
+   *  - attempts are not marked EXPIRED — the order is still payable, and a
+   *    success that arrives later re-reserves the stock (or, if it is gone,
+   *    leaves the order in «Позиція недоступна» for the operator);
+   *  - no «оплату не отримано» letter — nothing was cancelled, so it would be
+   *    untrue.
+   *
+   * `false` from the service means the order was paid (or released) between the
+   * read above and the conditional write — nothing to do, and not an error.
+   */
+  private async releaseReservations(
+    due: { id: string; reservationExpiresAt: Date | null }[],
+    now: Date,
+  ): Promise<number> {
+    let released = 0;
+
+    for (const order of due) {
+      try {
+        const done = await this.orderService.releaseExpiredReservation(order.id, now);
+        if (!done) continue;
+
+        released += 1;
+        this.logger.info(
+          {
+            event: 'payment.reconcile.reservation_released',
+            orderId: order.id,
+            reservationExpiresAt: order.reservationExpiresAt,
+          },
+          'Unpaid order kept open after its reservation deadline; stock returned',
+        );
+      } catch (err) {
+        this.logger.error(
+          { event: 'payment.reconcile.release_failed', orderId: order.id, err },
+          'Could not release the stock of an order whose reservation expired',
+        );
+      }
+    }
+
+    return released;
   }
 }

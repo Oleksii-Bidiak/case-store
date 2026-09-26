@@ -55,7 +55,9 @@ export function ActiveFilterChips({
 }: ActiveFilterChipsProps) {
   // The facet list of the active category, for chip labels only (TASK-488).
   // Deduped by React Query with the sidebar's own call, and not fired at all
-  // until there is both a category and something selected to label.
+  // until there is both a category and something selected to label. The API
+  // caps this list at its facet ceiling but always keeps an ACTIVE facet in it
+  // (TASK-707), so every chip finds its label here and so does the sidebar.
   const { data: facetsData } = useCategoryControllerGetFilterableSpecs(
     categoryId ?? "",
     // The SAME params the sidebar sends (TASK-489) — the labels come free off

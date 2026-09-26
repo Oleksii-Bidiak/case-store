@@ -105,6 +105,8 @@ export class LiqPayAdapter implements PaymentProvider {
       result_url: params.resultUrl,
       server_url: params.callbackUrl,
       paytypes: this.paytypes,
+      // TASK-352 (a): after this the hosted page refuses payment itself.
+      ...(params.expiresAt ? { expired_date: toLiqPayDate(params.expiresAt) } : {}),
       ...(this.sandbox ? { sandbox: '1' } : {}),
     };
 
@@ -339,4 +341,13 @@ export class LiqPayAdapter implements PaymentProvider {
     }
     return this.privateKey;
   }
+}
+
+/**
+ * LiqPay's `expired_date` format (TASK-352): "YYYY-MM-DD HH:mm:ss" in UTC, as
+ * the checkout API documents it (docs/payments-liqpay.md §8). Seconds are
+ * truncated, never rounded up — a deadline must not move later.
+ */
+export function toLiqPayDate(instant: Date): string {
+  return instant.toISOString().slice(0, 19).replace('T', ' ');
 }

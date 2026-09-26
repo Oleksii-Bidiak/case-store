@@ -185,7 +185,10 @@ describe('PageService', () => {
 
       await service.create({ title: 'Privacy Policy', content: '<p>Hello</p>' });
 
-      expect(pageRepositoryMock.findBySlugAny).toHaveBeenCalledWith('privacy-policy');
+      expect(pageRepositoryMock.findBySlugAny).toHaveBeenCalledWith(
+        'privacy-policy',
+        PageKind.LEGAL,
+      );
       expect(pageRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ slug: 'privacy-policy', title: 'Privacy Policy' }),
       );
@@ -398,7 +401,10 @@ describe('PageService', () => {
       expect(pageRepositoryMock.update).toHaveBeenCalledWith(
         'page-uuid-1',
         expect.objectContaining({ slug: 'new-slug' }),
-        { oldSlug: 'privacy-policy', newSlug: 'new-slug' },
+        {
+          from: { kind: PageKind.LEGAL, slug: 'privacy-policy' },
+          to: { kind: PageKind.LEGAL, slug: 'new-slug' },
+        },
       );
     });
 
@@ -684,6 +690,93 @@ describe('PageService', () => {
         tags: ['pages', 'page:blog'],
         paths: ['/blog'],
       });
+    });
+
+    // ── TASK-566: a slug is unique per kind, not globally. ────────────────────
+
+    it('creates /info/delivery beside /legal/delivery — uniqueness is checked in the kind only', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockResolvedValue({ ...infoPage, slug: 'delivery' });
+
+      await service.create({
+        title: 'Доставка',
+        content: '<p>x</p>',
+        slug: 'delivery',
+        kind: PageKind.INFO,
+      });
+
+      expect(pageRepositoryMock.findBySlugAny).toHaveBeenCalledWith('delivery', PageKind.INFO);
+      expect(pageRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ slug: 'delivery', kind: PageKind.INFO }),
+      );
+    });
+
+    it('names the kind of the owning row in the conflict', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue({ ...infoPage, slug: 'delivery' });
+
+      await expect(
+        service.create({ title: 'x', content: '<p>x</p>', slug: 'delivery', kind: PageKind.INFO }),
+      ).rejects.toThrow('Slug "delivery" is already taken by an INFO page');
+    });
+
+    it('names the kind in a P2002 race conflict too', async () => {
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '7.0.0' }),
+      );
+
+      await expect(
+        service.create({ title: 'x', content: '<p>x</p>', slug: 'terms', kind: PageKind.LEGAL }),
+      ).rejects.toThrow('Slug "terms" is already taken by a LEGAL page');
+    });
+
+    it('checks the DESTINATION kind when a page changes kind but keeps its slug', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // LEGAL privacy-policy
+      pageRepositoryMock.findBySlugAny.mockResolvedValue({
+        ...infoPage,
+        id: 'other',
+        slug: 'privacy-policy',
+      });
+
+      await expect(service.update('page-uuid-1', { kind: PageKind.INFO })).rejects.toThrow(
+        'Slug "privacy-policy" is already taken by an INFO page',
+      );
+      expect(pageRepositoryMock.findBySlugAny).toHaveBeenCalledWith(
+        'privacy-policy',
+        PageKind.INFO,
+      );
+      expect(pageRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('records a kind move of a PUBLISHED page as a redirect between namespaces', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(mockPage); // LEGAL, PUBLISHED
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.update.mockResolvedValue({ ...mockPage, kind: PageKind.INFO });
+
+      await service.update('page-uuid-1', { kind: PageKind.INFO });
+
+      expect(pageRepositoryMock.update).toHaveBeenCalledWith(
+        'page-uuid-1',
+        expect.objectContaining({ kind: PageKind.INFO }),
+        {
+          from: { kind: PageKind.LEGAL, slug: 'privacy-policy' },
+          to: { kind: PageKind.INFO, slug: 'privacy-policy' },
+        },
+      );
+    });
+
+    it('records nothing for a HUB row — it has no address to redirect from', async () => {
+      pageRepositoryMock.findById.mockResolvedValue(hubPage); // HUB blog, PUBLISHED
+      pageRepositoryMock.findBySlugAny.mockResolvedValue(null);
+      pageRepositoryMock.update.mockResolvedValue({ ...hubPage, slug: 'promo' });
+
+      await service.update('page-uuid-4', { slug: 'promo' });
+
+      expect(pageRepositoryMock.update).toHaveBeenCalledWith(
+        'page-uuid-4',
+        expect.objectContaining({ slug: 'promo' }),
+        undefined,
+      );
     });
 
     it('purges BOTH surfaces when a published page changes kind', async () => {

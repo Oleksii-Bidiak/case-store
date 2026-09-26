@@ -33,13 +33,18 @@ function sumRefundedAmounts(
  * 1. the catalogue row is a tombstone (`deletedAt != null`);
  * 2. it is unpublished (`isActive = false`);
  * 3. it is oversold (`stock < 0`) after an inventory correction;
- * 4. this order's reservation was lifted by the TTL worker — `restockedAt` is
- *    set while the order still expects to be fulfilled. Stock is taken at
- *    creation, so "someone else took it" cannot happen on its own; it can only
- *    happen after the hold was released, which is exactly this case. Orders that
- *    are CANCELLED or REFUNDED are excluded: their stock came back BECAUSE they
- *    ended, and flagging them would bury the actionable ones under every
- *    cancelled order in the shop.
+ * 4. this order's stock hold was given back while the order is still expected
+ *    to be fulfilled — `restockedAt` is set on a status other than CANCELLED /
+ *    REFUNDED. Reachable only with ORDER_RESERVATION_EXPIRY=release (TASK-627):
+ *    the TTL worker then returns an unpaid order's units and leaves the order
+ *    open. The mark clears when the units are re-taken — by a late payment
+ *    (if the stock is still there) or by the operator moving the order on
+ *    (the revive path; 409 if it is gone). A payment that found the stock sold
+ *    keeps the mark: the money is recorded and the operator decides. In the
+ *    default `cancel` mode `restockedAt` is only ever set together with
+ *    CANCELLED, so this condition never fires. CANCELLED and REFUNDED orders
+ *    are excluded: their stock came back BECAUSE they ended, and flagging them
+ *    would bury the actionable ones under every cancelled order in the shop.
  *
  * Returns `undefined` — not `[]` — when this read did not join the availability
  * columns (every customer-facing path). Absent means "not measured"; an empty
@@ -346,7 +351,10 @@ export class OrderEntity {
     description:
       'When reserved stock was auto-returned to inventory on cancellation (TASK-228), ' +
       'or null while the order still holds stock / was never restocked. Set once when a ' +
-      'pre-shipment order is cancelled and cleared back to null if the order is revived.',
+      'pre-shipment order is cancelled and cleared back to null if the order is revived. ' +
+      'With ORDER_RESERVATION_EXPIRY=release (TASK-627) it is also set on a LIVE unpaid ' +
+      'order whose reservation deadline passed (stock returned, order kept open) and ' +
+      'cleared when a payment or the operator re-reserves the stock.',
     type: String,
     format: 'date-time',
     nullable: true,

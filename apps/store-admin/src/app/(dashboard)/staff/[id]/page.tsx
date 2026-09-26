@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { StaffDetailSkeleton, StaffDetailView } from "@/widgets";
+import { PERM } from "@/entities/permission";
+import { PermissionGate } from "@/entities/session";
 import { dict } from "@/shared/config";
 
 export const dynamic = "force-dynamic";
@@ -27,9 +29,17 @@ export default async function StaffDetailPage({
 }: StaffDetailPageProps) {
   const { id } = await params;
 
+  // TASK-639: one refusal for a manager who typed the URL, instead of the
+  // card's own queries each failing with 403 on screen.
   return (
-    <Suspense fallback={<StaffDetailSkeleton />}>
-      <StaffDetailView userId={id} />
-    </Suspense>
+    <PermissionGate
+      permission={PERM.staffRead}
+      title={dict.staff.forbidden}
+      hint={dict.staff.forbiddenHint}
+    >
+      <Suspense fallback={<StaffDetailSkeleton />}>
+        <StaffDetailView userId={id} />
+      </Suspense>
+    </PermissionGate>
   );
 }

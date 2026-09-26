@@ -11,6 +11,8 @@ function makePost(overrides: Partial<BlogPostView> = {}): BlogPostView {
     title: "iPhone 16 проти iPhone 15",
     excerpt: "Розбір камер, продуктивності та автономності.",
     author: "Олег Пилипенко",
+    authorRole: "Оглядач смартфонів і ноутбуків",
+    authorBio: "Пише порівняння й огляди флагманів.",
     date: "28 черв. 2026",
     publishedAt: "2026-06-28T09:00:00.000Z",
     read: "8 хв",
@@ -44,6 +46,28 @@ describe("BlogArticleView", () => {
     expect(screen.getByText(post.excerpt)).toBeInTheDocument();
     // Author shows in the head meta and again in the bio card.
     expect(screen.getAllByText(post.author).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders the author's own role and bio from the API (TASK-554)", () => {
+    renderWithProviders(<BlogArticleView post={post} related={related} />);
+
+    expect(
+      screen.getByText("Оглядач смартфонів і ноутбуків"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Пише порівняння й огляди флагманів."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows only the name when the author has no role or bio — no invented placeholder", () => {
+    const bare = makePost({ authorRole: null, authorBio: null });
+    const { container } = renderWithProviders(
+      <BlogArticleView post={bare} related={related} />,
+    );
+
+    expect(screen.getAllByText(bare.author).length).toBeGreaterThanOrEqual(2);
+    expect(container.textContent).not.toContain("Оглядач мобільної техніки");
+    expect(container.textContent).not.toContain("Оглядач смартфонів");
   });
 
   it("renders share controls and TOC entries derived from the body headings", () => {

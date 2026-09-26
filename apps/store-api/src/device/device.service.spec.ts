@@ -33,6 +33,7 @@ const deviceRepositoryMock = {
   createBrand: jest.fn(),
   updateBrand: jest.fn(),
   findModels: jest.fn(),
+  findPublicModels: jest.fn(),
   findModelById: jest.fn(),
   findModelBySlug: jest.fn(),
   findModelsByIds: jest.fn(),
@@ -135,16 +136,60 @@ describe('DeviceService', () => {
   });
 
   describe('getModels', () => {
-    it('lists active models scoped to a brand', async () => {
-      deviceRepositoryMock.findModels.mockResolvedValue({ models: [mockModel], total: 1 });
-      const query: DeviceModelListQueryDto = { deviceBrandId: 'brand-1' };
+    it('lists active models scoped to a brand through the light public read', async () => {
+      deviceRepositoryMock.findPublicModels.mockResolvedValue([mockModel]);
+      const query: DeviceModelListQueryDto = { deviceBrandId: 'brand-1', search: 'pro' };
 
       const result = await service.getModels(query);
 
-      expect(deviceRepositoryMock.findModels).toHaveBeenCalledWith(
-        expect.objectContaining({ deviceBrandId: 'brand-1', isActive: true }),
-      );
-      expect(result.data[0]).toMatchObject({ id: 'model-1', brandName: 'Apple' });
+      expect(deviceRepositoryMock.findPublicModels).toHaveBeenCalledWith({
+        limit: 200,
+        deviceBrandId: 'brand-1',
+        search: 'pro',
+      });
+      expect(deviceRepositoryMock.findModels).not.toHaveBeenCalled();
+      expect(result.data[0]).toEqual({
+        id: 'model-1',
+        deviceBrandId: 'brand-1',
+        name: 'iPhone 15 Pro',
+        slug: 'iphone-15-pro',
+      });
+    });
+
+    // TASK-702: the homepage ModelPicker and the catalog filter pull up to 200
+    // rows of this — the landing SEO copy must not ride along, even when the
+    // repository hands back a full row.
+    it('never serialises the compat-landing SEO fields on the public list', async () => {
+      deviceRepositoryMock.findPublicModels.mockResolvedValue([
+        {
+          ...mockModel,
+          metaTitle: 'Чохли для iPhone 15 Pro',
+          metaDescription: 'Опис',
+          description: 'Лід',
+        },
+      ]);
+
+      const result = await service.getModels({});
+
+      expect(Object.keys(result.data[0]).sort()).toEqual(['deviceBrandId', 'id', 'name', 'slug']);
+    });
+  });
+
+  describe('getModelsPaginated (admin)', () => {
+    it('keeps the SEO overrides on the admin list', async () => {
+      deviceRepositoryMock.findModels.mockResolvedValue({
+        models: [{ ...mockModel, metaTitle: 'T', metaDescription: 'D', description: 'L' }],
+        total: 1,
+      });
+
+      const result = await service.getModelsPaginated({});
+
+      expect(result.data[0]).toMatchObject({
+        metaTitle: 'T',
+        metaDescription: 'D',
+        description: 'L',
+        brandName: 'Apple',
+      });
     });
   });
 
@@ -173,6 +218,84 @@ describe('DeviceService', () => {
         expect.objectContaining({ slug: 'iphone-15-pro', deviceBrandId: 'brand-1' }),
       );
       expect(result).toMatchObject({ id: 'model-1', brandName: 'Apple' });
+    });
+  });
+
+  // TASK-699: `/catalog/<категорія>/<модель>` is a public, indexed address (TASK-490),
+  // so a model slug rename must leave a 308 behind — the same rule as a category
+  // rename (plan 147 §Design Decision 3): only a model that was visible BEFORE the
+  // write had a reachable URL worth redirecting.
+  describe('updateModel (slug rename → redirect ledger, TASK-699)', () => {
+    beforeEach(() => {
+      deviceRepositoryMock.findModelBySlug.mockResolvedValue(null);
+      deviceRepositoryMock.updateModel.mockResolvedValue(mockModel);
+    });
+
+    it('hands the repository the rename when an ACTIVE model changes its slug', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+
+      await service.updateModel('model-1', { slug: 'iphone-15-pro-new' });
+
+      expect(deviceRepositoryMock.updateModel).toHaveBeenCalledWith(
+        'model-1',
+        { slug: 'iphone-15-pro-new' },
+        { oldSlug: 'iphone-15-pro', newSlug: 'iphone-15-pro-new' },
+      );
+    });
+
+    it('still records it when the same write renames AND deactivates the model', async () => {
+      // The PRE-write snapshot decides: the old URL was reachable until this call.
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+
+      await service.updateModel('model-1', { slug: 'iphone-15-pro-new', isActive: false });
+
+      expect(deviceRepositoryMock.updateModel).toHaveBeenCalledWith(
+        'model-1',
+        { slug: 'iphone-15-pro-new', isActive: false },
+        { oldSlug: 'iphone-15-pro', newSlug: 'iphone-15-pro-new' },
+      );
+    });
+
+    it('records nothing for a model that was hidden — its URL never answered', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue({ ...mockModel, isActive: false });
+
+      await service.updateModel('model-1', { slug: 'iphone-15-pro-new' });
+
+      expect(deviceRepositoryMock.updateModel).toHaveBeenCalledWith(
+        'model-1',
+        { slug: 'iphone-15-pro-new' },
+        undefined,
+      );
+    });
+
+    it('records nothing when the slug is absent or unchanged', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+
+      await service.updateModel('model-1', { name: 'iPhone 15 Pro (2023)' });
+      await service.updateModel('model-1', { slug: 'iphone-15-pro' });
+
+      expect(deviceRepositoryMock.updateModel).toHaveBeenNthCalledWith(
+        1,
+        'model-1',
+        { name: 'iPhone 15 Pro (2023)' },
+        undefined,
+      );
+      expect(deviceRepositoryMock.updateModel).toHaveBeenNthCalledWith(
+        2,
+        'model-1',
+        { slug: 'iphone-15-pro' },
+        undefined,
+      );
+    });
+
+    it('rejects a slug another model already holds before writing anything', async () => {
+      deviceRepositoryMock.findModelById.mockResolvedValue(mockModel);
+      deviceRepositoryMock.findModelBySlug.mockResolvedValue({ ...mockModel, id: 'model-2' });
+
+      await expect(
+        service.updateModel('model-1', { slug: 'iphone-15-pro-max' }),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(deviceRepositoryMock.updateModel).not.toHaveBeenCalled();
     });
   });
 

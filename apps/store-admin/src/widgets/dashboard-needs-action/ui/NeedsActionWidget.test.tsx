@@ -14,13 +14,20 @@ interface NeedsActionCounts {
   ratingAbuse?: number;
   /** TASK-470 — orders holding a line that can no longer be supplied. */
   unavailableItems?: number;
+  /** TASK-352 — late-paid orders still cancelled. */
+  paidAfterCancel?: number;
 }
 
 function mockNeedsAction(counts: NeedsActionCounts) {
   server.use(
     http.get("*/api/admin/dashboard/needs-action", () =>
       HttpResponse.json({
-        data: { ratingAbuse: 0, unavailableItems: 0, ...counts },
+        data: {
+          ratingAbuse: 0,
+          unavailableItems: 0,
+          paidAfterCancel: 0,
+          ...counts,
+        },
       }),
     ),
   );
@@ -270,6 +277,44 @@ describe("NeedsActionWidget (TASK-248)", () => {
       renderWithProviders(<NeedsActionWidget />);
 
       await screen.findByText(dict.dashboard.needsActionUnavailableItems);
+      expect(
+        screen.queryByText(dict.dashboard.needsActionAllClear),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * «Оплачено після скасування» (TASK-352 (c), decision B-11 №3): a late
+   * payment on an order the TTL already cancelled. Nothing is refunded or
+   * revived automatically — this tile is how the operator finds out.
+   */
+  describe("the «Оплачено після скасування» tile (TASK-352)", () => {
+    const quiet = {
+      newOrders: 0,
+      pendingReviews: 0,
+      unpaidInTransit: 0,
+      failedMails: 0,
+      pendingOver48h: 0,
+    };
+
+    it("deep-links to the list filtered by the same predicate it counts", async () => {
+      mockNeedsAction({ ...quiet, paidAfterCancel: 2 });
+
+      renderWithProviders(<NeedsActionWidget />);
+
+      const link = await screen.findByRole("link", {
+        name: new RegExp(dict.dashboard.needsActionPaidAfterCancel),
+      });
+      expect(link).toHaveAttribute("href", "/orders?paidAfterCancel=true");
+      expect(within(link).getByText("2")).toHaveClass("text-warning");
+    });
+
+    it("withholds 'all clear' while it is the only signal", async () => {
+      mockNeedsAction({ ...quiet, paidAfterCancel: 1 });
+
+      renderWithProviders(<NeedsActionWidget />);
+
+      await screen.findByText(dict.dashboard.needsActionPaidAfterCancel);
       expect(
         screen.queryByText(dict.dashboard.needsActionAllClear),
       ).not.toBeInTheDocument();

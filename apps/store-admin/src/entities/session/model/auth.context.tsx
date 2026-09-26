@@ -18,6 +18,7 @@ import {
   ADMIN_UI_SESSION_COOKIE,
   ADMIN_UI_SESSION_MAX_AGE_SECONDS,
 } from "@/shared/config/admin-ui-session";
+import { MY_PERMISSIONS_QUERY } from "./my-permissions-query";
 
 /**
  * Roles that may occupy the admin shell at all (TASK-334).
@@ -32,9 +33,6 @@ import {
  * `permissions`, which is resolved server-side per request.
  */
 const STAFF_ROLES: ReadonlySet<string> = new Set(["ADMIN", "MANAGER"]);
-
-/** How long an effective-permission answer is trusted before a refetch. */
-const PERMISSIONS_STALE_MS = 30_000;
 
 export interface AuthContextValue {
   accessToken: string | null;
@@ -266,17 +264,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [accessToken]);
 
   // TASK-334: the frontend's single source of truth for what this session may
-  // do. `retry: false` because the only interesting failure (401) is not worth
-  // retrying, and a failed fetch degrades to "no permissions" — the safe
-  // direction: a manager sees an empty panel rather than links that 403.
+  // do. The observer options are shared with every other reader of this key
+  // (see `my-permissions-query.ts` for why they must match).
   const { data: permissionsData, isPending: permissionsPending } =
     useGetMyPermissions({
-      query: {
-        enabled: accessToken !== null,
-        staleTime: PERMISSIONS_STALE_MS,
-        refetchOnWindowFocus: true,
-        retry: false,
-      },
+      query: { ...MY_PERMISSIONS_QUERY, enabled: accessToken !== null },
     });
 
   const effective = permissionsData?.data;

@@ -5,6 +5,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import request from 'supertest';
+import { Prisma } from '@prisma/client';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { AuthService } from '../src/auth/auth.service';
@@ -141,6 +142,8 @@ describe('Staff (e2e)', () => {
   const prismaServiceMock = {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
+    // Hiding an author is three statements in one transaction since TASK-599.
+    $transaction: jest.fn((fn: (tx: unknown) => unknown): unknown => fn(prismaServiceMock)),
     auditLog: {
       findMany: jest.fn().mockResolvedValue([]),
       count: jest.fn().mockResolvedValue(0),
@@ -441,6 +444,11 @@ describe('Staff (e2e)', () => {
 
       expect(response.body.data.isActive).toBe(false);
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('target-manager');
+      // Same side effect as the customer ban, same reason (TASK-599).
+      expect(reviewRepositoryStub.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'target-manager', hiddenAt: null },
+        data: { hiddenAt: expect.any(Date), hiddenReason: 'BAN' },
+      });
     });
 
     it('is 403 on another ADMIN and on the OWNER', async () => {
@@ -491,6 +499,11 @@ describe('Staff (e2e)', () => {
         managerRow.email,
       );
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith('target-manager');
+      // TASK-603: deleting withdraws the account's reviews, for good.
+      expect(reviewRepositoryStub.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'target-manager', hiddenAt: null },
+        data: { hiddenAt: expect.any(Date), hiddenReason: 'DELETED' },
+      });
     });
 
     it('is 403 on another ADMIN and on the OWNER', async () => {
@@ -632,6 +645,41 @@ describe('Staff (e2e)', () => {
       expect(authRepositoryMock.revokeAllUserTokens).toHaveBeenCalledWith(adminRow.id);
     });
 
+    // TASK-574 (closes TASK-636): two simultaneous transfers from the same owner
+    // collide on the partial unique "one owner" index. The loser's transaction
+    // rolls back with P2002 — the invariant holds — and it must answer 409, not
+    // the HTTP 500 it used to, on the most sensitive route in the admin.
+    it('answers the losing one of two simultaneous transfers with 409, not 500', async () => {
+      const uniqueClash = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on the fields: (`is_owner`)',
+        { code: 'P2002', clientVersion: '7.9.1', meta: { target: ['is_owner'] } },
+      );
+      staffRepositoryMock.transferOwnership
+        .mockResolvedValueOnce({
+          outgoing: { ...ownerRow, isOwner: false },
+          incoming: { ...adminRow, isOwner: true },
+        })
+        .mockRejectedValueOnce(uniqueClash);
+
+      const send = () =>
+        request(app.getHttpServer())
+          .post(url)
+          .set('Authorization', auth(owner))
+          .send({ password: PASSWORD });
+
+      const responses = await Promise.all([send(), send()]);
+      const statuses = responses.map((r) => r.status).sort();
+
+      expect(statuses).toEqual([200, 409]);
+      const conflict = responses.find((r) => r.status === 409)!;
+      expect(conflict.body).toMatchObject({
+        statusCode: 409,
+        error: 'UNIQUE_CONSTRAINT_VIOLATION',
+      });
+      // No schema internals in the body.
+      expect(JSON.stringify(conflict.body)).not.toContain('is_owner');
+    });
+
     it('is 403 for a DEPUTY ADMIN — this is the reserve, not a permission', async () => {
       // A deputy passes every `@RequirePermission` there is, including
       // `staff:write`. `@OwnerOnly` is consulted BEFORE that bypass in
@@ -661,7 +709,7 @@ describe('Staff (e2e)', () => {
       expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
     });
 
-    it('is 401 on a wrong password, and nothing at all happens', async () => {
+    it('is 401 on a wrong password, moves nothing, and logs the refused attempt', async () => {
       authServiceMock.verifyOwnPassword.mockRejectedValue(
         new UnauthorizedException('Invalid credentials'),
       );
@@ -677,6 +725,31 @@ describe('Staff (e2e)', () => {
 
       expect(staffRepositoryMock.transferOwnership).not.toHaveBeenCalled();
       expect(authRepositoryMock.revokeAllUserTokens).not.toHaveBeenCalled();
+
+      // TASK-637: «хтось намагався віддати мій магазин і не вгадав пароль» is
+      // what the action log is for. One row, the same action key as a success,
+      // marked as refused — and without the password that was typed.
+      expect(prismaServiceMock.auditLog.create).toHaveBeenCalledTimes(1);
+      const { data } = prismaServiceMock.auditLog.create.mock.calls[0][0] as {
+        data: Record<string, unknown>;
+      };
+      expect(data.action).toBe('staff.transferOwnership');
+      expect(data.actorId).toBe(owner.id);
+      expect(data.entityId).toBe(adminRow.id);
+      expect(data.diff).toEqual({ outcome: { from: null, to: 'rejected' } });
+      expect(String(data.summary)).toContain('відхилено');
+      expect(JSON.stringify(data)).not.toContain('not-my-password');
+    });
+
+    it('logs nothing for a refusal that is about the request, not the password', async () => {
+      staffRepositoryMock.findStaffById.mockResolvedValue(account(managerRow));
+
+      await request(app.getHttpServer())
+        .post(`/api/admin/staff/${managerRow.id}/transfer-ownership`)
+        .set('Authorization', auth(owner))
+        .send({ password: PASSWORD })
+        .expect(400);
+
       expect(prismaServiceMock.auditLog.create).not.toHaveBeenCalled();
     });
 

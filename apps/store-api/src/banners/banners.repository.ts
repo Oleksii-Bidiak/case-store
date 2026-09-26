@@ -258,12 +258,55 @@ export class BannerRepository implements PublishablePort {
   }
 
   /**
-   * Update a banner's fields. Only provided fields are written.
+   * Update a banner's fields IN PLACE. Only provided fields are written.
+   *
+   * Valid only while the row STAYS in its placement. A `placement` that differs from the
+   * stored one must go through {@link updateWithPlacementMove} instead — see its docblock
+   * for the duplicate-slot failure this plain write causes. The service makes that call.
    */
   update(id: string, data: UpdateBannerInput): Promise<Banner> {
     return this.prisma.banner.update({
       where: { id },
       data,
+    });
+  }
+
+  /**
+   * Update a banner that is MOVING to another placement: write the submitted fields and, in
+   * the SAME advisory-locked transaction, RE-APPEND the row to the end of the TARGET
+   * placement (`sortOrder = max(target) + 1`) — TASK-580, same shape as
+   * `CarouselRepository.updateWithPlacementMove`.
+   *
+   * WHY THE MOVE CANNOT BE A PLAIN `update`. Each placement is an independent `sortOrder`
+   * list (TASK-295), and a plain write carries the row's OLD slot into the new list: a
+   * HERO_SLIDE banner at slot 0 moved into PROMO_TILE (0,1,2) becomes a SECOND row at 0, and
+   * `findAllPublished` tiebreaks the pair by `createdAt` — the banner lands wherever its
+   * creation date puts it, not where the operator could predict.
+   *
+   * The lock is the TARGET placement's, taken before the `max` read and held for the whole
+   * transaction, exactly as `create` does: without it a move racing a create or a
+   * `reorderPlacement` in the same placement reads the same max and hands out the same slot.
+   *
+   * The SOURCE placement is left with a hole. Ordering is by relative value, so a gap is
+   * invisible, and the next drag there rewrites it anyway — closing it here would mean a
+   * second lock in the same transaction to fix nothing.
+   *
+   * An EXPLICIT `data.sortOrder` still wins, same as in `create` — the append is the default.
+   */
+  updateWithPlacementMove(
+    id: string,
+    data: UpdateBannerInput,
+    placement: BannerPlacement,
+  ): Promise<Banner> {
+    return this.prisma.$transaction(async (tx) => {
+      await acquireAdvisoryLocks(tx, [placementLockKey(placement)]);
+
+      const sortOrder = data.sortOrder ?? (await this.nextSortOrder(tx, placement));
+
+      return tx.banner.update({
+        where: { id },
+        data: { ...data, placement, sortOrder },
+      });
     });
   }
 

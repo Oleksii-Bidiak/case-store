@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { CacheService } from '../src/cache/cache.service';
 import { AttributeType } from '@prisma/client';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
@@ -128,6 +129,16 @@ describe('Colour as a catalogue facet: backfill + bridge (integration)', () => {
         BrandRepository,
         DeviceRepository,
         CatalogueFilterResolver,
+        // A cache that never hits (TASK-708): these specs mutate rows between
+        // reads and assert on the LIVE counts, which is the uncached half.
+        {
+          provide: CacheService,
+          useValue: {
+            get: async () => null,
+            set: async () => undefined,
+            delByPrefix: async () => undefined,
+          },
+        },
       ],
     }).compile();
 

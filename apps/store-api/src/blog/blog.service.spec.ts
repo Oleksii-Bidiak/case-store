@@ -159,8 +159,9 @@ describe('BlogService', () => {
       expect(indexerMock.search).toHaveBeenCalledWith({
         q: 'павербнак',
         categorySlug: undefined,
-        offset: 0,
+        page: 1,
         limit: 9,
+        includeUnlisted: false,
       });
       expect(result.data.map((p) => p.id)).toEqual(['post-3', 'post-1']);
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 9, totalPages: 1 });
@@ -176,9 +177,24 @@ describe('BlogService', () => {
       expect(indexerMock.search).toHaveBeenCalledWith({
         q: 'iphone',
         categorySlug: 'compare',
-        offset: 9,
+        page: 2,
         limit: 9,
+        includeUnlisted: false,
       });
+    });
+
+    it('answers a page past the end from the index with its exact total (TASK-537)', async () => {
+      // The engine matched 12 articles; page 5 of 9-per-page is simply empty.
+      // Falling back to Postgres here swapped the result set and the total under
+      // the same URL — and the hub's page list with them.
+      indexerMock.search.mockResolvedValue({ ids: [], total: 12 });
+
+      const result = await service.findAll({ page: 5, limit: 9, q: 'iphone' });
+
+      expect(repositoryMock.findAll).not.toHaveBeenCalled();
+      expect(repositoryMock.findPublishedByIds).not.toHaveBeenCalled();
+      expect(result.data).toEqual([]);
+      expect(result.meta).toEqual({ total: 12, page: 5, limit: 9, totalPages: 2 });
     });
 
     it('never consults the index without a query', async () => {
@@ -243,6 +259,11 @@ describe('BlogService', () => {
       await service.findAll({ page: 1, limit: 9, q: 'trade-in', includeUnlisted: true });
 
       expect(repositoryMock.findPublishedByIds).toHaveBeenCalledWith(['post-1'], true);
+      // …and the engine is told too, so its exact total (TASK-537) counts the
+      // same set the re-read keeps.
+      expect(indexerMock.search).toHaveBeenCalledWith(
+        expect.objectContaining({ includeUnlisted: true }),
+      );
     });
   });
 

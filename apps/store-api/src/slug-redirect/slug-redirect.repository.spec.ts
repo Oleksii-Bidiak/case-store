@@ -9,6 +9,9 @@ import { SlugRedirectRepository } from './slug-redirect.repository';
  * where/data shapes — NOT the algorithm's correctness (that is the pure
  * reducer's exhaustively-tested job; the int-spec proves the statements
  * against real Postgres).
+ *
+ * TASK-566: rows are keyed by ADDRESS — `(scope, slug)` on each side. A bare
+ * slug is the empty scope, which is what every single-namespace entity uses.
  */
 describe('SlugRedirectRepository', () => {
   let repository: SlugRedirectRepository;
@@ -53,11 +56,13 @@ describe('SlugRedirectRepository', () => {
   });
 
   describe('findRedirect', () => {
-    it('reads the (entity, oldSlug) unique key and returns the row', async () => {
+    it('reads the (entity, scope, oldSlug) unique key in the empty scope by default', async () => {
       const row = {
         id: 'id-1',
         entity: SlugRedirectEntity.PAGE,
+        scope: '',
         oldSlug: 'old',
+        newScope: '',
         newSlug: 'new',
       };
       mockPrisma.slugRedirect.findUnique.mockResolvedValue(row);
@@ -65,9 +70,27 @@ describe('SlugRedirectRepository', () => {
       const result = await repository.findRedirect(SlugRedirectEntity.PAGE, 'old');
 
       expect(mockPrisma.slugRedirect.findUnique).toHaveBeenCalledWith({
-        where: { entity_oldSlug: { entity: SlugRedirectEntity.PAGE, oldSlug: 'old' } },
+        where: {
+          entity_scope_oldSlug: { entity: SlugRedirectEntity.PAGE, scope: '', oldSlug: 'old' },
+        },
       });
       expect(result).toBe(row);
+    });
+
+    it('reads a namespaced address when a scope is given (TASK-566)', async () => {
+      mockPrisma.slugRedirect.findUnique.mockResolvedValue(null);
+
+      await repository.findRedirect(SlugRedirectEntity.PAGE, 'delivery', 'INFO');
+
+      expect(mockPrisma.slugRedirect.findUnique).toHaveBeenCalledWith({
+        where: {
+          entity_scope_oldSlug: {
+            entity: SlugRedirectEntity.PAGE,
+            scope: 'INFO',
+            oldSlug: 'delivery',
+          },
+        },
+      });
     });
 
     it('returns null when no redirect row exists', async () => {
@@ -91,15 +114,23 @@ describe('SlugRedirectRepository', () => {
       expect(raw.slugRedirect.deleteMany).toHaveBeenCalledTimes(1);
     });
 
-    it('step 1 upserts (entity, oldSlug: from) → newSlug: to', async () => {
+    it('step 1 upserts (entity, scope, oldSlug: from) → to, a bare slug in the empty scope', async () => {
       const { tx, raw } = makeTx();
 
       await repository.recordRename(tx, SlugRedirectEntity.PAGE, 'B', 'C');
 
       expect(raw.slugRedirect.upsert).toHaveBeenCalledWith({
-        where: { entity_oldSlug: { entity: SlugRedirectEntity.PAGE, oldSlug: 'B' } },
-        create: { entity: SlugRedirectEntity.PAGE, oldSlug: 'B', newSlug: 'C' },
-        update: { newSlug: 'C' },
+        where: {
+          entity_scope_oldSlug: { entity: SlugRedirectEntity.PAGE, scope: '', oldSlug: 'B' },
+        },
+        create: {
+          entity: SlugRedirectEntity.PAGE,
+          scope: '',
+          oldSlug: 'B',
+          newScope: '',
+          newSlug: 'C',
+        },
+        update: { newScope: '', newSlug: 'C' },
       });
     });
 
@@ -109,19 +140,92 @@ describe('SlugRedirectRepository', () => {
       await repository.recordRename(tx, SlugRedirectEntity.CATEGORY, 'B', 'C');
 
       expect(raw.slugRedirect.updateMany).toHaveBeenCalledWith({
-        where: { entity: SlugRedirectEntity.CATEGORY, newSlug: 'B', oldSlug: { not: 'B' } },
-        data: { newSlug: 'C' },
+        where: {
+          entity: SlugRedirectEntity.CATEGORY,
+          newScope: '',
+          newSlug: 'B',
+          NOT: { scope: '', oldSlug: 'B' },
+        },
+        data: { newScope: '', newSlug: 'C' },
       });
     });
 
-    it('step 3 deletes the (oldSlug: to, newSlug: to) self-loop for this entity', async () => {
+    it('step 3 deletes the (to → to) self-loop for this entity', async () => {
       const { tx, raw } = makeTx();
 
       await repository.recordRename(tx, SlugRedirectEntity.PRODUCT, 'B', 'C');
 
       expect(raw.slugRedirect.deleteMany).toHaveBeenCalledWith({
-        where: { entity: SlugRedirectEntity.PRODUCT, oldSlug: 'C', newSlug: 'C' },
+        where: {
+          entity: SlugRedirectEntity.PRODUCT,
+          scope: '',
+          oldSlug: 'C',
+          newScope: '',
+          newSlug: 'C',
+        },
       });
+    });
+
+    it('records a rename between two namespaced addresses (TASK-566)', async () => {
+      const { tx, raw } = makeTx();
+
+      await repository.recordRename(
+        tx,
+        SlugRedirectEntity.PAGE,
+        { scope: 'LEGAL', slug: 'delivery' },
+        { scope: 'INFO', slug: 'delivery' },
+      );
+
+      expect(raw.slugRedirect.upsert).toHaveBeenCalledWith({
+        where: {
+          entity_scope_oldSlug: {
+            entity: SlugRedirectEntity.PAGE,
+            scope: 'LEGAL',
+            oldSlug: 'delivery',
+          },
+        },
+        create: {
+          entity: SlugRedirectEntity.PAGE,
+          scope: 'LEGAL',
+          oldSlug: 'delivery',
+          newScope: 'INFO',
+          newSlug: 'delivery',
+        },
+        update: { newScope: 'INFO', newSlug: 'delivery' },
+      });
+      // The collapse repoints aliases of the LEGAL address only — an INFO page
+      // that happens to share the slug keeps its own aliases.
+      expect(raw.slugRedirect.updateMany).toHaveBeenCalledWith({
+        where: {
+          entity: SlugRedirectEntity.PAGE,
+          newScope: 'LEGAL',
+          newSlug: 'delivery',
+          NOT: { scope: 'LEGAL', oldSlug: 'delivery' },
+        },
+        data: { newScope: 'INFO', newSlug: 'delivery' },
+      });
+      expect(raw.slugRedirect.deleteMany).toHaveBeenCalledWith({
+        where: {
+          entity: SlugRedirectEntity.PAGE,
+          scope: 'INFO',
+          oldSlug: 'delivery',
+          newScope: 'INFO',
+          newSlug: 'delivery',
+        },
+      });
+    });
+
+    it('writes nothing when the address does not change', async () => {
+      const { tx, calls } = makeTx();
+
+      await repository.recordRename(
+        tx,
+        SlugRedirectEntity.PAGE,
+        { scope: 'INFO', slug: 'x' },
+        { scope: 'INFO', slug: 'x' },
+      );
+
+      expect(calls).toEqual([]);
     });
 
     it('never touches the non-transactional prisma client', async () => {

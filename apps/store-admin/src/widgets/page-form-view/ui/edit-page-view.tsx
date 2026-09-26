@@ -8,6 +8,7 @@ import { toast } from "@/shared/ui/toast";
 import {
   PageForm,
   pageFormValuesToUpdateDto,
+  pageSaveConflictMessage,
   type PageFormInput,
   type PageFormValues,
 } from "@/features/page-form";
@@ -73,8 +74,11 @@ export function EditPageView({ pageId }: EditPageViewProps) {
           toast.success(dict.pages.toastUpdated);
           router.push("/pages");
         },
-        onError: () => {
-          toast.error(dict.pages.toastUpdateFailed);
+        onError: (error) => {
+          toast.error(
+            pageSaveConflictMessage(error, values.kind) ??
+              dict.pages.toastUpdateFailed,
+          );
         },
       },
     );
@@ -132,7 +136,6 @@ function mapPageToFormValues(page: PageEntity): Partial<PageFormInput> {
     metaDescription: page.metaDescription ?? "",
     keywords: formatKeywords(page.keywords),
     ogImage: page.ogImage ?? "",
-    sortOrder: String(page.sortOrder),
     status: page.status,
     // Seed the datetime-local input ("YYYY-MM-DDTHH:mm") from the ISO instant,
     // in KYIV time. The local `toDateTimeLocal` this replaces read the BROWSER's

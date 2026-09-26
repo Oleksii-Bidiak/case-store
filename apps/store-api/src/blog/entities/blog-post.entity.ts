@@ -18,6 +18,35 @@ export class BlogPostCategorySummary {
 }
 
 /**
+ * The article's author as the storefront bio card renders it (TASK-554). Role and
+ * bio are nullable: a missing one is simply not shown — the storefront no longer
+ * has a placeholder to fall back on.
+ */
+export class BlogPostAuthorSummary {
+  @ApiProperty({ description: 'Author id', example: '550e8400-e29b-41d4-a716-446655440000' })
+  id!: string;
+
+  @ApiProperty({ description: 'Author display name', example: 'Ірина Ткач' })
+  name!: string;
+
+  @ApiProperty({
+    description: 'Short role shown under the name',
+    example: 'Редакторка гайдів',
+    type: String,
+    nullable: true,
+  })
+  role!: string | null;
+
+  @ApiProperty({
+    description: 'Plain-text bio shown in the article author card',
+    example: 'Пише покрокові гайди про зарядки, павербанки й аудіо.',
+    type: String,
+    nullable: true,
+  })
+  bio!: string | null;
+}
+
+/**
  * Domain entity for a blog post (TASK-170).
  *
  * Clean domain entity (not a Prisma model). It deliberately exposes ONLY
@@ -69,8 +98,17 @@ export class BlogPostEntity {
   })
   coverBlurDataUrl!: string | null;
 
-  @ApiProperty({ description: 'Author display name', example: 'Олег Пилипенко' })
+  @ApiProperty({ description: 'Author display name (the byline)', example: 'Олег Пилипенко' })
   authorName!: string;
+
+  @ApiProperty({
+    description:
+      'The linked author with role and bio (TASK-554). Null only for a post with a blank ' +
+      'byline.',
+    type: BlogPostAuthorSummary,
+    nullable: true,
+  })
+  author!: BlogPostAuthorSummary | null;
 
   @ApiProperty({
     description: 'Estimated reading time in minutes',
@@ -199,6 +237,8 @@ export class BlogPostEntity {
     createdAt: Date;
     updatedAt: Date;
     category: { id: string; slug: string; name: string };
+    /** Optional so a caller that did not include the relation still maps (to null). */
+    author?: { id: string; name: string; role: string | null; bio: string | null } | null;
   }): BlogPostEntity {
     const entity = new BlogPostEntity();
     entity.id = post.id;
@@ -209,6 +249,14 @@ export class BlogPostEntity {
     entity.coverImageUrl = post.coverImageUrl;
     entity.coverBlurDataUrl = post.coverBlurDataUrl;
     entity.authorName = post.authorName;
+    entity.author = post.author
+      ? {
+          id: post.author.id,
+          name: post.author.name,
+          role: post.author.role,
+          bio: post.author.bio,
+        }
+      : null;
     entity.readingMinutes = post.readingMinutes;
     entity.featured = post.featured;
     entity.listed = post.listed;

@@ -533,7 +533,8 @@ const VARS = [
     validated: "optional",
     code: "used",
     effect: "Дефолт `15m` — час життя access-токена.",
-    howTo: "`15m`.",
+    howTo:
+      "`15m`. Формат `<число><s|m|h|d>`; голе число на кшталт `60` — API не стартує (TASK-790).",
   },
   {
     name: "JWT_REFRESH_EXPIRATION",
@@ -545,8 +546,10 @@ const VARS = [
     example: true,
     validated: "optional",
     code: "used",
-    effect: "Дефолт `7d` — скільки клієнт лишається залогіненим.",
-    howTo: "`7d`.",
+    effect:
+      "Дефолт `7d` — скільки клієнт лишається залогіненим; з неї ж рахується Max-Age refresh-куки (TASK-789).",
+    howTo:
+      "`7d`. Формат `<число><s|m|h|d>`; голе число на кшталт `60` — API не стартує (TASK-790).",
   },
   {
     name: "CORS_ORIGINS",
@@ -605,6 +608,21 @@ const VARS = [
       "Origin вітрини, куди API повертає користувача: callback Google-входу і посилання «відновити пароль» у листі. Без нього обидва вели б на `http://localhost:3000` — у проді це мертві посилання, і жодна перевірка при старті цього не бачила. Тепер API не стартує в проді без нього.",
     howTo:
       "Не задається окремо: compose бере значення з `NEXT_PUBLIC_APP_URL`. Дві незалежні змінні для одного й того самого origin гарантовано розійшлися б.",
+  },
+  {
+    name: "IMAGE_HOSTS",
+    group: "api",
+    need: "optional",
+    compose: "none",
+    services: ["store-api"],
+    buildArgs: [],
+    example: false,
+    validated: "optional",
+    code: "used",
+    effect:
+      "Додаткові хости, з яких `<img>` у rich-text (сторінки, блог, описи товарів) переживає збереження (TASK-758). Порожній → лишаються тільки відносні шляхи, завантаження з `PUBLIC_BASE_URL` і `data:`-растри; картинку з будь-якого іншого хоста (напр. постачальника з імпорту) API мовчки викидає при збереженні — вітрина однаково не показала б її через CSP `img-src`. Невалідне значення (схема, порт, шлях, `*`) — API не стартує.",
+    howTo:
+      "Не задається окремо: compose бере значення з `NEXT_PUBLIC_IMAGE_HOSTS` — список вітрини і список API мусять збігатися, інакше API зберігає картинки, які CSP вітрини блокує, або навпаки.",
   },
   {
     name: "UPLOAD_DEST",
@@ -979,6 +997,27 @@ const VARS = [
     howTo: "Рішення власника (TASK-352).",
   },
   {
+    name: "ORDER_RESERVATION_EXPIRY",
+    group: "payments",
+    need: "optional",
+    compose: "none",
+    services: [],
+    buildArgs: [],
+    example: false,
+    validated: "optional",
+    // Reader: payment/payment-reconcile.worker.ts (TASK-627).
+    code: "used",
+    effect:
+      "Порожній → `cancel`: на дедлайні резерву неоплачене онлайн-замовлення скасовується, стік повертається, покупцю йде лист «оплату не отримано». `release`: повертається лише стік, замовлення лишається відкритим і з'являється в «Позиція недоступна»; пізня оплата резервує товар знову, а якщо його вже немає — оплата зараховується, рішення за оператором. Будь-що інше — API не стартує. `ORDER_AUTOCANCEL_UNPAID=false` вимикає обидва режими.",
+    howTo:
+      "Рішення власника (TASK-627). Щоб увімкнути `release` на сервері, спершу прокинути змінну в compose і приклад (див. gap).",
+    gap: {
+      reason:
+        "not threaded through docker-compose.prod/staging or .env.production.example yet: the default (`cancel`) is the pre-TASK-627 behaviour, so nothing is lost until the owner chooses `release` — that switch adds `ORDER_RESERVATION_EXPIRY: ${ORDER_RESERVATION_EXPIRY:-cancel}` to both compose files and the example line (agents cannot edit .env* files)",
+      task: "TASK-627",
+    },
+  },
+  {
     name: "GUEST_ORDER_TOKEN_TTL_DAYS",
     group: "payments",
     need: "optional",
@@ -1035,7 +1074,8 @@ const VARS = [
     code: "used",
     effect:
       "Порожній → дефолт сервісу. Скільки живе посилання з листа підтвердження адреси (TASK-342).",
-    howTo: "Формат тривалості, як у JWT_EXPIRATION (напр. `24h`).",
+    howTo:
+      "Формат тривалості, як у JWT_EXPIRATION: `<число><s|m|h|d>` (напр. `24h`); інакше API не стартує.",
   },
   {
     name: "NEXT_PUBLIC_PAYMENT_METHODS",
@@ -1403,9 +1443,9 @@ const VARS = [
     validated: "absent",
     code: "used",
     effect:
-      "Порожній → оптимізується лише origin із NEXT_PUBLIC_API_URL, і плитка категорії з картинкою на будь-якому іншому хості мовчки падає на заглушку: ні помилки, ні запису в лог, просто категорія без зображення. Build-time.",
+      "Порожній → оптимізується лише origin із NEXT_PUBLIC_API_URL, і плитка категорії з картинкою на будь-якому іншому хості мовчки падає на заглушку: ні помилки, ні запису в лог, просто категорія без зображення. Build-time для вітрини; той самий список compose передає в API як `IMAGE_HOSTS` — поза ним `<img>` у rich-text видаляється при збереженні.",
     howTo:
-      "Через кому, ГОЛІ імена хостів без схеми й шляху: `cdn.mystore.ua,images.brand.com`. Додавати щойно в адмінці з'явилося зовнішнє посилання на картинку категорії.",
+      "Через кому, ГОЛІ імена хостів без схеми й шляху: `cdn.mystore.ua,images.brand.com`. Додавати щойно в адмінці з'явилося зовнішнє посилання на картинку категорії або картинка з CDN у тексті сторінки, блогу чи опису товару. Зміна = перезбирання вітрини І перезапуск API.",
   },
   {
     name: "NEXT_PUBLIC_GOOGLE_AUTH_ENABLED",
@@ -1643,7 +1683,8 @@ const VARS = [
     validated: "optional",
     code: "used",
     effect: "Дефолт `1h` — скільки живе посилання «відновити пароль».",
-    howTo: "Напр. `1h`.",
+    howTo:
+      "Напр. `1h`. Формат `<число><s|m|h|d>`; `60` без одиниці — API не стартує, а не «тиждень» як раніше (TASK-790).",
   },
   {
     name: "PUBLISHING_CRON",

@@ -90,6 +90,15 @@ export const PERMISSIONS = [
   { key: 'orders:write', zone: PERMISSION_ZONES.ORDERS, label: 'Змінювати статуси та ТТН' },
   { key: 'payments:read', zone: PERMISSION_ZONES.ORDERS, label: 'Бачити платежі' },
   { key: 'payments:refund', zone: PERMISSION_ZONES.ORDERS, label: 'Повертати гроші' },
+  // TASK-620 (рішення B-11 №7): lifting an operator's mistaken «Кошти повернено»
+  // back to PAID / PARTIALLY_REFUNDED. NO BACKFILL on purpose: on deploy only the
+  // owner and admins (who hold every key by level) can do it, until the owner
+  // grants it to someone on the permissions screen.
+  {
+    key: 'payments:correct',
+    zone: PERMISSION_ZONES.ORDERS,
+    label: 'Виправляти помилкову мітку «Кошти повернено»',
+  },
   { key: 'returns:read', zone: PERMISSION_ZONES.ORDERS, label: 'Переглядати повернення' },
   { key: 'returns:write', zone: PERMISSION_ZONES.ORDERS, label: 'Опрацьовувати повернення' },
 
@@ -329,6 +338,13 @@ export function isGrantablePermission(value: string): value is Permission {
  * against the runtime query which read it, until TASK-475 removed both the query
  * and the `role_permissions` table; the statement still replays in migration
  * order on a fresh database, so the SQL half of the assertion stays.
+ *
+ * PER PERSON SINCE TASK-614. That role-based statement inserted zero rows on
+ * every database measured — the matrix held one row for the whole shop — and
+ * after plan 181 every content-write grant is a `user_permissions` row nothing
+ * looked at. `…_backfill_media_permissions_per_user` is the same eligibility,
+ * unchanged and still conditional (owner's decision 2026-09-15), read and written
+ * on the person and on templates. Both files are pinned against this list.
  */
 export const MEDIA_BACKFILL_SOURCE_PERMISSIONS = [
   'products:write',
@@ -416,6 +432,14 @@ export const CUSTOMERS_CARD_PERMISSIONS = [
  * delete it. The constant exists only so the migration's SQL and the code that
  * looks the template up spell the name identically; `permission.catalog.spec.ts`
  * asserts the migration uses exactly this literal.
+ *
+ * ONLY WHERE THERE WAS SOMETHING TO KEEP (TASK-635). The migration creates the
+ * template unconditionally, so wherever the role matrix was never filled — every
+ * fresh install, and every database measured — it came out EMPTY, and applying
+ * it (which REPLACES a person's set) stripped them bare. A later migration,
+ * `…_drop_empty_manager_as_was_template`, removes it when it holds no items; a
+ * shop whose MANAGER role actually had grants keeps its template with them. So
+ * on a fresh install this template does not exist, and code must not assume it.
  */
 export const MANAGER_BACKFILL_TEMPLATE_NAME = 'Менеджер (як було)';
 

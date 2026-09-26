@@ -19,6 +19,7 @@ import { UserBanToggle } from "@/features/user-ban-toggle";
 // every parallel branch appends to, and this widget needs nothing else from it.
 import { UserNotesPanel } from "@/features/user-notes";
 import {
+  ChangeUserEmailDialog,
   DeleteUserDialog,
   UserRoleChange,
 } from "@/features/user-account-actions";
@@ -116,6 +117,7 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
   // gates, matching the two routes.
   const canManageStaff = can(PERM.staffWrite);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [changeEmailOpen, setChangeEmailOpen] = useState(false);
 
   // Exactly one of these is ever enabled, so the screen makes one request.
   const cardQuery = useGetUserAdminCard(userId, {
@@ -354,6 +356,16 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
               {isOwner && (
                 <>
                   <div className="flex flex-wrap gap-2">
+                    {/* TASK-396: owner-only, like deletion — it hands the
+                        account to whoever reads the new inbox. */}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setChangeEmailOpen(true)}
+                    >
+                      {dict.users.changeEmailOpen}
+                    </Button>
                     <Button
                       type="button"
                       variant="destructive"
@@ -363,6 +375,13 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
                       {dict.users.deleteHeading}
                     </Button>
                   </div>
+
+                  <ChangeUserEmailDialog
+                    userId={user.id}
+                    email={user.email}
+                    open={changeEmailOpen}
+                    onOpenChange={setChangeEmailOpen}
+                  />
 
                   <DeleteUserDialog
                     userId={user.id}

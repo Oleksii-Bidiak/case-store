@@ -10,6 +10,7 @@ import type { ResolvedCartIdentity } from '../cart/cart-identity.types';
 import { DiscountEntity, DiscountPreviewEntity, PublicDiscountEntity } from './entities';
 import { CreateDiscountDto, UpdateDiscountDto, DiscountListQueryDto } from './dto';
 import { DiscountErrorCode, badDiscount, conflictDiscount } from './discount.errors';
+import { centsToString, toCents } from '../addon-service/money.util';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
@@ -113,7 +114,9 @@ export class DiscountService {
     }
 
     const amountCents = computeAmountCents(discount, subtotalCents);
-    return { discount, amount: centsToDecimalString(amountCents) };
+    // Never a negative discount: the floor the old local copy of the cents
+    // helper applied silently is written out here (TASK-807).
+    return { discount, amount: centsToString(Math.max(0, amountCents)) };
   }
 
   /**
@@ -134,7 +137,7 @@ export class DiscountService {
     entity.code = discount.code;
     entity.type = discount.type;
     entity.amount = amount;
-    entity.newTotal = centsToDecimalString(newTotalCents);
+    entity.newTotal = centsToString(Math.max(0, newTotalCents));
     return entity;
   }
 
@@ -265,6 +268,7 @@ export class DiscountService {
       startsAt: dto.startsAt ? new Date(dto.startsAt) : null,
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       isActive: dto.isActive,
+      showOnPromoPage: dto.showOnPromoPage ?? false,
     };
 
     const created = await this.discountRepository.create(input);
@@ -281,11 +285,14 @@ export class DiscountService {
 
     // Validate the effective (post-merge) definition so a partial update can't
     // produce an out-of-range percent or an inverted start/expiry window.
+    // `undefined` = not sent (keep the stored value); `null` = cleared — so a
+    // cleared date must not fall back to the stored one (TASK-798: `??` did,
+    // and clearing the start date failed on a date that was no longer there).
     this.assertValidDefinition(
       dto.type ?? existing.type,
       dto.value ?? Number(existing.value),
-      dto.startsAt ?? existing.startsAt?.toISOString(),
-      dto.expiresAt ?? existing.expiresAt?.toISOString(),
+      dto.startsAt !== undefined ? dto.startsAt : existing.startsAt?.toISOString(),
+      dto.expiresAt !== undefined ? dto.expiresAt : existing.expiresAt?.toISOString(),
     );
 
     if (dto.code && dto.code !== existing.code) {
@@ -311,6 +318,7 @@ export class DiscountService {
         ? { expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null }
         : {}),
       ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      ...(dto.showOnPromoPage !== undefined ? { showOnPromoPage: dto.showOnPromoPage } : {}),
     };
 
     const updated = await this.discountRepository.update(id, input);
@@ -344,21 +352,6 @@ export class DiscountService {
       throw new BadRequestException('startsAt must be before expiresAt');
     }
   }
-}
-
-// ─── Cents helpers (shared with the cart/order line-total pattern) ────────────
-
-/** Convert a "XX.YY" decimal string to an integer number of cents. */
-function toCents(decimal: string): number {
-  return Math.round(parseFloat(decimal) * 100);
-}
-
-/** Convert an integer number of cents to a "XX.YY" decimal string. */
-function centsToDecimalString(cents: number): string {
-  const safe = Math.max(0, cents);
-  const dollars = Math.floor(safe / 100);
-  const remainder = safe % 100;
-  return `${dollars}.${remainder.toString().padStart(2, '0')}`;
 }
 
 /**

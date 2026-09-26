@@ -26,6 +26,27 @@ import { waitForHydration } from "./hydration";
  * A login per test costs ~2s and gives each context a token only it will use.
  */
 export async function loginAsAdmin(page: Page): Promise<void> {
+  await loginAsStaff(page, {
+    email: E2E_ADMIN_EMAIL,
+    password: E2E_ADMIN_PASSWORD,
+  });
+}
+
+/** Credentials of one seeded staff account (see `seed-e2e.ts`). */
+export interface StaffCredentials {
+  email: string;
+  password: string;
+}
+
+/**
+ * Sign in ANY seeded staff account (TASK-715) — the same flow as
+ * `loginAsAdmin`, for specs that need a narrower session than the admin's,
+ * e.g. the read-only manager whose order card must show no controls.
+ */
+export async function loginAsStaff(
+  page: Page,
+  { email, password }: StaffCredentials,
+): Promise<void> {
   await page.goto("/login");
 
   // Labels are the Ukrainian strings from
@@ -35,8 +56,8 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   // A click before hydration is a native GET submit, not a login (TASK-753).
   await waitForHydration(page.locator("form").filter({ has: submit }));
 
-  await page.getByLabel(/(електронна пошта|email)/i).fill(E2E_ADMIN_EMAIL);
-  await page.getByLabel(/пароль/i).fill(E2E_ADMIN_PASSWORD);
+  await page.getByLabel(/(електронна пошта|email)/i).fill(email);
+  await page.getByLabel(/пароль/i).fill(password);
   await submit.click();
 
   // A CUSTOMER login is rejected in place with "не має прав адміністратора", so

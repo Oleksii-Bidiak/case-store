@@ -98,7 +98,8 @@ function resolveZoneCountState(
 }
 
 /**
- * «Карта контенту» — the content-map widget (TASK-264-B). Issues exactly four
+ * «Де що на сайті» — the content-map widget (TASK-264-B; the screen took the
+ * sidebar item's name in TASK-720). Issues exactly four
  * list queries (banners collapse to one shared fetch counted per placement
  * client-side, and pages likewise per kind since TASK-435; faq/blog one each),
  * resolves every zone's active count from them, and renders the five storefront

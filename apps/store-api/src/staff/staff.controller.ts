@@ -11,6 +11,7 @@ import {
   Put,
   Query,
   Req,
+  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
@@ -23,7 +24,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { StaffService } from './staff.service';
+import { StaffService, type OwnershipTransfer } from './staff.service';
 import { OwnershipTransferEntity, StaffPermissionsEntity, StaffUserEntity } from './entities';
 import {
   CreateStaffDto,
@@ -406,9 +407,11 @@ export class StaffController {
    *
    * ONE NOTE FOR THE UI (TASK-480): because that 401 comes from a route outside
    * `/auth/`, the admin client's response interceptor will refresh once and replay
-   * the request before surfacing the error. Harmless — a wrong password writes
-   * nothing, which `staff.e2e-spec.ts` asserts explicitly — but a screen here
-   * should not treat the first 401 as "your session expired".
+   * the request before surfacing the error. A wrong password moves nothing,
+   * which `staff.e2e-spec.ts` asserts explicitly — but since TASK-637 it does
+   * write one audit row per attempt, so the replay leaves a SECOND «refused»
+   * row for what the owner experienced as one try. A screen here should not
+   * treat the first 401 as "your session expired".
    *
    * `@RecordsOwnAudit()` for two reasons, and the second is not optional. The
    * generic interceptor logs the REQUEST BODY as the diff, and this body is the
@@ -445,7 +448,34 @@ export class StaffController {
     @CurrentActor() actor: PermissionActor,
     @Req() request: Request,
   ): Promise<{ data: OwnershipTransferEntity }> {
-    const transfer = await this.staffService.transferOwnership(id, dto.password, actor);
+    let transfer: OwnershipTransfer;
+    try {
+      transfer = await this.staffService.transferOwnership(id, dto.password, actor);
+    } catch (error) {
+      // A REFUSED transfer is logged too (TASK-637). «Хтось намагався віддати мій
+      // магазин і не вгадав пароль» is exactly the event an action log exists
+      // for, and `@RecordsOwnAudit()` silences the interceptor, so without this
+      // row the attempt left only a Pino line nobody reads from the panel. Same
+      // action key as a success, so filtering the log by it shows both; the
+      // outcome says which. Only the 401 — a wrong password — is recorded: the
+      // 400/403/404 refusals are about the request, not about someone guessing.
+      if (error instanceof UnauthorizedException) {
+        await this.auditService.record({
+          actorId: actor.id,
+          actorEmail: actor.email,
+          actorRole: actor.role,
+          action: 'staff.transferOwnership',
+          entityType: 'staff',
+          // The account the shop would have gone to.
+          entityId: id,
+          summary: 'Спробу передати власність магазину відхилено: пароль власника не збігся',
+          diff: { outcome: { from: null, to: 'rejected' } },
+          ip: request.ip ?? null,
+          userAgent: request.headers['user-agent'] ?? null,
+        });
+      }
+      throw error;
+    }
 
     await this.auditService.record({
       actorId: actor.id,

@@ -12,6 +12,8 @@ import {
   useAdminReturnControllerResolve,
   type ReturnEntity,
 } from "@/entities/return";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import {
   Button,
   Checkbox,
@@ -62,8 +64,25 @@ interface ReturnResolveFormProps {
  *  - No refund button. Money leaving is recorded here as an amount, not
  *    triggered from here — the provider-side refund lives with the payment, and
  *    a button that merely *looks* like it moves money is worse than none.
+ *
+ * And a fourth (TASK-716): no form at all without `returns:write`. The PATCH
+ * answers 403 to anyone else, so the section says in one line that the return
+ * is view-only rather than offering a decision that cannot be saved. Neither
+ * branch renders while the grant set is still loading: `can()` answers false in
+ * that window for everyone, and the view-only line flashed at every writer.
  */
 export function ReturnResolveForm({ rma }: ReturnResolveFormProps) {
+  const { can, arePermissionsLoading } = useAuth();
+  if (arePermissionsLoading) return null;
+  if (!can(PERM.returnsWrite)) {
+    return (
+      <p className="text-sm text-muted-foreground">{dict.common.viewOnly}</p>
+    );
+  }
+  return <ReturnResolveEditor rma={rma} />;
+}
+
+function ReturnResolveEditor({ rma }: ReturnResolveFormProps) {
   const queryClient = useQueryClient();
   const resolve = useAdminReturnControllerResolve();
 

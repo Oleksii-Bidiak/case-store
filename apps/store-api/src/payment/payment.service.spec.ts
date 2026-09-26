@@ -169,6 +169,25 @@ describe('PaymentService', () => {
       );
     });
 
+    // TASK-352 (a): the hosted page must refuse after the reservation deadline
+    // itself, rather than taking money for an order the TTL worker cancelled.
+    it('hands the provider the reservation deadline as the checkout expiry', async () => {
+      const deadline = new Date('2026-09-24T14:30:00.000Z');
+      await buildService().createCheckout(
+        makeOrder({ reservationExpiresAt: deadline.toISOString() }),
+      );
+
+      expect(providerMock.createCheckout).toHaveBeenCalledWith(
+        expect.objectContaining({ expiresAt: deadline }),
+      );
+    });
+
+    it('sends no expiry for an order with no deadline', async () => {
+      await buildService().createCheckout(makeOrder({ reservationExpiresAt: null }));
+
+      expect(providerMock.createCheckout.mock.calls[0][0]).not.toHaveProperty('expiresAt');
+    });
+
     it('builds the callback URL on the API origin and the return URL on the storefront', async () => {
       await buildService().createCheckout(makeOrder());
 

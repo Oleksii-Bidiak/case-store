@@ -11,6 +11,9 @@ export {
   useAttributeDefinitionControllerDelete,
   useAttributeDefinitionControllerReorder,
   getAttributeDefinitionControllerFindByCategoryQueryKey,
+  // TASK-707 — categories of a subtree over the storefront facet ceiling.
+  useAttributeDefinitionControllerFacetCeiling,
+  getAttributeDefinitionControllerFacetCeilingQueryKey,
 } from "@/shared/api";
 
 export {
@@ -25,4 +28,6 @@ export type {
   ReorderAttributeDefinitionsDto,
   AttributeDefinitionResponse,
   AttributeDefinitionListResponse,
+  FacetCeilingReportEntity,
+  FacetCeilingCategoryEntity,
 } from "@/shared/api";

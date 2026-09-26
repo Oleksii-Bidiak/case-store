@@ -16,3 +16,5 @@ export {
 export type { VariantSiblingInput } from './product-variant-summary.entity';
 export { ProductSpecEntity, buildProductSpecs } from './product-spec.entity';
 export type { SpecValueRow } from './product-spec.entity';
+export { mapSharedProductFields } from './product-source';
+export type { ProductSource, SharedProductFields } from './product-source';

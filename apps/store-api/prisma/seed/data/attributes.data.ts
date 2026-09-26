@@ -1,5 +1,5 @@
-import { readColorAxis } from '../../../src/common/color-axis';
-import { cataloguePositions } from './catalogue';
+import { COLOR_SPEC_KEY, readColorAxis } from '../../../src/common/color-axis';
+import { cataloguePositions, type CataloguePosition } from './catalogue';
 import { rootCategorySlug } from './categories.data';
 
 /**
@@ -231,9 +231,11 @@ export const definitionsByRootCategory: Record<string, AttributeDefinitionSeed[]
     // values are sentences («Посилені кути Air Cushion, бортик над екраном
     // 1.2 мм»), one per product. This is the example B-10 names.
     { key: 'protection', label: 'Захист', type: 'TEXT' },
-    // New in TASK-488 (B-10 «немає взагалі»). Declared last, so it lands behind
-    // «Ще фільтри»: today every seeded case ships alone, and the facet earns a
-    // sidebar slot only once bundled SKUs («чохол + скло») exist.
+    // New in TASK-488 (B-10 «немає взагалі»). Declared filterable, but SEEDED
+    // unflagged for now (TASK-700): every seeded case ships alone, so the facet
+    // would offer one «Лише чохол» that narrows nothing. `inertFacets` decides
+    // that from the data — the first bundled SKU («чохол + скло») flags it back
+    // on the next seed with no edit here.
     {
       key: 'bundle',
       label: 'Комплектація',
@@ -424,6 +426,68 @@ export const AXIS_BACKED_SPECS: { axis: string; key: string }[] = [
  */
 export function colorOfPosition(variantAttributes: unknown): string | null {
   return readColorAxis(variantAttributes)?.value ?? null;
+}
+
+/**
+ * Every structured spec one position ends up with: the entry's own `specs`,
+ * overridden by the variant axes of {@link AXIS_BACKED_SPECS}, plus the colour
+ * bridge (TASK-487). The ONE derivation — the seeder writes exactly this, and
+ * {@link inertFacets} judges exactly this, so the two cannot disagree.
+ */
+export function specsOfPosition(
+  position: CataloguePosition,
+): Record<string, string | number | boolean> {
+  const specs: Record<string, string | number | boolean> = { ...(position.entry.specs ?? {}) };
+  // Axis-backed specs win over the entry-level value: the position's own
+  // «Пам'ять» / «Об'єм» / «Довжина» is what the shopper actually buys.
+  for (const { axis, key } of AXIS_BACKED_SPECS) {
+    const axisValue = position.variant.attributes?.[axis];
+    if (axisValue) specs[key] = axisValue;
+  }
+  const color = colorOfPosition(position.variant.attributes);
+  if (color !== null) specs[COLOR_SPEC_KEY] = color;
+  return specs;
+}
+
+/**
+ * A facet narrows nothing when every product it would filter carries the SAME
+ * value: ticking that value hides nothing. `undefined` is a product without the
+ * spec — then ticking the one value DOES hide something (a hydrogel film has no
+ * «9H»), so the facet is useful. No products → nothing to judge.
+ */
+export function narrowsNothing(values: readonly (string | undefined)[]): boolean {
+  if (values.length === 0) return false;
+  const [first] = values;
+  return first !== undefined && values.every((value) => value === first);
+}
+
+/**
+ * The declared-filterable facets that narrow nothing in today's catalogue, as
+ * `root:key` (TASK-700). The seeder writes them `isFilterable: false` — on the
+ * `update` branch too, so an already-seeded database loses the dead control on
+ * the next seed. Computed, not listed: the day one position gains a second
+ * value, the facet comes back on its own.
+ */
+export function inertFacets(): Set<string> {
+  const byRoot = new Map<string, Record<string, string | number | boolean>[]>();
+  for (const position of cataloguePositions()) {
+    const root = rootCategorySlug(position.entry.categorySlug);
+    const bucket = byRoot.get(root) ?? [];
+    bucket.push(specsOfPosition(position));
+    byRoot.set(root, bucket);
+  }
+  const inert = new Set<string>();
+  for (const [root, definitions] of Object.entries(definitionsByRootCategory)) {
+    const specs = byRoot.get(root) ?? [];
+    for (const definition of definitions) {
+      if (!definition.isFilterable) continue;
+      const values = specs.map((s) =>
+        s[definition.key] === undefined ? undefined : String(s[definition.key]),
+      );
+      if (narrowsNothing(values)) inert.add(`${root}:${definition.key}`);
+    }
+  }
+  return inert;
 }
 
 /**

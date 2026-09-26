@@ -102,4 +102,10 @@ describe('extractSearchSynonymTerms', () => {
   it('returns an empty array when no token is in the dictionary', () => {
     expect(extractSearchSynonymTerms('Універсальний аксесуар')).toEqual([]);
   });
+
+  it('splits an article number at its separators (TASK-522)', () => {
+    // The code is part of the extracted text; a hyphenated code must yield its
+    // words, not one opaque token.
+    expect(extractSearchSynonymTerms('Захисне скло GLASS-IPHONE-15')).toContain('айфон');
+  });
 });

@@ -51,9 +51,11 @@ export class DeviceModelEntity {
   /**
    * Admin SEO/copy overrides for the compatibility landing page (TASK-490).
    * Null means "no override" — the storefront renders its generated template
-   * («Чохли для iPhone 15 Pro») instead. Exposed on the PUBLIC entity on
-   * purpose: the only consumer is the public landing page's `<head>`, and
-   * everything in these three fields is written to be published.
+   * («Чохли для iPhone 15 Pro») instead. Published on purpose — everything in
+   * these three fields is written to be public — but ONLY through the single
+   * landing route (`CompatLandingEntity.deviceModel`) and the admin routes. The
+   * public model LIST serves {@link DeviceModelListItemEntity} instead (TASK-702):
+   * up to 200 rows of landing copy has no business on the homepage picker.
    */
   @ApiProperty({
     description: 'Admin override for the compatibility landing page <title> (null = generated)',

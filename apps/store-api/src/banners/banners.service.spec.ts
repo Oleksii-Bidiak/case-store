@@ -41,6 +41,7 @@ const bannerRepositoryMock = {
   findById: jest.fn(),
   create: jest.fn(),
   update: jest.fn(),
+  updateWithPlacementMove: jest.fn(),
   publish: jest.fn(),
   unpublish: jest.fn(),
   delete: jest.fn(),
@@ -273,6 +274,61 @@ describe('BannerService', () => {
       bannerRepositoryMock.findById.mockResolvedValue(null);
 
       await expect(service.update('missing', { title: 'x' })).rejects.toThrow(NotFoundException);
+    });
+
+    // ─── placement moves re-append (TASK-580) ───────────────────────────────
+    //
+    // Each placement is its own 0..n `sortOrder` list, so a plain `update` carried the
+    // banner's OLD slot into the target list, colliding with the row already there. The
+    // service decides this is a MOVE; the locked `max + 1` is the repository's.
+
+    it('routes a placement CHANGE through the re-appending repository path', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(mockBanner); // stored: HERO_SLIDE
+      bannerRepositoryMock.updateWithPlacementMove.mockResolvedValue({
+        ...mockBanner,
+        placement: BannerPlacement.PROMO_TILE,
+        sortOrder: 3,
+      });
+
+      const entity = await service.update('banner-uuid-1', {
+        placement: BannerPlacement.PROMO_TILE,
+      });
+
+      expect(bannerRepositoryMock.update).not.toHaveBeenCalled();
+      expect(bannerRepositoryMock.updateWithPlacementMove).toHaveBeenCalledWith(
+        'banner-uuid-1',
+        expect.objectContaining({ placement: BannerPlacement.PROMO_TILE }),
+        BannerPlacement.PROMO_TILE,
+      );
+      expect(entity.placement).toBe(BannerPlacement.PROMO_TILE);
+      // A live banner changing homepage section changes what the shopper sees.
+      expect(revalidationMock.revalidate).toHaveBeenCalledWith({ tags: ['banners'], paths: ['/'] });
+    });
+
+    it('keeps an edit that RE-SENDS the current placement an in-place write', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(mockBanner); // stored: HERO_SLIDE
+      bannerRepositoryMock.update.mockResolvedValue(mockBanner);
+
+      await service.update('banner-uuid-1', {
+        title: 'Renamed',
+        placement: BannerPlacement.HERO_SLIDE,
+      });
+
+      // The admin form always submits the select's current value; treating an unchanged
+      // placement as a move would drop the banner to the bottom of its own list on every
+      // rename.
+      expect(bannerRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
+      expect(bannerRepositoryMock.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps an edit that omits placement entirely an in-place write', async () => {
+      bannerRepositoryMock.findById.mockResolvedValue(mockBanner);
+      bannerRepositoryMock.update.mockResolvedValue(mockBanner);
+
+      await service.update('banner-uuid-1', { title: 'Renamed' });
+
+      expect(bannerRepositoryMock.updateWithPlacementMove).not.toHaveBeenCalled();
+      expect(bannerRepositoryMock.update).toHaveBeenCalledTimes(1);
     });
 
     it('does not touch publish fields when status is omitted', async () => {

@@ -131,6 +131,9 @@ describe('PageRepository', () => {
           // No kind asked for → any kind BUT hub: a hub row is not a document.
           kind: { not: PageKind.HUB },
         },
+        // TASK-566: a slug may now be live under /legal AND /info at once, so the
+        // kind-agnostic read must pick the same row every time.
+        orderBy: { kind: 'asc' },
       });
     });
 
@@ -143,6 +146,7 @@ describe('PageRepository', () => {
 
       expect(prismaMock.page.findFirst).toHaveBeenCalledWith({
         where: { slug: 'about', status: PublishStatus.PUBLISHED, kind: PageKind.LEGAL },
+        orderBy: { kind: 'asc' },
       });
     });
   });
@@ -155,6 +159,20 @@ describe('PageRepository', () => {
 
       expect(result).toBe(mockPage);
       expect(prismaMock.page.findUnique).toHaveBeenCalledWith({ where: { id: 'page-uuid-1' } });
+    });
+  });
+
+  // TASK-566 — a slug is unique per kind, so the uniqueness probe is an ADDRESS read.
+  describe('findBySlugAny', () => {
+    it('reads the (kind, slug) unique key regardless of status', async () => {
+      prismaMock.page.findUnique.mockResolvedValue(mockPage);
+
+      const result = await repository.findBySlugAny('delivery', PageKind.INFO);
+
+      expect(result).toBe(mockPage);
+      expect(prismaMock.page.findUnique).toHaveBeenCalledWith({
+        where: { kind_slug: { kind: PageKind.INFO, slug: 'delivery' } },
+      });
     });
   });
 
@@ -436,7 +454,10 @@ describe('PageRepository', () => {
       const result = await repository.update(
         'page-uuid-1',
         { slug: 'new-slug' },
-        { oldSlug: 'privacy-policy', newSlug: 'new-slug' },
+        {
+          from: { kind: PageKind.LEGAL, slug: 'privacy-policy' },
+          to: { kind: PageKind.LEGAL, slug: 'new-slug' },
+        },
       );
 
       expect(result).toBe(renamed);
@@ -450,13 +471,35 @@ describe('PageRepository', () => {
       // asserting the singleton delegate went untouched: since TASK-428 the singleton and
       // the transaction client share ONE delegate mock, because `create` and `reorderAll`
       // write through `tx.page` too.)
+      // TASK-566: the redirect is recorded between ADDRESSES — the page kind is the
+      // namespace, so a LEGAL rename never touches an INFO page's aliases of the same slug.
       expect(slugRedirectRepositoryMock.recordRename).toHaveBeenCalledWith(
         txMock,
         SlugRedirectEntity.PAGE,
-        'privacy-policy',
-        'new-slug',
+        { scope: PageKind.LEGAL, slug: 'privacy-policy' },
+        { scope: PageKind.LEGAL, slug: 'new-slug' },
       );
       expect(prismaMock.page.update).toHaveBeenCalledTimes(1);
+    });
+
+    it('records a kind move that keeps the slug as a move between namespaces (TASK-566)', async () => {
+      txMock.page.update.mockResolvedValue({ ...mockPage, kind: PageKind.INFO });
+
+      await repository.update(
+        'page-uuid-1',
+        { kind: PageKind.INFO },
+        {
+          from: { kind: PageKind.LEGAL, slug: 'delivery' },
+          to: { kind: PageKind.INFO, slug: 'delivery' },
+        },
+      );
+
+      expect(slugRedirectRepositoryMock.recordRename).toHaveBeenCalledWith(
+        txMock,
+        SlugRedirectEntity.PAGE,
+        { scope: PageKind.LEGAL, slug: 'delivery' },
+        { scope: PageKind.INFO, slug: 'delivery' },
+      );
     });
   });
 

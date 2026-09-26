@@ -13,16 +13,28 @@ export class SlugRedirectService {
   constructor(private readonly slugRedirectRepository: SlugRedirectRepository) {}
 
   /**
-   * Resolve a dead slug to the entity's current live slug, or null when the
-   * slug never redirected (or is currently live).
+   * Resolve a dead address to the entity's current live slug, or null when the
+   * address never redirected (or is currently live).
+   *
+   * `scope` is the namespace of the dead address (TASK-566) — for PAGE the page
+   * kind whose route was requested; omitted for single-namespace entities. The
+   * answer carries `newScope` only when the live address has a namespace, so a
+   * product/category/blog/device-model answer is exactly what it always was.
    */
-  async lookup(entity: SlugRedirectEntity, slug: string): Promise<SlugRedirectLookupEntity | null> {
-    const redirect = await this.slugRedirectRepository.findRedirect(entity, slug);
+  async lookup(
+    entity: SlugRedirectEntity,
+    slug: string,
+    scope?: string,
+  ): Promise<SlugRedirectLookupEntity | null> {
+    const redirect = await this.slugRedirectRepository.findRedirect(entity, slug, scope ?? '');
     if (!redirect) {
       return null;
     }
     const result = new SlugRedirectLookupEntity();
     result.newSlug = redirect.newSlug;
+    if (redirect.newScope) {
+      result.newScope = redirect.newScope;
+    }
     return result;
   }
 }

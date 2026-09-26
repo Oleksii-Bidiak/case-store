@@ -33,4 +33,4 @@ export type {
   ResolvedCategoryTemplate,
   CategoryTemplateSource,
 } from './addon-service.types';
-export { toTwoDecimals, toCents, centsToString } from './money.util';
+export { toTwoDecimals, toCents, centsToString, lineTotalCents, sumLineCents } from './money.util';

@@ -19,9 +19,11 @@ import {
   useAttributeDefinitionControllerDelete,
   useAttributeDefinitionControllerReorder,
   getAttributeDefinitionControllerFindByCategoryQueryKey,
+  getAttributeDefinitionControllerFacetCeilingQueryKey,
   type AttributeDefinitionEntity,
 } from "@/entities/attribute-definition";
 import { AttributeDefinitionForm } from "./attribute-definition-form";
+import { FacetCeilingNotice } from "./facet-ceiling-notice";
 import {
   formValuesToDto,
   type AttributeDefinitionFormValues,
@@ -57,11 +59,20 @@ export function AttributeDefinitionEditor({
   const deleteMutation = useAttributeDefinitionControllerDelete();
   const reorderMutation = useAttributeDefinitionControllerReorder();
 
+  // Every write here can move a category across the facet ceiling (TASK-707):
+  // ticking «фільтр», deleting, and reordering (which changes WHICH facets are
+  // past it) — so the notice is refetched alongside the list.
   const invalidate = () =>
-    queryClient.invalidateQueries({
-      queryKey:
-        getAttributeDefinitionControllerFindByCategoryQueryKey(categoryId),
-    });
+    Promise.all([
+      queryClient.invalidateQueries({
+        queryKey:
+          getAttributeDefinitionControllerFindByCategoryQueryKey(categoryId),
+      }),
+      queryClient.invalidateQueries({
+        queryKey:
+          getAttributeDefinitionControllerFacetCeilingQueryKey(categoryId),
+      }),
+    ]);
 
   const openCreate = () => {
     setEditing(null);
@@ -152,6 +163,8 @@ export function AttributeDefinitionEditor({
           {d.add}
         </Button>
       </div>
+
+      <FacetCeilingNotice categoryId={categoryId} />
 
       {listQuery.isError ? (
         <p role="alert" className="text-sm text-destructive">

@@ -40,6 +40,7 @@ function makeDiscount(overrides: Partial<Discount> = {}): Discount {
     startsAt: null,
     expiresAt: null,
     isActive: true,
+    showOnPromoPage: true,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
     ...overrides,
@@ -477,5 +478,353 @@ describe('DiscountService.redeem — concurrent redemptions (TOCTOU)', () => {
     expect(results.every((r) => r.status === 'fulfilled')).toBe(true);
     expect(row.redeemedCount).toBe(2);
     expect(redemptions).toHaveLength(2);
+  });
+});
+
+// ─── TASK-798: update() — "not sent" vs "cleared" ────────────────────────────
+
+describe('DiscountService.update — undefined leaves a field, null clears it (TASK-798)', () => {
+  let service: DiscountService;
+
+  const existing = makeDiscount({
+    minSpend: new Prisma.Decimal('500'),
+    maxRedemptions: 100,
+    perUserLimit: 1,
+    startsAt: new Date('2026-10-01T00:00:00.000Z'),
+    expiresAt: new Date('2026-12-31T00:00:00.000Z'),
+  });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscountService(repositoryMock as never, cartServiceMock as never);
+    repositoryMock.findById.mockResolvedValue(existing);
+    repositoryMock.update.mockImplementation((_id: string, input: Partial<Discount>) =>
+      Promise.resolve({ ...existing, ...input }),
+    );
+  });
+
+  const nullableFields = [
+    'minSpend',
+    'maxRedemptions',
+    'perUserLimit',
+    'startsAt',
+    'expiresAt',
+  ] as const;
+
+  it.each(nullableFields)('%s: omitted → not written', async (field) => {
+    await service.update('d1', { isActive: true });
+
+    const input = repositoryMock.update.mock.calls[0][1] as Record<string, unknown>;
+    expect(input).not.toHaveProperty(field);
+  });
+
+  it.each(nullableFields)('%s: null → written as null', async (field) => {
+    await service.update('d1', { [field]: null } as never);
+
+    const input = repositoryMock.update.mock.calls[0][1] as Record<string, unknown>;
+    expect(input).toHaveProperty(field, null);
+  });
+
+  it('clearing startsAt does not validate against the stored start date', async () => {
+    // The stored start (2026-10-01) is AFTER the new expiry; the operator is
+    // clearing it in the same request, so there is no window to invert.
+    await expect(
+      service.update('d1', { startsAt: null, expiresAt: '2026-09-01T00:00:00.000Z' } as never),
+    ).resolves.toBeDefined();
+
+    expect(repositoryMock.update).toHaveBeenCalledWith(
+      'd1',
+      expect.objectContaining({ startsAt: null, expiresAt: new Date('2026-09-01T00:00:00.000Z') }),
+    );
+  });
+
+  it('clearing expiresAt does not validate against the stored expiry', async () => {
+    await expect(
+      service.update('d1', { expiresAt: null, startsAt: '2027-02-01T00:00:00.000Z' } as never),
+    ).resolves.toBeDefined();
+  });
+
+  it('an omitted startsAt still validates the new expiry against the stored start', async () => {
+    await expect(service.update('d1', { expiresAt: '2026-09-01T00:00:00.000Z' })).rejects.toThrow(
+      'startsAt must be before expiresAt',
+    );
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+});
+
+// ─── TASK-823: update() field by field ────────────────────────────────────────
+//
+// `update()` is the most intricate write in the module — a partial DTO merged
+// over the stored row, validated as the MERGED definition, then written as a
+// sparse input — and before TASK-823 it had no coverage beyond the TASK-798
+// null/omitted pair above. That is exactly where TASK-797 and TASK-798 landed.
+
+describe('DiscountService.update — field by field (TASK-823)', () => {
+  let service: DiscountService;
+
+  /** A stored PERCENT 10 % code with every nullable field populated. */
+  const stored = makeDiscount({
+    id: 'd1',
+    code: 'SUMMER10',
+    minSpend: new Prisma.Decimal('500'),
+    maxRedemptions: 100,
+    perUserLimit: 1,
+    startsAt: new Date('2026-10-01T00:00:00.000Z'),
+    expiresAt: new Date('2026-12-31T00:00:00.000Z'),
+    isActive: true,
+    showOnPromoPage: true,
+  });
+
+  const writtenInput = (): Record<string, unknown> =>
+    repositoryMock.update.mock.calls[0][1] as Record<string, unknown>;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscountService(repositoryMock as never, cartServiceMock as never);
+    repositoryMock.findById.mockResolvedValue(stored);
+    repositoryMock.findByCode.mockResolvedValue(null);
+    repositoryMock.update.mockImplementation((_id: string, input: Partial<Discount>) =>
+      Promise.resolve({ ...stored, ...input }),
+    );
+  });
+
+  // ─── Existence ──────────────────────────────────────────────────────────
+
+  it('404s for an unknown id without looking up the code or writing', async () => {
+    repositoryMock.findById.mockResolvedValue(null);
+
+    await expect(service.update('missing', { code: 'NEW10' })).rejects.toThrow(
+      'Discount not found',
+    );
+    expect(repositoryMock.findByCode).not.toHaveBeenCalled();
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+
+  // ─── Not sent ───────────────────────────────────────────────────────────
+
+  it('an empty body writes nothing — every stored field is kept', async () => {
+    await service.update('d1', {});
+
+    expect(repositoryMock.update).toHaveBeenCalledWith('d1', {});
+  });
+
+  // ─── Sent with a value ──────────────────────────────────────────────────
+
+  it.each([
+    ['code', { code: 'AUTUMN15' }, { code: 'AUTUMN15' }],
+    ['type', { type: DiscountType.FIXED }, { type: DiscountType.FIXED }],
+    ['value', { value: 25.5 }, { value: new Prisma.Decimal('25.5') }],
+    ['minSpend', { minSpend: 300 }, { minSpend: new Prisma.Decimal('300') }],
+    ['maxRedemptions', { maxRedemptions: 50 }, { maxRedemptions: 50 }],
+    ['perUserLimit', { perUserLimit: 3 }, { perUserLimit: 3 }],
+    [
+      'startsAt',
+      { startsAt: '2026-11-01T00:00:00.000Z' },
+      { startsAt: new Date('2026-11-01T00:00:00.000Z') },
+    ],
+    [
+      'expiresAt',
+      { expiresAt: '2027-01-31T00:00:00.000Z' },
+      { expiresAt: new Date('2027-01-31T00:00:00.000Z') },
+    ],
+    ['isActive', { isActive: false }, { isActive: false }],
+    ['showOnPromoPage', { showOnPromoPage: false }, { showOnPromoPage: false }],
+  ])('%s: a value is written — and nothing else is', async (_field, dto, expected) => {
+    await service.update('d1', dto);
+
+    expect(repositoryMock.update).toHaveBeenCalledWith('d1', expected);
+  });
+
+  it('minSpend: 0 is written as a zero minimum, not cleared to null', async () => {
+    await service.update('d1', { minSpend: 0 });
+
+    expect(writtenInput().minSpend).toEqual(new Prisma.Decimal(0));
+  });
+
+  it('returns the updated row as an entity with money as strings', async () => {
+    const entity = await service.update('d1', { value: 15, minSpend: 250 });
+
+    expect(entity).toMatchObject({ id: 'd1', value: '15', minSpend: '250' });
+  });
+
+  it('returns minSpend: null once the minimum is cleared', async () => {
+    const entity = await service.update('d1', { minSpend: null } as never);
+
+    expect(entity.minSpend).toBeNull();
+  });
+
+  // ─── Percent bounds — validated on the MERGED definition ────────────────
+
+  it.each([1, 100])('accepts a PERCENT value at the %s boundary', async (value) => {
+    await expect(service.update('d1', { value })).resolves.toBeDefined();
+    expect(writtenInput().value).toEqual(new Prisma.Decimal(value));
+  });
+
+  it.each([0.5, 100.01, 101])('refuses a PERCENT value of %s without writing', async (value) => {
+    await expect(service.update('d1', { value })).rejects.toThrow(
+      'Percentage value must be between 1 and 100',
+    );
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses switching a FIXED 150 code to PERCENT when the stored value is kept', async () => {
+    repositoryMock.findById.mockResolvedValue(
+      makeDiscount({ type: DiscountType.FIXED, value: new Prisma.Decimal('150') }),
+    );
+
+    await expect(service.update('d1', { type: DiscountType.PERCENT })).rejects.toThrow(
+      'Percentage value must be between 1 and 100',
+    );
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+
+  it('accepts switching FIXED 150 to PERCENT when a valid value comes with it', async () => {
+    repositoryMock.findById.mockResolvedValue(
+      makeDiscount({ type: DiscountType.FIXED, value: new Prisma.Decimal('150') }),
+    );
+
+    await service.update('d1', { type: DiscountType.PERCENT, value: 20 });
+
+    expect(repositoryMock.update).toHaveBeenCalledWith('d1', {
+      type: DiscountType.PERCENT,
+      value: new Prisma.Decimal(20),
+    });
+  });
+
+  it('accepts a FIXED value above 100 — the percent bound is PERCENT-only', async () => {
+    await expect(
+      service.update('d1', { type: DiscountType.FIXED, value: 250 }),
+    ).resolves.toBeDefined();
+  });
+
+  // ─── Date window — validated on the MERGED definition ───────────────────
+
+  it('accepts startsAt equal to expiresAt (a zero-length window is not inverted)', async () => {
+    const instant = '2026-11-15T12:00:00.000Z';
+
+    await expect(
+      service.update('d1', { startsAt: instant, expiresAt: instant }),
+    ).resolves.toBeDefined();
+  });
+
+  it('refuses startsAt one millisecond after expiresAt', async () => {
+    await expect(
+      service.update('d1', {
+        startsAt: '2026-11-15T12:00:00.001Z',
+        expiresAt: '2026-11-15T12:00:00.000Z',
+      }),
+    ).rejects.toThrow('startsAt must be before expiresAt');
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a new startsAt after the STORED expiry', async () => {
+    await expect(service.update('d1', { startsAt: '2027-01-01T00:00:00.000Z' })).rejects.toThrow(
+      'startsAt must be before expiresAt',
+    );
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+
+  it('accepts a new startsAt before the stored expiry', async () => {
+    await service.update('d1', { startsAt: '2026-12-01T00:00:00.000Z' });
+
+    expect(repositoryMock.update).toHaveBeenCalledWith('d1', {
+      startsAt: new Date('2026-12-01T00:00:00.000Z'),
+    });
+  });
+
+  it('accepts a new expiresAt after the stored start', async () => {
+    await expect(
+      service.update('d1', { expiresAt: '2026-10-02T00:00:00.000Z' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('clearing both ends leaves an unbounded window', async () => {
+    await service.update('d1', { startsAt: null, expiresAt: null } as never);
+
+    expect(repositoryMock.update).toHaveBeenCalledWith('d1', { startsAt: null, expiresAt: null });
+  });
+
+  // ─── Code conflict ──────────────────────────────────────────────────────
+
+  it('refuses renaming to a code another discount already holds, without writing', async () => {
+    repositoryMock.findByCode.mockResolvedValue(makeDiscount({ id: 'd2', code: 'TAKEN' }));
+
+    await expect(service.update('d1', { code: 'TAKEN' })).rejects.toThrow(
+      'A discount with code "TAKEN" already exists',
+    );
+    expect(repositoryMock.findByCode).toHaveBeenCalledWith('TAKEN');
+    expect(repositoryMock.update).not.toHaveBeenCalled();
+  });
+
+  it('re-sending the code it already has is not a conflict with itself', async () => {
+    await service.update('d1', { code: 'SUMMER10', value: 12 });
+
+    expect(repositoryMock.findByCode).not.toHaveBeenCalled();
+    expect(repositoryMock.update).toHaveBeenCalledWith('d1', {
+      code: 'SUMMER10',
+      value: new Prisma.Decimal(12),
+    });
+  });
+
+  it('validates the definition before looking the code up — a bad percent is reported first', async () => {
+    repositoryMock.findByCode.mockResolvedValue(makeDiscount({ id: 'd2', code: 'TAKEN' }));
+
+    await expect(service.update('d1', { code: 'TAKEN', value: 150 })).rejects.toThrow(
+      'Percentage value must be between 1 and 100',
+    );
+    expect(repositoryMock.findByCode).not.toHaveBeenCalled();
+  });
+});
+
+// ─── TASK-731: «Показувати на сторінці «Акції»» ───────────────────────────────
+
+describe('DiscountService — showOnPromoPage (TASK-731)', () => {
+  let service: DiscountService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscountService(repositoryMock as never, cartServiceMock as never);
+    repositoryMock.findByCode.mockResolvedValue(null);
+    repositoryMock.create.mockImplementation((input: Partial<Discount>) =>
+      Promise.resolve(makeDiscount(input)),
+    );
+    repositoryMock.findById.mockResolvedValue(makeDiscount({ showOnPromoPage: false }));
+    repositoryMock.update.mockImplementation((_id: string, input: Partial<Discount>) =>
+      Promise.resolve(makeDiscount(input)),
+    );
+  });
+
+  it('creates a private code when the flag is omitted', async () => {
+    const entity = await service.create({ code: 'PRIVATE', type: DiscountType.PERCENT, value: 5 });
+
+    expect(repositoryMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ showOnPromoPage: false }),
+    );
+    expect(entity.showOnPromoPage).toBe(false);
+  });
+
+  it('creates a published code when the operator ticks the flag', async () => {
+    const entity = await service.create({
+      code: 'PUBLIC',
+      type: DiscountType.PERCENT,
+      value: 5,
+      showOnPromoPage: true,
+    });
+
+    expect(repositoryMock.create).toHaveBeenCalledWith(
+      expect.objectContaining({ showOnPromoPage: true }),
+    );
+    expect(entity.showOnPromoPage).toBe(true);
+  });
+
+  it('publishes an existing code on update, and leaves the flag alone when omitted', async () => {
+    await service.update('d1', { showOnPromoPage: true });
+    expect(repositoryMock.update).toHaveBeenLastCalledWith(
+      'd1',
+      expect.objectContaining({ showOnPromoPage: true }),
+    );
+
+    await service.update('d1', { isActive: false });
+    expect(repositoryMock.update.mock.calls[1][1]).not.toHaveProperty('showOnPromoPage');
   });
 });

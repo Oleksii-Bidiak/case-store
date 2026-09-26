@@ -30,15 +30,16 @@ components and styling your own layout glue with the token-bound utility classes
 NEVER hardcode hex colors. Style with these utility families; the color names are
 semantic tokens (use each as `bg-<name>`, `text-<name>`, `border-<name>`):
 
-| Family          | Names                                                                                                                                                  |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Surfaces        | `background`, `foreground`, `card` (`card-foreground`), `popover` (`popover-foreground`), `muted` (`muted-foreground`), `accent` (`accent-foreground`) |
-| Brand / actions | `primary` (`primary-foreground`), `secondary` (`secondary-foreground`)                                                                                 |
-| Commerce status | `sale` (`sale-foreground`), `success` (`success-foreground`), `warning` (`warning-foreground`), `destructive` (`destructive-foreground`)               |
-| Lines / focus   | `border-border`, `border-input`; focus rings only as `focus-visible:ring-ring`                                                                         |
-| Radius          | `rounded-sm` · `rounded-md` · `rounded-lg` · `rounded-xl` · `rounded-2xl` (base `--radius` = 0.75rem)                                                  |
-| Elevation       | `shadow-card` · `shadow-elevated` · `shadow-lift` (use `shadow-lift` on hover-raise)                                                                   |
-| Fonts           | `font-sans` (Geist) · `font-mono` · `font-display` (Sora — headings & prices)                                                                          |
+| Family            | Names                                                                                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Surfaces          | `background`, `foreground`, `card` (`card-foreground`), `popover` (`popover-foreground`), `muted` (`muted-foreground`), `accent` (`accent-foreground`)                         |
+| Brand / actions   | `primary` (`primary-foreground`), `secondary` (`secondary-foreground`)                                                                                                         |
+| Commerce status   | `sale` (`sale-foreground`), `success` (`success-foreground`), `warning` (`warning-foreground`), `destructive` (`destructive-foreground`)                                       |
+| Inactive / chrome | `disabled` (`disabled-foreground`) for inactive controls — never fade with `opacity-*`; `footer` (`footer-foreground`) for the footer & announcement bar (dark in both themes) |
+| Lines / focus     | `border-border`, `border-input`; focus rings only as `focus-visible:ring-ring`                                                                                                 |
+| Radius            | `rounded-sm` · `rounded-md` · `rounded-lg` · `rounded-xl` · `rounded-2xl` (base `--radius` = 0.75rem)                                                                          |
+| Elevation         | `shadow-card` · `shadow-elevated` · `shadow-lift` (use `shadow-lift` on hover-raise)                                                                                           |
+| Fonts             | `font-sans` (Geist) · `font-mono` · `font-display` (Sora — headings & prices)                                                                                                  |
 
 Examples: a page surface is `bg-background text-foreground`; a panel is
 `bg-card text-card-foreground rounded-xl shadow-card border border-border`; a price is

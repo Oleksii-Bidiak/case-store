@@ -1,5 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { OrderStatus, PaymentStatus, OrderHistoryChangeType } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentStatus,
+  OrderHistoryChangeType,
+  OrderHistoryNote,
+} from '@prisma/client';
 import type { OrderStatusHistoryRow } from '../order.types';
 
 /**
@@ -77,6 +82,20 @@ export class OrderStatusHistoryEntity {
   })
   changedBy!: string | null;
 
+  @ApiProperty({
+    description:
+      'A flag on the row for an event the operator must see (TASK-932 / TASK-788): ' +
+      'PAID_AFTER_CANCEL on a payment row — the money arrived after the order was cancelled; ' +
+      'SHIPPED_UNPAID on a status row — shipped while the online payment was unconfirmed. ' +
+      'Null on an ordinary row.',
+    enum: OrderHistoryNote,
+    enumName: 'OrderHistoryNote',
+    nullable: true,
+    type: String,
+    example: null,
+  })
+  note!: OrderHistoryNote | null;
+
   @ApiProperty({ description: 'When the change happened', example: '2024-01-01T00:00:00.000Z' })
   changedAt!: Date;
 
@@ -93,6 +112,7 @@ export class OrderStatusHistoryEntity {
     entity.fromPaymentStatus = row.fromPaymentStatus;
     entity.toPaymentStatus = row.toPaymentStatus;
     entity.changedBy = row.changedBy;
+    entity.note = row.note ?? null;
     entity.changedAt = row.changedAt;
     return entity;
   }

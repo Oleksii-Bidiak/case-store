@@ -1,3 +1,4 @@
+import { STORE_NAME } from '../../lib/store';
 import type { CatalogueEntry } from '../../types';
 
 /** Навушники — 9 catalogue entries / 15 positions. */
@@ -12,7 +13,7 @@ export const headphones: CatalogueEntry[] = [
     sku: 'HP-APL-APP2',
     categorySlug: 'tws-earbuds',
     brandSlug: 'apple',
-    metaTitle: 'Купити Apple AirPods Pro 2 — ціна в Україні',
+    metaTitle: `Купити Apple AirPods Pro 2 — ціна в Україні | ${STORE_NAME}`,
     metaDescription:
       'Apple AirPods Pro 2: активне шумозаглушення, прозорий режим, до 30 годин із кейсом. Офіційна гарантія.',
     keywords: ['ейрподс', 'airpods', 'шумозаглушення', 'anc'],
@@ -160,7 +161,7 @@ export const headphones: CatalogueEntry[] = [
     sku: 'HP-SNY-XM5',
     categorySlug: 'over-ear-headphones',
     brandSlug: 'sony',
-    metaTitle: 'Купити Sony WH-1000XM5 — ціна в Україні',
+    metaTitle: `Купити Sony WH-1000XM5 — ціна в Україні | ${STORE_NAME}`,
     metaDescription:
       'Sony WH-1000XM5: провідне шумозаглушення, 30 годин автономності, швидке заряджання. Офіційна гарантія.',
     specs: {

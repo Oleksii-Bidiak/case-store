@@ -3,13 +3,21 @@ import { ConflictException, INestApplication, ValidationPipe } from '@nestjs/com
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule, ThrottlerStorage } from '@nestjs/throttler';
 import { JwtService } from '@nestjs/jwt';
-import { OrderStatus, PaymentStatus, OrderHistoryChangeType, Prisma } from '@prisma/client';
+import {
+  OrderStatus,
+  PaymentStatus,
+  PaymentMethod,
+  OrderHistoryChangeType,
+  OrderHistoryNote,
+  Prisma,
+} from '@prisma/client';
 import request from 'supertest';
 import cookieParser from 'cookie-parser';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CartRepository, CartWithItems } from '../src/cart/cart.repository';
+import { createCartRepositoryMock } from './cart-repository.mock';
 import { OrderRepository } from '../src/order/order.repository';
 import { OrderLookupRepository } from '../src/order/order-lookup.repository';
 // TASK-425: the export's row cap, asserted rather than restated as a literal.
@@ -88,19 +96,7 @@ describe('OrderController (e2e)', () => {
     createRedemption: jest.fn(),
   };
 
-  const cartRepositoryMock = {
-    findByUserId: jest.fn(),
-    findByToken: jest.fn(),
-    findById: jest.fn(),
-    findOrCreate: jest.fn(),
-    assignCartToUser: jest.fn(),
-    mergeGuestCartIntoUser: jest.fn(),
-    addItem: jest.fn(),
-    updateItem: jest.fn(),
-    removeItem: jest.fn(),
-    clearItems: jest.fn(),
-    findItem: jest.fn(),
-  };
+  const cartRepositoryMock = createCartRepositoryMock();
 
   const authRepositoryMock = {
     findByEmail: jest.fn(),
@@ -175,29 +171,25 @@ describe('OrderController (e2e)', () => {
   const cartItem: CartWithItems['items'][number] = {
     id: 'cart-item-e2e-1',
     productId: 'prod-e2e-1',
-    variantId: 'var-e2e-1',
     quantity: 2,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+    addons: [],
     product: {
       id: 'prod-e2e-1',
       name: 'iPhone 15 Pro Case',
+      slug: 'iphone-15-pro-case',
       price: { toString: () => '29.99' },
       compareAtPrice: null,
+      stock: 50,
       isActive: true,
+      categoryId: 'cat-e2e-1',
       // TASK-297: checkout re-checks the owning category's status, so the cart
       // fixture must carry it (mirrors CART_ITEMS_INCLUDE's category select).
       category: { isActive: true },
       // Match the CartWithItems contract: CART_ITEMS_INCLUDE always selects
       // product.images, so the cart fixture must carry it too.
       images: [],
-    },
-    variant: {
-      id: 'var-e2e-1',
-      name: 'Black',
-      price: { toString: () => '29.99' },
-      stock: 50,
-      isActive: true,
     },
   };
 
@@ -235,7 +227,6 @@ describe('OrderController (e2e)', () => {
         id: 'order-item-e2e-1',
         orderId: 'order-e2e-1',
         productId: 'prod-e2e-1',
-        variantId: 'var-e2e-1',
         quantity: 2,
         price: { toString: () => '29.99' },
         createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -245,7 +236,7 @@ describe('OrderController (e2e)', () => {
           slug: 'iphone-15-pro-case',
           images: [{ url: ORDER_ITEM_IMAGE_URL }],
         },
-        variant: { id: 'var-e2e-1', name: 'Black' },
+        addons: [],
       },
     ],
     ...overrides,
@@ -1311,6 +1302,43 @@ describe('OrderController (e2e)', () => {
       expect(orderRepositoryMock.findHistoryByOrderId).toHaveBeenCalledWith('order-e2e-1');
     });
 
+    it('exposes the row note — PAID_AFTER_CANCEL and SHIPPED_UNPAID (TASK-932 / TASK-788)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      orderRepositoryMock.findHistoryByOrderId.mockResolvedValue([
+        { ...historyRows[1], note: null },
+        {
+          ...historyRows[1],
+          id: 'hist-3',
+          fromStatus: OrderStatus.PROCESSING,
+          toStatus: OrderStatus.SHIPPED,
+          note: OrderHistoryNote.SHIPPED_UNPAID,
+        },
+        {
+          ...historyRows[1],
+          id: 'hist-4',
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromStatus: null,
+          toStatus: null,
+          fromPaymentStatus: PaymentStatus.PENDING,
+          toPaymentStatus: PaymentStatus.PAID,
+          changedBy: null,
+          note: OrderHistoryNote.PAID_AFTER_CANCEL,
+        },
+      ]);
+
+      const response = await request(app.getHttpServer())
+        .get('/api/admin/orders/order-e2e-1/history')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data.map((row: { note: unknown }) => row.note)).toEqual([
+        null,
+        OrderHistoryNote.SHIPPED_UNPAID,
+        OrderHistoryNote.PAID_AFTER_CANCEL,
+      ]);
+    });
+
     it('should return 404 when the order does not exist', async () => {
       const token = generateAccessToken(admin.id, admin.role);
       orderRepositoryMock.findById.mockResolvedValue(null);
@@ -1543,6 +1571,70 @@ describe('OrderController (e2e)', () => {
         // token (absent here — the request declared no `expectedUpdatedAt`).
         { evictProductStockCaches: false, expectedUpdatedAt: undefined },
       );
+    });
+
+    // ── TASK-788: shipping without a confirmed payment leaves a trace ──────────
+    it('ships an unpaid ONLINE order with the operator’s confirmation and notes it in history (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.PROCESSING,
+          paymentMethod: PaymentMethod.ONLINE,
+          paymentStatus: PaymentStatus.PENDING,
+        }),
+      );
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, paymentMethod: PaymentMethod.ONLINE }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.SHIPPED, confirmUnpaidShipment: true })
+        .expect(200);
+
+      expect(orderRepositoryMock.updateStatus).toHaveBeenCalledWith(
+        'order-e2e-1',
+        OrderStatus.PROCESSING,
+        OrderStatus.SHIPPED,
+        PaymentStatus.PENDING,
+        admin.id,
+        expect.objectContaining({ note: OrderHistoryNote.SHIPPED_UNPAID }),
+      );
+    });
+
+    it('ships a PAID order with no note (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.PROCESSING,
+          paymentMethod: PaymentMethod.ONLINE,
+          paymentStatus: PaymentStatus.PAID,
+        }),
+      );
+      orderRepositoryMock.updateStatus.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, paymentStatus: PaymentStatus.PAID }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.SHIPPED })
+        .expect(200);
+
+      expect(orderRepositoryMock.updateStatus.mock.calls[0][5]).not.toHaveProperty('note');
+    });
+
+    it('refuses a non-boolean confirmUnpaidShipment (400)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1/status')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ status: OrderStatus.SHIPPED, confirmUnpaidShipment: 'yes please' })
+        .expect(400);
+
+      expect(orderRepositoryMock.updateStatus).not.toHaveBeenCalled();
     });
 
     // ── TASK-332: the server, not the admin UI, decides what is legal ──────────
@@ -2335,6 +2427,88 @@ describe('OrderController (e2e)', () => {
         { trackingNumber: null },
         {},
       );
+    });
+
+    // ─── TASK-786: one edit, one guarded write ──────────────────────────────
+    const newAddress = {
+      firstName: 'Олена',
+      lastName: 'Коваль',
+      phone: '+380501234567',
+      city: 'Львів',
+      postalCode: '79000',
+      address1: 'вул. Городоцька, 1',
+    };
+
+    it('writes the address and the waybill in one call, under the caller’s version (200)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      const version = new Date('2026-07-28T10:15:30.000Z');
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.PROCESSING, updatedAt: version, trackingNumber: null }),
+      );
+      orderRepositoryMock.updateDetails.mockResolvedValue(makeOrder());
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          shippingAddress: newAddress,
+          trackingNumber: '20450000000001',
+          expectedUpdatedAt: version.toISOString(),
+        })
+        .expect(200);
+
+      // Was: updateShippingAddress(…, lock) THEN updateDetails(…, {}) — the
+      // second half without the version check.
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledTimes(1);
+      expect(orderRepositoryMock.updateDetails).toHaveBeenCalledWith(
+        'order-e2e-1',
+        expect.objectContaining({
+          shippingAddress: expect.objectContaining({ city: 'Львів' }),
+          trackingNumber: '20450000000001',
+        }),
+        { expectedUpdatedAt: version },
+      );
+    });
+
+    it('409 on a stale version when another operator already entered a waybill — nothing written', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      // The row moved on since the form was loaded: somebody else saved THEIR
+      // waybill at 10:20; this operator's form is from 10:15.
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({
+          status: OrderStatus.PROCESSING,
+          trackingNumber: '20450000000999',
+          updatedAt: new Date('2026-07-28T10:20:00.000Z'),
+        }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          shippingAddress: newAddress,
+          trackingNumber: '20450000000001',
+          expectedUpdatedAt: '2026-07-28T10:15:30.000Z',
+        })
+        .expect(409);
+
+      expect(res.body.error).toBe('ORDER_STALE');
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
+    });
+
+    it('409 for an address edit on a shipped order — the waybill in the same request is not written either', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      orderRepositoryMock.findById.mockResolvedValue(
+        makeOrder({ status: OrderStatus.SHIPPED, trackingNumber: null }),
+      );
+
+      await request(app.getHttpServer())
+        .patch('/api/admin/orders/order-e2e-1')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ shippingAddress: newAddress, trackingNumber: '20450000000001' })
+        .expect(409);
+
+      expect(orderRepositoryMock.updateDetails).not.toHaveBeenCalled();
     });
   });
 });

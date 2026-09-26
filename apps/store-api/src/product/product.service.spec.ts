@@ -123,7 +123,7 @@ const deviceCompatRepositoryMock = {
   getDeviceCompatByProductIds: jest.fn().mockResolvedValue(new Map()),
   getDeviceModelIds: jest.fn().mockResolvedValue([]),
   setDeviceCompat: jest.fn().mockResolvedValue(undefined),
-  setDeviceCompatForGroup: jest.fn().mockResolvedValue({ updatedCount: 0, productIds: [] }),
+  setDeviceCompatForGroup: jest.fn().mockResolvedValue({ updatedCount: 0, positions: [] }),
   countGroupPositions: jest.fn().mockResolvedValue(0),
 };
 
@@ -224,7 +224,7 @@ describe('ProductService', () => {
     deviceCompatRepositoryMock.setDeviceCompat.mockResolvedValue(undefined);
     deviceCompatRepositoryMock.setDeviceCompatForGroup.mockResolvedValue({
       updatedCount: 0,
-      productIds: [],
+      positions: [],
     });
     deviceCompatRepositoryMock.countGroupPositions.mockResolvedValue(0);
     deviceRepositoryMock.findModelsByIds.mockResolvedValue([]);
@@ -2197,13 +2197,59 @@ describe('ProductService', () => {
       deviceRepositoryMock.findModelsByIds.mockResolvedValue([{ id: 'm1' }]);
       deviceCompatRepositoryMock.setDeviceCompatForGroup.mockResolvedValue({
         updatedCount: 3,
-        productIds: ['p1', 'p2', 'p3'],
+        positions: [
+          { id: 'p1', slug: 'case-red', isActive: true },
+          { id: 'p2', slug: 'case-blue', isActive: true },
+          { id: 'p3', slug: 'case-green', isActive: true },
+        ],
       });
 
       const result = await service.updateGroupDeviceCompat('g1', ['m1']);
 
       expect(result).toEqual({ updatedCount: 3 });
       expect(deviceCompatRepositoryMock.setDeviceCompatForGroup).toHaveBeenCalledWith('g1', ['m1']);
+    });
+
+    // TASK-826: the public PDP is cached under the slug key, so evicting only the
+    // id key left the storefront showing the old compatibility until the TTL.
+    it('evicts both the id and the slug detail cache key of every position', async () => {
+      deviceCompatRepositoryMock.countGroupPositions.mockResolvedValue(2);
+      deviceRepositoryMock.findModelsByIds.mockResolvedValue([{ id: 'm1' }]);
+      deviceCompatRepositoryMock.setDeviceCompatForGroup.mockResolvedValue({
+        updatedCount: 2,
+        positions: [
+          { id: 'p1', slug: 'case-red', isActive: true },
+          { id: 'p2', slug: 'case-blue', isActive: false },
+        ],
+      });
+
+      await service.updateGroupDeviceCompat('g1', ['m1']);
+
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailIdKey('p1'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey('case-red'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailIdKey('p2'));
+      expect(cacheServiceMock.del).toHaveBeenCalledWith(productDetailSlugKey('case-blue'));
+    });
+
+    // TASK-826: an inactive position must be removed from the index, never
+    // (re)indexed as if it were active.
+    it('re-indexes active positions and removes inactive ones from the index', async () => {
+      deviceCompatRepositoryMock.countGroupPositions.mockResolvedValue(2);
+      deviceRepositoryMock.findModelsByIds.mockResolvedValue([{ id: 'm1' }]);
+      deviceCompatRepositoryMock.setDeviceCompatForGroup.mockResolvedValue({
+        updatedCount: 2,
+        positions: [
+          { id: 'p1', slug: 'case-red', isActive: true },
+          { id: 'p2', slug: 'case-blue', isActive: false },
+        ],
+      });
+
+      await service.updateGroupDeviceCompat('g1', ['m1']);
+
+      expect(productIndexerMock.index).toHaveBeenCalledWith('p1');
+      expect(productIndexerMock.index).not.toHaveBeenCalledWith('p2');
+      expect(productIndexerMock.remove).toHaveBeenCalledWith('p2');
+      expect(productIndexerMock.remove).not.toHaveBeenCalledWith('p1');
     });
   });
 

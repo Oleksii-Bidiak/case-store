@@ -1,5 +1,9 @@
 import type { OrderStatusHistoryEntity } from "@/shared/api";
-import { OrderStatusHistoryEntityChangeType } from "@/shared/api";
+import {
+  OrderStatusHistoryEntityChangeType,
+  OrderStatusHistoryEntityNote,
+} from "@/shared/api";
+import { dict } from "@/shared/config";
 import { orderStatusLabel, paymentStatusLabel } from "./status-label";
 
 /**
@@ -57,4 +61,23 @@ export function historyChangeLabel(entry: OrderStatusHistoryEntity): string {
   return `Статус: ${orderStatusLabel(entry.fromStatus)} → ${orderStatusLabel(
     entry.toStatus ?? "",
   )}`;
+}
+
+/**
+ * The flag a history row carries, as the operator reads it (TASK-932 /
+ * TASK-788) — or null on an ordinary row. Shown UNDER the change label: the
+ * transition itself reads the same as any other, and the note is what makes it
+ * not ordinary.
+ */
+export function historyNoteLabel(
+  entry: OrderStatusHistoryEntity,
+): string | null {
+  switch (entry.note) {
+    case OrderStatusHistoryEntityNote.SHIPPED_UNPAID:
+      return dict.orderStatus.unpaidShipHistoryNote;
+    case OrderStatusHistoryEntityNote.PAID_AFTER_CANCEL:
+      return dict.orderStatus.paidAfterCancelHistoryNote;
+    default:
+      return null;
+  }
 }

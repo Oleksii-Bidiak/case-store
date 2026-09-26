@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { MAX_QUANTITY } from '../cart.constants';
-import { ResolvedAddonEntity } from '../../addon-service';
+import { ResolvedAddonEntity, centsToString, lineTotalCents } from '../../addon-service';
 import type { ResolvedAddon } from '../../addon-service';
 
 /**
@@ -168,12 +168,8 @@ export class CartItemEntity {
     // already handles a deactivated product handles this for free.
     entity.isActive = item.product.isActive && item.product.category.isActive;
 
-    // Calculate line total using cents arithmetic to avoid float errors
-    const priceCents = Math.round(parseFloat(unitPriceStr) * 100);
-    const lineTotalCents = priceCents * item.quantity;
-    const dollars = Math.floor(lineTotalCents / 100);
-    const cents = lineTotalCents % 100;
-    entity.lineTotal = `${dollars}.${cents.toString().padStart(2, '0')}`;
+    // Integer cents via the canonical helpers (TASK-807) — never a float product.
+    entity.lineTotal = centsToString(lineTotalCents(item.product.price, item.quantity));
 
     entity.availableAddons = availableAddons.map((addon) =>
       ResolvedAddonEntity.fromResolved(addon),

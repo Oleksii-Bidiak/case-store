@@ -1,20 +1,18 @@
 import { AppService } from './app.service';
-import { PrismaService } from './prisma/prisma.service';
+import type { AppRepository } from './app.repository';
 import type { ThrottlerRedisHealth, ThrottlerStoreStatus } from './throttler';
 
 describe('AppService', () => {
   const throttlerHealth = (status: ThrottlerStoreStatus): ThrottlerRedisHealth =>
     ({ status, isDegraded: status === 'down' }) as unknown as ThrottlerRedisHealth;
 
-  const buildService = (queryRaw: jest.Mock, rateLimitStore: ThrottlerStoreStatus = 'disabled') =>
-    new AppService(
-      { $queryRaw: queryRaw } as unknown as PrismaService,
-      throttlerHealth(rateLimitStore),
-    );
+  // TASK-822: the database is reached through AppRepository.ping(), never PrismaService.
+  const buildService = (ping: jest.Mock, rateLimitStore: ThrottlerStoreStatus = 'disabled') =>
+    new AppService({ ping } as unknown as AppRepository, throttlerHealth(rateLimitStore));
 
   describe('health', () => {
     it('reports ok when the database answers', async () => {
-      const service = buildService(jest.fn().mockResolvedValue([{ '?column?': 1 }]));
+      const service = buildService(jest.fn().mockResolvedValue(undefined));
 
       const result = await service.health();
 
@@ -56,7 +54,7 @@ describe('AppService', () => {
    * API can still serve, and no restart could fix it.
    */
   describe('rate-limit store', () => {
-    const up = jest.fn().mockResolvedValue([{ '?column?': 1 }]);
+    const up = jest.fn().mockResolvedValue(undefined);
 
     it('is reported as `disabled` — not degraded — when Redis is not configured', async () => {
       const result = await buildService(up, 'disabled').health();

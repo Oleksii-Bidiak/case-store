@@ -7,6 +7,7 @@ import { toast } from "@/shared/ui/toast";
 import {
   PageForm,
   pageFormValuesToCreateDto,
+  pageSaveConflictMessage,
   type PageFormValues,
 } from "@/features/page-form";
 import {
@@ -35,8 +36,11 @@ export function CreatePageView() {
           toast.success(dict.pages.toastCreated);
           router.push("/pages");
         },
-        onError: () => {
-          toast.error(dict.pages.toastCreateFailed);
+        onError: (error) => {
+          toast.error(
+            pageSaveConflictMessage(error, values.kind) ??
+              dict.pages.toastCreateFailed,
+          );
         },
       },
     );

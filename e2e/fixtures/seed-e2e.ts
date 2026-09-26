@@ -19,7 +19,9 @@ loadEnv({ path: path.resolve(__dirname, "../../apps/store-api/.env") });
  *   - product slug:   `test-product`
  *   - user login:     `e2e@test.com` / `E2ePassword1!`
  *   - admin login:    `e2e-admin@test.com` / `E2eAdminPassword1!`
- *   - orders:         one PROCESSING + one PENDING (ids below)
+ *   - read-only mgr:  `e2e-manager-ro@test.com` / `E2eManagerRo1!` — MANAGER
+ *                     holding ONLY `orders:read` (TASK-715)
+ *   - orders:        one PROCESSING + one PENDING (ids below)
  */
 export const E2E_PRODUCT_SLUG = "test-product";
 export const E2E_USER_EMAIL = "e2e@test.com";
@@ -28,6 +30,19 @@ export const E2E_USER_PASSWORD = "E2ePassword1!";
 /** Staff account for the admin-panel specs — role ADMIN, i.e. the shop owner. */
 export const E2E_ADMIN_EMAIL = "e2e-admin@test.com";
 export const E2E_ADMIN_PASSWORD = "E2eAdminPassword1!";
+
+/**
+ * A MANAGER who may READ orders and nothing else (TASK-715).
+ *
+ * The admin above holds every permission, so it cannot show what a narrower
+ * session is spared. This one exists for the specs asserting that a control is
+ * ABSENT without its right — the order card of someone who may look but not
+ * change. Its grant set is reset to exactly `orders:read` on every run, so a
+ * row added by hand on the test DB cannot quietly widen it.
+ */
+export const E2E_MANAGER_RO_EMAIL = "e2e-manager-ro@test.com";
+export const E2E_MANAGER_RO_PASSWORD = "E2eManagerRo1!";
+const E2E_MANAGER_RO_PERMISSIONS = ["orders:read"];
 
 /**
  * Order fixtures for the admin order-filter specs (TASK-405).
@@ -110,6 +125,42 @@ export default async function globalSetup(): Promise<void> {
         emailVerifiedAt: new Date(),
       },
     });
+
+    // TASK-715: a MANAGER's rights are exactly its `user_permissions` rows
+    // (plan 181 — no role matrix any more), so the grant set is replaced, not
+    // merged: every other row is removed before the one right is written.
+    const managerPasswordHash = await argon2.hash(E2E_MANAGER_RO_PASSWORD);
+    const manager = await prisma.user.upsert({
+      where: { email: E2E_MANAGER_RO_EMAIL },
+      update: {
+        passwordHash: managerPasswordHash,
+        role: "MANAGER",
+        isActive: true,
+        deletedAt: null,
+      },
+      create: {
+        email: E2E_MANAGER_RO_EMAIL,
+        passwordHash: managerPasswordHash,
+        firstName: "E2E",
+        lastName: "Reader",
+        role: "MANAGER",
+        isActive: true,
+        emailVerifiedAt: new Date(),
+      },
+    });
+    await prisma.userPermission.deleteMany({
+      where: {
+        userId: manager.id,
+        permission: { notIn: E2E_MANAGER_RO_PERMISSIONS },
+      },
+    });
+    for (const permission of E2E_MANAGER_RO_PERMISSIONS) {
+      await prisma.userPermission.upsert({
+        where: { userId_permission: { userId: manager.id, permission } },
+        update: {},
+        create: { userId: manager.id, permission },
+      });
+    }
 
     // Two orders that differ only in status — the minimum needed to prove a
     // status filter actually filters. `createdAt` is stamped on every run (the

@@ -1,10 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { Prisma, Review, ReviewReply, ReviewTextStatus } from '@prisma/client';
+import { Prisma, Review, ReviewHiddenReason, ReviewReply, ReviewTextStatus } from '@prisma/client';
 import { ReviewRepository, ReviewsNotFoundError } from './review.repository';
 import { ReviewService } from './review.service';
-import { ReviewModerationStatus } from './dto';
+import { ReviewAuthorVisibility, ReviewModerationStatus } from './dto';
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -23,6 +23,7 @@ const makeReview = (overrides: Partial<Review> = {}): Review => ({
   ratingVisible: false,
   textStatus: ReviewTextStatus.PENDING,
   hiddenAt: null,
+  hiddenReason: null,
   createdIp: null,
   createdAt: now,
   updatedAt: now,
@@ -64,10 +65,13 @@ const reviewRepositoryMock = {
   isEmailVerified: jest.fn(),
   // TASK-598: the same lever, asked at submission — hiding an account has to stop
   // it writing NEW ratings, not merely withdraw the ones it already wrote.
-  isAuthorHidden: jest.fn(),
+  findAuthorHiddenReason: jest.fn(),
   // TASK-589: the one-click account-wide lever.
   hideAuthorReviews: jest.fn(),
   restoreAuthorReviews: jest.fn(),
+  // TASK-599: a moderator's restore of a banned or deleted account.
+  findAccountHoldReason: jest.fn(),
+  relabelAuthorReviews: jest.fn(),
 };
 
 /** The address the submission arrived from — recorded since TASK-588. */
@@ -90,7 +94,7 @@ describe('ReviewService', () => {
     // The ordinary author: nobody has withdrawn them. Stated rather than left to
     // an undefined mock, because "not hidden" is now an input to whether a
     // submitted rating counts.
-    reviewRepositoryMock.isAuthorHidden.mockResolvedValue(false);
+    reviewRepositoryMock.findAuthorHiddenReason.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -126,7 +130,7 @@ describe('ReviewService', () => {
       reviewRepositoryMock.isVerifiedPurchase.mockResolvedValue(false);
       // Address proven: the email gate alone would let this one through.
       reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
-      reviewRepositoryMock.isAuthorHidden.mockResolvedValue(true);
+      reviewRepositoryMock.findAuthorHiddenReason.mockResolvedValue(ReviewHiddenReason.MODERATOR);
       reviewRepositoryMock.create.mockResolvedValue(makeReview());
 
       await submit({ rating: 1, comment: 'Same abuser, new review' });
@@ -136,6 +140,9 @@ describe('ReviewService', () => {
       // Stamped, not merely uncounted: `hiddenAt` is what the text paths filter
       // on, so without it the sentence would still reach the moderation queue.
       expect(written.hiddenAt).toBeInstanceOf(Date);
+      // And held by the SAME decision as the rest of the account (TASK-599), so a
+      // later un-ban does not lift this one row alone.
+      expect(written.hiddenReason).toBe(ReviewHiddenReason.MODERATOR);
     });
 
     it('creates the review and returns the entity', async () => {
@@ -154,6 +161,7 @@ describe('ReviewService', () => {
         ratingVisible: false,
         createdIp: SUBMITTER_IP,
         hiddenAt: null,
+        hiddenReason: null,
       });
       expect(result.id).toBe('review-uuid-1');
     });
@@ -388,6 +396,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
+        { visibility: undefined, productId: undefined, createdIp: undefined },
       );
       expect(result.data[0].userEmail).toBe('olena@example.com');
       expect(result.data[0].productName).toBe('iPhone 15 Pro Case');
@@ -427,6 +436,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
+        { visibility: undefined, productId: undefined, createdIp: undefined },
       );
     });
 
@@ -443,6 +453,7 @@ describe('ReviewService', () => {
         1,
         20,
         undefined,
+        { visibility: undefined, productId: undefined, createdIp: undefined },
       );
     });
 
@@ -469,6 +480,44 @@ describe('ReviewService', () => {
       expect(result.data[0]).not.toHaveProperty('isActive');
     });
 
+    // TASK-596: `ratingVisible = false` alone cannot tell "a moderator withdrew
+    // this account" from "the address is not confirmed yet"; the row has to say.
+    it('exposes when and why the author was withdrawn', async () => {
+      const hiddenAt = new Date('2026-09-20T10:00:00.000Z');
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({ hiddenAt, hiddenReason: ReviewHiddenReason.MODERATOR }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+          {
+            ...makeReview({ id: 'review-uuid-2' }),
+            user: { email: 'petro@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 2,
+      });
+
+      const result = await service.getReviewsForModeration({
+        visibility: ReviewAuthorVisibility.ALL,
+      });
+
+      expect(result.data[0].hiddenAt).toEqual(hiddenAt);
+      expect(result.data[0].hiddenReason).toBe(ReviewHiddenReason.MODERATOR);
+      // Unconfirmed, not withdrawn: the other half of the distinction.
+      expect(result.data[1].hiddenAt).toBeNull();
+      expect(result.data[1].hiddenReason).toBeNull();
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
+        'pending',
+        1,
+        20,
+        undefined,
+        { visibility: 'all', productId: undefined, createdIp: undefined },
+      );
+    });
+
     // TASK-423: the queue had no search at all. A term that reached the service
     // but not the repository would render a full, unfiltered queue — which looks
     // like "nothing matched my typo" rather than "the filter was dropped".
@@ -482,7 +531,35 @@ describe('ReviewService', () => {
         3,
         100,
         'чохол',
+        { visibility: undefined, productId: undefined, createdIp: undefined },
       );
+    });
+
+    // TASK-601: the rating-abuse card links here with the series named.
+    it('forwards status=all with the product and address filters, and exposes createdIp', async () => {
+      reviewRepositoryMock.findForModeration.mockResolvedValue({
+        reviews: [
+          {
+            ...makeReview({ createdIp: '203.0.113.42', comment: null }),
+            user: { email: 'olena@example.com' },
+            product: { name: 'iPhone 15 Pro Case', sku: null },
+          },
+        ],
+        total: 1,
+      });
+
+      const result = await service.getReviewsForModeration({
+        status: ReviewModerationStatus.ALL,
+        productId: PRODUCT_ID,
+        createdIp: '203.0.113.42',
+      });
+
+      expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith('all', 1, 20, undefined, {
+        visibility: undefined,
+        productId: PRODUCT_ID,
+        createdIp: '203.0.113.42',
+      });
+      expect(result.data[0].createdIp).toBe('203.0.113.42');
     });
   });
 
@@ -821,16 +898,23 @@ describe('ReviewService', () => {
     it('withdraws every review of the account in one call', async () => {
       reviewRepositoryMock.hideAuthorReviews.mockResolvedValue(7);
 
-      await expect(service.hideAuthor('abuser-1')).resolves.toBe(7);
-      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith('abuser-1');
+      await expect(service.hideAuthor('abuser-1', ReviewHiddenReason.MODERATOR)).resolves.toBe(7);
+      expect(reviewRepositoryMock.hideAuthorReviews).toHaveBeenCalledWith(
+        'abuser-1',
+        ReviewHiddenReason.MODERATOR,
+      );
     });
 
     it('restores a confirmed author with their ratings counting again', async () => {
       reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
       reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(7);
 
-      await expect(service.unhideAuthor('forgiven-1')).resolves.toBe(7);
-      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith('forgiven-1', true);
+      await expect(service.unhideAuthor('forgiven-1', ReviewHiddenReason.BAN)).resolves.toBe(7);
+      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith(
+        'forgiven-1',
+        ReviewHiddenReason.BAN,
+        true,
+      );
     });
 
     it('restores an unconfirmed author WITHOUT counting their ratings', async () => {
@@ -840,12 +924,49 @@ describe('ReviewService', () => {
       reviewRepositoryMock.isEmailVerified.mockResolvedValue(false);
       reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(3);
 
-      await service.unhideAuthor('unconfirmed-1');
+      await service.unhideAuthor('unconfirmed-1', ReviewHiddenReason.BAN);
 
       expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith(
         'unconfirmed-1',
+        ReviewHiddenReason.BAN,
         false,
       );
+    });
+
+    it('lifts a moderator hide on a live account by restoring the MODERATOR rows only', async () => {
+      reviewRepositoryMock.findAccountHoldReason.mockResolvedValue(null);
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      reviewRepositoryMock.restoreAuthorReviews.mockResolvedValue(2);
+
+      await expect(service.unhideAuthor('u-1', ReviewHiddenReason.MODERATOR)).resolves.toBe(2);
+      expect(reviewRepositoryMock.restoreAuthorReviews).toHaveBeenCalledWith(
+        'u-1',
+        ReviewHiddenReason.MODERATOR,
+        true,
+      );
+      expect(reviewRepositoryMock.relabelAuthorReviews).not.toHaveBeenCalled();
+    });
+
+    it('does not publish a banned account when a moderator lifts their own hide', async () => {
+      // TASK-599. The moderator's verdict goes, but the ban still holds the rows:
+      // they are handed to BAN and come back with the un-ban, not now.
+      reviewRepositoryMock.findAccountHoldReason.mockResolvedValue(ReviewHiddenReason.BAN);
+      reviewRepositoryMock.relabelAuthorReviews.mockResolvedValue(4);
+
+      await expect(service.unhideAuthor('banned-1', ReviewHiddenReason.MODERATOR)).resolves.toBe(0);
+      expect(reviewRepositoryMock.relabelAuthorReviews).toHaveBeenCalledWith(
+        'banned-1',
+        ReviewHiddenReason.MODERATOR,
+        ReviewHiddenReason.BAN,
+      );
+      expect(reviewRepositoryMock.restoreAuthorReviews).not.toHaveBeenCalled();
+    });
+
+    it('never asks about the account hold on an un-ban', async () => {
+      // The account is being switched on by this very call; only BAN rows move.
+      reviewRepositoryMock.isEmailVerified.mockResolvedValue(true);
+      await service.unhideAuthor('u-2', ReviewHiddenReason.BAN);
+      expect(reviewRepositoryMock.findAccountHoldReason).not.toHaveBeenCalled();
     });
   });
 });

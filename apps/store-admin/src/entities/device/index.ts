@@ -36,6 +36,8 @@ export {
 export type {
   DeviceBrandEntity,
   DeviceModelEntity,
+  // The light public list item (TASK-702) — what `useDeviceControllerFindModels` returns.
+  DeviceModelListItemEntity,
   DeviceBrandListResponse,
   DeviceModelListResponse,
   AdminDeviceBrandListResponse,

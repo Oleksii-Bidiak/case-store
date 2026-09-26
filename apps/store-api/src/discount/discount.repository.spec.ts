@@ -108,6 +108,8 @@ describe('DiscountRepository', () => {
       expect(prismaMock.discount.findMany).toHaveBeenCalledWith({
         where: {
           isActive: true,
+          // TASK-731: only codes the operator published reach the public feed.
+          showOnPromoPage: true,
           OR: [{ startsAt: null }, { startsAt: { lte: now } }],
           AND: [{ OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }],
         },
@@ -138,9 +140,26 @@ describe('DiscountRepository', () => {
           startsAt: null,
           expiresAt: null,
           isActive: true,
+          // TASK-731: a new code is private until the operator publishes it.
+          showOnPromoPage: false,
         }),
       });
       expect(result).toBe(created);
+    });
+
+    it('persists showOnPromoPage when the operator publishes on create (TASK-731)', async () => {
+      prismaMock.discount.create.mockResolvedValue({ id: 'd1' });
+
+      await repository.create({
+        code: 'PUBLIC5',
+        type: 'PERCENT',
+        value: new Prisma.Decimal('5'),
+        showOnPromoPage: true,
+      });
+
+      expect(prismaMock.discount.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ showOnPromoPage: true }),
+      });
     });
   });
 

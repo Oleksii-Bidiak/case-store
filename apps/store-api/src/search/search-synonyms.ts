@@ -118,7 +118,9 @@ export const UA_EN_SYNONYMS: Record<string, string[]> = buildSynonymMap(SYNONYM_
 /**
  * Derive the cross-script search terms to inject into a product document.
  *
- * Tokenizes the given text (product name + category + brand), looks each token up
+ * Tokenizes the given text (product name + category + brand + article number —
+ * the code since TASK-522, split at its separators so «GLASS-IPHONE-15» yields
+ * `iphone`), looks each token up
  * in {@link UA_EN_SYNONYMS} and returns the deduplicated equivalents the text does
  * **not** already contain. Direction-agnostic on purpose: the catalogue is
  * Ukrainian, so most injections are now Latin, but an entry named «AirPods Pro 2»

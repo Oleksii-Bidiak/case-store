@@ -10,6 +10,7 @@ import {
   IsDateString,
   Min,
   MaxLength,
+  ValidateIf,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { DiscountType } from '@prisma/client';
@@ -50,7 +51,10 @@ export class CreateDiscountDto {
     example: 500,
     required: false,
   })
-  @IsOptional()
+  // Omit to mean "no minimum"; `null` is NOT accepted on create (TASK-797) —
+  // @IsOptional would let it through to `new Prisma.Decimal(null)` → 500. The
+  // update DTO's PartialType re-adds @IsOptional, so `null` still clears it there.
+  @ValidateIf((_, value: unknown) => value !== undefined)
   @Type(() => Number)
   @IsNumber({ maxDecimalPlaces: 2 }, { message: 'minSpend must be a number with up to 2 decimals' })
   @Min(0, { message: 'minSpend must be at least 0' })
@@ -105,4 +109,16 @@ export class CreateDiscountDto {
   @IsOptional()
   @IsBoolean({ message: 'isActive must be true or false' })
   isActive?: boolean;
+
+  @ApiProperty({
+    description:
+      'Publish the code on the storefront «Акції» page and in GET /discounts/active (TASK-731). ' +
+      'An unpublished code is private but still applies when entered by code.',
+    example: false,
+    required: false,
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean({ message: 'showOnPromoPage must be true or false' })
+  showOnPromoPage?: boolean;
 }
