@@ -375,7 +375,9 @@ export const dict = {
       tips: "Поради",
       compare: "Порівняння",
     },
-    featuredBadge: "Головна тема тижня",
+    // TASK-833 — the same words as the admin switch that sets it («Головна
+    // стаття тижня»), so the editor recognises what they marked.
+    featuredBadge: "Головна стаття тижня",
     emptyHeading: "Нічого не знайдено",
     emptyBody: "Спробуйте іншу категорію або уточніть запит.",
     newsletter: {

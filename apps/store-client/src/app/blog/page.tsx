@@ -50,7 +50,8 @@ export async function generateMetadata({
  * single accumulating window — `?page=3` meant "the first 21 posts" — which is
  * why it could never carry numbered pages. On the unfiltered first page one of
  * these nine is lifted out as the featured hero rather than fetched on top of
- * them, so page 2 starts exactly where page 1 ended.
+ * them, so page 2 starts exactly where page 1 ended. With no post marked
+ * featured there is no hero at all (TASK-833) and page 1 shows nine cards.
  */
 const PAGE_SIZE = 9;
 
@@ -95,9 +96,13 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
 
   const views = posts.map(toBlogPostView);
 
+  // TASK-833 — only a post the editor actually marked «Головна стаття тижня».
+  // The hero used to fall back to the newest post, so the hub always had one
+  // and marking an article changed nothing visible — the switch looked broken.
+  // The API sorts featured posts first, so a marked post is always on page 1.
   const featured =
     isUnfiltered && pageNum === 1
-      ? (views.find((p) => p.featured) ?? views[0] ?? null)
+      ? (views.find((p) => p.featured) ?? null)
       : null;
   const rest = featured ? views.filter((p) => p.slug !== featured.slug) : views;
 
