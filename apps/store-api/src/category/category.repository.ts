@@ -13,8 +13,12 @@ import {
 } from './category-reorder.rules';
 import {
   CategoryCycleError,
+  CategoryMoveTargetInSubtreeError,
+  CategoryMoveTargetNotFoundError,
   CategoryNotFoundError,
   CategorySelfParentError,
+  CategorySlugConflictError,
+  CategoryTreeStaleError,
 } from './category.errors';
 import {
   acquireAdvisoryLocks,
@@ -219,6 +223,42 @@ export interface BulkStatusResult {
 export interface CategoryUpdateResult {
   category: Category;
   reparented: boolean;
+}
+
+/**
+ * Where {@link CategoryRepository.deleteSubtreeWithMove} moves the deleted subtree's
+ * products (TASK-652): an EXISTING live category, or a NEW one created in the same
+ * transaction. The new target's slug is generated and pre-checked by the service; the
+ * unique index is the authoritative guard and surfaces as `CategorySlugConflictError`.
+ */
+export type CategoryDeletionTarget =
+  | { kind: 'existing'; id: string }
+  | { kind: 'new'; name: string; slug: string; parentId: string | null };
+
+/**
+ * Result of {@link CategoryRepository.deleteSubtreeWithMove} (TASK-652) — everything
+ * the service needs for its post-commit side effects and the `category.deleted` log
+ * line, computed inside the transaction that did the work.
+ */
+export interface CategoryDeletionResult {
+  targetId: string;
+  targetCreated: boolean;
+  /** The tombstoned ids — the deleted category itself plus every live descendant. */
+  subtreeIds: string[];
+  /** Products re-filed into the target (active, inactive and soft-deleted alike). */
+  movedProducts: number;
+  /** Carousels switched from a subtree category to the target. */
+  switchedCarousels: number;
+}
+
+/**
+ * The numbers the admin delete dialog previews (TASK-652) — see
+ * {@link CategoryRepository.countDeletionImpact}.
+ */
+export interface CategoryDeletionImpact {
+  subcategoryCount: number;
+  productCount: number;
+  carouselCount: number;
 }
 
 @Injectable()
@@ -1156,6 +1196,196 @@ export class CategoryRepository {
     });
   }
 
+  // ─── Deletion (TASK-652, decision B-2 of plan 178) ──────────────────────────
+
+  /**
+   * Delete a category: tombstone its WHOLE subtree after moving every product and
+   * carousel out of it into `target` — all in ONE transaction, so there is no state in
+   * which a product points at a tombstone (invariant I1) or a live category sits under
+   * one (I2).
+   *
+   * Steps, in order:
+   *   1. Tree lock, then the node itself (live, or `CategoryNotFoundError`) and its
+   *      subtree, then the SORTED bucket locks: the node's own bucket, the bucket of
+   *      every subtree node (a concurrent `create` under one of them takes exactly that
+   *      lock) and — for a new target — the destination bucket. Same global order as
+   *      `applyTreeMoves` / `prepareReparent`: tree first, then sorted buckets.
+   *   2. The subtree is re-read under all locks; if a child appeared between the two
+   *      reads (a create that committed before we got its bucket lock) the request is
+   *      refused as `CategoryTreeStaleError` rather than leaving a live orphan.
+   *   3. The target is validated AUTHORITATIVELY here — the service's checks were only
+   *      fast-fail hints: it (or the new target's parent) must be live and outside the
+   *      subtree.
+   *   4. A new target is created at the end of its bucket (live rows only); a slug
+   *      collision on the unique index is `CategorySlugConflictError`.
+   *   5. `product.updateMany` — NO `deletedAt` filter: a soft-deleted product moves too,
+   *      so a product restored later never points at a tombstone. `isActive` and
+   *      `deletedAt` of products are never touched.
+   *   6. `carousel.updateMany` — the FK's `SetNull` only fires on a HARD delete, so a
+   *      carousel left on a tombstone would 404 on its next edit.
+   *   7. Each subtree row: `deletedAt = now`, `isActive = false`, slug mangled to
+   *      `deleted:<id>:<slug>` so the address is free for a new category (I3).
+   *
+   * Throws the domain errors of `category.errors.ts`; any throw rolls everything back.
+   */
+  deleteSubtreeWithMove(
+    id: string,
+    target: CategoryDeletionTarget,
+    now: Date = new Date(),
+  ): Promise<CategoryDeletionResult> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        // Tree lock FIRST: while it is held no node can change parent, so the subtree
+        // read below cannot be invalidated by a reparent.
+        await this.acquireLocks(tx, [TREE_LOCK_KEY]);
+
+        const node = await tx.category.findFirst({
+          where: { id, deletedAt: null },
+          select: { id: true, parentId: true },
+        });
+        if (!node) {
+          throw new CategoryNotFoundError(`Category "${id}" not found`);
+        }
+
+        const subtreeIds = await this.findSubtreeIds(id, tx);
+        const bucketKeys = [
+          bucketLockKey(node.parentId),
+          ...subtreeIds.map((subtreeId) => bucketLockKey(subtreeId)),
+        ];
+        if (target.kind === 'new') {
+          bucketKeys.push(bucketLockKey(target.parentId));
+        }
+        await this.acquireLocks(tx, bucketKeys);
+
+        const subtreeNow = await this.findSubtreeIds(id, tx);
+        const subtree = new Set(subtreeIds);
+        if (subtreeNow.length !== subtree.size || subtreeNow.some((sid) => !subtree.has(sid))) {
+          throw new CategoryTreeStaleError();
+        }
+
+        let targetId: string;
+        if (target.kind === 'existing') {
+          if (subtree.has(target.id)) {
+            throw new CategoryMoveTargetInSubtreeError();
+          }
+          const live = await tx.category.findFirst({
+            where: { id: target.id, deletedAt: null },
+            select: { id: true },
+          });
+          if (!live) {
+            throw new CategoryMoveTargetNotFoundError(
+              `Move target category "${target.id}" not found`,
+            );
+          }
+          targetId = target.id;
+        } else {
+          targetId = await this.createDeletionTarget(tx, target, subtree);
+        }
+
+        const moved = await tx.product.updateMany({
+          where: { categoryId: { in: subtreeIds } },
+          data: { categoryId: targetId },
+        });
+        const switched = await tx.carousel.updateMany({
+          where: { categoryId: { in: subtreeIds } },
+          data: { categoryId: targetId },
+        });
+
+        const rows = await tx.category.findMany({
+          where: { id: { in: subtreeIds } },
+          select: { id: true, slug: true },
+        });
+        for (const row of rows) {
+          await tx.category.update({
+            where: { id: row.id },
+            data: { deletedAt: now, isActive: false, slug: `deleted:${row.id}:${row.slug}` },
+          });
+        }
+
+        return {
+          targetId,
+          targetCreated: target.kind === 'new',
+          subtreeIds,
+          movedProducts: moved.count,
+          switchedCarousels: switched.count,
+        };
+      },
+      // Lock waits count against `timeout` — same budget as `runTreeMoves`.
+      { timeout: 15_000, maxWait: 10_000 },
+    );
+  }
+
+  /**
+   * Create the new move target of a delete inside its transaction (TASK-652). Its
+   * destination bucket lock is already held by the caller, so the `max + 1` read cannot
+   * race a concurrent append.
+   */
+  private async createDeletionTarget(
+    tx: Prisma.TransactionClient,
+    target: Extract<CategoryDeletionTarget, { kind: 'new' }>,
+    subtree: Set<string>,
+  ): Promise<string> {
+    if (target.parentId !== null) {
+      if (subtree.has(target.parentId)) {
+        throw new CategoryMoveTargetInSubtreeError(
+          'The parent of the new category must be outside the subtree being deleted',
+        );
+      }
+      const parent = await tx.category.findFirst({
+        where: { id: target.parentId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!parent) {
+        throw new CategoryMoveTargetNotFoundError(
+          `Parent category "${target.parentId}" of the new move target not found`,
+        );
+      }
+    }
+
+    const { _max } = await tx.category.aggregate({
+      where: { parentId: target.parentId, deletedAt: null },
+      _max: { sortOrder: true },
+    });
+
+    try {
+      const created = await tx.category.create({
+        data: {
+          name: target.name,
+          slug: target.slug,
+          parentId: target.parentId,
+          sortOrder: _max.sortOrder === null ? 0 : _max.sortOrder + 1,
+        },
+        select: { id: true },
+      });
+      return created.id;
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new CategorySlugConflictError();
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * What deleting `id` would touch (TASK-652) — the admin delete dialog's preview:
+   *   - `subcategoryCount` — the live subtree minus the category itself;
+   *   - `productCount` — EVERY non-deleted product of the subtree, inactive ones
+   *     included, because all of them move (NOT {@link PUBLIC_PRODUCT_WHERE}, which
+   *     would under-report);
+   *   - `carouselCount` — carousels pointing into the subtree, which switch too.
+   */
+  async countDeletionImpact(id: string): Promise<CategoryDeletionImpact> {
+    const subtreeIds = await this.findSubtreeIds(id);
+    const [productCount, carouselCount] = await Promise.all([
+      this.prisma.product.count({
+        where: { categoryId: { in: subtreeIds }, deletedAt: null },
+      }),
+      this.prisma.carousel.count({ where: { categoryId: { in: subtreeIds } } }),
+    ]);
+
+    return { subcategoryCount: subtreeIds.length - 1, productCount, carouselCount };
+  }
+
   /**
    * Deactivate a category by setting isActive = false.
    * Returns the updated category record.
@@ -1231,9 +1461,16 @@ export class CategoryRepository {
    * result (even for a non-existent `categoryId`, where the CTE's base row is
    * empty) so callers get a well-formed, non-empty `IN (...)` filter. Ordering
    * is not guaranteed — callers only need set membership.
+   *
+   * `client` (TASK-652): pass an interactive-transaction client to resolve the subtree
+   * under the locks `deleteSubtreeWithMove` holds — same contract as
+   * {@link findDescendantIds}.
    */
-  async findSubtreeIds(categoryId: string): Promise<string[]> {
-    const result = await this.prisma.$queryRaw<Array<{ id: string }>>`
+  async findSubtreeIds(
+    categoryId: string,
+    client: CategoryDbClient = this.prisma,
+  ): Promise<string[]> {
+    const result = await client.$queryRaw<Array<{ id: string }>>`
       WITH RECURSIVE subtree AS (
         -- Base case: the category itself
         SELECT id, parent_id FROM categories WHERE id = ${categoryId}

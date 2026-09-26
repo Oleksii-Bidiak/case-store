@@ -1,5 +1,11 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+  ForbiddenException,
+  HttpException,
+} from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import {
   CategoryRepository,
@@ -19,9 +25,13 @@ import { CategoryListQueryDto } from './dto';
 import {
   CategoryCycleError,
   CategoryDuplicateIdError,
+  CategoryErrorCode,
   CategoryMaxDepthError,
+  CategoryMoveTargetInSubtreeError,
+  CategoryMoveTargetNotFoundError,
   CategoryNotFoundError,
   CategorySelfParentError,
+  CategorySlugConflictError,
   CategoryTreeStaleError,
 } from './category.errors';
 import {
@@ -32,6 +42,7 @@ import {
 } from '../cache';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
+import { PermissionService } from '../auth/permissions';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
@@ -90,6 +101,17 @@ const categoryRepositoryMock = {
   findDescendantIds: jest.fn(),
   applyTreeMoves: jest.fn(),
   setActiveMany: jest.fn(),
+  deleteSubtreeWithMove: jest.fn(),
+  countDeletionImpact: jest.fn(),
+};
+
+// ─── PermissionService mock (TASK-652: moveToNew needs categories:write) ─────
+// Mirrors the real contract: the actor is read from the database, and the grant
+// check is a synchronous question asked of that actor.
+
+const permissionServiceMock = {
+  findActor: jest.fn(),
+  actorHasPermission: jest.fn(),
 };
 
 const cacheMock = {
@@ -140,6 +162,7 @@ describe('CategoryService', () => {
         { provide: CategorySubtreeIndexer, useValue: subtreeIndexerMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
         { provide: RevalidationNotifier, useValue: revalidationMock },
+        { provide: PermissionService, useValue: permissionServiceMock },
       ],
     }).compile();
 
@@ -1114,6 +1137,298 @@ describe('CategoryService', () => {
 
       expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
       expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─── delete (admin, TASK-652) ────────────────────────────────────────────────
+
+  describe('delete', () => {
+    const TARGET_ID = 'cat-target';
+    const deletionResult = {
+      targetId: TARGET_ID,
+      targetCreated: false,
+      subtreeIds: ['cat-uuid-1', 'cat-uuid-2'],
+      movedProducts: 5,
+      switchedCarousels: 1,
+    };
+    const actor = { id: 'manager-1' };
+
+    /** The error code on the HTTP body — the admin panel keys its message off it. */
+    const codeOf = async (promise: Promise<unknown>): Promise<unknown> => {
+      try {
+        await promise;
+      } catch (error) {
+        return ((error as HttpException).getResponse() as { error?: string }).error;
+      }
+      throw new Error('expected a rejection');
+    };
+
+    beforeEach(() => {
+      categoryRepositoryMock.findById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === 'cat-uuid-1' ? mockCategory : id === TARGET_ID ? { ...mockCategory, id } : null,
+        ),
+      );
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.deleteSubtreeWithMove.mockResolvedValue(deletionResult);
+      permissionServiceMock.findActor.mockResolvedValue(actor);
+      permissionServiceMock.actorHasPermission.mockReturnValue(true);
+    });
+
+    describe('exactly one move mode', () => {
+      it.each([
+        ['neither', {}],
+        ['both', { moveToId: TARGET_ID, moveToNew: { name: 'Інше' } }],
+      ])('rejects %s with 400 CATEGORY_MOVE_TARGET_REQUIRED and writes nothing', async (_, dto) => {
+        const call = service.delete('cat-uuid-1', dto, 'admin-1');
+
+        await expect(call).rejects.toThrow(BadRequestException);
+        expect(await codeOf(service.delete('cat-uuid-1', dto, 'admin-1'))).toBe(
+          CategoryErrorCode.MOVE_TARGET_REQUIRED,
+        );
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('target validation', () => {
+      it('rejects the category itself as the target with 400 CATEGORY_MOVE_TARGET_IN_SUBTREE', async () => {
+        const call = service.delete('cat-uuid-1', { moveToId: 'cat-uuid-1' }, 'admin-1');
+
+        expect(await codeOf(call)).toBe(CategoryErrorCode.MOVE_TARGET_IN_SUBTREE);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+
+      // The authoritative subtree check runs under the tree lock in the repository.
+      it('maps a target inside the subtree (decided under the lock) to 400 with its code', async () => {
+        categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(
+          new CategoryMoveTargetInSubtreeError(),
+        );
+
+        const call = service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+
+        await expect(call).rejects.toThrow(BadRequestException);
+        expect(await codeOf(service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'))).toBe(
+          CategoryErrorCode.MOVE_TARGET_IN_SUBTREE,
+        );
+        expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+      });
+
+      it('rejects a missing or deleted target with 404 CATEGORY_MOVE_TARGET_NOT_FOUND', async () => {
+        const call = service.delete('cat-uuid-1', { moveToId: 'cat-gone' }, 'admin-1');
+
+        await expect(call).rejects.toThrow(NotFoundException);
+        expect(
+          await codeOf(service.delete('cat-uuid-1', { moveToId: 'cat-gone' }, 'admin-1')),
+        ).toBe(CategoryErrorCode.MOVE_TARGET_NOT_FOUND);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+
+      it('maps a target deleted under the lock to 404 CATEGORY_MOVE_TARGET_NOT_FOUND', async () => {
+        categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(
+          new CategoryMoveTargetNotFoundError(),
+        );
+
+        const call = service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+
+        await expect(call).rejects.toThrow(NotFoundException);
+      });
+
+      it('rejects a missing parent of the new target with 404 CATEGORY_MOVE_TARGET_NOT_FOUND', async () => {
+        const call = service.delete(
+          'cat-uuid-1',
+          { moveToNew: { name: 'Інше', parentId: 'cat-gone' } },
+          'admin-1',
+        );
+
+        expect(await codeOf(call)).toBe(CategoryErrorCode.MOVE_TARGET_NOT_FOUND);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+
+      it('returns 404 when the category to delete does not exist (or is already deleted)', async () => {
+        const call = service.delete('cat-gone', { moveToId: TARGET_ID }, 'admin-1');
+
+        await expect(call).rejects.toThrow(NotFoundException);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+
+      it('maps a node that vanished before the lock to 404 CATEGORY_NOT_FOUND', async () => {
+        categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(new CategoryNotFoundError());
+
+        await expect(
+          service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'),
+        ).rejects.toThrow(NotFoundException);
+      });
+    });
+
+    describe('moveToNew', () => {
+      // Creating the target is a category write: the delete permission alone must not
+      // be a back door to it (decision B-2). 403 BEFORE anything is read or written.
+      it('returns 403 without categories:write and never reaches the repository', async () => {
+        permissionServiceMock.actorHasPermission.mockReturnValue(false);
+
+        const call = service.delete('cat-uuid-1', { moveToNew: { name: 'Інше' } }, 'manager-1');
+
+        await expect(call).rejects.toThrow(ForbiddenException);
+        expect(permissionServiceMock.findActor).toHaveBeenCalledWith('manager-1');
+        expect(permissionServiceMock.actorHasPermission).toHaveBeenCalledWith(
+          actor,
+          'categories:write',
+        );
+        expect(categoryRepositoryMock.findById).not.toHaveBeenCalled();
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+
+      it('returns 403 when the actor no longer exists', async () => {
+        permissionServiceMock.findActor.mockResolvedValue(null);
+
+        await expect(
+          service.delete('cat-uuid-1', { moveToNew: { name: 'Інше' } }, 'manager-1'),
+        ).rejects.toThrow(ForbiddenException);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+
+      it('does not ask for categories:write in the moveToId mode', async () => {
+        await service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'manager-1');
+
+        expect(permissionServiceMock.findActor).not.toHaveBeenCalled();
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith('cat-uuid-1', {
+          kind: 'existing',
+          id: TARGET_ID,
+        });
+      });
+
+      it('passes the generated slug and parent to the repository', async () => {
+        await service.delete(
+          'cat-uuid-1',
+          { moveToNew: { name: 'Other Cases', parentId: TARGET_ID } },
+          'admin-1',
+        );
+
+        expect(categoryRepositoryMock.findBySlug).toHaveBeenCalledWith('other-cases', {
+          activeOnly: false,
+        });
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith('cat-uuid-1', {
+          kind: 'new',
+          name: 'Other Cases',
+          slug: 'other-cases',
+          parentId: TARGET_ID,
+        });
+      });
+
+      it('creates a root target when no parent is given', async () => {
+        await service.delete('cat-uuid-1', { moveToNew: { name: 'Other' } }, 'admin-1');
+
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+          'cat-uuid-1',
+          expect.objectContaining({ kind: 'new', parentId: null }),
+        );
+      });
+
+      it('returns 409 CATEGORY_SLUG_CONFLICT when the slug is taken (even by an inactive one)', async () => {
+        categoryRepositoryMock.findBySlug.mockResolvedValue(mockInactiveCategory);
+
+        const call = service.delete('cat-uuid-1', { moveToNew: { name: 'Other' } }, 'admin-1');
+
+        expect(await codeOf(call)).toBe(CategoryErrorCode.SLUG_CONFLICT);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+
+      it('maps a slug race lost at the unique index to 409', async () => {
+        categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(
+          new CategorySlugConflictError(),
+        );
+
+        await expect(
+          service.delete('cat-uuid-1', { moveToNew: { name: 'Other' } }, 'admin-1'),
+        ).rejects.toThrow(ConflictException);
+      });
+
+      it('rejects a name that yields an empty slug with 400', async () => {
+        await expect(
+          service.delete('cat-uuid-1', { moveToNew: { name: '!!!' } }, 'admin-1'),
+        ).rejects.toThrow(BadRequestException);
+        expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('on success', () => {
+      it('purges the product caches, revalidates the catalogue and reindexes the target', async () => {
+        const result = await service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+
+        expect(result).toEqual(deletionResult);
+        expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
+        expect(cacheMock.delByPrefix).toHaveBeenCalledWith(BRAND_LIST_PREFIX);
+        expect(revalidationMock.revalidate).toHaveBeenCalledWith(CATALOGUE_REVALIDATE_TARGET);
+        expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith([TARGET_ID]);
+      });
+
+      it('logs a category.deleted line with the counts', async () => {
+        await service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1');
+
+        expect(pinoLoggerMock.info).toHaveBeenCalledWith(
+          expect.objectContaining({
+            event: 'category.deleted',
+            id: 'cat-uuid-1',
+            targetId: TARGET_ID,
+            deletedCount: 2,
+            movedProducts: 5,
+            switchedCarousels: 1,
+            actorId: 'admin-1',
+          }),
+          expect.any(String),
+        );
+      });
+
+      it('still succeeds when the storefront revalidation fails', async () => {
+        revalidationMock.revalidate.mockRejectedValue(new Error('storefront down'));
+
+        await expect(
+          service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'),
+        ).resolves.toEqual(deletionResult);
+      });
+
+      it('runs no side effect when the transaction fails', async () => {
+        categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(
+          new CategoryTreeStaleError(),
+        );
+
+        await expect(
+          service.delete('cat-uuid-1', { moveToId: TARGET_ID }, 'admin-1'),
+        ).rejects.toThrow(ConflictException);
+        expect(cacheMock.delByPrefix).not.toHaveBeenCalled();
+        expect(subtreeIndexerMock.reindexSubtrees).not.toHaveBeenCalled();
+        expect(revalidationMock.revalidate).not.toHaveBeenCalled();
+      });
+    });
+  });
+
+  // ─── findByIdForAdmin (TASK-652 delete preview) ──────────────────────────────
+
+  describe('findByIdForAdmin', () => {
+    it('returns the category with its deletion impact', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(mockCategory);
+      categoryRepositoryMock.countDeletionImpact.mockResolvedValue({
+        subcategoryCount: 2,
+        productCount: 7,
+        carouselCount: 1,
+      });
+
+      const result = await service.findByIdForAdmin('cat-uuid-1');
+
+      expect(result.id).toBe('cat-uuid-1');
+      expect(result.slug).toBe('phone-cases');
+      expect(result.deletionImpact).toEqual({
+        subcategoryCount: 2,
+        productCount: 7,
+        carouselCount: 1,
+      });
+    });
+
+    it('404s a missing category without counting anything', async () => {
+      categoryRepositoryMock.findById.mockResolvedValue(null);
+
+      await expect(service.findByIdForAdmin('nope')).rejects.toThrow(NotFoundException);
+      expect(categoryRepositoryMock.countDeletionImpact).not.toHaveBeenCalled();
     });
   });
 

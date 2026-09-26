@@ -21,6 +21,22 @@ export const CategoryErrorCode = {
   NOT_FOUND: 'CATEGORY_NOT_FOUND',
   /** A described bucket's child SET changed underneath the client (concurrent reparent). */
   TREE_STALE: 'CATEGORY_TREE_STALE',
+  /**
+   * A delete request named neither or both move modes (TASK-652): exactly one of
+   * `moveToId` / `moveToNew` is required, because products are never deleted with
+   * their category (decision B-2 of plan 178).
+   */
+  MOVE_TARGET_REQUIRED: 'CATEGORY_MOVE_TARGET_REQUIRED',
+  /**
+   * The move target of a delete (or the parent of a target created by it) lies
+   * inside the subtree being deleted — the products would move into a category the
+   * same request tombstones (TASK-652).
+   */
+  MOVE_TARGET_IN_SUBTREE: 'CATEGORY_MOVE_TARGET_IN_SUBTREE',
+  /** The move target (or the new target's parent) does not exist or is deleted. */
+  MOVE_TARGET_NOT_FOUND: 'CATEGORY_MOVE_TARGET_NOT_FOUND',
+  /** The slug a new move target would take is already held by another category. */
+  SLUG_CONFLICT: 'CATEGORY_SLUG_CONFLICT',
 } as const;
 
 export type CategoryErrorCode = (typeof CategoryErrorCode)[keyof typeof CategoryErrorCode];
@@ -79,6 +95,31 @@ export class CategoryNotFoundError extends CategoryDomainError {
 export class CategoryTreeStaleError extends CategoryDomainError {
   constructor(message = 'The category tree changed since it was loaded — reload and retry') {
     super(CategoryErrorCode.TREE_STALE, message);
+  }
+}
+
+/**
+ * A delete request's move target — or the parent of the target it creates — is
+ * inside the subtree being deleted (TASK-652). Decided authoritatively under the
+ * tree advisory lock in `CategoryRepository.deleteSubtreeWithMove`.
+ */
+export class CategoryMoveTargetInSubtreeError extends CategoryDomainError {
+  constructor(message = 'The move target must be outside the category subtree being deleted') {
+    super(CategoryErrorCode.MOVE_TARGET_IN_SUBTREE, message);
+  }
+}
+
+/** The move target (or the new target's parent) does not exist or is deleted (TASK-652). */
+export class CategoryMoveTargetNotFoundError extends CategoryDomainError {
+  constructor(message = 'Move target category not found') {
+    super(CategoryErrorCode.MOVE_TARGET_NOT_FOUND, message);
+  }
+}
+
+/** A new move target's slug collided with an existing category's slug (TASK-652). */
+export class CategorySlugConflictError extends CategoryDomainError {
+  constructor(message = 'A category with this slug already exists') {
+    super(CategoryErrorCode.SLUG_CONFLICT, message);
   }
 }
 
