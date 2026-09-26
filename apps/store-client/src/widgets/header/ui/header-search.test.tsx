@@ -385,6 +385,29 @@ describe("HeaderSearch — APG combobox ARIA contract (TASK-275)", () => {
     expect(options[2]).toHaveAttribute("aria-selected", "false");
   });
 
+  it("enters the combined list at the bottom on ArrowUp (APG, TASK-508)", async () => {
+    setupHandlers({
+      products: [
+        makeSuggestion(),
+        makeSuggestion({ id: "product-2", name: "Скло", slug: "glass" }),
+      ],
+      posts: [makeBlogPost()],
+    });
+
+    const { user, input } = await typeQuery("чохол");
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+    const options = combinedOptions();
+
+    // ↑ with nothing highlighted → the last option (the article), not the
+    // first product it used to clamp to.
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", options[2].id);
+    expect(options[2]).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", options[1].id);
+  });
+
   it("selects the option named by aria-activedescendant on Enter", async () => {
     setupHandlers({
       products: [

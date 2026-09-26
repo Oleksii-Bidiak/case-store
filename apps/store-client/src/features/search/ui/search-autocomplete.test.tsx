@@ -358,6 +358,41 @@ describe("SearchAutocomplete — the pill's behaviour at every width (TASK-805/5
     expect(input).not.toHaveAttribute("aria-activedescendant");
   });
 
+  // APG combobox (TASK-508): ↑ from the input enters the combined list at the
+  // bottom — the last article — just as ↓ enters it at the first product.
+  it("moves ArrowUp from the input to the LAST option of the combined list", async () => {
+    mockSuggest(
+      [suggestion(), suggestion({ id: "p2", name: "Скло", slug: "glass" })],
+      [blogPost()],
+    );
+
+    const { user, input } = await typeQuery("чохол");
+    const blogList = await screen.findByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    const [firstProduct, secondProduct] =
+      within(productList()).getAllByRole("option");
+    const article = within(blogList).getByRole("option");
+
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", article.id);
+    expect(article).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", secondProduct.id);
+
+    // Clamped at the top, not wrapped.
+    await user.keyboard("{ArrowUp}{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", firstProduct.id);
+
+    // Enter commits what ↑ reached.
+    await user.keyboard("{Escape}");
+    await user.type(input, "и");
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+    await user.keyboard("{ArrowUp}{Enter}");
+    expect(mockPush).toHaveBeenCalledWith("/blog/how-to-pick-a-case");
+  });
+
   it("gives two instances distinct option ids", async () => {
     mockSuggest([suggestion()]);
     const user = userEvent.setup();

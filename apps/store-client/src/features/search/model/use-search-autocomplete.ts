@@ -217,7 +217,12 @@ export function useSearchAutocomplete({
         break;
       case "ArrowUp":
         event.preventDefault();
-        setActiveIndex((i) => Math.max(i - 1, 0));
+        // APG combobox (TASK-508): ↑ from the input — nothing highlighted yet
+        // — lands on the LAST option (the last article when there are any),
+        // the mirror of ↓ landing on the first product.
+        setActiveIndex((i) =>
+          i < 0 ? combined.length - 1 : Math.max(i - 1, 0),
+        );
         break;
       case "Enter": {
         const item = activeIndex >= 0 ? combined[activeIndex] : undefined;
