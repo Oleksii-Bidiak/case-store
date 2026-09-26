@@ -1,5 +1,11 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import {
+  act,
+  fireEvent,
+  renderWithProviders,
+  screen,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { formatCurrency } from "@/shared/lib";
@@ -819,5 +825,108 @@ describe("OrderDetailView — returns on the card (TASK-724)", () => {
     expect(
       screen.queryByRole("heading", { name: dict.orders.returnsForOrder }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-629: «Очікує оплати · N хв» used to freeze at the fetch — the card read
+ * the panel-default 5-minute `staleTime` and nothing re-rendered on a clock. Now
+ * a one-minute tick moves the count and the card refetches once a minute.
+ */
+describe("OrderDetailView — the awaiting-payment countdown (TASK-629)", () => {
+  const START = Date.parse("2026-09-26T10:00:00.000Z");
+
+  beforeEach(() => {
+    // Promises and MSW must still run; only the clocks are faked.
+    jest.useFakeTimers({
+      now: START,
+      doNotFake: ["queueMicrotask", "nextTick", "setImmediate"],
+    });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  function awaitingOrder(overrides: Record<string, unknown> = {}) {
+    return {
+      ...makeOrder(null),
+      paymentMethod: "ONLINE",
+      paymentStatus: "PENDING",
+      reservationExpiresAt: new Date(START + 10 * 60_000).toISOString(),
+      trackingNumber: null,
+      internalNotes: "стара примітка",
+      ...overrides,
+    };
+  }
+
+  it("counts the minutes down without a reload, and refetches the order", async () => {
+    let reads = 0;
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () => {
+        reads += 1;
+        return HttpResponse.json({ data: awaitingOrder() });
+      }),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByText(dict.orders.markAwaitingPayment(10)),
+    ).toBeInTheDocument();
+    expect(reads).toBe(1);
+
+    await act(async () => {
+      jest.advanceTimersByTime(3 * 60_000);
+    });
+
+    expect(
+      await screen.findByText(dict.orders.markAwaitingPayment(7)),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orders.markAwaitingPayment(10)),
+    ).not.toBeInTheDocument();
+    // The card polls on its own (refetchInterval), not only on focus.
+    await waitFor(() => expect(reads).toBeGreaterThan(1));
+
+    // And the countdown ends where the worker would act.
+    await act(async () => {
+      jest.advanceTimersByTime(8 * 60_000);
+    });
+    expect(
+      await screen.findByText(dict.orders.markReservationExpired),
+    ).toBeInTheDocument();
+  });
+
+  it("does not wipe a half-typed waybill when the periodic refetch lands", async () => {
+    let notes = "стара примітка";
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: awaitingOrder({ internalNotes: notes }) }),
+      ),
+    );
+
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
+    });
+
+    const waybill = await screen.findByLabelText(dict.orders.trackingNumber);
+    fireEvent.change(waybill, { target: { value: "20450000000000" } });
+
+    // A colleague edits the notes; the next poll brings that in.
+    notes = "примітка колеги";
+    await act(async () => {
+      jest.advanceTimersByTime(61_000);
+    });
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(dict.orders.internalNotes)).toHaveValue(
+        "примітка колеги",
+      ),
+    );
+    // forms.md Rule 2a: the dirty field survives the refetch.
+    expect(screen.getByLabelText(dict.orders.trackingNumber)).toHaveValue(
+      "20450000000000",
+    );
   });
 });
