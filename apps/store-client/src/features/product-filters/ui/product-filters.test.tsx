@@ -412,3 +412,76 @@ describe("ProductFilters — on sale (TASK-742)", () => {
     expect(screen.queryByText(dict.filters.saleTitle)).not.toBeInTheDocument();
   });
 });
+
+/**
+ * TASK-523 — `/search` passes a category (brand scope) but its endpoint has no
+ * `?specs=`, so the category-scoped spec facets must stay out of the panel.
+ */
+describe("ProductFilters — hideSpecFacets (TASK-523)", () => {
+  const CATEGORY_ID = "11111111-1111-4111-8111-111111111111";
+  let facetCalls = 0;
+
+  beforeEach(() => {
+    facetCalls = 0;
+    server.use(
+      http.get("*/api/categories/:id/filterable-specs", () => {
+        facetCalls += 1;
+        return HttpResponse.json({
+          data: [
+            {
+              definition: {
+                id: "def-material",
+                categoryId: CATEGORY_ID,
+                key: "material",
+                label: "Матеріал",
+                type: "SELECT",
+                unit: null,
+                options: ["Силікон"],
+                isFilterable: true,
+                sortOrder: 0,
+              },
+              values: [{ value: "Силікон", count: 3 }],
+            },
+          ],
+        });
+      }),
+    );
+  });
+
+  it("shows the spec facets for a category by default", async () => {
+    renderWithProviders(
+      <ProductFilters
+        currentParams={{}}
+        categoryId={CATEGORY_ID}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(await screen.findByText(dict.filters.specsTitle)).toBeVisible();
+  });
+
+  it.each([
+    ["the sidebar", false],
+    ["the drawer", true],
+  ])(
+    "leaves them out of %s with hideSpecFacets — and never asks for them",
+    async (_label, collapsible) => {
+      renderWithProviders(
+        <ProductFilters
+          currentParams={{}}
+          categoryId={CATEGORY_ID}
+          onFilterChange={jest.fn()}
+          collapsible={collapsible}
+          hideSpecFacets
+        />,
+      );
+
+      // Let every enabled query settle before asserting on absence.
+      await screen.findByText(dict.filters.deviceTitle);
+      expect(
+        screen.queryByText(dict.filters.specsTitle),
+      ).not.toBeInTheDocument();
+      expect(facetCalls).toBe(0);
+    },
+  );
+});

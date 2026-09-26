@@ -5,8 +5,10 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 import { useSearch } from "@/entities/search";
+import { useCategoryControllerGetCategoryTree } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
+  CategoryChips,
   FiltersDrawer,
   ProductFilters,
   clearFilterUpdates,
@@ -18,6 +20,7 @@ import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
+import { findCategoryIdBySlug } from "../model/find-category";
 import { SearchResultsSkeleton } from "./search-results-skeleton";
 import {
   SearchSortSelect,
@@ -44,6 +47,11 @@ interface SearchResultsViewProps {
 
 /** The facets `/search` narrows by — the subset of the panel the API accepts. */
 interface SearchFacets {
+  /**
+   * Category SLUG — `?category=phone-cases` (TASK-523). The API rolls it up over
+   * the whole subtree, exactly like the catalogue listing.
+   */
+  category?: string;
   /** Brand SLUG — `?brand=apple` (TASK-420). */
   brand?: string;
   /** Device-model SLUG — `?device=iphone-15` (TASK-420). */
@@ -67,11 +75,13 @@ interface SearchFacets {
  * page is shareable and survives a reload. The server component hands down the
  * first `q`/`page`; from then on the live URL wins (they agree on first render).
  *
- * Two filters the panel offers are deliberately NOT wired here: the category
- * (the search endpoint takes a category id, but nothing on this page picks one
- * — so the panel is given no `categoryId`, which in turn keeps the
- * category-scoped spec facets hidden rather than showing controls the endpoint
- * would ignore). See TASK-523.
+ * The category is picked from the same chips row the catalogue uses and rides
+ * the URL as a slug (TASK-523). Its id is handed to the panel, so the brand
+ * list is scoped to it — but the panel's spec facets and «Зі знижкою» stay
+ * hidden (`hideSpecFacets`, `hideOnSale`): `GET /api/search` takes neither
+ * `?specs=` nor `?onSale=`, and a control the endpoint ignores is worse than
+ * no control. Per-category result counts on the chips need facet counts from
+ * the search engine, which are not requested yet (TASK-1401).
  */
 export function SearchResultsView({ query, page }: SearchResultsViewProps) {
   const searchParams = useSearchParams();
@@ -92,6 +102,7 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
   const minPriceRaw = searchParams.get("minPrice");
   const maxPriceRaw = searchParams.get("maxPrice");
   const facets: SearchFacets = {
+    category: searchParams.get("category") ?? undefined,
     brand: searchParams.get("brand") ?? undefined,
     device: searchParams.get("device") ?? undefined,
     // Only the literal "true" turns availability on — "false" means "no filter",
@@ -112,6 +123,7 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
   // editing it there edits `?q=` (see `applyFilters`).
   const panelParams: ProductControllerFindAllParams = {
     search: trimmed,
+    category: facets.category,
     brand: facets.brand,
     device: facets.device,
     minPrice: facets.minPrice,
@@ -119,8 +131,18 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
     inStock: facets.inStock,
   };
 
+  // The public tree (roots + children, one payload) feeds the chips row and the
+  // slug → id lookup the id-addressed brand list needs — the same query the
+  // catalogue already holds, so it is shared through React Query's cache.
+  const { data: categoriesData } = useCategoryControllerGetCategoryTree();
+  const categories = categoriesData?.data ?? [];
+  const activeCategoryId = facets.category
+    ? findCategoryIdBySlug(categories, facets.category)
+    : undefined;
+
   // Badge on the mobile «Фільтри» button. Counted through the shared definition
   // (TASK-414) and without the keyword, which is the query rather than a filter.
+  // The category is excluded as on the catalogue: its control is the chips row.
   const activeFilterCount = countActiveFilters(
     { ...panelParams, search: undefined },
     { includeCategory: false },
@@ -152,11 +174,12 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
     [searchParams, pathname, router],
   );
 
-  // The drawer's zero-results action: the same full-set reset the panel's
-  // «Скинути фільтри» sends, so `applyFilters` recognises it as a reset and
-  // keeps `?q=`.
+  // The drawer's zero-results action clears EVERY filter, the category chip
+  // included — named «Скинути всі фільтри» like the catalogue's, and apart from
+  // the panel's own reset, which keeps the category (TASK-516). A full-set
+  // reset is what `applyFilters` recognises, so `?q=` survives it.
   const resetFilters = useCallback(
-    () => applyFilters(clearFilterUpdates({ includeCategory: false })),
+    () => applyFilters(clearFilterUpdates()),
     [applyFilters],
   );
 
@@ -265,6 +288,15 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
 
   return (
     <div>
+      {/* Category chips — the catalogue's own row (TASK-523), writing
+          ?category=<slug>. No per-category counts yet: those need facet counts
+          from the search engine (TASK-1401). */}
+      <CategoryChips
+        categories={categories}
+        activeCategorySlug={facets.category}
+        onSelect={(category) => applyFilters({ category })}
+      />
+
       {/* Toolbar: mobile filters button (left) + sort (right) */}
       <div className="mb-5 flex items-center gap-3">
         <button
@@ -295,9 +327,12 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
           <ProductFilters
             idPrefix="search-filter"
             currentParams={panelParams}
+            categoryId={activeCategoryId}
             onFilterChange={applyFilters}
-            // GET /api/search has no `onSale` param (TASK-742).
+            // GET /api/search takes neither `onSale` (TASK-742) nor `specs`
+            // (TASK-523) — no control that the endpoint would ignore.
             hideOnSale
+            hideSpecFacets
           />
         </aside>
 
@@ -305,19 +340,22 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
       </div>
 
       {/* Mobile filters drawer — the shared one (TASK-804). Its zero-results
-          reset is the panel's own «скинути фільтри», which on this page keeps
-          the query (see `applyFilters`). */}
+          reset clears every filter, the category included, and keeps the query
+          (see `resetFilters`). */}
       <FiltersDrawer
         open={filtersOpen}
         onOpenChange={setFiltersOpen}
         resultCount={meta?.total}
         onReset={resetFilters}
+        resetLabel={dict.catalog.clearAllFilters}
       >
         <ProductFilters
           idPrefix="search-filter-m"
           currentParams={panelParams}
+          categoryId={activeCategoryId}
           onFilterChange={applyFilters}
           hideOnSale
+          hideSpecFacets
           collapsible
         />
       </FiltersDrawer>

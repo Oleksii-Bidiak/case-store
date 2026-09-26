@@ -78,6 +78,13 @@ interface ProductFiltersProps {
    * box would be ticked with no effect on the results.
    */
   hideOnSale?: boolean;
+  /**
+   * Leave out the structured-spec facets even when a category is active
+   * (TASK-523). `/search` narrows by category — so it passes `categoryId`,
+   * which scopes the brand list — but `GET /api/search` has no `?specs=`, and
+   * facet checkboxes there would be ticked with no effect on the results.
+   */
+  hideSpecFacets?: boolean;
 }
 
 const cardClass =
@@ -100,6 +107,7 @@ export function ProductFilters({
   collapsible = false,
   lockedDevice = false,
   hideOnSale = false,
+  hideSpecFacets = false,
 }: ProductFiltersProps) {
   // Committed price bounds from the URL, clamped into the slider domain.
   const committedMin = clampPrice(currentParams.minPrice ?? 0);
@@ -208,9 +216,14 @@ export function ProductFilters({
     // second, differently-keyed copy of the facet list — and could then open a
     // disclosure onto a control that self-hides because its own list is narrower.
     toFacetQueryParams(currentParams),
-    { query: { enabled: collapsible && Boolean(categoryId) } },
+    {
+      query: {
+        enabled: collapsible && Boolean(categoryId) && !hideSpecFacets,
+      },
+    },
   );
-  const hasSpecs = Boolean(categoryId) && (specsData?.data.length ?? 0) > 0;
+  const hasSpecs =
+    !hideSpecFacets && Boolean(categoryId) && (specsData?.data.length ?? 0) > 0;
 
   /**
    * Render one filter section's chrome. In `collapsible` mode it is a native
@@ -405,8 +418,9 @@ export function ProductFilters({
 
       {/* Structured-spec facets (TASK-191) — category-scoped; renders nothing
           when no category is active or it has no filterable specs. Collapsible
-          drawer gates on `hasSpecs` and strips the facet card's own chrome. */}
-      {collapsible ? (
+          drawer gates on `hasSpecs` and strips the facet card's own chrome.
+          Left out altogether with `hideSpecFacets` (TASK-523). */}
+      {hideSpecFacets ? null : collapsible ? (
         hasSpecs &&
         renderSection(
           dict.filters.specsTitle,
