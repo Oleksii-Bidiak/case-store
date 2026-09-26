@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 /**
  * Swagger-decorated response classes for `GET /api/admin/dashboard/summary`.
@@ -113,12 +113,21 @@ export class TopProductDto {
   @ApiProperty({ type: String, description: 'Product name', example: 'USB-C Cable 2m' })
   name!: string;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: Number,
-    description: 'Total revenue earned by this product',
+    description:
+      'Total revenue earned by this product. Present only for callers holding ' +
+      '`analytics:revenue` (TASK-684); absent otherwise.',
     example: 3420.0,
   })
-  totalRevenue!: number;
+  totalRevenue?: number;
+
+  @ApiProperty({
+    type: Number,
+    description: 'Units sold (sum of line quantities over PAID orders)',
+    example: 12,
+  })
+  unitsSold!: number;
 }
 
 export class ProductMetricsDto {
@@ -128,7 +137,12 @@ export class ProductMetricsDto {
   @ApiProperty({ type: Number, description: 'Number of active products', example: 119 })
   activeProducts!: number;
 
-  @ApiProperty({ type: [TopProductDto], description: 'Top products by total revenue' })
+  @ApiProperty({
+    type: [TopProductDto],
+    description:
+      'Top products — by total revenue for callers holding `analytics:revenue`, by units sold ' +
+      'for everybody else',
+  })
   topProducts!: TopProductDto[];
 }
 
@@ -163,8 +177,17 @@ export class OperationsMetricsDto {
 }
 
 export class DashboardSummaryResponse {
-  @ApiProperty({ type: RevenueMetricsDto })
-  revenue!: RevenueMetricsDto;
+  /**
+   * MONEY (TASK-684): present only for callers holding `analytics:revenue`. For
+   * everybody else the key is ABSENT from the body — not null — because the
+   * admin is a public bundle and hiding a tile would hide nothing.
+   */
+  @ApiPropertyOptional({
+    type: RevenueMetricsDto,
+    description:
+      'Revenue metrics. Present only for callers holding `analytics:revenue`; absent otherwise.',
+  })
+  revenue?: RevenueMetricsDto;
 
   @ApiProperty({ type: OrderMetricsDto })
   orders!: OrderMetricsDto;

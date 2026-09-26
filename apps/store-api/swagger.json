@@ -13924,7 +13924,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Aggregated dashboard metrics",
+            "description": "Aggregated dashboard metrics. `revenue`, and `totalRevenue` on each top product, are present only for callers holding `analytics:revenue`; for everybody else the keys are absent (not null) and top products are ranked by units sold.",
             "content": {
               "application/json": {
                 "schema": {
@@ -27103,14 +27103,19 @@
           },
           "totalRevenue": {
             "type": "number",
-            "description": "Total revenue earned by this product",
+            "description": "Total revenue earned by this product. Present only for callers holding `analytics:revenue` (TASK-684); absent otherwise.",
             "example": 3420
+          },
+          "unitsSold": {
+            "type": "number",
+            "description": "Units sold (sum of line quantities over PAID orders)",
+            "example": 12
           }
         },
         "required": [
           "productId",
           "name",
-          "totalRevenue"
+          "unitsSold"
         ]
       },
       "ProductMetricsDto": {
@@ -27127,7 +27132,7 @@
             "example": 119
           },
           "topProducts": {
-            "description": "Top products by total revenue",
+            "description": "Top products — by total revenue for callers holding `analytics:revenue`, by units sold for everybody else",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TopProductDto"
@@ -27196,7 +27201,12 @@
         "type": "object",
         "properties": {
           "revenue": {
-            "$ref": "#/components/schemas/RevenueMetricsDto"
+            "description": "Revenue metrics. Present only for callers holding `analytics:revenue`; absent otherwise.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RevenueMetricsDto"
+              }
+            ]
           },
           "orders": {
             "$ref": "#/components/schemas/OrderMetricsDto"
@@ -27218,7 +27228,6 @@
           }
         },
         "required": [
-          "revenue",
           "orders",
           "users",
           "customers",

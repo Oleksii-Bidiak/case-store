@@ -13,6 +13,13 @@ import { dict } from "@/shared/config";
 
 interface DashboardTopProductsTableProps {
   products: TopProductDto[];
+  /**
+   * Whether the caller was sent money (TASK-684) — `summary.revenue !== undefined`
+   * at the call site. Explicit because an empty list cannot say it by itself:
+   * an owner with no paid sales yet must still see the revenue heading. When
+   * omitted it is read off the rows.
+   */
+  showsRevenue?: boolean;
 }
 
 /**
@@ -35,14 +42,29 @@ interface DashboardTopProductsTableProps {
  *
  * Still no `"use client"`: `next/link` renders fine in a server component, and this
  * widget has no state to own.
+ *
+ * ── TASK-684: money only when the API sent money ────────────────────────────
+ * For a caller without `analytics:revenue` the API strips `totalRevenue` from
+ * every row and ranks the list by units sold instead. The table follows the
+ * data: when no row carries a sum it shows units, under a heading that no longer
+ * says «за виручкою». It never renders a blank or «0 ₴» money column — that would
+ * misreport the shop — and it cannot reveal a sum the response did not contain.
  */
 export function DashboardTopProductsTable({
   products,
+  showsRevenue,
 }: DashboardTopProductsTableProps) {
+  // Either every row carries a sum or none does — the API decides per caller.
+  const showsMoney =
+    showsRevenue ??
+    products.some((product) => product.totalRevenue !== undefined);
+
   return (
     <div className="rounded-lg border border-border bg-card p-6 shadow-card">
       <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-        {dict.dashboard.topProducts}
+        {showsMoney
+          ? dict.dashboard.topProducts
+          : dict.dashboard.topProductsByUnits}
       </h3>
       <Table>
         <TableHeader>
@@ -52,7 +74,9 @@ export function DashboardTopProductsTable({
             </TableHead>
             <TableHead>{dict.dashboard.product}</TableHead>
             <TableHead className="text-right">
-              {dict.dashboard.totalRevenue}
+              {showsMoney
+                ? dict.dashboard.totalRevenue
+                : dict.dashboard.unitsSold}
             </TableHead>
           </TableRow>
         </TableHeader>
@@ -81,8 +105,10 @@ export function DashboardTopProductsTable({
                     {product.name}
                   </Link>
                 </TableCell>
-                <TableCell className="text-right">
-                  {formatCurrency(product.totalRevenue)}
+                <TableCell className="text-right tabular-nums">
+                  {showsMoney && product.totalRevenue !== undefined
+                    ? formatCurrency(product.totalRevenue)
+                    : product.unitsSold}
                 </TableCell>
               </TableRow>
             ))

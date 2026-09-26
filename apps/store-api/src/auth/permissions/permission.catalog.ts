@@ -230,6 +230,17 @@ export const PERMISSIONS = [
 
   // ── Аналітика ─────────────────────────────────────────────────────────────
   { key: 'analytics:read', zone: PERMISSION_ZONES.ANALYTICS, label: 'Дашборд і показники' },
+  // TASK-684 (plan 188, owner's decision B-8 №9): the money, carved out of
+  // `analytics:read`. That key keeps the operational dashboard — order counts,
+  // registrations, top products in units, stock; this one adds revenue and every
+  // sum. The API cuts the figures out of the response for anyone without it (the
+  // admin is a public bundle, so hiding a tile would hide nothing). Backfilled
+  // from `analytics:read` — see ANALYTICS_REVENUE_BACKFILL_SOURCE_PERMISSIONS.
+  {
+    key: 'analytics:revenue',
+    zone: PERMISSION_ZONES.ANALYTICS,
+    label: 'Виторг і фінансові показники',
+  },
 
   // ── Персонал і журнал дій (NON-GRANTABLE) ─────────────────────────────────
   // See GRANTABLE_PERMISSIONS below for the whole argument. In short: these are
@@ -410,6 +421,45 @@ export const CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS = [
 /** The key that backfill grants. */
 export const CUSTOMERS_CARD_PERMISSIONS = [
   'customers:card',
+] as const satisfies ReadonlyArray<Permission>;
+
+/**
+ * The permissions whose holders were granted `analytics:revenue` by the TASK-684
+ * backfill migration (`…_backfill_analytics_revenue_permission`, plan 188).
+ *
+ * THE SAME NARROW SHAPE AS THE CUSTOMER CARD ABOVE: the key carves a capability
+ * OUT of one people already hold. Until the split, `analytics:read` WAS the
+ * revenue — the dashboard sent the till to everybody who could open it. Shipping
+ * the new key default-denied would not be caution; it would make the revenue
+ * tiles silently vanish for every manager who read them the evening before, with
+ * no 403 and no message, on a screen that then reads as "the shop sold nothing".
+ * The owner's decision B-8 №9 makes the backfill mandatory for exactly that
+ * reason. So the migration follows the existing grant one-for-one: everyone who
+ * holds `analytics:read` gets `analytics:revenue`, nobody else does, and from the
+ * deploy on the owner can take the money away from anyone by unticking one box.
+ *
+ * PER PERSON, NOT PER ROLE. Wave 180 shipped a conditional backfill written
+ * against the role matrix, which held one row for the whole shop, and it granted
+ * nothing on every database measured. Grants are rows on the PERSON
+ * (`user_permissions`) since plan 181, plus templates — a template is what the
+ * next hire is set up from, so one that offered the dashboard must keep offering
+ * the numbers it used to show. An admin holds the key by level and needs no row.
+ *
+ * Like the card and per-person media backfills, no liveness filter: the row IS
+ * the grant, whoever holds it. A deactivated operator who reads the dashboard
+ * today comes back to the same dashboard on re-activation rather than a quietly
+ * narrower one, and is refused at the guard in the meantime either way.
+ *
+ * This list is the code half of the contract; the SQL is the other half, and
+ * `permission.catalog.spec.ts` asserts the two say the same thing.
+ */
+export const ANALYTICS_REVENUE_BACKFILL_SOURCE_PERMISSIONS = [
+  'analytics:read',
+] as const satisfies ReadonlyArray<Permission>;
+
+/** The key that backfill grants. */
+export const ANALYTICS_REVENUE_PERMISSIONS = [
+  'analytics:revenue',
 ] as const satisfies ReadonlyArray<Permission>;
 
 /**

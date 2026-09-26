@@ -153,6 +153,11 @@ export const dict = {
       "при оформленні замовлення, а не при відправці.",
     noLowStock: "Немає товарів із низьким запасом.",
     topProducts: "Топ товари за виручкою",
+    // TASK-684: the same list for somebody without `analytics:revenue` — the API
+    // withholds the sums and ranks by units, so the heading must not say
+    // «за виручкою».
+    topProductsByUnits: "Топ товари за кількістю продажів",
+    unitsSold: "Продано, шт.",
     rank: "#",
     noTopProducts: "Немає даних про продажі.",
     // Needs-action widget + sidebar badges (TASK-248).

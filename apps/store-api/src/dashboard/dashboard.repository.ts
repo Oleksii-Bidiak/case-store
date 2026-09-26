@@ -21,12 +21,14 @@ import {
   REPEAT_BUYER_WINDOW_DAYS,
   TOP_PRODUCTS_LIMIT,
   type DailyDataPoint,
-  type DashboardSummary,
+  type DashboardSummaryBase,
   type LowStockProduct,
   type NeedsAction,
   type RatingAbuseSignals,
   type OrderStatusCount,
+  type RevenueMetrics,
   type TopProduct,
+  type TopProductsRanking,
 } from './dashboard.types';
 import { computeAverageOrderValue, computeRepeatBuyerRate } from './dashboard.formulas';
 
@@ -65,6 +67,7 @@ interface TopProductRow {
   productId: string;
   name: string;
   totalRevenue: number;
+  unitsSold: number;
 }
 
 /**
@@ -82,18 +85,25 @@ export class DashboardRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Run every metric query in parallel and assemble the summary payload.
+   * Run every NON-money metric query in parallel and assemble the summary
+   * payload (TASK-684).
+   *
+   * The `revenue` block is not here: {@link getRevenueMetrics} computes it, and
+   * the service calls that only for a caller holding `analytics:revenue`. A query
+   * that never runs cannot leak through a later refactor that forgets to drop
+   * its result. Top products still carry `totalRevenue` — the service strips it —
+   * but they are SELECTED and ordered by `topProductsRankedBy`, which defaults to
+   * units: the safe answer for a caller that forgets to ask, because a list
+   * ranked by money tells its reader which product earns most even with every
+   * sum removed.
    */
-  async getSummary(windowDays: number = DASHBOARD_WINDOW_DAYS): Promise<DashboardSummary> {
+  async getSummary(
+    options: { windowDays?: number; topProductsRankedBy?: TopProductsRanking } = {},
+  ): Promise<DashboardSummaryBase> {
+    const windowDays = options.windowDays ?? DASHBOARD_WINDOW_DAYS;
     const windowStart = this.windowStart(windowDays);
 
     const [
-      totalRevenue,
-      revenueLast30Days,
-      unrealizedRevenue,
-      unrealizedRevenueLast30Days,
-      paidOrderCountLast30Days,
-      revenueByDay,
       totalOrders,
       ordersByStatus,
       ordersByDay,
@@ -107,12 +117,6 @@ export class DashboardRepository {
       lowStockProducts,
       averageProcessingHoursLast30Days,
     ] = await Promise.all([
-      this.getTotalRevenue(),
-      this.getRevenueSince(windowStart),
-      this.getUnrealizedRevenue(),
-      this.getUnrealizedRevenueSince(windowStart),
-      this.getPaidOrderCountSince(windowStart),
-      this.getRevenueByDay(windowDays),
       this.prisma.order.count(),
       this.getOrderCountByStatus(),
       this.getOrdersByDay(windowDays),
@@ -122,29 +126,56 @@ export class DashboardRepository {
       this.getRepeatBuyerRate(this.windowStart(REPEAT_BUYER_WINDOW_DAYS)),
       this.prisma.product.count(),
       this.prisma.product.count({ where: { isActive: true } }),
-      this.getTopProducts(TOP_PRODUCTS_LIMIT),
+      this.getTopProducts(TOP_PRODUCTS_LIMIT, options.topProductsRankedBy ?? 'units'),
       this.getLowStockProducts(LOW_STOCK_THRESHOLD, LOW_STOCK_LIMIT),
       this.getAverageProcessingHours(windowStart),
     ]);
 
     return {
-      revenue: {
-        totalRevenue,
-        revenueLast30Days,
-        unrealizedRevenue,
-        unrealizedRevenueLast30Days,
-        averageOrderValueLast30Days: computeAverageOrderValue(
-          revenueLast30Days,
-          paidOrderCountLast30Days,
-        ),
-        revenueByDay,
-      },
       orders: { totalOrders, ordersByStatus, ordersByDay },
       users: { totalUsers, newUsersByDay },
       customers: { repeatBuyerRate, repeatBuyerRateLast90Days },
       products: { totalProducts, activeProducts, topProducts },
       inventory: { lowStockProducts },
       operations: { averageProcessingHoursLast30Days },
+    };
+  }
+
+  /**
+   * The dashboard's money (TASK-684): earned and unrealized revenue, average
+   * order value and the daily revenue series. Split out of {@link getSummary} so
+   * it is computed only for a caller allowed to see it — see `DashboardService`.
+   * The formulas are unchanged from when they lived there (TASK-152/137/249).
+   */
+  async getRevenueMetrics(windowDays: number = DASHBOARD_WINDOW_DAYS): Promise<RevenueMetrics> {
+    const windowStart = this.windowStart(windowDays);
+
+    const [
+      totalRevenue,
+      revenueLast30Days,
+      unrealizedRevenue,
+      unrealizedRevenueLast30Days,
+      paidOrderCountLast30Days,
+      revenueByDay,
+    ] = await Promise.all([
+      this.getTotalRevenue(),
+      this.getRevenueSince(windowStart),
+      this.getUnrealizedRevenue(),
+      this.getUnrealizedRevenueSince(windowStart),
+      this.getPaidOrderCountSince(windowStart),
+      this.getRevenueByDay(windowDays),
+    ]);
+
+    return {
+      totalRevenue,
+      revenueLast30Days,
+      unrealizedRevenue,
+      unrealizedRevenueLast30Days,
+      averageOrderValueLast30Days: computeAverageOrderValue(
+        revenueLast30Days,
+        paidOrderCountLast30Days,
+      ),
+      revenueByDay,
     };
   }
 
@@ -600,25 +631,38 @@ export class DashboardRepository {
    * `payment_status = 'PAID'` so top-products revenue stays consistent with
    * `getTotalRevenue` (TASK-152 — earned revenue, not merely accepted orders;
    * order status is no longer a payment proxy after the TASK-151 decoupling).
+   *
+   * `unitsSold` (TASK-684) is `SUM(quantity)` over the same PAID lines — the
+   * operational half of the row, which a caller without `analytics:revenue`
+   * still sees. `rankedBy` picks the ORDER BY, and with it which five products
+   * make the cut: ranked by units, a tie falls back to the product id rather
+   * than to revenue, so nothing about money decides the list. The PAID-only base
+   * is deliberately untouched here; TASK-688/694 move it.
    */
-  private async getTopProducts(limit: number): Promise<TopProduct[]> {
+  private async getTopProducts(limit: number, rankedBy: TopProductsRanking): Promise<TopProduct[]> {
+    const orderBy =
+      rankedBy === 'revenue'
+        ? Prisma.sql`ORDER BY "totalRevenue" DESC`
+        : Prisma.sql`ORDER BY "unitsSold" DESC, oi.product_id ASC`;
     const rows = await this.prisma.$queryRaw<TopProductRow[]>`
       SELECT oi.product_id AS "productId",
              p.name AS name,
-             SUM(oi.price * oi.quantity)::float8 AS "totalRevenue"
+             SUM(oi.price * oi.quantity)::float8 AS "totalRevenue",
+             SUM(oi.quantity)::int AS "unitsSold"
       FROM order_items oi
       INNER JOIN orders o
         ON o.id = oi.order_id
         AND o.payment_status = 'PAID'
       JOIN products p ON p.id = oi.product_id
       GROUP BY oi.product_id, p.name
-      ORDER BY "totalRevenue" DESC
+      ${orderBy}
       LIMIT ${limit}
     `;
     return rows.map((row) => ({
       productId: row.productId,
       name: row.name,
       totalRevenue: Number(row.totalRevenue),
+      unitsSold: Number(row.unitsSold),
     }));
   }
 

@@ -196,12 +196,67 @@ describe('DashboardRepository (integration)', () => {
       // A product whose only order is CANCELLED must not appear.
       expect(topProducts.find((p) => p.productId === cancelledProductId)).toBeUndefined();
     });
+
+    it('reports units sold beside the revenue (TASK-684)', async () => {
+      const summary = await repo.getSummary({ topProductsRankedBy: 'revenue' });
+      const top = summary.products.topProducts.find((p) => p.productId === paidProductId);
+
+      // The PAID line is qty 3 — the operational figure a manager without
+      // `analytics:revenue` is still allowed to see.
+      expect(top?.unitsSold).toBe(3);
+    });
+
+    it('ranks by units when asked, so the order itself does not rank money (TASK-684)', async () => {
+      // A cheap, fast-moving product: more units than the paid product (5 > 3),
+      // far less money ($5 < $30). Ranked by revenue it comes second; ranked by
+      // units it must come first.
+      const cheap = await prisma.product.create({
+        data: {
+          name: 'Dash Cheap Product',
+          slug: `dash-cheap-${randomUUID()}`,
+          price: '1.00',
+          categoryId,
+          stock: LOW_STOCK_THRESHOLD + 50,
+        },
+      });
+      const order = await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '5.00',
+          total: '5.00',
+          items: { create: [{ productId: cheap.id, quantity: 5, price: '1.00' }] },
+        },
+      });
+
+      try {
+        const byRevenue = (await repo.getSummary({ topProductsRankedBy: 'revenue' })).products
+          .topProducts;
+        const byUnits = (await repo.getSummary({ topProductsRankedBy: 'units' })).products
+          .topProducts;
+
+        expect(byRevenue.map((p) => p.productId)).toEqual([paidProductId, cheap.id]);
+        expect(byUnits.map((p) => p.productId)).toEqual([cheap.id, paidProductId]);
+      } finally {
+        await prisma.orderItem.deleteMany({ where: { orderId: order.id } });
+        await prisma.order.delete({ where: { id: order.id } });
+        await prisma.product.delete({ where: { id: cheap.id } });
+      }
+    });
   });
 
-  describe('getSummary — revenue series gap-fill', () => {
-    it('returns a full 30-point series with today summing the PAID orders only', async () => {
+  describe('getSummary — carries no revenue block (TASK-684)', () => {
+    it('leaves the money to getRevenueMetrics, so it is computed only on request', async () => {
       const summary = await repo.getSummary();
-      const series = summary.revenue.revenueByDay;
+
+      expect('revenue' in summary).toBe(false);
+    });
+  });
+
+  describe('getRevenueMetrics — revenue series gap-fill', () => {
+    it('returns a full 30-point series with today summing the PAID orders only', async () => {
+      const series = (await repo.getRevenueMetrics()).revenueByDay;
 
       // generate_series always yields the full window.
       expect(series).toHaveLength(30);
@@ -214,10 +269,9 @@ describe('DashboardRepository (integration)', () => {
     });
   });
 
-  describe('getSummary — unrealized revenue', () => {
+  describe('getRevenueMetrics — unrealized revenue', () => {
     it('sums Order.total for active unpaid orders only, leaving earned revenue untouched (TASK-137)', async () => {
-      const summary = await repo.getSummary();
-      const { revenue } = summary;
+      const revenue = await repo.getRevenueMetrics();
 
       // Only the CONFIRMED + PENDING order (qty 2 @ $20 = $40) is unrealized.
       // The DELIVERED + PAID order is earned, the CANCELLED order is neither.
@@ -266,7 +320,7 @@ describe('DashboardRepository (integration)', () => {
    * PAID orders (plus an unpaid order that must be ignored), then verifies the
    * divide-by-zero guard by clearing every order.
    */
-  describe('getSummary — average order value', () => {
+  describe('getRevenueMetrics — average order value', () => {
     beforeAll(async () => {
       await prisma.orderItem.deleteMany({});
       await prisma.order.deleteMany({});
@@ -303,14 +357,14 @@ describe('DashboardRepository (integration)', () => {
     });
 
     it('divides window revenue by the paid-order count ($150 / 2 = $75)', async () => {
-      const summary = await repo.getSummary();
-      expect(summary.revenue.averageOrderValueLast30Days).toBe(75);
+      const revenue = await repo.getRevenueMetrics();
+      expect(revenue.averageOrderValueLast30Days).toBe(75);
     });
 
     it('returns 0 (no divide-by-zero) when there are no paid orders in the window', async () => {
       await prisma.order.deleteMany({});
-      const summary = await repo.getSummary();
-      expect(summary.revenue.averageOrderValueLast30Days).toBe(0);
+      const revenue = await repo.getRevenueMetrics();
+      expect(revenue.averageOrderValueLast30Days).toBe(0);
     });
   });
 
