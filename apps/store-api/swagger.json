@@ -14390,6 +14390,73 @@
         ]
       }
     },
+    "/api/admin/analytics/reports/funnel": {
+      "get": {
+        "description": "Event counts (not visitors) of the three storefront events, step-to-step shares and the overall conversion purchase ÷ add_to_cart. `configured` / `available` distinguish \"not set up\" and \"did not answer\" from real zeros; in those states every number is null. Nothing is taken from our own orders.",
+        "operationId": "getFunnelReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Funnel report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FunnelReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Add to cart → begin checkout → purchase, from Umami, compared with the previous range",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
     "/api/csrf-token": {
       "get": {
         "operationId": "CsrfController_getToken",
@@ -28348,6 +28415,139 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/TrafficSummaryEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "FunnelEvent": {
+        "type": "string",
+        "enum": [
+          "add_to_cart",
+          "begin_checkout",
+          "purchase"
+        ]
+      },
+      "FunnelStepEntity": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FunnelEvent"
+              }
+            ]
+          },
+          "count": {
+            "description": "Times the event fired",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "event",
+          "count"
+        ]
+      },
+      "FunnelTransitionEntity": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FunnelEvent"
+              }
+            ]
+          },
+          "to": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FunnelEvent"
+              }
+            ]
+          },
+          "rate": {
+            "type": "number",
+            "description": "Share (0…1) of `from` that reached `to` in the period; null when `from` is 0",
+            "nullable": true,
+            "example": 0.3
+          },
+          "previousRate": {
+            "type": "number",
+            "description": "The same share in the comparison range; null when its `from` is 0",
+            "nullable": true,
+            "example": 0.27
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "rate",
+          "previousRate"
+        ]
+      },
+      "FunnelReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Analytics credentials are present on the server"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "The analytics service answered this request"
+          },
+          "steps": {
+            "nullable": true,
+            "description": "The three steps in order; null unless available",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FunnelStepEntity"
+            }
+          },
+          "transitions": {
+            "nullable": true,
+            "description": "Step-to-step shares; null unless available",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FunnelTransitionEntity"
+            }
+          },
+          "conversion": {
+            "type": "number",
+            "description": "purchase ÷ add_to_cart in the period, 0…1; null when unknown or add_to_cart is 0",
+            "nullable": true,
+            "example": 0.12
+          },
+          "previousConversion": {
+            "type": "number",
+            "description": "The same in the comparison range",
+            "nullable": true,
+            "example": 0.1
+          }
+        },
+        "required": [
+          "period",
+          "configured",
+          "available",
+          "steps",
+          "transitions",
+          "conversion",
+          "previousConversion"
+        ]
+      },
+      "FunnelReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FunnelReportEntity"
           }
         },
         "required": [

@@ -14,6 +14,7 @@ import type { SalesDay, SalesTotals } from '../src/analytics/reports/sales.repos
 import { CatalogueRepository } from '../src/analytics/reports/catalogue.repository';
 import { ProductsReportRepository } from '../src/analytics/reports/products-report.repository';
 import { RegistrationsRepository } from '../src/analytics/reports/registrations.repository';
+import { UmamiClient } from '../src/analytics/umami.client';
 import type {
   BrandSalesRow,
   CategorySalesRow,
@@ -140,6 +141,9 @@ describe('Admin Analytics Reports (e2e)', () => {
       .useValue(productsRepositoryMock)
       .overrideProvider(RegistrationsRepository)
       .useValue(registrationsRepositoryMock)
+      // Deterministic whatever the machine's env holds: Umami is "not set up".
+      .overrideProvider(UmamiClient)
+      .useValue({ isConfigured: () => false, getStats: jest.fn(), getEventCounts: jest.fn() })
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -177,6 +181,38 @@ describe('Admin Analytics Reports (e2e)', () => {
   // The reports cache in memory for the whole suite (REDIS_HOST=''), so each
   // case below asks a period of its own — a cached answer from a previous case
   // must not be what is asserted.
+  describe('GET /api/admin/analytics/reports/funnel (TASK-689)', () => {
+    const URL = '/api/admin/analytics/reports/funnel';
+
+    it('returns 401 without a token and 403 without analytics:read', async () => {
+      await request(app.getHttpServer()).get(URL).expect(401);
+      await request(app.getHttpServer())
+        .get(URL)
+        .set('Authorization', `Bearer ${tokenFor('manager-e2e-1', UserRole.MANAGER)}`)
+        .expect(403);
+    });
+
+    it('answers "not configured" with nulls, never 0%, when Umami is not set up', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['analytics:read']);
+
+      const response = await request(app.getHttpServer())
+        .get(URL)
+        .query({ preset: '90d' })
+        .set('Authorization', `Bearer ${tokenFor('manager-e2e-1', UserRole.MANAGER)}`)
+        .expect(200);
+
+      expect(response.body.data).toMatchObject({
+        configured: false,
+        available: false,
+        steps: null,
+        transitions: null,
+        conversion: null,
+        previousConversion: null,
+        period: { preset: '90d', days: 90 },
+      });
+    });
+  });
+
   describe('GET /api/admin/analytics/reports/registrations (TASK-690)', () => {
     const URL = '/api/admin/analytics/reports/registrations';
 
