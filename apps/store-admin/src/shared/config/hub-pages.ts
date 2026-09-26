@@ -37,6 +37,33 @@ export function hubRouteForSlug(slug: string): string | null {
 }
 
 /**
+ * INFO slugs whose body the storefront's `/info` hub renders INLINE (TASK-565):
+ * «Про нас» (TASK-435) and the delivery / payment / warranty / «у цифрах»
+ * blocks (TASK-560). The storefront finds each by this exact slug, so renaming,
+ * unpublishing or deleting one silently changes `/info` — the page list marks
+ * these rows so nobody does that unawares.
+ *
+ * MIRRORED: the storefront's `shared/config/hub-pages.ts`
+ * (`INFO_SLUGS_INLINED_ON_HUB`) is the list it actually reads; each copy is
+ * pinned by its own test.
+ */
+export const INFO_SLUGS_INLINED_ON_HUB: readonly string[] = [
+  "about",
+  "info-delivery",
+  "info-payment",
+  "info-warranty",
+  "info-about-stats",
+];
+
+/** True for an INFO row the storefront renders inside `/info` itself. */
+export function isInlinedOnInfoHub(
+  kind: PageEntityKind,
+  slug: string,
+): boolean {
+  return kind === "INFO" && INFO_SLUGS_INLINED_ON_HUB.includes(slug);
+}
+
+/**
  * The storefront path a page of this kind and slug will live at — what the SERP
  * preview shows under the green host.
  *

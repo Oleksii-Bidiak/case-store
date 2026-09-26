@@ -1339,6 +1339,11 @@ export const dict = {
     toastSlugTaken: (kindLabel: string) =>
       `Сторінка з такою адресою вже є серед сторінок виду «${kindLabel}». ` +
       "Змініть slug або відредагуйте наявну сторінку.",
+    // TASK-565 — the storefront /info renders these rows inline by their exact
+    // slug; renaming or unpublishing one changes /info.
+    inlinedOnInfo: "вбудована в /info",
+    inlinedOnInfoHint:
+      "Текст цієї сторінки показується прямо на сторінці /info вітрини. Не змінюйте slug і не знімайте з публікації — інакше відповідний блок /info зникне або покаже запасний текст.",
   },
 
   pageForm: {
