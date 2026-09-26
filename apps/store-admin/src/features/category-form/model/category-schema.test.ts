@@ -1,3 +1,4 @@
+import { dict } from "@/shared/config";
 import { categorySchema } from "./category-schema";
 
 /**
@@ -20,6 +21,28 @@ describe("category form — parentId is shape-checked (TASK-808)", () => {
     "rejects %j",
     (id) => {
       expect(parentId.safeParse(id).success).toBe(false);
+    },
+  );
+});
+
+describe("category form — OG image is http(s) only (TASK-573)", () => {
+  const { ogImage } = categorySchema.shape;
+
+  it("accepts blank and an https URL", () => {
+    expect(ogImage.safeParse("").success).toBe(true);
+    expect(ogImage.safeParse("https://cdn.example.com/og.jpg").success).toBe(
+      true,
+    );
+  });
+
+  it.each(["javascript:alert(1)", "data:image/png;base64,AAAA"])(
+    "rejects %j with the hint under the field",
+    (value) => {
+      const result = ogImage.safeParse(value);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe(
+        dict.seoFields.errors.ogImageUrl,
+      );
     },
   );
 });

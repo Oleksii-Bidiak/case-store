@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { CreatePageDto, UpdatePageDto } from "@/entities/page";
 import { dict, hubRouteForSlug } from "@/shared/config";
 import { SLUG_PATTERN } from "@/shared/lib/slug";
-import { seoTextFields } from "@/shared/lib/seo-fields-schema";
+import { ogImageField, seoTextFields } from "@/shared/lib/seo-fields-schema";
 import { fromKyivDateTimeLocal } from "@/shared/lib";
 import {
   KEYWORDS_MAX_COUNT,
@@ -74,12 +74,7 @@ export const pageSchema = z
         seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
       ),
 
-    ogImage: z
-      .string()
-      .trim()
-      .url(seoErrors.ogImageUrl)
-      .optional()
-      .or(z.literal("")),
+    ogImage: ogImageField(),
 
     // No `sortOrder` (TASK-428, removed from the schema by TASK-729): the order is
     // set by dragging rows in the page list, and a new page is appended by the server.

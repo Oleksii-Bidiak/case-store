@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { CreateBlogPostDto, UpdateBlogPostDto } from "@/entities/blog";
 import { dict } from "@/shared/config";
 import { SLUG_PATTERN } from "@/shared/lib/slug";
-import { seoTextFields } from "@/shared/lib/seo-fields-schema";
+import { ogImageField, seoTextFields } from "@/shared/lib/seo-fields-schema";
 import { fromKyivDateTimeLocal } from "@/shared/lib";
 import {
   KEYWORDS_MAX_COUNT,
@@ -94,12 +94,7 @@ export const blogPostSchema = z
         seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
       ),
 
-    ogImage: z
-      .string()
-      .trim()
-      .url(seoErrors.ogImageUrl)
-      .optional()
-      .or(z.literal("")),
+    ogImage: ogImageField(),
 
     status: z.enum(BLOG_POST_STATUS),
 

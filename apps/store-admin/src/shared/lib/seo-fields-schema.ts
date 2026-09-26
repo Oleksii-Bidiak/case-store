@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { dict } from "@/shared/config";
+import { optionalHttpUrl } from "./http-url";
 
 const seoErrors = dict.seoFields.errors;
 
@@ -39,4 +40,13 @@ export function seoTextFields() {
       .optional()
       .or(z.literal("")),
   };
+}
+
+/**
+ * The entity forms' «Картинка для соцмереж (OG)» field (TASK-573): blank, or
+ * an http(s) URL. `javascript:` / `data:` get the hint under the field instead
+ * of a generic 400 from the API.
+ */
+export function ogImageField() {
+  return optionalHttpUrl(seoErrors.ogImageUrl);
 }

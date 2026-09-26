@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { CreateProductDto, UpdateProductDto } from "@/entities/product";
 import { dict } from "@/shared/config";
 import { SLUG_PATTERN } from "@/shared/lib/slug";
-import { seoTextFields } from "@/shared/lib/seo-fields-schema";
+import { ogImageField, seoTextFields } from "@/shared/lib/seo-fields-schema";
 import {
   KEYWORDS_MAX_COUNT,
   KEYWORD_MAX_LENGTH,
@@ -146,12 +146,7 @@ export const productSchema = z.object({
       seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
     ),
 
-  ogImage: z
-    .string()
-    .trim()
-    .url(seoErrors.ogImageUrl)
-    .optional()
-    .or(z.literal("")),
+  ogImage: ogImageField(),
 });
 
 export type ProductFormInput = z.input<typeof productSchema>;
