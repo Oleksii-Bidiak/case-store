@@ -19,7 +19,7 @@ import {
   toMetadataTitle,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { INFO_SLUG_INLINED_ON_HUB, SITE_URL, dict } from "@/shared/config";
+import { isInfoSlugInlinedOnHub, SITE_URL, dict } from "@/shared/config";
 
 /**
  * `/info/<slug>` — admin-authored help / reference pages (TASK-435).
@@ -75,14 +75,14 @@ export async function generateMetadata({
     fallback: page.title,
   });
   const description = resolved.description;
-  // The hub renders one INFO page inline (the "Про нас" block), so that page's
-  // text exists at two addresses. This route stays reachable, but points its
-  // canonical at the hub instead of competing with it — the sitemap agrees, and
-  // both read the slug from the same constant so they cannot drift apart.
-  const canonical =
-    page.slug === INFO_SLUG_INLINED_ON_HUB
-      ? `${SITE_URL}/info`
-      : `${SITE_URL}/info/${page.slug}`;
+  // The hub renders some INFO pages inline (the "Про нас" block and, since
+  // TASK-560, delivery / payment / warranty / «у цифрах»), so their text exists
+  // at two addresses. This route stays reachable, but points its canonical at
+  // the hub instead of competing with it — the sitemap agrees, and both read
+  // the slugs from the same list so they cannot drift apart.
+  const canonical = isInfoSlugInlinedOnHub(page.slug)
+    ? `${SITE_URL}/info`
+    : `${SITE_URL}/info/${page.slug}`;
 
   return {
     title,

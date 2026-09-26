@@ -573,6 +573,11 @@ export const dict = {
     docBadge: "ДОВІДКА",
     docOtherHeading: "Інші довідкові сторінки",
     aboutOpenPage: "Відкрити як окрему сторінку",
+    // TASK-561 — a real add-on's catalog price; a product may override it, so
+    // the card states a starting price.
+    servicePriceFrom: (price: string) => `від ${price}`,
+    // TASK-560 — the published help pages /info does not render inline.
+    pagesHeading: "Довідкові сторінки",
   },
 
   // TASK-167-Q — dedicated contact page (/contact, Contact.dc.html). Contact

@@ -361,7 +361,7 @@
   },
   "src/widgets/info-support/ui/info-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 77
+      "count": 65
     }
   },
   "src/widgets/legal-doc/ui/legal-doc-actions.tsx": {

@@ -57,6 +57,40 @@ export function hubRouteForSlug(slug: string): string | null {
 export const INFO_SLUG_INLINED_ON_HUB = "about";
 
 /**
+ * The INFO pages the `/info` hub renders as its other blocks (TASK-560): the
+ * delivery, payment and warranty cards and the «in numbers / why us» part of
+ * «Про нас» used to be constants in `widgets/info-support/model/info-content.ts`
+ * that the owner could see and edit nowhere. The migration
+ * `20260926110000_backfill_info_pages` and the seed create these rows with the
+ * text the constants held.
+ *
+ * Same rule as {@link INFO_SLUG_INLINED_ON_HUB}: `/info` is their canonical
+ * home, so they get no sitemap entry of their own and `/info/<slug>` points its
+ * canonical at the hub. The admin page list marks every one of them (the panel
+ * mirrors this list in its own `hub-pages.ts`).
+ */
+export const INFO_HUB_SECTION_SLUGS = {
+  delivery: "info-delivery",
+  payment: "info-payment",
+  warranty: "info-warranty",
+  aboutStats: "info-about-stats",
+} as const;
+
+/** Which `/info` block a section page fills. */
+export type InfoHubSectionKey = keyof typeof INFO_HUB_SECTION_SLUGS;
+
+/** Every INFO slug whose body `/info` renders inline — «Про нас» first. */
+export const INFO_SLUGS_INLINED_ON_HUB: readonly string[] = [
+  INFO_SLUG_INLINED_ON_HUB,
+  ...Object.values(INFO_HUB_SECTION_SLUGS),
+];
+
+/** True for an INFO page whose text lives on `/info` itself. */
+export function isInfoSlugInlinedOnHub(slug: string): boolean {
+  return INFO_SLUGS_INLINED_ON_HUB.includes(slug);
+}
+
+/**
  * Where a published page of the given kind is served, or null when it is served
  * nowhere. Used by the sitemap to turn a page row into a URL — and to drop the
  * HUB rows, whose routes the static list already covers.
@@ -72,7 +106,7 @@ export function pageRouteFor(
       // The inlined page is still reachable at /info/<slug>, but /info is its
       // canonical home and /info is already in the sitemap's static list — so,
       // exactly like a HUB row, it contributes no entry of its own here.
-      return slug === INFO_SLUG_INLINED_ON_HUB ? null : `/info/${slug}`;
+      return isInfoSlugInlinedOnHub(slug) ? null : `/info/${slug}`;
     case "HUB":
       // A hub row has no page of its own — the route it describes is a separate,
       // already-listed entry.
@@ -104,7 +138,7 @@ export function pageCanonicalPath(
     case "LEGAL":
       return `/legal/${slug}`;
     case "INFO":
-      return slug === INFO_SLUG_INLINED_ON_HUB ? "/info" : `/info/${slug}`;
+      return isInfoSlugInlinedOnHub(slug) ? "/info" : `/info/${slug}`;
     case "HUB":
       return hubRouteForSlug(slug);
   }
