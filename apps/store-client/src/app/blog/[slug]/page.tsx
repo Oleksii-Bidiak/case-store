@@ -144,6 +144,9 @@ export default async function BlogArticlePage({
           headline: post.title,
           description: post.excerpt,
           datePublished: post.publishedAt ?? undefined,
+          // TASK-556 — last edit + cover, both straight off the API entity.
+          dateModified: entity.updatedAt,
+          image: entity.coverImageUrl ?? undefined,
           authorName: post.author,
           siteName: resolveSiteName(seo),
         })}

@@ -10,7 +10,7 @@ export type { BuildBlogPostingSchemaInput } from "./buildBlogPostingSchema";
 export { buildFaqPageSchema } from "./buildFaqPageSchema";
 export type { FaqSchemaItem } from "./buildFaqPageSchema";
 export { buildItemListSchema } from "./buildItemListSchema";
-export type { ItemListEntry } from "./buildItemListSchema";
+export type { ItemListEntry, ItemListItemType } from "./buildItemListSchema";
 export { fetchAllActiveProducts } from "./fetchAllProducts";
 export { fetchAllPublishedPages } from "./fetchAllPages";
 export { fetchAllPublishedPosts } from "./fetchAllPosts";

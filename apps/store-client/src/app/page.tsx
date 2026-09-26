@@ -122,6 +122,8 @@ export default async function HomePage() {
           siteName,
           socialLinks,
           seo?.logoUrl,
+          // TASK-556 — the customer-service phone/email as ContactPoint.
+          contact,
         )}
       />
       <JsonLd schema={buildWebSiteSchema(SITE_URL, siteName)} />

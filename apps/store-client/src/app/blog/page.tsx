@@ -6,7 +6,10 @@ import {
   fetchBlogCategories,
 } from "@/shared/api/blog-server";
 import { JsonLd } from "@/shared/ui";
-import { buildBreadcrumbSchema } from "@/shared/lib/schema";
+import {
+  buildBreadcrumbSchema,
+  buildItemListSchema,
+} from "@/shared/lib/schema";
 import { buildHubMetadata } from "@/shared/lib/seo";
 import { SITE_URL, dict } from "@/shared/config";
 
@@ -86,6 +89,11 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
   const totalPages = Math.max(1, meta.totalPages || 1);
   const activeCategory = category || "all";
 
+  // TASK-556 — the articles on this page, in the order they are shown (hero
+  // first). The posts are server-fetched, so the list is in the first HTML, as
+  // a crawler needs it; an empty page gets no ItemList rather than an empty one.
+  const listed = featured ? [featured, ...rest] : rest;
+
   return (
     <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
       <JsonLd
@@ -94,6 +102,20 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
           { name: dict.blog.breadcrumb, item: `${SITE_URL}/blog` },
         ])}
       />
+      {listed.length > 0 && (
+        <JsonLd
+          schema={buildItemListSchema(
+            listed.map((post) => ({
+              name: post.title,
+              url: `${SITE_URL}/blog/${post.slug}`,
+              image: post.coverImageUrl
+                ? new URL(post.coverImageUrl, SITE_URL).toString()
+                : undefined,
+            })),
+            { itemType: "BlogPosting" },
+          )}
+        />
+      )}
 
       {/* Breadcrumbs */}
       <nav
