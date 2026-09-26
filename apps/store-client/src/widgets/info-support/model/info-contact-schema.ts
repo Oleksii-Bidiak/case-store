@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { dict } from "@/shared/config";
+// Direct import (not the barrel), as in `widgets/contact/model/contact-schema.ts`.
+import { isValidUAPhone } from "@/shared/lib/phone";
 
 /**
  * Validation schema for the compact info-page contact form. Mirrors the backend
@@ -13,11 +15,14 @@ export const infoContactSchema = z.object({
     .trim()
     .min(2, dict.contact.errors.nameRequired)
     .max(120, dict.contact.errors.nameRequired),
+  // TASK-744: the same rule as `/contact` (TASK-407) and `@IsUaPhone()` on the
+  // DTO. It was `min(5)/max(32)`, so `12345` passed here, earned a 400 and the
+  // generic «Не вдалося надіслати» — a validation error dressed as an outage.
   phone: z
     .string()
     .trim()
-    .min(5, dict.contact.errors.phoneRequired)
-    .max(32, dict.contact.errors.phoneRequired),
+    .max(32, dict.contact.errors.phoneRequired)
+    .refine(isValidUAPhone, dict.contact.errors.phoneRequired),
   email: z
     .string()
     .trim()
