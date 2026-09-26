@@ -9151,6 +9151,56 @@
         ]
       }
     },
+    "/api/blog/suggest": {
+      "get": {
+        "description": "Typo-tolerant via the search index, Postgres fallback. Published, listed posts only. Returns id, slug, title and coverImageUrl — never `content` (TASK-543).",
+        "operationId": "BlogController_suggest",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "Partial query string (min 1 char)",
+            "schema": {
+              "example": "павербанк",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Maximum number of suggestions",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10,
+              "default": 5,
+              "example": 5,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Article suggestions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlogSuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing/blank q or limit out of range"
+          }
+        },
+        "summary": "Autocomplete blog-article suggestions (no article bodies)",
+        "tags": [
+          "Blog"
+        ]
+      }
+    },
     "/api/blog/{slug}": {
       "get": {
         "operationId": "BlogController_findBySlug",
@@ -18673,7 +18723,7 @@
             "nullable": true
           },
           "options": {
-            "description": "Allowed values (required and non-empty when type is SELECT)",
+            "description": "Allowed values (required and non-empty when type is SELECT). An option may not contain «,» or «;» — they separate values in the catalogue ?specs= filter (TASK-514)",
             "example": [
               "Силікон",
               "Шкіра"
@@ -18747,7 +18797,7 @@
             "nullable": true
           },
           "options": {
-            "description": "Allowed values (required and non-empty when type is SELECT)",
+            "description": "Allowed values (required and non-empty when type is SELECT). An option may not contain «,» or «;» — they separate values in the catalogue ?specs= filter (TASK-514)",
             "example": [
               "Силікон",
               "Шкіра"
@@ -22343,6 +22393,38 @@
           "updatedAt"
         ]
       },
+      "BlogPostSuggestionEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id",
+            "example": "b3f7c2a0-1111-4c6b-9a1e-0f1f2e3d4c5b"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug — the article lives at /blog/{slug}",
+            "example": "power-bank-guide"
+          },
+          "title": {
+            "type": "string",
+            "description": "Post title",
+            "example": "Як обрати павербанк"
+          },
+          "coverImageUrl": {
+            "type": "string",
+            "description": "Cover image URL for the row thumbnail, or null",
+            "nullable": true,
+            "example": null
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "coverImageUrl"
+        ]
+      },
       "BlogPaginationMeta": {
         "type": "object",
         "properties": {
@@ -22411,6 +22493,21 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/BlogCategoryEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "BlogSuggestResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Matching published, listed articles — id, slug, title and cover only",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlogPostSuggestionEntity"
             }
           }
         },
