@@ -245,6 +245,11 @@ export const dict = {
     // TASK-613 (граничний випадок E-22): нова заявка на повернення сигналить
     // із головної, а не лише з розділу «Повернення».
     needsActionNewReturns: "Нові заявки на повернення",
+    // TASK-613: the tile's count comes from its own request, so it can be
+    // unknown while the rest of the widget is not. A «0» there would read as
+    // «no new returns» — the placeholder says the number is missing instead.
+    needsActionCountPending: "Кількість завантажується",
+    needsActionCountFailed: "Не вдалося отримати кількість",
   },
 
   common: {

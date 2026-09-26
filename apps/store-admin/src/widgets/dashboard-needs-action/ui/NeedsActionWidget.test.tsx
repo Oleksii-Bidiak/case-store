@@ -408,6 +408,68 @@ describe("NeedsActionWidget (TASK-248)", () => {
       ).toBeInTheDocument();
     });
 
+    /**
+     * The count is its own request. When it fails, a «0» on the tile would say
+     * «no new returns» about a queue nobody managed to read — and the tile must
+     * not unlock «all clear» either.
+     */
+    it("shows a placeholder, not «0», and withholds «all clear» when the returns list fails", async () => {
+      mockNeedsAction(quiet);
+      let calls = 0;
+      server.use(
+        http.get("*/api/admin/returns", () => {
+          calls += 1;
+          return HttpResponse.json(
+            {
+              error: "Internal Server Error",
+              message: "boom",
+              statusCode: 500,
+            },
+            { status: 500 },
+          );
+        }),
+      );
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      const link = (
+        await screen.findByText(dict.dashboard.needsActionNewReturns)
+      ).closest("a") as HTMLElement;
+      expect(
+        await within(link).findByText(dict.dashboard.needsActionCountFailed),
+      ).toBeInTheDocument();
+      expect(calls).toBeGreaterThan(0);
+      expect(within(link).getByText("—")).toBeInTheDocument();
+      expect(within(link).queryByText("0")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(dict.dashboard.needsActionAllClear),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows a placeholder, not «0», while the returns list has not answered", async () => {
+      mockNeedsAction(quiet);
+      server.use(
+        http.get("*/api/admin/returns", () => new Promise<Response>(() => {})),
+      );
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      const link = (
+        await screen.findByText(dict.dashboard.needsActionNewReturns)
+      ).closest("a") as HTMLElement;
+      expect(
+        within(link).getByText(dict.dashboard.needsActionCountPending),
+      ).toBeInTheDocument();
+      expect(within(link).queryByText("0")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(dict.dashboard.needsActionAllClear),
+      ).not.toBeInTheDocument();
+    });
+
     it("has no tile and makes no request without returns:read", async () => {
       mockNeedsAction(quiet);
       const seen = mockReturns(5);

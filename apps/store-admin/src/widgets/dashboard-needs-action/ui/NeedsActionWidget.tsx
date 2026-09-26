@@ -20,17 +20,25 @@ import { NeedsActionWidgetSkeleton } from "./NeedsActionWidgetSkeleton";
  * when the count is zero ("all clear"). Cards with an `href` are `<Link>`s (the
  * one-click deep link into the filtered section); the failed-mail card has no
  * admin destination, so it renders as a plain, non-interactive stat.
+ *
+ * TASK-613: `count` is `undefined` when the number is not known — a tile fed by
+ * its own request that has not answered yet, or failed. It renders a muted «—»
+ * with a spoken `unknownLabel`, never a «0»: a zero there reads as «nothing
+ * waiting», which is exactly what an unanswered request cannot say.
  */
 function NeedsActionCard({
   label,
   count,
   href,
+  unknownLabel,
 }: {
   label: string;
-  count: number;
+  count: number | undefined;
   href?: string;
+  unknownLabel?: string;
 }) {
-  const countClass = count > 0 ? "text-warning" : "text-muted-foreground";
+  const countClass =
+    count !== undefined && count > 0 ? "text-warning" : "text-muted-foreground";
   const base = "block rounded-lg border border-border bg-card p-6 shadow-card";
 
   const body = (
@@ -39,7 +47,14 @@ function NeedsActionCard({
       <p
         className={`mt-2 font-display text-3xl font-bold tracking-tight tabular-nums ${countClass}`}
       >
-        {count}
+        {count === undefined ? (
+          <>
+            <span aria-hidden="true">—</span>
+            <span className="sr-only">{unknownLabel}</span>
+          </>
+        ) : (
+          count
+        )}
       </p>
     </>
   );
@@ -87,11 +102,13 @@ export function NeedsActionWidget() {
   // TASK-601: the rating-abuse card links only for a moderator — its href can
   // carry an IP address (see `ratingAbuseHref`).
   const canModerateReviews = can(PERM.reviewsModerate);
-  const { data: returnsData } = useAdminReturnControllerFindAll(
-    { status: ReturnEntityStatus.REQUESTED, limit: 1 },
-    { query: { ...OPERATIONAL_LIST_QUERY, enabled: canReadReturns } },
-  );
-  // `undefined` until the list answers — see `nothingToDo`.
+  const { data: returnsData, isError: returnsFailed } =
+    useAdminReturnControllerFindAll(
+      { status: ReturnEntityStatus.REQUESTED, limit: 1 },
+      { query: { ...OPERATIONAL_LIST_QUERY, enabled: canReadReturns } },
+    );
+  // `undefined` until the list answers, and for good if it fails — see
+  // `nothingToDo` and the tile's placeholder.
   const newReturns = returnsData?.meta?.total;
 
   if (isLoading) {
@@ -215,11 +232,18 @@ export function NeedsActionWidget() {
           href="/orders?paidAfterCancel=true"
         />
         {/* TASK-613: a new return request, counted by the queue's own
-            filter and opening the queue on it. */}
+            filter and opening the queue on it. Its count arrives on its own
+            request, so until that answers (or when it fails) the tile shows a
+            placeholder, not a «0» that would read as «no new returns». */}
         {canReadReturns ? (
           <NeedsActionCard
             label={dict.dashboard.needsActionNewReturns}
-            count={newReturns ?? 0}
+            count={newReturns}
+            unknownLabel={
+              returnsFailed
+                ? dict.dashboard.needsActionCountFailed
+                : dict.dashboard.needsActionCountPending
+            }
             href="/returns?status=REQUESTED"
           />
         ) : null}
