@@ -80,9 +80,69 @@ const lastParams = (state: ReturnType<typeof stubLog>) =>
 
 const d = dict.auditLog;
 
+function makeStaff(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "staff-olena",
+    email: "olena@example.com",
+    firstName: "Олена",
+    lastName: "Коваль",
+    phone: null,
+    role: "MANAGER",
+    isOwner: false,
+    level: 1,
+    isActive: true,
+    permissionCount: 3,
+    lastSeenAt: null,
+    emailVerifiedAt: null,
+    lockedUntil: null,
+    failedLoginAttempts: 0,
+    createdAt: "2026-07-01T00:00:00.000Z",
+    updatedAt: "2026-07-01T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
+/**
+ * The staff register behind the actor filter (TASK-843). Stubbed per test file
+ * rather than in the shared handlers: the audit log is its only reader so far.
+ */
+function stubStaff(rows: Array<Record<string, unknown>>) {
+  const state = { params: [] as URLSearchParams[] };
+  server.use(
+    http.get("*/api/admin/staff", ({ request }) => {
+      state.params.push(new URL(request.url).searchParams);
+      return HttpResponse.json({
+        data: rows,
+        meta: { total: rows.length, page: 1, limit: 100, totalPages: 1 },
+      });
+    }),
+  );
+  return state;
+}
+
 beforeEach(() => {
   mockReplace.mockClear();
   mockSearchParamsRef.current = new URLSearchParams("");
+  // The viewer themself comes back from the register too — the view must not
+  // offer them twice.
+  stubStaff([
+    makeStaff({
+      id: VIEWER_ID,
+      email: "owner@example.com",
+      firstName: "Власник",
+      lastName: null,
+      role: "ADMIN",
+      isOwner: true,
+    }),
+    makeStaff(),
+    makeStaff({
+      id: "staff-ihor",
+      email: "ihor@example.com",
+      firstName: null,
+      lastName: null,
+      isActive: false,
+    }),
+  ]);
 });
 
 describe("AuditLogView — rows", () => {
@@ -399,6 +459,102 @@ describe("AuditLogView — actor filters", () => {
           d.filterActorOther("other-uuid-2"),
         ),
       }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers every colleague by name and sends the chosen one's id (TASK-843)", async () => {
+    const staff = stubStaff([
+      makeStaff({
+        id: VIEWER_ID,
+        email: "owner@example.com",
+        firstName: "Власник",
+        lastName: null,
+      }),
+      makeStaff(),
+      makeStaff({
+        id: "staff-ihor",
+        email: "ihor@example.com",
+        firstName: null,
+        lastName: null,
+        isActive: false,
+      }),
+    ]);
+    stubLog();
+    renderWithProviders(<AuditLogView />);
+    await screen.findByText("manager@example.com");
+
+    await userEvent.click(
+      screen.getByRole("combobox", { name: d.filterActorAria }),
+    );
+
+    // «Мої дії» first, then colleagues — named like the staff register names
+    // them (full name, or the email when there is none). A deactivated account
+    // stays: its past actions are exactly what gets audited. Sorted by the
+    // Ukrainian collation, which puts Cyrillic names before Latin emails.
+    const options = (await screen.findAllByRole("option")).map(
+      (option) => option.textContent,
+    );
+    expect(options).toEqual([
+      d.filterActorAll,
+      d.filterActorMine,
+      "Олена Коваль",
+      "ihor@example.com",
+    ]);
+    // The viewer is not offered a second time under their own name.
+    expect(options).not.toContain("Власник");
+    expect(staff.params[0]?.get("limit")).toBe("100");
+
+    await userEvent.click(screen.getByRole("option", { name: "Олена Коваль" }));
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("actorId=staff-olena"),
+      ),
+    );
+  });
+
+  it("names a colleague's id from a shared link by the staff register", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("actorId=staff-olena");
+    const state = stubLog();
+    renderWithProviders(<AuditLogView />);
+    await screen.findByText("manager@example.com");
+
+    expect(lastParams(state).get("actorId")).toBe("staff-olena");
+    expect(
+      await screen.findByRole("button", {
+        name: dict.common.table.clearFilterAria(
+          d.filterActorAria,
+          "Олена Коваль",
+        ),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps «Мої дії» and a readable chip when the staff register cannot be read", async () => {
+    server.use(
+      http.get("*/api/admin/staff", () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+    mockSearchParamsRef.current = new URLSearchParams("actorId=staff-olena");
+    stubLog();
+    renderWithProviders(<AuditLogView />);
+    await screen.findByText("manager@example.com");
+
+    expect(
+      screen.getByRole("button", {
+        name: dict.common.table.clearFilterAria(
+          d.filterActorAria,
+          d.filterActorOther("staff-olena"),
+        ),
+      }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("combobox", { name: d.filterActorAria }),
+    );
+    expect(
+      await screen.findByRole("option", { name: d.filterActorMine }),
     ).toBeInTheDocument();
   });
 
