@@ -350,10 +350,17 @@ function AdminProductTableView() {
         ]}
       />
 
-      {(bulkUndo.canUndo || bulkUndo.isPending) && (
+      {/* Mounted for good, like every other ReorderUndoButton: outside the
+          window it goes aria-disabled instead of unmounting, so a keyboard or
+          screen-reader user who pressed it (or sat on it while the offer
+          lapsed) keeps their focus. Gated on EVERY write in flight, not only
+          the undo's own: replaying while a newer forward write is pending would
+          let that write land last and commit an offer that can never reach the
+          value before both. The deleted view accepts no writes at all. */}
+      {!isDeletedView && (
         <div className="flex">
           <ReorderUndoButton
-            canUndo={bulkUndo.canUndo}
+            canUndo={bulkUndo.canUndo && !isMutating}
             onUndo={bulkUndo.undo}
             label={dict.products.bulk.undo}
           />

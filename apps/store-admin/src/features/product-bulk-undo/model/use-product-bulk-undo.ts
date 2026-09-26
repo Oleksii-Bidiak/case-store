@@ -38,7 +38,13 @@ export interface ProductBulkUndoApi {
   /** The write succeeded: offer its undo for `UNDO_WINDOW_MS`. */
   commit: () => void;
   undo: () => void;
-  /** An undo is on offer (inside the window, not yet used). */
+  /**
+   * An undo is on offer (inside the window, not yet used). It does NOT know
+   * about the caller's forward bulk writes — the caller must also gate on them
+   * (`canUndo && !forwardPending`): an undo replayed while a newer write is in
+   * flight lands first, and that write then commits an offer that can never
+   * reach the value before both.
+   */
   canUndo: boolean;
   isPending: boolean;
 }
@@ -116,7 +122,14 @@ export function useProductBulkUndo(): ProductBulkUndoApi {
     // `null` plan: nothing actually changed, so there is nothing to offer — and
     // an older offer is stale now either way.
     setOffer(plan ? { plan, expiresAt: Date.now() + UNDO_WINDOW_MS } : null);
-  }, []);
+    // Tell a screen-reader user the undo exists, naming the control by its
+    // label (the reorder commit announcement does the same). The caller calls
+    // `commit` last in its `onSuccess` — after `selection.clear()` — so this is
+    // the message that stays in the polite region.
+    if (plan) {
+      announcePolite(t.announceUndoAvailable(countPlanIds(plan), t.undo));
+    }
+  }, [announcePolite]);
 
   const runStep = useCallback(
     async (

@@ -438,6 +438,10 @@ export const dict = {
         `Масову дію скасовано, повернуто товарів: ${count}`,
       announceUndoFailed:
         "Не вдалося скасувати масову дію повністю. Спробуйте ще раз.",
+      // Said once the write lands and an undo is on offer — it names the control
+      // by its label, as the reorder commit announcement does.
+      announceUndoAvailable: (count: number, undoLabel: string) =>
+        `Готово, змінено товарів: ${count}. Щоб повернути, як було, скористайтеся кнопкою «${undoLabel}».`,
     },
     back: "← Назад до товарів",
     createHeading: "Створення товару",
