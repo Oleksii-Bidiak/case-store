@@ -9,8 +9,11 @@ import {
   Query,
   UseGuards,
   HttpCode,
+  HttpStatus,
+  Delete,
 } from '@nestjs/common';
 import {
+  ApiBody,
   ApiTags,
   ApiOperation,
   ApiResponse,
@@ -27,6 +30,7 @@ import {
   CategoryListQueryDto,
   ReorderCategoriesDto,
   BulkCategoryStatusDto,
+  DeleteCategoryDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
 // Direct file import, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
@@ -34,7 +38,13 @@ import { PermissionGuard, RequirePermission } from '../auth/permissions';
 // leaves `CurrentUser` undefined at decorator-evaluation time ("CurrentUser is not a
 // function"). Anything on a module cycle's edge must bypass the barrels.
 import { CurrentUser } from '../auth/decorators';
-import { AdminCategoryTreeNodeEntity, CategoryEntity, CategoryWithCountEntity } from './entities';
+import {
+  AdminCategoryDetailEntity,
+  AdminCategoryTreeNodeEntity,
+  CategoryDeletionImpactEntity,
+  CategoryEntity,
+  CategoryWithCountEntity,
+} from './entities';
 
 /**
  * Response envelope for a single category.
@@ -45,6 +55,16 @@ import { AdminCategoryTreeNodeEntity, CategoryEntity, CategoryWithCountEntity } 
 class CategoryResponseEnvelope {
   @ApiProperty({ type: CategoryEntity })
   data!: CategoryEntity;
+}
+
+/**
+ * Response envelope for the admin single-category read (TASK-654): the category plus
+ * the `deletionImpact` preview the delete dialog shows. Additive over
+ * {@link CategoryResponseEnvelope}, so existing consumers keep working.
+ */
+class AdminCategoryDetailResponseEnvelope {
+  @ApiProperty({ type: AdminCategoryDetailEntity })
+  data!: AdminCategoryDetailEntity;
 }
 
 /**
@@ -111,6 +131,8 @@ export class AdminCategoryTreeResponse {
  *   PUT    /admin/categories/:id              — Update a category
  *   PATCH  /admin/categories/:id/deactivate   — Deactivate a category
  *   PATCH  /admin/categories/:id/activate     — Activate a category
+ *   DELETE /admin/categories/:id              — Delete a subtree, moving its products
+ *                                               (`categories:delete`, TASK-654)
  */
 @ApiTags('Categories')
 @ApiExtraModels(
@@ -120,6 +142,10 @@ export class AdminCategoryTreeResponse {
   CategoryResponseEnvelope,
   AdminCategoryTreeResponse,
   AdminCategoryTreeNodeEntity,
+  AdminCategoryDetailResponseEnvelope,
+  AdminCategoryDetailEntity,
+  CategoryDeletionImpactEntity,
+  DeleteCategoryDto,
 )
 @Controller('admin/categories')
 @UseGuards(PermissionGuard)
@@ -231,13 +257,69 @@ export class AdminCategoryController {
   @ApiBearerAuth('access-token')
   @ApiOperation({ summary: 'Get category by ID (admin)' })
   @ApiParam({ name: 'id', description: 'Category UUID' })
-  @ApiResponse({ status: 200, description: 'Category found', type: CategoryResponseEnvelope })
+  @ApiResponse({
+    status: 200,
+    description: 'Category found, with the preview of what deleting it would touch',
+    type: AdminCategoryDetailResponseEnvelope,
+  })
   @ApiResponse({ status: 404, description: 'Category not found' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async findById(@Param('id') id: string): Promise<CategoryResponseEnvelope> {
-    const category = await this.categoryService.findById(id);
+  async findById(@Param('id') id: string): Promise<AdminCategoryDetailResponseEnvelope> {
+    const category = await this.categoryService.findByIdForAdmin(id);
 
     return { data: category };
+  }
+
+  /**
+   * DELETE /api/admin/categories/:id
+   *
+   * Deletes a category AND its whole subtree (tombstones — decision B-2 of plan 178),
+   * after moving every product and carousel filed in it into ONE target outside the
+   * subtree, all in one transaction. Products are never deleted or deactivated. The
+   * body names the target: `moveToId` (an existing category) XOR `moveToNew` (create
+   * one — which additionally needs `categories:write`, checked by the service because
+   * it depends on the body).
+   *
+   * Its own permission (TASK-654): the route-level `categories:delete` REPLACES the
+   * class-level `categories:write` (see `PermissionGuard.resolveRequirement`).
+   */
+  @Delete(':id')
+  @RequirePermission('categories:delete')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({
+    summary: 'Delete a category subtree, moving its products (admin)',
+    operationId: 'adminCategoryControllerDelete',
+  })
+  @ApiParam({ name: 'id', description: 'Category UUID' })
+  @ApiBody({ type: DeleteCategoryDto })
+  @ApiResponse({ status: 204, description: 'Category subtree deleted, products moved' })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation error; CATEGORY_MOVE_TARGET_REQUIRED (neither or both modes); ' +
+      'CATEGORY_MOVE_TARGET_IN_SUBTREE (the target or its parent is inside the subtree)',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden — needs categories:delete (and categories:write for moveToNew)',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Category not found, or CATEGORY_MOVE_TARGET_NOT_FOUND',
+  })
+  @ApiResponse({
+    status: 409,
+    description:
+      'CATEGORY_SLUG_CONFLICT (the new target slug is taken) or CATEGORY_TREE_STALE ' +
+      '(the subtree changed concurrently — reload and retry)',
+  })
+  async delete(
+    @Param('id') id: string,
+    @Body() dto: DeleteCategoryDto,
+    @CurrentUser('id') adminUserId: string,
+  ): Promise<void> {
+    await this.categoryService.delete(id, dto, adminUserId);
   }
 
   /**

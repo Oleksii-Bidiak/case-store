@@ -113,6 +113,22 @@ export const PERMISSIONS = [
   // `products:write` can still change it. Splitting stock into its own endpoint
   // would make the permission real; until someone does, it must not be offered.
   { key: 'categories:write', zone: PERMISSION_ZONES.CATALOG, label: 'Категорії' },
+  // `DELETE /admin/categories/:id` (TASK-654, decision B-2 of plan 178 from
+  // 2026-09-15). Deleting a category tombstones its WHOLE branch and moves every
+  // product filed in it to another category — a different blast radius from
+  // renaming a category, so it is its own key rather than a fold into
+  // `categories:write`. The dialog's «create a new target» mode ALSO needs
+  // `categories:write`: that check depends on the request body, so it lives in
+  // `CategoryService.delete`, not on the route.
+  //
+  // NO BACKFILL, and do NOT add a backfill migration. A backfill is right only for
+  // a key that splits an existing grant one-to-one, so a silent migration preserves
+  // what an operator could do yesterday (the MEDIA_ / CUSTOMERS_ / RETURNS_ sets
+  // below). This key ADDS reach: nobody could delete a category yesterday. On
+  // deploy only the owner and admins hold it — by level, without a row
+  // (`PermissionService.actorHasPermission`) — and a manager gets it only when the
+  // owner ticks it deliberately on the permissions screen.
+  { key: 'categories:delete', zone: PERMISSION_ZONES.CATALOG, label: 'Видаляти категорії' },
   { key: 'brands:write', zone: PERMISSION_ZONES.CATALOG, label: 'Бренди' },
   { key: 'devices:write', zone: PERMISSION_ZONES.CATALOG, label: 'Пристрої та сумісність' },
   { key: 'attributes:write', zone: PERMISSION_ZONES.CATALOG, label: 'Характеристики' },

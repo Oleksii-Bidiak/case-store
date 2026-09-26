@@ -9,7 +9,11 @@ import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { CategoryRepository } from '../src/category/category.repository';
-import { CategoryCycleError, CategoryNotFoundError } from '../src/category/category.errors';
+import {
+  CategoryCycleError,
+  CategoryMoveTargetInSubtreeError,
+  CategoryNotFoundError,
+} from '../src/category/category.errors';
 import { HttpExceptionFilter } from '../src/common/filters';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -79,7 +83,14 @@ describe('CategoryController (e2e)', () => {
     applyTreeMoves: jest.fn(),
     setActiveMany: jest.fn(),
     findSubtreeIds: jest.fn(),
+    // TASK-652/654: the subtree delete and the admin card's delete preview.
+    deleteSubtreeWithMove: jest.fn(),
+    countDeletionImpact: jest.fn(),
   };
+
+  // Kept as a reference so the DELETE suite can hand managers different keys mid-suite
+  // (`setGrants`) — every other suite here runs as the admin or a customer.
+  const permissionRepositoryMock = createPermissionRepositoryMock();
 
   // Mock PrismaService — prevents database connection errors
   const prismaServiceMock = {
@@ -178,7 +189,7 @@ describe('CategoryController (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
       .overrideProvider(PermissionRepository)
-      .useValue(createPermissionRepositoryMock())
+      .useValue(permissionRepositoryMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(UserRepository)
@@ -491,6 +502,11 @@ describe('CategoryController (e2e)', () => {
       const token = generateAccessToken(testAdmin.id, 'ADMIN');
 
       categoryRepositoryMock.findById.mockResolvedValue(testCategory);
+      categoryRepositoryMock.countDeletionImpact.mockResolvedValue({
+        subcategoryCount: 1,
+        productCount: 7,
+        carouselCount: 2,
+      });
 
       const response = await request(app.getHttpServer())
         .get('/api/admin/categories/cat-e2e-1')
@@ -501,6 +517,13 @@ describe('CategoryController (e2e)', () => {
       expect(response.body.data).toHaveProperty('id');
       expect(response.body.data).toHaveProperty('name', 'Phone Cases');
       expect(response.body.data).toHaveProperty('slug', 'phone-cases');
+      // TASK-652/654: the delete dialog's preview travels with the admin card.
+      expect(response.body.data.deletionImpact).toEqual({
+        subcategoryCount: 1,
+        productCount: 7,
+        carouselCount: 2,
+      });
+      expect(categoryRepositoryMock.countDeletionImpact).toHaveBeenCalledWith('cat-e2e-1');
     });
 
     it('should return 404 for non-existent category', async () => {
@@ -1134,6 +1157,194 @@ describe('CategoryController (e2e)', () => {
       await request(app.getHttpServer())
         .patch('/api/admin/categories/nonexistent-id/activate')
         .set('Authorization', `Bearer ${token}`)
+        .expect(404);
+    });
+  });
+
+  // ─── DELETE /api/admin/categories/:id (TASK-654) ─────────────────────────────
+
+  describe('DELETE /api/admin/categories/:id', () => {
+    const TARGET_ID = '550e8400-e29b-41d4-a716-446655440000';
+    const url = '/api/admin/categories/cat-e2e-1';
+    const moveToId = { moveToId: TARGET_ID };
+    const moveToNew = { moveToNew: { name: 'Інші аксесуари' } };
+    const managerId = 'manager-e2e-1';
+
+    beforeEach(() => {
+      // The node and the target both exist; anything else is unknown.
+      categoryRepositoryMock.findById.mockImplementation((id: string) =>
+        Promise.resolve(
+          id === testCategory.id
+            ? testCategory
+            : id === TARGET_ID
+              ? { ...testCategory, id: TARGET_ID, slug: 'target' }
+              : null,
+        ),
+      );
+      categoryRepositoryMock.findBySlug.mockResolvedValue(null);
+      categoryRepositoryMock.deleteSubtreeWithMove.mockResolvedValue({
+        targetId: TARGET_ID,
+        targetCreated: false,
+        subtreeIds: [testCategory.id],
+        movedProducts: 3,
+        switchedCarousels: 0,
+      });
+      // The post-commit subtree re-index is best-effort; give it something to walk.
+      categoryRepositoryMock.findSubtreeIds.mockResolvedValue([TARGET_ID]);
+    });
+
+    afterEach(() => {
+      // Managers hold nothing again, as in every other suite of this file.
+      permissionRepositoryMock.setGrants('MANAGER', []);
+    });
+
+    it('returns 401 without an auth token', async () => {
+      await request(app.getHttpServer()).delete(url).send(moveToId).expect(401);
+    });
+
+    it('returns 403 for a customer', async () => {
+      const token = generateAccessToken(testCustomer.id, 'CUSTOMER');
+
+      await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send(moveToId)
+        .expect(403);
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+    });
+
+    // The route's own key REPLACES the controller-wide `categories:write` — editing
+    // categories is not a licence to delete a branch and move its products.
+    it('returns 403 for a manager who holds only categories:write', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['categories:write']);
+      const token = generateAccessToken(managerId, 'MANAGER');
+
+      await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send(moveToId)
+        .expect(403);
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+    });
+
+    it('returns 204 for a manager with categories:delete moving into an existing category', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['categories:delete']);
+      const token = generateAccessToken(managerId, 'MANAGER');
+
+      await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send(moveToId)
+        .expect(204);
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(testCategory.id, {
+        kind: 'existing',
+        id: TARGET_ID,
+      });
+    });
+
+    // Creating the target is a category WRITE: the delete key alone must not be a back
+    // door to it. Checked in the service (it depends on the body), before any write.
+    it('returns 403 for a manager with categories:delete but not categories:write in moveToNew mode', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['categories:delete']);
+      const token = generateAccessToken(managerId, 'MANAGER');
+
+      await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send(moveToNew)
+        .expect(403);
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+    });
+
+    it('returns 204 for a manager holding both keys in moveToNew mode', async () => {
+      permissionRepositoryMock.setGrants('MANAGER', ['categories:delete', 'categories:write']);
+      const token = generateAccessToken(managerId, 'MANAGER');
+
+      await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send(moveToNew)
+        .expect(204);
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).toHaveBeenCalledWith(
+        testCategory.id,
+        expect.objectContaining({ kind: 'new', name: 'Інші аксесуари', parentId: null }),
+      );
+    });
+
+    it('returns 204 with an empty response for an admin creating a new target', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      const response = await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send(moveToNew)
+        .expect(204);
+      expect(response.text).toBe('');
+    });
+
+    it.each([
+      ['neither mode', {}],
+      ['both modes', { ...moveToId, ...moveToNew }],
+    ])('returns 400 CATEGORY_MOVE_TARGET_REQUIRED for %s', async (_label, body) => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      const response = await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send(body)
+        .expect(400);
+      expect(response.body).toHaveProperty('error', 'CATEGORY_MOVE_TARGET_REQUIRED');
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 CATEGORY_MOVE_TARGET_IN_SUBTREE when the target is inside the subtree', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      categoryRepositoryMock.deleteSubtreeWithMove.mockRejectedValue(
+        new CategoryMoveTargetInSubtreeError(),
+      );
+
+      const response = await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send(moveToId)
+        .expect(400);
+      expect(response.body).toHaveProperty('error', 'CATEGORY_MOVE_TARGET_IN_SUBTREE');
+    });
+
+    it('returns 400 for an invalid body (non-UUID target, empty new name)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ moveToId: 'not-a-uuid' })
+        .expect(400);
+      await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ moveToNew: { name: '   ' } })
+        .expect(400);
+      expect(categoryRepositoryMock.deleteSubtreeWithMove).not.toHaveBeenCalled();
+    });
+
+    it('returns 404 CATEGORY_MOVE_TARGET_NOT_FOUND for an unknown target', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      const response = await request(app.getHttpServer())
+        .delete(url)
+        .set('Authorization', `Bearer ${token}`)
+        .send({ moveToId: '650e8400-e29b-41d4-a716-446655440000' })
+        .expect(404);
+      expect(response.body).toHaveProperty('error', 'CATEGORY_MOVE_TARGET_NOT_FOUND');
+    });
+
+    it('returns 404 for an unknown category', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+
+      await request(app.getHttpServer())
+        .delete('/api/admin/categories/nonexistent-id')
+        .set('Authorization', `Bearer ${token}`)
+        .send(moveToId)
         .expect(404);
     });
   });

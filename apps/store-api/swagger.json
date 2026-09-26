@@ -1922,11 +1922,11 @@
         ],
         "responses": {
           "200": {
-            "description": "Category found",
+            "description": "Category found, with the preview of what deleting it would touch",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CategoryResponseEnvelope"
+                  "$ref": "#/components/schemas/AdminCategoryDetailResponseEnvelope"
                 }
               }
             }
@@ -1944,6 +1944,56 @@
           }
         ],
         "summary": "Get category by ID (admin)",
+        "tags": [
+          "Categories"
+        ]
+      },
+      "delete": {
+        "operationId": "adminCategoryControllerDelete",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Category UUID",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteCategoryDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Category subtree deleted, products moved"
+          },
+          "400": {
+            "description": "Validation error; CATEGORY_MOVE_TARGET_REQUIRED (neither or both modes); CATEGORY_MOVE_TARGET_IN_SUBTREE (the target or its parent is inside the subtree)"
+          },
+          "403": {
+            "description": "Forbidden — needs categories:delete (and categories:write for moveToNew)"
+          },
+          "404": {
+            "description": "Category not found, or CATEGORY_MOVE_TARGET_NOT_FOUND"
+          },
+          "409": {
+            "description": "CATEGORY_SLUG_CONFLICT (the new target slug is taken) or CATEGORY_TREE_STALE (the subtree changed concurrently — reload and retry)"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Delete a category subtree, moving its products (admin)",
         "tags": [
           "Categories"
         ]
@@ -15916,6 +15966,187 @@
         "required": [
           "data"
         ]
+      },
+      "CategoryDeletionImpactEntity": {
+        "type": "object",
+        "properties": {
+          "subcategoryCount": {
+            "type": "number",
+            "description": "Live categories below this one (the whole subtree minus the category itself)",
+            "example": 3
+          },
+          "productCount": {
+            "type": "number",
+            "description": "Non-deleted products filed anywhere in the subtree, INCLUDING inactive ones — every one of them moves to the chosen target",
+            "example": 42
+          },
+          "carouselCount": {
+            "type": "number",
+            "description": "Homepage carousels pointing into the subtree — they switch to the target",
+            "example": 1
+          }
+        },
+        "required": [
+          "subcategoryCount",
+          "productCount",
+          "carouselCount"
+        ]
+      },
+      "AdminCategoryDetailEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Category unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Category name",
+            "example": "Phone Cases"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL-friendly slug",
+            "example": "phone-cases"
+          },
+          "description": {
+            "type": "string",
+            "description": "Category description",
+            "example": "Protective cases for all smartphones",
+            "nullable": true
+          },
+          "image": {
+            "type": "string",
+            "description": "Category image URL",
+            "example": "https://example.com/images/phone-cases.jpg",
+            "nullable": true
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent category ID (null for root)",
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "nullable": true
+          },
+          "isActive": {
+            "type": "boolean",
+            "description": "Whether the category is active",
+            "example": true
+          },
+          "sortOrder": {
+            "type": "number",
+            "description": "Display sort order (lower = first)",
+            "example": 0
+          },
+          "metaTitle": {
+            "type": "string",
+            "description": "SEO meta title override (falls back to name when empty)",
+            "example": "Phone Cases — Premium Protection | Store",
+            "nullable": true
+          },
+          "metaDescription": {
+            "type": "string",
+            "description": "SEO meta description override",
+            "example": "Shop premium protective phone cases for every model.",
+            "nullable": true
+          },
+          "keywords": {
+            "description": "Internal content tags (TASK-437). NOT rendered as `<meta name=\"keywords\">` — see IsKeywordsField.",
+            "example": [
+              "чохли",
+              "cases"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ogImage": {
+            "type": "string",
+            "description": "Open Graph image for this category; wins over the global default (TASK-437).",
+            "example": "https://cdn.example.com/og/cases.jpg",
+            "nullable": true
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Creation timestamp",
+            "example": "2024-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "format": "date-time",
+            "type": "string",
+            "description": "Last update timestamp",
+            "example": "2024-01-01T00:00:00.000Z"
+          },
+          "deletionImpact": {
+            "description": "What deleting this category would touch — for the delete dialog preview",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CategoryDeletionImpactEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "slug",
+          "isActive",
+          "sortOrder",
+          "createdAt",
+          "updatedAt",
+          "deletionImpact"
+        ]
+      },
+      "AdminCategoryDetailResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/AdminCategoryDetailEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "DeleteCategoryMoveToNewDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the category to create and move the products into",
+            "example": "Інші аксесуари",
+            "maxLength": 255
+          },
+          "parentId": {
+            "type": "string",
+            "description": "Parent of the new category (null or absent = a root category). Must be a live category outside the subtree being deleted.",
+            "example": "550e8400-e29b-41d4-a716-446655440000",
+            "nullable": true
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "DeleteCategoryDto": {
+        "type": "object",
+        "properties": {
+          "moveToId": {
+            "type": "string",
+            "description": "Move the products into this EXISTING live category. Must be outside the subtree being deleted. Mutually exclusive with `moveToNew`.",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "moveToNew": {
+            "description": "Create a new category and move the products into it (requires `categories:write` in addition to the delete permission). Mutually exclusive with `moveToId`.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeleteCategoryMoveToNewDto"
+              }
+            ]
+          }
+        }
       },
       "ReorderGroupDto": {
         "type": "object",
