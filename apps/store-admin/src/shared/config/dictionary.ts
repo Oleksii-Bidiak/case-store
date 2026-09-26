@@ -242,6 +242,9 @@ export const dict = {
     // A metric an owner clicks is a question about the position, not an intent to
     // edit it — the card is where the answer is.
     topProductLinkAria: (name: string) => `Відкрити картку товару «${name}»`,
+    // TASK-613 (граничний випадок E-22): нова заявка на повернення сигналить
+    // із головної, а не лише з розділу «Повернення».
+    needsActionNewReturns: "Нові заявки на повернення",
   },
 
   common: {

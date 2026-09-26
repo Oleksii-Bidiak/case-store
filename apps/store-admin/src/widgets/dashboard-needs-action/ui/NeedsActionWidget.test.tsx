@@ -321,4 +321,96 @@ describe("NeedsActionWidget (TASK-248)", () => {
       ).not.toBeInTheDocument();
     });
   });
+
+  /**
+   * TASK-613 (E-22): a new return request signals from the dashboard. The count
+   * is `meta.total` of the returns queue under `returns:read` — not a field on
+   * the analytics-gated needs-action payload — so a session without the right
+   * never asks for it and never sees the tile.
+   */
+  describe("the «Нові заявки на повернення» tile (TASK-613)", () => {
+    const quiet = {
+      newOrders: 0,
+      pendingReviews: 0,
+      unpaidInTransit: 0,
+      failedMails: 0,
+      pendingOver48h: 0,
+    };
+
+    function mockReturns(total: number, seen: string[] = []) {
+      server.use(
+        http.get("*/api/admin/returns", ({ request }) => {
+          seen.push(new URL(request.url).search);
+          return HttpResponse.json({
+            data: [],
+            meta: { total, page: 1, limit: 1, totalPages: total },
+          });
+        }),
+      );
+      return seen;
+    }
+
+    it("counts REQUESTED returns and deep-links to the queue on that filter", async () => {
+      mockNeedsAction(quiet);
+      const seen = mockReturns(3);
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      const link = (
+        await screen.findByText(dict.dashboard.needsActionNewReturns)
+      ).closest("a") as HTMLElement;
+      expect(link).toHaveAttribute("href", "/returns?status=REQUESTED");
+      expect(await within(link).findByText("3")).toHaveClass("text-warning");
+      // One row is enough — only `meta.total` is read.
+      expect(seen.join(" ")).toContain("status=REQUESTED");
+      expect(seen.join(" ")).toContain("limit=1");
+    });
+
+    it("withholds «all clear» while a new return is the only signal", async () => {
+      mockNeedsAction(quiet);
+      mockReturns(1);
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      const link = (
+        await screen.findByText(dict.dashboard.needsActionNewReturns)
+      ).closest("a") as HTMLElement;
+      await within(link).findByText("1");
+      expect(
+        screen.queryByText(dict.dashboard.needsActionAllClear),
+      ).not.toBeInTheDocument();
+    });
+
+    it("still says «all clear» when the queue is empty", async () => {
+      mockNeedsAction(quiet);
+      mockReturns(0);
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      expect(
+        await screen.findByText(dict.dashboard.needsActionAllClear),
+      ).toBeInTheDocument();
+    });
+
+    it("has no tile and makes no request without returns:read", async () => {
+      mockNeedsAction(quiet);
+      const seen = mockReturns(5);
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read"] },
+      });
+
+      await screen.findByText(dict.dashboard.needsActionNewOrders);
+      expect(
+        screen.queryByText(dict.dashboard.needsActionNewReturns),
+      ).not.toBeInTheDocument();
+      expect(seen).toHaveLength(0);
+    });
+  });
 });

@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useAdminDashboardControllerGetNeedsAction } from "@/entities/dashboard";
+import { PERM } from "@/entities/permission";
+import {
+  ReturnEntityStatus,
+  useAdminReturnControllerFindAll,
+} from "@/entities/return";
+import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
+import { cn } from "@/shared/lib";
+import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import { NeedsActionWidgetSkeleton } from "./NeedsActionWidgetSkeleton";
 
 /**
@@ -61,10 +69,26 @@ function NeedsActionCard({
  * signals all deep-link into their section; failed mail is an info-only card (no
  * admin destination). Zero-count cards still render (so the owner sees "all
  * clear"), visually de-emphasized.
+ *
+ * TASK-613 (edge case E-22): a ninth tile, «Нові заявки на повернення», for a
+ * session with `returns:read`. Its count is NOT on the needs-action payload —
+ * that endpoint is analytics-gated, and widening it would hand the returns count
+ * to anyone with the dashboard. Like the sidebar badges (TASK-722) it reads
+ * `meta.total` of the returns list under the section's own right, one row, with
+ * the queue's operational freshness; the deep link carries the same filter.
+ * Without the right the request is never made and the tile does not exist.
  */
 export function NeedsActionWidget() {
   const { data, isLoading, isError } =
     useAdminDashboardControllerGetNeedsAction();
+  const { can } = useAuth();
+  const canReadReturns = can(PERM.returnsRead);
+  const { data: returnsData } = useAdminReturnControllerFindAll(
+    { status: ReturnEntityStatus.REQUESTED, limit: 1 },
+    { query: { ...OPERATIONAL_LIST_QUERY, enabled: canReadReturns } },
+  );
+  // `undefined` until the list answers — see `nothingToDo`.
+  const newReturns = returnsData?.meta?.total;
 
   if (isLoading) {
     return <NeedsActionWidgetSkeleton />;
@@ -97,7 +121,10 @@ export function NeedsActionWidget() {
     // only notification there is, denying itself.
     counts.unavailableItems === 0 &&
     // TASK-352: money held for an order that is not being fulfilled.
-    counts.paidAfterCancel === 0;
+    counts.paidAfterCancel === 0 &&
+    // TASK-613: only once the count is KNOWN — an «Все під контролем» printed
+    // before the returns list answers could sit over a non-zero tile.
+    (!canReadReturns || newReturns === 0);
 
   return (
     <section aria-label={dict.dashboard.needsActionHeading}>
@@ -112,11 +139,17 @@ export function NeedsActionWidget() {
         ) : null}
       </div>
 
-      {/* Eight cards since TASK-352 (4 + 4 at four columns). Seven since TASK-470; the column count moved 3 → 4 with it: at
-          three columns the seventh card sat alone on a third row, which is the
-          same "reads as an afterthought" problem `lg:grid-cols-5` caused at six.
-          Four gives 4 + 3, so no card stands by itself on a wide screen. */}
-      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {/* Eight cards since TASK-352 (4 + 4 at four columns); nine with the
+          returns tile (TASK-613), which only a `returns:read` session sees. At
+          four columns the ninth would sit alone on a third row — the
+          "reads as an afterthought" problem TASK-470 moved away from — so nine
+          lay out 3 × 3 and eight stay 4 × 2. */}
+      <div
+        className={cn(
+          "mt-4 grid grid-cols-2 gap-4",
+          canReadReturns ? "lg:grid-cols-3" : "lg:grid-cols-4",
+        )}
+      >
         <NeedsActionCard
           label={dict.dashboard.needsActionNewOrders}
           count={counts.newOrders}
@@ -170,6 +203,15 @@ export function NeedsActionWidget() {
           count={counts.paidAfterCancel}
           href="/orders?paidAfterCancel=true"
         />
+        {/* TASK-613: a new return request, counted by the queue's own
+            filter and opening the queue on it. */}
+        {canReadReturns ? (
+          <NeedsActionCard
+            label={dict.dashboard.needsActionNewReturns}
+            count={newReturns ?? 0}
+            href="/returns?status=REQUESTED"
+          />
+        ) : null}
         <NeedsActionCard
           label={dict.dashboard.needsActionFailedMails}
           count={counts.failedMails}
