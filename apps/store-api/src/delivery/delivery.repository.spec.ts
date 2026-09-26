@@ -66,6 +66,25 @@ describe('DeliveryRepository', () => {
       });
     });
 
+    it('writes the delivery-method flags and courier terms, including a null threshold (TASK-643)', async () => {
+      prismaMock.deliverySetting.upsert.mockResolvedValue(mockRow);
+      const input = {
+        pickupEnabled: true,
+        otherEnabled: false,
+        courierCityName: 'Київ',
+        courierPrice: 120.5,
+        courierFreeFrom: null,
+      };
+
+      await repository.upsertSettings(input);
+
+      expect(prismaMock.deliverySetting.upsert).toHaveBeenCalledWith({
+        where: { id: SINGLETON_ID },
+        create: { id: SINGLETON_ID, ...input },
+        update: { ...input },
+      });
+    });
+
     it('writes only the provided fields', async () => {
       prismaMock.deliverySetting.upsert.mockResolvedValue(mockRow);
 

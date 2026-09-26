@@ -260,6 +260,15 @@ const resolveCreateWithHook = (order: OrderWithItems = makeOrder()) =>
 
 const deliveryServiceMock = {
   estimateShipping: jest.fn(),
+  // TASK-643: which methods are on offer + courier terms, and the pickup point.
+  getMethodSettings: jest.fn(),
+  resolveActivePickupPoint: jest.fn(),
+};
+
+/** The schema defaults (TASK-642): Nova Poshta and the free-text path on. */
+const DEFAULT_METHOD_SETTINGS = {
+  enabledMethods: ['NOVA_POSHTA', 'OTHER'],
+  courier: { price: '0.00', freeFrom: null, cityName: null },
 };
 
 const discountServiceMock = {
@@ -307,6 +316,9 @@ describe('OrderService', () => {
     // Default: no add-on applies to anything (TASK-174). Individual add-on tests
     // override this.
     addonResolverMock.resolveForProducts.mockResolvedValue(new Map());
+    // TASK-643: a shop that never opened the delivery settings screen.
+    deliveryServiceMock.getMethodSettings.mockResolvedValue(DEFAULT_METHOD_SETTINGS);
+    deliveryServiceMock.resolveActivePickupPoint.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -361,13 +373,24 @@ describe('OrderService', () => {
           // TASK-174: no line has a selected add-on in this fixture, so the
           // snapshot map is empty — but it is always passed.
           addonsByCartItemId: new Map(),
-          shippingAddress: address,
+          // TASK-643: a request with no method and no NP city is free text →
+          // OTHER, and its address snapshot says the shipping is still to be
+          // quoted rather than letting the 0 below read as "free delivery".
+          shippingAddress: {
+            ...address,
+            deliveryMethod: 'OTHER',
+            carrier: null,
+            shippingCostPending: true,
+          },
           billingAddress: undefined,
           notes: undefined,
           // TASK-330: a request that never mentions payment is cash on delivery,
           // and cash on delivery holds its reservation indefinitely.
           paymentMethod: 'ON_DELIVERY',
           reservationExpiresAt: null,
+          deliveryMethod: 'OTHER',
+          // A decided zero, passed explicitly — not a repository default.
+          shippingCost: 0,
         },
         // TASK-103-F: in-transaction outbox-enqueue hook passed as 2nd arg.
         expect.any(Function),
@@ -386,8 +409,15 @@ describe('OrderService', () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
+      // An NP-routed order: a free-text (OTHER) order may not be paid online at
+      // all (TASK-643 matrix).
+      deliveryServiceMock.estimateShipping.mockResolvedValue({ cost: '60.00', etaDays: 2 });
+
       const before = Date.now();
-      await service.createOrder(userActor, { ...createDto, paymentMethod: 'ONLINE' });
+      await service.createOrder(userActor, {
+        shippingAddress: { ...address, npCityRef: 'city-ref-1' },
+        paymentMethod: 'ONLINE',
+      });
 
       const [params] = orderRepositoryMock.createFromCart.mock.calls[0] as [
         { paymentMethod?: string; reservationExpiresAt?: Date | null },
@@ -415,16 +445,17 @@ describe('OrderService', () => {
       expect(params.reservationExpiresAt).toBeNull();
     });
 
-    it('does not estimate shipping for a free-text order (no npCityRef)', async () => {
+    it('books a free-text order (no npCityRef) as OTHER at an explicit 0, without asking NP', async () => {
       cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
       orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
 
       await service.createOrder(userActor, createDto);
 
       expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
-      expect(orderRepositoryMock.createFromCart.mock.calls[0][0]).not.toHaveProperty(
-        'shippingCost',
-      );
+      expect(orderRepositoryMock.createFromCart.mock.calls[0][0]).toMatchObject({
+        deliveryMethod: 'OTHER',
+        shippingCost: 0,
+      });
     });
 
     it('estimates and forwards the NP shipping cost when npCityRef is present', async () => {
@@ -684,6 +715,402 @@ describe('OrderService', () => {
   // A deactivated account must not place an order even while it still holds a
   // non-expired access token. The guard runs FIRST — before cart lookup or any
   // write — so a banned user never touches inventory.
+
+  // ─── createOrder → delivery methods (TASK-643) ──────────────────────────────
+  // The server resolves the method, validates it against the shop's settings and
+  // the delivery × payment matrix BEFORE any write, prices it itself (the client
+  // never sends a price), and snapshots it into the order's address.
+
+  describe('createOrder — delivery methods (TASK-643)', () => {
+    // 29.99 × 2 + 9.99 × 1 — the product subtotal of `cartWithItems`.
+    const SUBTOTAL = '69.97';
+    const POINT_ID = '6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11';
+    const point = {
+      id: POINT_ID,
+      name: 'Магазин на Хрещатику',
+      city: 'Київ',
+      address: 'вул. Хрещатик, 1',
+      phone: null,
+      workingHours: 'Пн–Пт 10:00–19:00',
+      mapUrl: null,
+    };
+    const allEnabled = (
+      courier: { price: string; freeFrom: string | null } = {
+        price: '120.00',
+        freeFrom: null,
+      },
+    ) => ({
+      enabledMethods: ['NOVA_POSHTA', 'PICKUP', 'COURIER', 'OTHER'],
+      courier: { ...courier, cityName: 'Київ' },
+    });
+    const npAddress = { ...address, npCityRef: 'city-ref-1', npWarehouseRef: 'wh-ref-1' };
+
+    /** The params createFromCart received. */
+    const created = () =>
+      orderRepositoryMock.createFromCart.mock.calls[0][0] as Record<string, unknown> & {
+        shippingAddress: Record<string, unknown>;
+      };
+
+    /** The rejection a call produced — fails the test if it resolved. */
+    async function rejectionOf(promise: Promise<unknown>): Promise<BadRequestException> {
+      try {
+        await promise;
+      } catch (err) {
+        return err as BadRequestException;
+      }
+      throw new Error('expected createOrder to reject');
+    }
+
+    /** Asserts a 400 with a stable code and a shopper-readable Ukrainian message. */
+    function expectDelivery400(err: BadRequestException, code: string): void {
+      expect(err).toBeInstanceOf(BadRequestException);
+      const body = err.getResponse() as { error: string; message: unknown };
+      expect(body.error).toBe(code);
+      // The storefront shows this string verbatim (use-checkout.ts), so it must
+      // be one sentence of Ukrainian, not a code or an array.
+      expect(typeof body.message).toBe('string');
+      expect(body.message).toMatch(/[а-щьюяєіїґ]/i);
+      // Refused before anything was written or priced.
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    }
+
+    beforeEach(() => {
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      resolveCreateWithHook();
+      deliveryServiceMock.estimateShipping.mockResolvedValue({ cost: '60.00', etaDays: 2 });
+    });
+
+    // ── Resolution ──────────────────────────────────────────────────────────
+
+    describe('method resolution', () => {
+      it('derives NOVA_POSHTA from an NP city when no method is sent — the legacy checkout', async () => {
+        await service.createOrder(userActor, { shippingAddress: npAddress });
+
+        expect(deliveryServiceMock.estimateShipping).toHaveBeenCalledWith('city-ref-1');
+        expect(created()).toMatchObject({ deliveryMethod: 'NOVA_POSHTA', shippingCost: 60 });
+        expect(created()).not.toHaveProperty('pickupPointId');
+      });
+
+      it('derives OTHER from a free-text address and books 0 without asking NP', async () => {
+        await service.createOrder(userActor, createDto);
+
+        expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+        expect(created()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+      });
+
+      it('treats an empty npCityRef as absent (derived OTHER)', async () => {
+        await service.createOrder(userActor, { shippingAddress: { ...address, npCityRef: '' } });
+
+        expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+        expect(created()).toMatchObject({ deliveryMethod: 'OTHER' });
+      });
+
+      it('uses an explicit NOVA_POSHTA as is and prices it with the NP estimate', async () => {
+        await service.createOrder(userActor, {
+          shippingAddress: npAddress,
+          deliveryMethod: 'NOVA_POSHTA',
+        });
+
+        expect(created()).toMatchObject({ deliveryMethod: 'NOVA_POSHTA', shippingCost: 60 });
+      });
+
+      it('refuses an explicit NOVA_POSHTA without an NP city instead of booking a silent 0', async () => {
+        const err = await rejectionOf(
+          service.createOrder(userActor, {
+            shippingAddress: address,
+            deliveryMethod: 'NOVA_POSHTA',
+          }),
+        );
+
+        expectDelivery400(err, 'DELIVERY_NP_CITY_REQUIRED');
+        expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+      });
+    });
+
+    // ── Enabled flags ───────────────────────────────────────────────────────
+
+    describe('a method the shop switched off', () => {
+      const requests = {
+        NOVA_POSHTA: { shippingAddress: npAddress, deliveryMethod: 'NOVA_POSHTA' },
+        PICKUP: { shippingAddress: address, deliveryMethod: 'PICKUP', pickupPointId: POINT_ID },
+        COURIER: { shippingAddress: address, deliveryMethod: 'COURIER' },
+        OTHER: { shippingAddress: address, deliveryMethod: 'OTHER' },
+      } as const satisfies Record<string, CreateOrderDto>;
+
+      it.each(Object.keys(requests) as Array<keyof typeof requests>)(
+        'refuses an explicit %s with 400 DELIVERY_METHOD_UNAVAILABLE',
+        async (method) => {
+          deliveryServiceMock.getMethodSettings.mockResolvedValue({
+            ...allEnabled(),
+            enabledMethods: allEnabled().enabledMethods.filter((m) => m !== method),
+          });
+          deliveryServiceMock.resolveActivePickupPoint.mockResolvedValue(point);
+
+          const err = await rejectionOf(service.createOrder(userActor, requests[method]));
+
+          expectDelivery400(err, 'DELIVERY_METHOD_UNAVAILABLE');
+        },
+      );
+
+      it('refuses a DERIVED OTHER (legacy free-text checkout) while OTHER is off', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue({
+          ...DEFAULT_METHOD_SETTINGS,
+          enabledMethods: ['NOVA_POSHTA'],
+        });
+
+        const err = await rejectionOf(service.createOrder(userActor, createDto));
+
+        expectDelivery400(err, 'DELIVERY_METHOD_UNAVAILABLE');
+      });
+
+      it('refuses a DERIVED NOVA_POSHTA (legacy NP checkout) while NP is off', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue({
+          ...DEFAULT_METHOD_SETTINGS,
+          enabledMethods: ['OTHER'],
+        });
+
+        const err = await rejectionOf(
+          service.createOrder(userActor, { shippingAddress: npAddress }),
+        );
+
+        expectDelivery400(err, 'DELIVERY_METHOD_UNAVAILABLE');
+        expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+      });
+    });
+
+    // ── Delivery × payment matrix ───────────────────────────────────────────
+
+    describe('the delivery × payment matrix', () => {
+      it.each(['ONLINE', 'INSTALLMENTS'] as const)(
+        'refuses OTHER + %s — there is no final amount to sign',
+        async (paymentMethod) => {
+          const err = await rejectionOf(
+            service.createOrder(userActor, {
+              shippingAddress: address,
+              deliveryMethod: 'OTHER',
+              paymentMethod,
+            }),
+          );
+
+          expectDelivery400(err, 'DELIVERY_PAYMENT_NOT_ALLOWED');
+        },
+      );
+
+      it('refuses a DERIVED OTHER (free-text city) paid ONLINE — owner-approved', async () => {
+        const err = await rejectionOf(
+          service.createOrder(userActor, { shippingAddress: address, paymentMethod: 'ONLINE' }),
+        );
+
+        expectDelivery400(err, 'DELIVERY_PAYMENT_NOT_ALLOWED');
+      });
+
+      it('lets OTHER be paid on delivery', async () => {
+        await service.createOrder(userActor, {
+          shippingAddress: address,
+          deliveryMethod: 'OTHER',
+          paymentMethod: 'ON_DELIVERY',
+        });
+
+        expect(created()).toMatchObject({ deliveryMethod: 'OTHER', paymentMethod: 'ON_DELIVERY' });
+      });
+
+      it('lets COURIER be paid ONLINE', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(allEnabled());
+
+        await service.createOrder(userActor, {
+          shippingAddress: address,
+          deliveryMethod: 'COURIER',
+          paymentMethod: 'ONLINE',
+        });
+
+        expect(created()).toMatchObject({ deliveryMethod: 'COURIER', paymentMethod: 'ONLINE' });
+      });
+    });
+
+    // ── PICKUP ──────────────────────────────────────────────────────────────
+
+    describe('PICKUP', () => {
+      beforeEach(() => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(allEnabled());
+      });
+
+      it('requires a pickup point', async () => {
+        const err = await rejectionOf(
+          service.createOrder(userActor, { shippingAddress: address, deliveryMethod: 'PICKUP' }),
+        );
+
+        expectDelivery400(err, 'DELIVERY_PICKUP_POINT_REQUIRED');
+      });
+
+      it('refuses a point that is missing or deactivated', async () => {
+        deliveryServiceMock.resolveActivePickupPoint.mockResolvedValue(null);
+
+        const err = await rejectionOf(
+          service.createOrder(userActor, {
+            shippingAddress: address,
+            deliveryMethod: 'PICKUP',
+            pickupPointId: POINT_ID,
+          }),
+        );
+
+        expectDelivery400(err, 'DELIVERY_PICKUP_POINT_UNAVAILABLE');
+        expect(deliveryServiceMock.resolveActivePickupPoint).toHaveBeenCalledWith(POINT_ID);
+      });
+
+      it('costs 0, links the point and snapshots it over the typed city/address', async () => {
+        deliveryServiceMock.resolveActivePickupPoint.mockResolvedValue(point);
+
+        await service.createOrder(userActor, {
+          shippingAddress: { ...address, city: 'typed city', address1: 'typed street' },
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+        });
+
+        expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+        expect(created()).toMatchObject({
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+          shippingCost: 0,
+        });
+        expect(created().shippingAddress).toEqual({
+          ...address,
+          // The server's copy of the point wins over whatever the client typed.
+          city: 'Київ',
+          address1: 'вул. Хрещатик, 1',
+          deliveryMethod: 'PICKUP',
+          carrier: null,
+          pickupPointName: 'Магазин на Хрещатику',
+          pickupPointAddress: 'вул. Хрещатик, 1',
+        });
+      });
+    });
+
+    // ── COURIER ─────────────────────────────────────────────────────────────
+
+    describe('COURIER', () => {
+      const courier = { shippingAddress: address, deliveryMethod: 'COURIER' } as const;
+
+      it('charges the courier price below the threshold', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(
+          allEnabled({ price: '120.00', freeFrom: '69.98' }),
+        );
+
+        await service.createOrder(userActor, courier);
+
+        expect(created()).toMatchObject({ deliveryMethod: 'COURIER', shippingCost: 120 });
+        expect(created().shippingAddress).toMatchObject({
+          deliveryMethod: 'COURIER',
+          carrier: null,
+        });
+        expect(created().shippingAddress).not.toHaveProperty('shippingCostPending');
+      });
+
+      it('is free when the subtotal is exactly on the threshold', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(
+          allEnabled({ price: '120.00', freeFrom: SUBTOTAL }),
+        );
+
+        await service.createOrder(userActor, courier);
+
+        expect(created()).toMatchObject({ shippingCost: 0 });
+      });
+
+      it('is free above the threshold', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(
+          allEnabled({ price: '120.00', freeFrom: '69.96' }),
+        );
+
+        await service.createOrder(userActor, courier);
+
+        expect(created()).toMatchObject({ shippingCost: 0 });
+      });
+
+      it('always charges without a threshold', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(
+          allEnabled({ price: '99.90', freeFrom: null }),
+        );
+
+        await service.createOrder(userActor, courier);
+
+        expect(created()).toMatchObject({ shippingCost: 99.9 });
+      });
+
+      it('compares the threshold with the subtotal BEFORE the discount', async () => {
+        // A 3.00 promo takes the payable goods to 66.97, under the 69.97
+        // threshold — but the threshold, like the discount, is measured on the
+        // product subtotal, so the courier stays free.
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(
+          allEnabled({ price: '120.00', freeFrom: SUBTOTAL }),
+        );
+        discountServiceMock.computeDiscount.mockResolvedValue({
+          discount: { id: 'd1', code: 'SUMMER10' },
+          amount: '3.00',
+        });
+
+        await service.createOrder(userActor, { ...courier, discountCode: 'SUMMER10' });
+
+        expect(created()).toMatchObject({ shippingCost: 0 });
+        // …and the shipping never entered the discount base.
+        expect(discountServiceMock.computeDiscount).toHaveBeenCalledWith(
+          'SUMMER10',
+          SUBTOTAL,
+          USER_ID,
+        );
+      });
+    });
+
+    // ── Snapshot + stray fields ─────────────────────────────────────────────
+
+    describe('address snapshot', () => {
+      it('marks NP orders with the carrier and keeps the NP refs', async () => {
+        await service.createOrder(userActor, { shippingAddress: npAddress });
+
+        expect(created().shippingAddress).toEqual({
+          ...npAddress,
+          deliveryMethod: 'NOVA_POSHTA',
+          carrier: 'NOVA_POSHTA',
+        });
+      });
+
+      it('marks OTHER as still to be quoted', async () => {
+        await service.createOrder(userActor, createDto);
+
+        expect(created().shippingAddress).toMatchObject({
+          deliveryMethod: 'OTHER',
+          carrier: null,
+          shippingCostPending: true,
+        });
+      });
+
+      it('ignores a pickupPointId sent with any method but PICKUP', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(allEnabled());
+
+        await service.createOrder(userActor, {
+          shippingAddress: address,
+          deliveryMethod: 'COURIER',
+          pickupPointId: POINT_ID,
+        });
+
+        expect(deliveryServiceMock.resolveActivePickupPoint).not.toHaveBeenCalled();
+        expect(created()).not.toHaveProperty('pickupPointId');
+        expect(created().shippingAddress).not.toHaveProperty('pickupPointName');
+      });
+
+      it('drops NP refs from a non-NP order so nothing reads it as a Nova Poshta parcel', async () => {
+        deliveryServiceMock.getMethodSettings.mockResolvedValue(allEnabled());
+
+        await service.createOrder(userActor, {
+          shippingAddress: npAddress,
+          deliveryMethod: 'COURIER',
+        });
+
+        expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+        expect(created().shippingAddress).not.toHaveProperty('npCityRef');
+        expect(created().shippingAddress).not.toHaveProperty('npWarehouseRef');
+      });
+    });
+  });
 
   describe('createOrder — ban enforcement', () => {
     it('throws ForbiddenException when the placing user is inactive (banned)', async () => {
@@ -2129,6 +2556,30 @@ describe('OrderService', () => {
         }),
         ADMIN_ID,
       );
+    });
+
+    // TASK-643: a phone order is classified by the same rule as a legacy checkout
+    // and the TASK-642 backfill — an NP city ref means Nova Poshta, otherwise the
+    // address is free text. Pricing of manual orders is untouched.
+    it('records a phone order with an NP city ref as NOVA_POSHTA', async () => {
+      await service.adminCreateOrder(
+        { ...dto, shippingAddress: { ...address, npCityRef: 'city-ref-1' } },
+        ADMIN_ID,
+      );
+
+      expect(orderRepositoryMock.createManual).toHaveBeenCalledWith(
+        expect.objectContaining({ deliveryMethod: 'NOVA_POSHTA' }),
+        ADMIN_ID,
+      );
+      expect(deliveryServiceMock.estimateShipping).not.toHaveBeenCalled();
+    });
+
+    it('records a free-text phone order as OTHER', async () => {
+      await service.adminCreateOrder(dto, ADMIN_ID);
+
+      const [params] = orderRepositoryMock.createManual.mock.calls[0];
+      expect(params.deliveryMethod).toBe('OTHER');
+      expect(params).not.toHaveProperty('shippingCost');
     });
 
     it('records the acting operator on the order', async () => {

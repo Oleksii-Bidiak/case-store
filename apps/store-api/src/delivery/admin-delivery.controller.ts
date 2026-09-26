@@ -17,6 +17,10 @@ import { DeliverySettingDto, DeliverySettingResponse, UpdateDeliverySettingDto }
  * controller from the public `DeliveryController` precisely so that the guard is
  * a property of the whole class and cannot be forgotten on a later route.
  *
+ * TASK-643: the PUT also takes the four delivery-method switches and the
+ * courier's city, price and free-delivery threshold (`UpdateDeliverySettingDto`).
+ * Their public face is `GET /api/delivery/methods` on the other controller.
+ *
  * The city field in store-admin is populated from the existing public
  * `GET /api/delivery/cities` proxy, so the operator picks a real Nova Poshta
  * city and we store a valid ref rather than a hand-typed UUID.

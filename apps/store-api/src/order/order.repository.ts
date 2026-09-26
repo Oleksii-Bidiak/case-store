@@ -417,6 +417,12 @@ export class OrderRepository {
           ...(params.reservationExpiresAt !== undefined
             ? { reservationExpiresAt: params.reservationExpiresAt }
             : {}),
+          // TASK-643: always written. The column defaults to NOVA_POSHTA (honest
+          // for pre-column orders), so leaning on it would book every pickup,
+          // courier and free-text order as a Nova Poshta parcel. The point FK is
+          // `onDelete: SetNull`; the address snapshot keeps its name and address.
+          deliveryMethod: params.deliveryMethod,
+          ...(params.pickupPointId ? { pickupPointId: params.pickupPointId } : {}),
           subtotal,
           discount: discountAmount,
           discountCode: discountParam?.code ?? null,
@@ -585,6 +591,9 @@ export class OrderRepository {
           ...(params.reservationExpiresAt !== undefined
             ? { reservationExpiresAt: params.reservationExpiresAt }
             : {}),
+          // TASK-643: the service classifies a phone order (NP ref → NOVA_POSHTA,
+          // else OTHER); absent → the column default.
+          ...(params.deliveryMethod ? { deliveryMethod: params.deliveryMethod } : {}),
           subtotal,
           discount: new Prisma.Decimal(0),
           shippingCost: shipping,

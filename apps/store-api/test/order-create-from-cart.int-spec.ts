@@ -1,6 +1,6 @@
 import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
-import { PaymentMethod, Prisma } from '@prisma/client';
+import { DeliveryMethod, PaymentMethod, Prisma } from '@prisma/client';
 import { randomUUID } from 'crypto';
 import { OrderRepository } from '../src/order/order.repository';
 import type { CreateOrderParams } from '../src/order/order.types';
@@ -134,6 +134,7 @@ describe('OrderRepository.createFromCart — persisted row (integration)', () =>
         phone: '+380501234567',
       } as CreateOrderParams['shippingAddress'],
       shippingCost: SHIPPING_COST,
+      deliveryMethod: DeliveryMethod.NOVA_POSHTA,
       ...overrides,
     };
   }
@@ -200,5 +201,92 @@ describe('OrderRepository.createFromCart — persisted row (integration)', () =>
     // The reservation itself was taken.
     const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
     expect(product.stock).toBe(INITIAL_STOCK - ORDERED_QTY);
+  });
+
+  // ─── Delivery method (TASK-643) ──────────────────────────────────────────────
+
+  describe('delivery method (TASK-643)', () => {
+    let pickupPointId = '';
+
+    afterEach(async () => {
+      // Runs BEFORE the outer afterEach, so the order still exists and its FK
+      // is simply set null by the point's deletion (if a test left the point).
+      if (pickupPointId) await prisma.pickupPoint.deleteMany({ where: { id: pickupPointId } });
+      pickupPointId = '';
+    });
+
+    it('persists a COURIER order with its method and shipping cost, keeping the total invariant under a discount', async () => {
+      const COURIER_PRICE = 120;
+      const DISCOUNT = '20.00';
+
+      const created = await repo.createFromCart(
+        await buildParams({
+          deliveryMethod: DeliveryMethod.COURIER,
+          shippingCost: COURIER_PRICE,
+          discount: { amount: DISCOUNT, code: 'INT643', redeem: async () => undefined },
+        }),
+      );
+
+      const row = await persisted(created.id);
+      expect(row.deliveryMethod).toBe(DeliveryMethod.COURIER);
+      expect(row.pickupPointId).toBeNull();
+      expect(row.shippingCost.toFixed(2)).toBe('120.00');
+      expect(row.discount.toFixed(2)).toBe(DISCOUNT);
+      // The discount comes off the goods, never off the shipping.
+      expect(row.total.toFixed(2)).toBe(
+        row.subtotal.plus(row.shippingCost).plus(row.addonsTotal).minus(row.discount).toFixed(2),
+      );
+      expect(row.total.toFixed(2)).toBe(
+        new Prisma.Decimal(UNIT_PRICE)
+          .times(ORDERED_QTY)
+          .plus(COURIER_PRICE)
+          .minus(DISCOUNT)
+          .toFixed(2),
+      );
+    });
+
+    it('persists a PICKUP order linked to its point; deleting the point nulls the link but not the snapshot', async () => {
+      const point = await prisma.pickupPoint.create({
+        data: { name: 'Int-643 point', city: 'Київ', address: 'вул. Хрещатик, 1' },
+      });
+      pickupPointId = point.id;
+
+      const created = await repo.createFromCart(
+        await buildParams({
+          deliveryMethod: DeliveryMethod.PICKUP,
+          pickupPointId: point.id,
+          shippingCost: 0,
+          shippingAddress: {
+            firstName: 'Тарас',
+            lastName: 'Шевченко',
+            phone: '+380501234567',
+            city: point.city,
+            address1: point.address,
+            deliveryMethod: DeliveryMethod.PICKUP,
+            carrier: null,
+            pickupPointName: point.name,
+            pickupPointAddress: point.address,
+          },
+        }),
+      );
+
+      const row = await persisted(created.id);
+      expect(row.deliveryMethod).toBe(DeliveryMethod.PICKUP);
+      expect(row.pickupPointId).toBe(point.id);
+      expect(row.shippingCost.toFixed(2)).toBe('0.00');
+
+      await prisma.pickupPoint.delete({ where: { id: point.id } });
+      pickupPointId = '';
+
+      const after = await persisted(created.id);
+      // onDelete: SetNull — the order survives its point…
+      expect(after.pickupPointId).toBeNull();
+      // …and still says where the parcel was to be collected.
+      expect(after.shippingAddress).toMatchObject({
+        deliveryMethod: 'PICKUP',
+        pickupPointName: 'Int-643 point',
+        pickupPointAddress: 'вул. Хрещатик, 1',
+      });
+    });
   });
 });

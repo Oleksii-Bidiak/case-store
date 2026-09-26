@@ -1,12 +1,57 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DeliveryMethod } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import { CacheService } from '../cache';
+// The matrix file itself, not the order barrel: it is pure, and the order module
+// already depends on this one — importing its Nest module graph back would be a
+// cycle. One table, read by both the server check and the storefront (TASK-643).
+import { allowedPaymentMethods } from '../order/delivery-payment-matrix';
 import { DeliveryRepository, UpsertDeliverySettingInput } from './delivery.repository';
+import { PickupPointRepository, type PickupPoint } from './pickup-point.repository';
 import { DeliveryNotConfiguredException } from './delivery.errors';
 import { DEFAULT_WEIGHT_KG, NovaPoshtaClient } from './nova-poshta.client';
 import { DeliverySettingDto } from './dto';
-import type { NpCityDto, NpWarehouseDto, NpEstimateDto } from './dto';
+import type {
+  CourierTermsDto,
+  DeliveryMethodsDto,
+  NpCityDto,
+  NpWarehouseDto,
+  NpEstimateDto,
+} from './dto';
+
+/**
+ * The delivery settings an order needs (TASK-643): which methods the shop offers
+ * and what the courier costs. The single mapping from the settings row to
+ * "enabled", shared by the checkout endpoint and the order-creation check, so
+ * the two can never disagree about what is on offer.
+ */
+export interface DeliveryMethodSettings {
+  /** Enabled methods, in the fixed order NOVA_POSHTA, PICKUP, COURIER, OTHER. */
+  enabledMethods: DeliveryMethod[];
+  courier: CourierTermsDto;
+}
+
+type MethodFlag = 'npEnabled' | 'pickupEnabled' | 'courierEnabled' | 'otherEnabled';
+
+/**
+ * The settings switch behind each method. A `Record`, so a fifth enum value
+ * fails to compile here until someone decides where its switch lives.
+ */
+const METHOD_FLAG: Readonly<Record<DeliveryMethod, MethodFlag>> = {
+  NOVA_POSHTA: 'npEnabled',
+  PICKUP: 'pickupEnabled',
+  COURIER: 'courierEnabled',
+  OTHER: 'otherEnabled',
+};
+
+/** Fixed display order of the methods; also the order of `enabledMethods`. */
+const METHOD_ORDER: readonly DeliveryMethod[] = [
+  DeliveryMethod.NOVA_POSHTA,
+  DeliveryMethod.PICKUP,
+  DeliveryMethod.COURIER,
+  DeliveryMethod.OTHER,
+];
 
 /** Kyiv NP city ref — the bootstrap dispatch origin when nothing else is set. */
 export const KYIV_CITY_REF = 'db5c88e0-391c-11dd-90d9-001a92567626';
@@ -58,6 +103,8 @@ export class DeliveryService {
   constructor(
     private readonly client: NovaPoshtaClient,
     private readonly repository: DeliveryRepository,
+    // TASK-643: the checkout's pickup points.
+    private readonly pickupPoints: PickupPointRepository,
     private readonly cache: CacheService,
     private readonly config: ConfigService,
     private readonly logger: PinoLogger,
@@ -211,6 +258,74 @@ export class DeliveryService {
     );
 
     return DeliverySettingDto.fromPrisma(row);
+  }
+
+  // ─── Delivery methods (TASK-643) ───────────────────────────────────────────
+  //
+  // Deliberately uncached: one PK read (plus one small indexed list for the
+  // public endpoint), and a cache here would be one more thing `updateSettings`
+  // and the pickup-point CRUD must remember to evict. An operator who switches a
+  // method off expects the very next checkout to see it — the lesson of
+  // TASK-080-E, where a value read once at boot made admin edits a no-op.
+
+  /**
+   * Which methods are on offer and what the courier costs. A never-written row
+   * reads as the schema defaults (NP + OTHER on, courier 0.00, no threshold), via
+   * {@link getSettings} — the same shape the admin form shows.
+   */
+  async getMethodSettings(): Promise<DeliveryMethodSettings> {
+    const settings = await this.getSettings();
+    return {
+      enabledMethods: METHOD_ORDER.filter((method) => settings[METHOD_FLAG[method]]),
+      courier: {
+        price: settings.courierPrice,
+        freeFrom: settings.courierFreeFrom,
+        cityName: settings.courierCityName,
+      },
+    };
+  }
+
+  /**
+   * Public `GET /api/delivery/methods`: what the checkout may offer right now.
+   *
+   * PICKUP is listed only while at least one active point exists — an enabled
+   * method with nothing to pick would lead the shopper straight into a 400 at
+   * submit. The order-side check agrees without special-casing it: with no
+   * active point, no `pickupPointId` resolves.
+   *
+   * The payment matrix is served as a fresh copy per response, so nothing done
+   * to a response object can reach back into the frozen table.
+   */
+  async getMethods(): Promise<DeliveryMethodsDto> {
+    const { enabledMethods, courier } = await this.getMethodSettings();
+
+    const pickupPoints = enabledMethods.includes(DeliveryMethod.PICKUP)
+      ? await this.pickupPoints.findActive()
+      : [];
+    const methods =
+      pickupPoints.length > 0
+        ? enabledMethods
+        : enabledMethods.filter((method) => method !== DeliveryMethod.PICKUP);
+
+    return {
+      methods,
+      courier,
+      pickupPoints,
+      paymentMatrix: {
+        NOVA_POSHTA: allowedPaymentMethods(DeliveryMethod.NOVA_POSHTA),
+        PICKUP: allowedPaymentMethods(DeliveryMethod.PICKUP),
+        COURIER: allowedPaymentMethods(DeliveryMethod.COURIER),
+        OTHER: allowedPaymentMethods(DeliveryMethod.OTHER),
+      },
+    };
+  }
+
+  /**
+   * The pickup point an order names, or null when it does not exist or has been
+   * deactivated — the order service turns null into a 400.
+   */
+  resolveActivePickupPoint(id: string): Promise<PickupPoint | null> {
+    return this.pickupPoints.findActiveById(id);
   }
 
   /**

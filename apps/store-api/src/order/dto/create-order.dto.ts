@@ -1,11 +1,12 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { PaymentMethod } from '@prisma/client';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { DeliveryMethod, PaymentMethod } from '@prisma/client';
 import { Type, Transform } from 'class-transformer';
 import {
   IsDefined,
   IsEnum,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
@@ -63,6 +64,43 @@ export class CreateOrderDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod;
+
+  /**
+   * How the order is to be delivered (TASK-643, plan 184).
+   *
+   * Optional so every client that predates the delivery-method step keeps
+   * working unchanged: absent, the method is DERIVED from the address —
+   * `shippingAddress.npCityRef` present → NOVA_POSHTA (priced by the NP estimate
+   * exactly as before), otherwise OTHER (shipping quoted later by the operator).
+   * The client never sends a shipping price; the server computes it per method.
+   */
+  @ApiPropertyOptional({
+    description:
+      'Delivery method. Omitted → derived from the address: shippingAddress.npCityRef ' +
+      'present → NOVA_POSHTA, otherwise OTHER. The server computes the shipping cost for ' +
+      'the method and refuses (400) a method that is disabled, a PICKUP without an active ' +
+      'pickupPointId, a NOVA_POSHTA without npCityRef, and a payment method the delivery ' +
+      'method does not admit (OTHER allows ON_DELIVERY only).',
+    enum: DeliveryMethod,
+    enumName: 'DeliveryMethod',
+  })
+  @IsOptional()
+  @IsEnum(DeliveryMethod)
+  deliveryMethod?: DeliveryMethod;
+
+  /**
+   * The pickup point of a PICKUP order (TASK-643). Ignored for every other
+   * method. `'loose'` like every id DTO in this repo: seeded fixed ids are not
+   * RFC-4122 v4, and a strict check would refuse them (wave 193).
+   */
+  @ApiPropertyOptional({
+    description:
+      'Pickup point id (from GET /api/delivery/methods). Required for PICKUP; ignored otherwise.',
+    format: 'uuid',
+  })
+  @IsOptional()
+  @IsUUID('loose', { message: 'pickupPointId must be a valid UUID' })
+  pickupPointId?: string;
 
   @ApiProperty({ description: 'Shipping address', type: AddressDto })
   @IsDefined()

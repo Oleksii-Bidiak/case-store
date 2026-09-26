@@ -25,6 +25,7 @@ import { ORDER_EXPORT_MAX_ROWS } from '../src/order/order.service';
 import { DiscountRepository } from '../src/discount';
 import { MailService } from '../src/mail/mail.service';
 import { MailOutboxService } from '../src/mail-outbox';
+import { NovaPoshtaClient } from '../src/delivery';
 import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -151,6 +152,21 @@ describe('OrderController (e2e)', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
+    // TASK-643: DeliveryService is REAL here, so checkout reads the delivery
+    // settings singleton and, for PICKUP, the point through these.
+    deliverySetting: { findUnique: jest.fn() },
+    pickupPoint: { findMany: jest.fn(), findFirst: jest.fn() },
+  };
+
+  // TASK-643: the Nova Poshta client is the network edge — mocked like
+  // delivery.e2e does, so the NP branch of checkout runs through the REAL
+  // DeliveryService (origin resolution, caching, 2dp mapping).
+  const NP_COST = 65;
+  const novaPoshtaClientMock = {
+    isConfigured: jest.fn(),
+    searchCities: jest.fn(),
+    searchWarehouses: jest.fn(),
+    estimateShipping: jest.fn(),
   };
 
   // ─── Test data ──────────────────────────────────────────────────────────────
@@ -291,6 +307,8 @@ describe('OrderController (e2e)', () => {
       .useValue(mailServiceMock)
       .overrideProvider(MailOutboxService)
       .useValue(mailOutboxServiceMock)
+      .overrideProvider(NovaPoshtaClient)
+      .useValue(novaPoshtaClientMock)
       // Rate limiting is disabled by replacing the COUNTER, not the guard.
       //
       // The obvious spellings do not work and fail silently, which is how every
@@ -354,9 +372,234 @@ describe('OrderController (e2e)', () => {
     prismaServiceMock.addonService.findMany.mockResolvedValue([]);
     prismaServiceMock.categoryAddonTemplate.findMany.mockResolvedValue([]);
     prismaServiceMock.addonServiceDelta.findMany.mockResolvedValue([]);
+    // TASK-643: a shop that never opened the delivery settings (schema
+    // defaults: NP + OTHER on), no pickup points, and a reachable NP.
+    prismaServiceMock.deliverySetting.findUnique.mockResolvedValue(null);
+    prismaServiceMock.pickupPoint.findMany.mockResolvedValue([]);
+    prismaServiceMock.pickupPoint.findFirst.mockResolvedValue(null);
+    novaPoshtaClientMock.isConfigured.mockReturnValue(true);
+    novaPoshtaClientMock.estimateShipping.mockResolvedValue({ cost: NP_COST, etaDays: 2 });
   });
 
   // ─── POST /api/orders ────────────────────────────────────────────────────────
+
+  // ─── POST /api/orders — delivery methods (TASK-643) ──────────────────────────
+  // The server resolves, validates, prices and snapshots the delivery method;
+  // the client never sends a price. The two LEGACY cases are the wave's
+  // acceptance: today's storefront (no method field) must keep producing exactly
+  // the orders it produced before.
+
+  describe('POST /api/orders — delivery methods (TASK-643)', () => {
+    const POINT_ID = '6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11';
+    const point = {
+      id: POINT_ID,
+      name: 'Магазин на Хрещатику',
+      city: 'Київ',
+      address: 'вул. Хрещатик, 1',
+      phone: null,
+      workingHours: 'Пн–Пт 10:00–19:00',
+      mapUrl: null,
+    };
+
+    /** A configured settings row with every method on. */
+    const allMethodsRow = {
+      id: '00000000-0000-0000-0000-000000000003',
+      senderCityRef: null,
+      senderCityName: null,
+      senderWarehouseRef: null,
+      defaultWeightKg: 0.5,
+      npEnabled: true,
+      pickupEnabled: true,
+      courierEnabled: true,
+      otherEnabled: true,
+      courierCityName: 'Київ',
+      courierPrice: new Prisma.Decimal('120'),
+      // Above the 59.98 fixture subtotal, so the courier is charged.
+      courierFreeFrom: new Prisma.Decimal('1000'),
+      createdAt: new Date('2026-09-26T00:00:00Z'),
+      updatedAt: new Date('2026-09-26T00:00:00Z'),
+    };
+
+    const createdParams = () =>
+      orderRepositoryMock.createFromCart.mock.calls.at(-1)?.[0] as Record<string, unknown> & {
+        shippingAddress: Record<string, unknown>;
+      };
+
+    const placeOrder = (body: Record<string, unknown>) =>
+      request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${generateAccessToken(userA.id, userA.role)}`)
+        .send(body);
+
+    beforeEach(() => {
+      userRepositoryMock.findById.mockResolvedValue({
+        id: userA.id,
+        email: 'usera@example.com',
+        firstName: 'User',
+        isActive: true,
+      });
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      orderRepositoryMock.createFromCart.mockResolvedValue(makeOrder());
+    });
+
+    // ── Legacy clients (no deliveryMethod) ──────────────────────────────────
+
+    it('LEGACY: an NP-picked city becomes NOVA_POSHTA at exactly the NP estimate', async () => {
+      const cityRef = 'city-ref-legacy';
+      // What the storefront's checkout summary shows before submit.
+      const estimate = await request(app.getHttpServer())
+        .get('/api/delivery/estimate')
+        .query({ cityRef })
+        .expect(200);
+
+      await placeOrder({
+        shippingAddress: { ...validAddress, npCityRef: cityRef, npWarehouseRef: 'wh-1' },
+      }).expect(201);
+
+      expect(createdParams()).toMatchObject({
+        deliveryMethod: 'NOVA_POSHTA',
+        shippingCost: Number(estimate.body.data.cost),
+      });
+      expect(createdParams().shippingCost).toBe(NP_COST);
+      expect(createdParams().shippingAddress).toMatchObject({
+        npCityRef: cityRef,
+        deliveryMethod: 'NOVA_POSHTA',
+        carrier: 'NOVA_POSHTA',
+      });
+    });
+
+    it('LEGACY: a free-text city paid on delivery becomes OTHER, booked at 0 and marked pending', async () => {
+      await placeOrder({ shippingAddress: validAddress, paymentMethod: 'ON_DELIVERY' }).expect(201);
+
+      expect(novaPoshtaClientMock.estimateShipping).not.toHaveBeenCalled();
+      expect(createdParams()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+      expect(createdParams().shippingAddress).toMatchObject({
+        deliveryMethod: 'OTHER',
+        carrier: null,
+        shippingCostPending: true,
+      });
+    });
+
+    // ── Each method, explicitly ─────────────────────────────────────────────
+
+    describe('with every method enabled', () => {
+      beforeEach(() => {
+        prismaServiceMock.deliverySetting.findUnique.mockResolvedValue(allMethodsRow);
+      });
+
+      it('NOVA_POSHTA → 201 priced by the NP estimate', async () => {
+        await placeOrder({
+          shippingAddress: { ...validAddress, npCityRef: 'city-ref-explicit' },
+          deliveryMethod: 'NOVA_POSHTA',
+          paymentMethod: 'ONLINE',
+        }).expect(201);
+
+        expect(createdParams()).toMatchObject({
+          deliveryMethod: 'NOVA_POSHTA',
+          shippingCost: NP_COST,
+          paymentMethod: 'ONLINE',
+        });
+      });
+
+      it('PICKUP → 201 at 0, linked to the active point and snapshotting it', async () => {
+        prismaServiceMock.pickupPoint.findFirst.mockResolvedValue(point);
+
+        await placeOrder({
+          shippingAddress: { ...validAddress, city: point.city, address1: point.address },
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+        }).expect(201);
+
+        expect(prismaServiceMock.pickupPoint.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { id: POINT_ID, isActive: true } }),
+        );
+        expect(createdParams()).toMatchObject({
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+          shippingCost: 0,
+        });
+        expect(createdParams().shippingAddress).toMatchObject({
+          pickupPointName: point.name,
+          pickupPointAddress: point.address,
+          carrier: null,
+        });
+      });
+
+      it('COURIER → 201 at the courier price below the threshold', async () => {
+        await placeOrder({
+          shippingAddress: validAddress,
+          deliveryMethod: 'COURIER',
+          paymentMethod: 'INSTALLMENTS',
+        }).expect(201);
+
+        expect(novaPoshtaClientMock.estimateShipping).not.toHaveBeenCalled();
+        expect(createdParams()).toMatchObject({ deliveryMethod: 'COURIER', shippingCost: 120 });
+      });
+
+      it('OTHER → 201 at 0', async () => {
+        await placeOrder({ shippingAddress: validAddress, deliveryMethod: 'OTHER' }).expect(201);
+
+        expect(createdParams()).toMatchObject({ deliveryMethod: 'OTHER', shippingCost: 0 });
+      });
+
+      it('OTHER + ONLINE → 400 with a Ukrainian message the storefront can show', async () => {
+        const res = await placeOrder({
+          shippingAddress: validAddress,
+          deliveryMethod: 'OTHER',
+          paymentMethod: 'ONLINE',
+        }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_PAYMENT_NOT_ALLOWED');
+        expect(typeof res.body.message).toBe('string');
+        expect(res.body.message).toMatch(/оплат/i);
+        expect(res.body.message).toMatch(/при отриманні/);
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+
+      it('PICKUP with a deactivated point → 400, nothing written', async () => {
+        prismaServiceMock.pickupPoint.findFirst.mockResolvedValue(null);
+
+        const res = await placeOrder({
+          shippingAddress: validAddress,
+          deliveryMethod: 'PICKUP',
+          pickupPointId: POINT_ID,
+        }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_PICKUP_POINT_UNAVAILABLE');
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+
+      it('explicit NOVA_POSHTA without an NP city → 400, never a silent 0', async () => {
+        const res = await placeOrder({
+          shippingAddress: validAddress,
+          deliveryMethod: 'NOVA_POSHTA',
+        }).expect(400);
+
+        expect(res.body.error).toBe('DELIVERY_NP_CITY_REQUIRED');
+        expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+      });
+    });
+
+    it('a method the shop switched off → 400 DELIVERY_METHOD_UNAVAILABLE', async () => {
+      // Schema defaults: courier is off.
+      const res = await placeOrder({
+        shippingAddress: validAddress,
+        deliveryMethod: 'COURIER',
+      }).expect(400);
+
+      expect(res.body.error).toBe('DELIVERY_METHOD_UNAVAILABLE');
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['an unknown delivery method', { deliveryMethod: 'DRONE' }],
+      ['a malformed pickup point id', { deliveryMethod: 'PICKUP', pickupPointId: 'not-a-uuid' }],
+    ])('rejects %s at validation (400)', async (_label, extra) => {
+      await placeOrder({ shippingAddress: validAddress, ...extra }).expect(400);
+
+      expect(orderRepositoryMock.createFromCart).not.toHaveBeenCalled();
+    });
+  });
 
   describe('POST /api/orders', () => {
     // The order ban guard (TASK-150) fetches the placing user first; seed an
@@ -449,7 +692,12 @@ describe('OrderController (e2e)', () => {
       await request(app.getHttpServer())
         .post('/api/orders')
         .set('Authorization', `Bearer ${token}`)
-        .send({ shippingAddress: validAddress, paymentMethod: 'ONLINE' })
+        // An NP-routed order: since TASK-643 a free-text (OTHER) order cannot be
+        // paid online at all — see the delivery-method block below.
+        .send({
+          shippingAddress: { ...validAddress, npCityRef: 'city-ref-online' },
+          paymentMethod: 'ONLINE',
+        })
         .expect(201);
 
       const params = orderRepositoryMock.createFromCart.mock.calls.at(-1)?.[0] as {
