@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
+import { RetryAfterException } from '../common/filters/retry-after.exception';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessage, ContactMessageStatus } from '@prisma/client';
 import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
@@ -215,6 +216,27 @@ describe('ContactService', () => {
         );
         expect(contactRepositoryMock.create).not.toHaveBeenCalled();
       });
+
+      it.each([
+        [9 * 60 * 1000, 60],
+        [1000, 599],
+        [10 * 60 * 1000 - 300, 1],
+      ])(
+        'carries the REAL remaining wait (written %p ms ago → %p s) (TASK-762)',
+        async (agoMs, expected) => {
+          contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
+            new Date(NOW.getTime() - agoMs),
+          );
+
+          const error = await service.submit(validDto).catch((caught: unknown) => caught);
+
+          expect(error).toBeInstanceOf(RetryAfterException);
+          expect((error as RetryAfterException).retryAfterSeconds).toBe(expected);
+          expect((error as RetryAfterException).getResponse()).toEqual(
+            expect.objectContaining({ retryAfterSeconds: expected }),
+          );
+        },
+      );
 
       it('accepts the next message once 10 minutes have passed', async () => {
         contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(

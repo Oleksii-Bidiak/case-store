@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { HttpException, HttpStatus, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { RetryAfterException } from '../common/filters/retry-after.exception';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessageStatus } from '@prisma/client';
 import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
@@ -100,15 +101,16 @@ export class ContactService {
 
     const email = dto.email.trim().toLowerCase();
     const latest = await this.contactRepository.findLatestCreatedAtByEmail(email);
-    if (latest && Date.now() - latest.getTime() < CONTACT_EMAIL_COOLDOWN_MS) {
-      throw new HttpException(
-        {
-          statusCode: HttpStatus.TOO_MANY_REQUESTS,
-          error: CONTACT_COOLDOWN_ERROR,
-          message: 'A message from this email was received recently. Try again in 10 minutes.',
-        },
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+    const remainingMs = latest ? CONTACT_EMAIL_COOLDOWN_MS - (Date.now() - latest.getTime()) : 0;
+    if (remainingMs > 0) {
+      // TASK-762: the REAL remaining wait, not the full window. The copy used to
+      // promise "10 minutes from now" to someone who might have one second left.
+      const retryAfterSeconds = Math.ceil(remainingMs / 1000);
+      throw new RetryAfterException({
+        error: CONTACT_COOLDOWN_ERROR,
+        message: `A message from this email was received recently. Try again in ${retryAfterSeconds} s.`,
+        retryAfterSeconds,
+      });
     }
 
     const created = await this.create(message);

@@ -8,6 +8,7 @@ import { ContactMessageStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
+import { HttpExceptionFilter } from '../src/common/filters';
 import { ContactMessagesNotFoundError, ContactRepository } from '../src/contact/contact.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -134,6 +135,8 @@ describe('Contact (e2e)', () => {
       }),
     );
     app.setGlobalPrefix('api', { exclude: ['health'] });
+    // The production envelope (main.ts): TASK-762 is about what survives it.
+    app.useGlobalFilters(moduleFixture.get(HttpExceptionFilter));
 
     await app.init();
   });
@@ -206,6 +209,17 @@ describe('Contact (e2e)', () => {
         'ivan@example.com',
       );
       expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+
+      // TASK-762 — in the SAME request, because the route's own 5/min throttle
+      // counts every POST in this file: how long is REALLY left, as a body key
+      // and as the Retry-After header. Written a minute ago → nine remain.
+      expect(res.body.retryAfterSeconds).toBeGreaterThan(530);
+      expect(res.body.retryAfterSeconds).toBeLessThanOrEqual(540);
+      expect(res.headers['retry-after']).toBe(String(res.body.retryAfterSeconds));
+      // Still the one envelope — nothing else leaked through with it.
+      expect(Object.keys(res.body).sort()).toEqual(
+        ['error', 'message', 'path', 'retryAfterSeconds', 'statusCode', 'timestamp'].sort(),
+      );
     });
 
     it('bounds the honeypot like any other string field (400 over 255 chars)', async () => {

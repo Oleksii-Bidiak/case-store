@@ -95,3 +95,31 @@ describe("InfoContactForm — phone (TASK-744)", () => {
     expect(captured.current).toMatchObject({ phone: "+380 50 111 2233" });
   });
 });
+
+describe("InfoContactForm — cooldown wait (TASK-762)", () => {
+  it("names the REAL remaining minutes from the API", async () => {
+    server.use(
+      http.post("*/api/contact", () =>
+        HttpResponse.json(
+          {
+            statusCode: 429,
+            error: "CONTACT_COOLDOWN",
+            message: "recent",
+            retryAfterSeconds: 30,
+          },
+          { status: 429 },
+        ),
+      ),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<InfoContactForm />);
+
+    await fill(user);
+    await user.click(submitButton());
+
+    expect(
+      await screen.findByText(dict.contact.errors.cooldownIn(1)),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(d.formError)).not.toBeInTheDocument();
+  });
+});

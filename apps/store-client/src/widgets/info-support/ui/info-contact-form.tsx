@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   CONTACT_HONEYPOT_FIELD,
   ContactHoneypot,
+  contactRetryAfterMinutes,
   contactSubmitErrorKind,
   useContactControllerSubmit,
 } from "@/entities/contact";
@@ -20,6 +21,14 @@ import {
 const FIELD =
   "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-[14.5px] text-foreground outline-none focus-visible:border-primary";
 const ERROR = "text-[12.5px] font-medium text-destructive";
+
+/** TASK-762: the real remaining minutes when the API sends them. */
+function cooldownText(error: unknown): string {
+  const minutes = contactRetryAfterMinutes(error);
+  return minutes !== undefined
+    ? dict.contact.errors.cooldownIn(minutes)
+    : dict.contact.errors.cooldown;
+}
 
 /**
  * InfoContactForm — the compact "Напишіть нам" form on the /info page. Submits
@@ -180,7 +189,7 @@ export function InfoContactForm() {
               {/* The cooldown gets its own sentence (TASK-452): this form's
                   generic «спробуйте ще раз за хвилину» is wrong for it. */}
               {contactSubmitErrorKind(submit.error) === "cooldown"
-                ? dict.contact.errors.cooldown
+                ? cooldownText(submit.error)
                 : d.formError}
             </p>
           )}
