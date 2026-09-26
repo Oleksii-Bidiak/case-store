@@ -6,15 +6,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Loader2, SlidersHorizontal } from "lucide-react";
 import { useSearch } from "@/entities/search";
 import type { ProductControllerFindAllParams } from "@/entities/product";
-import { ProductFilters, countActiveFilters } from "@/features/product-filters";
 import {
-  ProductCard,
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/shared/ui";
+  FiltersDrawer,
+  ProductFilters,
+  clearFilterUpdates,
+  countActiveFilters,
+} from "@/features/product-filters";
+import { ProductCard } from "@/shared/ui";
 import { Pagination } from "@/shared/ui/pagination";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
@@ -152,6 +150,14 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
       router.replace(`${pathname}?${next.toString()}`);
     },
     [searchParams, pathname, router],
+  );
+
+  // The drawer's zero-results action: the same full-set reset the panel's
+  // «Скинути фільтри» sends, so `applyFilters` recognises it as a reset and
+  // keeps `?q=`.
+  const resetFilters = useCallback(
+    () => applyFilters(clearFilterUpdates({ includeCategory: false })),
+    [applyFilters],
   );
 
   const buildPageHref = useCallback(
@@ -298,42 +304,23 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
         <section className="min-w-0">{results}</section>
       </div>
 
-      {/* Mobile filters drawer */}
-      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-        <SheetContent
-          side="left"
-          // `overscroll-contain` stops iOS Safari scroll-chaining — dragging
-          // past the end of the filter list must not rubber-band the page
-          // underneath the open drawer.
-          className="w-86 max-w-full gap-0 overflow-y-auto overscroll-contain p-0"
-        >
-          <SheetHeader className="border-b border-border">
-            <SheetTitle className="font-display text-lg font-bold">
-              {dict.filters.legend}
-            </SheetTitle>
-          </SheetHeader>
-          <div className="p-4">
-            <ProductFilters
-              idPrefix="search-filter-m"
-              currentParams={panelParams}
-              onFilterChange={applyFilters}
-              hideOnSale
-              collapsible
-            />
-          </div>
-          <SheetFooter className="border-t border-border">
-            <button
-              type="button"
-              onClick={() => setFiltersOpen(false)}
-              className="h-12 w-full rounded-xl bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90"
-            >
-              {meta?.total == null
-                ? dict.filters.mobileApplyPending
-                : dict.filters.mobileApply(meta.total)}
-            </button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      {/* Mobile filters drawer — the shared one (TASK-804). Its zero-results
+          reset is the panel's own «скинути фільтри», which on this page keeps
+          the query (see `applyFilters`). */}
+      <FiltersDrawer
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        resultCount={meta?.total}
+        onReset={resetFilters}
+      >
+        <ProductFilters
+          idPrefix="search-filter-m"
+          currentParams={panelParams}
+          onFilterChange={applyFilters}
+          hideOnSale
+          collapsible
+        />
+      </FiltersDrawer>
     </div>
   );
 }

@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  within,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { ProductListView } from "./product-list-view";
@@ -376,21 +381,66 @@ describe("ProductListView — mobile filter drawer count (TASK-084)", () => {
     expect(applyButton).toHaveTextContent("Показати 1 товар");
   });
 
-  it("disables the apply button with the empty-state label when nothing matches", async () => {
+  // TASK-804: the drawer used to DISABLE its only labelled action here, and
+  // the working reset lay under the drawer, on the page behind it.
+  it("offers the empty state's working reset in the drawer when nothing matches", async () => {
     installCatalogHandlers({ empty: true });
     const user = userEvent.setup();
+    currentQuery = "category=chargers&minPrice=9999&inStock=true";
 
     renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
     await screen.findByText(dict.catalog.emptyHeading);
 
+    await user.click(screen.getByRole("button", { name: /^Фільтри/ }));
+
+    const drawer = await screen.findByRole("dialog", {
+      name: dict.filters.legend,
+    });
+    expect(
+      within(drawer).getByText(dict.filters.mobileApply(0)),
+    ).toBeInTheDocument();
+    const reset = within(drawer).getByRole("button", {
+      name: dict.catalog.clearAllFilters,
+    });
+    expect(reset).toBeEnabled();
+
+    await user.click(reset);
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    const params = new URLSearchParams(target.split("?")[1]);
+    expect(params.has("category")).toBe(false);
+    expect(params.has("minPrice")).toBe(false);
+    expect(params.has("inStock")).toBe(false);
+  });
+
+  it("keeps a route-locked device when the drawer resets (TASK-804 × TASK-490)", async () => {
+    installCatalogHandlers({ empty: true });
+    const user = userEvent.setup();
+    currentPathname = "/catalog/chohly/iphone-15";
+    currentQuery = "minPrice=9999";
+
+    renderWithProviders(
+      <ProductListView
+        initialParams={{ page: 1 }}
+        lockedCategory={{ id: "cat-locked", slug: "chohly" }}
+        lockedDevice={{ slug: "iphone-15" }}
+      />,
+    );
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    await user.click(screen.getByRole("button", { name: /^Фільтри/ }));
+    const drawer = await screen.findByRole("dialog", {
+      name: dict.filters.legend,
+    });
     await user.click(
-      screen.getByRole("button", { name: dict.filters.filtersButton }),
+      within(drawer).getByRole("button", {
+        name: dict.catalog.clearAllFilters,
+      }),
     );
 
-    const applyButton = await screen.findByRole("button", {
-      name: dict.filters.mobileApply(0),
-    });
-    expect(applyButton).toBeDisabled();
-    expect(applyButton).toHaveTextContent("Немає товарів за цими фільтрами");
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    const [path, query] = target.split("?");
+    expect(path).toBe("/catalog/chohly/iphone-15");
+    expect(new URLSearchParams(query).has("minPrice")).toBe(false);
   });
 });

@@ -4,6 +4,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -367,6 +368,41 @@ describe("SearchResultsView", () => {
       expect(
         screen.getAllByLabelText(dict.filters.inStockOnly).length,
       ).toBeGreaterThan(0);
+    });
+
+    // TASK-804: the shared drawer — at zero results its footer resets the
+    // filters (keeping the query) instead of closing onto an empty grid.
+    it("offers a working reset in the drawer when a filtered search finds nothing", async () => {
+      currentQuery = "q=zzz&brand=apple&inStock=true";
+      installSearch(0);
+
+      renderWithProviders(<SearchResultsView query="zzz" page={1} />);
+      await screen.findByText(dict.search.emptyHeading("zzz"));
+
+      await userEvent.click(screen.getByRole("button", { name: /^Фільтри/ }));
+      const drawer = await screen.findByRole("dialog", {
+        name: dict.filters.legend,
+      });
+      expect(
+        within(drawer).getByText(dict.filters.mobileApply(0)),
+      ).toBeInTheDocument();
+
+      mockReplace.mockClear();
+      // The panel inside the drawer carries its own «Скинути фільтри» too —
+      // the footer's is the LAST one, and both send the same reset.
+      const resets = within(drawer).getAllByRole("button", {
+        name: dict.filters.clear,
+      });
+      await userEvent.click(resets[resets.length - 1]);
+
+      await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+      const target = new URL(
+        mockReplace.mock.calls.at(-1)?.[0] as string,
+        "http://localhost",
+      );
+      expect(target.searchParams.get("q")).toBe("zzz");
+      expect(target.searchParams.get("brand")).toBeNull();
+      expect(target.searchParams.get("inStock")).toBeNull();
     });
 
     // TASK-742: GET /api/search takes no `onSale`, so the panel must not offer

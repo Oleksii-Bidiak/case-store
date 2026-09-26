@@ -451,7 +451,7 @@
   },
   "src/widgets/product-list/ui/product-list-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 6
+      "count": 3
     }
   },
   "src/widgets/product-list/ui/product-list.tsx": {
@@ -501,7 +501,7 @@
   },
   "src/widgets/wishlist/ui/wishlist-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 25
+      "count": 22
     }
   }
 }

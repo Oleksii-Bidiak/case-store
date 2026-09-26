@@ -16,17 +16,11 @@ import {
   CategoryChips,
   SortSelect,
   ViewToggle,
+  FiltersDrawer,
   clearFilterUpdates,
   countActiveFilters,
   type CatalogView,
 } from "@/features/product-filters";
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/shared/ui";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { findCategoryNodeBySlug } from "../model/catalog-header";
 import { ProductList } from "./product-list";
@@ -310,44 +304,25 @@ export function ProductListView({
         </section>
       </div>
 
-      {/* Mobile filters drawer */}
-      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-        <SheetContent
-          side="left"
-          // `overscroll-contain` stops iOS Safari scroll-chaining — dragging past
-          // the top/bottom of the filter list no longer rubber-bands the page
-          // underneath the open drawer (TASK-084).
-          className="w-[342px] max-w-[88vw] gap-0 overflow-y-auto overscroll-contain p-0"
-        >
-          <SheetHeader className="border-b border-border">
-            <SheetTitle className="font-display text-lg font-bold">
-              {dict.filters.legend}
-            </SheetTitle>
-          </SheetHeader>
-          <div className="p-4">
-            <ProductFilters
-              idPrefix="filter-m"
-              currentParams={params}
-              categoryId={activeCategoryId}
-              lockedDevice={Boolean(lockedDevice)}
-              onFilterChange={applyFilters}
-              collapsible
-            />
-          </div>
-          <SheetFooter className="border-t border-border">
-            <button
-              type="button"
-              onClick={() => setFiltersOpen(false)}
-              disabled={resultCount === 0}
-              className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {resultCount == null
-                ? dict.filters.mobileApplyPending
-                : dict.filters.mobileApply(resultCount)}
-            </button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      {/* Mobile filters drawer — the shared one (TASK-804). At zero results
+          its footer offers the SAME reset as the empty state under it, which
+          used to be reachable only after closing the drawer. */}
+      <FiltersDrawer
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        resultCount={resultCount}
+        onReset={clearFilters}
+        resetLabel={dict.catalog.clearAllFilters}
+      >
+        <ProductFilters
+          idPrefix="filter-m"
+          currentParams={params}
+          categoryId={activeCategoryId}
+          lockedDevice={Boolean(lockedDevice)}
+          onFilterChange={applyFilters}
+          collapsible
+        />
+      </FiltersDrawer>
     </div>
   );
 }
