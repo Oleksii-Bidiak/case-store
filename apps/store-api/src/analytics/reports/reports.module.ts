@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma';
+import { CatalogueReportService } from './catalogue-report.service';
+import { CatalogueRepository } from './catalogue.repository';
 import { ReportCache } from './report-cache';
 import { ReportsController } from './reports.controller';
 import { SalesReportService } from './sales-report.service';
@@ -21,7 +23,13 @@ import { SalesRepository } from './sales.repository';
 @Module({
   imports: [PrismaModule],
   controllers: [ReportsController],
-  providers: [ReportCache, SalesRepository, SalesReportService],
+  providers: [
+    ReportCache,
+    SalesRepository,
+    SalesReportService,
+    CatalogueRepository,
+    CatalogueReportService,
+  ],
   exports: [ReportCache, SalesRepository],
 })
 export class ReportsModule {}

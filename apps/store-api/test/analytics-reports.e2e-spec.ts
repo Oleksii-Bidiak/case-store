@@ -11,6 +11,11 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { PermissionRepository } from '../src/auth/permissions';
 import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import type { SalesDay, SalesTotals } from '../src/analytics/reports/sales.repository';
+import { CatalogueRepository } from '../src/analytics/reports/catalogue.repository';
+import type {
+  BrandSalesRow,
+  CategorySalesRow,
+} from '../src/analytics/reports/catalogue.repository';
 import { PrismaService } from '../src/prisma';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
@@ -45,6 +50,27 @@ describe('Admin Analytics Reports (e2e)', () => {
   const salesRepositoryMock = {
     getTotals: jest.fn().mockResolvedValue(totals),
     getDaily: jest.fn().mockResolvedValue(daily),
+  };
+
+  const categoryRows: CategorySalesRow[] = [
+    {
+      categoryId: 'cat-cases',
+      name: 'Чохли',
+      direct: false,
+      hasChildren: true,
+      units: 7,
+      orders: 4,
+      revenue: 4200,
+    },
+  ];
+  const brandRows: BrandSalesRow[] = [
+    { brandId: 'brand-apple', name: 'Apple', units: 3, orders: 2, revenue: 900 },
+    { brandId: null, name: null, units: 5, orders: 5, revenue: 50 },
+  ];
+  const catalogueRepositoryMock = {
+    getCategorySales: jest.fn().mockResolvedValue(categoryRows),
+    getBrandSales: jest.fn().mockResolvedValue(brandRows),
+    categoryExists: jest.fn().mockResolvedValue(true),
   };
 
   const permissionRepositoryMock = createPermissionRepositoryMock();
@@ -94,6 +120,8 @@ describe('Admin Analytics Reports (e2e)', () => {
       .useValue(authRepositoryMock)
       .overrideProvider(SalesRepository)
       .useValue(salesRepositoryMock)
+      .overrideProvider(CatalogueRepository)
+      .useValue(catalogueRepositoryMock)
       .overrideProvider(APP_GUARD)
       .useClass(ThrottlerGuardPassThrough)
       .compile();
@@ -122,7 +150,85 @@ describe('Admin Analytics Reports (e2e)', () => {
     jest.clearAllMocks();
     salesRepositoryMock.getTotals.mockResolvedValue(totals);
     salesRepositoryMock.getDaily.mockResolvedValue(daily);
+    catalogueRepositoryMock.getCategorySales.mockResolvedValue(categoryRows);
+    catalogueRepositoryMock.getBrandSales.mockResolvedValue(brandRows);
+    catalogueRepositoryMock.categoryExists.mockResolvedValue(true);
     permissionRepositoryMock.setGrants(UserRole.MANAGER, []);
+  });
+
+  // The reports cache in memory for the whole suite (REDIS_HOST=''), so each
+  // case below asks a period of its own — a cached answer from a previous case
+  // must not be what is asserted.
+  describe('GET /api/admin/analytics/reports/categories and /brands (TASK-687)', () => {
+    const MANAGER = () => `Bearer ${tokenFor('manager-e2e-1', UserRole.MANAGER)}`;
+
+    it('returns 403 for a manager without analytics:read', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['analytics:revenue']);
+      await request(app.getHttpServer())
+        .get('/api/admin/analytics/reports/categories')
+        .set('Authorization', MANAGER())
+        .expect(403);
+    });
+
+    it('answers a reader without a single revenue key in the body', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['analytics:read']);
+
+      const categories = await request(app.getHttpServer())
+        .get('/api/admin/analytics/reports/categories')
+        .query({ preset: '7d' })
+        .set('Authorization', MANAGER())
+        .expect(200);
+      const brands = await request(app.getHttpServer())
+        .get('/api/admin/analytics/reports/brands')
+        .query({ preset: '7d' })
+        .set('Authorization', MANAGER())
+        .expect(200);
+
+      expect(categories.body.data.rows[0]).toMatchObject({
+        categoryId: 'cat-cases',
+        units: { current: 7 },
+      });
+      expect(categories.body.data.basis).toBe('current-catalogue');
+      expect(categories.text).not.toContain('revenue');
+      expect(brands.body.data.rows.map((r: { brandId: string | null }) => r.brandId)).toEqual([
+        null,
+        'brand-apple',
+      ]);
+      expect(brands.text).not.toContain('revenue');
+    });
+
+    it('adds the money for a holder of analytics:revenue', async () => {
+      permissionRepositoryMock.setGrants(UserRole.MANAGER, ['analytics:read', 'analytics:revenue']);
+
+      const categories = await request(app.getHttpServer())
+        .get('/api/admin/analytics/reports/categories')
+        .query({ preset: '30d' })
+        .set('Authorization', MANAGER())
+        .expect(200);
+
+      expect(categories.body.data.rows[0].revenue).toEqual({
+        current: 4200,
+        previous: 4200,
+        changePct: 0,
+      });
+    });
+
+    it('returns 404 when expanding a category that does not exist', async () => {
+      catalogueRepositoryMock.categoryExists.mockResolvedValue(false);
+      await request(app.getHttpServer())
+        .get('/api/admin/analytics/reports/categories')
+        .query({ parentId: '0b5e8c4e-4a3f-4f0e-9b1a-2f6d7c8e9a10' })
+        .set('Authorization', `Bearer ${tokenFor('admin-e2e-1', UserRole.ADMIN)}`)
+        .expect(404);
+    });
+
+    it('returns 400 for a parentId that is not a UUID', async () => {
+      await request(app.getHttpServer())
+        .get('/api/admin/analytics/reports/categories')
+        .query({ parentId: 'not-a-uuid' })
+        .set('Authorization', `Bearer ${tokenFor('admin-e2e-1', UserRole.ADMIN)}`)
+        .expect(400);
+    });
   });
 
   describe('GET /api/admin/analytics/reports/sales', () => {

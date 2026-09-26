@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { kyivDaySql } from '../../common/time/kyiv-day';
 import { PrismaService } from '../../prisma';
 import { ReportRange } from './report-period';
+import { SALES_BASE_STATUSES } from './sales-base';
 
 /** Money and count of one range, before net and average are derived. */
 export interface SalesTotals {
@@ -23,14 +24,11 @@ export interface SalesDay {
 }
 
 /**
- * The payment statuses that make an order a sale (owner decision B-8).
- *
- * PARTIALLY_REFUNDED and REFUNDED stay in on purpose: the money WAS taken on the
- * day of the order, and what went back later is a refund of its own day. Drop
- * them and a refund in September silently rewrites August — a closed month
- * would change every time someone returned something.
+ * The payment statuses that make an order a sale (owner decision B-8) — the
+ * one definition in `sales-base.ts`, shared with the catalogue reports and the
+ * dashboard (TASK-687/688/694), so no two screens disagree on what was sold.
  */
-const SALES_BASE = Prisma.sql`('PAID', 'PARTIALLY_REFUNDED', 'REFUNDED')`;
+const SALES_BASE = SALES_BASE_STATUSES;
 
 /**
  * The sales report's money, in raw SQL (TASK-686, plan 188).
