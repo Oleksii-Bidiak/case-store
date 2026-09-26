@@ -173,15 +173,16 @@ describe("ProductFilters collapsible mobile drawer (TASK-084)", () => {
     await screen.findByText(dict.filters.deviceTitle);
 
     // Brands are stubbed empty and no category is set, so brand + specs self-hide;
-    // the four rendered disclosures are search / availability / device / price
-    // in DOM order (availability added by TASK-414).
+    // the five rendered disclosures are search / availability / sale / device /
+    // price in DOM order (availability added by TASK-414, sale by TASK-742).
     const sections = container.querySelectorAll("details");
-    expect(sections).toHaveLength(4);
+    expect(sections).toHaveLength(5);
     // Search carries the active value → open; the rest start collapsed.
     expect(sections[0]).toHaveAttribute("open");
     expect(sections[1]).not.toHaveAttribute("open");
     expect(sections[2]).not.toHaveAttribute("open");
     expect(sections[3]).not.toHaveAttribute("open");
+    expect(sections[4]).not.toHaveAttribute("open");
   });
 
   it("opens the price section (and not search) when only a price bound is active", async () => {
@@ -196,9 +197,9 @@ describe("ProductFilters collapsible mobile drawer (TASK-084)", () => {
     await screen.findByText(dict.filters.deviceTitle);
 
     const sections = container.querySelectorAll("details");
-    // Order: [0] search, [1] availability, [2] device, [3] price.
+    // Order: [0] search, [1] availability, [2] sale, [3] device, [4] price.
     expect(sections[0]).not.toHaveAttribute("open");
-    expect(sections[3]).toHaveAttribute("open");
+    expect(sections[4]).toHaveAttribute("open");
   });
 
   it("opens the availability section when the in-stock filter is on", async () => {
@@ -302,6 +303,7 @@ describe("ProductFilters — availability + reset (TASK-414)", () => {
           maxPrice: 900,
           specs: "material:Силікон",
           inStock: true,
+          onSale: true,
         }}
         onFilterChange={onFilterChange}
       />,
@@ -320,8 +322,93 @@ describe("ProductFilters — availability + reset (TASK-414)", () => {
       maxPrice: undefined,
       specs: undefined,
       inStock: undefined,
+      onSale: undefined,
     });
     // The category's control is the chips row / the route, not this panel.
     expect("category" in updates).toBe(false);
+  });
+});
+
+/**
+ * TASK-742 — «Зі знижкою». The API understood `?onSale=true` all along; the
+ * panel had no control for it.
+ */
+describe("ProductFilters — on sale (TASK-742)", () => {
+  it("writes ?onSale=true when the checkbox is ticked", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = jest.fn();
+
+    renderWithProviders(
+      <ProductFilters currentParams={{}} onFilterChange={onFilterChange} />,
+    );
+
+    await user.click(
+      screen.getByRole("checkbox", { name: dict.filters.onSaleOnly }),
+    );
+
+    expect(onFilterChange).toHaveBeenCalledWith({ onSale: "true" });
+  });
+
+  it("REMOVES the param when the checkbox is unticked", async () => {
+    const user = userEvent.setup();
+    const onFilterChange = jest.fn();
+
+    renderWithProviders(
+      <ProductFilters
+        currentParams={{ onSale: true }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+
+    const checkbox = screen.getByRole("checkbox", {
+      name: dict.filters.onSaleOnly,
+    });
+    expect(checkbox).toBeChecked();
+    await user.click(checkbox);
+
+    expect(onFilterChange).toHaveBeenCalledWith({ onSale: undefined });
+  });
+
+  it("offers the reset button when only «Зі знижкою» is on", async () => {
+    renderWithProviders(
+      <ProductFilters
+        currentParams={{ onSale: true }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: dict.filters.clear }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the sale section of the drawer when the filter is on", async () => {
+    const { container } = renderWithProviders(
+      <ProductFilters
+        collapsible
+        currentParams={{ onSale: true }}
+        onFilterChange={() => {}}
+      />,
+    );
+
+    await screen.findByText(dict.filters.deviceTitle);
+
+    expect(container.querySelectorAll("details")[2]).toHaveAttribute("open");
+  });
+
+  // `/search` has no `onSale` param — a box there would do nothing.
+  it("is left out entirely with hideOnSale", () => {
+    renderWithProviders(
+      <ProductFilters
+        currentParams={{}}
+        onFilterChange={jest.fn()}
+        hideOnSale
+      />,
+    );
+
+    expect(
+      screen.queryByRole("checkbox", { name: dict.filters.onSaleOnly }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(dict.filters.saleTitle)).not.toBeInTheDocument();
   });
 });

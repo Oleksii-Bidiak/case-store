@@ -369,6 +369,23 @@ describe("SearchResultsView", () => {
       ).toBeGreaterThan(0);
     });
 
+    // TASK-742: GET /api/search takes no `onSale`, so the panel must not offer
+    // a box that would be ticked with no effect on the results.
+    it("does not offer «Зі знижкою» — the search endpoint has no such param", async () => {
+      currentQuery = "q=case";
+      installSearch();
+
+      renderWithProviders(<SearchResultsView query="case" page={1} />);
+      await screen.findByText("iPhone 15 Case");
+
+      expect(
+        screen.getAllByLabelText(dict.filters.inStockOnly).length,
+      ).toBeGreaterThan(0);
+      expect(
+        screen.queryByLabelText(dict.filters.onSaleOnly),
+      ).not.toBeInTheDocument();
+    });
+
     it("offers no filter panel before anything has been searched for", () => {
       renderWithProviders(<SearchResultsView query="" page={1} />);
 

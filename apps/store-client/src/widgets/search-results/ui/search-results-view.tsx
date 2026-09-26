@@ -290,6 +290,8 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
             idPrefix="search-filter"
             currentParams={panelParams}
             onFilterChange={applyFilters}
+            // GET /api/search has no `onSale` param (TASK-742).
+            hideOnSale
           />
         </aside>
 
@@ -315,6 +317,7 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
               idPrefix="search-filter-m"
               currentParams={panelParams}
               onFilterChange={applyFilters}
+              hideOnSale
               collapsible
             />
           </div>

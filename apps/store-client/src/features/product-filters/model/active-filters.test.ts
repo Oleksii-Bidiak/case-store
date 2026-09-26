@@ -44,6 +44,7 @@ describe("catalog active-filter helpers", () => {
       maxPrice: 900,
       specs: "material:Силікон,TPU;form:Накладка",
       inStock: true,
+      onSale: true,
     };
 
     expect(countActiveFilters(params)).toBe(CATALOG_FILTER_KEYS.length);
@@ -104,6 +105,12 @@ describe("catalog active-filter helpers", () => {
     expect(countActiveFilters({ page: 1, limit: 20, inStock: false })).toBe(0);
   });
 
+  // TASK-742 — the same boolean rule for «Зі знижкою».
+  it("counts onSale only when it is true", () => {
+    expect(countActiveFilters({ page: 1, limit: 20, onSale: true })).toBe(1);
+    expect(countActiveFilters({ page: 1, limit: 20, onSale: false })).toBe(0);
+  });
+
   describe("clearFilterUpdates", () => {
     it("clears the FULL set, not only what is currently active", () => {
       expect(clearFilterUpdates()).toEqual({
@@ -115,6 +122,7 @@ describe("catalog active-filter helpers", () => {
         maxPrice: undefined,
         specs: undefined,
         inStock: undefined,
+        onSale: undefined,
       });
     });
 

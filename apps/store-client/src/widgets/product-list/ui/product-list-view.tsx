@@ -124,6 +124,8 @@ export function ProductListView({
     // also what the API's own boolean transform does with it.
     inStock:
       searchParams.get("inStock") === "true" ? true : initialParams.inStock,
+    // «Зі знижкою» (TASK-742) — the same literal-"true" rule as `inStock`.
+    onSale: searchParams.get("onSale") === "true" ? true : initialParams.onSale,
     page: pageRaw ? Number(pageRaw) : (initialParams.page ?? 1),
     limit: PAGE_SIZE,
     isActive: true,

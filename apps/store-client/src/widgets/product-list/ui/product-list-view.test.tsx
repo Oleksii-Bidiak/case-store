@@ -215,6 +215,41 @@ describe("ProductListView — filters (TASK-414)", () => {
     expect(productRequests.at(-1)?.searchParams.has("inStock")).toBe(false);
   });
 
+  // TASK-742 — «Зі знижкою» reaches the query with the same literal-"true" rule.
+  it("forwards ?onSale=true to the product query and ignores ?onSale=false", async () => {
+    const productRequests = installCatalogHandlers();
+    currentQuery = "onSale=true";
+
+    const { unmount } = renderWithProviders(
+      <ProductListView initialParams={{ page: 1 }} />,
+    );
+    await screen.findByText("Alpha Case");
+    expect(productRequests.at(-1)?.searchParams.get("onSale")).toBe("true");
+    unmount();
+
+    currentQuery = "onSale=false";
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+    expect(productRequests.at(-1)?.searchParams.has("onSale")).toBe(false);
+  });
+
+  it("offers the «Зі знижкою» control and its chip on the catalogue", async () => {
+    installCatalogHandlers();
+    currentQuery = "onSale=true";
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+
+    expect(
+      screen.getByRole("checkbox", { name: dict.filters.onSaleOnly }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("button", {
+        name: new RegExp(`^${dict.filters.onSaleChip}`),
+      }),
+    ).toBeInTheDocument();
+  });
+
   // The regression that motivated the shared filter set: «Скинути фільтри»
   // cleared four params and left the device, spec and availability selections
   // applied — visible in the chips row, unreachable from the reset.
