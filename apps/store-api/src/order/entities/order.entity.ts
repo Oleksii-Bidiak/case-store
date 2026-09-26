@@ -61,8 +61,11 @@ function findUnavailableItemIds(order: OrderWithItems): string[] | undefined {
     return undefined;
   }
 
+  // `!= null`, the one idiom for this column (TASK-828): `OrderService` and the
+  // admin order detail read it the same way, and a select that did not ask for
+  // the field must read as "not restocked", not as a lifted reservation.
   const reservationLifted =
-    order.restockedAt !== null &&
+    order.restockedAt != null &&
     order.status !== OrderStatus.CANCELLED &&
     order.status !== OrderStatus.REFUNDED;
 

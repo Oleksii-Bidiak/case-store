@@ -7,7 +7,7 @@ import {
   ProductListSkeleton,
   SubcategoryChips,
 } from "@/widgets";
-import { findCategoryPathBySlug } from "@/widgets/product-list/model/catalog-header";
+import { findCategoryPathBySlug } from "@/widgets/product-list";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";

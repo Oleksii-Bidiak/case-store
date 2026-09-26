@@ -6,7 +6,7 @@ import { ProductListView, ProductListSkeleton } from "@/widgets";
 import {
   buildCatalogHeader,
   findCategoryNodeBySlug,
-} from "@/widgets/product-list/model/catalog-header";
+} from "@/widgets/product-list";
 import {
   resolveLegacyCatalogParams,
   withQuery,

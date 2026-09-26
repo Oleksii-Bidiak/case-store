@@ -3,7 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { ProductListView, ProductListSkeleton } from "@/widgets";
-import { findCategoryPathBySlug } from "@/widgets/product-list/model/catalog-header";
+import { findCategoryPathBySlug } from "@/widgets/product-list";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import type {
   CategoryTreeNodeEntity,

@@ -11,13 +11,13 @@ export { PopularRail, PopularRailSkeleton } from "./product-grid";
 export { PromoBanner } from "./promo-banner";
 export { Newsletter } from "./newsletter";
 export { RecentlyViewed } from "./recently-viewed";
-export { BlogView } from "./blog";
+export { BlogView, BlogArticleView } from "./blog";
 export { ProductListView, ProductListSkeleton } from "./product-list";
 export { SubcategoryChips } from "./category-detail";
 export { SearchResultsView, SearchResultsSkeleton } from "./search-results";
 export { ProductDetailView, ProductDetailSkeleton } from "./product-detail";
 export { ProductReviewsWidget } from "./product-reviews";
-export { CartView, CartSkeleton } from "./cart";
+export { CartView, CartSkeleton, CartSheet } from "./cart";
 export { WishlistView, WishlistSkeleton } from "./wishlist";
 export {
   CheckoutView,
@@ -36,3 +36,8 @@ export { OrderHistoryView, OrderHistorySkeleton } from "./order-history";
 export { OrderLookupView } from "./order-lookup";
 export { ProductQuickViewTrigger } from "./product-quick-view";
 export { RecommendationCarousels } from "./recommendation-carousels";
+// TASK-828: the slices below were public (the routes import them) but missing
+// here, so the root barrel described half the layer.
+export { Header, HeaderAuth } from "./header";
+export { LegalDocView, LegalHubView } from "./legal-doc";
+export { ProductCardActions } from "./product-card-actions";
