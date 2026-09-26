@@ -5,6 +5,10 @@ export {
   getAccessToken,
   setAccessToken,
   refreshSession,
+  // TASK-528 — the "this browser holds a session" hint that spares /login a 401.
+  markSessionActive,
+  clearSessionMarker,
+  shouldAttemptSessionRefresh,
 } from "./instance";
 export type { ErrorType, BodyType, RefreshOutcome } from "./instance";
 
