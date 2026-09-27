@@ -268,4 +268,30 @@ describe('CatalogueRepository (integration)', () => {
     await expect(repo.categoryExists(root)).resolves.toBe(true);
     await expect(repo.categoryExists(randomUUID())).resolves.toBe(false);
   });
+
+  it('treats a deleted category as missing: no row, no expander, no expansion', async () => {
+    // What category deletion leaves behind (TASK-653): tombstone + switched off.
+    async function deleted(name: string, parentId: string | null): Promise<string> {
+      const id = await category(name, parentId, false);
+      await prisma.category.update({ where: { id }, data: { deletedAt: new Date() } });
+      return id;
+    }
+    const root = await category('Лишилась без дітей', null);
+    const gone = await deleted('Видалена дитина', root);
+    const goneRoot = await deleted('Видалений корінь', null);
+    const p = await product(root);
+    await sale([{ productId: p, quantity: 1, price: '100' }]);
+
+    const roots = await repo.getCategorySales(MARCH, null);
+    expect(roots.find((r) => r.categoryId === root)).toMatchObject({
+      units: 1,
+      hasChildren: false,
+    });
+    expect(roots.find((r) => r.categoryId === goneRoot)).toBeUndefined();
+
+    const expanded = await repo.getCategorySales(MARCH, root);
+    expect(expanded.find((r) => r.categoryId === gone)).toBeUndefined();
+
+    await expect(repo.categoryExists(gone)).resolves.toBe(false);
+  });
 });

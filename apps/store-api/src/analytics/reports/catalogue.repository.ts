@@ -49,6 +49,12 @@ export interface BrandSalesRow extends CatalogueSales {
  * A category is listed when it is active or when it sold something in the
  * range: a category switched off after selling still owns that money, and one
  * switched off that sold nothing is noise.
+ *
+ * A deleted category (TASK-653) is never a row and never makes its parent
+ * expandable. The subtree walk still descends through it on purpose: deletion
+ * moves every product out first, so it adds nothing — and if that invariant
+ * ever broke, the money would stay in the live ancestor's total instead of
+ * vanishing from the report.
  */
 @Injectable()
 export class CatalogueRepository {
@@ -87,13 +93,16 @@ export class CatalogueRepository {
       SELECT c.id AS "categoryId",
              c.name,
              FALSE AS direct,
-             EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id) AS "hasChildren",
+             EXISTS (
+               SELECT 1 FROM categories ch WHERE ch.parent_id = c.id AND ch.deleted_at IS NULL
+             ) AS "hasChildren",
              COALESCE(pa.units, 0)::int AS units,
              COALESCE(pa.orders, 0)::int AS orders,
              COALESCE(pa.revenue, 0)::float8 AS revenue
       FROM categories c
       LEFT JOIN per_anchor pa ON pa.anchor_id = c.id
       WHERE ${anchors}
+        AND c.deleted_at IS NULL
         AND (c.is_active OR COALESCE(pa.units, 0) > 0)
       ORDER BY c.sort_order, c.name
     `;
@@ -134,10 +143,14 @@ export class CatalogueRepository {
     `;
   }
 
-  /** Whether `categoryId` names a category — an expansion of nothing is a 404, not an empty list. */
+  /**
+   * Whether `categoryId` names a live category — an expansion of nothing is a
+   * 404, not an empty list. A deleted one (TASK-653) is missing, as on every
+   * other category read path; `findFirst`, since `deletedAt` is not in the key.
+   */
   async categoryExists(categoryId: string): Promise<boolean> {
-    const found = await this.prisma.category.findUnique({
-      where: { id: categoryId },
+    const found = await this.prisma.category.findFirst({
+      where: { id: categoryId, deletedAt: null },
       select: { id: true },
     });
     return found !== null;
