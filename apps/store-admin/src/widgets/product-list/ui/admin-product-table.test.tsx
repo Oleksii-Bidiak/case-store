@@ -1516,3 +1516,61 @@ describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
     expect(bodies).toHaveLength(2);
   });
 });
+
+/**
+ * TASK-837/838 — the bulk endpoints (status, group, colour) all require
+ * `products:write`, and the undo replays them. A session without it gets no
+ * selection column, no bulk bar and no undo: every one of those clicks would
+ * end in a 403. The server guard stays the real boundary.
+ */
+describe("AdminProductTable — bulk actions need products:write (TASK-837/838)", () => {
+  const P1 = "iPhone 15 Pro Case";
+
+  it("renders no selection, no bulk bar and no undo without products:write", async () => {
+    stubEndpoints();
+    renderTable({ permissions: ["products:read"] });
+    await screen.findByText(P1);
+
+    // Row checkboxes, the header select-all and the toolbar's (phone) one.
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", { name: dict.products.bulk.undo }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: dict.products.bulk.activate(1) }),
+    ).toBeNull();
+    // The column goes as a whole: header and row still have the same width.
+    const row = screen.getByText(P1).closest("tr") as HTMLElement;
+    expect(within(row).getAllByRole("cell")).toHaveLength(
+      screen.getAllByRole("columnheader").length,
+    );
+  });
+
+  it("renders the selection, the bulk bar and the undo with products:write", async () => {
+    stubEndpoints();
+    renderTable({ permissions: ["products:read", "products:write"] });
+    await screen.findByText(P1);
+
+    expect(
+      await screen.findByRole("button", { name: dict.products.bulk.undo }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.getAllByRole("checkbox", { name: dict.common.table.selectAll }),
+    ).not.toHaveLength(0);
+
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: dict.products.bulk.selectRow(P1),
+      }),
+    );
+
+    for (const label of [
+      dict.products.bulk.activate(1),
+      dict.products.bulk.deactivate(1),
+      dict.products.bulk.moveToGroup(1),
+      dict.products.bulk.setColor(1),
+    ]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
+  });
+});
