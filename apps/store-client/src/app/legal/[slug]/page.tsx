@@ -19,9 +19,11 @@ import { SITE_URL, dict } from "@/shared/config";
 
 /**
  * Fetch a published LEGAL page by slug through the ISR-tagged server fetcher;
- * returns null on 404 (draft / scheduled / missing / wrong kind) or any API
- * error. The explicit kind is what keeps a help page from ever being served
- * under a legal address (TASK-435) — the API 404s the mismatch.
+ * returns null ONLY on a 404 (draft / scheduled / missing / wrong kind) and
+ * throws on anything else (TASK-793): an API outage must surface as a 5xx, not
+ * as a 404 on a canonical URL from the sitemap. Do not wrap it in a catch. The
+ * explicit kind is what keeps a help page from ever being served under a legal
+ * address (TASK-435) — the API 404s the mismatch.
  */
 const getPage = (slug: string) => fetchPublishedPage(slug, "LEGAL");
 
@@ -42,8 +44,9 @@ export async function generateMetadata({
 }: LegalDocPageProps): Promise<Metadata> {
   const { slug } = await params;
 
-  // Fetch the page and the global SEO settings in parallel; both degrade to null
-  // on error (getPage → 404 fallback, fetchSeoSettings → resolveSeo tolerates null).
+  // Fetch the page and the global SEO settings in parallel. getPage is null only
+  // for a real 404 and throws on an outage (TASK-793); fetchSeoSettings degrades
+  // to null, which resolveSeo tolerates.
   const [page, seo] = await Promise.all([getPage(slug), fetchSeoSettings()]);
   if (!page) {
     return { title: dict.meta.pageFallbackTitle };
@@ -99,7 +102,8 @@ export async function generateMetadata({
 export default async function LegalDocPage({ params }: LegalDocPageProps) {
   const { slug } = await params;
 
-  // A draft / missing page resolves to 404 on the API; any error → Next 404.
+  // A draft / missing page resolves to 404 on the API → null → Next 404; any
+  // other failure throws out of getPage and becomes a 5xx (TASK-793).
   const page = await getPage(slug);
   if (!page) {
     // TASK-285: an admin may have renamed the slug — and since TASK-435 they may
