@@ -15,91 +15,11 @@ import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
+import { isCarouselTab, toTabs } from "../model/popular-tabs";
 import { PopularRailSkeleton } from "./product-grid-skeleton";
-
-/**
- * Fallback tabs — used ONLY when no HOME_TABS carousel is available (fresh
- * install, everything unpublished, or an unreachable API, which yields an empty
- * list by design). Each is backed by a real server-side filter:
- *   • hits → bestselling: units sold across PAID orders, most sold first (TASK-164)
- *   • new  → newest first (createdAt desc)
- *   • sale → `onSale: true` — the discounted set is computed by the API, NOT by
- *            filtering a page client-side (which used to leave the tab looking
- *            empty whenever the first page held few discounted items).
- */
-const FALLBACK_TABS: QueryTab[] = [
-  {
-    key: "hits",
-    label: dict.home.popular.tabs.hits,
-    params: {
-      isActive: true,
-      sortBy: "bestselling",
-      sortOrder: "desc",
-      limit: 12,
-    },
-  },
-  {
-    key: "new",
-    label: dict.home.popular.tabs.new,
-    params: {
-      isActive: true,
-      sortBy: "createdAt",
-      sortOrder: "desc",
-      limit: 12,
-    },
-  },
-  {
-    key: "sale",
-    label: dict.home.popular.tabs.sale,
-    params: { isActive: true, onSale: true, limit: 12 },
-  },
-];
 
 /** Rail slides are fixed-width (`w-[244px] sm:w-[260px]`), not grid-fluid. */
 const RAIL_IMAGE_SIZES = "(max-width: 639px) 244px, 260px";
-
-/** A tab whose products were resolved server-side (an admin HOME_TABS carousel). */
-interface CarouselTab {
-  key: string;
-  label: string;
-  products: PublicProductEntity[];
-}
-
-/** A tab that fetches its own products client-side (fallback mode only). */
-interface QueryTab {
-  key: string;
-  label: string;
-  params: ProductControllerFindAllParams;
-}
-
-type RailTab = CarouselTab | QueryTab;
-
-function isCarouselTab(tab: RailTab): tab is CarouselTab {
-  return "products" in tab;
-}
-
-/**
- * Admin-managed HOME_TABS carousels become the tabs (title = tab label, resolved
- * products = tab content). A carousel that resolved to zero products is dropped —
- * a tab that opens onto nothing is worse than no tab.
- */
-function toTabs(carousels: PublicCarouselEntity[]): RailTab[] {
-  const tabs: CarouselTab[] = carousels
-    .filter((carousel) => carousel.products.length > 0)
-    .map((carousel) => ({
-      key: carousel.id,
-      label: carousel.title,
-      products: carousel.products,
-    }));
-
-  // Fallback (never an empty hole on the homepage): with no usable carousel the
-  // rail behaves exactly as it did before TASK-288. The section carries the
-  // homepage's product discovery, and `fetchPublishedCarousels` returns [] on any
-  // transport error — hiding the section would mean a brief API outage silently
-  // guts the homepage. Same posture as the banner regions falling back to their
-  // hardcoded content.
-  return tabs.length > 0 ? tabs : FALLBACK_TABS;
-}
 
 /**
  * PopularRail — the homepage "Популярне" section: a tabbed, horizontally

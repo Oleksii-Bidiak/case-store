@@ -46,7 +46,9 @@ export interface ComboboxProps {
  *
  * Accessibility: WAI-ARIA combobox pattern — `role="combobox"` +
  * `aria-expanded`/`aria-controls`/`aria-activedescendant`, a `role="listbox"`
- * popup, and ArrowUp/ArrowDown/Enter/Escape keyboard navigation.
+ * popup, and ArrowUp/ArrowDown/Enter/Escape keyboard navigation. From the
+ * input with nothing highlighted, ↓ goes to the first option and ↑ to the last
+ * (TASK-508).
  *
  * `activeIndex` is the KEYBOARD selection and nothing else (TASK-411): hovering
  * an option tints it through CSS `:hover` but never moves the selection, so a
@@ -110,7 +112,15 @@ export function Combobox({
         break;
       case "ArrowUp":
         e.preventDefault();
-        setActiveIndex((i) => Math.max(i - 1, 0));
+        if (!open) {
+          setOpen(true);
+          return;
+        }
+        // APG combobox (TASK-508): ↑ from the input — nothing highlighted yet —
+        // lands on the LAST option, the mirror of ↓ landing on the first.
+        setActiveIndex((i) =>
+          i < 0 ? options.length - 1 : Math.max(i - 1, 0),
+        );
         break;
       case "Enter":
         if (open && activeIndex >= 0 && options[activeIndex]) {

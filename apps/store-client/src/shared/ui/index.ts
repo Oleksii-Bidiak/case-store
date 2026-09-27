@@ -48,6 +48,8 @@ export {
 export { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs";
 export { Slider } from "./slider";
 export { Toaster } from "./sonner";
+// Bot trap for public forms (TASK-452 contact, TASK-749 registration).
+export { Honeypot } from "./honeypot";
 
 // Custom primitives
 export { Skeleton } from "./skeleton";
@@ -63,3 +65,7 @@ export { JsonLd } from "./json-ld";
 export { RichText, RICH_TEXT_PROSE, looksLikeHtml } from "./rich-text";
 export { Logo } from "./logo";
 export { CategoryTileImage } from "./category-tile-image";
+// Admin banner pictures behind the homepage banners (TASK-740).
+export { BannerBackdrop } from "./banner-backdrop";
+// Plain <img> for admin URLs with a load-failure fallback (TASK-759).
+export { FallbackImg } from "./fallback-img";

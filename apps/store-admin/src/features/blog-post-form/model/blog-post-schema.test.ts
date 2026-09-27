@@ -1,3 +1,4 @@
+import { dict } from "@/shared/config";
 import {
   blogPostSchema,
   blogPostFormValuesToCreateDto,
@@ -170,4 +171,17 @@ describe("blogPostSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  // TASK-573: `new URL()` accepts any scheme, so zod's `.url()` let these through.
+  it.each(["javascript:alert(1)", "data:image/png;base64,AAAA"])(
+    "rejects %j on the ogImage field with the hint",
+    (ogImage) => {
+      const result = blogPostSchema.safeParse({ ...baseInput, ogImage });
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.path).toEqual(["ogImage"]);
+      expect(result.error?.issues[0]?.message).toBe(
+        dict.seoFields.errors.ogImageUrl,
+      );
+    },
+  );
 });

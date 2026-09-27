@@ -25,6 +25,12 @@ const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
 
 /**
+ * Cap on `GET /returns` (TASK-608). A customer files a handful of returns in a
+ * lifetime; the cap bounds the read, it is not a page size anyone will reach.
+ */
+export const MY_RETURNS_LIMIT = 100;
+
+/**
  * Statuses from which a customer may open a return (TASK-340).
  *
  * The goods have to have reached them first. A PENDING or PROCESSING order is
@@ -178,6 +184,18 @@ export class ReturnService {
     }
 
     const returns = await this.returnRepository.findByOrderId(orderId);
+    return returns.map((row) => ReturnEntity.fromPrisma(row));
+  }
+
+  /**
+   * A customer's view of every return they have, across all their orders
+   * (TASK-608) — what lets the order history show a request's status without a
+   * speculative `GET /orders/:id/returns` per row.
+   *
+   * Customer projection: no operator notes, no author id.
+   */
+  async getMyReturns(userId: string): Promise<ReturnEntity[]> {
+    const returns = await this.returnRepository.findByUserId(userId, MY_RETURNS_LIMIT);
     return returns.map((row) => ReturnEntity.fromPrisma(row));
   }
 

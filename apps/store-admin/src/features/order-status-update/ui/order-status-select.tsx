@@ -39,6 +39,7 @@ import { dict } from "@/shared/config";
 import { toTransitionOptions } from "../model/transitions";
 import {
   orderConflictMessage,
+  orderWriteErrorMessage,
   requiresReload,
   type ApiErrorLike,
 } from "../model/order-conflict";
@@ -142,7 +143,9 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
 
   const { allowed, expectedUpdatedAt } = toTransitionOptions(transitions.data);
 
-  const conflict = orderConflictMessage(updateStatus.error as ApiErrorLike);
+  // A 409 (with or without the reload button) or, since TASK-622, a 403 naming
+  // the missing grant — both stay on screen until the next attempt.
+  const conflict = orderWriteErrorMessage(updateStatus.error as ApiErrorLike);
   const showReload = requiresReload(updateStatus.error as ApiErrorLike);
 
   /**
@@ -287,7 +290,10 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
             toast.error(message);
             return;
           }
-          toast.error(dict.orderStatus.toastFailed);
+          toast.error(
+            orderWriteErrorMessage(error as ApiErrorLike) ??
+              dict.orderStatus.toastFailed,
+          );
         },
       },
     );

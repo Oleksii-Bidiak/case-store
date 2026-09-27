@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Badge, Button } from "@/shared/ui";
+import { StatusToggleButton } from "@/shared/ui/status-toggle-button";
 import { dict } from "@/shared/config";
 import { isReorderInFlight } from "@/shared/lib/reorder-lock";
 import {
@@ -11,6 +11,7 @@ import {
   useAdminCategoryControllerActivate,
   useAdminCategoryControllerDeactivate,
 } from "@/entities/category";
+import { useStatusToggle } from "@/features/bulk-status";
 
 export interface UseCategoryStatusToggleOptions {
   categoryId: string;
@@ -26,14 +27,21 @@ export interface UseCategoryStatusToggleOptions {
   onCancel?: () => void;
 }
 
+export interface CategoryStatusToggleApi {
+  toggle: () => void;
+  isPending: boolean;
+  /** The blast-radius prompt (TASK-812) — render once in the caller's JSX. */
+  confirmDialog: ReactNode;
+}
+
 /**
  * Activate/deactivate a category, with the mandatory blast-radius warning
  * (plan 158 §3.11).
  *
- * The mechanism is BINDING: a `window.confirm` (the TASK-285 precedent in
- * `widgets/category-form-view/ui/edit-category-view.tsx`), NOT a toast — a toast
- * fires AFTER the write and therefore cannot satisfy "state the blast radius
- * BEFORE it commits". `findCategoryTree` filters `isActive` at EVERY level, so
+ * The mechanism is BINDING: a confirmation BEFORE the write — an AlertDialog
+ * since TASK-812 (`window.confirm` before it), NOT a toast. A toast fires AFTER
+ * the write and therefore cannot satisfy "state the blast radius BEFORE it
+ * commits". `findCategoryTree` filters `isActive` at EVERY level, so
  * deactivating a parent hides its still-ACTIVE children from the storefront —
  * and the tree UI puts those children right on screen, making the operator MORE
  * likely to believe they are unaffected.
@@ -42,7 +50,8 @@ export interface UseCategoryStatusToggleOptions {
  *
  * Exported as a hook as well as a button so the per-row "Дії" menu
  * (`features/category-tree-row-actions`) routes its Активувати/Деактивувати item
- * through the SAME blast-radius guard instead of re-deriving it.
+ * through the SAME blast-radius guard instead of re-deriving it. A hook caller
+ * must render the returned `confirmDialog`.
  */
 export function useCategoryStatusToggle({
   categoryId,
@@ -50,61 +59,45 @@ export function useCategoryStatusToggle({
   name = "",
   descendantCount = 0,
   onCancel,
-}: UseCategoryStatusToggleOptions) {
+}: UseCategoryStatusToggleOptions): CategoryStatusToggleApi {
   const queryClient = useQueryClient();
   const activate = useAdminCategoryControllerActivate();
   const deactivate = useAdminCategoryControllerDeactivate();
 
-  const isPending = activate.isPending || deactivate.isPending;
-  const mutation = isActive ? deactivate : activate;
-
-  const toggle = useCallback(() => {
-    if (isPending) return;
-
-    if (isActive && descendantCount > 0) {
-      const confirmed = window.confirm(
-        dict.categories.tree.deactivateConfirm(name, descendantCount),
-      );
-      if (!confirmed) {
-        onCancel?.();
-        return;
-      }
-    }
-
-    mutation.mutate(
-      { id: categoryId },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey:
-              getAdminCategoryControllerFindAllWithProductCountQueryKey(),
-          });
-          // §3.11: NOTHING invalidates the admin-tree query key today, so a
-          // status toggle would leave the treegrid stale until a hard reload.
-          // Suppressed while a reorder PATCH is in flight: refetching mid-move
-          // pulls the PRE-move server tree in under the optimistic override.
-          // Keyed by resource (TASK-295): a banner or brand reorder elsewhere in
-          // the app must NOT suppress the category tree's invalidation.
-          if (!isReorderInFlight("categories")) {
-            void queryClient.invalidateQueries({
-              queryKey: getCategoryControllerGetAdminTreeQueryKey(),
-            });
-          }
-        },
-      },
-    );
-  }, [
-    categoryId,
-    descendantCount,
+  return useStatusToggle({
+    id: categoryId,
     isActive,
-    isPending,
-    mutation,
-    name,
+    activate,
+    deactivate,
+    confirmDeactivate:
+      descendantCount > 0
+        ? {
+            description: dict.categories.tree.deactivateConfirm(
+              name,
+              descendantCount,
+            ),
+            confirmLabel: dict.common.deactivate,
+            destructive: true,
+          }
+        : null,
     onCancel,
-    queryClient,
-  ]);
-
-  return { toggle, isPending };
+    onWritten: () => {
+      void queryClient.invalidateQueries({
+        queryKey: getAdminCategoryControllerFindAllWithProductCountQueryKey(),
+      });
+      // §3.11: NOTHING invalidates the admin-tree query key today, so a
+      // status toggle would leave the treegrid stale until a hard reload.
+      // Suppressed while a reorder PATCH is in flight: refetching mid-move
+      // pulls the PRE-move server tree in under the optimistic override.
+      // Keyed by resource (TASK-295): a banner or brand reorder elsewhere in
+      // the app must NOT suppress the category tree's invalidation.
+      if (!isReorderInFlight("categories")) {
+        void queryClient.invalidateQueries({
+          queryKey: getCategoryControllerGetAdminTreeQueryKey(),
+        });
+      }
+    },
+  });
 }
 
 export interface CategoryStatusToggleProps {
@@ -126,7 +119,7 @@ export function CategoryStatusToggle({
 }: CategoryStatusToggleProps) {
   const buttonRef = useRef<HTMLButtonElement>(null);
 
-  const { toggle, isPending } = useCategoryStatusToggle({
+  const { toggle, isPending, confirmDialog } = useCategoryStatusToggle({
     categoryId,
     isActive,
     name,
@@ -135,22 +128,16 @@ export function CategoryStatusToggle({
   });
 
   return (
-    <Button
-      ref={buttonRef}
-      type="button"
-      variant="ghost"
-      size="sm"
-      onClick={toggle}
-      disabled={isPending}
-      aria-label={
-        isActive
-          ? dict.statusToggle.categoryDeactivate
-          : dict.statusToggle.categoryActivate
-      }
-    >
-      <Badge variant={isActive ? "default" : "secondary"}>
-        {isActive ? dict.common.active : dict.common.inactive}
-      </Badge>
-    </Button>
+    <>
+      <StatusToggleButton
+        ref={buttonRef}
+        isActive={isActive}
+        isPending={isPending}
+        onToggle={toggle}
+        activateLabel={dict.statusToggle.categoryActivate}
+        deactivateLabel={dict.statusToggle.categoryDeactivate}
+      />
+      {confirmDialog}
+    </>
   );
 }

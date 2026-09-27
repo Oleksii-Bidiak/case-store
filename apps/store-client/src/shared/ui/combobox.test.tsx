@@ -137,6 +137,45 @@ describe("Combobox", () => {
       expect(input).toHaveFocus();
     });
 
+    // APG combobox (TASK-508): with nothing highlighted, ↓ enters the list at
+    // the top and ↑ at the bottom. It used to clamp to the first row both ways.
+    it("moves ArrowUp from the input to the LAST option, ArrowDown to the first", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      const [first, second] = screen.getAllByRole("option");
+
+      await user.keyboard("{ArrowUp}");
+      expect(input).toHaveAttribute("aria-activedescendant", second.id);
+      expect(second).toHaveAttribute("aria-selected", "true");
+
+      // Up again walks towards the top and stops there.
+      await user.keyboard("{ArrowUp}{ArrowUp}");
+      expect(input).toHaveAttribute("aria-activedescendant", first.id);
+
+      // A fresh keystroke resets the selection; ↓ then starts at the top.
+      await user.type(input, "ї");
+      expect(input).not.toHaveAttribute("aria-activedescendant");
+      await user.keyboard("{ArrowDown}");
+      expect(input).toHaveAttribute("aria-activedescendant", first.id);
+    });
+
+    it("opens a closed list on ArrowUp without selecting anything", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      await user.keyboard("{Escape}");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+
+      await user.keyboard("{ArrowUp}");
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      expect(input).not.toHaveAttribute("aria-activedescendant");
+    });
+
     it("drops aria-activedescendant when the list is closed with Escape", async () => {
       const user = userEvent.setup();
       setup({ value: "Ки" });

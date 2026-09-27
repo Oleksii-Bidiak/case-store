@@ -141,6 +141,53 @@ describe("OrderTimeline (TASK-251)", () => {
     );
   });
 
+  // TASK-621: a refused provider event is written current → current. It must
+  // read as a refusal naming what was asked for, not «Оплачено → Оплачено».
+  it("renders a refused payment event as a refusal, in the warning tone", async () => {
+    const payRow = {
+      ...historyRows[1],
+      changeType: "PAYMENT_STATUS",
+      fromStatus: null,
+      toStatus: null,
+      fromPaymentStatus: "PAID",
+      toPaymentStatus: "PAID",
+      changedBy: null,
+    };
+    mockHistory([
+      {
+        ...payRow,
+        id: "hist-refused",
+        note: "PAYMENT_EVENT_REFUSED",
+        rejectedPaymentStatus: "FAILED",
+      },
+      // A row written before TASK-621: no note, no rejected status.
+      { ...payRow, id: "hist-legacy", note: null, rejectedPaymentStatus: null },
+      { ...historyRows[0], note: null },
+    ]);
+
+    renderWithProviders(
+      <OrderTimeline orderId="order-1" customerUserId={CUSTOMER_USER_ID} />,
+    );
+
+    const refusedLabel = dict.orderStatus.paymentEventRefusedLabel(
+      "Помилка оплати",
+      "Оплачено",
+    );
+    await screen.findByText(refusedLabel);
+    const items = screen.getAllByRole("listitem");
+
+    expect(items[0]).toHaveAttribute("data-refused", "true");
+    expect(items[0]).toHaveTextContent(
+      dict.orderStatus.paymentEventRefusedHistoryNote,
+    );
+    expect(items[1]).toHaveTextContent(
+      dict.orderStatus.paymentEventRefusedLegacyLabel("Оплачено"),
+    );
+    expect(items[1]).toHaveAttribute("data-refused", "true");
+    expect(items[2]).not.toHaveAttribute("data-refused");
+    expect(screen.queryByText("Оплата: Оплачено → Оплачено")).toBeNull();
+  });
+
   it("shows the empty-state copy when there are no rows", async () => {
     mockHistory([]);
 

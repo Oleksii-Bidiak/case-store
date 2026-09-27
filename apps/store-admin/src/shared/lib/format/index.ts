@@ -10,6 +10,11 @@ export type { DateInput } from "./formatDate";
 // header of `datetime-local.ts` for why the inputs need their own pair and why
 // the ESLint date guard could never have caught them.
 export { toKyivDateTimeLocal, fromKyivDateTimeLocal } from "./datetime-local";
+export {
+  fromKyivDateStart,
+  fromKyivDateEnd,
+  toKyivDateInput,
+} from "./datetime-local";
 export { formatPercent } from "./formatPercent";
 export { formatDurationHours } from "./formatDurationHours";
 export { formatFileSize } from "./formatFileSize";

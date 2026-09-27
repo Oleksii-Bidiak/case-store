@@ -1,4 +1,9 @@
-import { apiErrorCode, apiErrorMessage, apiErrorStatus } from "./api-error";
+import {
+  apiErrorCode,
+  apiErrorMessage,
+  apiErrorRetryAfterSeconds,
+  apiErrorStatus,
+} from "./api-error";
 
 /**
  * TASK-574: a Prisma failure the API used to answer with a bare 500 now arrives
@@ -39,5 +44,47 @@ describe("api-error readers — translated Prisma failures (TASK-574)", () => {
 
   it("returns undefined for a body with no message, so the caller's fallback applies", () => {
     expect(apiErrorMessage(axiosError(500, {}))).toBeUndefined();
+  });
+});
+
+describe("apiErrorRetryAfterSeconds (TASK-762)", () => {
+  const withHeaders = (headers: unknown, data: unknown = {}) => ({
+    response: { status: 429, data, headers },
+  });
+
+  it("reads retryAfterSeconds from the body first", () => {
+    expect(
+      apiErrorRetryAfterSeconds(
+        withHeaders({ "retry-after": "5" }, { retryAfterSeconds: 42 }),
+      ),
+    ).toBe(42);
+  });
+
+  it("falls back to the Retry-After header (plain object or AxiosHeaders-like)", () => {
+    expect(
+      apiErrorRetryAfterSeconds(withHeaders({ "retry-after": "30" })),
+    ).toBe(30);
+    expect(
+      apiErrorRetryAfterSeconds(
+        withHeaders({
+          get: (name: string) => (name === "retry-after" ? "7" : null),
+        }),
+      ),
+    ).toBe(7);
+  });
+
+  it("ignores what is not a positive number of seconds", () => {
+    expect(apiErrorRetryAfterSeconds(withHeaders({}))).toBeUndefined();
+    expect(
+      apiErrorRetryAfterSeconds(
+        withHeaders({ "retry-after": "Wed, 21 Oct 2026 07:28:00 GMT" }),
+      ),
+    ).toBeUndefined();
+    expect(
+      apiErrorRetryAfterSeconds(withHeaders({}, { retryAfterSeconds: -1 })),
+    ).toBeUndefined();
+    expect(
+      apiErrorRetryAfterSeconds(new Error("Network Error")),
+    ).toBeUndefined();
   });
 });

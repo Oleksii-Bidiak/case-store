@@ -24,6 +24,14 @@ export class PaymentEntity {
   @ApiProperty({ description: 'Amount charged, as a decimal string', example: '1249.00' })
   amount!: string;
 
+  @ApiProperty({
+    description:
+      'Total of refunds requested on this attempt, as a decimal string. ' +
+      '`amount - refundedAmount` is the most the next refund may be (TASK-1302)',
+    example: '0',
+  })
+  refundedAmount!: string;
+
   @ApiProperty({ description: 'ISO 4217 currency code', example: 'UAH' })
   currency!: string;
 
@@ -43,7 +51,12 @@ export class PaymentEntity {
   @ApiProperty({ description: 'Provider error message', nullable: true, type: String })
   failureMessage!: string | null;
 
-  @ApiProperty({ description: 'When the attempt reached a final state', nullable: true })
+  @ApiProperty({
+    description: 'When the attempt reached a final state',
+    nullable: true,
+    type: String,
+    format: 'date-time',
+  })
   settledAt!: Date | null;
 
   @ApiProperty({ description: 'When the attempt was opened' })
@@ -55,6 +68,7 @@ export class PaymentEntity {
     entity.orderId = payment.orderId;
     entity.provider = payment.provider;
     entity.amount = payment.amount.toString();
+    entity.refundedAmount = payment.refundedAmount.toString();
     entity.currency = payment.currency;
     entity.status = payment.status;
     entity.providerPaymentId = payment.providerPaymentId;

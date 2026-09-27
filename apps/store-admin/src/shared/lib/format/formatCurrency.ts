@@ -1,12 +1,18 @@
-// Canonical money formatter for the admin panel.
+// Canonical money formatter for the admin panel — the ONE function that turns an
+// amount into hryvnia on screen (TASK-801).
 //
 // All amounts are stored as Decimal(10, 2) major-unit values (e.g. "29.99" or
-// 1299). This is the single source of truth for rendering them as Ukrainian
-// hryvnia. Output examples (uk-UA convention, non-breaking spaces): "1 299 ₴",
-// "29,99 ₴". Mirrors the storefront's `formatMoney` (TASK-069).
+// 1299). Output examples (uk-UA grouping, non-breaking spaces): "1 299 ₴",
+// "29,99 ₴". Byte-for-byte the storefront's `formatMoney`, and the confirmation
+// e-mail's `formatMoney` in store-api formats the same way — a customer on the
+// phone and an operator on this screen read the same string.
+//
+// The "₴" sign is appended manually instead of `style: "currency"`: the symbol
+// Intl picks for uk-UA/UAH differs across ICU versions ("грн" on the SSR Node
+// runtime vs "₴" in browsers). The storefront banned it after a hydration
+// mismatch; the admin renders money on the server too (the dashboard), so the
+// same trip-wire was armed here.
 const formatter = new Intl.NumberFormat("uk-UA", {
-  style: "currency",
-  currency: "UAH",
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
 });
@@ -17,5 +23,7 @@ const formatter = new Intl.NumberFormat("uk-UA", {
  */
 export function formatCurrency(value: string | number): string {
   const amount = typeof value === "string" ? Number(value) : value;
-  return Number.isFinite(amount) ? formatter.format(amount) : String(value);
+  return Number.isFinite(amount)
+    ? `${formatter.format(amount)} ₴`
+    : String(value);
 }

@@ -8,6 +8,7 @@ import { ContactMessageStatus } from '@prisma/client';
 import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
+import { HttpExceptionFilter } from '../src/common/filters';
 import { ContactMessagesNotFoundError, ContactRepository } from '../src/contact/contact.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
@@ -60,7 +61,7 @@ describe('Contact (e2e)', () => {
     countByStatus: jest.fn(),
     findMatchingUserId: jest.fn(),
     findMatchingUserIds: jest.fn(),
-    findLatestCreatedAtByEmail: jest.fn(),
+    findLatestMessageAgeMsByEmail: jest.fn(),
   };
 
   const prismaServiceMock = {
@@ -134,6 +135,8 @@ describe('Contact (e2e)', () => {
       }),
     );
     app.setGlobalPrefix('api', { exclude: ['health'] });
+    // The production envelope (main.ts): TASK-762 is about what survives it.
+    app.useGlobalFilters(moduleFixture.get(HttpExceptionFilter));
 
     await app.init();
   });
@@ -157,7 +160,7 @@ describe('Contact (e2e)', () => {
     };
 
     it('stores a normal submission and returns 201 { data: { id } }', async () => {
-      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+      contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(null);
       contactRepositoryMock.create.mockResolvedValue(makeMessageRow());
 
       const res = await request(app.getHttpServer()).post('/api/contact').send(body).expect(201);
@@ -166,7 +169,11 @@ describe('Contact (e2e)', () => {
       expect(contactRepositoryMock.create).toHaveBeenCalledTimes(1);
     });
 
-    it('answers a filled honeypot with the same 201 shape and stores nothing', async () => {
+    it('answers a filled honeypot with the same 201 shape and files it as SPAM (TASK-761)', async () => {
+      contactRepositoryMock.create.mockResolvedValue(
+        makeMessageRow({ status: ContactMessageStatus.SPAM }),
+      );
+
       const res = await request(app.getHttpServer())
         .post('/api/contact')
         .send({ ...body, website: 'https://spam.example' })
@@ -175,12 +182,14 @@ describe('Contact (e2e)', () => {
       expect(Object.keys(res.body)).toEqual(['data']);
       expect(Object.keys(res.body.data)).toEqual(['id']);
       expect(res.body.data.id).toMatch(/^[0-9a-f-]{36}$/);
-      expect(contactRepositoryMock.create).not.toHaveBeenCalled();
-      expect(contactRepositoryMock.findLatestCreatedAtByEmail).not.toHaveBeenCalled();
+      expect(contactRepositoryMock.create).toHaveBeenCalledWith(
+        expect.objectContaining({ status: ContactMessageStatus.SPAM }),
+      );
+      expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).not.toHaveBeenCalled();
     });
 
     it('accepts an empty honeypot as a human submission', async () => {
-      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+      contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(null);
       contactRepositoryMock.create.mockResolvedValue(makeMessageRow());
 
       await request(app.getHttpServer())
@@ -192,9 +201,7 @@ describe('Contact (e2e)', () => {
     });
 
     it('refuses a second message from the same email within 10 minutes with 429 CONTACT_COOLDOWN', async () => {
-      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
-        new Date(Date.now() - 60 * 1000),
-      );
+      contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(60 * 1000);
 
       const res = await request(app.getHttpServer())
         .post('/api/contact')
@@ -202,10 +209,21 @@ describe('Contact (e2e)', () => {
         .expect(429);
 
       expect(res.body).toEqual(expect.objectContaining({ error: 'CONTACT_COOLDOWN' }));
-      expect(contactRepositoryMock.findLatestCreatedAtByEmail).toHaveBeenCalledWith(
+      expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).toHaveBeenCalledWith(
         'ivan@example.com',
       );
       expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+
+      // TASK-762 — in the SAME request, because the route's own 5/min throttle
+      // counts every POST in this file: how long is REALLY left, as a body key
+      // and as the Retry-After header. Written a minute ago → nine remain.
+      expect(res.body.retryAfterSeconds).toBeGreaterThan(530);
+      expect(res.body.retryAfterSeconds).toBeLessThanOrEqual(540);
+      expect(res.headers['retry-after']).toBe(String(res.body.retryAfterSeconds));
+      // Still the one envelope — nothing else leaked through with it.
+      expect(Object.keys(res.body).sort()).toEqual(
+        ['error', 'message', 'path', 'retryAfterSeconds', 'statusCode', 'timestamp'].sort(),
+      );
     });
 
     it('bounds the honeypot like any other string field (400 over 255 chars)', async () => {
@@ -260,6 +278,29 @@ describe('Contact (e2e)', () => {
       expect(contactRepositoryMock.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ status: ContactMessageStatus.IN_PROGRESS }),
       );
+    });
+
+    it('accepts ?status=SPAM — the only way to reach honeypot hits (TASK-761)', async () => {
+      const token = generateAccessToken(testAdmin.id, 'ADMIN');
+      contactRepositoryMock.findAll.mockResolvedValue({
+        messages: [makeMessageRow({ status: ContactMessageStatus.SPAM })],
+        total: 1,
+      });
+      contactRepositoryMock.countByStatus.mockResolvedValue(0);
+      contactRepositoryMock.findMatchingUserIds.mockResolvedValue(new Map());
+
+      const response = await request(app.getHttpServer())
+        .get('/api/contact/admin')
+        .query({ status: 'SPAM' })
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(response.body.data[0].status).toBe('SPAM');
+      expect(contactRepositoryMock.findAll).toHaveBeenCalledWith(
+        expect.objectContaining({ status: ContactMessageStatus.SPAM }),
+      );
+      // The unread badge counts NEW only, so SPAM never inflates it.
+      expect(contactRepositoryMock.countByStatus).toHaveBeenCalledWith(ContactMessageStatus.NEW);
     });
 
     it('rejects an unknown status value with 400', async () => {

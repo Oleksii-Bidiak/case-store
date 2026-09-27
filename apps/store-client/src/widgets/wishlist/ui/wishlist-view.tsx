@@ -8,7 +8,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useGetWishlist, type WishlistItemEntity } from "@/entities/wishlist";
 import { useAuth } from "@/entities/session";
 import { getGetCartQueryKey, useAddToCart } from "@/entities/cart";
-import { ViewToggle, type CatalogView } from "@/features/product-filters";
+import {
+  FiltersDrawer,
+  ViewToggle,
+  type CatalogView,
+} from "@/features/product-filters";
 import {
   Button,
   Select,
@@ -16,11 +20,6 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
 } from "@/shared/ui";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { WishlistItemCard } from "./wishlist-item-card";
@@ -344,38 +343,23 @@ export function WishlistView() {
         </section>
       </div>
 
-      {/* Mobile filters drawer */}
-      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-        <SheetContent
-          side="left"
-          className="w-[342px] max-w-[88vw] gap-0 overflow-y-auto p-0"
-        >
-          <SheetHeader className="border-b border-border">
-            <SheetTitle className="font-display text-lg font-bold">
-              {dict.filters.legend}
-            </SheetTitle>
-          </SheetHeader>
-          <div className="p-4">
-            <WishlistFilters
-              idPrefix="wl-m"
-              collapsible
-              items={items}
-              value={filters}
-              onChange={setFilters}
-            />
-          </div>
-          <SheetFooter className="border-t border-border">
-            <button
-              type="button"
-              onClick={() => setFiltersOpen(false)}
-              disabled={visible.length === 0}
-              className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {dict.filters.mobileApply(visible.length)}
-            </button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      {/* Mobile filters drawer — the shared one (TASK-804). At zero matches
+          its footer resets the wishlist filters (the same action as the
+          «no match» state behind it) instead of a disabled button. */}
+      <FiltersDrawer
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        resultCount={visible.length}
+        onReset={clearFilters}
+      >
+        <WishlistFilters
+          idPrefix="wl-m"
+          collapsible
+          items={items}
+          value={filters}
+          onChange={setFilters}
+        />
+      </FiltersDrawer>
     </div>
   );
 }

@@ -9,6 +9,8 @@ import { AddonApplicabilityResolver } from './addon-applicability.resolver';
 import { CategoryRepository } from '../category';
 import { ProductRepository } from '../product';
 import { SetProductDeltaDto, AddonServiceListQueryDto } from './dto';
+import { RevalidationNotifier } from '../publishing';
+import { ADDON_SERVICES_TAG } from './addon-service.service';
 
 const service = {
   id: 'svc-a',
@@ -39,6 +41,7 @@ describe('AddonServiceService (TASK-174)', () => {
   const resolver = { resolveForProduct: jest.fn(), resolveTemplateForCategory: jest.fn() };
   const categoryRepository = { findById: jest.fn() };
   const productRepository = { findById: jest.fn(), findPublicById: jest.fn() };
+  const revalidation = { revalidate: jest.fn().mockResolvedValue(undefined) };
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -49,9 +52,43 @@ describe('AddonServiceService (TASK-174)', () => {
         { provide: AddonApplicabilityResolver, useValue: resolver },
         { provide: CategoryRepository, useValue: categoryRepository },
         { provide: ProductRepository, useValue: productRepository },
+        { provide: RevalidationNotifier, useValue: revalidation },
       ],
     }).compile();
     addonServiceService = module.get(AddonServiceService);
+  });
+
+  // TASK-561 — the storefront /info lists these; a write must reach it.
+  describe('public active list', () => {
+    it('maps the active services to the public shape — no isActive, no timestamps', async () => {
+      repository.findAllActive.mockResolvedValue([service]);
+
+      expect(await addonServiceService.findPublicActive()).toEqual([
+        { id: 'svc-a', name: 'Warranty', description: null, price: '499.00' },
+      ]);
+    });
+
+    it.each([
+      ['create', () => addonServiceService.create({ name: 'Warranty', price: 499 })],
+      ['update', () => addonServiceService.update('svc-a', { price: 599 })],
+      ['setActive', () => addonServiceService.setActive('svc-a', false)],
+    ])('purges the storefront add-on tag after %s', async (_name, write) => {
+      repository.findById.mockResolvedValue(service);
+      repository.create.mockResolvedValue(service);
+      repository.update.mockResolvedValue(service);
+      repository.setActive.mockResolvedValue(service);
+
+      await write();
+
+      expect(revalidation.revalidate).toHaveBeenCalledWith({ tags: [ADDON_SERVICES_TAG] });
+    });
+
+    it('does not purge anything when the service does not exist', async () => {
+      repository.findById.mockResolvedValue(null);
+
+      await expect(addonServiceService.update('missing', { price: 1 })).rejects.toThrow();
+      expect(revalidation.revalidate).not.toHaveBeenCalled();
+    });
   });
 
   describe('catalog CRUD', () => {

@@ -11,6 +11,8 @@ export * from "./attribute-definition-editor";
 export * from "./product-specs-editor";
 export * from "./discount-form";
 export * from "./discount-status-toggle";
+// TASK-559 — the search-synonym list editor on /settings/search.
+export * from "./search-synonyms-form";
 export * from "./page-form";
 export * from "./site-contact-form";
 export * from "./order-status-update";

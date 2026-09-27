@@ -7,6 +7,7 @@ import { dict } from "@/shared/config";
 import { COLOR_SPEC_KEY } from "@/shared/lib";
 import { toFacetQueryParams } from "../model/facet-query";
 import {
+  canSelectSpecValue,
   formatFacetValue,
   parseSpecParam,
   selectedSpecValues,
@@ -106,6 +107,12 @@ export function SpecFacets({
     (facet) => facet.values.length > 0,
   );
   const selected = parseSpecParam(specs);
+  // TASK-540: a value past the API's `?specs=` caps cannot be ticked — the
+  // server would drop it (or, past 600 characters, answer 400), and a tick the
+  // grid ignores is exactly the disagreement this rule exists to prevent.
+  const canSelect = (key: string, value: string) =>
+    canSelectSpecValue(specs, key, value);
+  const limitNoteId = `${idPrefix}-spec-limit`;
 
   if (!categoryId || facets.length === 0) {
     return null;
@@ -113,6 +120,12 @@ export function SpecFacets({
 
   const visible = showAll ? facets : facets.slice(0, INITIAL_FACETS);
   const hiddenCount = facets.length - visible.length;
+  // One note for the whole card, shown only while some value is blocked. Over
+  // every facet, not only the expanded ones: the note has to be there when the
+  // shopper opens «Ще фільтри» and finds a row they cannot tick.
+  const limitReached = facets.some((facet) =>
+    facet.values.some(({ value }) => !canSelect(facet.definition.key, value)),
+  );
 
   return (
     <div className={cardClassName}>
@@ -143,6 +156,8 @@ export function SpecFacets({
                       specs: toggleSpecValue(specs, key, value),
                     })
                   }
+                  canSelect={(value) => canSelect(key, value)}
+                  describedBy={limitNoteId}
                 />
               ) : (
                 <div className="flex max-h-56 flex-col overflow-y-auto overscroll-contain">
@@ -157,6 +172,8 @@ export function SpecFacets({
                       label={formatFacetValue(value, facet.definition)}
                       count={count}
                       checked={active.includes(value)}
+                      disabled={!canSelect(key, value)}
+                      describedBy={limitNoteId}
                       onCheckedChange={() =>
                         onFilterChange({
                           specs: toggleSpecValue(specs, key, value),
@@ -170,6 +187,12 @@ export function SpecFacets({
           );
         })}
       </div>
+
+      {limitReached && (
+        <p id={limitNoteId} className="mt-3 text-xs text-muted-foreground">
+          {dict.filters.specLimitReached}
+        </p>
+      )}
 
       {facets.length > INITIAL_FACETS && (
         <button

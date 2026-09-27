@@ -4,6 +4,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -20,19 +21,57 @@ jest.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(currentQuery),
 }));
 
+/** The public tree the chips row and the slug → id lookup read (TASK-523). */
+const CATEGORY_TREE = [
+  {
+    id: "cat-cases",
+    name: "Чохли",
+    slug: "cases",
+    isActive: true,
+    sortOrder: 0,
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    children: [],
+  },
+  {
+    id: "cat-power",
+    name: "Зарядні",
+    slug: "power",
+    isActive: true,
+    sortOrder: 1,
+    updatedAt: "2026-06-01T00:00:00.000Z",
+    children: [],
+  },
+];
+
+/** Every brand-list request the panel made, for the category-scope test. */
+let brandRequests: URL[] = [];
+/** Every facet-list request — /search must never make one (TASK-523). */
+let facetRequests: URL[] = [];
+
 /**
  * The sidebar panel (TASK-417) fetches its own option lists. They are empty
  * here — this suite is about the results column and the URL contract, not about
  * the panel's internals, which `product-filters.test.tsx` owns.
  */
 function installFilterPanelHandlers() {
+  brandRequests = [];
+  facetRequests = [];
   server.use(
-    http.get("*/api/brands", () => HttpResponse.json({ data: [] })),
+    http.get("*/api/categories/tree", () =>
+      HttpResponse.json({ data: CATEGORY_TREE }),
+    ),
+    http.get("*/api/categories/:id/filterable-specs", ({ request }) => {
+      facetRequests.push(new URL(request.url));
+      return HttpResponse.json({ data: [] });
+    }),
+    http.get("*/api/brands", ({ request }) => {
+      brandRequests.push(new URL(request.url));
+      return HttpResponse.json({ data: [] });
+    }),
     http.get("*/api/device-brands", () => HttpResponse.json({ data: [] })),
     http.get("*/api/device-models", () => HttpResponse.json({ data: [] })),
-    http.get("*/api/wishlist", () =>
-      HttpResponse.json({ data: { items: [] } }),
-    ),
+    // `/api/wishlist` (asked by every card's heart) comes from the shared
+    // default handlers (TASK-531).
   );
 }
 
@@ -40,6 +79,22 @@ beforeEach(() => {
   currentQuery = "";
   mockReplace.mockClear();
   installFilterPanelHandlers();
+});
+
+// TASK-531: every card on the page asked for the wishlist and each miss logged
+// an MSW "unhandled request" error. Keep the suite quiet — an unmocked request
+// here is either a new default the shared handlers lack or a real regression.
+const unhandledRequests: string[] = [];
+function recordUnhandled({ request }: { request: Request }) {
+  unhandledRequests.push(`${request.method} ${new URL(request.url).pathname}`);
+}
+beforeAll(() => server.events.on("request:unhandled", recordUnhandled));
+afterAll(() =>
+  server.events.removeListener("request:unhandled", recordUnhandled),
+);
+afterEach(() => {
+  const seen = unhandledRequests.splice(0);
+  expect(seen).toEqual([]);
 });
 
 function variantSummary(overrides: Record<string, unknown> = {}) {
@@ -367,6 +422,144 @@ describe("SearchResultsView", () => {
       expect(
         screen.getAllByLabelText(dict.filters.inStockOnly).length,
       ).toBeGreaterThan(0);
+    });
+
+    // TASK-804: the shared drawer — at zero results its footer resets the
+    // filters (keeping the query) instead of closing onto an empty grid.
+    it("offers a working reset in the drawer when a filtered search finds nothing", async () => {
+      currentQuery = "q=zzz&category=cases&brand=apple&inStock=true";
+      installSearch(0);
+
+      renderWithProviders(<SearchResultsView query="zzz" page={1} />);
+      await screen.findByText(dict.search.emptyHeading("zzz"));
+
+      await userEvent.click(screen.getByRole("button", { name: /^Фільтри/ }));
+      const drawer = await screen.findByRole("dialog", {
+        name: dict.filters.legend,
+      });
+      expect(
+        within(drawer).getByText(dict.filters.mobileApply(0)),
+      ).toBeInTheDocument();
+
+      mockReplace.mockClear();
+      // Named apart from the panel's «Скинути фільтри» (which keeps the
+      // category chip) — this one clears the lot (TASK-516).
+      await userEvent.click(
+        within(drawer).getByRole("button", {
+          name: dict.catalog.clearAllFilters,
+        }),
+      );
+
+      await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+      const target = new URL(
+        mockReplace.mock.calls.at(-1)?.[0] as string,
+        "http://localhost",
+      );
+      expect(target.searchParams.get("q")).toBe("zzz");
+      expect(target.searchParams.get("category")).toBeNull();
+      expect(target.searchParams.get("brand")).toBeNull();
+      expect(target.searchParams.get("inStock")).toBeNull();
+    });
+
+    /**
+     * TASK-523 — the category filter on /search. `GET /api/search` rolls a
+     * category up over its subtree; the page now picks one from the catalogue's
+     * chips row, and the panel is told its id (brand scope) while keeping the
+     * spec facets away (the endpoint has no `?specs=`).
+     */
+    describe("category (TASK-523)", () => {
+      it("writes ?category=<slug> from the chips row and keeps the query", async () => {
+        currentQuery = "q=case&page=2";
+        installSearch();
+
+        renderWithProviders(<SearchResultsView query="case" page={2} />);
+        await screen.findByText("iPhone 15 Case");
+
+        await userEvent.click(
+          await screen.findByRole("button", { name: "Зарядні" }),
+        );
+
+        await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.get("category")).toBe("power");
+        expect(target.searchParams.get("q")).toBe("case");
+        expect(target.searchParams.get("page")).toBe("1");
+      });
+
+      it("forwards the URL category to the search request and marks its chip", async () => {
+        currentQuery = "q=case&category=cases";
+        const requests = installSearch();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        expect(requests[0].searchParams.get("category")).toBe("cases");
+        expect(
+          await screen.findByRole("button", { name: "Чохли" }),
+        ).toHaveAttribute("aria-pressed", "true");
+      });
+
+      it("scopes the brand list by the category id but offers no spec facets", async () => {
+        currentQuery = "q=case&category=cases";
+        installSearch();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        await waitFor(() =>
+          expect(
+            brandRequests.some(
+              (url) => url.searchParams.get("categoryId") === "cat-cases",
+            ),
+          ).toBe(true),
+        );
+        expect(facetRequests).toHaveLength(0);
+        expect(
+          screen.queryByText(dict.filters.specsTitle),
+        ).not.toBeInTheDocument();
+      });
+
+      it("drops the category with the «Всі категорії» chip", async () => {
+        currentQuery = "q=case&category=cases";
+        installSearch();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        await userEvent.click(
+          await screen.findByRole("button", {
+            name: dict.filters.allCategories,
+          }),
+        );
+
+        await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.has("category")).toBe(false);
+        expect(target.searchParams.get("q")).toBe("case");
+      });
+    });
+
+    // TASK-742: GET /api/search takes no `onSale`, so the panel must not offer
+    // a box that would be ticked with no effect on the results.
+    it("does not offer «Зі знижкою» — the search endpoint has no such param", async () => {
+      currentQuery = "q=case";
+      installSearch();
+
+      renderWithProviders(<SearchResultsView query="case" page={1} />);
+      await screen.findByText("iPhone 15 Case");
+
+      expect(
+        screen.getAllByLabelText(dict.filters.inStockOnly).length,
+      ).toBeGreaterThan(0);
+      expect(
+        screen.queryByLabelText(dict.filters.onSaleOnly),
+      ).not.toBeInTheDocument();
     });
 
     it("offers no filter panel before anything has been searched for", () => {

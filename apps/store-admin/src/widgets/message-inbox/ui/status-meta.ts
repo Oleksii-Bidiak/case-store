@@ -12,6 +12,9 @@ export function statusLabel(status: string): string {
       return dict.messages.statusRead;
     case ContactMessageEntityStatus.ARCHIVED:
       return dict.messages.statusArchived;
+    // TASK-761: a honeypot hit, kept so a false positive can be spotted.
+    case ContactMessageEntityStatus.SPAM:
+      return dict.messages.statusSpam;
     default:
       return status;
   }

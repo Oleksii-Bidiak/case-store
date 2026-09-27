@@ -1678,8 +1678,11 @@ export class OrderRepository {
       // Nothing on the order moved — this row exists so the timeline shows that
       // the provider said something at this moment and the shop did not act on
       // it. `current → current` is the literal truth: the payment status is where
-      // it was. (What was asked for is in the warning log; see the field's
-      // docblock for why it is not written as a `to`.)
+      // it was (see the field's docblock for why the target is not a `to`).
+      //
+      // TASK-621: the row now SAYS it is a refusal — the note — and what was
+      // asked for — `rejectedPaymentStatus`. Without them the timeline rendered
+      // «Оплачено → Оплачено», which reads as nothing having happened.
       if (plan.refusedPaymentStatusChange) {
         await tx.orderStatusHistory.create({
           data: {
@@ -1687,6 +1690,8 @@ export class OrderRepository {
             changeType: OrderHistoryChangeType.PAYMENT_STATUS,
             fromPaymentStatus: plan.refusedPaymentStatusChange.current,
             toPaymentStatus: plan.refusedPaymentStatusChange.current,
+            note: OrderHistoryNote.PAYMENT_EVENT_REFUSED,
+            rejectedPaymentStatus: plan.refusedPaymentStatusChange.rejected,
             changedBy: null,
           },
         });

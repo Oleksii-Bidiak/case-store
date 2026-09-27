@@ -3,7 +3,7 @@ import { LegalHubView, type LegalHubDoc } from "@/widgets/legal-doc";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { fetchPublishedPages } from "@/shared/api/pages-server";
-import { buildHubMetadata } from "@/shared/lib/seo";
+import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { SITE_URL, dict } from "@/shared/config";
 
 // TASK-435 — admin-managed via the `legal` HUB page row; the hub's own headings

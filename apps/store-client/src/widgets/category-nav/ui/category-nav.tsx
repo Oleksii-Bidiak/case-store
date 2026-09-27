@@ -12,6 +12,7 @@ import {
   ChevronRight,
 } from "lucide-react";
 import {
+  ACTIVE_ROOT_CATEGORIES_PARAMS,
   useCategoryControllerGetRootCategories,
   type CategoryEntity,
 } from "@/entities/category";
@@ -99,11 +100,10 @@ function CategoryTile({ category }: { category: CategoryEntity }) {
  * Client Component: consumes the Orval-generated TanStack Query hook.
  */
 export function CategoryNav() {
-  const { data, isPending, isError } = useCategoryControllerGetRootCategories({
-    isActive: true,
-    sortBy: "sortOrder",
-    sortOrder: "asc",
-  });
+  // Shared params: the homepage prefetches this very key (TASK-563).
+  const { data, isPending, isError } = useCategoryControllerGetRootCategories(
+    ACTIVE_ROOT_CATEGORIES_PARAMS,
+  );
 
   const categories = data?.data ?? [];
 

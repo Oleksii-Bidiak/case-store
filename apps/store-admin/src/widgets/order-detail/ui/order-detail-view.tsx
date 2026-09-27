@@ -34,9 +34,17 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatCurrency, formatDateTime, formatTime } from "@/shared/lib";
+import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
+import { useNow } from "@/shared/lib/use-now";
 import { OrderDetailSkeleton } from "./order-detail-skeleton";
+import { OrderPaymentAttempts } from "./order-payment-attempts";
 import { OrderReturnsSection } from "./order-returns-section";
 import { OrderTimeline } from "./order-timeline";
+
+/** How often the open card re-reads its order (TASK-629). */
+const ORDER_REFETCH_MS = 60_000;
+/** The «Очікує оплати · N хв» count is in minutes — tick once a minute. */
+const MARK_TICK_MS = 60_000;
 
 interface OrderDetailViewProps {
   orderId: string;
@@ -71,8 +79,25 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
   // that line at every writer, the owner included, on each cold load.
   const canWriteOrders = !arePermissionsLoading && can(PERM.ordersWrite);
   const isReadOnly = !arePermissionsLoading && !can(PERM.ordersWrite);
+  // TASK-629: the card is a working surface, not a reference page. The panel
+  // default `staleTime` is five minutes; an order that the reservation worker
+  // cancels in the meantime must not keep saying «Очікує оплати». So the card
+  // takes the operational freshness of the order LIST and polls once a minute
+  // (only while the tab is visible — TanStack's default). The two forms on the
+  // card are safe under it: both seed through RHF `values` with
+  // `keepDirtyValues` (forms.md Rule 2a), so a refetch refreshes untouched fields
+  // and leaves a half-typed ТТН or address alone. The poll also moves
+  // `order.updatedAt` — the optimistic-lock token — under a dirty form, so both
+  // forms send the version the operator started editing (`useEditLockToken`),
+  // not the latest one, or a colleague's save would be overwritten without a 409.
   const { data, dataUpdatedAt, isLoading, isError, error } =
-    useAdminOrderControllerFindById(orderId);
+    useAdminOrderControllerFindById(orderId, {
+      query: { ...OPERATIONAL_LIST_QUERY, refetchInterval: ORDER_REFETCH_MS },
+    });
+  // …and the minute count moves between refetches too: a pure tick, combined
+  // with the fetch instant, never `Date.now()` in render (see `useNow`).
+  const tick = useNow(MARK_TICK_MS);
+  const marksNow = Math.max(dataUpdatedAt, tick ?? 0);
 
   const isNotFound = error?.response?.status === 404;
 
@@ -160,10 +185,10 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                   the owner's rule is that only the physically impossible is
                   blocked, and everything else is made visible.
 
-                  `dataUpdatedAt` rather than the real clock: reading it during
-                  render is impure, and the minute count is a statement about
-                  the order as it was fetched. */}
-              {orderDerivedMarks(order, dataUpdatedAt).map((mark) => (
+                  Not `Date.now()`: reading the clock during render is impure.
+                  The fetch instant, advanced by a one-minute tick (TASK-629),
+                  so «Очікує оплати · N хв» counts down without a reload. */}
+              {orderDerivedMarks(order, marksNow).map((mark) => (
                 <Badge key={mark.kind} variant={mark.variant}>
                   {mark.label}
                 </Badge>
@@ -241,14 +266,12 @@ export function OrderDetailView({ orderId }: OrderDetailViewProps) {
                 </div>
               </>
             ) : null}
-            {/* An honest blank rather than a card that implies there were no
-                payment attempts. The method, the attempt history and the refund
-                button need `Order.paymentMethod` on the entity plus the admin
-                payments endpoints — none of which the merged backend exposes
-                yet. See this file's note and the report for the exact contract. */}
-            <p className="text-xs text-muted-foreground">
-              {dict.orders.paymentAttemptsUnavailable}
-            </p>
+            {/* TASK-371: the LiqPay attempts behind the money above, newest
+                first, with «Повернути кошти» on a successful one. Renders
+                nothing without `payments:read`; the refund needs
+                `payments:refund` on top. It replaces the placeholder that stood
+                here while the admin payments endpoints had no screen. */}
+            <OrderPaymentAttempts order={order} />
           </section>
 
           {/* TASK-724: the order's return requests, each linked to its page —

@@ -1,5 +1,11 @@
 import { formatDateTime } from "./formatDate";
-import { fromKyivDateTimeLocal, toKyivDateTimeLocal } from "./datetime-local";
+import {
+  fromKyivDateEnd,
+  fromKyivDateStart,
+  fromKyivDateTimeLocal,
+  toKyivDateInput,
+  toKyivDateTimeLocal,
+} from "./datetime-local";
 
 /**
  * HOW THIS SUITE PINS A TIMEZONE, AND WHY NOT THE OBVIOUS WAY.
@@ -310,5 +316,87 @@ describe("round trip", () => {
     );
     expect(instant.toISOString()).toBe("2026-03-29T01:30:00.000Z");
     expect(toKyivDateTimeLocal(instant)).toBe("2026-03-29T04:30");
+  });
+});
+
+describe("date-only Kyiv day bounds (TASK-795)", () => {
+  const iso = (date: Date | null) => date?.toISOString() ?? null;
+
+  it("«Діє до 1 вересня» lasts until 23:59:59.999 Kyiv, not 03:00", () => {
+    const [start, end] = withAmbientZonePoisoned(() => [
+      fromKyivDateStart("2026-09-01"),
+      fromKyivDateEnd("2026-09-01"),
+    ]);
+    // Summer: Kyiv is UTC+3.
+    expect(iso(start)).toBe("2026-08-31T21:00:00.000Z");
+    expect(iso(end)).toBe("2026-09-01T20:59:59.999Z");
+    // The old `new Date("2026-09-01").toISOString()` — UTC midnight, 03:00 Kyiv.
+    expect(end!.getTime()).toBeGreaterThan(Date.parse("2026-09-01T00:00:00Z"));
+  });
+
+  it("uses the winter offset in winter", () => {
+    const [start, end] = withAmbientZonePoisoned(() => [
+      fromKyivDateStart("2026-01-15"),
+      fromKyivDateEnd("2026-01-15"),
+    ]);
+    expect(iso(start)).toBe("2026-01-14T22:00:00.000Z");
+    expect(iso(end)).toBe("2026-01-15T21:59:59.999Z");
+  });
+
+  it("spans 23 hours on the spring DST day and 25 on the autumn one", () => {
+    const [springStart, springEnd, autumnStart, autumnEnd] =
+      withAmbientZonePoisoned(() => [
+        fromKyivDateStart("2026-03-29"),
+        fromKyivDateEnd("2026-03-29"),
+        fromKyivDateStart("2026-10-25"),
+        fromKyivDateEnd("2026-10-25"),
+      ]);
+    // 29 March: starts in EET (UTC+2), ends in EEST (UTC+3).
+    expect(iso(springStart)).toBe("2026-03-28T22:00:00.000Z");
+    expect(iso(springEnd)).toBe("2026-03-29T20:59:59.999Z");
+    // 25 October: starts in EEST (UTC+3), ends in EET (UTC+2).
+    expect(iso(autumnStart)).toBe("2026-10-24T21:00:00.000Z");
+    expect(iso(autumnEnd)).toBe("2026-10-25T21:59:59.999Z");
+
+    const HOUR = 3_600_000;
+    expect(springEnd!.getTime() + 1 - springStart!.getTime()).toBe(23 * HOUR);
+    expect(autumnEnd!.getTime() + 1 - autumnStart!.getTime()).toBe(25 * HOUR);
+  });
+
+  it("rolls over the end of a month and a year", () => {
+    const [monthEnd, yearEnd] = withAmbientZonePoisoned(() => [
+      fromKyivDateEnd("2026-02-28"),
+      fromKyivDateEnd("2026-12-31"),
+    ]);
+    expect(iso(monthEnd)).toBe("2026-02-28T21:59:59.999Z");
+    expect(iso(yearEnd)).toBe("2026-12-31T21:59:59.999Z");
+  });
+
+  it.each(["", "2026-02-30", "2026-9-1", "2026-09-01T00:00", "not a date"])(
+    "returns null for %j",
+    (value) => {
+      expect(fromKyivDateStart(value)).toBeNull();
+      expect(fromKyivDateEnd(value)).toBeNull();
+    },
+  );
+
+  it("reads an instant back as its Kyiv calendar day", () => {
+    const days = withAmbientZonePoisoned(() => [
+      // 00:00 Kyiv on the 1st is still the 31st in UTC — `slice(0, 10)` said 31.
+      toKyivDateInput("2026-08-31T21:00:00.000Z"),
+      toKyivDateInput("2026-09-01T20:59:59.999Z"),
+      toKyivDateInput("not a date"),
+    ]);
+    expect(days).toEqual(["2026-09-01", "2026-09-01", ""]);
+  });
+
+  it("round-trips both bounds to the day that was typed", () => {
+    for (const day of ["2026-03-29", "2026-10-25", "2026-09-01"]) {
+      const shown = withAmbientZonePoisoned(() => [
+        toKyivDateInput(fromKyivDateStart(day) as Date),
+        toKyivDateInput(fromKyivDateEnd(day) as Date),
+      ]);
+      expect(shown).toEqual([day, day]);
+    }
   });
 });

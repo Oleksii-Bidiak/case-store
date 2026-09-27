@@ -25,3 +25,7 @@ export {
   // Structured-spec facets (TASK-191)
   useCategoryControllerGetFilterableSpecs,
 } from "@/shared/api/generated/categories/categories";
+
+// The shared root-category query params — one key for widgets and the server
+// prefetch (TASK-563).
+export { ACTIVE_ROOT_CATEGORIES_PARAMS } from "./model/active-root-categories";

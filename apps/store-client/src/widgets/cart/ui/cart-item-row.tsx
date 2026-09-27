@@ -30,6 +30,23 @@ import { resolveQuantityCommit } from "../model/quantity-commit";
 const UNDO_TOAST_MS = 8000;
 
 /**
+ * The id of the sonner `<Toaster id=…>` a MODAL host mounts inside its own
+ * content (TASK-497) — the mini-cart sheet.
+ *
+ * A Radix modal dialog hides everything outside itself from assistive tech
+ * (`aria-hidden` on the rest of the page) and traps focus inside it. The app's
+ * one global Toaster lives outside, so the undo toast raised from a row in the
+ * sheet was on screen but unreachable: a screen reader could not find
+ * «Повернути», Tab could not leave the dialog to reach it, and sonner's own
+ * alt+T hotkey jumps to a toaster the focus trap immediately pulls focus back
+ * from. A toaster rendered INSIDE the dialog content is in the dialog's tab
+ * order and accessibility tree, so the same toast is reachable there with no
+ * new controls. Sonner routes by id: a toast with `toasterId` appears only in
+ * the toaster that carries it, never also in the global one.
+ */
+export const CART_SHEET_TOASTER_ID = "cart-sheet";
+
+/**
  * Everything needed to re-create a removed line. It MUST be captured before the
  * DELETE fires: afterwards the line is gone from the cache and the add-ons the
  * shopper had picked are gone with it.
@@ -75,6 +92,12 @@ interface CartItemRowProps {
    * (TASK-204), especially when the target PDP is the page already underneath.
    */
   onNavigate?: () => void;
+  /**
+   * Route the undo toast to the `<Toaster id>` the host renders inside its own
+   * modal content (TASK-497) — see {@link CART_SHEET_TOASTER_ID}. Omitted on
+   * the `/cart` page, where the global toaster is not behind a dialog.
+   */
+  undoToasterId?: string;
 }
 
 /**
@@ -98,6 +121,7 @@ export function CartItemRow({
   item,
   showAddons = false,
   onNavigate,
+  undoToasterId,
 }: CartItemRowProps) {
   const queryClient = useQueryClient();
   const addonToggle = useCartAddonToggle();
@@ -162,7 +186,10 @@ export function CartItemRow({
         }
       }
     } catch {
-      toast.error(dict.cart.undoError);
+      toast.error(
+        dict.cart.undoError,
+        undoToasterId ? { toasterId: undoToasterId } : undefined,
+      );
     } finally {
       invalidate();
     }
@@ -181,10 +208,12 @@ export function CartItemRow({
           // dialog, which parks `pointer-events: none` on <body> while it is
           // open. Sonner sets no `pointer-events` of its own on a visible
           // toast, so the undo button would inherit that and quietly refuse
-          // every click. The toast still ends up inside the dialog's
-          // `aria-hidden` subtree, which is the a11y half of the same problem
-          // and is filed as TASK-497.
+          // every click. The a11y half (TASK-497): from the sheet the toast is
+          // routed to a toaster INSIDE the dialog (`undoToasterId`), which is
+          // in its tab order and accessibility tree; the class stays for any
+          // host that has not mounted one.
           className: "pointer-events-auto",
+          ...(undoToasterId && { toasterId: undoToasterId }),
           action: {
             label: dict.cart.undoRemove,
             onClick: () => void restoreLine(snapshot),

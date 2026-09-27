@@ -37,6 +37,13 @@ export type {
 // method the API does not know fails to compile instead of failing at runtime.
 export { CreateOrderDtoPaymentMethod } from "@/shared/api/generated/models";
 
+// TASK-802: the one badge-colour map for order and payment statuses.
+export {
+  STATUS_BADGE,
+  STATUS_BADGE_FALLBACK,
+  statusBadgeClass,
+} from "./lib/status-badge";
+
 export {
   useCreateOrder,
   useGetOrders,

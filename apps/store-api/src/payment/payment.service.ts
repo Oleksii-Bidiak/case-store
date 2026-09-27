@@ -12,6 +12,7 @@ import { PinoLogger } from 'nestjs-pino';
 import type { OrderEntity } from '../order';
 import { OrderService } from '../order';
 import { PAYMENT_CLOCK, type Clock } from './payment.clock';
+import { refundExceedsBalanceError } from './payment.errors';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
 import { isDuplicateEventError, PaymentRepository } from './payment.repository';
 import { PaymentOutcome, type PaymentApplyResult, type PaymentEventInput } from './payment.types';
@@ -240,8 +241,18 @@ export class PaymentService {
    * {@link applyEvent}, so the label can never claim a refund that did not
    * happen (edge case E-12).
    *
+   * The ceiling is what is LEFT on the attempt — `amount - refundedAmount` —
+   * not what it charged (TASK-1302): a partial refund leaves the attempt
+   * SUCCEEDED, so checking against the charge alone let 600 + 500 out of 1000
+   * both through. The amount is reserved by one conditional UPDATE before the
+   * provider is called, so two simultaneous requests cannot both spend the same
+   * remainder; if the provider refuses, the reservation is given back.
+   * Omitting `amount` refunds the remainder.
+   *
    * @throws NotFoundException when the payment does not exist.
    * @throws ConflictException when the attempt never succeeded.
+   * @throws BadRequestException for a zero amount, or one above the remainder
+   *   (`PAYMENT_REFUND_EXCEEDS_BALANCE`).
    */
   async refund(paymentId: string, amount?: string): Promise<void> {
     const payment = await this.paymentRepository.findById(paymentId);
@@ -250,20 +261,45 @@ export class PaymentService {
       throw new NotFoundException('Payment not found');
     }
 
-    if (payment.status !== PaymentAttemptStatus.SUCCEEDED) {
-      throw new ConflictException(`Cannot refund a payment in status ${payment.status}`);
+    this.assertRefundable(payment);
+
+    const remaining = payment.amount.minus(payment.refundedAmount);
+    const refundAmount = amount ?? remaining.toString();
+
+    if (amount !== undefined && !new Prisma.Decimal(amount).greaterThan(0)) {
+      throw new BadRequestException('Refund amount must be more than zero');
     }
 
-    const refundAmount = amount ?? payment.amount.toString();
-
-    if (new Prisma.Decimal(refundAmount).greaterThan(payment.amount)) {
-      throw new BadRequestException('Refund amount exceeds the amount paid');
+    if (!remaining.greaterThan(0) || new Prisma.Decimal(refundAmount).greaterThan(remaining)) {
+      throw refundExceedsBalanceError(refundAmount, remaining.toString());
     }
 
-    await this.provider.refund({ paymentId: payment.id, amount: refundAmount });
+    if (!(await this.paymentRepository.reserveRefund(payment.id, refundAmount))) {
+      // Lost a race: another refund took the balance, or the attempt moved on
+      // (a full `reversed` callback) between the read and the reservation.
+      const fresh = await this.paymentRepository.findById(payment.id);
+      if (!fresh) throw new NotFoundException('Payment not found');
+      this.assertRefundable(fresh);
+      throw refundExceedsBalanceError(
+        refundAmount,
+        fresh.amount.minus(fresh.refundedAmount).toString(),
+      );
+    }
+
+    try {
+      await this.provider.refund({ paymentId: payment.id, amount: refundAmount });
+    } catch (err) {
+      await this.paymentRepository.releaseRefund(payment.id, refundAmount);
+      throw err;
+    }
 
     this.logger.info(
-      { event: 'payment.refund.requested', paymentId: payment.id, amount: refundAmount },
+      {
+        event: 'payment.refund.requested',
+        paymentId: payment.id,
+        amount: refundAmount,
+        remainingBefore: remaining.toString(),
+      },
       'Refund requested; awaiting the provider callback that confirms it',
     );
   }
@@ -275,6 +311,13 @@ export class PaymentService {
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
+
+  /** Only a SUCCEEDED attempt has money to send back. */
+  private assertRefundable(payment: Payment): void {
+    if (payment.status !== PaymentAttemptStatus.SUCCEEDED) {
+      throw new ConflictException(`Cannot refund a payment in status ${payment.status}`);
+    }
+  }
 
   /**
    * Refuse an event whose money does not match what we asked for.

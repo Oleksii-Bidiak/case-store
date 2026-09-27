@@ -1,9 +1,19 @@
 "use client";
 
-import { useId, type ComponentProps } from "react";
+import type { ComponentProps } from "react";
 import { dict } from "@/shared/config";
+import { Honeypot } from "@/shared/ui";
 
-/** The field the API treats as the honeypot (`CreateContactMessageDto.website`). */
+/**
+ * The field the API treats as the honeypot (`CreateContactMessageDto.website`).
+ *
+ * A semantic name, and a known risk: `website` is a real field in 1Password's
+ * "Internet Details", Bitwarden identities and Safari cards. It stays because it
+ * is the published API contract of `POST /api/contact`; the opt-out attributes
+ * on `Honeypot` are what keeps those fillers out, and since TASK-761 a hit is
+ * stored as SPAM rather than dropped, so a false positive can be seen. New traps
+ * (registration, TASK-749) use a name no filler has a slot for.
+ */
 export const CONTACT_HONEYPOT_FIELD = "website";
 
 type ContactHoneypotProps = Pick<
@@ -12,50 +22,11 @@ type ContactHoneypotProps = Pick<
 >;
 
 /**
- * ContactHoneypot — a bot trap for the contact forms (TASK-452).
+ * ContactHoneypot — the contact forms' bot trap (TASK-452): the shared
+ * `Honeypot` (see it for why every attribute is there) with the contact label.
  *
- * An input no person meets: clipped out of view (`sr-only`), out of the
- * accessibility tree, out of reach of every kind of focus, and refused to
- * autofill.
- *
- * `inert` AND `aria-hidden` on the wrapper, not one of them. `aria-hidden`
- * alone hides the field from a screen reader but leaves it focusable — which is
- * both the axe `aria-hidden-focus` pattern and a real hole, since `tabIndex=-1`
- * stops Tab and nothing else. `inert` closes that hole (no focus, no pointer,
- * no a11y tree) and makes the pair legitimate; `aria-hidden` stays because it
- * is what any engine that does not implement `inert` still understands. The
- * label below is therefore for DOM-reading bots only, never for a person.
- *
- * Autofill needs more than `autoComplete="off"`: `website` is a real field in
- * 1Password's "Internet Details", in Bitwarden identities and in Safari cards,
- * and Chrome's profile autofill is allowed to ignore `autocomplete="off"`
- * outright. The `data-*` opt-outs below are what those fillers actually read —
- * without them a customer who accepts an identity suggestion fills the trap and
- * their message is discarded in silence.
- *
- * `sr-only` rather than `display: none` / `hidden`: the cheap bots skip inputs
- * that are not rendered at all, and those are the ones this is meant to catch.
- *
- * Spread RHF's `register(CONTACT_HONEYPOT_FIELD)` onto it. The form must send the
- * value only when non-empty, so a person's request carries no `website` key.
+ * Spread RHF's `register(CONTACT_HONEYPOT_FIELD)` onto it.
  */
 export function ContactHoneypot(props: ContactHoneypotProps) {
-  const id = useId();
-
-  return (
-    <div inert aria-hidden="true" className="sr-only">
-      <label htmlFor={id}>{dict.contact.honeypotLabel}</label>
-      <input
-        id={id}
-        type="text"
-        tabIndex={-1}
-        autoComplete="off"
-        data-1p-ignore
-        data-lpignore="true"
-        data-bwignore
-        data-form-type="other"
-        {...props}
-      />
-    </div>
-  );
+  return <Honeypot label={dict.contact.honeypotLabel} {...props} />;
 }

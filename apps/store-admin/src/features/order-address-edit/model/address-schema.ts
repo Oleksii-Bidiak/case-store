@@ -1,6 +1,9 @@
 import { z } from "zod";
 import type { AddressDto, OrderEntity } from "@/entities/order";
 import { dict } from "@/shared/config";
+// From the module, not the `@/shared/lib` barrel — the barrel also exports the
+// UA-only rule, and an order address is NOT held to it (see create-order-schema).
+import { isValidInternationalPhone } from "@/shared/lib/phone";
 
 const required = dict.orderCreate.addressRequired;
 
@@ -12,11 +15,20 @@ const required = dict.orderCreate.addressRequired;
  * cannot deliver without. Optional extras that already exist on the order are
  * carried through untouched by {@link addressValuesToDto} — a correction to the
  * city must not silently drop the Nova Poshta warehouse reference alongside it.
+ *
+ * The phone is held to the SAME rule as the API (TASK-577): `AddressDto.phone` is
+ * `@IsInternationalPhone`, mirrored here by `isValidInternationalPhone` — the
+ * rule the order-create form already uses. It was `min(1)`, so `123` passed the
+ * form and came back as a 400 the operator could not place.
  */
 export const orderAddressSchema = z.object({
   firstName: z.string().trim().min(1, required),
   lastName: z.string().trim().min(1, required),
-  phone: z.string().trim().min(1, required),
+  phone: z
+    .string()
+    .trim()
+    .min(1, required)
+    .refine(isValidInternationalPhone, dict.orderCreate.contactPhoneInvalid),
   city: z.string().trim().min(1, required),
   address1: z.string().trim().min(1, required),
   postalCode: z.string().trim(),

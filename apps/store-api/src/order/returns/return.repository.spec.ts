@@ -113,6 +113,43 @@ describe('ReturnRepository — admin queue sorting (TASK-354)', () => {
  * holds `abc12345…`), a text arm that forgets `mode: 'insensitive'`, and an
  * unguarded phone arm that matches every row.
  */
+describe('ReturnRepository.findByUserId — the customer list (TASK-608)', () => {
+  let repository: ReturnRepository;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    prismaMock.return.findMany.mockResolvedValue([]);
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ReturnRepository,
+        { provide: PrismaService, useValue: prismaMock },
+        { provide: CacheService, useValue: cacheMock },
+        { provide: ProductIndexer, useValue: productIndexerMock },
+      ],
+    }).compile();
+
+    repository = module.get(ReturnRepository);
+  });
+
+  it("scopes through the ORDER's owner, not through who pressed the button", async () => {
+    await repository.findByUserId('user-1', 100);
+
+    const args = prismaMock.return.findMany.mock.calls.at(-1)?.[0] as {
+      where: unknown;
+      take: number;
+    };
+    expect(args.where).toEqual({ order: { userId: 'user-1', deletedAt: null } });
+    expect(args.take).toBe(100);
+  });
+
+  it('lists the newest request first with a stable tiebreaker', async () => {
+    await repository.findByUserId('user-1', 100);
+
+    expect(orderByOfLastFindMany()).toEqual([{ requestedAt: 'desc' }, { id: 'asc' }]);
+  });
+});
+
 describe('ReturnRepository — admin queue search (TASK-423)', () => {
   let repository: ReturnRepository;
 

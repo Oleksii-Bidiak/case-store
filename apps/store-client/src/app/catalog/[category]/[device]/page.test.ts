@@ -31,11 +31,35 @@ jest.mock("next/navigation", () => ({
 jest.mock("@/shared/lib/slug-redirect", () => ({
   resolveSlugRedirect: jest.fn(),
 }));
+// React `cache()` memoizes only inside a server request, which Jest never opens —
+// outside one it is a pass-through, so a "called once" assertion could not fail.
+// Stand in for the request scope: one Map per wrapped function, emptied between
+// tests exactly as a new request starts empty (TASK-703).
+jest.mock("react", () => {
+  const actual = jest.requireActual("react");
+  const scope = globalThis as { __requestMemos?: Map<string, unknown>[] };
+  scope.__requestMemos ??= [];
+  return {
+    ...actual,
+    cache: <A extends unknown[], R>(fn: (...args: A) => R) => {
+      const memo = new Map<string, R>();
+      scope.__requestMemos!.push(memo as Map<string, unknown>);
+      return (...args: A): R => {
+        const key = JSON.stringify(args);
+        if (!memo.has(key)) memo.set(key, fn(...args));
+        return memo.get(key)!;
+      };
+    },
+  };
+});
 
 import { notFound, permanentRedirect } from "next/navigation";
 import { catalogLandingControllerFindCompatPage } from "@/shared/api/generated/catalog/catalog";
+import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { SITE_URL, dict } from "@/shared/config";
+import { ProductListView } from "@/widgets";
+import { StaleCanonicalGuard } from "@/shared/lib/seo/stale-canonical-guard";
 import CompatLandingPage, { generateMetadata } from "./page";
 
 const findPage = catalogLandingControllerFindCompatPage as jest.MockedFunction<
@@ -94,7 +118,33 @@ const meta = (
     searchParams: Promise.resolve(searchParams),
   });
 
-afterEach(() => jest.clearAllMocks());
+afterEach(() => {
+  jest.clearAllMocks();
+  // A new test is a new request: forget every memoized call.
+  (
+    globalThis as { __requestMemos?: Map<string, unknown>[] }
+  ).__requestMemos?.forEach((memo) => memo.clear());
+});
+
+describe("catalog/[category]/[device] — one API call per render (TASK-703)", () => {
+  it("generateMetadata and the page body share a single compat-page request", async () => {
+    findPage.mockResolvedValue(pair() as never);
+
+    await meta("chohly", "iphone-15-pro");
+    await run("chohly", "iphone-15-pro");
+
+    expect(findPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not share the answer between two different pairs", async () => {
+    findPage.mockResolvedValue(pair() as never);
+
+    await meta("chohly", "iphone-15-pro");
+    await run("chohly", "iphone-15");
+
+    expect(findPage).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("catalog/[category]/[device] — existence (TASK-490)", () => {
   it("renders a pair that has products", async () => {
@@ -209,6 +259,53 @@ describe("catalog/[category]/[device] — existence (TASK-490)", () => {
   });
 });
 
+/** Depth-first search of a rendered element tree for the first element of `type`. */
+function findElement(
+  node: unknown,
+  type: unknown,
+): { props: Record<string, unknown> } | null {
+  if (!node || typeof node !== "object") return null;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const hit = findElement(child, type);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  const element = node as { type?: unknown; props?: Record<string, unknown> };
+  if (element.type === type && element.props) {
+    return { props: element.props };
+  }
+  return findElement(element.props?.children, type);
+}
+
+describe("catalog/[category]/[device] — boolean facets reach the grid (TASK-513)", () => {
+  it("passes inStock/onSale=true from the URL into the grid's initial params", async () => {
+    findPage.mockResolvedValue(pair() as never);
+
+    const tree = await run("chohly", "iphone-15-pro", {
+      inStock: "true",
+      onSale: "true",
+    });
+
+    const grid = findElement(tree, ProductListView);
+    expect(grid?.props.initialParams).toEqual(
+      expect.objectContaining({ inStock: true, onSale: true }),
+    );
+  });
+
+  it('treats "false" as no filter, like the metadata does', async () => {
+    findPage.mockResolvedValue(pair() as never);
+
+    const tree = await run("chohly", "iphone-15-pro", { inStock: "false" });
+
+    const grid = findElement(tree, ProductListView);
+    expect(grid?.props.initialParams).toEqual(
+      expect.objectContaining({ inStock: undefined, onSale: undefined }),
+    );
+  });
+});
+
 describe("catalog/[category]/[device] — metadata (TASK-490)", () => {
   it("builds title and description from the template, self-canonical", async () => {
     findPage.mockResolvedValue(pair() as never);
@@ -259,6 +356,50 @@ describe("catalog/[category]/[device] — metadata (TASK-490)", () => {
     expect(result.robots).toEqual({ index: false, follow: true });
     expect(result.alternates?.canonical).toBe(`${SITE_URL}/categories/chohly`);
   });
+
+  // TASK-568/569 — the category's own tile picture, with an alt, before the
+  // store-wide card; one tree read shared with the body's breadcrumb.
+  it("previews with the category's image, carrying the page title as alt", async () => {
+    findPage.mockResolvedValue(pair() as never);
+    (categoryControllerGetCategoryTree as jest.Mock).mockResolvedValueOnce({
+      data: [
+        {
+          id: "cat-1",
+          slug: "chohly",
+          name: "Чохли",
+          image: "https://cdn.example.com/chohly.jpg",
+          children: [],
+        },
+      ],
+    });
+
+    const result = await meta("chohly", "iphone-15-pro");
+
+    const og = result.openGraph as { images?: unknown; title?: string };
+    expect(og.images).toEqual([
+      { url: "https://cdn.example.com/chohly.jpg", alt: og.title },
+    ]);
+  });
+
+  // TASK-835 — the body's stale-canonical guard must wait for exactly the tag
+  // generateMetadata emits, or it would never act (or act on the wrong one).
+  it.each([
+    ["unfiltered", {}],
+    ["filtered", { inStock: "true" }],
+  ])(
+    "hands the %s view's canonical to the stale-canonical guard",
+    async (_label, searchParams: Record<string, string>) => {
+      findPage.mockResolvedValue(pair() as never);
+
+      const [result, tree] = await Promise.all([
+        meta("chohly", "iphone-15-pro", searchParams),
+        run("chohly", "iphone-15-pro", searchParams),
+      ]);
+
+      const guard = findElement(tree, StaleCanonicalGuard);
+      expect(guard?.props.href).toBe(result.alternates?.canonical);
+    },
+  );
 
   it("falls back to a bare title when there is no such page", async () => {
     findPage.mockRejectedValue(notFoundError());

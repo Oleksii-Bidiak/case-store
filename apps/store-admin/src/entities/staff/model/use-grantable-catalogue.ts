@@ -5,7 +5,6 @@ import type {
   GrantablePermissionEntry,
   PermissionZoneEntry,
 } from "@/shared/api";
-import { useAuth } from "@/entities/session";
 
 export interface GrantableCatalogue {
   catalogue: GrantablePermissionEntry[];
@@ -32,11 +31,17 @@ export interface GrantableCatalogue {
  * Non-grantable keys (`staff:read`, `staff:write`, `audit:read`) are absent from
  * the catalogue server-side, so no screen built on this hook can render a box
  * that must not be ticked.
+ *
+ * `userId` is the CALLER's own id, passed in by the feature that renders the
+ * screen (TASK-640). The hook used to read it from `@/entities/session` itself,
+ * which made it one of the only two entity→entity imports in the admin; the
+ * session is a sibling entity, so the feature layer — which may import both —
+ * joins them. `null`/`undefined` (a session with no id yet) disables the query.
  */
 export function useGrantableCatalogue(
+  userId: string | null | undefined,
   options: { enabled?: boolean } = {},
 ): GrantableCatalogue {
-  const { userId } = useAuth();
   const enabled = (options.enabled ?? true) && Boolean(userId);
 
   const { data, isLoading, isError } = useGetStaffPermissions(userId ?? "", {

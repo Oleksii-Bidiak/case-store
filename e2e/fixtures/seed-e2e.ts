@@ -16,14 +16,21 @@ loadEnv({ path: path.resolve(__dirname, "../../apps/store-api/.env") });
  * dev data. Idempotent: upserts so repeated runs don't duplicate rows.
  *
  * Fixture contract (keep in sync with the specs):
- *   - product slug:   `test-product`
+ *   - product slug:   `test-product` (+ sold-out `test-product-sold-out`)
  *   - user login:     `e2e@test.com` / `E2ePassword1!`
  *   - admin login:    `e2e-admin@test.com` / `E2eAdminPassword1!`
  *   - read-only mgr:  `e2e-manager-ro@test.com` / `E2eManagerRo1!` — MANAGER
  *                     holding ONLY `orders:read` (TASK-715)
  *   - orders:        one PROCESSING + one PENDING (ids below)
+ *   - paid order:    one ONLINE + CONFIRMED + PAID order with a SUCCEEDED LiqPay
+ *                    attempt of 1299.00 (TASK-371, the payment card)
  */
 export const E2E_PRODUCT_SLUG = "test-product";
+/** Category both catalogue fixtures are filed in (TASK-830). */
+export const E2E_CATEGORY_SLUG = "e2e-category";
+/** Same category as `test-product`, stock 0 (TASK-830). */
+export const E2E_SOLD_OUT_PRODUCT_SLUG = "test-product-sold-out";
+export const E2E_SOLD_OUT_PRODUCT_NAME = "E2E Sold Out Product";
 export const E2E_USER_EMAIL = "e2e@test.com";
 export const E2E_USER_PASSWORD = "E2ePassword1!";
 
@@ -60,6 +67,19 @@ export const E2E_ORDER_PENDING_ID = "e2e40502-0000-4000-8000-000000000002";
 const E2E_ORDER_PROCESSING_ITEM_ID = "e2e40511-0000-4000-8000-000000000011";
 const E2E_ORDER_PENDING_ITEM_ID = "e2e40512-0000-4000-8000-000000000012";
 
+/**
+ * An ONLINE order paid by card, with one SUCCEEDED LiqPay attempt (TASK-371) —
+ * the minimum the payment card needs to offer «Повернути кошти». CONFIRMED, so
+ * it never shows up in the PENDING/PROCESSING filter specs above. The refund
+ * spec intercepts the POST in the browser, so this row is never refunded for
+ * real and stays SUCCEEDED run after run; the upsert resets it anyway.
+ */
+export const E2E_ORDER_ONLINE_PAID_ID = "e2e37101-0000-4000-8000-000000000371";
+const E2E_ORDER_ONLINE_PAID_ITEM_ID = "e2e37111-0000-4000-8000-000000000371";
+export const E2E_PAYMENT_SUCCEEDED_ID = "e2e37121-0000-4000-8000-000000000371";
+/** What the seeded attempt charged — the refund dialog's ceiling. */
+export const E2E_PAYMENT_SUCCEEDED_AMOUNT = "1299.00";
+
 export default async function globalSetup(): Promise<void> {
   // The generated client uses the pg driver adapter (see prisma/seed.ts) — a
   // bare `new PrismaClient()` throws instead of reading DATABASE_URL itself.
@@ -67,9 +87,9 @@ export default async function globalSetup(): Promise<void> {
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
   try {
     const category = await prisma.category.upsert({
-      where: { slug: "e2e-category" },
+      where: { slug: E2E_CATEGORY_SLUG },
       update: {},
-      create: { name: "E2E Category", slug: "e2e-category" },
+      create: { name: "E2E Category", slug: E2E_CATEGORY_SLUG },
     });
 
     // Stock lives on the Product row itself (no variant model — sibling
@@ -85,6 +105,29 @@ export default async function globalSetup(): Promise<void> {
         price: "499.00",
         sku: "E2E-SKU-1",
         stock: 100,
+        categoryId: category.id,
+        isActive: true,
+      },
+    });
+
+    // A sold-out sibling in the same category (TASK-830): the one row that lets
+    // a spec prove «Тільки в наявності» actually removes something. Stock is
+    // forced back to 0 on every run so a manual restock cannot turn it green.
+    await prisma.product.upsert({
+      where: { slug: E2E_SOLD_OUT_PRODUCT_SLUG },
+      update: {
+        isActive: true,
+        deletedAt: null,
+        stock: 0,
+        categoryId: category.id,
+      },
+      create: {
+        name: E2E_SOLD_OUT_PRODUCT_NAME,
+        slug: E2E_SOLD_OUT_PRODUCT_SLUG,
+        description: "Deterministic sold-out product for Playwright E2E.",
+        price: "399.00",
+        sku: "E2E-SKU-SOLD-OUT",
+        stock: 0,
         categoryId: category.id,
         isActive: true,
       },
@@ -210,6 +253,60 @@ export default async function globalSetup(): Promise<void> {
         },
       });
     }
+
+    // TASK-371: the paid ONLINE order and its successful attempt. Both upserts
+    // put the rows back to exactly this state, so a hand-made change on the test
+    // DB (or a refund callback that somehow landed) cannot leak into the next run.
+    const paidAt = new Date(Date.now() - 60 * 60 * 1000);
+    await prisma.order.upsert({
+      where: { id: E2E_ORDER_ONLINE_PAID_ID },
+      update: {
+        status: "CONFIRMED",
+        paymentStatus: "PAID",
+        paymentMethod: "ONLINE",
+        paidAt,
+        deletedAt: null,
+      },
+      create: {
+        id: E2E_ORDER_ONLINE_PAID_ID,
+        userId: user.id,
+        status: "CONFIRMED",
+        paymentStatus: "PAID",
+        paymentMethod: "ONLINE",
+        paidAt,
+        subtotal: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+        total: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+        createdAt: paidAt,
+        items: {
+          create: [
+            {
+              id: E2E_ORDER_ONLINE_PAID_ITEM_ID,
+              productId: product.id,
+              quantity: 1,
+              price: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+            },
+          ],
+        },
+      },
+    });
+    await prisma.payment.upsert({
+      where: { id: E2E_PAYMENT_SUCCEEDED_ID },
+      update: {
+        status: "SUCCEEDED",
+        amount: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+        settledAt: paidAt,
+      },
+      create: {
+        id: E2E_PAYMENT_SUCCEEDED_ID,
+        orderId: E2E_ORDER_ONLINE_PAID_ID,
+        provider: "liqpay",
+        providerPaymentId: "e2e-liqpay-371",
+        amount: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+        currency: "UAH",
+        status: "SUCCEEDED",
+        settledAt: paidAt,
+      },
+    });
   } finally {
     await prisma.$disconnect();
   }

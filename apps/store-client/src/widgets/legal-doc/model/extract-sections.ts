@@ -2,6 +2,8 @@
 // stable heading ids + a flat section list, so the sticky TOC / scroll-spy can
 // target each `<h2>`. Pure functions — unit-testable, no DOM required.
 
+import { formatDate } from "@/shared/lib/format";
+
 export interface DocSection {
   /** Injected element id (`sec-0`, `sec-1`, …). */
   id: string;
@@ -47,46 +49,15 @@ export function extractDocSections(html: string): ExtractedDoc {
   return { html: withIds, sections };
 }
 
-const UK_MONTHS_GENITIVE = [
-  "січня",
-  "лютого",
-  "березня",
-  "квітня",
-  "травня",
-  "червня",
-  "липня",
-  "серпня",
-  "вересня",
-  "жовтня",
-  "листопада",
-  "грудня",
-];
-
-/** Format an ISO date as "12 червня 2026" (falls back to the input on error). */
+/**
+ * Format an ISO date as "12 червня 2026" in Kyiv (falls back to the input on
+ * error). Delegates to the shared formatter (TASK-809).
+ */
 export function formatLegalDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return `${d.getDate()} ${UK_MONTHS_GENITIVE[d.getMonth()]} ${d.getFullYear()}`;
+  return formatDate(iso);
 }
 
-const UK_MONTHS_SHORT = [
-  "січ.",
-  "лют.",
-  "бер.",
-  "квіт.",
-  "трав.",
-  "черв.",
-  "лип.",
-  "серп.",
-  "вер.",
-  "жовт.",
-  "лист.",
-  "груд.",
-];
-
-/** Format an ISO date as "12 черв. 2026" (falls back to the input on error). */
+/** Format an ISO date as "12 черв. 2026" in Kyiv (falls back to the input on error). */
 export function formatLegalDateShort(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return `${d.getDate()} ${UK_MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`;
+  return formatDate(iso, "short");
 }

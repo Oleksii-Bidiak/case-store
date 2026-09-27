@@ -28,6 +28,14 @@ export const PERM = {
   // owner and admins hold it (by level) — the correction action stays hidden for
   // every manager until the owner ticks the box.
   paymentsCorrect: "payments:correct",
+  // TASK-371 — the payment card on the order: the attempt history
+  // (`GET /admin/payments/orders/:orderId`) and the refund button
+  // (`POST /admin/payments/:id/refund`, the first admin control that moves real
+  // money). Two keys because reading what happened and sending money back are
+  // different jobs — the class-level guard of `AdminPaymentController` asks for
+  // `payments:read`, the refund route for `payments:refund` on top of it.
+  paymentsRead: "payments:read",
+  paymentsRefund: "payments:refund",
 
   productsRead: "products:read",
   productsWrite: "products:write",

@@ -195,3 +195,71 @@ export function fromKyivDateTimeLocal(value: string): Date | null {
   const firstPass = wallClockAsUtc - kyivOffsetMs(wallClockAsUtc);
   return new Date(wallClockAsUtc - kyivOffsetMs(firstPass));
 }
+
+// --- `<input type="date">` values (TASK-795) ---------------------------------
+//
+// A date input emits a bare `YYYY-MM-DD`, and `new Date("YYYY-MM-DD")` is UTC
+// midnight — the ECMAScript grammar reads a date-ONLY string as UTC. For a
+// promo code «Діє до 1 вересня» that is 03:00 on 1 September in Kyiv: the code
+// died at breakfast on the last day it was advertised for. The `datetime-local`
+// guard above never saw it, because the value has no time part to mistrust.
+//
+// A calendar day in this shop is a KYIV day, and "until the 1st" means "through
+// the end of the 1st". Both ends are therefore resolved through
+// `fromKyivDateTimeLocal`, which asks ICU for the offset per instant, so a day
+// that contains a DST switch (23 or 25 hours long) still starts and ends where
+// the wall clock says.
+
+/** The only shape `<input type="date">` emits and accepts. */
+const DATE_ONLY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * The first instant of a Kyiv calendar day: `YYYY-MM-DD` → 00:00:00.000 Kyiv.
+ * `null` for an empty or impossible date.
+ */
+export function fromKyivDateStart(value: string): Date | null {
+  const trimmed = value ? value.trim() : "";
+  if (!DATE_ONLY.test(trimmed)) {
+    return null;
+  }
+  return fromKyivDateTimeLocal(`${trimmed}T00:00`);
+}
+
+/**
+ * The last instant of a Kyiv calendar day: `YYYY-MM-DD` → 23:59:59.999 Kyiv.
+ * `null` for an empty or impossible date.
+ *
+ * Computed as "the next Kyiv midnight minus one millisecond" rather than as
+ * `T23:59` plus 59.999 s, so it is exact by construction — the next midnight is
+ * resolved with ITS OWN offset, which is what keeps the answer right on the two
+ * days a year that are not 24 hours long.
+ */
+export function fromKyivDateEnd(value: string): Date | null {
+  const start = fromKyivDateStart(value);
+  if (!start) {
+    return null;
+  }
+  const match = DATE_ONLY.exec(value.trim()) as RegExpExecArray;
+  // `Date.UTC` rolls the day over a month/year boundary; only the calendar
+  // fields are read back (in UTC), so no zone is involved in finding "tomorrow".
+  const nextDay = new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]) + 1),
+  )
+    .toISOString()
+    .slice(0, 10);
+  const nextMidnight = fromKyivDateTimeLocal(`${nextDay}T00:00`) as Date;
+  return new Date(nextMidnight.getTime() - 1);
+}
+
+/**
+ * The Kyiv calendar day of an instant, as the `YYYY-MM-DD` value of an
+ * `<input type="date">` — the inverse of {@link fromKyivDateStart} and
+ * {@link fromKyivDateEnd}. `""` for anything unusable.
+ *
+ * `iso.slice(0, 10)` — what the discount edit form did — is the UTC day: a
+ * window saved as starting at 00:00 Kyiv on the 1st (21:00 UTC on the 31st)
+ * reopened in the form as starting on the 31st.
+ */
+export function toKyivDateInput(value: DateInput): string {
+  return toKyivDateTimeLocal(value).slice(0, 10);
+}

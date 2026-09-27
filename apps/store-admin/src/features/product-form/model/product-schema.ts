@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { CreateProductDto, UpdateProductDto } from "@/entities/product";
 import { dict } from "@/shared/config";
+import { SLUG_PATTERN } from "@/shared/lib/slug";
+import { ogImageField, seoTextFields } from "@/shared/lib/seo-fields-schema";
 import {
   KEYWORDS_MAX_COUNT,
   KEYWORD_MAX_LENGTH,
@@ -10,8 +12,6 @@ import { UUID_PATTERN } from "@/shared/lib/uuid";
 
 const e = dict.productForm.errors;
 const seoErrors = dict.seoFields.errors;
-
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * Is this rich-text value visually empty? Tiptap serializes a cleared document
@@ -43,7 +43,7 @@ export const productSchema = z.object({
     .string()
     .trim()
     .max(255, e.slugMax)
-    .regex(SLUG_PATTERN, e.slugPattern)
+    .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
     .optional()
     .or(z.literal("")),
 
@@ -130,19 +130,7 @@ export const productSchema = z.object({
 
   // SEO overrides (TASK-241). Optional free text; blank is dropped on map so the
   // storefront PDP falls back to the auto-derived title/description (resolveSeo).
-  metaTitle: z
-    .string()
-    .trim()
-    .max(255, e.metaTitleMax)
-    .optional()
-    .or(z.literal("")),
-
-  metaDescription: z
-    .string()
-    .trim()
-    .max(500, e.metaDescriptionMax)
-    .optional()
-    .or(z.literal("")),
+  ...seoTextFields(),
 
   // TASK-437 — internal tags, bound as one comma-separated text field and
   // validated on the PARSED list, so "a, , a" is one tag rather than three.
@@ -158,12 +146,7 @@ export const productSchema = z.object({
       seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
     ),
 
-  ogImage: z
-    .string()
-    .trim()
-    .url(seoErrors.ogImageUrl)
-    .optional()
-    .or(z.literal("")),
+  ogImage: ogImageField(),
 });
 
 export type ProductFormInput = z.input<typeof productSchema>;

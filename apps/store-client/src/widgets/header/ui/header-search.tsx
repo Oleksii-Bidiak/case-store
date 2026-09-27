@@ -2,29 +2,15 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { keepPreviousData } from "@tanstack/react-query";
-import { Menu, Newspaper, Search } from "lucide-react";
-import { SearchAutocomplete } from "@/features/search";
-import { useSearchSuggest } from "@/entities/search";
-import { useBlogControllerFindAll } from "@/entities/blog";
+import { Menu, Search } from "lucide-react";
+import {
+  SearchAutocomplete,
+  SearchSuggestionsPopup,
+  useSearchAutocomplete,
+} from "@/features/search";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
-import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import { Skeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { cn } from "@/shared/lib/utils";
-
-/** Minimum characters before we ask the API for suggestions. */
-const MIN_QUERY_LENGTH = 1;
-/** Maximum blog articles mixed into the suggestions dropdown (TASK-218). */
-const BLOG_SUGGEST_LIMIT = 5;
-
-/**
- * One entry of the combined keyboard-navigation list: products first, then
- * blog posts, addressed by a single `activeIndex` across both listboxes.
- */
-type CombinedSuggestion =
-  { kind: "product"; slug: string } | { kind: "blog"; slug: string };
 
 /**
  * HeaderSearch — the desktop search pill from the design import: one bordered
@@ -35,8 +21,10 @@ type CombinedSuggestion =
  * The suggestions dropdown mixes products with up to 5 matching blog articles
  * (TASK-218) — two labelled listboxes navigated as one combined list.
  *
- * Reuses the storefront search hooks; keyboard nav (↑/↓/Enter/Esc) mirrors the
- * shared Combobox. Hidden below `md` — mobile navigates via the header Sheet.
+ * The suggestions are NOT implemented here (TASK-805): the pill runs the one
+ * storefront autocomplete, `useSearchAutocomplete` + `SearchSuggestionsPopup`
+ * from `features/search`, and only supplies its own input chrome and the
+ * full-pill anchor. Hidden below `md` — mobile navigates via the header Sheet.
  *
  * The catalog panel is fully keyboard-operable (TASK-413): ↑/↓/Home/End walk
  * one pane, →/← cross between them, each pane keeps a single roving tab stop,
@@ -51,73 +39,19 @@ type CombinedSuggestion =
  * carries the category accordion is `lg:hidden` (TASK-413).
  */
 export function HeaderSearch() {
-  const router = useRouter();
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  // SSR-stable ids (never random) — the input's `aria-activedescendant` must
-  // resolve to a real option id on both server and client render.
+  // SSR-stable id (never random) for the compact panel's aria-controls.
   const uid = useId();
-  const listboxId = `${uid}-listbox`;
-  const blogListboxId = `${uid}-blog-listbox`;
   const compactPanelId = `${uid}-compact-panel`;
-  /** Option id addressed by the SINGLE combined index (products, then blog). */
-  const optionId = (index: number) => `${uid}-option-${index}`;
 
-  const [value, setValue] = useState("");
-  const [query, setQuery] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
+  // The pill's own autocomplete instance — the same hook the compact panel and
+  // the mobile menu run through `SearchAutocomplete` (TASK-805).
+  const search = useSearchAutocomplete();
+  const searchOpen = search.isOpen;
   const [catalogOpen, setCatalogOpen] = useState(false);
   /** Below `lg`: the magnifier's drop-down panel (TASK-411). */
   const [compactOpen, setCompactOpen] = useState(false);
-  /**
-   * KEYBOARD selection only. Hovering an option never writes here — otherwise a
-   * cursor resting over the popup silently re-targets Enter (TASK-411).
-   */
-  const [activeIndex, setActiveIndex] = useState(-1);
-
-  const debouncedSetQuery = useDebouncedCallback(
-    (next: string) => setQuery(next),
-    250,
-  );
-
-  // `keepPreviousData` on BOTH suggest calls: without it every keystroke empties
-  // the dropdown while the next request is in flight, so the popup blinks
-  // through "Пошук…" between letters and jumps in height (TASK-411).
-  const { data: suggestData, isFetching } = useSearchSuggest(
-    { q: query },
-    {
-      query: {
-        enabled: query.trim().length >= MIN_QUERY_LENGTH,
-        placeholderData: keepPreviousData,
-      },
-    },
-  );
-  const suggestions = suggestData?.data ?? [];
-
-  // Blog-article suggestions (TASK-218) — reuses the same debounced `query`
-  // state as the product suggest call (no second debounce timer).
-  const { data: blogData } = useBlogControllerFindAll(
-    { q: query, limit: BLOG_SUGGEST_LIMIT },
-    {
-      query: {
-        enabled: query.trim().length >= MIN_QUERY_LENGTH,
-        placeholderData: keepPreviousData,
-      },
-    },
-  );
-  const blogPosts = (blogData?.data ?? []).slice(0, BLOG_SUGGEST_LIMIT);
-
-  // Single logical list for ↑/↓/Enter: products first, then blog posts.
-  const combined: CombinedSuggestion[] = [
-    ...suggestions.map((s): CombinedSuggestion => ({
-      kind: "product",
-      slug: s.slug,
-    })),
-    ...blogPosts.map((p): CombinedSuggestion => ({
-      kind: "blog",
-      slug: p.slug,
-    })),
-  ];
 
   // Category tree (TASK-082) — roots + one nested level for the flyout. The
   // endpoint hardcodes isActive + sortOrder ascending server-side, matching the
@@ -254,18 +188,19 @@ export function HeaderSearch() {
   }, [catalogOpen]);
 
   // Close every dropdown on outside-click and Escape.
+  const closeSearch = search.close;
   useEffect(() => {
     if (!searchOpen && !catalogOpen && !compactOpen) return;
     function onPointerDown(event: MouseEvent) {
       if (!containerRef.current?.contains(event.target as Node)) {
-        setSearchOpen(false);
+        closeSearch();
         setCatalogOpen(false);
         setCompactOpen(false);
       }
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
-        setSearchOpen(false);
+        closeSearch();
         setCatalogOpen(false);
         setCompactOpen(false);
         // Keyboard users keep their place: Escape on the catalog panel returns
@@ -281,71 +216,7 @@ export function HeaderSearch() {
       document.removeEventListener("mousedown", onPointerDown);
       document.removeEventListener("keydown", onKeyDown);
     };
-  }, [searchOpen, catalogOpen, compactOpen]);
-
-  const showSuggestions = searchOpen && value.trim().length >= MIN_QUERY_LENGTH;
-  // Anything the popup can offer — products OR articles. Counting products
-  // alone printed "нічого не знайдено" above a list of matching posts.
-  const hasSuggestions = suggestions.length > 0 || blogPosts.length > 0;
-  // The 250ms debounce means `query` trails `value`: between the keystroke and
-  // the request there is a window where nothing is in flight and nothing has
-  // arrived. Counting that window as "loading" is what stops the popup from
-  // flashing "Нічого не знайдено" on the first letter of every search.
-  const isSearching = isFetching || value.trim() !== query.trim();
-  const searchHref = `/search?q=${encodeURIComponent(value.trim())}`;
-
-  // Single source of truth for BOTH the visual highlight and the ARIA pointer:
-  // the same `activeIndex`. Absent (undefined, not "") when the list is closed
-  // or nothing is highlighted — an empty value would point at no element.
-  const activeDescendantId =
-    showSuggestions && activeIndex >= 0 && combined[activeIndex]
-      ? optionId(activeIndex)
-      : undefined;
-
-  function submitSearch(raw: string) {
-    const q = raw.trim();
-    if (q.length === 0) return;
-    setSearchOpen(false);
-    router.push(`/search?q=${encodeURIComponent(q)}`);
-  }
-
-  function pick(slug: string) {
-    setSearchOpen(false);
-    router.push(`/products/${slug}`);
-  }
-
-  function pickBlogPost(slug: string) {
-    setSearchOpen(false);
-    router.push(`/blog/${slug}`);
-  }
-
-  function onInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (!showSuggestions) return;
-    switch (event.key) {
-      case "ArrowDown":
-        event.preventDefault();
-        setActiveIndex((i) => Math.min(i + 1, combined.length - 1));
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        setActiveIndex((i) => Math.max(i - 1, 0));
-        break;
-      case "Enter": {
-        const item = activeIndex >= 0 ? combined[activeIndex] : undefined;
-        event.preventDefault();
-        // Nothing highlighted (the popup is merely open, or the cursor is
-        // hovering a row) → the query itself goes to the results page.
-        if (!item) submitSearch(value);
-        else if (item.kind === "blog") pickBlogPost(item.slug);
-        else pick(item.slug);
-        break;
-      }
-      case "Escape":
-        setSearchOpen(false);
-        setActiveIndex(-1);
-        break;
-    }
-  }
+  }, [searchOpen, catalogOpen, compactOpen, closeSearch]);
 
   return (
     <div
@@ -380,7 +251,7 @@ export function HeaderSearch() {
         role="search"
         onSubmit={(event) => {
           event.preventDefault();
-          submitSearch(value);
+          search.submit();
         }}
       >
         <div className="flex h-12 items-center overflow-hidden rounded-xl border-[1.5px] border-border bg-background">
@@ -390,7 +261,7 @@ export function HeaderSearch() {
             type="button"
             onClick={() => {
               setCatalogOpen((v) => !v);
-              setSearchOpen(false);
+              search.close();
               // The magnifier's panel is a peer dropdown, not a sibling of
               // this one: both are absolutely positioned at the same corner,
               // so leaving it open would stack two panels over each other and
@@ -412,26 +283,13 @@ export function HeaderSearch() {
           {/* Search input (middle). */}
           <input
             type="text"
-            role="combobox"
-            aria-expanded={showSuggestions}
-            aria-controls={
-              blogPosts.length > 0 ? `${listboxId} ${blogListboxId}` : listboxId
-            }
-            aria-activedescendant={activeDescendantId}
-            aria-autocomplete="list"
+            {...search.inputProps}
             aria-label={dict.search.inputAria}
-            autoComplete="off"
-            value={value}
             placeholder={dict.search.placeholder}
             onChange={(event) => {
-              setValue(event.target.value);
-              debouncedSetQuery(event.target.value);
-              setSearchOpen(true);
+              search.inputProps.onChange(event);
               setCatalogOpen(false);
-              setActiveIndex(-1);
             }}
-            onFocus={() => setSearchOpen(true)}
-            onKeyDown={onInputKeyDown}
             className="hidden h-full min-w-0 flex-1 border-0 bg-transparent px-4 text-[15px] text-foreground outline-none placeholder:text-muted-foreground lg:block"
           />
 
@@ -443,7 +301,7 @@ export function HeaderSearch() {
             onClick={() => {
               setCompactOpen((v) => !v);
               setCatalogOpen(false);
-              setSearchOpen(false);
+              search.close();
             }}
             aria-expanded={compactOpen}
             aria-controls={compactPanelId}
@@ -641,134 +499,13 @@ export function HeaderSearch() {
         </div>
       )}
 
-      {/* Suggestions dropdown (anchored to the full pill). */}
-      {showSuggestions && (
-        <div className="absolute top-[calc(100%+8px)] right-0 left-0 z-50 rounded-2xl border border-border bg-popover p-2 shadow-lift">
-          <ul
-            id={listboxId}
-            role="listbox"
-            aria-label={dict.search.inputAria}
-            // `min-h-16` is the floor that keeps the popup from resizing under
-            // the cursor as a query narrows from several rows down to one.
-            className="max-h-72 min-h-16 overflow-y-auto"
-          >
-            {isSearching && !hasSuggestions && (
-              <li
-                role="presentation"
-                className="px-3 py-2 text-sm text-muted-foreground"
-              >
-                {dict.search.loading}
-              </li>
-            )}
-            {!isSearching && !hasSuggestions && (
-              <li
-                role="presentation"
-                className="px-3 py-2 text-sm text-muted-foreground"
-              >
-                {dict.search.empty}
-              </li>
-            )}
-            {suggestions.map((suggestion, i) => (
-              <li
-                key={suggestion.slug}
-                id={optionId(i)}
-                role="option"
-                aria-selected={i === activeIndex}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => pick(suggestion.slug)}
-                className={cn(
-                  // Hover tints the row through CSS only — it must not move the
-                  // keyboard selection that Enter commits.
-                  "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-popover-foreground hover:bg-muted",
-                  i === activeIndex && "bg-muted",
-                )}
-              >
-                <Search
-                  className="size-4 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                />
-                <span className="min-w-0 flex-1 truncate">
-                  {suggestion.name}
-                </span>
-              </li>
-            ))}
-          </ul>
-
-          {/* Blog-article suggestions (TASK-218) — rendered only when there is
-              at least one match; scrolls independently of the product list. */}
-          {blogPosts.length > 0 && (
-            <>
-              <hr
-                aria-hidden="true"
-                className="mx-3 my-2 border-t border-border"
-              />
-              <p className="px-3 pb-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                {dict.search.blogSectionLabel}
-              </p>
-              <ul
-                id={blogListboxId}
-                role="listbox"
-                aria-label={dict.search.blogSectionLabel}
-                className="max-h-72 overflow-y-auto"
-              >
-                {blogPosts.map((post, i) => {
-                  const index = suggestions.length + i;
-                  return (
-                    <li
-                      key={post.slug}
-                      id={optionId(index)}
-                      role="option"
-                      aria-selected={index === activeIndex}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => pickBlogPost(post.slug)}
-                      className={cn(
-                        "flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 text-sm text-popover-foreground hover:bg-muted",
-                        index === activeIndex && "bg-muted",
-                      )}
-                    >
-                      {post.coverImageUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={post.coverImageUrl}
-                          alt=""
-                          className="size-8 shrink-0 rounded-md object-cover"
-                        />
-                      ) : (
-                        <Newspaper
-                          className="size-4 shrink-0 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span className="min-w-0 flex-1 truncate">
-                        {post.title}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </>
-          )}
-
-          {/* A dead end is never acceptable: when nothing matched, the popup
-              still offers the full results page for what was typed (TASK-411).
-              It sits OUTSIDE the listbox on purpose — a focusable link is not a
-              valid child of `role="listbox"`, whose children must be options. */}
-          {!isSearching && !hasSuggestions && (
-            <Link
-              href={searchHref}
-              // Mirrors the option rows: keep the input from blurring before
-              // the click lands.
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => setSearchOpen(false)}
-              className="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-primary transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <Search className="size-4 shrink-0" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate">
-                {dict.search.showAllResults(value.trim())}
-              </span>
-            </Link>
-          )}
-        </div>
+      {/* Suggestions dropdown (anchored to the full pill) — the shared popup,
+          so the pill and the stand-alone fields cannot drift apart (TASK-805). */}
+      {search.showSuggestions && (
+        <SearchSuggestionsPopup
+          model={search.popup}
+          className="absolute top-[calc(100%+8px)] right-0 left-0 z-50"
+        />
       )}
     </div>
   );

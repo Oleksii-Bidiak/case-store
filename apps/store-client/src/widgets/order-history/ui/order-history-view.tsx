@@ -4,34 +4,51 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/entities/session";
-import { useGetOrders } from "@/entities/order";
+import { statusBadgeClass, useGetOrders } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
+import { useGetMyReturns, type ReturnEntity } from "@/entities/return";
 import { ReturnRequestButton } from "@/features/return-request";
-import { Button } from "@/shared/ui";
+import { Badge, Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatMoney } from "@/shared/lib";
+import { formatDate, formatMoney } from "@/shared/lib";
 import { OrderHistorySkeleton } from "./order-history-skeleton";
 
-/** Token-based badge colours per status value (no raw hex) — mirrors confirmation. */
-const STATUS_BADGE: Record<string, string> = {
-  PENDING: "bg-muted text-muted-foreground",
-  CONFIRMED: "bg-primary/10 text-primary",
-  PROCESSING: "bg-primary/20 text-primary",
-  SHIPPED: "bg-primary/30 text-primary",
-  DELIVERED: "bg-primary/10 text-primary font-semibold",
-  CANCELLED: "bg-destructive/10 text-destructive",
-  REFUNDED: "bg-destructive/10 text-destructive",
+/**
+ * The status of the NEWEST return request per order (TASK-608). The API lists
+ * newest first, so the first row seen for an order is the one to show — an
+ * order can carry several requests (one unit now, another next week), and the
+ * latest is what the customer is waiting on.
+ */
+function latestReturnStatusByOrder(
+  returns: readonly ReturnEntity[],
+): Map<string, string> {
+  const byOrder = new Map<string, string>();
+  for (const row of returns) {
+    if (!byOrder.has(row.orderId)) byOrder.set(row.orderId, row.status);
+  }
+  return byOrder;
+}
+
+/** Existing Badge variants only; the look is Д-в's call (plan 196 register). */
+const RETURN_BADGE_VARIANT: Record<
+  string,
+  "secondary" | "success" | "outline"
+> = {
+  REFUNDED: "success",
+  REJECTED: "outline",
 };
 
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
-  year: "numeric",
-  month: "short",
-  day: "numeric",
-});
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
+function ReturnStatusBadge({ status }: { status: string | undefined }) {
+  if (!status) return null;
+  const label = dict.returnRequest.statusLabels[status] ?? status;
+  return (
+    <Badge
+      variant={RETURN_BADGE_VARIANT[status] ?? "secondary"}
+      aria-label={dict.returnRequest.statusAria(label)}
+    >
+      {label}
+    </Badge>
+  );
 }
 
 /**
@@ -47,6 +64,13 @@ export function OrderHistoryView() {
     query: { enabled: isAuthenticated },
   });
 
+  // TASK-608: one request for every return the customer has, instead of one
+  // `GET /orders/:id/returns` per row. A failure here costs the page nothing but
+  // the return badges, so it is deliberately not part of the loading/error gate.
+  const { data: myReturns } = useGetMyReturns({
+    query: { enabled: isAuthenticated },
+  });
+
   useEffect(() => {
     if (!isInitializing && !isAuthenticated) {
       router.replace("/login?redirect=/orders");
@@ -58,6 +82,7 @@ export function OrderHistoryView() {
   }
 
   const orders = data?.data ?? [];
+  const latestReturn = latestReturnStatusByOrder(myReturns?.data ?? []);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -99,13 +124,13 @@ export function OrderHistoryView() {
                     aria-label={`${dict.orderHistory.statusSr}: ${
                       dict.order.orderStatusLabels[order.status] ?? order.status
                     }`}
-                    className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${
-                      STATUS_BADGE[order.status] ??
-                      "bg-muted text-muted-foreground"
-                    }`}
+                    className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass(
+                      order.status,
+                    )}`}
                   >
                     {dict.order.orderStatusLabels[order.status] ?? order.status}
                   </span>
+                  <ReturnStatusBadge status={latestReturn.get(order.id)} />
                   <span className="font-semibold text-foreground">
                     {formatMoney(order.total)}
                   </span>

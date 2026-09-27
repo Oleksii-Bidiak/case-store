@@ -233,6 +233,64 @@ describe("MessageInbox", () => {
     ).toBeInTheDocument();
   });
 
+  // TASK-761: honeypot hits are kept as SPAM rows instead of being dropped, so
+  // a false positive can be seen — but only by asking for them.
+  it("offers a «Спам» filter that sends status=SPAM", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
+    );
+
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    await user.click(
+      screen.getByRole("combobox", { name: dict.messages.filterStatusAria }),
+    );
+    await user.click(
+      await screen.findByRole("option", { name: dict.messages.filterSpam }),
+    );
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("status=SPAM"),
+      ),
+    );
+  });
+
+  it("asks the API for SPAM when the URL says so, and labels the rows", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("status=SPAM");
+    let requested: string | null = null;
+    server.use(
+      http.get("*/api/contact/admin", ({ request }) => {
+        requested = new URL(request.url).searchParams.get("status");
+        return listResponse([makeMessageRow({ status: "SPAM" })]);
+      }),
+    );
+
+    renderWithProviders(<MessageInbox />);
+
+    expect(
+      await screen.findByText(dict.messages.statusSpam, { selector: "span" }),
+    ).toBeInTheDocument();
+    expect(requested).toBe("SPAM");
+  });
+
+  it("does not ask for SPAM in the default «Усі» view — the API leaves it out", async () => {
+    let requested: string | null = "unset";
+    server.use(
+      http.get("*/api/contact/admin", ({ request }) => {
+        requested = new URL(request.url).searchParams.get("status");
+        return listResponse([makeMessageRow()]);
+      }),
+    );
+
+    renderWithProviders(<MessageInbox />);
+    await screen.findByText("Ivan Petrenko");
+
+    expect(requested).toBeNull();
+  });
+
   it("sends the default sort and rewrites the URL when a header is clicked (TASK-354)", async () => {
     const user = userEvent.setup();
     let captured: URLSearchParams | null = null;

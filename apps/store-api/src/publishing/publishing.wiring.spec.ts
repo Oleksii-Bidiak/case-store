@@ -50,10 +50,11 @@ describe('PublishingModule wiring', () => {
     expect(publishers).toContain(pageRepo);
     // TASK-435 — the scheduler flips a BATCH of due rows without learning which
     // ones, so it cannot know their kinds or slugs and purges every root a page
-    // can appear on: both page hubs plus all six hub routes.
+    // can appear on: both page hubs plus all seven hub routes (`/products` is
+    // TASK-549's).
     expect(publishers[0].revalidateTarget).toEqual({
       tags: ['pages'],
-      paths: ['/legal', '/info', '/categories', '/blog', '/contact', '/promo'],
+      paths: ['/legal', '/info', '/categories', '/blog', '/contact', '/promo', '/products'],
     });
 
     // Register + immediately stop the cron so its timer does not leak.

@@ -1,13 +1,20 @@
-// Static content for the "Інформація та підтримка" hub (/info, Info.dc.html).
-// Curated marketing/support copy mirroring the mockup 1:1 (brand "volta"
-// localized to CaseStore).
+// Content for the "Інформація та підтримка" hub (/info, Info.dc.html).
 //
-// Migrating to the CMS, section by section. Already admin-managed: Contacts
-// (SiteContactSettings, TASK-154), FAQ (TASK-187), and "Про нас" — the `about`
-// page of kind INFO (TASK-435). What remains below is the delivery/warranty copy
-// and the presentation of the About section (stats + values); each moves the
-// same way — a page row supplies the text, these constants stay as the fallback
-// that keeps /info rendering when the API does not answer.
+// Every block of /info is admin-managed now. Contacts come from
+// SiteContactSettings (TASK-154), FAQ from the FAQ list (TASK-187), "Про нас"
+// from the `about` page of kind INFO (TASK-435), and — since TASK-560 — the
+// delivery, payment and warranty cards and the «у цифрах / чому ми» part of
+// "Про нас" from their own INFO pages (slugs in `shared/config/hub-pages.ts`,
+// `INFO_HUB_SECTION_SLUGS`). The add-on services list is the store's real
+// active add-ons with their catalog prices (TASK-561).
+//
+// The constants below are ONLY the outage fallback: they render when the API
+// does not answer, because this page carries delivery, warranty and contact
+// information and must render regardless. A page that is genuinely MISSING
+// (unpublished or deleted by the owner) hides its block instead — falling back
+// to these strings there would put text the owner removed back on the site.
+// There is deliberately no fallback for the services list: the old one
+// advertised prices nobody had entered anywhere.
 
 export type InfoSectionKey =
   "delivery" | "warranty" | "faq" | "about" | "contacts";
@@ -37,12 +44,6 @@ export interface InfoOptionCard {
   desc: string;
   price?: string;
 }
-export interface InfoServiceRow {
-  icon: InfoIconKey;
-  title: string;
-  desc: string;
-  price: string;
-}
 export interface InfoWarrantyCard {
   big: string;
   title: string;
@@ -66,8 +67,8 @@ export interface InfoFaq {
  * kind INFO. `html` is already sanitized by the server component that reads it —
  * `InfoView` is a client component and must not pull a sanitizer into the
  * bundle. Null everywhere means "no such page / API down", and the section falls
- * back to `dict.info.aboutHeading` + `aboutIntro`; `ABOUT_STATS` / `ABOUT_VALUES`
- * below stay as the section's presentation either way.
+ * back to `dict.info.aboutHeading` + `aboutIntro` (the route reports a missing
+ * page to Sentry, TASK-565).
  */
 export interface InfoAbout {
   heading: string;
@@ -76,6 +77,41 @@ export interface InfoAbout {
   /** Sanitized page body. */
   html: string;
   /** Link to the full page at `/info/<slug>`. */
+  href: string;
+}
+
+/**
+ * One /info block read from its INFO page (TASK-560): the page title heads the
+ * card, the excerpt is its lede, the body replaces the card grid. `html` is
+ * sanitized by the server component that read it, exactly like
+ * {@link InfoAbout}.
+ */
+export interface InfoSectionPage {
+  heading: string;
+  intro: string | null;
+  html: string;
+}
+
+/**
+ * What the route knows about one block's page:
+ *   - the page itself → render it;
+ *   - `"missing"`     → the API answered 404 (unpublished / deleted): hide the block;
+ *   - `"unavailable"` → the API did not answer: render the static fallback below.
+ */
+export type InfoSectionSource = InfoSectionPage | "missing" | "unavailable";
+
+/** An add-on service the store offers, as the /info services card lists it (TASK-561). */
+export interface InfoService {
+  id: string;
+  name: string;
+  description: string | null;
+  /** Catalog price, two-decimal string ("499.00"); a product may override it. */
+  price: string;
+}
+
+/** A published INFO page that /info does not inline — listed as a link (TASK-560). */
+export interface InfoPageLink {
+  title: string;
   href: string;
 }
 
@@ -138,27 +174,6 @@ export const WARRANTY_CARDS: readonly InfoWarrantyCard[] = [
     big: "100%",
     title: "оригінальна техніка",
     desc: "Сервісне обслуговування — [сервісний центр / партнер]",
-  },
-];
-
-export const PROTECTION_SERVICES: readonly InfoServiceRow[] = [
-  {
-    icon: "screen",
-    title: "Screen Repair",
-    desc: "Ремонт екрана без черг — 12 або 24 місяці",
-    price: "від 990 ₴",
-  },
-  {
-    icon: "shield",
-    title: "Save Plus",
-    desc: "Захист від механічних пошкоджень і залиття",
-    price: "від 1 290 ₴",
-  },
-  {
-    icon: "warranty",
-    title: "+1 / +2 роки гарантії",
-    desc: "Продовження офіційної гарантії виробника",
-    price: "від 750 ₴",
   },
 ];
 

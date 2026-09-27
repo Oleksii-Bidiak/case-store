@@ -16,6 +16,13 @@ export class ProductSpecValueDto {
   @IsUUID('loose', { message: 'definitionId must be a valid UUID' })
   definitionId!: string;
 
+  // Deliberately NO «,»/«;» rule here (TASK-514). Those characters break only a
+  // FACET value, and a facet value is authored on the definition's options —
+  // which `NoSpecValueSeparators` guards — then matched against them by
+  // `ProductService.validateSpecValue` (SELECT) or pinned to true/false
+  // (BOOLEAN). This DTO cannot see the definition's type, and the values it
+  // would catch are the free-text ones: «Посилені кути, бортик над екраном» is
+  // a normal TEXT spec that never reaches `?specs=`.
   @ApiProperty({ description: 'Value in canonical string form', example: 'Силікон' })
   @IsString()
   value!: string;
