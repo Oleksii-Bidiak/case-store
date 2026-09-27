@@ -158,6 +158,53 @@ const tailwindTokenGuard = [
  * Exceptions: `shared/api/server-fetch.ts` (the wrapper itself) and
  * `shared/api/generated/**` (Orval output, never hand-edited).
  */
+const rawFetchSelectors = [
+  {
+    selector: "CallExpression[callee.name='fetch']",
+    message:
+      'Заборонений «голий» fetch: він не має таймауту за замовчуванням, тому мовчазний API вішає збірку (кожна сторінка вигорає staticPageGenerationTimeout, Next ретраїть її 3 рази і build падає з «Failed to build … after 3 attempts»). На сервері використовуй serverFetch з @/shared/api/server-fetch (він завжди накладає AbortSignal.timeout). У браузері — згенеровані Orval-хуки, а не ручний fetch.',
+  },
+  {
+    selector:
+      "CallExpression[callee.object.name=/^(globalThis|global|window|self)$/][callee.property.name='fetch']",
+    message:
+      'Заборонений «голий» fetch (через globalThis/window/global/self) — обхід того самого правила. На сервері використовуй serverFetch з @/shared/api/server-fetch, у браузері — згенеровані Orval-хуки.',
+  },
+];
+
+/**
+ * Date-formatter guard (TASK-809, mirrors the admin's TASK-421 rule).
+ *
+ * The storefront had seven hand-rolled date formatters that disagreed with each
+ * other (the same order date in two month styles on neighbouring screens) and
+ * read the day in the runtime's zone — UTC on the server, the visitor's in the
+ * browser. `shared/lib/format/formatDate.ts` is the one formatter now; these
+ * selectors keep it that way. They live in the SAME `no-restricted-syntax`
+ * entry as the fetch guard because flat config REPLACES a rule's options per
+ * matching object instead of merging them — a second entry would silently
+ * switch the fetch guard off.
+ */
+const dateFormatSelectors = [
+  {
+    selector:
+      "CallExpression[callee.property.name=/^toLocale(Date|Time)String$/]",
+    message:
+      'Дата через toLocaleDateString()/toLocaleTimeString(): без timeZone день читається в поясі середовища — на сервері UTC, у браузері пояс відвідувача, тож HTML і гідратація можуть показати різні дати. Використовуй formatDate / formatDayMonth з @/shared/lib/format (uk-UA, Europe/Kyiv). Новий формат — додай у shared/lib/format/formatDate.ts.',
+  },
+  {
+    selector:
+      "CallExpression[arguments.length=0][callee.property.name='toLocaleString']",
+    message:
+      'toLocaleString() без аргументів бере локаль і пояс середовища. Для дати — formatDate з @/shared/lib/format; для числа — toLocaleString("uk-UA") з явною локаллю або formatMoney.',
+  },
+  {
+    selector:
+      "NewExpression[callee.object.name='Intl'][callee.property.name=/^(DateTimeFormat|RelativeTimeFormat)$/]",
+    message:
+      'Власний Intl.DateTimeFormat/RelativeTimeFormat поза shared/lib/format: саме так у вітрині з\'явилося сім форматерів, що писали ту саму дату замовлення по-різному і без timeZone. Імпортуй formatDate / formatDayMonth з @/shared/lib/format; новий формат додай у shared/lib/format/formatDate.ts.',
+  },
+];
+
 const rawFetchGuard = [
   {
     name: 'no-raw-fetch',
@@ -166,18 +213,18 @@ const rawFetchGuard = [
     rules: {
       'no-restricted-syntax': [
         'error',
-        {
-          selector: "CallExpression[callee.name='fetch']",
-          message:
-            'Заборонений «голий» fetch: він не має таймауту за замовчуванням, тому мовчазний API вішає збірку (кожна сторінка вигорає staticPageGenerationTimeout, Next ретраїть її 3 рази і build падає з «Failed to build … after 3 attempts»). На сервері використовуй serverFetch з @/shared/api/server-fetch (він завжди накладає AbortSignal.timeout). У браузері — згенеровані Orval-хуки, а не ручний fetch.',
-        },
-        {
-          selector:
-            "CallExpression[callee.object.name=/^(globalThis|global|window|self)$/][callee.property.name='fetch']",
-          message:
-            'Заборонений «голий» fetch (через globalThis/window/global/self) — обхід того самого правила. На сервері використовуй serverFetch з @/shared/api/server-fetch, у браузері — згенеровані Orval-хуки.',
-        },
+        ...rawFetchSelectors,
+        ...dateFormatSelectors,
       ],
+    },
+  },
+  {
+    // The formatter module itself builds the Intl singletons — it keeps the
+    // fetch guard and drops only the date selectors.
+    name: 'date-format-module',
+    files: ['src/shared/lib/format/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-syntax': ['error', ...rawFetchSelectors],
     },
   },
 ];

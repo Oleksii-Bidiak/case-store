@@ -3,7 +3,7 @@ import { ContactView } from "@/widgets/contact";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
-import { buildHubMetadata } from "@/shared/lib/seo";
+import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { SITE_URL, dict } from "@/shared/config";
 
 // TASK-435 — admin-managed via the `contact` HUB page row; dictionary fallback.

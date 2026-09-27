@@ -270,7 +270,7 @@ export const pagesData: {
 
   // ─── HUB rows: meta tags for listing routes that already exist ───────────────
   // Not pages. Each one's slug NAMES the storefront route it describes, and only
-  // the six slugs below mean anything (the API rejects any other). Descriptions
+  // the seven slugs below mean anything (the API rejects any other). Descriptions
   // say what the section is — never a claim about the shop (terms, addresses,
   // guarantees): those belong in the LEGAL documents above, where a lawyer reads
   // them.
@@ -357,5 +357,73 @@ export const pagesData: {
         <strong>/promo</strong>: тут задаються заголовок і опис, які бачить
         Google і які показуються у прев'ю посилання. Самі акційні добірки формуються зі знижок і банерів.</p>
       `,
+  },
+  {
+    // TASK-549 — `/products` was the one indexed listing with no owner-editable
+    // meta. Only the UNFILTERED catalogue reads this row; a `?category=` view
+    // takes the category's own texts, and any filter is noindex anyway.
+    slug: 'products',
+    kind: PageKind.HUB,
+    title: 'Розділ «Каталог»',
+    excerpt: 'SEO-заголовок і опис для каталогу всіх товарів.',
+    metaTitle: `Каталог товарів | ${STORE_NAME}`,
+    metaDescription:
+      'Увесь асортимент магазину на одній сторінці — фільтруйте за категорією, брендом, пристроєм і ціною.',
+    content: `
+        <p>Це не окрема сторінка сайту, а SEO-картка розділу
+        <strong>/products</strong>: тут задаються заголовок і опис, які бачить
+        Google і які показуються у прев'ю посилання. Самі товари редагуються в розділі «Товари».</p>
+      `,
+  },
+
+  // ─── INFO rows the /info hub renders inline (TASK-560) ───────────────────────
+  // Each block of /info that used to be a constant in the storefront's
+  // `info-content.ts`. The texts are those constants verbatim — placeholders
+  // included (TASK-311: no invented facts) — and the SAME rows the migration
+  // `20260926110000_backfill_info_pages` inserts on an existing stand, so a
+  // seeded database and a migrated one read alike. Kept at the end of the list
+  // so the seed's `sortOrder` of every row above is unchanged.
+  {
+    slug: 'info-delivery',
+    kind: PageKind.INFO,
+    title: 'Доставка',
+    excerpt:
+      'Відправляємо замовлення день у день при оформленні до 18:00. Безкоштовно від 1 000 ₴.',
+    metaTitle: `Доставка | ${STORE_NAME}`,
+    metaDescription:
+      'Як ми доставляємо замовлення: Нова Пошта по всій Україні, курʼєр по місту, самовивіз.',
+    content:
+      '<ul><li><p><strong>Нова Пошта</strong> — відділення або поштомат по всій Україні. Вартість: за тарифом НП.</p></li><li><p><strong>Курʼєр по місту</strong> — [міста курʼєрської доставки] — доставка в день замовлення. Вартість: [вартість].</p></li><li><p><strong>Самовивіз</strong> — [адреса пункту самовивозу]. Безкоштовно.</p></li></ul>',
+  },
+  {
+    slug: 'info-payment',
+    kind: PageKind.INFO,
+    title: 'Оплата',
+    excerpt: 'Обирайте зручний спосіб — онлайн або при отриманні.',
+    metaTitle: `Оплата | ${STORE_NAME}`,
+    metaDescription: 'Способи оплати замовлення: при отриманні або карткою онлайн.',
+    content:
+      '<ul><li><p><strong>При отриманні</strong> — готівкою або карткою у відділенні Нової Пошти.</p></li><li><p><strong>Картка онлайн</strong> — [платіжний провайдер: підключити перед запуском].</p></li><li><p><strong>Безпечна оплата</strong> — дані картки не зберігаються на сайті.</p></li></ul>',
+  },
+  {
+    slug: 'info-warranty',
+    kind: PageKind.INFO,
+    title: 'Гарантія та сервіс',
+    excerpt:
+      'Уся техніка — офіційна, з гарантією виробника. Сервісне обслуговування — [сервісний центр / партнер].',
+    metaTitle: `Гарантія та сервіс | ${STORE_NAME}`,
+    metaDescription: 'Гарантія виробника, повернення протягом 14 днів і сервісне обслуговування.',
+    content:
+      '<ul><li><p><strong>12–24 місяці гарантії</strong> — офіційна гарантія виробника на всю техніку.</p></li><li><p><strong>14 днів на повернення</strong> — повернення товару належної якості без пояснень.</p></li><li><p><strong>100% оригінальна техніка</strong> — сервісне обслуговування — [сервісний центр / партнер].</p></li></ul>',
+  },
+  {
+    slug: 'info-about-stats',
+    kind: PageKind.INFO,
+    title: 'Про нас у цифрах',
+    excerpt: '',
+    metaTitle: `Про нас у цифрах | ${STORE_NAME}`,
+    metaDescription: 'Магазин у цифрах і чому його обирають.',
+    content:
+      '<ul><li><p><strong>[N]</strong> років на ринку</p></li><li><p><strong>[N]</strong> товарів у каталозі</p></li><li><p><strong>[N]</strong> клієнтів</p></li><li><p><strong>[N]</strong> середня оцінка</p></li></ul><h2>Чому обирають нас</h2><ul><li><p><strong>Тільки оригінал</strong> — офіційні постачальники, жодних сірих пристроїв.</p></li><li><p><strong>Чесні ціни</strong> — без прихованих доплат і накруток.</p></li><li><p><strong>Швидка доставка</strong> — відправка день у день по всій Україні.</p></li><li><p><strong>Підтримка</strong> — допоможемо з вибором та після покупки: [графік роботи підтримки].</p></li></ul>',
   },
 ];

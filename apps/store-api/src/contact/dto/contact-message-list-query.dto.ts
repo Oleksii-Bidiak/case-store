@@ -44,7 +44,8 @@ export class ContactMessageListQueryDto {
   limit?: number = 20;
 
   @ApiProperty({
-    description: 'Filter by message status (NEW, IN_PROGRESS, READ, ARCHIVED)',
+    description:
+      'Filter by message status (NEW, IN_PROGRESS, READ, ARCHIVED, SPAM). Omitted = every status except SPAM (TASK-761): honeypot hits are reached only by asking for them.',
     enum: ContactMessageStatus,
     example: ContactMessageStatus.NEW,
     required: false,

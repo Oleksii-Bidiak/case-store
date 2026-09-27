@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { dict } from "@/shared/config";
+import { FallbackImg } from "@/shared/ui";
 import {
   authorInitial,
   blogGradient,
@@ -93,14 +94,13 @@ export function BlogArticleView({
         className="relative mx-auto mt-[26px] h-[380px] max-w-[960px] overflow-hidden rounded-[20px] shadow-elevated"
         style={{ background: blogGradient(post.hue) }}
       >
-        {post.coverImageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={post.coverImageUrl}
-            alt=""
-            className="size-full object-cover"
-          />
-        )}
+        {/* A cover the CSP blocks or that fails to load leaves the gradient,
+            not a broken box (TASK-759). */}
+        <FallbackImg
+          src={post.coverImageUrl}
+          alt=""
+          className="size-full object-cover"
+        />
         <span className="absolute right-[18px] bottom-4 font-mono text-xs text-white/70">
           {dict.blog.article.coverCaption}
         </span>

@@ -35,7 +35,15 @@ function mockFooterData(
 ) {
   server.use(
     http.get("*/api/site-contact", () => HttpResponse.json({ data: null })),
-    http.get("*/api/pages", () => HttpResponse.json({ data: pages, meta: {} })),
+    // The footer reads LEGAL and INFO separately; answer each with its kind,
+    // as the API does.
+    http.get("*/api/pages", ({ request }) => {
+      const kind = new URL(request.url).searchParams.get("kind");
+      return HttpResponse.json({
+        data: pages.filter((page) => !kind || page.kind === kind),
+        meta: {},
+      });
+    }),
     http.get("*/api/seo-settings", () => HttpResponse.json({ data: seo })),
   );
 }
@@ -109,6 +117,76 @@ describe("Footer — «Інформація» column (TASK-184)", () => {
     ).not.toHaveAttribute("href", "/products");
     // Only the Каталог "Усі товари" link should remain on bare /products.
     expect(productsLinks).toHaveLength(1);
+  });
+});
+
+describe("Footer — help pages and the two hubs (TASK-834)", () => {
+  it("links every published help page at /info/<slug>, but not the ones /info inlines", async () => {
+    mockFooterData([
+      makePage({
+        id: "p-help",
+        slug: "returns-howto",
+        kind: "INFO",
+        title: "Як повернути товар",
+      }),
+      makePage({
+        id: "p-about",
+        slug: "about",
+        kind: "INFO",
+        title: "Про нас (CMS)",
+      }),
+      makePage({
+        id: "p-del",
+        slug: "info-delivery",
+        kind: "INFO",
+        title: "Доставка (блок /info)",
+      }),
+    ]);
+
+    render(await Footer());
+
+    expect(
+      screen.getByRole("link", { name: "Як повернути товар" }),
+    ).toHaveAttribute("href", "/info/returns-howto");
+    // Inlined pages live on /info itself — no second address in the footer.
+    expect(
+      screen.queryByRole("link", { name: "Про нас (CMS)" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Доставка (блок /info)" }),
+    ).not.toBeInTheDocument();
+    // A help page is never offered as a legal document.
+    expect(
+      screen
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("href") === "/legal/returns-howto"),
+    ).toHaveLength(0);
+  });
+
+  it("always links the /info hub, and the /legal hub when there are documents", async () => {
+    mockFooterData([makePage()]);
+
+    render(await Footer());
+
+    expect(
+      screen.getByRole("link", { name: dict.footer.infoHelpHub }),
+    ).toHaveAttribute("href", "/info");
+    expect(
+      screen.getByRole("link", { name: dict.footer.infoLegalHub }),
+    ).toHaveAttribute("href", "/legal");
+  });
+
+  it("omits the /legal hub link when no legal document is published", async () => {
+    mockFooterData([]);
+
+    render(await Footer());
+
+    expect(
+      screen.queryByRole("link", { name: dict.footer.infoLegalHub }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.footer.infoHelpHub }),
+    ).toHaveAttribute("href", "/info");
   });
 });
 

@@ -616,7 +616,15 @@ export class ProductRepository {
       { id: 'asc' },
     ];
 
-    if (inStockFirst) {
+    // Partition only when the slice still HAS two sides (TASK-830). A filter
+    // that already constrains `stock` — the storefront «Тільки в наявності»
+    // (`inStock` ⇒ `stock > 0`) or the admin restock worklist (`outOfStock`) —
+    // leaves exactly one partition. Partitioning anyway rebuilt the tail with
+    // its own `stock: { lte: 0 }`, which REPLACED the filter's `stock: { gt: 0 }`
+    // instead of narrowing it, so every page short of a full in-stock page was
+    // topped up with sold-out products and the checkbox «did nothing»
+    // (SF-CAT-13).
+    if (inStockFirst && where.stock === undefined) {
       return this.findPageInStockFirst(where, skip, limit, orderBy);
     }
 
@@ -646,6 +654,10 @@ export class ProductRepository {
    *
    * Requesting a page wholly inside one partition costs the same two queries as
    * before; only a page that straddles the boundary needs a third.
+   *
+   * Precondition: `where` does not constrain `stock` itself — both partitions
+   * set that key and would overwrite the caller's (the guard in
+   * {@link findPageByColumn}, TASK-830).
    */
   private async findPageInStockFirst(
     where: Prisma.ProductWhereInput,

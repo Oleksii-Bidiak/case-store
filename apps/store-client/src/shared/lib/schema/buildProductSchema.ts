@@ -2,12 +2,14 @@ import type {
   PublicProductEntity,
   ProductImageEntity,
 } from "@/shared/api/generated/models";
-// Imported from the MODULE, not the `@/shared/lib/seo` barrel: that barrel also
-// re-exports `indexnow`, which pulls in `@sentry/nextjs`. `shared/lib/index.ts`
-// re-exports this schema module, so a barrel import here would drag Sentry into
-// every component that touches `@/shared/lib` — and under Jest, where
-// `@sentry/nextjs` does not resolve, that takes down the whole suite.
+// Imported from the MODULE, not the `@/shared/lib/seo` barrel. Until TASK-570 the
+// barrel re-exported `indexnow`, which pulls in `@sentry/nextjs`, and
+// `shared/lib/index.ts` re-exports this schema module — a barrel import here
+// would have dragged Sentry into every component touching `@/shared/lib`. The
+// barrel is pure now (guarded by `seo-barrel.test.ts`); the direct import stays
+// as the narrowest dependency.
 import { stripFormatting } from "@/shared/lib/seo/resolveSeo";
+import { RETURN_POLICY } from "@/shared/config/return-policy";
 
 /** Inputs for {@link buildProductSchema}. */
 export interface BuildProductSchemaInput {
@@ -106,6 +108,21 @@ export function buildProductSchema(
         ? "https://schema.org/InStock"
         : "https://schema.org/OutOfStock",
       itemCondition: "https://schema.org/NewCondition",
+      // TASK-556 — the statutory 14-day return window (see RETURN_POLICY).
+      // Google's merchant listings read this; without it a product carries no
+      // return information at all. `returnFees` is deliberately NOT stated: who
+      // pays the return shipping is the owner's call and is written nowhere yet,
+      // and a guessed value in structured data is a false claim, not a gap.
+      // `shippingDetails` is absent for the same reason — there is no delivery
+      // tariff data to derive it from (its own BACKLOG row).
+      hasMerchantReturnPolicy: {
+        "@type": "MerchantReturnPolicy",
+        applicableCountry: RETURN_POLICY.country,
+        returnPolicyCategory:
+          "https://schema.org/MerchantReturnFiniteReturnWindow",
+        merchantReturnDays: RETURN_POLICY.days,
+        returnMethod: "https://schema.org/ReturnByMail",
+      },
     };
   }
 

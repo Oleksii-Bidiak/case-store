@@ -13,6 +13,10 @@ export {
   useCreateReturn,
   useGetOrderReturns,
   getGetOrderReturnsQueryKey,
+  // TASK-608: every return the customer has, so the order history can show a
+  // request's status without one request per order.
+  useGetMyReturns,
+  getGetMyReturnsQueryKey,
 } from "@/shared/api/generated/returns/returns";
 
 export type {

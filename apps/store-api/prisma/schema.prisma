@@ -1449,6 +1449,10 @@ enum ContactMessageStatus {
   IN_PROGRESS
   READ
   ARCHIVED
+  /// TASK-761: a honeypot hit, kept instead of dropped so a false positive (a
+  /// password manager filling the trap) can be seen. Out of the default inbox,
+  /// the unread count and the per-email cooldown; reached via `?status=SPAM`.
+  SPAM
 }
 
 /// Customer contact / support message submitted from the storefront contact
@@ -1470,6 +1474,10 @@ model ContactMessage {
   updatedAt DateTime             @updatedAt @map("updated_at")
 
   @@index([status, createdAt(sort: Desc)])
+  /// TASK-763: the per-email cooldown probe on every public POST —
+  /// `WHERE email = $1 ORDER BY created_at DESC LIMIT 1`. Exact match only:
+  /// `email` is stored lower(trim()) (TASK-772), so no ILIKE is needed.
+  @@index([email, createdAt(sort: Desc)])
   @@map("contact_messages")
 }
 

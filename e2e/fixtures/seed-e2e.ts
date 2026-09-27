@@ -16,7 +16,7 @@ loadEnv({ path: path.resolve(__dirname, "../../apps/store-api/.env") });
  * dev data. Idempotent: upserts so repeated runs don't duplicate rows.
  *
  * Fixture contract (keep in sync with the specs):
- *   - product slug:   `test-product`
+ *   - product slug:   `test-product` (+ sold-out `test-product-sold-out`)
  *   - user login:     `e2e@test.com` / `E2ePassword1!`
  *   - admin login:    `e2e-admin@test.com` / `E2eAdminPassword1!`
  *   - read-only mgr:  `e2e-manager-ro@test.com` / `E2eManagerRo1!` — MANAGER
@@ -26,6 +26,11 @@ loadEnv({ path: path.resolve(__dirname, "../../apps/store-api/.env") });
  *                    attempt of 1299.00 (TASK-371, the payment card)
  */
 export const E2E_PRODUCT_SLUG = "test-product";
+/** Category both catalogue fixtures are filed in (TASK-830). */
+export const E2E_CATEGORY_SLUG = "e2e-category";
+/** Same category as `test-product`, stock 0 (TASK-830). */
+export const E2E_SOLD_OUT_PRODUCT_SLUG = "test-product-sold-out";
+export const E2E_SOLD_OUT_PRODUCT_NAME = "E2E Sold Out Product";
 export const E2E_USER_EMAIL = "e2e@test.com";
 export const E2E_USER_PASSWORD = "E2ePassword1!";
 
@@ -82,9 +87,9 @@ export default async function globalSetup(): Promise<void> {
   const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
   try {
     const category = await prisma.category.upsert({
-      where: { slug: "e2e-category" },
+      where: { slug: E2E_CATEGORY_SLUG },
       update: {},
-      create: { name: "E2E Category", slug: "e2e-category" },
+      create: { name: "E2E Category", slug: E2E_CATEGORY_SLUG },
     });
 
     // Stock lives on the Product row itself (no variant model — sibling
@@ -100,6 +105,29 @@ export default async function globalSetup(): Promise<void> {
         price: "499.00",
         sku: "E2E-SKU-1",
         stock: 100,
+        categoryId: category.id,
+        isActive: true,
+      },
+    });
+
+    // A sold-out sibling in the same category (TASK-830): the one row that lets
+    // a spec prove «Тільки в наявності» actually removes something. Stock is
+    // forced back to 0 on every run so a manual restock cannot turn it green.
+    await prisma.product.upsert({
+      where: { slug: E2E_SOLD_OUT_PRODUCT_SLUG },
+      update: {
+        isActive: true,
+        deletedAt: null,
+        stock: 0,
+        categoryId: category.id,
+      },
+      create: {
+        name: E2E_SOLD_OUT_PRODUCT_NAME,
+        slug: E2E_SOLD_OUT_PRODUCT_SLUG,
+        description: "Deterministic sold-out product for Playwright E2E.",
+        price: "399.00",
+        sku: "E2E-SKU-SOLD-OUT",
+        stock: 0,
         categoryId: category.id,
         isActive: true,
       },

@@ -847,6 +847,29 @@
         ]
       }
     },
+    "/api/addon-services/active": {
+      "get": {
+        "description": "Public, active-only, ordered by name. Backs the «Додаткові сервіси» block on the storefront's /info page. `price` is the catalog price; a product may override it.",
+        "operationId": "addonServiceControllerFindActive",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Active add-on services",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicAddonServiceListResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List the add-on services the store currently offers, with catalog prices",
+        "tags": [
+          "AddonServices"
+        ]
+      }
+    },
     "/api/addon-services/resolved-for-product/{productId}": {
       "get": {
         "operationId": "addonServiceControllerResolveForProduct",
@@ -9229,6 +9252,56 @@
         ]
       }
     },
+    "/api/blog/suggest": {
+      "get": {
+        "description": "Typo-tolerant via the search index, Postgres fallback. Published, listed posts only. Returns id, slug, title and coverImageUrl — never `content` (TASK-543).",
+        "operationId": "BlogController_suggest",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "Partial query string (min 1 char)",
+            "schema": {
+              "example": "павербанк",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Maximum number of suggestions",
+            "schema": {
+              "minimum": 1,
+              "maximum": 10,
+              "default": 5,
+              "example": 5,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Article suggestions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlogSuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing/blank q or limit out of range"
+          }
+        },
+        "summary": "Autocomplete blog-article suggestions (no article bodies)",
+        "tags": [
+          "Blog"
+        ]
+      }
+    },
     "/api/blog/{slug}": {
       "get": {
         "operationId": "BlogController_findBySlug",
@@ -11491,7 +11564,8 @@
                 "NEW",
                 "IN_PROGRESS",
                 "READ",
-                "ARCHIVED"
+                "ARCHIVED",
+                "SPAM"
               ]
             }
           },
@@ -12951,6 +13025,36 @@
         "summary": "Correct a mistaken REFUNDED payment mark (admin)",
         "tags": [
           "Admin Orders"
+        ]
+      }
+    },
+    "/api/returns": {
+      "get": {
+        "operationId": "getMyReturns",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The caller's returns across all their orders, newest request first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReturnListResponseEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "List my returns",
+        "tags": [
+          "Returns"
         ]
       }
     },
@@ -14654,6 +14758,11 @@
             "type": "string",
             "description": "User last name",
             "example": "Doe"
+          },
+          "hpCheck": {
+            "type": "string",
+            "description": "Leave empty or omit it. Present only so the storefront form can carry a field that people never see; a request that fills it creates no account.",
+            "maxLength": 255
           }
         },
         "required": [
@@ -15051,6 +15160,53 @@
         },
         "required": [
           "quantity"
+        ]
+      },
+      "PublicAddonServiceEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Add-on service unique identifier",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "name": {
+            "type": "string",
+            "description": "Service name",
+            "example": "Гарантійний сертифікат (24 міс.)"
+          },
+          "description": {
+            "type": "string",
+            "description": "What the service covers",
+            "example": "Продовжена гарантія на 24 місяці.",
+            "nullable": true
+          },
+          "price": {
+            "type": "string",
+            "description": "Catalog price as a two-decimal string",
+            "example": "499.00"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "price"
+        ]
+      },
+      "PublicAddonServiceListResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Active add-on services, ordered by name",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicAddonServiceEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
         ]
       },
       "ResolvedAddonListResponse": {
@@ -18859,7 +19015,7 @@
             "nullable": true
           },
           "options": {
-            "description": "Allowed values (required and non-empty when type is SELECT)",
+            "description": "Allowed values (required and non-empty when type is SELECT). An option may not contain «,» or «;» — they separate values in the catalogue ?specs= filter (TASK-514)",
             "example": [
               "Силікон",
               "Шкіра"
@@ -18933,7 +19089,7 @@
             "nullable": true
           },
           "options": {
-            "description": "Allowed values (required and non-empty when type is SELECT)",
+            "description": "Allowed values (required and non-empty when type is SELECT). An option may not contain «,» or «;» — they separate values in the catalogue ?specs= filter (TASK-514)",
             "example": [
               "Силікон",
               "Шкіра"
@@ -19901,7 +20057,8 @@
               "NEW",
               "IN_PROGRESS",
               "READ",
-              "ARCHIVED"
+              "ARCHIVED",
+              "SPAM"
             ],
             "example": "NEW"
           },
@@ -22127,7 +22284,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo). Defaults to LEGAL.",
+            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo, products). Defaults to LEGAL.",
             "enum": [
               "LEGAL",
               "INFO",
@@ -22217,7 +22374,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo)",
+            "description": "What this row is — LEGAL: a document at /legal/<slug>; INFO: a help page at /info/<slug>; HUB: meta tags for an existing hub route (slug must be one of: categories, blog, legal, contact, info, promo, products)",
             "enum": [
               "LEGAL",
               "INFO",
@@ -22529,6 +22686,38 @@
           "updatedAt"
         ]
       },
+      "BlogPostSuggestionEntity": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Post id",
+            "example": "b3f7c2a0-1111-4c6b-9a1e-0f1f2e3d4c5b"
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL slug — the article lives at /blog/{slug}",
+            "example": "power-bank-guide"
+          },
+          "title": {
+            "type": "string",
+            "description": "Post title",
+            "example": "Як обрати павербанк"
+          },
+          "coverImageUrl": {
+            "type": "string",
+            "description": "Cover image URL for the row thumbnail, or null",
+            "nullable": true,
+            "example": null
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "title",
+          "coverImageUrl"
+        ]
+      },
       "BlogPaginationMeta": {
         "type": "object",
         "properties": {
@@ -22597,6 +22786,21 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/BlogCategoryEntity"
+            }
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "BlogSuggestResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "description": "Matching published, listed articles — id, slug, title and cover only",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BlogPostSuggestionEntity"
             }
           }
         },
@@ -23004,7 +23208,7 @@
           "ctaHref": {
             "type": "string",
             "description": "Call-to-action link (href)",
-            "example": "/catalog?sale=true",
+            "example": "/promo",
             "nullable": true
           },
           "theme": {
@@ -23231,7 +23435,7 @@
           "ctaHref": {
             "type": "string",
             "description": "Call-to-action link (href)",
-            "example": "/catalog"
+            "example": "/products"
           },
           "theme": {
             "type": "string",
@@ -23307,7 +23511,7 @@
           "ctaHref": {
             "type": "string",
             "description": "Call-to-action link (href)",
-            "example": "/catalog"
+            "example": "/products"
           },
           "theme": {
             "type": "string",
@@ -24515,7 +24719,8 @@
               "NEW",
               "IN_PROGRESS",
               "READ",
-              "ARCHIVED"
+              "ARCHIVED",
+              "SPAM"
             ],
             "example": "NEW"
           },
@@ -24687,7 +24892,8 @@
               "NEW",
               "IN_PROGRESS",
               "READ",
-              "ARCHIVED"
+              "ARCHIVED",
+              "SPAM"
             ],
             "example": "READ"
           }
@@ -24707,7 +24913,8 @@
               "NEW",
               "IN_PROGRESS",
               "READ",
-              "ARCHIVED"
+              "ARCHIVED",
+              "SPAM"
             ],
             "example": "READ"
           },

@@ -8,6 +8,7 @@ const serviceMock = {
   findAll: jest.fn(),
   findAllCategories: jest.fn(),
   findPublishedBySlug: jest.fn(),
+  suggest: jest.fn(),
   findAllAdmin: jest.fn(),
   findByIdAdmin: jest.fn(),
   create: jest.fn(),
@@ -56,6 +57,16 @@ describe('Blog controllers', () => {
       const result = await publicCtrl.findCategories();
 
       expect(result).toEqual({ data: [{ slug: 'guides' }] });
+    });
+
+    it('suggest forwards q and limit and wraps the rows in a data envelope (TASK-543)', async () => {
+      const rows = [{ id: 'p1', slug: 's', title: 'T', coverImageUrl: null }];
+      serviceMock.suggest.mockResolvedValue(rows);
+
+      const result = await publicCtrl.suggest({ q: 'чохол', limit: 3 });
+
+      expect(result).toEqual({ data: rows });
+      expect(serviceMock.suggest).toHaveBeenCalledWith('чохол', 3);
     });
 
     it('findBySlug wraps the post in a data envelope', async () => {

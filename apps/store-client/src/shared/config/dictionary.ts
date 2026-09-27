@@ -170,6 +170,9 @@ export const dict = {
     freeCallout: "Безкоштовно по Україні",
     socialsAria: "Ми в соцмережах",
     payments: ["Visa", "Mastercard", "Apple Pay", "Google Pay", "Privat24"],
+    // TASK-834 — the two hubs, so every published page has a way in.
+    infoLegalHub: "Усі правові документи",
+    infoHelpHub: "Довідка та підтримка",
   },
 
   trust: {
@@ -375,7 +378,9 @@ export const dict = {
       tips: "Поради",
       compare: "Порівняння",
     },
-    featuredBadge: "Головна тема тижня",
+    // TASK-833 — the same words as the admin switch that sets it («Головна
+    // стаття тижня»), so the editor recognises what they marked.
+    featuredBadge: "Головна стаття тижня",
     emptyHeading: "Нічого не знайдено",
     emptyBody: "Спробуйте іншу категорію або уточніть запит.",
     newsletter: {
@@ -518,6 +523,11 @@ export const dict = {
       // can express, and the reason /search does not reuse the catalogue sort.
       sortRelevance: "За релевантністю",
     },
+    // TASK-516 — the empty state's reset clears EVERYTHING, category included,
+    // while the panel's `filters.clear` deliberately keeps the category (its
+    // control is the chips row). Two behaviours, so two names: a screen reader
+    // must not meet two identically named buttons that do different things.
+    clearAllFilters: "Скинути всі фільтри",
   },
 
   // Info & support hub (/info, Info.dc.html import). Content is static (stub)
@@ -568,6 +578,11 @@ export const dict = {
     docBadge: "ДОВІДКА",
     docOtherHeading: "Інші довідкові сторінки",
     aboutOpenPage: "Відкрити як окрему сторінку",
+    // TASK-561 — a real add-on's catalog price; a product may override it, so
+    // the card states a starting price.
+    servicePriceFrom: (price: string) => `від ${price}`,
+    // TASK-560 — the published help pages /info does not render inline.
+    pagesHeading: "Довідкові сторінки",
   },
 
   // TASK-167-Q — dedicated contact page (/contact, Contact.dc.html). Contact
@@ -637,6 +652,10 @@ export const dict = {
       // цей про 1 лист на email за 10 хв, і «зачекайте хвилину» тут брехня.
       cooldown:
         "Ми вже отримали ваше повідомлення з цієї пошти. Відповімо найближчим часом — наступне можна надіслати за 10 хвилин.",
+      // TASK-762: скільки РЕАЛЬНО лишилось (з `retryAfterSeconds` API),
+      // округлено вгору. `cooldown` вище — запасний текст, коли API не сказав.
+      cooldownIn: (minutes: number) =>
+        `Ми вже отримали ваше повідомлення з цієї пошти. Відповімо найближчим часом — наступне можна надіслати за ${minutes} хв.`,
     },
     // TASK-452: підпис поля-пастки для ботів. Людина його не бачить і не
     // дістається до нього з клавіатури; текст — на випадок, якщо дістанеться.
@@ -874,6 +893,15 @@ export const dict = {
         word = "товари";
       return `${n} ${word}`;
     },
+    // TASK-540 — the `?specs=` caps the API applies (6 facets, 20 values per
+    // facet, 600 characters). Shown under the characteristics card while some
+    // value cannot be ticked, and linked to those checkboxes via aria-describedby.
+    specLimitReached:
+      "Досягнуто межі фільтра за характеристиками — зніміть одну з позначок, щоб обрати інше.",
+    // TASK-742 — «Зі знижкою» (`?onSale=true`, server-side compareAtPrice > price).
+    saleTitle: "Знижки",
+    onSaleOnly: "Зі знижкою",
+    onSaleChip: "Зі знижкою",
   },
 
   product: {
@@ -962,6 +990,11 @@ export const dict = {
     lightboxNext: "Наступне фото",
     lightboxCounter: (current: number, total: number) =>
       `${current} з ${total}`,
+    // PDP rail arrows name their own rail (TASK-813): with both «Сумісні
+    // аксесуари» and «Схожі товари» on one page there are four arrow buttons,
+    // and a screen reader must hear four different names.
+    railPrev: (title: string) => `${title}: гортати назад`,
+    railNext: (title: string) => `${title}: гортати вперед`,
   },
 
   reviews: {
@@ -1458,6 +1491,12 @@ export const dict = {
     // про покупця, а не як недоробка.
     privacyNote:
       "З міркувань безпеки тут показано лише стан замовлення. Повна адреса доставки та контактні дані доступні за посиланням із листа-підтвердження або в особистому кабінеті.",
+    // TASK-626: що чує читач екрана, коли форма змінюється результатом.
+    resultsAnnounce: (count: number) =>
+      count > 1
+        ? `Знайдено замовлень: ${count}. Деталі нижче.`
+        : "Замовлення знайдено. Деталі нижче.",
+    resultsRegionAria: "Результат перевірки замовлення",
   },
 
   account: {
@@ -1623,6 +1662,16 @@ export const dict = {
     // 400 з API: позиція вже повністю повернена, або замовлення ще не доїхало.
     conflict:
       "Ці позиції вже не можна повернути. Оновіть сторінку й спробуйте ще раз.",
+    // TASK-608: статус останньої заяви на повернення поруч із замовленням в
+    // історії. Ключі — сирі значення ReturnStatus з API, фолбек — сам статус.
+    statusLabels: {
+      REQUESTED: "Заяву подано",
+      APPROVED: "Повернення погоджено",
+      RECEIVED: "Товар отримано",
+      REFUNDED: "Кошти повернено",
+      REJECTED: "У поверненні відмовлено",
+    } as Record<string, string>,
+    statusAria: (label: string) => `Статус заяви на повернення: ${label}`,
   },
 
   auth: {
@@ -1831,6 +1880,8 @@ export const dict = {
       validationPasswordMatch: "Паролі не збігаються",
       terms: "Погоджуюсь з умовами використання та політикою конфіденційності",
       validationTerms: "Потрібно прийняти умови використання",
+      // TASK-749: підпис поля-пастки для ботів (людина його не бачить).
+      honeypotLabel: "Не заповнюйте це поле",
     },
     logout: {
       signOut: "Вийти",

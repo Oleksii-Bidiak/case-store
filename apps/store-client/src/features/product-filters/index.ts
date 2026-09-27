@@ -6,6 +6,8 @@ export { CategoryChips } from "./ui/category-chips";
 export { SortSelect } from "./ui/sort-select";
 export { ViewToggle, type CatalogView } from "./ui/view-toggle";
 export { FilterCheckbox } from "./ui/filter-checkbox";
+// The one mobile filter drawer (TASK-804) — catalogue, /search and wishlist.
+export { FiltersDrawer } from "./ui/filters-drawer";
 // The single definition of "the catalogue filters" (TASK-414) — widgets count
 // and clear through these rather than re-listing the params.
 export {

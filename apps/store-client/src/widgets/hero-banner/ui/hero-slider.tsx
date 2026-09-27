@@ -9,7 +9,7 @@ import {
   Pause,
   Play,
 } from "lucide-react";
-import { Button } from "@/shared/ui";
+import { BannerBackdrop, Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { useReducedMotion } from "@/shared/lib/use-reduced-motion";
 import type { BannerEntity } from "@/shared/api/generated/models";
@@ -21,6 +21,8 @@ type HeroSlide = {
   subtitle?: string;
   cta?: string;
   href: string;
+  /** Admin banner picture (TASK-740); the theme gradient shows without one. */
+  imageUrl?: string;
 };
 
 /** The hardcoded fallback slides — rendered when no HERO_SLIDE banners exist. */
@@ -33,6 +35,7 @@ function bannersToSlides(banners: BannerEntity[]): HeroSlide[] {
     subtitle: b.subtitle ?? undefined,
     cta: b.ctaLabel ?? undefined,
     href: b.ctaHref ?? "#",
+    imageUrl: b.imageUrl ?? undefined,
   }));
 }
 
@@ -51,6 +54,8 @@ type SlideTheme = {
   eyebrow: string;
   cta: string;
   panel: boolean;
+  /** Tint over an admin picture, in the gradient's colour family (TASK-740). */
+  scrim: string;
 };
 
 const THEMES: SlideTheme[] = [
@@ -61,6 +66,7 @@ const THEMES: SlideTheme[] = [
     eyebrow: "bg-white/15 text-white ring-1 ring-white/25 backdrop-blur-sm",
     cta: "bg-white text-primary hover:bg-white/90",
     panel: true,
+    scrim: "bg-black/45",
   },
   {
     gradient:
@@ -69,6 +75,7 @@ const THEMES: SlideTheme[] = [
     eyebrow: "bg-sale text-sale-foreground",
     cta: "bg-primary text-primary-foreground hover:bg-primary/90",
     panel: false,
+    scrim: "bg-foreground/60",
   },
   {
     gradient:
@@ -77,6 +84,7 @@ const THEMES: SlideTheme[] = [
     eyebrow: "bg-white/18 text-white ring-1 ring-white/25 backdrop-blur-sm",
     cta: "bg-white text-success hover:bg-white/90",
     panel: true,
+    scrim: "bg-black/45",
   },
 ];
 
@@ -141,13 +149,24 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
 
   return (
     <div
-      className="relative h-[420px] overflow-hidden rounded-2xl shadow-elevated sm:h-[440px]"
+      className="relative isolate h-[420px] overflow-hidden rounded-2xl shadow-elevated sm:h-[440px]"
       style={{ backgroundImage: theme.gradient }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocus={() => setHovered(true)}
       onBlur={() => setHovered(false)}
     >
+      {/* Admin picture for the active slide (TASK-740) — over the gradient,
+          under the copy; renders nothing without a usable URL. The first slide
+          is the homepage LCP, so only it is preloaded. */}
+      <BannerBackdrop
+        key={`backdrop-${activeIndex}`}
+        src={slide.imageUrl}
+        sizes="(max-width: 1280px) 100vw, 1280px"
+        scrimClassName={theme.scrim}
+        preload={activeIndex === 0}
+      />
+
       {/* Active slide — re-keyed so the copy fades in on change. */}
       <div
         key={activeIndex}

@@ -8,10 +8,11 @@ import {
 } from './hub-routes';
 
 describe('hub routes (TASK-435)', () => {
-  it('pins the six hub slugs and their storefront routes', () => {
+  it('pins the seven hub slugs and their storefront routes', () => {
     // This list is mirrored in the storefront (shared/config/hub-pages.ts) and in
-    // the panel; all three move together. A sixth-hub rename that only lands here
-    // should fail loudly rather than silently orphan a HUB row.
+    // the panel; all three move together. A hub rename that only lands here
+    // should fail loudly rather than silently orphan a HUB row. `products` is
+    // TASK-549's.
     expect(HUB_ROUTES).toEqual({
       categories: '/categories',
       blog: '/blog',
@@ -19,8 +20,9 @@ describe('hub routes (TASK-435)', () => {
       contact: '/contact',
       info: '/info',
       promo: '/promo',
+      products: '/products',
     });
-    expect(HUB_SLUGS).toHaveLength(6);
+    expect(HUB_SLUGS).toHaveLength(7);
   });
 
   it('resolves a hub slug to its route and anything else to null', () => {
@@ -61,6 +63,7 @@ describe('hub routes (TASK-435)', () => {
       '/blog',
       '/contact',
       '/promo',
+      '/products',
     ]);
   });
 });

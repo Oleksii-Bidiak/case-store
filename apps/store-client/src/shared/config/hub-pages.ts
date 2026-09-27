@@ -5,11 +5,12 @@ import type { PageEntityKind } from "@/shared/api/generated/models";
  *
  * A `HUB` page row is not a page: it carries the `metaTitle`/`metaDescription`
  * of a listing route this app already implements in code. Its slug NAMES that
- * route, so these six pairs are the complete vocabulary — the API rejects a HUB
- * row on any other slug.
+ * route, so these seven pairs are the complete vocabulary — the API rejects a HUB
+ * row on any other slug. `products` joined in TASK-549: `/products` was the one
+ * indexed listing whose title and description the owner could change nowhere.
  *
  * This is the ONE place the storefront states the mapping: `generateMetadata()`
- * on each of the six hubs reads its slug from here, and `sitemap.ts` uses it to
+ * on each of the hubs reads its slug from here, and `sitemap.ts` uses it to
  * know that a HUB row must NOT get a sitemap entry of its own (the route it
  * describes is already in the static list — emitting it twice would be a
  * duplicate URL).
@@ -29,6 +30,7 @@ export const HUB_PAGES = [
   { slug: "contact", route: "/contact" },
   { slug: "info", route: "/info" },
   { slug: "promo", route: "/promo" },
+  { slug: "products", route: "/products" },
 ] as const;
 
 /** The slug of a storefront hub whose meta tags an admin can edit. */
@@ -55,6 +57,40 @@ export function hubRouteForSlug(slug: string): string | null {
 export const INFO_SLUG_INLINED_ON_HUB = "about";
 
 /**
+ * The INFO pages the `/info` hub renders as its other blocks (TASK-560): the
+ * delivery, payment and warranty cards and the «in numbers / why us» part of
+ * «Про нас» used to be constants in `widgets/info-support/model/info-content.ts`
+ * that the owner could see and edit nowhere. The migration
+ * `20260926110000_backfill_info_pages` and the seed create these rows with the
+ * text the constants held.
+ *
+ * Same rule as {@link INFO_SLUG_INLINED_ON_HUB}: `/info` is their canonical
+ * home, so they get no sitemap entry of their own and `/info/<slug>` points its
+ * canonical at the hub. The admin page list marks every one of them (the panel
+ * mirrors this list in its own `hub-pages.ts`).
+ */
+export const INFO_HUB_SECTION_SLUGS = {
+  delivery: "info-delivery",
+  payment: "info-payment",
+  warranty: "info-warranty",
+  aboutStats: "info-about-stats",
+} as const;
+
+/** Which `/info` block a section page fills. */
+export type InfoHubSectionKey = keyof typeof INFO_HUB_SECTION_SLUGS;
+
+/** Every INFO slug whose body `/info` renders inline — «Про нас» first. */
+export const INFO_SLUGS_INLINED_ON_HUB: readonly string[] = [
+  INFO_SLUG_INLINED_ON_HUB,
+  ...Object.values(INFO_HUB_SECTION_SLUGS),
+];
+
+/** True for an INFO page whose text lives on `/info` itself. */
+export function isInfoSlugInlinedOnHub(slug: string): boolean {
+  return INFO_SLUGS_INLINED_ON_HUB.includes(slug);
+}
+
+/**
  * Where a published page of the given kind is served, or null when it is served
  * nowhere. Used by the sitemap to turn a page row into a URL — and to drop the
  * HUB rows, whose routes the static list already covers.
@@ -70,7 +106,7 @@ export function pageRouteFor(
       // The inlined page is still reachable at /info/<slug>, but /info is its
       // canonical home and /info is already in the sitemap's static list — so,
       // exactly like a HUB row, it contributes no entry of its own here.
-      return slug === INFO_SLUG_INLINED_ON_HUB ? null : `/info/${slug}`;
+      return isInfoSlugInlinedOnHub(slug) ? null : `/info/${slug}`;
     case "HUB":
       // A hub row has no page of its own — the route it describes is a separate,
       // already-listed entry.
@@ -102,7 +138,7 @@ export function pageCanonicalPath(
     case "LEGAL":
       return `/legal/${slug}`;
     case "INFO":
-      return slug === INFO_SLUG_INLINED_ON_HUB ? "/info" : `/info/${slug}`;
+      return isInfoSlugInlinedOnHub(slug) ? "/info" : `/info/${slug}`;
     case "HUB":
       return hubRouteForSlug(slug);
   }

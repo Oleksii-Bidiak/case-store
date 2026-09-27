@@ -297,4 +297,27 @@ export const handlers = [
   http.get("*/api/products/:productId/reviews/mine", () =>
     HttpResponse.json({ data: null }),
   ),
+
+  // The caller's returns across all orders (TASK-608). The order history asks
+  // for it on every mount; "no returns" is the shape every suite that merely
+  // renders the history wants. Status tests override it with `server.use(...)`.
+  http.get("*/api/returns", () => HttpResponse.json({ data: [] })),
+
+  // The visitor's wishlist (TASK-531). Every `ProductCard` mounts a
+  // `WishlistToggleButton`, which asks for it — without a default each suite
+  // that merely renders a card logged one "[MSW] intercepted a request without
+  // a matching request handler" per card. "Empty wishlist" is the shape those
+  // suites want; wishlist tests override it with `server.use(...)`.
+  http.get("*/api/wishlist", () =>
+    HttpResponse.json({
+      data: {
+        id: "wishlist-1",
+        userId: null,
+        items: [],
+        itemCount: 0,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    }),
+  ),
 ];

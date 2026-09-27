@@ -168,6 +168,27 @@ describe("legal/[slug] generateMetadata (TASK-268 review)", () => {
   });
 });
 
+describe("legal/[slug] — an API outage is not a 404 (TASK-793)", () => {
+  const runPage = (slug = "dostavka-ta-oplata") =>
+    LegalDocPage({ params: Promise.resolve({ slug }) });
+
+  it("rethrows a failed page read from the body instead of calling notFound()", async () => {
+    fetchPage.mockRejectedValue(new Error("pages API answered 502"));
+
+    await expect(runPage()).rejects.toThrow("502");
+
+    expect(notFound).not.toHaveBeenCalled();
+    expect(resolveRedirect).not.toHaveBeenCalled();
+  });
+
+  it("rethrows from generateMetadata too, rather than the fallback title", async () => {
+    fetchPage.mockRejectedValue(new Error("timeout of 5000ms exceeded"));
+    fetchSeo.mockResolvedValue(settings);
+
+    await expect(runMeta()).rejects.toThrow("timeout");
+  });
+});
+
 describe("legal/[slug] slug-redirect (TASK-285)", () => {
   const runPage = (slug: string) =>
     LegalDocPage({ params: Promise.resolve({ slug }) });

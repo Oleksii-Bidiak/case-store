@@ -78,6 +78,11 @@ async function bootstrap() {
     origin: corsOrigins.split(',').map((o) => o.trim()),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     credentials: true,
+    // TASK-762: a cross-origin script sees only the CORS-safelisted response
+    // headers unless told otherwise, and `Retry-After` is not one of them — the
+    // throttler and the contact cooldown set it, and the storefront could not
+    // read it.
+    exposedHeaders: ['Retry-After'],
   });
 
   // Global validation pipe — validate all incoming DTOs

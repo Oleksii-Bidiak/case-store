@@ -12,6 +12,7 @@ import { OAuthProvider, User, UserRole } from '@prisma/client';
 import { AuthRepository, CreateUserInput } from './auth.repository';
 import type { IssuedSession } from './entities';
 import { RegisterDto } from './dto';
+import { REGISTER_HONEYPOT_FIELD } from './dto/register.dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
 import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
@@ -146,6 +147,12 @@ export class AuthService {
    * Checks email uniqueness, hashes password, creates user, returns token pair.
    */
   async register(dto: RegisterDto): Promise<IssuedSession> {
+    // TASK-749: the honeypot. A filled trap is a bot creating accounts; it gets
+    // an answer shaped exactly like success and nothing is written.
+    if (dto[REGISTER_HONEYPOT_FIELD]) {
+      return this.fakeRegistration(dto.password);
+    }
+
     // Check if email is already taken
     const existingUser = await this.authRepository.findByEmail(dto.email);
     if (existingUser) {
@@ -172,6 +179,34 @@ export class AuthService {
 
     // Generate and return token pair
     return this.generateTokenPair(user.id, user.role);
+  }
+
+  /**
+   * The answer a honeypot hit on registration gets (TASK-749).
+   *
+   * Shaped like a real session so the bot cannot tell the trap worked, and
+   * worthless by construction: the "tokens" are random strings that were never
+   * signed or stored, so the first authenticated call answers 401 and the
+   * refresh cookie refreshes nothing; the user id belongs to no row. No account,
+   * no refresh token, no guest-cart merge target that exists.
+   *
+   * The password is still hashed and thrown away: a real registration spends an
+   * argon2 hash, and a trap that answered in a millisecond would be a timing
+   * oracle for exactly the traffic it is meant to catch.
+   *
+   * Logged without the address — it is a bot's payload, and possibly a real
+   * person's email the bot is abusing — so a false positive (a filler that
+   * starts writing into the trap) still shows up as a count of these lines.
+   */
+  private async fakeRegistration(password: string): Promise<IssuedSession> {
+    await hashPassword(password);
+    this.logger.info(
+      { event: 'auth.register_honeypot' },
+      'Registration honeypot tripped — discarded',
+    );
+    const opaque = () =>
+      [16, 32, 32].map((size) => randomBytes(size).toString('base64url')).join('.');
+    return { userId: randomUUID(), accessToken: opaque(), refreshToken: opaque() };
   }
 
   /**

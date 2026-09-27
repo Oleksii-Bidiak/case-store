@@ -1,4 +1,8 @@
 import {
+  MAX_SPEC_FACETS,
+  MAX_SPEC_PARAM_LENGTH,
+  MAX_SPEC_VALUES_PER_FACET,
+  canSelectSpecValue,
   parseSpecParam,
   toSpecParam,
   selectedSpecValues,
@@ -176,6 +180,82 @@ describe("spec-facet helpers (TASK-191, multi-value since TASK-414)", () => {
       expect(
         removeSpecValue("material:TPU", "material", "TPU"),
       ).toBeUndefined();
+    });
+  });
+
+  /**
+   * TASK-540 — the same caps as the API's `parseSpecFilters` + the
+   * `@MaxLength(600)` on the param, so the ticks never promise more than the
+   * grid is filtered by.
+   */
+  describe("server caps (TASK-540)", () => {
+    const values = (n: number, prefix = "v") =>
+      Array.from({ length: n }, (_, i) => `${prefix}${i + 1}`);
+    const facets = (n: number) =>
+      Array.from({ length: n }, (_, i) => `k${i + 1}:x`).join(";");
+
+    it("mirrors the server's numbers", () => {
+      expect(MAX_SPEC_FACETS).toBe(6);
+      expect(MAX_SPEC_VALUES_PER_FACET).toBe(20);
+      expect(MAX_SPEC_PARAM_LENGTH).toBe(600);
+    });
+
+    it("parseSpecParam keeps at most 20 values per facet, after de-duplication", () => {
+      const raw = `material:v1,v1,${values(22).join(",")}`;
+      expect(parseSpecParam(raw)).toEqual([
+        { key: "material", values: values(20) },
+      ]);
+    });
+
+    it("parseSpecParam keeps at most 6 facets — the ceiling counts new keys only", () => {
+      const parsed = parseSpecParam(`${facets(7)};k1:y`);
+      expect(parsed.map((facet) => facet.key)).toEqual([
+        "k1",
+        "k2",
+        "k3",
+        "k4",
+        "k5",
+        "k6",
+      ]);
+      // The repeated k1 merged even though the ceiling had been reached.
+      expect(parsed[0].values).toEqual(["x", "y"]);
+    });
+
+    it("refuses a 21st value in a facet, and toggleSpecValue leaves the param alone", () => {
+      const raw = `material:${values(20).join(",")}`;
+      expect(canSelectSpecValue(raw, "material", "v21")).toBe(false);
+      expect(toggleSpecValue(raw, "material", "v21")).toBe(raw);
+    });
+
+    it("refuses a 7th facet but still accepts a value in one of the six", () => {
+      const raw = facets(6);
+      expect(canSelectSpecValue(raw, "k7", "x")).toBe(false);
+      expect(toggleSpecValue(raw, "k7", "x")).toBe(raw);
+      expect(canSelectSpecValue(raw, "k1", "y")).toBe(true);
+    });
+
+    it("refuses a value that would push the param past 600 characters", () => {
+      // 9 + 586 = 595 characters: «,TPU» still fits (599), «,Силікон» does not (603).
+      const long = "Д".repeat(586);
+      const raw = `material:${long}`;
+      expect(canSelectSpecValue(raw, "material", "Силікон")).toBe(false);
+      expect(canSelectSpecValue(raw, "material", "TPU")).toBe(true);
+      // Exactly at the limit is still accepted by the server.
+      const atLimit = `material:${"Д".repeat(600 - "material:".length)}`;
+      expect(atLimit).toHaveLength(600);
+      expect(canSelectSpecValue(undefined, "material", atLimit.slice(9))).toBe(
+        true,
+      );
+    });
+
+    it("always allows unticking, however full the selection", () => {
+      const raw = `material:${values(20).join(",")}`;
+      expect(canSelectSpecValue(raw, "material", "v5")).toBe(true);
+      expect(toggleSpecValue(raw, "material", "v5")).toBe(
+        `material:${values(20)
+          .filter((value) => value !== "v5")
+          .join(",")}`,
+      );
     });
   });
 

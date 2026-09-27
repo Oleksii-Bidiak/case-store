@@ -156,6 +156,26 @@ describe("AdminPageTable — rendering", () => {
     expect(screen.getByText(dict.pages.statusDraft)).toBeInTheDocument();
   });
 
+  it("marks the INFO rows /info renders inline — and only those (TASK-565)", async () => {
+    server.use(
+      http.get("*/api/admin/pages", () => {
+        const body = listResponse();
+        // C becomes the «Про нас» row; A stays a legal document.
+        body.data[2] = { ...body.data[2], slug: "about" };
+        return HttpResponse.json(body);
+      }),
+    );
+    await renderGrid();
+
+    expect(
+      within(rowEl(C)).getByText(dict.pages.inlinedOnInfo),
+    ).toBeInTheDocument();
+    expect(
+      within(rowEl(A)).queryByText(dict.pages.inlinedOnInfo),
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByText(dict.pages.inlinedOnInfo)).toHaveLength(1);
+  });
+
   it("has NO sort-order column any more — the row order IS the order", async () => {
     mockReorder();
     await renderGrid();

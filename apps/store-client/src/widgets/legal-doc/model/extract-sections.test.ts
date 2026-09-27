@@ -37,8 +37,12 @@ describe("extractDocSections", () => {
 
 describe("formatLegalDate", () => {
   it("formats an ISO date as a Ukrainian long date", () => {
-    // No trailing "Z" → parsed as local time, so the day never shifts by TZ.
-    expect(formatLegalDate("2026-06-12T00:00:00")).toBe("12 червня 2026");
+    expect(formatLegalDate("2026-06-12T09:00:00Z")).toBe("12 червня 2026");
+  });
+
+  it("reads the day in Kyiv, so a UTC server and any browser agree", () => {
+    // 22:30 UTC on the 11th is already the 12th in Kyiv (TASK-809).
+    expect(formatLegalDate("2026-06-11T22:30:00Z")).toBe("12 червня 2026");
   });
 
   it("returns the input unchanged when it is not a valid date", () => {
@@ -48,7 +52,7 @@ describe("formatLegalDate", () => {
 
 describe("formatLegalDateShort", () => {
   it("formats an ISO date as an abbreviated Ukrainian date", () => {
-    expect(formatLegalDateShort("2026-06-12T00:00:00")).toBe("12 черв. 2026");
+    expect(formatLegalDateShort("2026-06-12T09:00:00Z")).toBe("12 черв. 2026");
   });
 
   it("returns the input unchanged when it is not a valid date", () => {

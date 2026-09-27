@@ -15,3 +15,13 @@ export {
   // Live promo feed for the storefront /promo page (TASK-179).
   useListActiveDiscounts,
 } from "@/shared/api/generated/discounts/discounts";
+
+// The code the shopper applied in the cart, read again at checkout (TASK-819).
+// It lived in `features/apply-discount`, which made `features/checkout` the one
+// feature importing another; both now read it from the entity that owns it.
+export {
+  useAppliedDiscount,
+  setAppliedDiscount,
+  clearAppliedDiscount,
+  type AppliedDiscount,
+} from "./model/applied-discount-store";

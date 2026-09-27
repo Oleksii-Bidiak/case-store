@@ -72,6 +72,7 @@ import {
 import { formatDate } from "@/shared/lib";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
+import { isInlinedOnInfoHub } from "@/shared/config/hub-pages";
 import { AdminPageTableSkeleton } from "./admin-page-table-skeleton";
 
 export const PAGE_INSTRUCTIONS_LONG_ID = "page-grid-instructions-long";
@@ -523,7 +524,16 @@ function PageRow({
         {page.slug}
       </TableCell>
       <TableCell role="gridcell">
-        <Badge variant="outline">{KIND_LABELS[page.kind]}</Badge>
+        <div className="flex flex-wrap items-center gap-1">
+          <Badge variant="outline">{KIND_LABELS[page.kind]}</Badge>
+          {/* TASK-565 — the storefront finds these rows by their exact slug
+              and renders them inside /info; say so where a rename happens. */}
+          {isInlinedOnInfoHub(page.kind, page.slug) && (
+            <Badge variant="secondary" title={dict.pages.inlinedOnInfoHint}>
+              {dict.pages.inlinedOnInfo}
+            </Badge>
+          )}
+        </div>
       </TableCell>
       <TableCell role="gridcell">
         <PageStatusBadge page={page} />

@@ -1,5 +1,11 @@
 import { http, HttpResponse } from "msw";
 import {
+  HydrationBoundary,
+  QueryClient,
+  dehydrate,
+} from "@tanstack/react-query";
+import { getProductControllerFindAllQueryKey } from "@/entities/product";
+import {
   renderWithProviders,
   screen,
   userEvent,
@@ -7,6 +13,10 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import {
+  buildCatalogListingParams,
+  readSearchParamsRecord,
+} from "../model/listing-params";
 import { ProductListView } from "./product-list-view";
 
 // next/navigation is unavailable under jsdom — mock it with a mutable URL so
@@ -164,7 +174,7 @@ describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", ()
     expect(lastRequest.searchParams.get("minPrice")).toBe("100");
   });
 
-  it("«Скинути фільтри» clears the other filters but never un-locks the category", async () => {
+  it("«Скинути всі фільтри» clears the other filters but never un-locks the category", async () => {
     const user = userEvent.setup();
     installCatalogHandlers({ empty: true });
     currentPathname = "/categories/cases";
@@ -178,7 +188,7 @@ describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", ()
     );
 
     await user.click(
-      await screen.findByRole("button", { name: dict.catalog.clearFilters }),
+      await screen.findByRole("button", { name: dict.catalog.clearAllFilters }),
     );
 
     expect(mockReplace).toHaveBeenCalled();
@@ -220,10 +230,45 @@ describe("ProductListView — filters (TASK-414)", () => {
     expect(productRequests.at(-1)?.searchParams.has("inStock")).toBe(false);
   });
 
+  // TASK-742 — «Зі знижкою» reaches the query with the same literal-"true" rule.
+  it("forwards ?onSale=true to the product query and ignores ?onSale=false", async () => {
+    const productRequests = installCatalogHandlers();
+    currentQuery = "onSale=true";
+
+    const { unmount } = renderWithProviders(
+      <ProductListView initialParams={{ page: 1 }} />,
+    );
+    await screen.findByText("Alpha Case");
+    expect(productRequests.at(-1)?.searchParams.get("onSale")).toBe("true");
+    unmount();
+
+    currentQuery = "onSale=false";
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+    expect(productRequests.at(-1)?.searchParams.has("onSale")).toBe(false);
+  });
+
+  it("offers the «Зі знижкою» control and its chip on the catalogue", async () => {
+    installCatalogHandlers();
+    currentQuery = "onSale=true";
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText("Alpha Case");
+
+    expect(
+      screen.getByRole("checkbox", { name: dict.filters.onSaleOnly }),
+    ).toBeChecked();
+    expect(
+      screen.getByRole("button", {
+        name: new RegExp(`^${dict.filters.onSaleChip}`),
+      }),
+    ).toBeInTheDocument();
+  });
+
   // The regression that motivated the shared filter set: «Скинути фільтри»
   // cleared four params and left the device, spec and availability selections
   // applied — visible in the chips row, unreachable from the reset.
-  it("«Скинути фільтри» clears EVERY filter, not just the four it used to", async () => {
+  it("«Скинути всі фільтри» clears EVERY filter, not just the four it used to", async () => {
     const user = userEvent.setup();
     installCatalogHandlers({ empty: true });
     currentQuery =
@@ -233,17 +278,11 @@ describe("ProductListView — filters (TASK-414)", () => {
     renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
     await screen.findByText(dict.catalog.emptyHeading);
 
-    // The sidebar panel carries a reset button with the SAME label, and it
-    // deliberately leaves the category alone (its control is the chips row).
-    // The one under test is the empty state's, which clears the lot — so pick
-    // it by its container rather than by a label the two share.
-    const emptyState = screen
-      .getByText(dict.catalog.emptyHeading)
-      .closest("div")!;
+    // The empty state's reset clears the lot, category included; since
+    // TASK-516 it is NAMED differently from the panel's, which keeps the
+    // category — so it is found by its own name, no container scoping needed.
     await user.click(
-      within(emptyState).getByRole("button", {
-        name: dict.catalog.clearFilters,
-      }),
+      screen.getByRole("button", { name: dict.catalog.clearAllFilters }),
     );
 
     const target = mockReplace.mock.calls.at(-1)![0] as string;
@@ -260,6 +299,24 @@ describe("ProductListView — filters (TASK-414)", () => {
     ]) {
       expect(params.has(key)).toBe(false);
     }
+  });
+
+  // TASK-516: two buttons that do different things (the panel keeps the
+  // category, the empty state does not) must not share an accessible name.
+  it("names the empty state's reset apart from the panel's", async () => {
+    installCatalogHandlers({ empty: true });
+    currentQuery = "category=chargers&minPrice=100";
+
+    renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    expect(dict.catalog.clearAllFilters).not.toBe(dict.filters.clear);
+    expect(
+      screen.getAllByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByRole("button", { name: dict.filters.clear }),
+    ).toHaveLength(1);
   });
 
   it("badges the mobile filters button with the spec facets the old count missed", async () => {
@@ -334,21 +391,142 @@ describe("ProductListView — mobile filter drawer count (TASK-084)", () => {
     expect(applyButton).toHaveTextContent("Показати 1 товар");
   });
 
-  it("disables the apply button with the empty-state label when nothing matches", async () => {
+  // TASK-804: the drawer used to DISABLE its only labelled action here, and
+  // the working reset lay under the drawer, on the page behind it.
+  it("offers the empty state's working reset in the drawer when nothing matches", async () => {
     installCatalogHandlers({ empty: true });
     const user = userEvent.setup();
+    currentQuery = "category=chargers&minPrice=9999&inStock=true";
 
     renderWithProviders(<ProductListView initialParams={{ page: 1 }} />);
     await screen.findByText(dict.catalog.emptyHeading);
 
+    await user.click(screen.getByRole("button", { name: /^Фільтри/ }));
+
+    const drawer = await screen.findByRole("dialog", {
+      name: dict.filters.legend,
+    });
+    expect(
+      within(drawer).getByText(dict.filters.mobileApply(0)),
+    ).toBeInTheDocument();
+    const reset = within(drawer).getByRole("button", {
+      name: dict.catalog.clearAllFilters,
+    });
+    expect(reset).toBeEnabled();
+
+    await user.click(reset);
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    const params = new URLSearchParams(target.split("?")[1]);
+    expect(params.has("category")).toBe(false);
+    expect(params.has("minPrice")).toBe(false);
+    expect(params.has("inStock")).toBe(false);
+  });
+
+  it("keeps a route-locked device when the drawer resets (TASK-804 × TASK-490)", async () => {
+    installCatalogHandlers({ empty: true });
+    const user = userEvent.setup();
+    currentPathname = "/catalog/chohly/iphone-15";
+    currentQuery = "minPrice=9999";
+
+    renderWithProviders(
+      <ProductListView
+        initialParams={{ page: 1 }}
+        lockedCategory={{ id: "cat-locked", slug: "chohly" }}
+        lockedDevice={{ slug: "iphone-15" }}
+      />,
+    );
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    await user.click(screen.getByRole("button", { name: /^Фільтри/ }));
+    const drawer = await screen.findByRole("dialog", {
+      name: dict.filters.legend,
+    });
     await user.click(
-      screen.getByRole("button", { name: dict.filters.filtersButton }),
+      within(drawer).getByRole("button", {
+        name: dict.catalog.clearAllFilters,
+      }),
     );
 
-    const applyButton = await screen.findByRole("button", {
-      name: dict.filters.mobileApply(0),
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    const [path, query] = target.split("?");
+    expect(path).toBe("/catalog/chohly/iphone-15");
+    expect(new URLSearchParams(query).has("minPrice")).toBe(false);
+  });
+});
+
+describe("ProductListView — adopts the server's prefetch (TASK-563)", () => {
+  /** A client configured like the app's (`app/providers.tsx`: 5-minute staleTime). */
+  const appLikeClient = () =>
+    new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 5 * 60 * 1000 } },
     });
-    expect(applyButton).toBeDisabled();
-    expect(applyButton).toHaveTextContent("Немає товарів за цими фільтрами");
+
+  /**
+   * What the server page does for one URL: build the params from the awaited
+   * `searchParams` record, fill a query client, dehydrate it.
+   */
+  function serverState(
+    record: Record<string, string>,
+    locks?: Parameters<typeof buildCatalogListingParams>[1],
+  ) {
+    const server = new QueryClient();
+    server.setQueryData(
+      getProductControllerFindAllQueryKey(
+        buildCatalogListingParams(readSearchParamsRecord(record), locks),
+      ),
+      {
+        data: [makeProduct("p-ssr", "Server Case")],
+        meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+      },
+    );
+    return dehydrate(server);
+  }
+
+  it("renders the prefetched cards on the first render and does not fetch them again", async () => {
+    const productRequests = installCatalogHandlers();
+    // The rules the builder owns: trimmed search, literal-"true" facet, a
+    // blank `specs` read as absent — each one a key mismatch if either side
+    // spelled it differently.
+    currentQuery = "search=%20case%20&inStock=true&specs=&page=1";
+
+    renderWithProviders(
+      <HydrationBoundary
+        state={serverState({
+          search: " case ",
+          inStock: "true",
+          specs: "",
+          page: "1",
+        })}
+      >
+        <ProductListView />
+      </HydrationBoundary>,
+      { queryClient: appLikeClient() },
+    );
+
+    // Synchronously — no skeleton first, i.e. what hydration will see.
+    expect(screen.getByText("Server Case")).toBeInTheDocument();
+    await screen.findByText(/Знайдено товарів: 1/);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(productRequests).toHaveLength(0);
+  });
+
+  it("does the same on a category landing page, where the segment is the category", async () => {
+    const productRequests = installCatalogHandlers();
+    currentPathname = "/categories/cases";
+    currentQuery = "category=ignored";
+
+    renderWithProviders(
+      <HydrationBoundary
+        state={serverState({ category: "ignored" }, { categorySlug: "cases" })}
+      >
+        <ProductListView lockedCategory={{ id: "cat-locked", slug: "cases" }} />
+      </HydrationBoundary>,
+      { queryClient: appLikeClient() },
+    );
+
+    expect(screen.getByText("Server Case")).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(productRequests).toHaveLength(0);
   });
 });

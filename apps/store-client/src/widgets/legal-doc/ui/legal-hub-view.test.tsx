@@ -8,13 +8,13 @@ const docs: LegalHubDoc[] = [
     title: "Політика конфіденційності",
     excerpt: "Як ми захищаємо ваші дані.",
     // Local-time ISO (no "Z") so the rendered day never shifts by timezone.
-    updatedAt: "2026-06-12T00:00:00",
+    updatedAt: "2026-06-12T09:00:00Z",
   },
   {
     slug: "terms",
     title: "Умови використання",
     excerpt: "Правила користування сайтом.",
-    updatedAt: "2026-06-05T00:00:00",
+    updatedAt: "2026-06-05T09:00:00Z",
   },
 ];
 

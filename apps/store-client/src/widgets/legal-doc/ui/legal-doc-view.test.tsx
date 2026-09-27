@@ -7,7 +7,7 @@ const page = {
   slug: "privacy",
   title: "Політика конфіденційності",
   // Local-time ISO (no "Z") so the rendered day never shifts by timezone.
-  updatedAt: "2026-06-12T00:00:00",
+  updatedAt: "2026-06-12T09:00:00Z",
   content:
     "<p>Вступ до документа.</p>" +
     "<h2>Загальні положення</h2><p>Перший абзац.</p>" +

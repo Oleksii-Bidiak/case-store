@@ -1,6 +1,7 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { dict } from "@/shared/config";
 import { ActiveFilterChips } from "./active-filter-chips";
 
 const CATEGORY_ID = "11111111-1111-4111-8111-111111111111";
@@ -101,5 +102,59 @@ describe("ActiveFilterChips — spec chips", () => {
     );
 
     expect(screen.getByText(/Силікон/)).toBeInTheDocument();
+  });
+});
+
+/** TASK-742 — «Зі знижкою» gets a removable chip like availability. */
+describe("ActiveFilterChips — on sale (TASK-742)", () => {
+  it("shows a chip for ?onSale=true that removes just that param", async () => {
+    const onFilterChange = jest.fn();
+    renderWithProviders(
+      <ActiveFilterChips
+        currentParams={{ onSale: true, inStock: true }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+
+    const chip = screen.getByRole("button", {
+      name: new RegExp(`^${dict.filters.onSaleChip}`),
+    });
+    await userEvent.click(chip);
+
+    expect(onFilterChange).toHaveBeenCalledWith({ onSale: undefined });
+  });
+
+  it("shows no sale chip when the filter is off", () => {
+    renderWithProviders(
+      <ActiveFilterChips
+        currentParams={{ onSale: false, inStock: true }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("button", {
+        name: new RegExp(`^${dict.filters.onSaleChip}`),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("is cleared by «Очистити все» along with the rest", async () => {
+    const onFilterChange = jest.fn();
+    renderWithProviders(
+      <ActiveFilterChips
+        currentParams={{ onSale: true }}
+        onFilterChange={onFilterChange}
+      />,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.filters.clearAll }),
+    );
+
+    expect(onFilterChange.mock.calls.at(-1)![0]).toHaveProperty(
+      "onSale",
+      undefined,
+    );
   });
 });

@@ -69,7 +69,7 @@ export class UpdateBannerDto extends PublishFieldsDto {
   @MaxLength(100, { message: 'CTA label must be at most 100 characters' })
   ctaLabel?: string;
 
-  @ApiProperty({ description: 'Call-to-action link (href)', example: '/catalog', required: false })
+  @ApiProperty({ description: 'Call-to-action link (href)', example: '/products', required: false })
   @IsOptional()
   @Transform(trim)
   @IsString()
