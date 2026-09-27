@@ -102,7 +102,7 @@ export function CreateStaffWizard({
 }: CreateStaffWizardProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { isOwner } = useAuth();
+  const { isOwner, userId } = useAuth();
 
   const createStaff = useCreateStaff();
   const setPermissions = useUpdateStaffPermissions();
@@ -126,7 +126,7 @@ export function CreateStaffWizard({
     catalogue,
     zones,
     isLoading: catalogueLoading,
-  } = useGrantableCatalogue({ enabled: open });
+  } = useGrantableCatalogue(userId, { enabled: open });
   const { data: templatesData } = useListPermissionTemplates({
     query: { enabled: open },
   });

@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { CreateCategoryDto, UpdateCategoryDto } from "@/entities/category";
 import { dict } from "@/shared/config";
+import { SLUG_PATTERN } from "@/shared/lib/slug";
+import { ogImageField, seoTextFields } from "@/shared/lib/seo-fields-schema";
 import {
   KEYWORDS_MAX_COUNT,
   KEYWORD_MAX_LENGTH,
@@ -10,8 +12,6 @@ import { UUID_PATTERN } from "@/shared/lib/uuid";
 
 const e = dict.categoryForm.errors;
 const seoErrors = dict.seoFields.errors;
-
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * Validation schema for the admin category form.
@@ -29,7 +29,7 @@ export const categorySchema = z.object({
     .string()
     .trim()
     .max(255, e.slugMax)
-    .regex(SLUG_PATTERN, e.slugPattern)
+    .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
     .optional()
     .or(z.literal("")),
 
@@ -54,19 +54,7 @@ export const categorySchema = z.object({
 
   // SEO overrides (TASK-236). Optional free text; storefront <head> wiring is
   // deferred to Phase D, this only persists the values.
-  metaTitle: z
-    .string()
-    .trim()
-    .max(255, e.metaTitleMax)
-    .optional()
-    .or(z.literal("")),
-
-  metaDescription: z
-    .string()
-    .trim()
-    .max(500, e.metaDescriptionMax)
-    .optional()
-    .or(z.literal("")),
+  ...seoTextFields(),
 
   // TASK-437 — internal tags as one comma-separated field, validated on the
   // PARSED list (see the product form's twin).
@@ -82,12 +70,7 @@ export const categorySchema = z.object({
       seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
     ),
 
-  ogImage: z
-    .string()
-    .trim()
-    .url(seoErrors.ogImageUrl)
-    .optional()
-    .or(z.literal("")),
+  ogImage: ogImageField(),
 });
 
 export type CategoryFormInput = z.input<typeof categorySchema>;

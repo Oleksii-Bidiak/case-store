@@ -5,9 +5,12 @@ import { dict } from "@/shared/config";
  * (`apps/store-client/src/widgets/blog/ui/blog-article-body.tsx`, PROSE
  * constant — read-only visual reference, not imported: FSD forbids cross-app
  * imports). Self-contained Tailwind arbitrary variants; no global stylesheet
- * edits. The tag set matches what the shared server-side `sanitizeRichText()`
- * allows for both Page.content and BlogPost.content, so one component serves
- * both forms.
+ * edits. Since TASK-492 the styled tag set is the whole of what the shared
+ * server-side `sanitizeRichText()` allows (h1–h4, p, lists, blockquote, a, img,
+ * hr, s/u, code/pre, table with caption and tfoot) for Page.content,
+ * BlogPost.content and product descriptions, so one component serves every
+ * form — and it now styles MORE than the storefront's blog body does (see
+ * BACKLOG TASK-1318: the storefront still lacks h1/h4/img/hr/code/pre rules).
  */
 const PROSE = [
   "min-w-0 max-w-[760px]",
@@ -37,6 +40,21 @@ const PROSE = [
   // Caption and totals row (TASK-548) — kept by the server since then.
   "[&_caption]:caption-top [&_caption]:pb-2 [&_caption]:text-left [&_caption]:text-sm [&_caption]:text-muted-foreground",
   "[&_tfoot_td]:border-t-2 [&_tfoot_td]:font-semibold [&_tfoot_th]:border-t-2",
+  // The rest of the sanitizer's allow-list (TASK-492). The editor has emitted
+  // H1/H4, images, rules, code and strikethrough since TASK-434/547, but this
+  // block only styled what the storefront's blog body styles, so Tailwind's
+  // preflight reset left an H1 the size of body text, an image wider than the
+  // panel, and a code block with no box around it — the preview understated
+  // exactly the constructs the author could least picture.
+  "[&_h1]:mt-10 [&_h1]:mb-4 [&_h1]:font-display [&_h1]:text-3xl [&_h1]:font-bold [&_h1]:tracking-[-0.015em] [&_h1]:text-foreground",
+  "[&_h4]:mt-6 [&_h4]:mb-2 [&_h4]:font-display [&_h4]:text-lg [&_h4]:font-semibold [&_h4]:text-foreground",
+  "[&_img]:my-5 [&_img]:h-auto [&_img]:max-w-full [&_img]:rounded-lg",
+  "[&_hr]:my-8 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-border",
+  "[&_s]:line-through [&_u]:underline",
+  "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-foreground",
+  "[&_pre]:mb-[22px] [&_pre]:overflow-x-auto [&_pre]:rounded-lg [&_pre]:bg-muted [&_pre]:p-4 [&_pre]:font-mono [&_pre]:text-sm [&_pre]:leading-relaxed [&_pre]:text-foreground",
+  // A code block is `<pre><code>`; the inline-code chip must not nest inside it.
+  "[&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_pre_code]:text-[length:inherit]",
 ].join(" ");
 
 export interface RichTextPreviewProps {
@@ -114,8 +132,11 @@ export interface RichTextPreviewProps {
  */
 export function RichTextPreview({ html, emptyLabel }: RichTextPreviewProps) {
   // Text-based emptiness: Tiptap emits "<p></p>" for a cleared document, which
-  // must show the placeholder too, not an invisible empty paragraph.
-  const isEmpty = !html.replace(/<[^>]*>/g, "").trim();
+  // must show the placeholder too, not an invisible empty paragraph. But an
+  // image, a rule or a table is content without text — a draft made of a
+  // single media-library image must render it, not claim to be empty.
+  const isEmpty =
+    !html.replace(/<[^>]*>/g, "").trim() && !/<(img|hr|table)\b/i.test(html);
 
   return (
     <div

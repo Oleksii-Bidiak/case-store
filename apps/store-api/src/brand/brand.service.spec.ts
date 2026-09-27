@@ -126,12 +126,31 @@ describe('BrandService', () => {
 
   describe('findAllAdmin', () => {
     it('returns paginated data + meta with computed totalPages', async () => {
-      brandRepositoryMock.findAllAdmin.mockResolvedValue({ brands: [mockBrand], total: 21 });
+      brandRepositoryMock.findAllAdmin.mockResolvedValue({
+        brands: [{ brand: mockBrand, productCount: 3 }],
+        total: 21,
+      });
 
       const result = await service.findAllAdmin({ page: 1, limit: 20 });
 
       expect(result.data).toHaveLength(1);
       expect(result.meta).toEqual({ total: 21, page: 1, limit: 20, totalPages: 2 });
+    });
+
+    it('maps the live product count and keeps the logo on every row (TASK-840)', async () => {
+      brandRepositoryMock.findAllAdmin.mockResolvedValue({
+        brands: [
+          { brand: { ...mockBrand, logo: 'https://cdn.example.com/spigen.svg' }, productCount: 0 },
+        ],
+        total: 1,
+      });
+
+      const result = await service.findAllAdmin({ page: 1, limit: 20 });
+
+      expect(result.data[0]).toBeInstanceOf(BrandEntity);
+      // 0 is a real answer («not in use»), not a missing one.
+      expect(result.data[0].productCount).toBe(0);
+      expect(result.data[0].logo).toBe('https://cdn.example.com/spigen.svg');
     });
   });
 

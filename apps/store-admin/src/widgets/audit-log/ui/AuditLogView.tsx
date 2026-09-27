@@ -11,6 +11,8 @@ import {
 } from "@/entities/audit";
 import { ROLE_VALUES, roleLabel } from "@/entities/user";
 import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
+import { staffDisplayName, useListStaff } from "@/entities/staff";
 import {
   Badge,
   Button,
@@ -215,10 +217,47 @@ function DiffCell({ entry }: { entry: AuditEntry }) {
  * pasted to them, and a pasteable view is the reason the state lives in the URL at
  * all. What the API still cannot express is "everyone except me" — for a shop with
  * one owner, «Менеджери» is that set, which is why no negative filter was invented.
+ *
+ * ── Why the actor filter lists every colleague now (TASK-843) ───────────────
+ * «Мої дії» alone answered only half of the owner's question — «що робила
+ * Олена?» needed a pasted uuid. The `actorId` control now offers «Мої дії» first
+ * and then every staff account from `GET /admin/staff`, named the way the staff
+ * register names them (`staffDisplayName`). Deactivated staff stay in that list
+ * on purpose: they are exactly the people whose past actions get audited.
+ *
+ * Deleted accounts are NOT in it — the log keeps their rows (no FK on
+ * `actorId`), the register does not — so `resolveLabel` still names a uuid the
+ * list cannot, which is also what a link pasted from another shop's data or a
+ * hand-edited URL gets.
+ *
+ * The list is read once, 100 accounts (the DTO's ceiling). A shop with more
+ * staff than that loses nothing but options: the rest still filter via a pasted
+ * link and still get a readable chip. Paging a Select was judged not worth it
+ * for a register that is a handful of people.
+ *
+ * Asked only with `staff:read`, which every holder of `audit:read` has (both
+ * are admin-only and not grantable) — the gate is belt and braces, so a future
+ * split of the two cannot turn this screen into a 403 banner.
  */
 export function AuditLogView() {
   const searchParams = useSearchParams();
-  const { userId } = useAuth();
+  const { userId, can } = useAuth();
+
+  const canReadStaff = can(PERM.staffRead);
+  const { data: staffData } = useListStaff(
+    { limit: 100 },
+    { query: { enabled: canReadStaff } },
+  );
+  const colleagueOptions = (staffData?.data ?? [])
+    // The viewer is already «Мої дії»; a second option with the same value
+    // would be a duplicate SelectItem.
+    .filter((person) => person.id !== userId)
+    .map((person) => ({ value: person.id, label: staffDisplayName(person) }))
+    .sort((a, b) => a.label.localeCompare(b.label, "uk"));
+  const actorOptions = [
+    ...(userId ? [{ value: userId, label: d.filterActorMine }] : []),
+    ...colleagueOptions,
+  ];
 
   const action = searchParams.get("action") ?? "";
   const entityType = searchParams.get("entityType") ?? "";
@@ -259,22 +298,23 @@ export function AuditLogView() {
     action !== "" || entityType !== "" || actorId !== "" || actorRole !== "";
 
   const filters: TableFilterDef[] = [
-    // ── «Мої дії» (TASK-430) ──────────────────────────────────────────────────
-    // One option, and it writes the viewer's own uuid into the existing `actorId`
-    // param. The option is offered only once the session is known — Radix forbids
-    // an empty `SelectItem` value, and a filter that silently means "everyone"
-    // would be worse than an absent one.
-    ...(userId
+    // ── «Мої дії» (TASK-430) + every colleague (TASK-843) ─────────────────────
+    // Each option writes a uuid into the existing `actorId` param. «Мої дії» is
+    // offered only once the session is known — Radix forbids an empty
+    // `SelectItem` value, and a filter that silently means "everyone" would be
+    // worse than an absent one. The control appears once it has any option.
+    ...(actorOptions.length > 0
       ? [
           {
             param: "actorId",
             label: d.filterActorAria,
             allLabel: d.filterActorAll,
-            options: [{ value: userId, label: d.filterActorMine }],
-            // A shared link may carry a COLLEAGUE's uuid. The rows are narrowed by
-            // it, so the chip has to name it and clear it rather than show a blank.
+            options: actorOptions,
+            // A deleted account (or a hand-edited link) is not in the staff list.
+            // The rows are narrowed by it, so the chip has to name it and clear
+            // it rather than show a blank.
             resolveLabel: (value: string) => d.filterActorOther(value),
-            className: "w-44",
+            className: "w-56",
           },
         ]
       : []),

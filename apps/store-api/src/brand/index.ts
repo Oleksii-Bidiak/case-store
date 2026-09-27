@@ -9,6 +9,7 @@ export {
   CreateBrandInput,
   UpdateBrandInput,
   PaginatedBrandsResult,
+  BrandWithProductCount,
 } from './brand.repository';
 export { BrandEntity } from './entities';
 export {

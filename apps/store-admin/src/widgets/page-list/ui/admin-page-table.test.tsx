@@ -584,3 +584,85 @@ describe("AdminPageTable — kind tabs", () => {
     }
   });
 });
+
+/**
+ * TASK-562 — the status filter. `AdminPageListQueryDto.status` exists on the API,
+ * but like the kind tabs the filter is LOCAL: the grid needs the complete list to
+ * reorder, so `?status=` hides rows and locks the drag instead of narrowing the
+ * query.
+ */
+describe("AdminPageTable — status filter (TASK-562)", () => {
+  it("filters the rows it already has by ?status= — never asks the server", async () => {
+    const urls: string[] = [];
+    mockSearchParams = new URLSearchParams("status=DRAFT");
+    mockReorder();
+    server.use(
+      http.get("*/api/admin/pages", ({ request }) => {
+        urls.push(request.url);
+        listCalls += 1;
+        return HttpResponse.json(listResponse());
+      }),
+    );
+    renderWithProviders(<AdminPageTable />);
+
+    await waitFor(() => expect(rowIds()).toEqual([B]));
+    expect(listCalls).toBe(1);
+    expect(new URL(urls[0]).searchParams.has("status")).toBe(false);
+  });
+
+  it("writes ?status= to the URL from the toolbar filter", async () => {
+    mockReorder();
+    await renderGrid();
+
+    await userEvent.click(
+      screen.getByRole("combobox", { name: dict.pages.filterStatus }),
+    );
+    await userEvent.click(
+      screen.getByRole("option", { name: dict.pages.statusScheduled }),
+    );
+
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(mockReplace.mock.calls.at(-1)?.[0]).toContain("status=SCHEDULED");
+  });
+
+  it("locks reordering while a status filter is active, and says why", async () => {
+    mockSearchParams = new URLSearchParams("status=PUBLISHED");
+    mockReorder();
+    renderWithProviders(<AdminPageTable />);
+    await waitFor(() => expect(rowIds()).toEqual([A, C]));
+
+    expect(screen.getByText(dict.pages.statusLockedHint)).toBeInTheDocument();
+
+    keyboardMoveUp(C);
+    expect(rowIds()).toEqual([A, C]);
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("combines with the kind tab", async () => {
+    mockSearchParams = new URLSearchParams("kind=LEGAL&status=PUBLISHED");
+    mockReorder();
+    renderWithProviders(<AdminPageTable />);
+
+    await waitFor(() => expect(rowIds()).toEqual([A]));
+  });
+
+  it("says the FILTER emptied the list, not that no pages exist", async () => {
+    mockSearchParams = new URLSearchParams("status=SCHEDULED");
+    mockReorder();
+    renderWithProviders(<AdminPageTable />);
+
+    expect(
+      await screen.findByText(dict.common.table.emptyFiltered),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(dict.pages.emptyKind)).toBeNull();
+  });
+
+  it("ignores a bogus ?status= — every row listed, drag not locked", async () => {
+    mockSearchParams = new URLSearchParams("status=NOT_A_STATUS");
+    mockReorder();
+    await renderGrid();
+
+    expect(rowIds()).toEqual([A, B, C]);
+    expect(screen.getByText(dict.pages.reorderHint)).toBeInTheDocument();
+  });
+});

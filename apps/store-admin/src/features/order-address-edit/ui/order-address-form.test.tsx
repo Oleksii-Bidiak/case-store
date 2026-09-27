@@ -1,4 +1,11 @@
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { http, HttpResponse } from "msw";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
+import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import type { OrderEntity } from "@/entities/order";
 import { OrderAddressForm } from "./order-address-form";
@@ -68,6 +75,250 @@ describe("OrderAddressForm — orders:write gate (TASK-715)", () => {
     expect(screen.getByText(dict.orders.addressLockedHint)).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: dict.orders.addressEdit }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-622: the refusal is read by its STATUS. A 403 used to reach
+ * `isOrderConflict` with `error: "Forbidden"` in the body and read as «замовлення
+ * змінилося, оновіть сторінку»; a 400 read the same way through `Bad Request`.
+ */
+describe("OrderAddressForm — refusals (TASK-622)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+
+  function stubPatch(status: number, error: string) {
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json(
+          { statusCode: status, error, message: "server prose" },
+          { status },
+        ),
+      ),
+    );
+  }
+
+  async function submitAddress() {
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+  }
+
+  it("says «немає права» under the form on a 403, not «замовлення змінилося»", async () => {
+    stubPatch(403, "Forbidden");
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await submitAddress();
+
+    expect(
+      await screen.findByText(dict.orderStatus.forbidden),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.orderStatus.conflictUnknown),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not call a 500 a conflict", async () => {
+    stubPatch(500, "Internal Server Error");
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await submitAddress();
+
+    // The generic toast fires; nothing on screen claims the order moved.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: dict.orders.addressSave }),
+      ).toBeEnabled(),
+    );
+    expect(
+      screen.queryByText(dict.orderStatus.conflictUnknown),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still words a 409 as the conflict it is", async () => {
+    stubPatch(409, "ORDER_STALE");
+    renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await submitAddress();
+
+    expect(
+      await screen.findByText(dict.orderStatus.conflict.ORDER_STALE),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-629: the card polls every minute and `keepDirtyValues` keeps a
+ * half-typed correction while the `order` prop moves on. The save must carry
+ * the version the operator started correcting — sending the refetched one would
+ * overwrite a colleague's concurrent edit without a 409.
+ */
+describe("OrderAddressForm — the lock token under polling (TASK-629)", () => {
+  const WRITER = { auth: { permissions: ["orders:read", "orders:write"] } };
+
+  function capturePatch(bodies: Array<Record<string, unknown>>) {
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({
+          data: {
+            ...makeOrder("PENDING"),
+            updatedAt: "2026-06-01T10:05:00.000Z",
+          },
+        });
+      }),
+    );
+  }
+
+  function refetched(updatedAt: string): OrderEntity {
+    return { ...makeOrder("PENDING"), updatedAt } as OrderEntity;
+  }
+
+  it("sends the version the operator started correcting, not one a refetch brought in", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies);
+    const { rerender } = renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Lviv");
+    // A colleague's save arrives with the minute poll.
+    rerender(
+      <OrderAddressForm order={refetched("2026-06-01T10:00:30.000Z")} />,
+    );
+    expect(city).toHaveValue("Lviv");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      expectedUpdatedAt: "2026-06-01T10:00:00.000Z",
+    });
+  });
+
+  it("takes the refreshed version when the refetch lands before any typing", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies);
+    const { rerender } = renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    rerender(
+      <OrderAddressForm order={refetched("2026-06-01T10:00:30.000Z")} />,
+    );
+    const city = screen.getByLabelText(dict.orderCreate.addressCity);
+    await userEvent.clear(city);
+    await userEvent.type(city, "Lviv");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      expectedUpdatedAt: "2026-06-01T10:00:30.000Z",
+    });
+  });
+
+  it("starts the next correction from the version its own save made", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies);
+    const { rerender } = renderWithProviders(
+      <OrderAddressForm order={makeOrder("PENDING")} />,
+      WRITER,
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.orderCreate.addressCity),
+      " (центр)",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    // The detail refetch hands the card its own save back.
+    rerender(
+      <OrderAddressForm order={refetched("2026-06-01T10:05:00.000Z")} />,
+    );
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.addressEdit }),
+    );
+    await userEvent.type(
+      screen.getByLabelText(dict.orderCreate.addressAddress1),
+      ", кв. 2",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toMatchObject({
+      expectedUpdatedAt: "2026-06-01T10:05:00.000Z",
+    });
+  });
+});
+
+/**
+ * TASK-577: `123` used to pass the form (`min(1)`), reach the API and come back
+ * as a 400 — which the conflict mapper of the day read as «замовлення
+ * змінилося». Now the form stops it, under the field, before any request.
+ */
+describe("OrderAddressForm — phone validation (TASK-577)", () => {
+  it("rejects «123» under the phone field and sends nothing", async () => {
+    let patched = false;
+    server.use(
+      http.patch("*/api/admin/orders/:orderId", () => {
+        patched = true;
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+    renderWithProviders(<OrderAddressForm order={makeOrder("PENDING")} />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressEdit }),
+    );
+    const phone = screen.getByLabelText(dict.orderCreate.addressPhone);
+    await userEvent.clear(phone);
+    await userEvent.type(phone, "123");
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.addressSave }),
+    );
+
+    expect(
+      await screen.findByText(dict.orderCreate.contactPhoneInvalid),
+    ).toBeInTheDocument();
+    expect(phone).toHaveAttribute("aria-invalid", "true");
+    expect(patched).toBe(false);
+    expect(
+      screen.queryByText(dict.orderStatus.conflictUnknown),
     ).not.toBeInTheDocument();
   });
 });

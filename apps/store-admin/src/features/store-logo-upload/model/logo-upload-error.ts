@@ -1,5 +1,5 @@
-import { isAxiosError } from "axios";
 import { dict } from "@/shared/config";
+import { imageUploadErrorMessage } from "@/shared/lib/image-upload-error";
 
 /**
  * Extensions offered by the file picker. Mirrors the API's `ALLOWED_LOGO_MIME`
@@ -15,18 +15,17 @@ export const LOGO_ACCEPT = ".svg,.png,.webp,.jpg,.jpeg";
  * 413 = over the 1 MB cap, 415 = MIME or real bytes are not an allowed image,
  * 400 = accepted as an image but unusable (e.g. an SVG with nothing safe left
  * after sanitization, or no file part at all).
+ *
+ * A thin wrapper over the shared `imageUploadErrorMessage` (TASK-810): it was a
+ * copy of it that differed only in what a 400 means, which is now the shared
+ * mapper's `errorRejected` parameter. Keys spelled out one by one so the
+ * dictionary-usage test sees each of them read.
  */
 export function logoUploadErrorMessage(error: unknown): string {
-  const status = isAxiosError(error) ? error.response?.status : undefined;
-
-  switch (status) {
-    case 413:
-      return dict.storeLogo.errorTooLarge;
-    case 415:
-      return dict.storeLogo.errorUnsupportedType;
-    case 400:
-      return dict.storeLogo.errorRejected;
-    default:
-      return dict.storeLogo.errorGeneric;
-  }
+  return imageUploadErrorMessage(error, {
+    errorTooLarge: dict.storeLogo.errorTooLarge,
+    errorUnsupportedType: dict.storeLogo.errorUnsupportedType,
+    errorRejected: dict.storeLogo.errorRejected,
+    errorGeneric: dict.storeLogo.errorGeneric,
+  });
 }

@@ -9,8 +9,10 @@ import {
   type ReactNode,
 } from "react";
 import {
+  clearSessionMarker,
   refreshSession,
   setAccessToken,
+  shouldAttemptSessionRefresh,
   useGetMyPermissions,
   userControllerGetProfile,
 } from "@/shared/api";
@@ -110,8 +112,20 @@ export const AuthContext = createContext<AuthContextValue | null>(null);
  * loser of that race is read as a stolen token, which revokes every session the
  * user holds. One guard, one caller, no race. See `instance.ts` for the
  * measurement.
+ *
+ * Skipped outright when this browser holds no session (TASK-528): asking anyway
+ * earns a 401 that the BROWSER logs to the console on every visit to /login —
+ * a red line no handler in the app can swallow, because the app never logged
+ * it. The marker is a hint, not an authority: it says nothing about whether the
+ * cookie is still valid, and the server stays the only judge of that. Where
+ * storage is unreadable the helper answers "true" and the old unconditional
+ * behaviour is kept.
  */
 async function bootstrapRefresh(): Promise<string | null> {
+  if (!shouldAttemptSessionRefresh() && !hasAdminUiSessionCookie()) {
+    return null;
+  }
+
   for (let attempt = 0; ; attempt++) {
     const { accessToken, status } = await refreshSession();
     if (accessToken) return accessToken;
@@ -144,6 +158,26 @@ function writeAdminUiSessionMarker(present: boolean): void {
   document.cookie = `${ADMIN_UI_SESSION_COOKIE}=${present ? "1" : ""}; path=/; max-age=${maxAge}; samesite=strict${secure}`;
 }
 
+/**
+ * Is the `admin_ui_session` marker cookie set? Read ONLY as a fallback for the
+ * localStorage session marker in {@link bootstrapRefresh}.
+ *
+ * Why a fallback is needed at all: the localStorage marker arrived with
+ * TASK-528, so an operator who signed in BEFORE that deploy holds a live
+ * refresh cookie and this cookie, but no localStorage marker. Without the
+ * fallback the first page load after the deploy would skip the refresh and send
+ * every signed-in operator back to /login once. The two markers are written
+ * together on every sign-in, so after that first restore they agree.
+ */
+function hasAdminUiSessionCookie(): boolean {
+  if (typeof document === "undefined") {
+    return false;
+  }
+  return document.cookie
+    .split(";")
+    .some((pair) => pair.trim() === `${ADMIN_UI_SESSION_COOKIE}=1`);
+}
+
 /** Decode a JWT payload (no verification — informational/UI use only). */
 function decodeJwt(token: string): { sub?: string; role?: string } | null {
   try {
@@ -159,7 +193,8 @@ function decodeJwt(token: string): { sub?: string; role?: string } | null {
  * AuthProvider — holds the in-memory access token and admin session metadata.
  *
  * On mount it silently calls /api/auth/refresh to restore a session from the
- * HttpOnly refresh cookie. The admin app accepts only STAFF sessions (ADMIN or
+ * HttpOnly refresh cookie — only when this browser holds a session marker (or
+ * cannot tell), so /login without a session logs no 401 (TASK-528). The admin app accepts only STAFF sessions (ADMIN or
  * MANAGER): if the restored (or set) token decodes to any other role, the token
  * is cleared immediately so a CUSTOMER can never occupy the admin shell.
  *
@@ -176,7 +211,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
 
-  const clearTokens = useCallback(() => {
+  // Null this tab's copy of the session. Shared by an explicit sign-out and by a
+  // bootstrap that could not restore one — which differ only in the marker below.
+  const dropSessionState = useCallback(() => {
     setAccessToken(null);
     setToken(null);
     setUserId(null);
@@ -184,6 +221,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setEmail(null);
     writeAdminUiSessionMarker(false);
   }, []);
+
+  const clearTokens = useCallback(() => {
+    dropSessionState();
+    // Every sign-out funnels through here (the logout button, a non-staff
+    // token). Forget the session marker too, so the next page load — /login
+    // included — makes no doomed refresh and logs no 401 (TASK-528).
+    clearSessionMarker();
+  }, [dropSessionState]);
 
   const setTokens = useCallback(
     (token: string) => {
@@ -219,8 +264,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // this a marker left over from a revoked or expired session would keep
       // letting the dashboard shell through the proxy for its full 7 days —
       // harmless (the API still 401s) but pointlessly so.
+      //
+      // `dropSessionState`, NOT `clearTokens` (TASK-528): the latter also
+      // forgets the localStorage session marker, and a bootstrap that gave up
+      // on a 429/5xx/network blip must keep it so the next page load tries
+      // again. A 401 has already cleared the marker inside `refreshSession`, so
+      // both cases end up right.
       if (active && !token) {
-        clearTokens();
+        dropSessionState();
       }
       if (active) {
         setIsInitializing(false);
@@ -230,7 +281,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       active = false;
     };
-  }, [setTokens, clearTokens]);
+  }, [setTokens, dropSessionState]);
 
   // TASK-255: light profile fetch for the header identity. Keyed on
   // `accessToken` so it re-runs on bootstrap restore, login, and every

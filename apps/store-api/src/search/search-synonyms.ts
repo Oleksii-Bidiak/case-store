@@ -34,7 +34,16 @@
  * Words containing an apostrophe («пам'ять») are deliberately absent: the
  * tokenizer splits on it, so they could never match as a single token.
  */
-const SYNONYM_GROUPS: readonly (readonly string[])[] = [
+/** A synonym map in Meilisearch's shape: `{ term: [equivalent, ...] }`. */
+export type SynonymMap = Record<string, string[]>;
+
+/**
+ * The BUILT-IN groups. Since TASK-559 the owner edits the list on
+ * /settings/search (`SearchSynonymGroup` rows); these apply while that table is
+ * empty — a fresh install, or an owner who never saved the list — and are what
+ * the admin screen starts from. See `search-synonyms/search-synonyms.service.ts`.
+ */
+export const DEFAULT_SYNONYM_GROUPS: readonly (readonly string[])[] = [
   // ── Brands / devices ──
   ['iphone', 'айфон'],
   ['ipad', 'айпад'],
@@ -98,22 +107,28 @@ const SYNONYM_GROUPS: readonly (readonly string[])[] = [
 ];
 
 /** Map every group term to all of its siblings (bidirectional synonyms). */
-function buildSynonymMap(groups: readonly (readonly string[])[]): Record<string, string[]> {
-  const map: Record<string, string[]> = {};
+export function buildSynonymMap(groups: readonly (readonly string[])[]): SynonymMap {
+  // Built through a `Map` since TASK-559: the terms are admin input now, and a
+  // plain object would treat «__proto__» or «constructor» as its own prototype
+  // members. `Object.fromEntries` defines every key as an own property.
+  const map = new Map<string, Set<string>>();
   for (const group of groups) {
     for (const term of group) {
-      const siblings = group.filter((t) => t !== term);
-      map[term] = [...new Set([...(map[term] ?? []), ...siblings])];
+      const siblings = map.get(term) ?? new Set<string>();
+      for (const other of group) {
+        if (other !== term) siblings.add(other);
+      }
+      map.set(term, siblings);
     }
   }
-  return map;
+  return Object.fromEntries([...map].map(([term, siblings]) => [term, [...siblings]]));
 }
 
 /**
  * Bidirectional UA↔EN synonym map in the shape Meilisearch expects for the
  * `synonyms` index setting: `{ term: [equivalent, ...] }`.
  */
-export const UA_EN_SYNONYMS: Record<string, string[]> = buildSynonymMap(SYNONYM_GROUPS);
+export const UA_EN_SYNONYMS: SynonymMap = buildSynonymMap(DEFAULT_SYNONYM_GROUPS);
 
 /**
  * Derive the cross-script search terms to inject into a product document.
@@ -129,12 +144,17 @@ export const UA_EN_SYNONYMS: Record<string, string[]> = buildSynonymMap(SYNONYM_
  * Dropping siblings that are already present keeps `searchTerms` from restating
  * what the indexed `name` covers, which would only dilute relevance scoring.
  */
-export function extractSearchSynonymTerms(text: string): string[] {
+export function extractSearchSynonymTerms(
+  text: string,
+  synonyms: SynonymMap = UA_EN_SYNONYMS,
+): string[] {
   const tokens = text.toLowerCase().split(/[^\p{L}\p{N}]+/u);
   const present = new Set(tokens);
   const terms = new Set<string>();
   for (const token of tokens) {
-    for (const sibling of UA_EN_SYNONYMS[token] ?? []) {
+    // Own keys only: a token like «constructor» must not read the prototype.
+    const siblings = Object.prototype.hasOwnProperty.call(synonyms, token) ? synonyms[token] : [];
+    for (const sibling of siblings) {
       if (!present.has(sibling)) terms.add(sibling);
     }
   }

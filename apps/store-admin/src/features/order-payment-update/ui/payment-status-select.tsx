@@ -32,6 +32,7 @@ import { dict } from "@/shared/config";
 import { toPaymentTransitionOptions } from "../model/payment-transitions";
 import {
   paymentConflictMessage,
+  paymentWriteErrorMessage,
   type ApiErrorLike,
 } from "../model/payment-conflict";
 import { PaymentCorrectionDialog } from "./payment-correction-dialog";
@@ -151,7 +152,11 @@ function PaymentStatusSelectControl({
       toast.error(message);
       return;
     }
-    toast.error(dict.orderStatus.paymentToastFailed);
+    // TASK-622: a 403 names the missing grant; anything else stays generic.
+    toast.error(
+      paymentWriteErrorMessage(error as ApiErrorLike) ??
+        dict.orderStatus.paymentToastFailed,
+    );
   };
 
   // The money arrived, but the full refund is not on offer — the one case where

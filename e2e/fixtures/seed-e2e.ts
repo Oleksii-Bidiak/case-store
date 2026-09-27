@@ -22,6 +22,8 @@ loadEnv({ path: path.resolve(__dirname, "../../apps/store-api/.env") });
  *   - read-only mgr:  `e2e-manager-ro@test.com` / `E2eManagerRo1!` — MANAGER
  *                     holding ONLY `orders:read` (TASK-715)
  *   - orders:        one PROCESSING + one PENDING (ids below)
+ *   - paid order:    one ONLINE + CONFIRMED + PAID order with a SUCCEEDED LiqPay
+ *                    attempt of 1299.00 (TASK-371, the payment card)
  */
 export const E2E_PRODUCT_SLUG = "test-product";
 export const E2E_USER_EMAIL = "e2e@test.com";
@@ -59,6 +61,19 @@ export const E2E_ORDER_PROCESSING_ID = "e2e40501-0000-4000-8000-000000000001";
 export const E2E_ORDER_PENDING_ID = "e2e40502-0000-4000-8000-000000000002";
 const E2E_ORDER_PROCESSING_ITEM_ID = "e2e40511-0000-4000-8000-000000000011";
 const E2E_ORDER_PENDING_ITEM_ID = "e2e40512-0000-4000-8000-000000000012";
+
+/**
+ * An ONLINE order paid by card, with one SUCCEEDED LiqPay attempt (TASK-371) —
+ * the minimum the payment card needs to offer «Повернути кошти». CONFIRMED, so
+ * it never shows up in the PENDING/PROCESSING filter specs above. The refund
+ * spec intercepts the POST in the browser, so this row is never refunded for
+ * real and stays SUCCEEDED run after run; the upsert resets it anyway.
+ */
+export const E2E_ORDER_ONLINE_PAID_ID = "e2e37101-0000-4000-8000-000000000371";
+const E2E_ORDER_ONLINE_PAID_ITEM_ID = "e2e37111-0000-4000-8000-000000000371";
+export const E2E_PAYMENT_SUCCEEDED_ID = "e2e37121-0000-4000-8000-000000000371";
+/** What the seeded attempt charged — the refund dialog's ceiling. */
+export const E2E_PAYMENT_SUCCEEDED_AMOUNT = "1299.00";
 
 export default async function globalSetup(): Promise<void> {
   // The generated client uses the pg driver adapter (see prisma/seed.ts) — a
@@ -210,6 +225,60 @@ export default async function globalSetup(): Promise<void> {
         },
       });
     }
+
+    // TASK-371: the paid ONLINE order and its successful attempt. Both upserts
+    // put the rows back to exactly this state, so a hand-made change on the test
+    // DB (or a refund callback that somehow landed) cannot leak into the next run.
+    const paidAt = new Date(Date.now() - 60 * 60 * 1000);
+    await prisma.order.upsert({
+      where: { id: E2E_ORDER_ONLINE_PAID_ID },
+      update: {
+        status: "CONFIRMED",
+        paymentStatus: "PAID",
+        paymentMethod: "ONLINE",
+        paidAt,
+        deletedAt: null,
+      },
+      create: {
+        id: E2E_ORDER_ONLINE_PAID_ID,
+        userId: user.id,
+        status: "CONFIRMED",
+        paymentStatus: "PAID",
+        paymentMethod: "ONLINE",
+        paidAt,
+        subtotal: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+        total: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+        createdAt: paidAt,
+        items: {
+          create: [
+            {
+              id: E2E_ORDER_ONLINE_PAID_ITEM_ID,
+              productId: product.id,
+              quantity: 1,
+              price: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+            },
+          ],
+        },
+      },
+    });
+    await prisma.payment.upsert({
+      where: { id: E2E_PAYMENT_SUCCEEDED_ID },
+      update: {
+        status: "SUCCEEDED",
+        amount: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+        settledAt: paidAt,
+      },
+      create: {
+        id: E2E_PAYMENT_SUCCEEDED_ID,
+        orderId: E2E_ORDER_ONLINE_PAID_ID,
+        provider: "liqpay",
+        providerPaymentId: "e2e-liqpay-371",
+        amount: E2E_PAYMENT_SUCCEEDED_AMOUNT,
+        currency: "UAH",
+        status: "SUCCEEDED",
+        settledAt: paidAt,
+      },
+    });
   } finally {
     await prisma.$disconnect();
   }

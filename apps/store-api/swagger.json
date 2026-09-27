@@ -2382,6 +2382,84 @@
         ]
       }
     },
+    "/api/admin/search/synonyms": {
+      "get": {
+        "operationId": "adminGetSearchSynonyms",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Synonym list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchSynonymsResponseEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — settings:search required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Get the search synonym list (admin)",
+        "tags": [
+          "Search"
+        ]
+      },
+      "put": {
+        "description": "Replaces the whole list. An empty `groups` array restores the built-in dictionary. The engine is updated best-effort — see `appliedToSearch`.",
+        "operationId": "adminUpdateSearchSynonyms",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateSearchSynonymsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchSynonymsSaveResponseEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid synonym list"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — settings:search required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Replace the search synonym list (admin)",
+        "tags": [
+          "Search"
+        ]
+      }
+    },
     "/api/products": {
       "get": {
         "operationId": "ProductController_findAll",
@@ -13900,11 +13978,17 @@
           "202": {
             "description": "Refund requested. The payment becomes REFUNDED only when the provider confirms it by callback — do not treat this response as confirmation."
           },
+          "400": {
+            "description": "Amount is zero or not a two-decimal string, or exceeds what is left to refund on the attempt after earlier refunds (`error: PAYMENT_REFUND_EXCEEDS_BALANCE`)"
+          },
           "403": {
             "description": "Forbidden — payments:refund required"
           },
           "404": {
             "description": "Payment not found"
+          },
+          "409": {
+            "description": "The attempt is not SUCCEEDED — nothing to refund"
           }
         },
         "security": [
@@ -16729,6 +16813,133 @@
           "data"
         ]
       },
+      "SearchSynonymGroupEntity": {
+        "type": "object",
+        "properties": {
+          "terms": {
+            "description": "Terms that are synonyms of each other, in both directions. Lowercase, one word each.",
+            "example": [
+              "чохол",
+              "чохли",
+              "case",
+              "cases"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "terms"
+        ]
+      },
+      "SearchSynonymsEntity": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchSynonymGroupEntity"
+            }
+          },
+          "isDefault": {
+            "type": "boolean",
+            "description": "True when the owner has never saved a list (or saved an empty one) and search uses the built-in UA↔EN dictionary shown in `groups`.",
+            "example": false
+          }
+        },
+        "required": [
+          "groups",
+          "isDefault"
+        ]
+      },
+      "SearchSynonymsSaveResultEntity": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchSynonymGroupEntity"
+            }
+          },
+          "isDefault": {
+            "type": "boolean",
+            "description": "True when the owner has never saved a list (or saved an empty one) and search uses the built-in UA↔EN dictionary shown in `groups`.",
+            "example": false
+          },
+          "appliedToSearch": {
+            "type": "boolean",
+            "description": "True when both search indexes (products, blog) confirmed the new synonyms. False when the engine is unconfigured or unreachable — the list is saved anyway and reaches the engine on the next restart or reindex.",
+            "example": true
+          }
+        },
+        "required": [
+          "groups",
+          "isDefault",
+          "appliedToSearch"
+        ]
+      },
+      "SearchSynonymsResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SearchSynonymsEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SearchSynonymGroupDto": {
+        "type": "object",
+        "properties": {
+          "terms": {
+            "description": "Words search treats as the same word, both directions. Trimmed, lowercased and de-duplicated on the way in; each must be ONE word (letters/digits only).",
+            "example": [
+              "чохол",
+              "чохли",
+              "case",
+              "cases"
+            ],
+            "minItems": 2,
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "terms"
+        ]
+      },
+      "UpdateSearchSynonymsDto": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "maxItems": 300,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SearchSynonymGroupDto"
+            }
+          }
+        },
+        "required": [
+          "groups"
+        ]
+      },
+      "SearchSynonymsSaveResponseEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SearchSynonymsSaveResultEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "ProductEntity": {
         "type": "object",
         "properties": {
@@ -17800,6 +18011,11 @@
             "description": "Whether the brand is active and visible in the store",
             "example": true
           },
+          "productCount": {
+            "type": "number",
+            "description": "Number of live (not soft-deleted) products of this brand, visible or hidden (admin listing only, TASK-840)",
+            "example": 42
+          },
           "createdAt": {
             "format": "date-time",
             "type": "string",
@@ -17883,7 +18099,7 @@
         "type": "object",
         "properties": {
           "data": {
-            "description": "Brands for the current page",
+            "description": "Brands for the current page, each with its logo and `productCount` (live products, visible or hidden — TASK-840)",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/BrandEntity"
@@ -25393,10 +25609,24 @@
           },
           "note": {
             "type": "string",
-            "description": "A flag on the row for an event the operator must see (TASK-932 / TASK-788): PAID_AFTER_CANCEL on a payment row — the money arrived after the order was cancelled; SHIPPED_UNPAID on a status row — shipped while the online payment was unconfirmed. Null on an ordinary row.",
+            "description": "A flag on the row for an event the operator must see (TASK-932 / TASK-788): PAID_AFTER_CANCEL on a payment row — the money arrived after the order was cancelled; SHIPPED_UNPAID on a status row — shipped while the online payment was unconfirmed; PAYMENT_EVENT_REFUSED on a payment row — a provider event asked for a move the shop refused (the row stays current → current; the asked-for status is in rejectedPaymentStatus, TASK-621). Null on an ordinary row.",
             "enum": [
               "PAID_AFTER_CANCEL",
-              "SHIPPED_UNPAID"
+              "SHIPPED_UNPAID",
+              "PAYMENT_EVENT_REFUSED"
+            ],
+            "nullable": true,
+            "example": null
+          },
+          "rejectedPaymentStatus": {
+            "type": "string",
+            "description": "TASK-621: on a PAYMENT_EVENT_REFUSED row, the payment status the provider event asked for and the shop refused. Null on every other row, and on refusals recorded before the column existed (those read from = to with no note).",
+            "enum": [
+              "PENDING",
+              "PAID",
+              "FAILED",
+              "PARTIALLY_REFUNDED",
+              "REFUNDED"
             ],
             "nullable": true,
             "example": null
@@ -25418,6 +25648,7 @@
           "toPaymentStatus",
           "changedBy",
           "note",
+          "rejectedPaymentStatus",
           "changedAt"
         ]
       },
@@ -26856,6 +27087,11 @@
             "description": "Amount charged, as a decimal string",
             "example": "1249.00"
           },
+          "refundedAmount": {
+            "type": "string",
+            "description": "Total of refunds requested on this attempt, as a decimal string. `amount - refundedAmount` is the most the next refund may be (TASK-1302)",
+            "example": "0"
+          },
           "currency": {
             "type": "string",
             "description": "ISO 4217 currency code",
@@ -26888,9 +27124,10 @@
             "nullable": true
           },
           "settledAt": {
-            "type": "object",
+            "type": "string",
             "description": "When the attempt reached a final state",
-            "nullable": true
+            "nullable": true,
+            "format": "date-time"
           },
           "createdAt": {
             "format": "date-time",
@@ -26903,6 +27140,7 @@
           "orderId",
           "provider",
           "amount",
+          "refundedAmount",
           "currency",
           "status",
           "providerPaymentId",

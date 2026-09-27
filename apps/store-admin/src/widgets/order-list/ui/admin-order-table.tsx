@@ -60,7 +60,7 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatCurrency, formatDateTime } from "@/shared/lib";
-import { downloadCsv } from "../model/download-csv";
+import { downloadCsv } from "@/shared/lib/download-csv";
 import { AdminOrderTableSkeleton } from "./admin-order-table-skeleton";
 
 const ALL_OPTION = "__all__";

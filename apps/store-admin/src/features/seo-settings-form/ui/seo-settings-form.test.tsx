@@ -4,6 +4,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
@@ -48,18 +49,36 @@ function stubUpdate() {
   return bodies;
 }
 
-const previewTitle = () => screen.getByTestId("seo-snippet-title");
-const previewHint = () => screen.getByTestId("seo-snippet-hint");
+// TASK-552: two previews — a page WITH a name (tier "derived", the defaults
+// lose) and one WITHOUT (the only place the defaults surface).
+const named = () => within(screen.getByTestId("seo-preview-named"));
+const unnamed = () => within(screen.getByTestId("seo-preview-unnamed"));
+const previewTitle = () => named().getByTestId("seo-snippet-title");
+const previewHint = () => named().getByTestId("seo-snippet-hint");
+const unnamedTitle = () => unnamed().getByTestId("seo-snippet-title");
+const unnamedHint = () => unnamed().getByTestId("seo-snippet-hint");
+const defaultDescriptionField = () =>
+  screen.getByLabelText(dict.seoSettingsForm.defaultMetaDescription);
 const defaultTitleField = () =>
   screen.getByLabelText(dict.seoSettingsForm.defaultMetaTitle);
 const templateField = () =>
   screen.getByLabelText(dict.seoSettingsForm.titleTemplate);
 
 describe("SeoSettingsForm — self-referential SERP preview (TASK-268)", () => {
-  it("shows the sample-page note", () => {
+  it("labels both sample pages", () => {
     renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
     expect(
-      screen.getByText(dict.seoSnippetPreview.sampleNote),
+      screen.getByText(dict.seoSettingsForm.previewNamedHeading),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        dict.seoSettingsForm.previewNamedNote(
+          dict.seoSnippetPreview.samplePageName,
+        ),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.seoSettingsForm.previewUnnamedNote),
     ).toBeInTheDocument();
   });
 
@@ -85,16 +104,50 @@ describe("SeoSettingsForm — self-referential SERP preview (TASK-268)", () => {
     );
   });
 
-  it("filling the default title switches the preview to that value verbatim (own)", async () => {
+  // TASK-552 — the default used to be fed in as the sample page's OWN title,
+  // so this preview claimed the default beats a product's name. Since TASK-432
+  // the storefront does the opposite; the preview now says so.
+  it("a filled default title does NOT replace a named page's title", async () => {
     renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
 
     await userEvent.type(defaultTitleField(), "Мій магазин аксесуарів");
 
     await waitFor(() =>
-      expect(previewTitle()).toHaveTextContent("Мій магазин аксесуарів"),
+      expect(unnamedTitle()).toHaveTextContent("Мій магазин аксесуарів"),
     );
-    expect(previewTitle()).not.toHaveTextContent("| CaseStore");
-    expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintOwn);
+    expect(previewTitle()).toHaveTextContent(
+      `${dict.seoSnippetPreview.samplePageName} | CaseStore`,
+    );
+    expect(previewTitle()).not.toHaveTextContent("Мій магазин аксесуарів");
+    expect(previewHint()).toHaveTextContent(dict.seoSnippetPreview.hintDerived);
+  });
+
+  it("shows the defaults verbatim on the page without content (tier «default»)", async () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    await userEvent.type(defaultTitleField(), "Мій магазин аксесуарів");
+    await userEvent.type(defaultDescriptionField(), "Опис магазину");
+
+    await waitFor(() =>
+      expect(unnamedTitle()).toHaveTextContent("Мій магазин аксесуарів"),
+    );
+    // Verbatim: the default is an absolute title, not run through the template.
+    expect(unnamedTitle()).not.toHaveTextContent("| CaseStore");
+    expect(unnamedHint()).toHaveTextContent(dict.seoSnippetPreview.hintDefault);
+    expect(unnamed().getByTestId("seo-snippet-description")).toHaveTextContent(
+      "Опис магазину",
+    );
+    // …and the named page keeps its own description.
+    expect(named().getByTestId("seo-snippet-description")).toHaveTextContent(
+      dict.seoSnippetPreview.samplePageDescription,
+    );
+  });
+
+  it("says the page without content has nothing to show while the defaults are blank", () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    expect(unnamedTitle()).toHaveTextContent(dict.seoSnippetPreview.emptyTitle);
+    expect(unnamedHint()).toHaveTextContent(dict.seoSnippetPreview.hintEmpty);
   });
 
   // TASK-433 — the green breadcrumb line used to be the hardcoded string
@@ -104,9 +157,10 @@ describe("SeoSettingsForm — self-referential SERP preview (TASK-268)", () => {
   it("shows the storefront host from the environment, not a hardcoded domain", () => {
     renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
 
-    const url = screen.getByTestId("seo-snippet-url");
-    expect(url).toHaveTextContent(STOREFRONT_HOST);
-    expect(url).not.toHaveTextContent("casestore.ua");
+    for (const url of screen.getAllByTestId("seo-snippet-url")) {
+      expect(url).toHaveTextContent(STOREFRONT_HOST);
+      expect(url).not.toHaveTextContent("casestore.ua");
+    }
   });
 });
 
