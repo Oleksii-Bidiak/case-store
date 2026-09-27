@@ -55,6 +55,13 @@ import { SlugRedirectRepository } from '../src/slug-redirect';
  *   p-dead-category      dead   active            → phone
  *   p-hidden-model       child  active            → hidden
  *   p-deep               leaf   active            → phone
+ *   p-tomb-category      tomb   active            → phone
+ *
+ *   tomb    (ACTIVE but DELETED — a deliberate violation of invariant I1 of
+ *            TASK-652/653: real deletion moves every product out first and also
+ *            sets isActive=false. Here the flag is left on so ONLY the new
+ *            `deleted_at` half of the SQL twin can hide this product, which is
+ *            the half the twin's type guard cannot see.)
  *
  * So exactly six pages must exist: (parent|child) × (phone|tablet) — phone at 2
  * products, tablet at 1 — plus (gparent|leaf) × phone. NOT `middle`: it is
@@ -106,6 +113,7 @@ describe('Compatibility landing pages (integration)', () => {
   let gparentId: string;
   let middleId: string;
   let leafId: string;
+  let tombId: string;
   let deviceBrandId: string;
   let phoneId: string;
   let tabletId: string;
@@ -186,6 +194,12 @@ describe('Compatibility landing pages (integration)', () => {
     });
     leafId = leaf.id;
 
+    // See the fixture note above: active flag ON, tombstone set.
+    const tomb = await prisma.category.create({
+      data: { name: 'compat tomb', slug: slug('tomb'), deletedAt: new Date() },
+    });
+    tombId = tomb.id;
+
     const brand = await prisma.deviceBrand.create({
       data: { name: 'compat brand', slug: slug('brand') },
     });
@@ -229,6 +243,7 @@ describe('Compatibility landing pages (integration)', () => {
     await product('dead-category', deadId, [phoneId]);
     await product('hidden-model', childId, [hiddenId]);
     await product('deep', leafId, [phoneId]);
+    await product('tomb-category', tombId, [phoneId]);
   });
 
   afterAll(async () => {
@@ -247,7 +262,7 @@ describe('Compatibility landing pages (integration)', () => {
     await prisma.category.deleteMany({ where: { id: leafId } });
     await prisma.category.deleteMany({ where: { id: middleId } });
     await prisma.category.deleteMany({ where: { id: { in: [childId, deadId] } } });
-    await prisma.category.deleteMany({ where: { id: { in: [parentId, gparentId] } } });
+    await prisma.category.deleteMany({ where: { id: { in: [parentId, gparentId, tombId] } } });
     await app.close();
   });
 
@@ -428,6 +443,23 @@ describe('Compatibility landing pages (integration)', () => {
       await expect(service.getCompatPage(slug('child'), slug('lonely'))).rejects.toBeInstanceOf(
         NotFoundException,
       );
+    });
+
+    // TASK-653: a deleted category is not a page, whatever its active flag says.
+    it('404s a deleted category, and never lists it', async () => {
+      await expect(service.getCompatPage(slug('tomb'), slug('phone'))).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      const pages = await fixturePages();
+      expect(pages.map((page) => page.category)).not.toContain(slug('tomb'));
+    });
+
+    it('hides a product in a deleted category through the deleted_at half of the SQL twin', async () => {
+      // `tomb` is ACTIVE, so `c.is_active = true` alone would let this row through —
+      // only `c.deleted_at IS NULL` can hide it (the twin's type guard sees top-level
+      // keys only, so a missing nested half would compile).
+      const pairs = await app.get(CatalogLandingRepository).countCompatPairs();
+      expect(pairs.some((pair) => pair.categoryId === tombId)).toBe(false);
     });
 
     it('404s an unknown slug on either side', async () => {

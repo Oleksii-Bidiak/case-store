@@ -4,8 +4,12 @@ import { Prisma } from '@prisma/client';
  * The one rule for «may a shopper see this product» (TASK-781/782).
  *
  * A product is publicly visible when it is on sale (`isActive`), not
- * soft-deleted, AND its category is active — deactivating a category withdraws
- * every product in it (TASK-297). Every public read of a product row — listing,
+ * soft-deleted, AND its category is active and not deleted — deactivating a
+ * category withdraws every product in it (TASK-297). The category's `deletedAt`
+ * half (TASK-653) is defence in depth: deleting a category moves every product
+ * out of it in the same transaction (invariant I1), so no product should ever
+ * point at a tombstone — and if one ever does, it stays hidden rather than being
+ * sold from a category that no longer exists. Every public read of a product row — listing,
  * PDP, cards, variant siblings, search, addon resolution, wishlist — goes
  * through this predicate, so a hidden product answers exactly like a
  * nonexistent one (404 / absent), never with its prices.
@@ -20,7 +24,7 @@ import { Prisma } from '@prisma/client';
 export const PUBLIC_PRODUCT_WHERE = {
   isActive: true,
   deletedAt: null,
-  category: { isActive: true },
+  category: { isActive: true, deletedAt: null },
 } as const satisfies Prisma.ProductWhereInput;
 
 /** Table aliases a raw query gave `products` and its `categories` join. */
@@ -35,12 +39,16 @@ const SQL_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
  * One SQL condition per key of {@link PUBLIC_PRODUCT_WHERE}. The mapped type is
  * the guard: a key added to the Prisma predicate without its SQL half here, or
  * a half here with no key there, fails `tsc` — the twin cannot silently lag.
+ *
+ * It checks TOP-LEVEL keys only. A field added INSIDE a nested key (the
+ * `category` relation filter) is invisible to it, so the `category` half below
+ * must be kept in step by hand — as it was for `deletedAt` (TASK-653).
  * Equality on real rows is proven in `test/compat-landing-pages.int-spec.ts`.
  */
 const PUBLIC_PRODUCT_SQL_TWIN = {
   isActive: ({ product }) => `${product}.is_active = true`,
   deletedAt: ({ product }) => `${product}.deleted_at IS NULL`,
-  category: ({ category }) => `${category}.is_active = true`,
+  category: ({ category }) => `${category}.is_active = true AND ${category}.deleted_at IS NULL`,
 } satisfies {
   [K in keyof typeof PUBLIC_PRODUCT_WHERE]: (aliases: PublicProductSqlAliases) => string;
 };
@@ -68,11 +76,19 @@ export function publicProductSql(aliases: PublicProductSqlAliases): Prisma.Sql {
  * The same rule for a row already in memory. The row must carry `isActive`,
  * `deletedAt` and its category's `isActive`; a missing category counts as
  * hidden, because a product with no loaded category cannot prove it is on sale.
+ * A loaded category's `deletedAt` is honoured when present (TASK-653) — optional
+ * in the type because many callers select only `category.isActive`, which is
+ * safe: a tombstone always carries `isActive = false` as well.
  */
 export function isPubliclyVisible(product: {
   isActive: boolean;
   deletedAt: Date | null;
-  category?: { isActive: boolean } | null;
+  category?: { isActive: boolean; deletedAt?: Date | null } | null;
 }): boolean {
-  return product.isActive && product.deletedAt === null && product.category?.isActive === true;
+  return (
+    product.isActive &&
+    product.deletedAt === null &&
+    product.category?.isActive === true &&
+    !product.category.deletedAt
+  );
 }

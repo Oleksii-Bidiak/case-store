@@ -969,6 +969,18 @@ describe('ProductService', () => {
       // findBySku should NOT be called when sku is null/undefined
       expect(productRepositoryMock.findBySku).not.toHaveBeenCalled();
     });
+
+    // TASK-653: a deleted category answers `findById` with null, so this one check
+    // keeps the product API from filing a product into a tombstone (invariant I1).
+    it('rejects a missing or deleted category with 400 and creates nothing', async () => {
+      productRepositoryMock.findBySlug.mockResolvedValue(null);
+      productRepositoryMock.findBySku.mockResolvedValue(null);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(null);
+
+      await expect(service.create(createInput)).rejects.toThrow(BadRequestException);
+      expect(categoryRepositoryMock.findById).toHaveBeenCalledWith('category-uuid-1');
+      expect(productRepositoryMock.create).not.toHaveBeenCalled();
+    });
   });
 
   // ─── update (admin) ───────────────────────────────────────────────────────────
@@ -1008,6 +1020,29 @@ describe('ProductService', () => {
         NotFoundException,
       );
       expect(productRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    // TASK-653: moving a product INTO a deleted category is refused (invariant I1).
+    it('rejects a change to a missing or deleted category with 400', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      categoryRepositoryMock.findById.mockResolvedValueOnce(null);
+
+      await expect(service.update('product-uuid-1', { categoryId: 'deleted-cat' })).rejects.toThrow(
+        BadRequestException,
+      );
+      expect(categoryRepositoryMock.findById).toHaveBeenCalledWith('deleted-cat');
+      expect(productRepositoryMock.update).not.toHaveBeenCalled();
+    });
+
+    it('does not re-check the category when the update re-sends the current one', async () => {
+      productRepositoryMock.findById.mockResolvedValue(mockProduct);
+      productRepositoryMock.update.mockResolvedValue(mockProduct);
+      categoryRepositoryMock.findById.mockClear();
+
+      await service.update('product-uuid-1', { categoryId: mockProduct.categoryId, price: 1 });
+
+      expect(categoryRepositoryMock.findById).not.toHaveBeenCalled();
+      expect(productRepositoryMock.update).toHaveBeenCalled();
     });
 
     it('sanitizes the description on update (TASK-361)', async () => {

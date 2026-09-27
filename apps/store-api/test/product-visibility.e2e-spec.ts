@@ -17,7 +17,7 @@ import { createPermissionRepositoryMock } from './permission-repository.mock';
  * Unlike most e2e suites here, the REAL repositories run: only PrismaService is
  * replaced, by a tiny in-memory table that EVALUATES the `where` it is handed
  * (`id`/`slug`/`groupId` — plain or `{ in }` — `isActive`, `deletedAt`,
- * `category.isActive`). A mock that answered by fixture would pass no matter
+ * `category.isActive`, `category.deletedAt`). A mock that answered by fixture would pass no matter
  * which predicate the repository sent; this one only returns a row the
  * predicate actually admits, so the tests below fail the moment a public read
  * drops a half of the rule — which is exactly how the variant siblings leaked
@@ -55,11 +55,36 @@ type Row = {
   ogImage: null;
   createdAt: Date;
   updatedAt: Date;
-  category: { id: string; name: string; slug: string; isActive: boolean };
+  category: { id: string; name: string; slug: string; isActive: boolean; deletedAt: Date | null };
 };
 
-const ACTIVE_CATEGORY = { id: 'cat-on', name: 'Чохли', slug: 'chokhly', isActive: true };
-const HIDDEN_CATEGORY = { id: 'cat-off', name: 'Архів', slug: 'arkhiv', isActive: false };
+const ACTIVE_CATEGORY = {
+  id: 'cat-on',
+  name: 'Чохли',
+  slug: 'chokhly',
+  isActive: true,
+  deletedAt: null,
+};
+const HIDDEN_CATEGORY = {
+  id: 'cat-off',
+  name: 'Архів',
+  slug: 'arkhiv',
+  isActive: false,
+  deletedAt: null,
+};
+/**
+ * A DELETED category that still says `isActive: true` (TASK-653). Real deletion
+ * also switches the flag off and moves every product out first (invariant I1), so
+ * this row cannot occur — it exists so that only the `category.deletedAt` half of
+ * the rule can hide its product.
+ */
+const DELETED_CATEGORY = {
+  id: 'cat-gone',
+  name: 'Видалена',
+  slug: 'deleted:cat-gone:vydalena',
+  isActive: true,
+  deletedAt: new Date('2026-09-26'),
+};
 
 /** UUIDs — `GET /products/cards` validates its ids. */
 const ID = {
@@ -70,6 +95,7 @@ const ID = {
   siblingVisible: '55555555-5555-4555-8555-555555555555',
   siblingHiddenCategory: '66666666-6666-4666-8666-666666666666',
   siblingDraft: '77777777-7777-4777-8777-777777777777',
+  inDeletedCategory: '88888888-8888-4888-8888-888888888888',
   missing: '99999999-9999-4999-8999-999999999999',
 };
 
@@ -148,6 +174,12 @@ const ROWS: Row[] = [
     category: HIDDEN_CATEGORY,
   }),
   row({ id: ID.deleted, slug: 'deleted', isActive: false, deletedAt: new Date('2026-02-01') }),
+  row({
+    id: ID.inDeletedCategory,
+    slug: 'in-deleted-category',
+    categoryId: DELETED_CATEGORY.id,
+    category: DELETED_CATEGORY,
+  }),
 ];
 
 /** Does `target` satisfy the Prisma-style `where`? Throws on anything it does not know. */
@@ -296,6 +328,7 @@ describe('Public product visibility (e2e, TASK-781/782)', () => {
     it.each([
       ['a draft', ID.draft],
       ['a product in a deactivated category', ID.inHiddenCategory],
+      ['a product in a deleted category (TASK-653)', ID.inDeletedCategory],
       ['a soft-deleted product', ID.deleted],
     ])('answers %s exactly like a nonexistent id — 404, no prices', async (_label, id) => {
       const hidden = await request(app.getHttpServer()).get(url(id)).expect(404);
@@ -317,6 +350,10 @@ describe('Public product visibility (e2e, TASK-781/782)', () => {
 
     it('answers a product of a deactivated category with 404', async () => {
       await request(app.getHttpServer()).get('/api/products/in-hidden-category').expect(404);
+    });
+
+    it('answers a product of a deleted category with 404 (TASK-653)', async () => {
+      await request(app.getHttpServer()).get('/api/products/in-deleted-category').expect(404);
     });
 
     it('offers only publicly visible siblings in the variant switcher', async () => {
@@ -348,7 +385,7 @@ describe('Public product visibility (e2e, TASK-781/782)', () => {
     it('drops hidden products from the requested cards altogether', async () => {
       const res = await request(app.getHttpServer())
         .get('/api/products/cards')
-        .query({ ids: [ID.draft, ID.inHiddenCategory, ID.visible].join(',') })
+        .query({ ids: [ID.draft, ID.inHiddenCategory, ID.inDeletedCategory, ID.visible].join(',') })
         .expect(200);
 
       expect((res.body.data as Array<{ id: string }>).map((p) => p.id)).toEqual([ID.visible]);

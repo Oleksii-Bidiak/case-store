@@ -14,6 +14,21 @@ export {
   PaginatedCategoriesWithCountResult,
   TreeMovesResult,
   CategoryUpdateResult,
+  CategoryDeletionTarget,
+  CategoryDeletionResult,
+  CategoryDeletionImpact,
 } from './category.repository';
-export { CategoryEntity, CategoryTreeNodeEntity, CategoryWithCountEntity } from './entities';
-export { CreateCategoryDto, UpdateCategoryDto, CategoryListQueryDto } from './dto';
+export {
+  AdminCategoryDetailEntity,
+  CategoryDeletionImpactEntity,
+  CategoryEntity,
+  CategoryTreeNodeEntity,
+  CategoryWithCountEntity,
+} from './entities';
+export {
+  CreateCategoryDto,
+  UpdateCategoryDto,
+  CategoryListQueryDto,
+  DeleteCategoryDto,
+  DeleteCategoryMoveToNewDto,
+} from './dto';

@@ -141,12 +141,12 @@ describe('SeoSettingsRepository', () => {
       expect(prismaMock.product.count).toHaveBeenNthCalledWith(2, {
         where: { isActive: true, deletedAt: null },
       });
-      // Categories: isActive only (no soft-delete column).
+      // Categories: isActive + not deleted (the TASK-651 tombstone).
       expect(prismaMock.category.count).toHaveBeenNthCalledWith(1, {
-        where: { metaTitle: null, isActive: true },
+        where: { metaTitle: null, isActive: true, deletedAt: null },
       });
       expect(prismaMock.category.count).toHaveBeenNthCalledWith(2, {
-        where: { isActive: true },
+        where: { isActive: true, deletedAt: null },
       });
       // Pages: status = PUBLISHED, NEVER the isActive mirror (plan 104).
       expect(prismaMock.page.count).toHaveBeenNthCalledWith(1, {
