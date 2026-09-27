@@ -25,8 +25,8 @@ import { createPermissionRepositoryMock } from './permission-repository.mock';
  * The contract the admin dialog is written against: 202 means *requested* (the
  * payment changes only on the provider's callback), 403 without
  * `payments:refund`, 409 when the attempt is not SUCCEEDED, 400 for an amount
- * over what the attempt charged or not a two-decimal string, 404 for an unknown
- * attempt.
+ * over what is left after earlier refunds (TASK-1302), for zero, or for one that
+ * is not a two-decimal string, 404 for an unknown attempt.
  */
 describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
   let app: INestApplication;
@@ -51,6 +51,8 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
     $connect: jest.fn(),
     $disconnect: jest.fn(),
     $queryRaw: jest.fn().mockResolvedValue([]),
+    // PaymentRepository.reserveRefund / releaseRefund — 1 row = the reservation fit.
+    $executeRaw: jest.fn().mockResolvedValue(1),
     user: { findUnique: jest.fn() },
     refreshToken: { findUnique: jest.fn() },
     auditLog: { create: jest.fn() },
@@ -63,6 +65,7 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
     provider: 'liqpay',
     providerPaymentId: '777',
     amount: new Prisma.Decimal(CHARGED),
+    refundedAmount: new Prisma.Decimal(0),
     currency: 'UAH',
     status: PaymentAttemptStatus.SUCCEEDED,
     failureCode: null,
@@ -136,6 +139,7 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
     jest.clearAllMocks();
     liqPayMock.refund.mockResolvedValue(undefined);
     prismaServiceMock.payment.findUnique.mockResolvedValue(makePayment());
+    prismaServiceMock.$executeRaw.mockResolvedValue(1);
   });
 
   describe('GET /api/admin/payments/orders/:orderId', () => {
@@ -164,6 +168,7 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
       expect(res.body.data[0]).toMatchObject({
         id: PAYMENT_ID,
         amount: CHARGED_WIRE,
+        refundedAmount: '0',
         status: 'SUCCEEDED',
         providerPaymentId: '777',
       });
@@ -236,6 +241,64 @@ describe('Admin payments — attempt list and refund (e2e, TASK-371)', () => {
         .set('Authorization', token(admin))
         .send({ amount: '12.345' })
         .expect(400);
+
+      expect(liqPayMock.refund).not.toHaveBeenCalled();
+    });
+
+    it('400 with a stable code for more than is left after an earlier partial refund', async () => {
+      prismaServiceMock.payment.findUnique.mockResolvedValue(
+        makePayment({ refundedAmount: new Prisma.Decimal('800.00') }),
+      );
+
+      const res = await request(app.getHttpServer())
+        .post(refundUrl)
+        .set('Authorization', token(admin))
+        .send({ amount: '500.00' })
+        .expect(400);
+
+      expect(res.body.error).toBe('PAYMENT_REFUND_EXCEEDS_BALANCE');
+      expect(prismaServiceMock.$executeRaw).not.toHaveBeenCalled();
+      expect(liqPayMock.refund).not.toHaveBeenCalled();
+    });
+
+    it('refunds only the remainder when the amount is omitted after a partial refund', async () => {
+      prismaServiceMock.payment.findUnique.mockResolvedValue(
+        makePayment({ refundedAmount: new Prisma.Decimal('800.00') }),
+      );
+
+      await request(app.getHttpServer())
+        .post(refundUrl)
+        .set('Authorization', token(admin))
+        .send({})
+        .expect(202);
+
+      expect(liqPayMock.refund).toHaveBeenCalledWith({ paymentId: PAYMENT_ID, amount: '499' });
+    });
+
+    it('400 when a simultaneous refund reserved the balance first', async () => {
+      prismaServiceMock.payment.findUnique
+        .mockResolvedValueOnce(makePayment())
+        .mockResolvedValueOnce(makePayment({ refundedAmount: new Prisma.Decimal('1000.00') }));
+      prismaServiceMock.$executeRaw.mockResolvedValue(0);
+
+      const res = await request(app.getHttpServer())
+        .post(refundUrl)
+        .set('Authorization', token(admin))
+        .send({ amount: '500.00' })
+        .expect(400);
+
+      expect(res.body.error).toBe('PAYMENT_REFUND_EXCEEDS_BALANCE');
+      expect(liqPayMock.refund).not.toHaveBeenCalled();
+    });
+
+    it('400 for a refund of zero', async () => {
+      for (const amount of ['0', '0.00']) {
+        await request(app.getHttpServer())
+          .post(refundUrl)
+          .set('Authorization', token(admin))
+          .send({ amount })
+          .expect(400);
+      }
 
       expect(liqPayMock.refund).not.toHaveBeenCalled();
     });

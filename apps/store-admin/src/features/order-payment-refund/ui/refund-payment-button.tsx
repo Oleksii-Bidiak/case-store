@@ -25,12 +25,16 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatCurrency } from "@/shared/lib";
-import { parseRefundAmount } from "../model/refund-amount";
+import {
+  parseRefundAmount,
+  refundableRemainder,
+  toKopiykas,
+} from "../model/refund-amount";
 import { refundErrorKind, refundErrorMessage } from "../model/refund-error";
 
 interface RefundPaymentButtonProps {
   orderId: string;
-  payment: Pick<PaymentEntity, "id" | "amount">;
+  payment: Pick<PaymentEntity, "id" | "amount" | "refundedAmount">;
 }
 
 type Mode = "full" | "partial";
@@ -42,9 +46,10 @@ const t = dict.orders;
  * «Повернути кошти» on one SUCCEEDED payment attempt (TASK-371) — the first
  * control in the admin panel that moves real money, so it is deliberately slow:
  *
- * 1. The operator picks the whole amount or types a part of it. The part is
- *    validated like the server validates it (decimal string, > 0, ≤ what THIS
- *    attempt charged) and the message sits under the field.
+ * 1. The operator picks what is left on the attempt or types a part of it. The
+ *    part is validated like the server validates it (decimal string, > 0, ≤ the
+ *    attempt's remainder after earlier refunds, TASK-1302) and the message sits
+ *    under the field.
  * 2. A confirmation step repeats the EXACT sum that will be sent — the one
  *    moment to catch «4990» typed for «499.0».
  * 3. The request answers 202, which means *requested*, nothing more. The toast
@@ -52,10 +57,15 @@ const t = dict.orders;
  *    LiqPay's callback says it did (the rule `AdminPaymentController` states).
  *
  * The button stays disabled while the request is in flight and, after a 202,
- * for the rest of this visit — a second click before the callback would send a
- * second refund to LiqPay, and the server does not yet cap cumulative partial
- * refunds (TASK-1302). A reload re-enables it; the attempt list by then shows
- * whatever the callback changed.
+ * for the rest of this visit. The server is the real boundary: it reserves
+ * every refund against the attempt's remainder in one conditional UPDATE
+ * (TASK-1302), so neither a second click nor a second tab can send back more
+ * than was paid; the refetched list then shows the smaller remainder.
+ *
+ * «All of it» travels as the explicit remainder this card showed, not as an
+ * omitted amount: were the list stale, an omitted amount would refund a sum
+ * other than the one the operator confirmed, where an explicit one gets a 400
+ * and the field back.
  *
  * Local state only, reset on every open (the dialog content unmounts when
  * closed), so there is no async-seeded field to keep in sync
@@ -77,6 +87,9 @@ export function RefundPaymentButton({
   const [requested, setRequested] = useState(false);
 
   const fullAmount = formatCurrency(payment.amount);
+  const remainder = refundableRemainder(payment);
+  const remainderAmount = formatCurrency(remainder);
+  const partlyRefunded = toKopiykas(payment.refundedAmount) > 0;
 
   const reset = () => {
     setStep("edit");
@@ -99,7 +112,7 @@ export function RefundPaymentButton({
       setStep("confirm");
       return;
     }
-    const parsed = parseRefundAmount(rawAmount, payment.amount);
+    const parsed = parseRefundAmount(rawAmount, remainder);
     if (!parsed.ok) {
       setFieldError(parsed.message);
       return;
@@ -113,9 +126,8 @@ export function RefundPaymentButton({
     refund.mutate(
       {
         paymentId: payment.id,
-        // Omitted = the whole attempt, which is what the server refunds by
-        // default; a part travels as the validated decimal string.
-        data: confirmedAmount === null ? {} : { amount: confirmedAmount },
+        // Always explicit — see the component docblock.
+        data: { amount: confirmedAmount ?? remainder },
       },
       {
         onSuccess: () => {
@@ -141,8 +153,12 @@ export function RefundPaymentButton({
             // The number is what is wrong: back to it, message under it.
             setStep("edit");
             setMode("partial");
-            setRawAmount(confirmedAmount ?? payment.amount);
+            setRawAmount(confirmedAmount ?? remainder);
             setFieldError(refundErrorMessage(error));
+            // Someone refunded meanwhile: show the remainder as it is now.
+            void queryClient.invalidateQueries({
+              queryKey: getAdminListOrderPaymentsQueryKey(orderId),
+            });
             return;
           }
           if (kind === "conflict") {
@@ -160,7 +176,9 @@ export function RefundPaymentButton({
   };
 
   const amountToShow =
-    confirmedAmount === null ? fullAmount : formatCurrency(confirmedAmount);
+    confirmedAmount === null
+      ? remainderAmount
+      : formatCurrency(confirmedAmount);
   const inputId = `refund-amount-${payment.id}`;
   const errorId = `${inputId}-error`;
 
@@ -212,7 +230,9 @@ export function RefundPaymentButton({
                     }}
                     className="size-4 accent-primary"
                   />
-                  {t.refundModeFull(fullAmount)}
+                  {partlyRefunded
+                    ? t.refundModeRemainder(remainderAmount)
+                    : t.refundModeFull(remainderAmount)}
                 </label>
                 <label className="flex items-center gap-2 text-sm text-foreground">
                   <input

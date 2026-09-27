@@ -13979,7 +13979,7 @@
             "description": "Refund requested. The payment becomes REFUNDED only when the provider confirms it by callback — do not treat this response as confirmation."
           },
           "400": {
-            "description": "Amount is not a two-decimal string, or exceeds what the attempt charged"
+            "description": "Amount is zero or not a two-decimal string, or exceeds what is left to refund on the attempt after earlier refunds (`error: PAYMENT_REFUND_EXCEEDS_BALANCE`)"
           },
           "403": {
             "description": "Forbidden — payments:refund required"
@@ -27087,6 +27087,11 @@
             "description": "Amount charged, as a decimal string",
             "example": "1249.00"
           },
+          "refundedAmount": {
+            "type": "string",
+            "description": "Total of refunds requested on this attempt, as a decimal string. `amount - refundedAmount` is the most the next refund may be (TASK-1302)",
+            "example": "0"
+          },
           "currency": {
             "type": "string",
             "description": "ISO 4217 currency code",
@@ -27119,9 +27124,10 @@
             "nullable": true
           },
           "settledAt": {
-            "type": "object",
+            "type": "string",
             "description": "When the attempt reached a final state",
-            "nullable": true
+            "nullable": true,
+            "format": "date-time"
           },
           "createdAt": {
             "format": "date-time",
@@ -27134,6 +27140,7 @@
           "orderId",
           "provider",
           "amount",
+          "refundedAmount",
           "currency",
           "status",
           "providerPaymentId",

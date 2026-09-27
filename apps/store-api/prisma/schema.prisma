@@ -1947,6 +1947,13 @@ model Payment {
   /// mismatch: without this check a tampered amount would be accepted as payment
   /// in full.
   amount            Decimal              @db.Decimal(10, 2)
+  /// Running total of refunds the admin has asked the provider for (TASK-1302).
+  /// Reserved atomically BEFORE the provider is called and given back if it
+  /// refuses, so `amount - refundedAmount` is the ceiling for the next refund —
+  /// a partial refund leaves the attempt SUCCEEDED, and without this total
+  /// 600 + 500 out of 1000 would both pass. Callbacks do not touch it; a refund
+  /// made in the provider's own cabinet is not counted here.
+  refundedAmount    Decimal              @default(0) @map("refunded_amount") @db.Decimal(10, 2)
   currency          String               @default("UAH")
   status            PaymentAttemptStatus @default(PENDING)
   /// Provider error code/message, kept verbatim for support. "Why was my card

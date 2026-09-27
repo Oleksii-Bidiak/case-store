@@ -47,8 +47,10 @@ class RefundRequestDto {
   })
   @IsOptional()
   @IsString()
-  @Matches(/^\d+(\.\d{1,2})?$/, {
-    message: 'amount must be a decimal string with at most two decimal places',
+  // The lookahead refuses an all-zero amount ("0", "0.00") — a refund of
+  // nothing would otherwise travel all the way to LiqPay (TASK-1302).
+  @Matches(/^(?!0+(\.0{1,2})?$)\d+(\.\d{1,2})?$/, {
+    message: 'amount must be a positive decimal string with at most two decimal places',
   })
   amount?: string;
 }
@@ -117,7 +119,9 @@ export class AdminPaymentController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Amount is not a two-decimal string, or exceeds what the attempt charged',
+    description:
+      'Amount is zero or not a two-decimal string, or exceeds what is left to refund on the ' +
+      'attempt after earlier refunds (`error: PAYMENT_REFUND_EXCEEDS_BALANCE`)',
   })
   @ApiResponse({ status: 403, description: 'Forbidden — payments:refund required' })
   @ApiResponse({ status: 404, description: 'Payment not found' })

@@ -11,7 +11,8 @@ export type RefundErrorKind =
  * The contract of `AdminPaymentController.refund`: 403 without
  * `payments:refund`, 404 for an unknown attempt, 409 when the attempt is not
  * SUCCEEDED (already refunded, or never paid — no code in the body), 400 when
- * the amount is over what the attempt charged. Everything else — a network
+ * the amount is over what is left on the attempt after earlier refunds
+ * (TASK-1302 — a refund from another tab lands here too). Everything else — a network
  * failure, a 5xx, LiqPay refusing upstream — is the generic sentence.
  */
 export function refundErrorKind(error: unknown): RefundErrorKind {

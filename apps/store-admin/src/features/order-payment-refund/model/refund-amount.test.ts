@@ -3,9 +3,23 @@ import { formatCurrency } from "@/shared/lib";
 import {
   REFUND_AMOUNT_PATTERN,
   parseRefundAmount,
+  refundableRemainder,
   toKopiykas,
 } from "./refund-amount";
 import { refundErrorKind, refundErrorMessage } from "./refund-error";
+
+describe("refundableRemainder (TASK-1302)", () => {
+  it.each([
+    ["1299.00", "0", "1299.00"],
+    ["1000.00", "600", "400.00"],
+    ["1000.10", "0.20", "999.90"],
+    ["1000.00", "1000", "0.00"],
+    // Never negative, whatever the server reports.
+    ["1000.00", "1200", "0.00"],
+  ])("%s charged, %s refunded → %s left", (amount, refundedAmount, left) => {
+    expect(refundableRemainder({ amount, refundedAmount })).toBe(left);
+  });
+});
 
 describe("parseRefundAmount (TASK-371)", () => {
   const MAX = "1299.00";

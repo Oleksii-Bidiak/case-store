@@ -10,7 +10,10 @@ import {
 } from "@/entities/payment";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
-import { RefundPaymentButton } from "@/features/order-payment-refund";
+import {
+  RefundPaymentButton,
+  refundableRemainder,
+} from "@/features/order-payment-refund";
 import { Badge } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatCurrency, formatDateTime } from "@/shared/lib";
@@ -133,10 +136,7 @@ function AttemptsBody({
               label={t.paymentAttemptCreatedAt}
               value={formatDateTime(attempt.createdAt)}
             />
-            {/* `settledAt` is an ISO string on the wire; the generated type
-                says `object` because the entity's swagger decorator omits
-                `type: String` on a nullable Date. */}
-            {typeof attempt.settledAt === "string" ? (
+            {attempt.settledAt ? (
               <AttemptField
                 label={t.paymentAttemptSettledAt}
                 value={formatDateTime(attempt.settledAt)}
@@ -157,8 +157,21 @@ function AttemptsBody({
                   .join(" — ")}
               />
             ) : null}
+            {Number(attempt.refundedAmount) > 0 ? (
+              <AttemptField
+                label={t.refundedLabel}
+                value={t.refundedOfTotal(
+                  formatCurrency(attempt.refundedAmount),
+                  formatCurrency(attempt.amount),
+                )}
+              />
+            ) : null}
           </dl>
-          {canRefund && isRefundableAttempt(attempt.status) ? (
+          {/* Nothing left to send back (TASK-1302): the server would answer 400,
+              so there is no button to press. */}
+          {canRefund &&
+          isRefundableAttempt(attempt.status) &&
+          Number(refundableRemainder(attempt)) > 0 ? (
             <RefundPaymentButton orderId={orderId} payment={attempt} />
           ) : null}
         </li>

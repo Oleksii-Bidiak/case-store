@@ -21,7 +21,11 @@ jest.mock("@/shared/ui/toast", () => ({
 }));
 
 const ORDER_ID = "order-uuid-1";
-const PAYMENT = { id: "payment-uuid-1", amount: "1299.00" };
+const PAYMENT = {
+  id: "payment-uuid-1",
+  amount: "1299.00",
+  refundedAmount: "0",
+};
 const t = dict.orders;
 
 /**
@@ -49,9 +53,9 @@ function stubRefund(status = 202, body?: unknown) {
   return seen;
 }
 
-function renderButton() {
+function renderButton(payment: typeof PAYMENT = PAYMENT) {
   return renderWithProviders(
-    <RefundPaymentButton orderId={ORDER_ID} payment={PAYMENT} />,
+    <RefundPaymentButton orderId={ORDER_ID} payment={payment} />,
   );
 }
 
@@ -79,7 +83,7 @@ describe("RefundPaymentButton (TASK-371)", () => {
     toastError.mockClear();
   });
 
-  it("confirms the exact full amount, sends no amount, and only says «requested»", async () => {
+  it("confirms the exact full amount, sends it explicitly, and only says «requested»", async () => {
     const seen = stubRefund();
     renderButton();
 
@@ -102,8 +106,9 @@ describe("RefundPaymentButton (TASK-371)", () => {
     await waitFor(() =>
       expect(toastSuccess).toHaveBeenCalledWith(t.refundRequested),
     );
-    // Omitted amount = the whole attempt, per RefundRequestDto.
-    expect(seen.body).toEqual({});
+    // The sum the operator confirmed, never an omitted amount the server would
+    // resolve against a remainder this card may not have seen (TASK-1302).
+    expect(seen.body).toEqual({ amount: "1299.00" });
     // No second refund before the callback: the button is off for this visit.
     expect(screen.getByRole("button", { name: t.refundAction })).toBeDisabled();
     expect(screen.getByText(t.refundPending)).toBeInTheDocument();
@@ -142,6 +147,49 @@ describe("RefundPaymentButton (TASK-371)", () => {
       "true",
     );
     expect(seen.calls).toBe(0);
+  });
+
+  describe("after an earlier partial refund (TASK-1302)", () => {
+    const PARTLY = { ...PAYMENT, refundedAmount: "800" };
+
+    it("offers and sends only the remainder", async () => {
+      const seen = stubRefund();
+      renderButton(PARTLY);
+
+      const dialog = await openDialog();
+      expect(
+        within(dialog).getByLabelText(
+          plain(t.refundModeRemainder(formatCurrency("499.00"))),
+        ),
+      ).toBeChecked();
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: t.refundNext }),
+      );
+      await userEvent.click(
+        within(dialog).getByRole("button", {
+          name: t.refundConfirm(formatCurrency("499.00")),
+        }),
+      );
+
+      await waitFor(() =>
+        expect(toastSuccess).toHaveBeenCalledWith(t.refundRequested),
+      );
+      expect(seen.body).toEqual({ amount: "499.00" });
+    });
+
+    it("refuses a typed amount above the remainder under the field", async () => {
+      const seen = stubRefund();
+      renderButton(PARTLY);
+
+      const dialog = await choosePartial("500");
+
+      expect(
+        within(dialog).getByText(
+          plain(t.refundAmountTooLarge(formatCurrency("499.00"))),
+        ),
+      ).toBeInTheDocument();
+      expect(seen.calls).toBe(0);
+    });
   });
 
   it("refuses zero and a malformed amount", async () => {

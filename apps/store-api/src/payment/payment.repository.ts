@@ -135,6 +135,36 @@ export class PaymentRepository {
   }
 
   /**
+   * Reserve `amount` against what is left to refund on a SUCCEEDED attempt
+   * (TASK-1302). Returns `false`, changing nothing, when the attempt is not
+   * SUCCEEDED or the amount does not fit in `amount - refunded_amount`.
+   *
+   * One conditional UPDATE rather than read-check-write: the row lock the
+   * UPDATE takes serialises two simultaneous refunds, and the second one
+   * re-evaluates the WHERE against the first one's total — so both can never
+   * spend the same remainder.
+   */
+  async reserveRefund(id: string, amount: string): Promise<boolean> {
+    const updated = await this.prisma.$executeRaw`
+      UPDATE "payments"
+         SET "refunded_amount" = "refunded_amount" + ${amount}::numeric,
+             "updated_at" = NOW()
+       WHERE "id" = ${id}
+         AND "status" = 'SUCCEEDED'
+         AND "refunded_amount" + ${amount}::numeric <= "amount"`;
+    return updated === 1;
+  }
+
+  /** Give back a reservation whose provider call failed — never below zero. */
+  async releaseRefund(id: string, amount: string): Promise<void> {
+    await this.prisma.$executeRaw`
+      UPDATE "payments"
+         SET "refunded_amount" = GREATEST("refunded_amount" - ${amount}::numeric, 0),
+             "updated_at" = NOW()
+       WHERE "id" = ${id}`;
+  }
+
+  /**
    * Attempts still PENDING and older than `createdBefore` — the reconcile
    * worker's poll list.
    *

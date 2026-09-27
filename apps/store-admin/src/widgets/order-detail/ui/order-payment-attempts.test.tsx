@@ -2,6 +2,7 @@ import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { formatCurrency } from "@/shared/lib";
 import { OrderPaymentAttempts } from "./order-payment-attempts";
 
 const ORDER_ID = "order-uuid-1";
@@ -13,6 +14,7 @@ const ATTEMPTS = [
     orderId: ORDER_ID,
     provider: "liqpay",
     amount: "1299.00",
+    refundedAmount: "0",
     currency: "UAH",
     status: "SUCCEEDED",
     providerPaymentId: "liqpay-9001",
@@ -26,6 +28,7 @@ const ATTEMPTS = [
     orderId: ORDER_ID,
     provider: "liqpay",
     amount: "1299.00",
+    refundedAmount: "0",
     currency: "UAH",
     status: "FAILED",
     providerPaymentId: null,
@@ -90,6 +93,35 @@ describe("OrderPaymentAttempts (TASK-371)", () => {
     expect(
       screen.getAllByRole("button", { name: t.refundAction }),
     ).toHaveLength(1);
+  });
+
+  it("shows what was already refunded and drops the button once nothing is left (TASK-1302)", async () => {
+    const [succeeded, failed] = ATTEMPTS;
+    stubAttempts([
+      { ...succeeded, id: "pay-3", refundedAmount: "800" },
+      { ...succeeded, id: "pay-2", refundedAmount: "1299" },
+      failed,
+    ]);
+    renderWithProviders(<OrderPaymentAttempts order={ONLINE} />, {
+      auth: {
+        permissions: ["orders:read", "payments:read", "payments:refund"],
+      },
+    });
+
+    const rows = await screen.findAllByTestId("payment-attempt");
+    const plain = (value: string) => value.replace(/\s+/g, " ");
+    expect(rows[0]).toHaveTextContent(
+      plain(
+        t.refundedOfTotal(formatCurrency("800"), formatCurrency("1299.00")),
+      ),
+    );
+    // 499 left on the first attempt, nothing on the second.
+    expect(
+      screen.getAllByRole("button", { name: t.refundAction }),
+    ).toHaveLength(1);
+    expect(rows[0]).toContainElement(
+      screen.getByRole("button", { name: t.refundAction }),
+    );
   });
 
   it("shows the history but no refund button to a reader without payments:refund", async () => {
