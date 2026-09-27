@@ -31,7 +31,15 @@ class ThrottlerGuardPassThrough extends ThrottlerGuard {
   }
 }
 
-const CATEGORY = { id: 'cat-cases', name: 'Чохли', slug: 'chokhly', isActive: true };
+// `deletedAt` is part of the public visibility rule since the category tombstone
+// (TASK-653): the fake evaluates `category: { isActive, deletedAt: null }` literally.
+const CATEGORY = {
+  id: 'cat-cases',
+  name: 'Чохли',
+  slug: 'chokhly',
+  isActive: true,
+  deletedAt: null,
+};
 
 type Row = {
   id: string;
