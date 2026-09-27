@@ -30,7 +30,7 @@ export function ProductStatusToggle({
   const activate = useProductControllerActivate();
   const deactivate = useProductControllerDeactivate();
 
-  const { toggle, isPending } = useStatusToggle({
+  const { toggle, isPending, confirmDialog } = useStatusToggle({
     id: productId,
     isActive,
     activate,
@@ -42,13 +42,19 @@ export function ProductStatusToggle({
     },
   });
 
+  // `confirmDialog` is null today (no `confirmDeactivate` is passed), but it
+  // is rendered anyway: a prompt added later must not await a dialog nobody
+  // mounted (TASK-812).
   return (
-    <StatusToggleButton
-      isActive={isActive}
-      isPending={isPending}
-      onToggle={toggle}
-      activateLabel={dict.statusToggle.productActivate}
-      deactivateLabel={dict.statusToggle.productDeactivate}
-    />
+    <>
+      <StatusToggleButton
+        isActive={isActive}
+        isPending={isPending}
+        onToggle={toggle}
+        activateLabel={dict.statusToggle.productActivate}
+        deactivateLabel={dict.statusToggle.productDeactivate}
+      />
+      {confirmDialog}
+    </>
   );
 }

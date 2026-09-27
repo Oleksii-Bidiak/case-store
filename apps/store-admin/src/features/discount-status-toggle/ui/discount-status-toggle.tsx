@@ -30,7 +30,7 @@ export function DiscountStatusToggle({
   const queryClient = useQueryClient();
   const deactivate = useAdminDeactivateDiscount();
 
-  const { toggle, isPending } = useStatusToggle({
+  const { toggle, isPending, confirmDialog } = useStatusToggle({
     id: discountId,
     isActive,
     deactivate,
@@ -49,9 +49,15 @@ export function DiscountStatusToggle({
     return <Badge variant="secondary">{dict.discounts.statusInactive}</Badge>;
   }
 
+  // `confirmDialog` is null today (no `confirmDeactivate` is passed), but it
+  // is rendered anyway: a prompt added later must not await a dialog nobody
+  // mounted (TASK-812).
   return (
-    <Button variant="outline" size="sm" onClick={toggle} disabled={isPending}>
-      {isPending ? dict.discounts.deactivating : dict.discounts.deactivate}
-    </Button>
+    <>
+      <Button variant="outline" size="sm" onClick={toggle} disabled={isPending}>
+        {isPending ? dict.discounts.deactivating : dict.discounts.deactivate}
+      </Button>
+      {confirmDialog}
+    </>
   );
 }
