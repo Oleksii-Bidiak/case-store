@@ -42,6 +42,7 @@ import {
 } from "@/shared/lib/reorder-lock";
 import type { TreeItem } from "@/shared/lib/sortable-tree";
 import { useAnnouncer } from "@/shared/ui/live-announcer";
+import { apiErrorCode, apiErrorStatus } from "@/shared/lib/api-error-message";
 
 /** How long the persistent Undo control stays enabled after a commit. */
 export const UNDO_WINDOW_MS = 30_000;
@@ -49,11 +50,6 @@ export const UNDO_WINDOW_MS = 30_000;
 export const CONFLICT_FLAG_MS = 5_000;
 
 const ROOT = "__root__";
-
-/** The shape the backend error envelope reaches us in (`HttpExceptionFilter`). */
-interface ApiErrorLike {
-  response?: { status?: number; data?: { error?: string } };
-}
 
 /** Ids whose bucket OR position within it differs between two lists. */
 export function changedRowIds(
@@ -268,9 +264,9 @@ export function useReorderLifecycle<TPayload, TResponse>({
       before: TreeItem[],
       attempted: TreeItem[],
     ) => {
-      const api = error as ApiErrorLike;
-      const status = api.response?.status;
-      const code = api.response?.data?.error;
+      // Read through the one shared envelope reader (TASK-810), never the body.
+      const status = apiErrorStatus(error);
+      const code = apiErrorCode(error);
 
       // Another admin changed the list first. Resynchronise, put the operator
       // back on their row, and show them what moved underneath them.

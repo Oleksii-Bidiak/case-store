@@ -110,8 +110,26 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
+/**
+ * Money the way the storefront and the admin panel render it (TASK-801):
+ * uk-UA grouping, comma decimals, trailing zeros dropped, a literal "₴" —
+ * `1299.00` → "1 299 ₴", `29.99` → "29,99 ₴". The e-mail used to print the raw
+ * Decimal string, so a customer read `1 299 ₴` on the site and `1299.00 ₴` in
+ * the letter about the same order.
+ *
+ * Twin of `formatMoney` (store-client) and `formatCurrency` (store-admin) — no
+ * shared package between the apps, so the rule is copied and each copy is pinned
+ * by an exact-string test. The sign is appended by hand, never
+ * `style: "currency"`: ICU renders UAH as «грн» on Node and «₴» in browsers.
+ */
+const MONEY_FORMAT = new Intl.NumberFormat('uk-UA', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 2,
+});
+
 function formatMoney(value: string): string {
-  return `${value} ₴`;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? `${MONEY_FORMAT.format(amount)} ₴` : `${value} ₴`;
 }
 
 function fullName(address: OrderConfirmationAddress): string {

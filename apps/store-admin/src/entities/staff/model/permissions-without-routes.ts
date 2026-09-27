@@ -1,6 +1,10 @@
 /**
  * Permissions that exist in the code catalogue but that no endpoint requires.
  *
+ * Lives in the staff entity (moved from `entities/permission` by TASK-640):
+ * `PermissionZoneGrid` is its only reader, and an entity must not import a
+ * sibling entity.
+ *
  * WHY THIS MECHANISM EXISTS: a checkbox that grants nothing is worse than a
  * missing checkbox. The owner ticks "Повертати гроші", believes the refund desk
  * is delegated, and finds out months later that the manager was hitting 403 the

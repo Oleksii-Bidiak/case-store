@@ -87,7 +87,8 @@ describe('MailService', () => {
       expect(typeof message.html).toBe('string');
       expect(message.html.length).toBeGreaterThan(0);
       expect(message.html).toContain('iPhone 15 Pro Case');
-      expect(message.text).toContain('59.98');
+      // Money is Intl-formatted like the storefront (TASK-801).
+      expect(message.text).toContain('59,98 ₴');
     });
 
     it('passes SMTP auth credentials to the transport', async () => {

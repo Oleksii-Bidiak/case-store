@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
-import { PERMISSIONS_WITHOUT_ROUTES } from "@/entities/permission";
 import { Badge, Button, Checkbox, Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import type { ZoneGroup } from "../model/permission-zones";
+import { PERMISSIONS_WITHOUT_ROUTES } from "../model/permissions-without-routes";
 
 const d = dict.staff;
 

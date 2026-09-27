@@ -6,6 +6,30 @@ import {
   normalizeSiteVerificationValue,
 } from "./seo-settings-schema";
 import type { SeoSettingsEntity } from "@/entities/seo-settings";
+import { dict } from "@/shared/config";
+
+describe("seoSettingsSchema — defaultOgImage is http(s) only (TASK-573)", () => {
+  const { defaultOgImage } = seoSettingsSchema.shape;
+
+  it("accepts blank and an https URL", () => {
+    expect(defaultOgImage.safeParse("").success).toBe(true);
+    expect(defaultOgImage.safeParse("https://cdn.ua/og.jpg").success).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    "javascript:alert(1)",
+    "data:image/png;base64,AAAA",
+    "ftp://x.ua/a",
+  ])("rejects %j with the hint under the field", (value) => {
+    const result = defaultOgImage.safeParse(value);
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe(
+      dict.seoSettingsForm.errors.urlInvalid,
+    );
+  });
+});
 
 describe("normalizeSiteVerificationValue (TASK-280)", () => {
   it("passes a bare token through unchanged", () => {

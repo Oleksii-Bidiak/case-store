@@ -315,4 +315,40 @@ describe('MeiliClient', () => {
       await expect(client.indexDocuments([DOC])).resolves.toBeNull();
     });
   });
+
+  describe('updateSynonyms (TASK-559)', () => {
+    const MAP = { гаджет: ['gadget'], gadget: ['гаджет'] };
+
+    it('sends ONLY the synonyms (a partial update) and waits for the task', async () => {
+      const index = makeIndexMock();
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.updateSynonyms(MAP, 'blog_posts')).resolves.toBe(true);
+
+      expect(index.updateSettings).toHaveBeenCalledWith({ synonyms: MAP });
+      expect(index.waitForTask).toHaveBeenCalledWith(1, expect.anything());
+    });
+
+    it('is false when the engine rejects the settings task', async () => {
+      const index = makeIndexMock();
+      index.waitForTask.mockResolvedValue({ status: 'failed', error: 'bad' });
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.updateSynonyms(MAP)).resolves.toBe(false);
+    });
+
+    it('is false — and does not throw — when the engine is down', async () => {
+      const index = makeIndexMock();
+      index.updateSettings.mockRejectedValue(new Error('ECONNREFUSED'));
+      const client = new MeiliClient(makeConfig({}), loggerMock, makeClientMock(index));
+
+      await expect(client.updateSynonyms(MAP)).resolves.toBe(false);
+      expect(loggerMock.warn).toHaveBeenCalled();
+    });
+
+    it('is false when unconfigured', async () => {
+      const client = new MeiliClient(makeConfig({}), loggerMock);
+      await expect(client.updateSynonyms(MAP)).resolves.toBe(false);
+    });
+  });
 });

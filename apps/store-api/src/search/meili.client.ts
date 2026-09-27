@@ -213,7 +213,8 @@ export interface TaskStatus {
  * narrow so unit specs can inject a mock without a running engine.
  */
 export interface MeiliIndexApi {
-  updateSettings(settings: IndexSettings): Promise<unknown>;
+  /** Partial updates are legal: Meilisearch leaves unmentioned settings as they are. */
+  updateSettings(settings: Partial<IndexSettings>): Promise<unknown>;
   addDocuments(docs: IndexedDocument[], options?: { primaryKey?: string }): Promise<EnqueuedWrite>;
   deleteDocument(id: string): Promise<unknown>;
   deleteDocuments(ids: string[]): Promise<EnqueuedWrite>;
@@ -419,6 +420,39 @@ export class MeiliClient {
     } catch (err) {
       this.logger.warn({ err, indexUid }, 'Meilisearch getSettings failed');
       return null;
+    }
+  }
+
+  /**
+   * Replace an index's query-side synonym map and wait for the engine to apply
+   * it (TASK-559). Returns `true` only when the settings task SUCCEEDED; `false`
+   * when unconfigured, unreachable, rejected or timed out — never throws, so a
+   * down engine cannot fail the admin's save (the new map then reaches the
+   * engine on the next boot or reindex, which read it from the database).
+   *
+   * A partial settings update: Meilisearch leaves every other setting as it is.
+   */
+  async updateSynonyms(
+    synonyms: Record<string, string[]>,
+    indexUid: string = PRODUCTS_INDEX,
+  ): Promise<boolean> {
+    if (!this.client) return false;
+    try {
+      const index = this.client.index(indexUid);
+      const task = (await index.updateSettings({ synonyms })) as Partial<EnqueuedWrite> | undefined;
+      if (typeof task?.taskUid !== 'number') return false;
+      const done = await index.waitForTask(task.taskUid, { timeOutMs: TASK_WAIT_TIMEOUT_MS });
+      if (done?.status !== TASK_SUCCEEDED) {
+        this.logger.warn(
+          { indexUid, status: done?.status, err: done?.error },
+          'Meilisearch synonyms update failed',
+        );
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.logger.warn({ err, indexUid }, 'Meilisearch synonyms update failed');
+      return false;
     }
   }
 

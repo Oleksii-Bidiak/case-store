@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { PublishStatus } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import { BlogRepository, type BlogPostWithCategory } from '../blog/blog.repository';
@@ -9,7 +9,8 @@ import {
   type BlogPostSearchDocument,
   type IndexSettings,
 } from './meili.client';
-import { UA_EN_SYNONYMS, extractSearchSynonymTerms } from './search-synonyms';
+import { UA_EN_SYNONYMS, extractSearchSynonymTerms, type SynonymMap } from './search-synonyms';
+import { SearchSynonymsService } from '../search-synonyms/search-synonyms.service';
 import type { BlogSearchHits } from './blog-indexer';
 
 /** Batch size for the full blog reindex pull. */
@@ -116,8 +117,16 @@ export class BlogSearchService implements OnModuleInit {
     private readonly meili: MeiliClient,
     private readonly blogRepository: BlogRepository,
     private readonly logger: PinoLogger,
+    // The admin-edited synonym list (TASK-559) — optional for the hand-built
+    // unit specs only; absent → the built-in dictionary.
+    @Optional() private readonly synonyms?: SearchSynonymsService,
   ) {
     this.logger.setContext(BlogSearchService.name);
+  }
+
+  /** The synonym map to index with: the saved list, or the built-in one. */
+  private synonymMap(): Promise<SynonymMap> {
+    return this.synonyms ? this.synonyms.getSynonymMap() : Promise.resolve(UA_EN_SYNONYMS);
   }
 
   /** Bootstrap: ensure the index + settings, then best-effort self-populate. */
@@ -132,7 +141,11 @@ export class BlogSearchService implements OnModuleInit {
 
   /** Apply the index settings (idempotent, best-effort). */
   async ensureIndex(): Promise<void> {
-    await this.meili.ensureIndex(BLOG_POSTS_INDEX_SETTINGS, BLOG_POSTS_INDEX);
+    // Same map as the products index, from the admin's saved list (TASK-559).
+    await this.meili.ensureIndex(
+      { ...BLOG_POSTS_INDEX_SETTINGS, synonyms: await this.synonymMap() },
+      BLOG_POSTS_INDEX,
+    );
   }
 
   /**
@@ -146,7 +159,7 @@ export class BlogSearchService implements OnModuleInit {
       await this.meili.deleteDocument(postId, BLOG_POSTS_INDEX);
       return;
     }
-    await this.meili.indexDocuments([toDocument(post)], BLOG_POSTS_INDEX);
+    await this.meili.indexDocuments([toDocument(post, await this.synonymMap())], BLOG_POSTS_INDEX);
   }
 
   /** Remove a post from the index (unpublish / delete). */
@@ -178,6 +191,8 @@ export class BlogSearchService implements OnModuleInit {
     if (!this.meili.isConfigured()) return 0;
     await this.ensureIndex();
 
+    // One synonym map for the whole pass, so every document of it agrees.
+    const synonyms = await this.synonymMap();
     const seenIds = new Set<string>();
     const batches: { uid: number; count: number }[] = [];
     for (let page = 1; ; page++) {
@@ -187,7 +202,7 @@ export class BlogSearchService implements OnModuleInit {
         status: PublishStatus.PUBLISHED,
       });
       if (posts.length === 0) break;
-      const docs = posts.map(toDocument);
+      const docs = posts.map((post) => toDocument(post, synonyms));
       for (const doc of docs) seenIds.add(doc.id);
       const uid = await this.meili.indexDocuments(docs, BLOG_POSTS_INDEX);
       if (uid !== null) batches.push({ uid, count: docs.length });
@@ -275,7 +290,7 @@ export class BlogSearchService implements OnModuleInit {
  * the searchable text; the title, the admin's tags, the excerpt and the
  * category are what a reader actually searches by.
  */
-function toDocument(post: BlogPostWithCategory): BlogPostSearchDocument {
+function toDocument(post: BlogPostWithCategory, synonyms: SynonymMap): BlogPostSearchDocument {
   const keywords = post.keywords ?? [];
   return {
     id: post.id,
@@ -290,6 +305,7 @@ function toDocument(post: BlogPostWithCategory): BlogPostSearchDocument {
     // Tags feed the cross-script terms too (TASK-558), as they do on products.
     searchTerms: extractSearchSynonymTerms(
       `${post.title} ${post.category.name} ${keywords.join(' ')}`,
+      synonyms,
     ),
   };
 }

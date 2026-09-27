@@ -242,6 +242,14 @@ export const dict = {
     // A metric an owner clicks is a question about the position, not an intent to
     // edit it — the card is where the answer is.
     topProductLinkAria: (name: string) => `Відкрити картку товару «${name}»`,
+    // TASK-613 (граничний випадок E-22): нова заявка на повернення сигналить
+    // із головної, а не лише з розділу «Повернення».
+    needsActionNewReturns: "Нові заявки на повернення",
+    // TASK-613: the tile's count comes from its own request, so it can be
+    // unknown while the rest of the widget is not. A «0» there would read as
+    // «no new returns» — the placeholder says the number is missing instead.
+    needsActionCountPending: "Кількість завантажується",
+    needsActionCountFailed: "Не вдалося отримати кількість",
   },
 
   common: {
@@ -302,6 +310,8 @@ export const dict = {
     // там, де без неї лишилося б порожнє місце, — щоб відсутність контролу
     // читалась як «так задумано», а не як поломка.
     viewOnly: "Ви можете переглядати, але не змінювати.",
+    // TASK-812: heading of the shared AlertDialog confirm (replaces window.confirm).
+    confirmTitle: "Підтвердіть дію",
   },
 
   // --- Products (TASK-115) ----------------------------------------------------
@@ -419,6 +429,19 @@ export const dict = {
       announceColorCleared: (count: number) =>
         `Прибрано колір у товарах: ${count}`,
       announceColorFailed: "Не вдалося змінити колір товарів",
+
+      // «Скасувати» for the last bulk action (TASK-837, AD-PROD-33). Named like
+      // the reorder undo so the two read as the same kind of control.
+      undo: "Скасувати останню масову дію",
+      announceUndoing: (count: number) => `Повернення ${count} тов.…`,
+      announceUndone: (count: number) =>
+        `Масову дію скасовано, повернуто товарів: ${count}`,
+      announceUndoFailed:
+        "Не вдалося скасувати масову дію повністю. Спробуйте ще раз.",
+      // Said once the write lands and an undo is on offer — it names the control
+      // by its label, as the reorder commit announcement does.
+      announceUndoAvailable: (count: number, undoLabel: string) =>
+        `Готово, змінено товарів: ${count}. Щоб повернути, як було, скористайтеся кнопкою «${undoLabel}».`,
     },
     back: "← Назад до товарів",
     createHeading: "Створення товару",
@@ -761,7 +784,6 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       descriptionMax: "Опис має містити не більше 20000 символів",
       priceRequired: "Вкажіть ціну",
       priceNumber: "Ціна має бути числом",
@@ -774,8 +796,6 @@ export const dict = {
       groupInvalid: "Оберіть коректну групу",
       brandInvalid: "Оберіть коректний бренд",
       positionInt: "Порядок позиції має бути цілим числом ≥ 0",
-      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
 
     // Type-to-filter pickers (TASK-423). The category, group and brand selects
@@ -945,12 +965,9 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       descriptionMax: "Опис має містити не більше 2000 символів",
       imageUrl: "Вкажіть коректний URL",
       parentInvalid: "Оберіть коректну категорію",
-      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
     // TASK-424: the image field accepts a FILE as well as a link. «Прибрати» is
     // deliberately not «Видалити» — it clears this form's field and nothing else.
@@ -1041,7 +1058,6 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
     },
   },
 
@@ -1075,11 +1091,8 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       seriesMax: "Серія має містити не більше 255 символів",
       yearInt: "Рік має бути коректним (1990–2100)",
-      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
       descriptionMax: "Опис має містити не більше 2000 символів",
     },
   },
@@ -1263,7 +1276,12 @@ export const dict = {
       minSpendInvalid: "Вкажіть невід'ємне число",
       intInvalid: "Вкажіть ціле число більше 0",
       dateOrder: "Дата початку має передувати даті завершення",
+      // TASK-796: mirrors the API's `maxDecimalPlaces: 2` on money fields.
+      decimalsMax: "Не більше двох знаків після коми",
     },
+    // TASK-795: the window is a pair of KYIV calendar days, inclusive.
+    datesHint:
+      "Дні — за київським часом, включно: код діє з 00:00 першого дня до 23:59 останнього.",
   },
 
   // --- Static pages (TASK-153) ------------------------------------------------
@@ -1344,6 +1362,12 @@ export const dict = {
     inlinedOnInfo: "вбудована в /info",
     inlinedOnInfoHint:
       "Текст цієї сторінки показується прямо на сторінці /info вітрини. Не змінюйте slug і не знімайте з публікації — інакше відповідний блок /info зникне або покаже запасний текст.",
+    // TASK-562 — status filter (`?status=`), local like the kind tabs, so it
+    // locks reordering for the same reason.
+    filterStatus: "Фільтр за статусом",
+    filterStatusAll: "Усі статуси",
+    statusLockedHint:
+      "Поки увімкнено фільтр за статусом, порядок змінювати не можна: сторінки впорядковані одним спільним списком, а тут видно лише його частину. Зніміть фільтр.",
   },
 
   pageForm: {
@@ -1370,10 +1394,7 @@ export const dict = {
       titleMax: "Заголовок має містити не більше 255 символів",
       contentRequired: "Додайте вміст сторінки",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       excerptMax: "Короткий опис має містити не більше 500 символів",
-      metaTitleMax: "SEO заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO опис має містити не більше 500 символів",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої сторінки",
       // TASK-435 — a hub row whose slug names no hub renders nowhere.
       hubSlugRequired: "Оберіть розділ, для якого задаються мета-теги",
@@ -1491,7 +1512,6 @@ export const dict = {
       titleRequired: "Вкажіть заголовок",
       titleMax: "Заголовок має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
       excerptRequired: "Додайте короткий опис",
       excerptMax: "Короткий опис має містити не більше 500 символів",
       contentRequired: "Додайте текст статті",
@@ -1501,8 +1521,6 @@ export const dict = {
       coverUrl: "Вкажіть коректний URL обкладинки",
       readingInt: "Час читання має бути додатним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої статті",
-      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
-      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
     // TASK-424: the cover accepts a FILE as well as a link.
     coverUpload: {
@@ -1589,7 +1607,6 @@ export const dict = {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 120 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
     },
   },
 
@@ -1778,6 +1795,14 @@ export const dict = {
     copyIdDone: "Скопійовано",
     copyIdFailed: "Не вдалося скопіювати — виділіть ID вручну",
     copyIdAria: "Скопіювати ID бренду",
+    // TASK-840 (AD-CAT-12): the list showed names only — no way to tell a brand
+    // in use from an empty one without opening the catalogue.
+    colLogo: "Лого",
+    logoAlt: (name: string) => `Логотип ${name}`,
+    noLogo: "без лого",
+    colProducts: "Товарів",
+    colProductsHint:
+      "Усі товари бренду, крім видалених, — і видимі, і приховані",
   },
 
   brandForm: {
@@ -1793,8 +1818,6 @@ export const dict = {
       nameRequired: "Вкажіть назву бренду",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
-      slugPattern:
-        "Slug має бути у нижньому регістрі: лише літери, цифри та дефіси",
       logoUrl: "Вкажіть коректний URL логотипа",
     },
     // TASK-424: the brand logo accepts a FILE as well as a link.
@@ -1967,12 +1990,12 @@ export const dict = {
     // instead, so the parsing stays out of this constants module.
     defaultMetaTitlePlaceholder: "Ваш магазин — аксесуари для смартфонів",
     defaultMetaTitleHint:
-      "Заголовок, який показується у вкладці браузера та в результатах пошуку, коли у сторінки немає власного заголовка. Залиште порожнім — і заголовок згенерується автоматично з назви сторінки.",
+      "Заголовок у вкладці браузера та в результатах пошуку для сторінок, у яких немає ні власного SEO-заголовка, ні назви (наприклад, головна). Сторінка з назвою завжди бере заголовок з назви за шаблоном нижче.",
     defaultMetaDescription: "Опис сайту за замовчуванням",
     defaultMetaDescriptionPlaceholder:
       "Мультибрендовий магазин аксесуарів та Apple-техніки. Доставка по Україні.",
     defaultMetaDescriptionHint:
-      "Короткий опис магазину (1–2 речення), який Google показує під заголовком у результатах пошуку — коли у сторінки немає власного опису.",
+      "Короткий опис магазину (1–2 речення), який Google показує під заголовком у результатах пошуку — для сторінок, у яких немає ні власного SEO-опису, ні тексту, з якого його можна взяти.",
     titleTemplate: "Шаблон заголовка сторінки",
     titleTemplatePlaceholder: "%s | Ваш магазин",
     titleTemplateHint:
@@ -2031,6 +2054,13 @@ export const dict = {
     // hint: the owner WILL change this field expecting the logo to follow.
     siteNameLogoNote:
       "Напис у самому логотипі поки змінюється в коді — якщо ви завантажили логотип-картинку, він теж лишиться без змін. Напишіть розробнику, якщо треба оновити і його.",
+    // TASK-552: two SERP samples in the real tier order (own → name → default).
+    previewNamedHeading: "Сторінка з назвою (товар, категорія, стаття)",
+    previewNamedNote: (name: string) =>
+      `Приклад — товар «${name}» без власних SEO-полів: заголовок і опис беруться з самої сторінки, заголовок — за шаблоном. Значення за замовчуванням тут не з'являються: зміст сторінки завжди важливіший.`,
+    previewUnnamedHeading: "Сторінка без власного змісту",
+    previewUnnamedNote:
+      "Приклад — сторінка без SEO-полів і без назви чи опису (наприклад, головна або загальний список). Лише тут показуються заголовок і опис за замовчуванням.",
   },
 
   // --- Store logo upload (TASK-299) -------------------------------------------
@@ -2233,13 +2263,6 @@ export const dict = {
     refundedLabel: "Повернуто",
     refundedOfTotal: (refunded: string, total: string) =>
       `${refunded} з ${total}`,
-    // An honest blank. The method, the per-attempt history and the refund button
-    // need `Order.paymentMethod` on the order entity plus the admin payments
-    // endpoints, and the merged backend exposes neither — so the card says it
-    // cannot read them rather than implying there were no attempts.
-    paymentAttemptsUnavailable:
-      "Історія спроб оплати та повернення коштів стануть доступні після увімкнення онлайн-оплати.",
-
     // --- Operator-created (phone) orders (TASK-341) ---------------------------
     createHeading: "Нове замовлення",
     createMetaTitle: "Нове замовлення — Адмін",
@@ -2367,6 +2390,67 @@ export const dict = {
     returnsForOrderEmpty: "Заявок на повернення по цьому замовленню немає.",
     returnsForOrderLoadError: "Не вдалося завантажити заявки на повернення.",
     returnsForOrderRequestedAt: (date: string) => `подано ${date}`,
+
+    // --- Спроби оплати й повернення коштів (TASK-371) -------------------------
+    // Картка платежу на замовленні: кожна спроба LiqPay і кнопка повернення на
+    // успішній. 202 від сервера означає лише «запит надіслано» — статус оплати
+    // змінює колбек LiqPay, тому жоден бейдж після кліку не перемикається.
+    paymentAttemptsHeading: "Спроби оплати",
+    paymentAttemptsLoading: "Завантажуємо спроби оплати…",
+    paymentAttemptsLoadError: "Не вдалося завантажити спроби оплати.",
+    paymentAttemptsEmpty:
+      "Спроб онлайн-оплати ще не було — покупець не відкривав сторінку LiqPay.",
+    paymentAttemptsOnDelivery:
+      "Оплата при отриманні: онлайн-спроб немає, гроші повертаються поза LiqPay — через заявку на повернення.",
+    paymentAttemptProviderId: "Ідентифікатор LiqPay",
+    paymentAttemptFailure: "Причина відмови",
+    paymentAttemptSettledAt: "Завершено",
+    paymentAttemptCreatedAt: "Відкрито",
+    paymentAttemptStatus: {
+      PENDING: "Очікує",
+      SUCCEEDED: "Успішна",
+      FAILED: "Відхилена",
+      EXPIRED: "Прострочена",
+      REFUNDED: "Повернено",
+    },
+    refundAction: "Повернути кошти",
+    refundTitle: "Повернення коштів через LiqPay",
+    refundDescription: (amount: string) =>
+      `Гроші повернуться на картку покупця. Оплачено цією спробою: ${amount}.`,
+    refundModeLegend: "Скільки повернути",
+    refundModeFull: (amount: string) => `Усю суму — ${amount}`,
+    refundModePartial: "Частину",
+    refundAmountLabel: "Сума повернення, ₴",
+    refundAmountHint:
+      "Наприклад, 499 або 499.50 — не більше за залишок до повернення.",
+    refundAmountInvalid: "Вкажіть суму числом, до двох знаків після крапки.",
+    refundAmountZero: "Сума має бути більшою за нуль.",
+    refundAmountTooLarge: (amount: string) =>
+      `Не більше за залишок до повернення з цієї спроби: ${amount}.`,
+    refundNext: "Далі",
+    refundBack: "Назад",
+    refundCancel: "Скасувати",
+    refundConfirmTitle: "Підтвердіть повернення",
+    refundConfirmText: (amount: string) =>
+      `Повернути покупцеві ${amount}? Запит піде в LiqPay одразу, скасувати його звідси не можна.`,
+    refundConfirm: (amount: string) => `Повернути ${amount}`,
+    refundRequested:
+      "Запит на повернення надіслано. Статус оплати оновиться після підтвердження LiqPay.",
+    // Кнопка на спробі, по якій запит уже пішов: сервер уже зарезервував суму
+    // (TASK-1302), а свіжий залишок картка покаже після оновлення списку.
+    refundPending: "Запит надіслано — чекаємо підтвердження LiqPay",
+    refundErrorForbidden:
+      "У вас немає права повертати кошти. Попросіть власника додати право «Повертати гроші».",
+    refundErrorConflict:
+      "Цю спробу вже не можна повернути: її статус змінився. Список спроб оновлено.",
+    refundErrorTooLarge:
+      "Сума перевищує залишок, який ще можна повернути з цієї спроби.",
+    refundErrorNotFound: "Спробу оплати не знайдено — оновіть сторінку.",
+    refundErrorGeneric:
+      "Не вдалося надіслати запит на повернення. Спробуйте ще раз.",
+    // Після часткового повернення всю суму вже не повернути — лише залишок
+    // (TASK-1302).
+    refundModeRemainder: (amount: string) => `Увесь залишок — ${amount}`,
   },
 
   reviews: {
@@ -2484,11 +2568,36 @@ export const dict = {
     unhideAuthorSuccess: (count: number) =>
       `Повернуто відгуків автора: ${count}`,
     unhideAuthorError: "Не вдалося повернути відгуки автора. Спробуйте ще раз.",
-    // `ratingVisible` folds two independent gates — a moderator's hide and an
-    // unconfirmed email — and the moderation row does not say which. The badge
-    // therefore reports the EFFECT, which is true either way, and never guesses
-    // at the cause.
+    // Since TASK-1004 only the unconfirmed-email gate reaches this badge: a
+    // withdrawn author's row names its lever from `hiddenReason` (the keys
+    // below). A row with no `hiddenReason` whose `ratingVisible` is still false
+    // is held back by the email alone, and there the effect is the whole truth.
     ratingNotCounted: "Оцінка не враховується",
+
+    // --- Why a row is withdrawn, from the server (TASK-1004, API TASK-596/599) --
+    // `hiddenReason` names the lever that put the author's contribution down, so
+    // the badge says WHO did it instead of inferring it from `ratingVisible` —
+    // and each lever is lifted by a different hand (a moderator, an un-ban,
+    // nobody), which is exactly what the operator needs to know before acting.
+    hiddenByModerator: "Приховано модератором",
+    hiddenByBan: "Автора заблоковано",
+    hiddenByDeletion: "Акаунт видалено",
+    // The review-author visibility filter (`?visibility=`, API default `visible`).
+    // Without it the withdrawn rows — and so the «повернути» button — were
+    // unreachable from the queue.
+    filterVisibilityAria: "Фільтр за видимістю автора",
+    filterVisibilityVisible: "Лише видимі",
+    filterVisibilityHidden: "Приховані",
+    filterVisibilityAll: "Видимі й приховані",
+    // `?status=all` — every text verdict plus ratings without text (TASK-601).
+    filterAll: "Усі",
+    // Deep-link narrowing from the dashboard's rating-abuse card (TASK-601):
+    // removable chips, since no control on this screen sets them.
+    productChip: (product: string) => `Товар: ${product}`,
+    productChipAria: (product: string) =>
+      `Прибрати фільтр за товаром ${product}`,
+    ipChip: (ip: string) => `IP: ${ip}`,
+    ipChipAria: (ip: string) => `Прибрати фільтр за IP-адресою ${ip}`,
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------
@@ -2698,6 +2807,22 @@ export const dict = {
     // Лише коли «Кошти повернено» немає в списку, а гроші надходили (TASK-842).
     paymentTransitionsHintFullRefund:
       "Повне повернення коштів можливе після скасування замовлення.",
+    // TASK-622: 403 на зміні замовлення чи оплати. Раніше мапер конфліктів
+    // бачив у тілі поле `error` («Forbidden») і казав «замовлення змінилося,
+    // оновіть сторінку» — оператор оновлював вічно, бо перезавантаження права
+    // не дає. Називаємо справжню причину і того, хто може її усунути.
+    forbidden:
+      "У вас немає права на цю дію — зміну не збережено. Якщо вона потрібна, попросіть власника магазину надати доступ.",
+    // TASK-621: рядок історії про подію оплати, яку магазин відхилив. Раніше
+    // таймлайн показував «Оплачено → Оплачено» — ніби нічого не сталося.
+    // `requested` — чого просила подія; `current` — що лишилось насправді.
+    paymentEventRefusedLabel: (requested: string, current: string) =>
+      `Відхилено подію оплати: «${requested}» (статус оплати лишився «${current}»)`,
+    // Рядки, записані до TASK-621, не зберегли, чого просила подія.
+    paymentEventRefusedLegacyLabel: (current: string) =>
+      `Відхилено подію оплати (статус оплати лишився «${current}»)`,
+    paymentEventRefusedHistoryNote:
+      "Платіжна система повідомила про зміну, яку магазин не прийняв: такий перехід статусу оплати заборонений. Гроші й статус не змінились; подробиці — в журналі сервера.",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
@@ -3508,6 +3633,8 @@ export const dict = {
       productImage: "Фото товарів",
       attributeDefinition: "Характеристики",
       seoSettings: "SEO-налаштування",
+      // TASK-559: PUT /admin/search/synonyms → `searchSynonyms.update`.
+      searchSynonyms: "Синоніми пошуку",
     },
 
     // ── TASK-430: the log in Ukrainian ────────────────────────────────────────
@@ -4115,8 +4242,7 @@ export const dict = {
       "Заповніть назву або SEO-заголовок, щоб побачити, як сторінка виглядатиме в пошуку Google.",
     // Self-referential preview on /settings/seo (Design Decision 4) — a sample
     // page standing in for "a real page with no title/description of its own".
-    sampleNote:
-      "Це приклад: так виглядатиме сторінка, у якої немає власного заголовка чи опису.",
+    // Its notes live in `seoSettingsForm.preview*` since TASK-552.
     samplePageName: "Чохол для iPhone 15",
     samplePageDescription:
       "Надійний силіконовий чохол для iPhone 15 із захистом кутів та підтримкою MagSafe. Доставка по Україні.",
@@ -4503,6 +4629,11 @@ export const dict = {
       keywordLength: (max: number) =>
         `Один тег має містити не більше ${max} символів`,
       ogImageUrl: "Вкажіть коректний URL картинки (http:// або https://)",
+      // TASK-811: one copy for all eight entity forms (was eight/five copies,
+      // one of which had already drifted to a different wording).
+      slugPattern: "Використовуйте малі літери, цифри та поодинокі дефіси",
+      metaTitleMax: "SEO-заголовок має містити не більше 255 символів",
+      metaDescriptionMax: "SEO-опис має містити не більше 500 символів",
     },
     // TASK-728: the OG field takes a FILE and a media-library pick as well as a
     // link — the same three paths the neighbouring image fields offer.
@@ -4526,6 +4657,54 @@ export const dict = {
     // Starts with the visible «З медіатеки» (WCAG 2.5.3 label in name); tells
     // it apart from the other picker in the same form.
     ogImagePickerAria: "З медіатеки — картинка для соцмереж",
+  },
+
+  // --- Синоніми пошуку (TASK-559) ----------------------------------------------
+  // Секція на /settings/search. Пишемо для оператора без технічного бекграунду:
+  // «синонім» пояснено прикладом, а обмеження рушія (одне слово, без дефісів)
+  // сказано до того, як форма його відхилить.
+  searchSynonyms: {
+    heading: "Синоніми пошуку",
+    subheading:
+      "Слова в одній групі пошук вважає однаковими: хто шукає «чохол», побачить і товари, де написано «case». Корисно для назв латиницею й кирилицею, множини та розмовних слів.",
+    defaultNote:
+      "Зараз діє стандартний список магазину. Змініть його й збережіть — і пошук працюватиме за вашим.",
+    termsLabel: (n: number) => `Група ${n}`,
+    termsPlaceholder: "чохол, чохли, case, cases",
+    termsHint:
+      "Через кому. Кожне слово — одне слово без пробілів, дефісів і апострофів; великі літери не мають значення.",
+    addGroup: "Додати групу",
+    removeGroupAria: (n: number) => `Видалити групу ${n}`,
+    empty:
+      "Жодної групи. Порожній список не зберігається: «Зберегти синоніми» поверне стандартний список магазину. Додайте групу, щоб пошук працював за вашим.",
+    submit: "Зберегти синоніми",
+    saving: "Збереження…",
+    restoreDefaults: "Повернути стандартний список",
+    restoreTitle: "Повернути стандартний список?",
+    restoreDescription:
+      "Ваші групи буде видалено, і пошук знову працюватиме за вбудованим словником магазину.",
+    restoreConfirm: "Повернути",
+    reindexNote:
+      "Нові синоніми діють одразу для правильно написаних слів. Щоб їх знаходило і з помилками («чохл»), після збереження натисніть «Перебудувати покажчик» вище.",
+    loading: "Завантажуємо синоніми…",
+    loadError: "Не вдалося завантажити синоніми. Спробуйте оновити сторінку.",
+    toastSaved: "Синоніми збережено",
+    notApplied:
+      "Синоніми збережено, але пошуковий сервіс зараз недоступний — вони запрацюють після його перезапуску або перебудови покажчика.",
+    toastRestored: "Повернуто стандартний список",
+    toastFailed: "Не вдалося зберегти синоніми",
+    errors: {
+      tooFew: "У групі мають бути щонайменше два різні слова",
+      tooMany: (max: number) => `Не більше ${max} слів в одній групі`,
+      notOneWord: (term: string) =>
+        `«${term}» — не одне слово: приберіть пробіли, дефіси й апострофи`,
+      tooLong: (max: number) => `Одне слово — не довше ${max} символів`,
+      tooManyGroups: (max: number) => `Не більше ${max} груп`,
+    },
+    // Saving a list with no groups left is the server's «restore the defaults»,
+    // so it goes through the same confirmation with its own explanation.
+    emptySaveDescription:
+      "У списку не лишилося жодної групи. Порожній список магазин не зберігає — пошук знову працюватиме за вбудованим словником, і його групи з'являться тут.",
   },
 } as const;
 

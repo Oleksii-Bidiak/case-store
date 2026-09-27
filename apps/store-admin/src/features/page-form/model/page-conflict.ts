@@ -1,5 +1,5 @@
 import { dict } from "@/shared/config";
-import { apiErrorStatus } from "@/shared/lib";
+import { apiErrorCode, apiErrorStatus } from "@/shared/lib";
 import type { PageKindValue } from "./page-schema";
 
 /** The API's code for "another page of this kind already has this address". */
@@ -25,8 +25,6 @@ export function pageSaveConflictMessage(
   kind: PageKindValue,
 ): string | undefined {
   if (apiErrorStatus(error) !== 409) return undefined;
-  const code = (error as { response?: { data?: { error?: unknown } } })
-    ?.response?.data?.error;
-  if (code !== PAGE_SLUG_TAKEN) return undefined;
+  if (apiErrorCode(error) !== PAGE_SLUG_TAKEN) return undefined;
   return dict.pages.toastSlugTaken(KIND_LABEL[kind]);
 }

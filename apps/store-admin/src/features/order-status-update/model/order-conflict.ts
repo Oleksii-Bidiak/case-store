@@ -1,4 +1,5 @@
 import { dict } from "@/shared/config";
+import { apiErrorCode, apiErrorStatus } from "@/shared/lib";
 
 /**
  * Decoding the 409s the order endpoints raise, into something an operator can
@@ -43,27 +44,22 @@ export interface ApiErrorLike {
   };
 }
 
-function codeOf(error: ApiErrorLike | null | undefined): string | undefined {
-  const data = error?.response?.data;
-  if (!data || typeof data !== "object") {
-    return undefined;
-  }
-  const code = (data as { error?: unknown }).error;
-  return typeof code === "string" ? code : undefined;
-}
-
 /**
  * True when the request was refused because the order moved under the operator
  * — either a forbidden transition or a lost update.
  *
- * Keyed off the HTTP status OR the code, not the code alone: a proxy that
- * swallows the body still leaves a 409, and "someone else changed this" is a far
- * better guess at that point than "unknown error".
+ * Keyed off the HTTP status ALONE; the code only refines which conflict it was
+ * (TASK-622). `HttpExceptionFilter` puts an `error` field in EVERY body — for an
+ * uncoded exception it is the class name, `Forbidden` or `Internal Server
+ * Error` — so "the body has a code" is true of any failure at all. Treating it
+ * as evidence told an operator who had just lost `orders:write` that the order
+ * had changed and to reload, which they did, forever. A 409 without a body (a
+ * proxy swallowed it) is still a conflict.
  */
 export function isOrderConflict(
   error: ApiErrorLike | null | undefined,
 ): boolean {
-  return error?.response?.status === 409 || codeOf(error) !== undefined;
+  return apiErrorStatus(error) === 409;
 }
 
 /**
@@ -82,7 +78,7 @@ export function orderConflictMessage(
     return null;
   }
 
-  const code = codeOf(error);
+  const code = apiErrorCode(error);
   if (code === ORDER_CONFLICT_CODE.STALE) {
     return dict.orderStatus.conflict.ORDER_STALE;
   }
@@ -120,6 +116,24 @@ export function requiresReload(
   if (!isOrderConflict(error)) {
     return false;
   }
-  const code = codeOf(error);
+  const code = apiErrorCode(error);
   return code === undefined || !NO_RELOAD_CODES.includes(code);
+}
+
+/**
+ * What an operator reads when an order write is refused: the conflict sentence
+ * for a 409, «немає права» for a 403, `null` for anything else so the caller
+ * falls back to its own generic copy (TASK-622).
+ *
+ * The 403 is named rather than folded into the generic failure because the two
+ * have opposite remedies: "try again" is useless without the grant, and the
+ * operator needs to know that asking the owner — not reloading — is the fix.
+ */
+export function orderWriteErrorMessage(
+  error: ApiErrorLike | null | undefined,
+): string | null {
+  if (apiErrorStatus(error) === 403) {
+    return dict.orderStatus.forbidden;
+  }
+  return orderConflictMessage(error);
 }

@@ -3,7 +3,9 @@
 import { RefreshCw } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import { useReindexSearch } from "@/entities/search";
-import { Button } from "@/shared/ui";
+import { useAdminGetSearchSynonyms } from "@/entities/search-synonyms";
+import { SearchSynonymsForm } from "@/features/search-synonyms-form";
+import { Button, Skeleton } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 const d = dict.searchIndex;
@@ -67,6 +69,53 @@ export function SearchIndexView() {
           {isPending ? d.buttonPending : d.button}
         </Button>
       </div>
+
+      <SearchSynonymsSection />
     </div>
+  );
+}
+
+const s = dict.searchSynonyms;
+
+/**
+ * The synonym list (TASK-559) — on the same screen as the rebuild button
+ * because the two go together: a new synonym works for correctly typed words
+ * at once, and for misspelt ones after the rebuild.
+ */
+function SearchSynonymsSection() {
+  const { data, isLoading, isError } = useAdminGetSearchSynonyms();
+  const settings = data?.data;
+
+  return (
+    <section
+      aria-labelledby="search-synonyms-heading"
+      className="rounded-lg border border-border bg-card p-6 shadow-card"
+    >
+      <h3
+        id="search-synonyms-heading"
+        className="text-base font-semibold text-foreground"
+      >
+        {s.heading}
+      </h3>
+      <p className="mt-1 mb-4 text-sm text-muted-foreground">{s.subheading}</p>
+
+      {isLoading ? (
+        <div
+          role="status"
+          aria-label={s.loading}
+          className="flex flex-col gap-3"
+        >
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Skeleton key={index} className="h-9 w-full" />
+          ))}
+        </div>
+      ) : isError || !settings ? (
+        <p role="alert" className="text-sm text-destructive">
+          {s.loadError}
+        </p>
+      ) : (
+        <SearchSynonymsForm settings={settings} />
+      )}
+    </section>
   );
 }

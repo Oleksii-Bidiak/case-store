@@ -1125,6 +1125,8 @@ function CategoryTreeView() {
           announcePolite(b.announce.cleared);
         }}
       />
+      {/* TASK-812: the bulk-deactivate AlertDialog (portalled to <body>). */}
+      {bulk.confirmDialog}
 
       <div id={INSTRUCTIONS_LONG_ID} className="sr-only">
         {dict.reorderTree.instructionsLong}
@@ -1297,14 +1299,17 @@ function CategoryTreeRow({
    * controls stay at `-1`, so Tab never walks the whole table.
    */
   const controlTabIndex = isOwner ? 0 : -1;
-  const { toggle: toggleStatus, isPending: statusPending } =
-    useCategoryStatusToggle({
-      categoryId: id,
-      isActive,
-      name,
-      descendantCount,
-      onCancel: () => statusRef.current?.focus(),
-    });
+  const {
+    toggle: toggleStatus,
+    isPending: statusPending,
+    confirmDialog: statusConfirmDialog,
+  } = useCategoryStatusToggle({
+    categoryId: id,
+    isActive,
+    name,
+    descendantCount,
+    onCancel: () => statusRef.current?.focus(),
+  });
 
   return (
     <TableRow
@@ -1423,6 +1428,8 @@ function CategoryTreeRow({
             {isActive ? dict.common.active : dict.common.inactive}
           </Badge>
         </Button>
+        {/* TASK-812: the blast-radius AlertDialog (portalled to <body>). */}
+        {statusConfirmDialog}
         {/*
           Outside the toggle button on purpose: it is a statement about an
           ANCESTOR, not something this row's control can change.

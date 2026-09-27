@@ -9,6 +9,7 @@ import {
 } from '../catalog-filter/catalogue-filter.resolver';
 import { PublicProductEntity } from '../product/entities';
 import { MeiliClient, SEARCH_MAX_TOTAL_HITS } from './meili.client';
+import type { SearchSynonymsService } from '../search-synonyms/search-synonyms.service';
 import {
   SearchService,
   PRODUCTS_INDEX_SETTINGS,
@@ -226,6 +227,62 @@ describe('SearchService', () => {
       expect(PRODUCTS_INDEX_SETTINGS.synonyms?.['айфон']).toContain('iphone');
       expect(PRODUCTS_INDEX_SETTINGS.synonyms?.['iphone']).toContain('айфон');
       expect(PRODUCTS_INDEX_SETTINGS.synonyms?.['чохол']).toContain('case');
+    });
+  });
+
+  // ─── admin-edited synonyms (TASK-559) ───────────────────────────────────────
+
+  describe('with the admin-edited synonym list (TASK-559)', () => {
+    const SAVED_MAP = { гаджет: ['gadget'], gadget: ['гаджет'] };
+    let synonyms: { getSynonymMap: jest.Mock };
+
+    beforeEach(() => {
+      synonyms = { getSynonymMap: jest.fn().mockResolvedValue(SAVED_MAP) };
+      service = new SearchService(
+        meili as unknown as MeiliClient,
+        repo as unknown as ProductRepository,
+        categoryRepo as unknown as CategoryRepository,
+        loggerMock,
+        new CatalogueFilterResolver(
+          categoryRepo as unknown as CategoryRepository,
+          brandRepo as unknown as BrandRepository,
+          deviceRepo as unknown as DeviceRepository,
+        ),
+        synonyms as unknown as SearchSynonymsService,
+      );
+    });
+
+    it('pushes the SAVED map as the index setting, not the built-in one', async () => {
+      await service.ensureIndex();
+
+      expect(meili.ensureIndex).toHaveBeenCalledWith({
+        ...PRODUCTS_INDEX_SETTINGS,
+        synonyms: SAVED_MAP,
+      });
+    });
+
+    it('builds a document’s searchTerms from the saved map', async () => {
+      repo.findOneForIndex.mockResolvedValue(
+        makeIndexSource({ name: 'Гаджет-тримач', keywords: [] }) as never,
+      );
+
+      await service.indexProduct('product-1');
+
+      const [docs] = meili.indexDocuments.mock.calls[0];
+      expect(docs[0].searchTerms).toEqual(['gadget']);
+    });
+
+    it('reads the map once per full reindex, not once per product', async () => {
+      repo.findManyForIndex
+        .mockResolvedValueOnce({
+          items: [makeIndexSource(), makeIndexSource({ id: 'p-2' })],
+        } as never)
+        .mockResolvedValueOnce({ items: [] } as never);
+
+      await service.reindexAll();
+
+      // ensureIndex + the pass itself.
+      expect(synonyms.getSynonymMap).toHaveBeenCalledTimes(2);
     });
   });
 

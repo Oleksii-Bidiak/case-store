@@ -4,9 +4,9 @@ import type {
   UpdateDeviceBrandDto,
 } from "@/entities/device";
 import { dict } from "@/shared/config";
+import { SLUG_PATTERN } from "@/shared/lib/slug";
 
 const e = dict.deviceBrandForm.errors;
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * Validation schema for the admin device-brand form (TASK-190).
@@ -20,7 +20,7 @@ export const deviceBrandSchema = z.object({
     .string()
     .trim()
     .max(255, e.slugMax)
-    .regex(SLUG_PATTERN, e.slugPattern)
+    .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
     .optional()
     .or(z.literal("")),
   isActive: z.boolean().optional(),

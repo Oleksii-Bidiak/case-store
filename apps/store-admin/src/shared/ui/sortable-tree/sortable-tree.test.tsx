@@ -1,5 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
+import type { TreeItem } from "@/shared/lib/sortable-tree";
 import { fixtureTree } from "@/shared/lib/sortable-tree/fixtures";
 import { depthClampFor, getProjection } from "@/shared/lib/sortable-tree";
 import { flattenTree, toNested } from "@/shared/lib/sortable-tree";
@@ -21,7 +22,32 @@ import {
  * asserted here is the configuration that §3.2 makes mandatory, plus the flat-mode
  * collapse. Drag CORRECTNESS is covered by the pure projection→reducer fixture
  * table in `shared/lib/sortable-tree/projection.test.ts`.
+ *
+ * TASK-578 adds one seam: `DndContext` is wrapped (the REAL one still renders)
+ * so a test can hand the component the exact start / move / end events dnd-kit
+ * would emit, and check that the drop lands where the painted hint said.
  */
+
+type DndHandler = (event: unknown) => void;
+const mockDndProps: {
+  current: {
+    onDragStart?: DndHandler;
+    onDragMove?: DndHandler;
+    onDragEnd?: DndHandler;
+  } | null;
+} = { current: null };
+
+jest.mock("@dnd-kit/core", () => {
+  const actual = jest.requireActual("@dnd-kit/core");
+  const { createElement } = jest.requireActual("react");
+  return {
+    ...actual,
+    DndContext: (props: Record<string, unknown>) => {
+      mockDndProps.current = props;
+      return createElement(actual.DndContext, props);
+    },
+  };
+});
 
 const renderTree = (maxDepth = 4, disabled = false) =>
   render(
@@ -233,5 +259,121 @@ describe("dropHintStyle", () => {
       expect(JSON.stringify(style)).not.toMatch(/#[0-9a-f]{3,8}/i);
       expect(JSON.stringify(style)).toContain("var(--color-primary)");
     }
+  });
+});
+
+/**
+ * TASK-578 — «куди показали — туди й упало». The hint and the drop used to run
+ * `getProjection` separately (state `overId` vs the end event's `over.id`); now
+ * the drop consumes the projection that was painted.
+ */
+describe("SortableTree — where it hinted is where it landed (TASK-578)", () => {
+  const renderDraggable = (onMove: jest.Mock) =>
+    render(
+      <LiveAnnouncer>
+        <SortableTree
+          items={fixtureTree}
+          maxDepth={4}
+          onMove={onMove}
+          renderRow={({ item, setNodeRef, style, handleProps }) => (
+            <div
+              key={item.id}
+              ref={setNodeRef}
+              style={style}
+              data-testid={`row-${item.id}`}
+            >
+              <button type="button" {...handleProps}>
+                grip {item.id}
+              </button>
+            </div>
+          )}
+        />
+      </LiveAnnouncer>,
+    );
+
+  const handlers = () => {
+    const current = mockDndProps.current;
+    if (!current) throw new Error("DndContext was not rendered");
+    return current;
+  };
+  const start = (id: string) =>
+    act(() => handlers().onDragStart?.({ active: { id } }));
+  const move = (id: string, overId: string, x: number) =>
+    act(() =>
+      handlers().onDragMove?.({
+        active: { id },
+        over: { id: overId },
+        delta: { x, y: 0 },
+      }),
+    );
+  const end = (id: string, overId: string) =>
+    act(() => handlers().onDragEnd?.({ active: { id }, over: { id: overId } }));
+
+  const parentOf = (next: TreeItem[], id: string) =>
+    next.find((item) => item.id === id)?.parentId;
+
+  it("a NEST hint on b1 drops a1 INSIDE b1", async () => {
+    const onMove = jest.fn();
+    renderDraggable(onMove);
+
+    await start("a1");
+    await move("a1", "b1", 24);
+    // The hint on screen: b1 framed as the future parent.
+    expect(screen.getByTestId("row-b1").style.outline).toBe(
+      "2px solid var(--color-primary)",
+    );
+
+    await end("a1", "b1");
+
+    expect(onMove).toHaveBeenCalledTimes(1);
+    const [, next, movingId] = onMove.mock.calls[0];
+    expect(movingId).toBe("a1");
+    expect(parentOf(next, "a1")).toBe("b1");
+  });
+
+  it("an AFTER line under b1 drops a1 as b1's sibling — even if the end event names another row", async () => {
+    const onMove = jest.fn();
+    renderDraggable(onMove);
+
+    await start("a1");
+    await move("a1", "b1", 0);
+    const row = screen.getByTestId("row-b1");
+    expect(row.style.backgroundPosition).toBe("left bottom");
+    expect(row.style.outline).toBe("");
+
+    // The release event disagrees with the last painted frame. The operator
+    // let go on what they were SHOWN, so the painted projection decides.
+    await end("a1", "a2");
+
+    expect(onMove).toHaveBeenCalledTimes(1);
+    const [, next] = onMove.mock.calls[0];
+    expect(parentOf(next, "a1")).toBe("b");
+    const order = (next as TreeItem[])
+      .filter((item) => item.parentId === "b")
+      .map((item) => item.id);
+    expect(order).toEqual(["b1", "a1"]);
+  });
+
+  it("clears the hint once the drag ends", async () => {
+    renderDraggable(jest.fn());
+
+    await start("a1");
+    await move("a1", "b1", 24);
+    await end("a1", "b1");
+
+    expect(screen.getByTestId("row-b1").style.outline).toBe("");
+  });
+
+  it("a release with no painted frame falls back to the end event", async () => {
+    const onMove = jest.fn();
+    renderDraggable(onMove);
+
+    await start("a1");
+    await end("a1", "b1");
+
+    expect(onMove).toHaveBeenCalledTimes(1);
+    const [, next] = onMove.mock.calls[0];
+    // offset 0 over b1 ⇒ the same answer the AFTER hint above gives.
+    expect(parentOf(next, "a1")).toBe("b");
   });
 });

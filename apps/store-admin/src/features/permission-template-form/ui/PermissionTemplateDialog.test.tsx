@@ -169,4 +169,68 @@ describe("PermissionTemplateDialog", () => {
       "Оператор замовлень",
     );
   });
+
+  it("reads the catalogue through the signed-in user's own id (TASK-640)", async () => {
+    // The feature — not the staff entity — now supplies the session id to
+    // `useGrantableCatalogue`; the request must still target the caller.
+    const requestedIds: string[] = [];
+    server.use(
+      http.get("*/api/admin/staff/:id/permissions", ({ params }) => {
+        requestedIds.push(String(params.id));
+        return HttpResponse.json({
+          data: {
+            userId: String(params.id),
+            email: "owner@example.com",
+            role: "ADMIN",
+            level: 3,
+            holdsEverythingByLevel: true,
+            permissions: [],
+            catalogue: [
+              {
+                key: "orders:read",
+                zone: "orders",
+                label: "Переглядати замовлення",
+              },
+            ],
+            zones: [{ zone: "orders", label: "Замовлення" }],
+          },
+        });
+      }),
+    );
+
+    renderWithProviders(
+      <WithAuth isOwner userId="owner-42">
+        <PermissionTemplateDialog
+          template={null}
+          open
+          onOpenChange={() => {}}
+        />
+      </WithAuth>,
+    );
+
+    expect(await screen.findByText("Замовлення")).toBeInTheDocument();
+    expect(requestedIds).toEqual(["owner-42"]);
+  });
+
+  it("does not fetch the catalogue while the dialog is closed", () => {
+    const requested = jest.fn();
+    server.use(
+      http.get("*/api/admin/staff/:id/permissions", () => {
+        requested();
+        return HttpResponse.json({ data: {} });
+      }),
+    );
+
+    renderWithProviders(
+      <WithAuth isOwner>
+        <PermissionTemplateDialog
+          template={null}
+          open={false}
+          onOpenChange={() => {}}
+        />
+      </WithAuth>,
+    );
+
+    expect(requested).not.toHaveBeenCalled();
+  });
 });

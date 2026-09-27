@@ -19,6 +19,23 @@ export {
   DialogTitle,
   DialogTrigger,
 } from "./dialog";
+// TASK-812: the confirm-before-commit modal that replaces `window.confirm`.
+export {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogOverlay,
+  AlertDialogPortal,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+  useConfirmDialog,
+  type ConfirmDialogApi,
+  type ConfirmOptions,
+} from "./alert-dialog";
 export {
   DropdownMenu,
   DropdownMenuCheckboxItem,

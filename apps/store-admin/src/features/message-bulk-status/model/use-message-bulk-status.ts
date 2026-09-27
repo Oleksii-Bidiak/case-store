@@ -1,6 +1,5 @@
 "use client";
 
-import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getAdminContactListQueryKey,
@@ -8,7 +7,7 @@ import {
   useAdminContactUpdateStatusMany,
   type BulkContactMessageStatusDtoStatus,
 } from "@/entities/contact";
-import { useAnnouncer } from "@/shared/ui";
+import { useBulkStatus } from "@/features/bulk-status";
 import { dict } from "@/shared/config";
 
 const t = dict.messages.bulk;
@@ -24,15 +23,17 @@ export interface MessageBulkStatusApi {
 }
 
 /**
- * Bulk status change over the selected contact messages (TASK-354).
+ * Bulk status change over the selected contact messages (TASK-354), a thin
+ * wrapper over `useBulkStatus` (TASK-812).
  *
  * ── Why this one does NOT confirm ────────────────────────────────────────────
- * Its siblings do: `useReviewBulkModeration` prompts because rejecting
- * hard-deletes, `useProductBulkStatus` prompts because deactivating pulls stock
- * off the storefront. Nothing here leaves the panel — every status is an
+ * Its siblings do: `useReviewBulkModeration` prompts because rejecting takes
+ * texts off the site, `useProductBulkStatus` prompts because deactivating pulls
+ * stock off the storefront. Nothing here leaves the panel — every status is an
  * internal triage label, and the row's own dialog can set any of them back. A
  * prompt on a reversible action is how operators learn to dismiss prompts
- * unread, which is what makes the two that matter stop working.
+ * unread, which is what makes the two that matter stop working. No `confirmFor`
+ * ⇒ no dialog to render, so the API carries no `confirmDialog` either.
  *
  * ── Both keys, not just the list ─────────────────────────────────────────────
  * The per-row path (`MessageDetailDialog`) invalidates the inbox list AND the
@@ -46,39 +47,27 @@ export function useMessageBulkStatus({
   onSuccess,
 }: UseMessageBulkStatusOptions = {}): MessageBulkStatusApi {
   const queryClient = useQueryClient();
-  const { announcePolite, announceAssertive } = useAnnouncer();
   const mutation = useAdminContactUpdateStatusMany();
 
-  const setStatus = useCallback(
-    (ids: string[], status: BulkContactMessageStatusDtoStatus) => {
-      if (mutation.isPending || ids.length === 0) return;
-
-      announcePolite(t.announceSaving(ids.length));
-
-      mutation.mutate(
-        { data: { ids, status } },
-        {
-          onSuccess: (response) => {
-            void queryClient.invalidateQueries({
-              queryKey: getAdminContactListQueryKey(),
-            });
-            void queryClient.invalidateQueries({
-              queryKey: getAdminContactUnreadCountQueryKey(),
-            });
-            // Announce what the server wrote, not what was asked for. The two
-            // can only differ when something went wrong, and that is precisely
-            // when the real number matters.
-            announcePolite(t.announceDone(response.data.updatedCount));
-            onSuccess?.();
-          },
-          onError: () => {
-            announceAssertive(t.announceFailed);
-          },
-        },
-      );
+  const { run, isPending } = useBulkStatus({
+    mutation,
+    toVariables: (ids, status: BulkContactMessageStatusDtoStatus) => ({
+      data: { ids, status },
+    }),
+    announceSaving: (count) => t.announceSaving(count),
+    // Announce what the server wrote, not what was asked for.
+    announceDone: (response) => t.announceDone(response.data.updatedCount),
+    announceFailed: t.announceFailed,
+    onWritten: () => {
+      void queryClient.invalidateQueries({
+        queryKey: getAdminContactListQueryKey(),
+      });
+      void queryClient.invalidateQueries({
+        queryKey: getAdminContactUnreadCountQueryKey(),
+      });
     },
-    [announceAssertive, announcePolite, mutation, onSuccess, queryClient],
-  );
+    onSuccess,
+  });
 
-  return { setStatus, isPending: mutation.isPending };
+  return { setStatus: run, isPending };
 }

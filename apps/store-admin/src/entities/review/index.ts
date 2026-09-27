@@ -20,6 +20,11 @@ export {
   // and the customer card both switch on it.
   AdminReviewEntityTextStatus,
   CustomerCardReviewEntityTextStatus,
+  // TASK-1004 (API TASK-596/599): WHY an author's contribution is withdrawn —
+  // the badge and the author action switch on it — and the queue's
+  // author-visibility filter (`?visibility=`).
+  ReviewHiddenReason,
+  ReviewAuthorVisibility,
 } from "@/shared/api";
 
 export type {

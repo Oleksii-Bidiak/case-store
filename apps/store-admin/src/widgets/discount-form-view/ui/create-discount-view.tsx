@@ -14,6 +14,7 @@ import {
   useAdminCreateDiscount,
 } from "@/entities/discount";
 import { dict } from "@/shared/config";
+import { apiErrorMessage } from "@/shared/lib";
 
 /**
  * Create-discount page body: renders the form and wires the create mutation,
@@ -35,8 +36,13 @@ export function CreateDiscountView() {
           toast.success(dict.discounts.toastCreated);
           router.push("/discounts");
         },
-        onError: () => {
-          toast.error(dict.discounts.toastCreateFailed);
+        // The server's own words when it has them (TASK-796): «код уже існує»
+        // or a field it refused tells the operator what to fix; the generic
+        // copy is only the fallback.
+        onError: (error) => {
+          toast.error(
+            apiErrorMessage(error) ?? dict.discounts.toastCreateFailed,
+          );
         },
       },
     );

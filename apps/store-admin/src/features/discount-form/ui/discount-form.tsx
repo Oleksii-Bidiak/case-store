@@ -220,7 +220,12 @@ export function DiscountForm({
               {dict.discountForm.optional}
             </span>
           </Label>
-          <Input id="discount-starts" type="date" {...register("startsAt")} />
+          <Input
+            id="discount-starts"
+            type="date"
+            aria-describedby="discount-dates-hint"
+            {...register("startsAt")}
+          />
         </div>
 
         <div className="flex flex-col gap-1.5">
@@ -230,13 +235,24 @@ export function DiscountForm({
               {dict.discountForm.optional}
             </span>
           </Label>
-          <Input id="discount-expires" type="date" {...register("expiresAt")} />
+          <Input
+            id="discount-expires"
+            type="date"
+            aria-describedby="discount-dates-hint"
+            {...register("expiresAt")}
+          />
           {errors.expiresAt && (
             <p role="alert" className="text-sm text-destructive">
               {errors.expiresAt.message}
             </p>
           )}
         </div>
+        <p
+          id="discount-dates-hint"
+          className="text-sm text-muted-foreground sm:col-span-2"
+        >
+          {dict.discountForm.datesHint}
+        </p>
       </div>
 
       <div className="flex items-center gap-2">

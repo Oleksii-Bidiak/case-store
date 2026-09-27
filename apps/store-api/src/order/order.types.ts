@@ -28,6 +28,11 @@ export interface OrderStatusHistoryRow {
   changedBy: string | null;
   /** TASK-619 / TASK-788: a flag the operator lists query; null on an ordinary row. */
   note: OrderHistoryNote | null;
+  /**
+   * TASK-621: on a PAYMENT_EVENT_REFUSED row, the payment status the provider's
+   * event asked for; null everywhere else (and on refusals written before it).
+   */
+  rejectedPaymentStatus: PaymentStatus | null;
   changedAt: Date;
 }
 
@@ -389,8 +394,9 @@ export interface PaymentApplyPlan {
    * The row deliberately does not claim the rejected target as a `to`: a chain of
    * history rows is read as a chain, and a row saying "PAID → FAILED" on an order
    * that is still PAID would break it for every later reader. The rejected value
-   * lives in the structured log, next to the provider status that asked for it,
-   * which is where that question is actually diagnosed.
+   * goes to the structured log, next to the provider status that asked for it,
+   * AND (TASK-621) onto the row itself as `note = PAYMENT_EVENT_REFUSED` plus
+   * `rejectedPaymentStatus`, so the timeline can say «відхилено», not «PAID → PAID».
    *
    * `reason` says WHICH rule refused (review of plan 180). Without it the log is
    * ambiguous in the one case that matters: a refund refused by the cross-rule on
