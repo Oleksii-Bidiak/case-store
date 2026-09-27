@@ -50,4 +50,42 @@ describe("FallbackImg (TASK-759)", () => {
 
     expect(container.querySelector("img")).toHaveAttribute("src", URL_B);
   });
+
+  // The cover is server-rendered: its load can end before hydration attaches
+  // onError. jsdom loads nothing, so the "already settled" state is stubbed.
+  describe("a load that settled before hydration", () => {
+    const proto = HTMLImageElement.prototype;
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    /**
+     * How many times `src` is written while mounting in the given load state.
+     * React itself writes it once; a replay is one write more. The baseline is
+     * a picture still loading — nothing to replay there.
+     */
+    function srcWritesOnMount(complete: boolean, naturalWidth: number) {
+      jest.spyOn(proto, "complete", "get").mockReturnValue(complete);
+      jest.spyOn(proto, "naturalWidth", "get").mockReturnValue(naturalWidth);
+      const srcSetter = jest.spyOn(proto, "src", "set");
+      srcSetter.mockClear();
+      const { unmount } = render(<FallbackImg src={URL_A} alt="" />);
+      const writes = srcSetter.mock.calls.length;
+      unmount();
+      return writes;
+    }
+
+    it("replays a load that already failed, so onError fires with the handler attached", () => {
+      const stillLoading = srcWritesOnMount(false, 0);
+
+      expect(srcWritesOnMount(true, 0)).toBe(stillLoading + 1);
+    });
+
+    it("leaves a picture that already loaded alone", () => {
+      const stillLoading = srcWritesOnMount(false, 0);
+
+      expect(srcWritesOnMount(true, 640)).toBe(stillLoading);
+    });
+  });
 });
