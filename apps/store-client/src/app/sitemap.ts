@@ -179,7 +179,9 @@ async function fetchBlogRoutes(now: Date): Promise<MetadataRoute.Sitemap> {
     // feed is still a public document (TASK-436), and a sitemap that omitted it
     // while its URL answered 200 would be the cloaking-shaped design the owner
     // rejected. Unlike the /blog grid's reader, this one THROWS on failure, so an
-    // outage is reported below instead of shipping a sitemap with no articles.
+    // outage reaches Sentry below instead of passing for a blog with no posts.
+    // The sitemap itself still ships (200) without articles for that one request
+    // — the route is force-dynamic, so the next crawl gets the full list back.
     const posts = await fetchAllPublishedPosts();
     return posts.map((post) => ({
       url: `${SITE_URL}/blog/${post.slug}`,
