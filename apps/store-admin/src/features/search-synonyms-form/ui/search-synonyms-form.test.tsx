@@ -62,6 +62,87 @@ describe("SearchSynonymsForm (TASK-559)", () => {
     expect(row(2)).toHaveValue("айфон, iphone");
   });
 
+  describe("state sync with the query (forms.md Rule 2)", () => {
+    const REFETCHED: SearchSynonymsEntity = {
+      isDefault: false,
+      groups: [
+        { terms: ["чохол", "case", "кейс"] },
+        { terms: ["айфон", "iphone", "ifone"] },
+        { terms: ["скло", "glass"] },
+      ],
+    };
+
+    it("shows a refetched list while the form is untouched", async () => {
+      const { rerender } = renderWithProviders(
+        <SearchSynonymsForm settings={SAVED} />,
+      );
+
+      rerender(<SearchSynonymsForm settings={REFETCHED} />);
+
+      await waitFor(() => expect(row(1)).toHaveValue("чохол, case, кейс"));
+      expect(row(2)).toHaveValue("айфон, iphone, ifone");
+      expect(row(3)).toHaveValue("скло, glass");
+    });
+
+    const rowValues = () =>
+      screen
+        .getAllByRole("textbox")
+        .map((input) => (input as HTMLInputElement).value);
+
+    it("keeps the operator's edit when the list is refetched, and saves their list", async () => {
+      const bodies = stubSave();
+      const { rerender } = renderWithProviders(
+        <SearchSynonymsForm settings={SAVED} />,
+      );
+      await userEvent.clear(row(1));
+      await userEvent.type(row(1), "чохол, бампер");
+
+      rerender(<SearchSynonymsForm settings={REFETCHED} />);
+
+      // The WHOLE list stays as the operator left it — not a per-row merge,
+      // which would refresh row 2 and silently drop the refetch's third group.
+      expect(rowValues()).toEqual(["чохол, бампер", "айфон, iphone"]);
+
+      await submit();
+      await waitFor(() => expect(bodies).toHaveLength(1));
+      expect(bodies[0]).toEqual({
+        groups: [
+          { terms: ["чохол", "бампер"] },
+          { terms: ["айфон", "iphone"] },
+        ],
+      });
+    });
+
+    it("keeps a removed row removed when the list is refetched", async () => {
+      const { rerender } = renderWithProviders(
+        <SearchSynonymsForm settings={SAVED} />,
+      );
+      await userEvent.click(
+        screen.getByRole("button", { name: s.removeGroupAria(1) }),
+      );
+
+      rerender(<SearchSynonymsForm settings={REFETCHED} />);
+
+      expect(rowValues()).toEqual(["айфон, iphone"]);
+    });
+
+    it("keeps an added row when the list is refetched", async () => {
+      const { rerender } = renderWithProviders(
+        <SearchSynonymsForm settings={SAVED} />,
+      );
+      await userEvent.click(screen.getByRole("button", { name: s.addGroup }));
+      await userEvent.type(row(3), "гаджет, gadget");
+
+      rerender(<SearchSynonymsForm settings={REFETCHED} />);
+
+      expect(rowValues()).toEqual([
+        "чохол, case",
+        "айфон, iphone",
+        "гаджет, gadget",
+      ]);
+    });
+  });
+
   it("adds a group, saves the normalised list and shows what was stored", async () => {
     const bodies = stubSave();
     renderWithProviders(<SearchSynonymsForm settings={SAVED} />);

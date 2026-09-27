@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
@@ -33,13 +34,21 @@ interface SearchSynonymsFormProps {
  * The search-synonym list editor (TASK-559): one comma-separated line per
  * group, rows added and removed freely, the whole list saved at once.
  *
- * STATE SYNC (docs/conventions/forms.md, Rule 2b). The list is a singleton with
- * no id, so the "entity identity" never changes: the form is seeded ONCE from
- * the first fetch (the widget renders it only after the query resolved) and
- * re-seeded only from its OWN save's answer — which is the normalised list the
- * server stored, so «Чохол ,CASE» comes back as «чохол, case». A background
- * refetch therefore never clobbers rows being edited, exactly like the
- * singleton SEO-settings form.
+ * STATE SYNC (docs/conventions/forms.md, Rule 2). The list is a singleton with
+ * no id, so there is no entity identity to key a reset on — the form follows
+ * `settings` itself, but only while it is PRISTINE: a refetch that lands while
+ * the operator is editing is ignored, and their whole list is what a save sends.
+ * The form is also re-seeded from its OWN save's answer — the normalised list
+ * the server stored, so «Чохол ,CASE» comes back as «чохол, case».
+ *
+ * Why not Rule 2a (`values` + `keepDirtyValues`): that option merges per FIELD
+ * PATH, i.e. per row index, and a field array is not a set of independent
+ * fields. Measured on RHF 7.83 with a refetch that grew the list 2 → 3: after
+ * an edit to row 1 the array kept its old length and the server's third group
+ * vanished; after a removed row the removal was undone; after an added row it
+ * overwrote the server's third group. Every one of those is then PUT as the
+ * whole list — a group silently deleted or resurrected. All-or-nothing is the
+ * only merge a whole-list save can honour.
  */
 export function SearchSynonymsForm({ settings }: SearchSynonymsFormProps) {
   const queryClient = useQueryClient();
@@ -50,7 +59,7 @@ export function SearchSynonymsForm({ settings }: SearchSynonymsFormProps) {
     control,
     handleSubmit,
     reset,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<SearchSynonymsFormInput, unknown, SearchSynonymsFormValues>({
     resolver: zodResolver(searchSynonymsSchema),
     defaultValues: mapSynonymsToFormValues(settings),
@@ -59,6 +68,16 @@ export function SearchSynonymsForm({ settings }: SearchSynonymsFormProps) {
     control,
     name: "groups",
   });
+
+  // Keyed on `settings` alone ON PURPOSE. With `isDirty` in the deps, the
+  // save's own `reset` (dirty → pristine) would fire this one render BEFORE
+  // `setQueryData` reaches the prop (the query cache notifies on a later tick),
+  // and flash the pre-save list over the rows just saved. `isDirty` read here is
+  // the value of the render in which `settings` changed, which is current.
+  useEffect(() => {
+    if (!isDirty) reset(mapSynonymsToFormValues(settings));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings]);
 
   const update = useAdminUpdateSearchSynonyms();
 
