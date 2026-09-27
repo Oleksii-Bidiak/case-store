@@ -164,3 +164,81 @@ describe('UmamiClient (TASK-380)', () => {
     await expect(client.getStats(1, 2)).resolves.toBeNull();
   });
 });
+
+describe('UmamiClient.getEventCounts (TASK-689)', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const answer =
+    (body: unknown, status = 200) =>
+    () =>
+      new Response(JSON.stringify(body), { status }) as Response;
+
+  it('asks the event metrics of the configured website for the given window', async () => {
+    const { impl, calls } = makeFetch({ stats: answer([]) });
+    const client = new UmamiClient(makeConfig(FULL_CONFIG), loggerMock, impl);
+
+    await client.getEventCounts(1000, 2000);
+
+    expect(calls).toContain(
+      'http://umami:3000/api/websites/site-uuid/metrics?type=event&startAt=1000&endAt=2000',
+    );
+  });
+
+  it('keys the v2 `{ x, y }` rows by event name', async () => {
+    const { impl } = makeFetch({
+      stats: answer([
+        { x: 'add_to_cart', y: 40 },
+        { x: 'begin_checkout', y: 12 },
+        { x: 'purchase', y: 5 },
+      ]),
+    });
+    const client = new UmamiClient(makeConfig(FULL_CONFIG), loggerMock, impl);
+
+    await expect(client.getEventCounts(1, 2)).resolves.toEqual({
+      add_to_cart: 40,
+      begin_checkout: 12,
+      purchase: 5,
+    });
+  });
+
+  it('also reads the `{ name, value }` spelling, so an upgrade does not zero the funnel', async () => {
+    const { impl } = makeFetch({ stats: answer([{ name: 'purchase', value: '7' }]) });
+    const client = new UmamiClient(makeConfig(FULL_CONFIG), loggerMock, impl);
+
+    await expect(client.getEventCounts(1, 2)).resolves.toEqual({ purchase: 7 });
+  });
+
+  it('answers an empty map — real zeros — when nothing fired', async () => {
+    const { impl } = makeFetch({ stats: answer([]) });
+    const client = new UmamiClient(makeConfig(FULL_CONFIG), loggerMock, impl);
+
+    await expect(client.getEventCounts(1, 2)).resolves.toEqual({});
+  });
+
+  it.each([
+    ['unconfigured', {}, answer([])],
+    ['the server fails', FULL_CONFIG, answer({ error: 'boom' }, 500)],
+    ['the body is not a list', FULL_CONFIG, answer({ data: [] })],
+  ])('answers null (unknown, not zero) when %s', async (_label, config, stats) => {
+    const { impl } = makeFetch({ stats });
+    const client = new UmamiClient(makeConfig(config), loggerMock, impl);
+
+    await expect(client.getEventCounts(1, 2)).resolves.toBeNull();
+  });
+
+  it('re-authenticates once on 401, like the stats call', async () => {
+    let call = 0;
+    const { impl, calls } = makeFetch({
+      stats: () => {
+        call += 1;
+        return call === 1
+          ? (new Response(null, { status: 401 }) as Response)
+          : (new Response(JSON.stringify([{ x: 'purchase', y: 1 }]), { status: 200 }) as Response);
+      },
+    });
+    const client = new UmamiClient(makeConfig(FULL_CONFIG), loggerMock, impl);
+
+    await expect(client.getEventCounts(1, 2)).resolves.toEqual({ purchase: 1 });
+    expect(calls.filter((u) => u.includes('/api/auth/login'))).toHaveLength(2);
+  });
+});

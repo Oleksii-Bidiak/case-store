@@ -78,8 +78,14 @@ function StatCard({
  * ordered-but-not-yet-paid money (TASK-137). TASK-249 adds average order value
  * and the two repeat-buyer-rate cards, plus plain-UA tooltips on the new cards
  * and the two unrealized-revenue cards.
+ *
+ * TASK-684: `summary.revenue` is present only for a caller holding
+ * `analytics:revenue`. The API cuts it — the admin is a public bundle, so hiding
+ * a tile would hide nothing — and this component only follows: without it, the
+ * five money cards are not rendered and the operational cards stand alone.
  */
 export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
+  const revenue = summary.revenue;
   const pendingOrders =
     summary.orders.ordersByStatus.find((entry) => entry.status === "PENDING")
       ?.count ?? 0;
@@ -90,38 +96,45 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
     // track wider than the viewport (grid min-width:auto) → page-level
     // horizontal scroll.
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <StatCard
-        label={dict.dashboard.totalRevenue}
-        value={formatCurrency(summary.revenue.totalRevenue)}
-        subText={dict.dashboard.revenueLifetime}
-        tone="success"
-      />
-      <StatCard
-        label={dict.dashboard.revenue30}
-        value={formatCurrency(summary.revenue.revenueLast30Days)}
-        subText={dict.dashboard.last30}
-        tone="success"
-      />
-      <StatCard
-        label={dict.dashboard.unrealizedRevenue}
-        value={formatCurrency(summary.revenue.unrealizedRevenue)}
-        subText={dict.dashboard.unrealizedLifetime}
-        tone="warning"
-        tooltip={dict.dashboard.unrealizedRevenueTooltip}
-      />
-      <StatCard
-        label={dict.dashboard.unrealizedRevenue30}
-        value={formatCurrency(summary.revenue.unrealizedRevenueLast30Days)}
-        subText={dict.dashboard.last30}
-        tone="warning"
-        tooltip={dict.dashboard.unrealizedRevenue30Tooltip}
-      />
-      <StatCard
-        label={dict.dashboard.averageOrderValue30}
-        value={formatCurrency(summary.revenue.averageOrderValueLast30Days)}
-        subText={dict.dashboard.averageOrderValue30Sub}
-        tooltip={dict.dashboard.averageOrderValue30Tooltip}
-      />
+      {/* TASK-684: the money tiles exist only when the API sent money. Without
+          `analytics:revenue` the key is absent — no «0 ₴» stand-ins, which
+          would misreport the shop. */}
+      {revenue ? (
+        <>
+          <StatCard
+            label={dict.dashboard.totalRevenue}
+            value={formatCurrency(revenue.totalRevenue)}
+            subText={dict.dashboard.revenueLifetime}
+            tone="success"
+          />
+          <StatCard
+            label={dict.dashboard.revenue30}
+            value={formatCurrency(revenue.revenueLast30Days)}
+            subText={dict.dashboard.last30}
+            tone="success"
+          />
+          <StatCard
+            label={dict.dashboard.unrealizedRevenue}
+            value={formatCurrency(revenue.unrealizedRevenue)}
+            subText={dict.dashboard.unrealizedLifetime}
+            tone="warning"
+            tooltip={dict.dashboard.unrealizedRevenueTooltip}
+          />
+          <StatCard
+            label={dict.dashboard.unrealizedRevenue30}
+            value={formatCurrency(revenue.unrealizedRevenueLast30Days)}
+            subText={dict.dashboard.last30}
+            tone="warning"
+            tooltip={dict.dashboard.unrealizedRevenue30Tooltip}
+          />
+          <StatCard
+            label={dict.dashboard.averageOrderValue30}
+            value={formatCurrency(revenue.averageOrderValueLast30Days)}
+            subText={dict.dashboard.averageOrderValue30Sub}
+            tooltip={dict.dashboard.averageOrderValue30Tooltip}
+          />
+        </>
+      ) : null}
       <StatCard
         label={dict.dashboard.totalOrders}
         value={String(summary.orders.totalOrders)}

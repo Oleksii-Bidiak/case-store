@@ -39,7 +39,7 @@ import type { AdminOrderExportQueryDto } from './dto/admin-order-list-query.dto'
 import { PENDING_STALE_HOURS } from '../dashboard/dashboard.types';
 import { staleOrderError } from './order.errors';
 import { centsToString, sumLineCents, toCents } from '../addon-service/money.util';
-import { kyivDayRange } from './kyiv-day';
+import { kyivDayRange } from '../common/time/kyiv-day';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
 // TASK-771: a revive that cannot re-claim its promo slot fails with the same
 // stable codes the checkout uses, so the admin sees the reason it already knows.

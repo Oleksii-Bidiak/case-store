@@ -82,32 +82,69 @@ export class UmamiClient {
     return Boolean(this.baseUrl && this.username && this.password && this.websiteId);
   }
 
-  /**
-   * Traffic metrics for `[startAt, endAt]` (epoch ms), or `null` when
-   * unconfigured or unreachable. A 401 drops the cached token and retries once,
-   * so a token that expired early self-heals instead of muting the card until
-   * the next deploy.
-   */
+  /** Traffic metrics for `[startAt, endAt]` (epoch ms), or `null` when unconfigured or unreachable. */
   async getStats(startAt: number, endAt: number): Promise<UmamiStatsRaw | null> {
+    return this.get<UmamiStatsRaw>('stats', `stats?startAt=${startAt}&endAt=${endAt}`);
+  }
+
+  /**
+   * How many times each custom event fired in `[startAt, endAt]` (epoch ms),
+   * keyed by event name — `GET /api/websites/:id/metrics?type=event` (TASK-689).
+   * `null` when unconfigured or unreachable, exactly like {@link getStats}: an
+   * event absent from a successful answer is a real 0, an unanswered request is
+   * not.
+   *
+   * These are event COUNTS, not distinct visitors — two "add to cart" clicks by
+   * one person are two. The funnel report says so rather than calling it people.
+   *
+   * Umami v2 answers `[{ x: name, y: count }]`; the `{ name, value }` spelling of
+   * its newer API client is accepted too, so a server upgrade does not silently
+   * turn every step into 0.
+   */
+  async getEventCounts(startAt: number, endAt: number): Promise<Record<string, number> | null> {
+    const rows = await this.get<unknown>(
+      'event metrics',
+      `metrics?type=event&startAt=${startAt}&endAt=${endAt}`,
+    );
+    if (rows === null) return null;
+    if (!Array.isArray(rows)) {
+      this.logger.warn('Umami event metrics answered with something other than a list');
+      return null;
+    }
+
+    const counts: Record<string, number> = {};
+    for (const row of rows as Array<Record<string, unknown>>) {
+      const name = row?.x ?? row?.name;
+      const count = Number(row?.y ?? row?.value);
+      if (typeof name === 'string' && Number.isFinite(count)) {
+        counts[name] = (counts[name] ?? 0) + count;
+      }
+    }
+    return counts;
+  }
+
+  /**
+   * GET a website-scoped Umami resource, or `null` when unconfigured or
+   * unreachable. A 401 drops the cached token and retries once, so a token that
+   * expired early self-heals instead of muting the card until the next deploy.
+   */
+  private async get<T>(label: string, resource: string): Promise<T | null> {
     if (!this.isConfigured()) return null;
 
-    const stats = await this.requestStats(startAt, endAt);
-    if (stats !== 'unauthorized') return stats;
+    const first = await this.request<T>(label, resource);
+    if (first !== 'unauthorized') return first;
 
     this.token = null;
-    const retried = await this.requestStats(startAt, endAt);
+    const retried = await this.request<T>(label, resource);
     return retried === 'unauthorized' ? null : retried;
   }
 
-  /** One stats attempt. `'unauthorized'` is distinct so the caller can retry. */
-  private async requestStats(
-    startAt: number,
-    endAt: number,
-  ): Promise<UmamiStatsRaw | null | 'unauthorized'> {
+  /** One attempt. `'unauthorized'` is distinct so the caller can retry. */
+  private async request<T>(label: string, resource: string): Promise<T | null | 'unauthorized'> {
     const token = await this.authenticate();
     if (!token) return null;
 
-    const url = `${this.baseUrl}/api/websites/${this.websiteId}/stats?startAt=${startAt}&endAt=${endAt}`;
+    const url = `${this.baseUrl}/api/websites/${this.websiteId}/${resource}`;
     try {
       const response = await this.fetchImpl(url, {
         headers: { Authorization: `Bearer ${token}` },
@@ -117,13 +154,13 @@ export class UmamiClient {
       if (!response.ok) {
         this.logger.warn(
           { status: response.status },
-          'Umami stats request returned a non-OK status',
+          `Umami ${label} request returned a non-OK status`,
         );
         return null;
       }
-      return (await response.json()) as UmamiStatsRaw;
+      return (await response.json()) as T;
     } catch (err) {
-      this.logger.warn({ err }, 'Umami stats request failed');
+      this.logger.warn({ err }, `Umami ${label} request failed`);
       return null;
     }
   }

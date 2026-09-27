@@ -14162,7 +14162,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Aggregated dashboard metrics",
+            "description": "Aggregated dashboard metrics. `revenue`, and `totalRevenue` on each top product, are present only for callers holding `analytics:revenue`; for everybody else the keys are absent (not null) and top products are ranked by units sold.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14222,6 +14222,366 @@
         ]
       }
     },
+    "/api/admin/analytics/reports/categories": {
+      "get": {
+        "description": "Rows are the root categories, or the children of `parentId`, each summed over its whole subtree; an expansion ends with a `direct` row for products placed on the expanded category itself. Attribution uses the CURRENT catalogue (`basis: current-catalogue`). `revenue` is absent without analytics:revenue, and rows are then ranked by units.",
+        "operationId": "getCategoryReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          },
+          {
+            "name": "parentId",
+            "required": false,
+            "in": "query",
+            "description": "Expand this category: rows for its children (each summed over its subtree)",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Category report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CategoryReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period or parentId cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read required"
+          },
+          "404": {
+            "description": "parentId names no category"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Sold units, orders and (with analytics:revenue) gross amount by category subtree",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
+    "/api/admin/analytics/reports/products": {
+      "get": {
+        "description": "Leaders are ranked by gross amount with analytics:revenue and by units without it (and then carry no `revenue`), each compared with its own previous-range sales. Outsiders are products on sale (active, not deleted, active category) that existed in the period and sold nothing in it, oldest first, with the total count.",
+        "operationId": "getProductsReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Rows in each list (leaders and outsiders)",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 10,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Products report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProductsReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period or limit cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Best sellers of the period and published products with no sale in it",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
+    "/api/admin/analytics/reports/registrations": {
+      "get": {
+        "description": "Customer accounts created in the period (staff excluded; later-deleted accounts still count), how many of them had placed a guest order with the same email before registering, and a daily series over Kyiv days. No money in it.",
+        "operationId": "getRegistrationsReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Registrations report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationsReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "New customer accounts in a period, compared with the previous one",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
+    "/api/admin/analytics/reports/brands": {
+      "get": {
+        "description": "A flat row per brand that sold in the period or its comparison; products without a brand are the `brandId: null` row. Attribution uses the CURRENT catalogue. `revenue` is absent without analytics:revenue, and rows are then ranked by units.",
+        "operationId": "getBrandReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Brand report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Sold units, orders and (with analytics:revenue) gross amount by brand",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
+    "/api/admin/analytics/reports/sales": {
+      "get": {
+        "description": "Sales = Σ totals of orders created in the period whose payment is PAID, PARTIALLY_REFUNDED or REFUNDED. Refunds = money returned in the period (refunded returns by resolution date, plus full payment refunds not covered by returns, by the date the payment became REFUNDED). Net = sales − refunds; average order value = net ÷ orders. Days are Kyiv calendar days.",
+        "operationId": "getSalesReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Sales report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SalesReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read and analytics:revenue required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Sales, refunds and net revenue for a period, compared with the previous one",
+        "tags": [
+          "Admin Analytics Reports"
+        ]
+      }
+    },
     "/api/admin/analytics/traffic": {
       "get": {
         "operationId": "getTrafficSummary",
@@ -14265,6 +14625,73 @@
         "summary": "Storefront traffic summary (admin)",
         "tags": [
           "Analytics"
+        ]
+      }
+    },
+    "/api/admin/analytics/reports/funnel": {
+      "get": {
+        "description": "Event counts (not visitors) of the three storefront events, step-to-step shares and the overall conversion purchase ÷ add_to_cart. `configured` / `available` distinguish \"not set up\" and \"did not answer\" from real zeros; in those states every number is null. Nothing is taken from our own orders.",
+        "operationId": "getFunnelReport",
+        "parameters": [
+          {
+            "name": "preset",
+            "required": false,
+            "in": "query",
+            "description": "Period preset. Rolling presets and `custom` are compared with the equal run of days right before; `this-month` (1…N) with days 1…N of the previous month; `last-month` with the whole month before it. Days are Kyiv calendar days, today included.",
+            "schema": {
+              "$ref": "#/components/schemas/ReportPreset"
+            }
+          },
+          {
+            "name": "from",
+            "required": false,
+            "in": "query",
+            "description": "First Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-01",
+              "type": "string"
+            }
+          },
+          {
+            "name": "to",
+            "required": false,
+            "in": "query",
+            "description": "Last Kyiv day, included (`custom` only)",
+            "schema": {
+              "example": "2026-08-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Funnel report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FunnelReportEnvelope"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The period cannot be answered"
+          },
+          "401": {
+            "description": "Unauthorized — missing or invalid token"
+          },
+          "403": {
+            "description": "Forbidden — analytics:read required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Add to cart → begin checkout → purchase, from Umami, compared with the previous range",
+        "tags": [
+          "Admin Analytics Reports"
         ]
       }
     },
@@ -27779,14 +28206,19 @@
           },
           "totalRevenue": {
             "type": "number",
-            "description": "Total revenue earned by this product",
+            "description": "Total revenue earned by this product. Present only for callers holding `analytics:revenue` (TASK-684); absent otherwise.",
             "example": 3420
+          },
+          "unitsSold": {
+            "type": "number",
+            "description": "Units sold (sum of line quantities over PAID orders)",
+            "example": 12
           }
         },
         "required": [
           "productId",
           "name",
-          "totalRevenue"
+          "unitsSold"
         ]
       },
       "ProductMetricsDto": {
@@ -27803,7 +28235,7 @@
             "example": 119
           },
           "topProducts": {
-            "description": "Top products by total revenue",
+            "description": "Top products — by total revenue for callers holding `analytics:revenue`, by units sold for everybody else",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TopProductDto"
@@ -27872,7 +28304,12 @@
         "type": "object",
         "properties": {
           "revenue": {
-            "$ref": "#/components/schemas/RevenueMetricsDto"
+            "description": "Revenue metrics. Present only for callers holding `analytics:revenue`; absent otherwise.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RevenueMetricsDto"
+              }
+            ]
           },
           "orders": {
             "$ref": "#/components/schemas/OrderMetricsDto"
@@ -27894,7 +28331,6 @@
           }
         },
         "required": [
-          "revenue",
           "orders",
           "users",
           "customers",
@@ -28007,6 +28443,584 @@
           "data"
         ]
       },
+      "ReportPreset": {
+        "type": "string",
+        "enum": [
+          "7d",
+          "30d",
+          "90d",
+          "this-month",
+          "last-month",
+          "custom"
+        ]
+      },
+      "ReportPeriodEntity": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ReportPreset"
+              }
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "First Kyiv day, included",
+            "example": "2026-08-01"
+          },
+          "to": {
+            "type": "string",
+            "description": "Last Kyiv day, included",
+            "example": "2026-08-31"
+          },
+          "days": {
+            "type": "number",
+            "description": "Days in the period",
+            "example": 31
+          },
+          "previousFrom": {
+            "type": "string",
+            "description": "First day of the comparison range",
+            "example": "2026-07-01"
+          },
+          "previousTo": {
+            "type": "string",
+            "description": "Last day of the comparison range",
+            "example": "2026-07-31"
+          },
+          "previousDays": {
+            "type": "number",
+            "description": "Days in the comparison range",
+            "example": 31
+          }
+        },
+        "required": [
+          "preset",
+          "from",
+          "to",
+          "days",
+          "previousFrom",
+          "previousTo",
+          "previousDays"
+        ]
+      },
+      "CatalogueBasis": {
+        "type": "string",
+        "enum": [
+          "current-catalogue"
+        ]
+      },
+      "ComparedValueEntity": {
+        "type": "object",
+        "properties": {
+          "current": {
+            "type": "number",
+            "example": 42000
+          },
+          "previous": {
+            "type": "number",
+            "example": 38000
+          },
+          "changePct": {
+            "type": "number",
+            "description": "Change against `previous`, in percent (one decimal); null when previous is 0",
+            "nullable": true,
+            "example": 10.5
+          }
+        },
+        "required": [
+          "current",
+          "previous",
+          "changePct"
+        ]
+      },
+      "CategoryReportRowEntity": {
+        "type": "object",
+        "properties": {
+          "units": {
+            "description": "Units sold",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "orders": {
+            "description": "Orders with at least one such line",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "revenue": {
+            "description": "Gross line amount (price × quantity, before order discounts, shipping and refunds). ABSENT — not null — without analytics:revenue: the API cuts the money, not the screen.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "categoryId": {
+            "type": "string",
+            "example": "b3c1…"
+          },
+          "name": {
+            "type": "string",
+            "example": "Чохли"
+          },
+          "direct": {
+            "type": "boolean",
+            "description": "The «directly in this category» row of an expansion: products placed on the expanded category itself rather than in one of its children"
+          },
+          "hasChildren": {
+            "type": "boolean",
+            "description": "Has child categories, so it can be expanded"
+          }
+        },
+        "required": [
+          "units",
+          "orders",
+          "categoryId",
+          "name",
+          "direct",
+          "hasChildren"
+        ]
+      },
+      "CategoryReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CatalogueBasis"
+              }
+            ]
+          },
+          "parentId": {
+            "type": "string",
+            "nullable": true,
+            "description": "The expanded category; null for the root rows"
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CategoryReportRowEntity"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "basis",
+          "parentId",
+          "rows"
+        ]
+      },
+      "CategoryReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/CategoryReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "LeaderRowEntity": {
+        "type": "object",
+        "properties": {
+          "units": {
+            "description": "Units sold",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "orders": {
+            "description": "Orders with at least one such line",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "revenue": {
+            "description": "Gross line amount (price × quantity, before order discounts, shipping and refunds). ABSENT — not null — without analytics:revenue: the API cuts the money, not the screen.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "productId": {
+            "type": "string",
+            "example": "3f1c…"
+          },
+          "name": {
+            "type": "string",
+            "example": "Чохол MagSafe для iPhone 16"
+          }
+        },
+        "required": [
+          "units",
+          "orders",
+          "productId",
+          "name"
+        ]
+      },
+      "OutsiderRowEntity": {
+        "type": "object",
+        "properties": {
+          "productId": {
+            "type": "string",
+            "example": "9a2b…"
+          },
+          "name": {
+            "type": "string",
+            "example": "Скло для iPad Air"
+          },
+          "stock": {
+            "type": "number",
+            "description": "Units in stock now",
+            "example": 14
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "When the product was created (ISO)",
+            "example": "2026-03-02T10:00:00.000Z"
+          }
+        },
+        "required": [
+          "productId",
+          "name",
+          "stock",
+          "createdAt"
+        ]
+      },
+      "OutsidersEntity": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number",
+            "description": "How many published products sold nothing in the period",
+            "example": 37
+          },
+          "rows": {
+            "description": "The oldest of them first",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutsiderRowEntity"
+            }
+          }
+        },
+        "required": [
+          "total",
+          "rows"
+        ]
+      },
+      "ProductsReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "rankedBy": {
+            "type": "string",
+            "enum": [
+              "revenue",
+              "units"
+            ],
+            "description": "What the leaders are ranked by"
+          },
+          "leaders": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LeaderRowEntity"
+            }
+          },
+          "outsiders": {
+            "$ref": "#/components/schemas/OutsidersEntity"
+          }
+        },
+        "required": [
+          "period",
+          "rankedBy",
+          "leaders",
+          "outsiders"
+        ]
+      },
+      "ProductsReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/ProductsReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "RegistrationDayEntity": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Kyiv calendar day",
+            "example": "2026-08-01"
+          },
+          "registrations": {
+            "type": "number",
+            "description": "New customer accounts that day",
+            "example": 3
+          }
+        },
+        "required": [
+          "date",
+          "registrations"
+        ]
+      },
+      "RegistrationsReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "registrations": {
+            "description": "New customer accounts",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "fromGuest": {
+            "description": "Of those, accounts whose email had placed a guest order before registering",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "daily": {
+            "description": "One point per Kyiv day of the period, first to last; empty days are zeros",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RegistrationDayEntity"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "registrations",
+          "fromGuest",
+          "daily"
+        ]
+      },
+      "RegistrationsReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/RegistrationsReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "BrandReportRowEntity": {
+        "type": "object",
+        "properties": {
+          "units": {
+            "description": "Units sold",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "orders": {
+            "description": "Orders with at least one such line",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "revenue": {
+            "description": "Gross line amount (price × quantity, before order discounts, shipping and refunds). ABSENT — not null — without analytics:revenue: the API cuts the money, not the screen.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "brandId": {
+            "type": "string",
+            "nullable": true,
+            "description": "null is «Без бренду» — products without a brand"
+          },
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "example": "Apple"
+          }
+        },
+        "required": [
+          "units",
+          "orders",
+          "brandId",
+          "name"
+        ]
+      },
+      "BrandReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "basis": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CatalogueBasis"
+              }
+            ]
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BrandReportRowEntity"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "basis",
+          "rows"
+        ]
+      },
+      "BrandReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/BrandReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "SalesDayEntity": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Kyiv calendar day",
+            "example": "2026-08-01"
+          },
+          "sales": {
+            "type": "number",
+            "description": "Σ totals of the orders created that day",
+            "example": 1200
+          },
+          "refunds": {
+            "type": "number",
+            "description": "Money that went back that day",
+            "example": 300
+          },
+          "net": {
+            "type": "number",
+            "description": "sales − refunds; negative on a day of refunds only",
+            "example": 900
+          }
+        },
+        "required": [
+          "date",
+          "sales",
+          "refunds",
+          "net"
+        ]
+      },
+      "SalesReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "sales": {
+            "description": "Σ totals of paid (incl. later refunded) orders created in the period",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "refunds": {
+            "description": "Money returned in the period: refunded returns plus full refunds of payment",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "net": {
+            "description": "sales − refunds; may be negative",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "orders": {
+            "description": "Paid orders created in the period",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "averageOrderValue": {
+            "description": "net ÷ orders; 0 when there were no orders",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          },
+          "daily": {
+            "description": "One point per Kyiv day of the period, first to last; empty days are zeros",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SalesDayEntity"
+            }
+          }
+        },
+        "required": [
+          "period",
+          "sales",
+          "refunds",
+          "net",
+          "orders",
+          "averageOrderValue",
+          "daily"
+        ]
+      },
+      "SalesReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/SalesReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "TrafficSummaryEntity": {
         "type": "object",
         "properties": {
@@ -28077,6 +29091,139 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/TrafficSummaryEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "FunnelEvent": {
+        "type": "string",
+        "enum": [
+          "add_to_cart",
+          "begin_checkout",
+          "purchase"
+        ]
+      },
+      "FunnelStepEntity": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FunnelEvent"
+              }
+            ]
+          },
+          "count": {
+            "description": "Times the event fired",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ComparedValueEntity"
+              }
+            ]
+          }
+        },
+        "required": [
+          "event",
+          "count"
+        ]
+      },
+      "FunnelTransitionEntity": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FunnelEvent"
+              }
+            ]
+          },
+          "to": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/FunnelEvent"
+              }
+            ]
+          },
+          "rate": {
+            "type": "number",
+            "description": "Share (0…1) of `from` that reached `to` in the period; null when `from` is 0",
+            "nullable": true,
+            "example": 0.3
+          },
+          "previousRate": {
+            "type": "number",
+            "description": "The same share in the comparison range; null when its `from` is 0",
+            "nullable": true,
+            "example": 0.27
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "rate",
+          "previousRate"
+        ]
+      },
+      "FunnelReportEntity": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "$ref": "#/components/schemas/ReportPeriodEntity"
+          },
+          "configured": {
+            "type": "boolean",
+            "description": "Analytics credentials are present on the server"
+          },
+          "available": {
+            "type": "boolean",
+            "description": "The analytics service answered this request"
+          },
+          "steps": {
+            "nullable": true,
+            "description": "The three steps in order; null unless available",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FunnelStepEntity"
+            }
+          },
+          "transitions": {
+            "nullable": true,
+            "description": "Step-to-step shares; null unless available",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FunnelTransitionEntity"
+            }
+          },
+          "conversion": {
+            "type": "number",
+            "description": "purchase ÷ add_to_cart in the period, 0…1; null when unknown or add_to_cart is 0",
+            "nullable": true,
+            "example": 0.12
+          },
+          "previousConversion": {
+            "type": "number",
+            "description": "The same in the comparison range",
+            "nullable": true,
+            "example": 0.1
+          }
+        },
+        "required": [
+          "period",
+          "configured",
+          "available",
+          "steps",
+          "transitions",
+          "conversion",
+          "previousConversion"
+        ]
+      },
+      "FunnelReportEnvelope": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/FunnelReportEntity"
           }
         },
         "required": [

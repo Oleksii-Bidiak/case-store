@@ -49,11 +49,13 @@ const SPREADSHEET_FORMULA = /^\s*[=+\-@]/;
  * the quoting rule below sees the final value.
  *
  * Consequence worth knowing before someone "fixes" it: a genuinely negative
- * number would export as `'-100.00`, i.e. as text. No column in either export
- * is ever negative today (money is stored non-negative and the sign lives in the
- * column name), and a number that Excel refuses to execute is the right trade in
- * any case. Do not carve out an exception without re-reading the trigger list —
- * `-1+1` is both a plausible number and a formula.
+ * number passed through here exports as `'-100.00`, i.e. as text. Do not carve
+ * out an exception here — `-1+1` is both a plausible number and a formula, and
+ * this function cannot tell which one a shopper typed. A column that IS numeric
+ * by construction (the `/analytics` reports' refunds and deltas, plan 188 —
+ * the first exports with negative numbers) goes through {@link csvNumberField}
+ * instead: a separate door that only numbers can pass, rather than a hole in
+ * this one.
  */
 export function escapeCsvField(value: string): string {
   const safe = SPREADSHEET_FORMULA.test(value) ? `'${value}` : value;
@@ -84,4 +86,50 @@ export function escapeCsvField(value: string): string {
  */
 export function toSingleCsvLine(value: string): string {
   return value.replace(/[\r\n]+/g, ' ');
+}
+
+/** A plain decimal: optional minus, digits, optional fraction. Nothing else. */
+const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
+
+/**
+ * Write a NUMERIC field — the separate branch for numbers (TASK-691, plan 188).
+ *
+ * `escapeCsvField` must turn `-4200` into the text `'-4200` (it cannot know a
+ * shopper did not type it). Report columns such as "Повернення −4 200" or
+ * "−12% до попереднього" are numbers by construction, never user input, and
+ * must reach Excel as numbers it can sum.
+ *
+ * Safe because it is strict, not because it trusts the caller: only a finite
+ * number or a string that is exactly a plain decimal passes, so the formula
+ * trigger list stays closed — `-1+1`, `=1+1`, `1e3`, `Infinity` and `''` all
+ * throw. A throw here is a programming error (a text column wired to the
+ * numeric door), and failing the export beats writing a live formula into it.
+ */
+export function csvNumberField(value: number | string): string {
+  const text = typeof value === 'number' ? (Number.isFinite(value) ? String(value) : '') : value;
+  if (!PLAIN_NUMBER.test(text)) {
+    throw new Error(`csvNumberField: not a plain decimal: ${JSON.stringify(value)}`);
+  }
+  return text;
+}
+
+/**
+ * UTF-8 byte-order mark. Without it Excel on Windows reads a UTF-8 CSV in the
+ * system codepage (cp1251 here) and every Ukrainian word opens as mojibake —
+ * which looks like OUR data being corrupt, not the spreadsheet's guess. Every
+ * export starts with it (TASK-691).
+ *
+ * The admin's download helper adds it again when missing, because the browser
+ * strips a leading BOM while decoding the response text (XHR/fetch UTF-8
+ * decode), so the server's copy alone never reached the saved file.
+ */
+export const CSV_BOM = '﻿';
+
+/**
+ * Assemble an export: BOM, then already-escaped lines joined with CRLF
+ * (RFC 4180). The one place every export gets its BOM from, so a new export
+ * cannot forget it the way the subscriber one did.
+ */
+export function buildCsvDocument(lines: readonly string[]): string {
+  return `${CSV_BOM}${lines.join('\r\n')}`;
 }

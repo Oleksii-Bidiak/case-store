@@ -104,7 +104,10 @@ export function DashboardView() {
 
               <Separator className="my-6" />
 
-              <DashboardTopProductsTable products={data.products.topProducts} />
+              <DashboardTopProductsTable
+                products={data.products.topProducts}
+                showsRevenue={data.revenue !== undefined}
+              />
 
               <Separator className="my-6" />
 

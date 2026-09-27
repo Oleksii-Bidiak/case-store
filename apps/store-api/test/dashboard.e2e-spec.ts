@@ -8,9 +8,14 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
-import type { DashboardSummary, NeedsAction } from '../src/dashboard/dashboard.types';
+import type {
+  DashboardSummaryBase,
+  NeedsAction,
+  RevenueMetrics,
+} from '../src/dashboard/dashboard.types';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
+import { UserRole } from '@prisma/client';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
 /**
@@ -34,18 +39,19 @@ describe('Admin Dashboard (e2e)', () => {
   let app: INestApplication;
   let jwtService: JwtService;
 
-  const summaryFixture: DashboardSummary = {
-    revenue: {
-      totalRevenue: 48230.75,
-      revenueLast30Days: 8120.4,
-      unrealizedRevenue: 12400.0,
-      unrealizedRevenueLast30Days: 3800.0,
-      averageOrderValueLast30Days: 812.04,
-      revenueByDay: [
-        { date: '2026-06-12', value: 1200.5 },
-        { date: '2026-06-13', value: 0 },
-      ],
-    },
+  const revenueFixture: RevenueMetrics = {
+    totalRevenue: 48230.75,
+    revenueLast30Days: 8120.4,
+    unrealizedRevenue: 12400.0,
+    unrealizedRevenueLast30Days: 3800.0,
+    averageOrderValueLast30Days: 812.04,
+    revenueByDay: [
+      { date: '2026-06-12', value: 1200.5 },
+      { date: '2026-06-13', value: 0 },
+    ],
+  };
+
+  const summaryFixture: DashboardSummaryBase = {
     orders: {
       totalOrders: 312,
       ordersByStatus: [
@@ -71,7 +77,10 @@ describe('Admin Dashboard (e2e)', () => {
     products: {
       totalProducts: 128,
       activeProducts: 119,
-      topProducts: [{ productId: 'prod-1', name: 'USB-C Cable 2m', totalRevenue: 3420 }],
+      topProducts: [
+        { productId: 'prod-1', name: 'USB-C Cable 2m', totalRevenue: 3420, unitsSold: 12 },
+        { productId: 'prod-3', name: 'MagSafe Case', totalRevenue: 2100, unitsSold: 30 },
+      ],
     },
     inventory: {
       lowStockProducts: [
@@ -107,8 +116,13 @@ describe('Admin Dashboard (e2e)', () => {
 
   const dashboardRepositoryMock = {
     getSummary: jest.fn().mockResolvedValue(summaryFixture),
+    getRevenueMetrics: jest.fn().mockResolvedValue(revenueFixture),
     getNeedsAction: jest.fn().mockResolvedValue(needsActionFixture),
   };
+
+  // Held, not inlined: the TASK-684 cases below hand a manager `analytics:read`
+  // alone, then both keys, and read the body each time.
+  const permissionRepositoryMock = createPermissionRepositoryMock();
 
   const authRepositoryMock = {
     findByEmail: jest.fn(),
@@ -150,7 +164,7 @@ describe('Admin Dashboard (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue(prismaServiceMock)
       .overrideProvider(PermissionRepository)
-      .useValue(createPermissionRepositoryMock())
+      .useValue(permissionRepositoryMock)
       .overrideProvider(AuthRepository)
       .useValue(authRepositoryMock)
       .overrideProvider(DashboardRepository)
@@ -183,6 +197,8 @@ describe('Admin Dashboard (e2e)', () => {
   afterEach(() => {
     jest.clearAllMocks();
     dashboardRepositoryMock.getSummary.mockResolvedValue(summaryFixture);
+    dashboardRepositoryMock.getRevenueMetrics.mockResolvedValue(revenueFixture);
+    permissionRepositoryMock.setGrants(UserRole.MANAGER, []);
     dashboardRepositoryMock.getNeedsAction.mockResolvedValue(needsActionFixture);
   });
 
@@ -246,6 +262,7 @@ describe('Admin Dashboard (e2e)', () => {
           productId: expect.any(String),
           name: expect.any(String),
           totalRevenue: expect.any(Number),
+          unitsSold: expect.any(Number),
         }),
       );
 
@@ -264,15 +281,15 @@ describe('Admin Dashboard (e2e)', () => {
     });
 
     it('should return non-negative numeric metrics and array fields when the store is empty', async () => {
+      dashboardRepositoryMock.getRevenueMetrics.mockResolvedValueOnce({
+        totalRevenue: 0,
+        revenueLast30Days: 0,
+        unrealizedRevenue: 0,
+        unrealizedRevenueLast30Days: 0,
+        averageOrderValueLast30Days: 0,
+        revenueByDay: [],
+      });
       dashboardRepositoryMock.getSummary.mockResolvedValueOnce({
-        revenue: {
-          totalRevenue: 0,
-          revenueLast30Days: 0,
-          unrealizedRevenue: 0,
-          unrealizedRevenueLast30Days: 0,
-          averageOrderValueLast30Days: 0,
-          revenueByDay: [],
-        },
         orders: { totalOrders: 0, ordersByStatus: [], ordersByDay: [] },
         users: { totalUsers: 0, newUsersByDay: [] },
         customers: { repeatBuyerRate: 0, repeatBuyerRateLast90Days: 0 },
@@ -294,6 +311,79 @@ describe('Admin Dashboard (e2e)', () => {
       expect(body.users.totalUsers).toBeGreaterThanOrEqual(0);
       expect(body.products.totalProducts).toBeGreaterThanOrEqual(0);
       expect(body.inventory.lowStockProducts).toEqual([]);
+    });
+
+    /**
+     * THE GATE OF TASK-684 (plan 188): money is cut by the API, not the browser.
+     *
+     * The admin panel is a public bundle and the network tab shows whatever the
+     * server sent, so "the tile is hidden" proves nothing. What is asserted here
+     * is the BODY: for a manager holding `analytics:read` alone, the `revenue`
+     * key is absent and no top product carries a sum — checked on the parsed
+     * object and, belt and braces, on the raw text, where a money field renamed
+     * or nested somewhere new would still show up.
+     */
+    describe('the revenue split (TASK-684)', () => {
+      it('sends a manager with analytics:read alone no revenue at all', async () => {
+        permissionRepositoryMock.setGrants(UserRole.MANAGER, ['analytics:read']);
+        const token = generateAccessToken('manager-e2e-1', 'MANAGER');
+
+        const response = await request(app.getHttpServer())
+          .get('/api/admin/dashboard/summary')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(response.body).not.toHaveProperty('revenue');
+        expect(response.body.products.topProducts).toHaveLength(2);
+        for (const product of response.body.products.topProducts) {
+          expect(product).not.toHaveProperty('totalRevenue');
+          expect(typeof product.unitsSold).toBe('number');
+        }
+        // Ranked by units, not by the money it no longer carries.
+        expect(
+          response.body.products.topProducts.map((p: { productId: string }) => p.productId),
+        ).toEqual(['prod-3', 'prod-1']);
+        for (const moneyKey of ['"revenue"', 'totalRevenue', 'revenueLast30Days', 'revenueByDay']) {
+          expect(response.text).not.toContain(moneyKey);
+        }
+        // The operational dashboard is still all there.
+        expect(response.body.orders.totalOrders).toBe(312);
+        expect(response.body.operations.averageProcessingHoursLast30Days).toBe(36.5);
+        // …and the money was never even computed for them.
+        expect(dashboardRepositoryMock.getRevenueMetrics).not.toHaveBeenCalled();
+      });
+
+      it('sends a manager holding analytics:revenue too the revenue block and the sums', async () => {
+        permissionRepositoryMock.setGrants(UserRole.MANAGER, [
+          'analytics:read',
+          'analytics:revenue',
+        ]);
+        const token = generateAccessToken('manager-e2e-1', 'MANAGER');
+
+        const response = await request(app.getHttpServer())
+          .get('/api/admin/dashboard/summary')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(200);
+
+        expect(response.body.revenue).toEqual(revenueFixture);
+        expect(response.body.products.topProducts[0]).toEqual({
+          productId: 'prod-1',
+          name: 'USB-C Cable 2m',
+          totalRevenue: 3420,
+          unitsSold: 12,
+        });
+      });
+
+      it('still refuses a manager holding analytics:revenue WITHOUT analytics:read', async () => {
+        // The money key is a widening of the dashboard, not a door into it.
+        permissionRepositoryMock.setGrants(UserRole.MANAGER, ['analytics:revenue']);
+        const token = generateAccessToken('manager-e2e-1', 'MANAGER');
+
+        await request(app.getHttpServer())
+          .get('/api/admin/dashboard/summary')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+      });
     });
   });
 
