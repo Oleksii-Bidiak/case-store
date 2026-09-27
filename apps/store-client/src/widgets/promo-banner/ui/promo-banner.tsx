@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { Button } from "@/shared/ui";
+import { BannerBackdrop, Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
@@ -23,10 +23,17 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
   const subtitle = banner ? (banner.subtitle ?? undefined) : fallback.subtitle;
   const ctaLabel = banner ? (banner.ctaLabel ?? undefined) : fallback.cta;
   const ctaHref = banner ? (banner.ctaHref ?? undefined) : fallback.href;
+  const imageUrl = banner?.imageUrl ?? undefined;
 
   return (
     <section className="mx-auto w-full max-w-7xl px-4">
-      <div className="flex flex-wrap items-center justify-between gap-8 rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-10 sm:p-12">
+      <div className="relative isolate flex flex-wrap items-center justify-between gap-8 overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-10 sm:p-12">
+        {/* Admin picture under the copy (TASK-740); the gradient without one. */}
+        <BannerBackdrop
+          src={imageUrl}
+          sizes="(max-width: 1280px) 100vw, 1280px"
+          scrimClassName="bg-slate-900/60"
+        />
         <div className="max-w-2xl text-white">
           {eyebrow && (
             <span className="inline-block rounded-full bg-primary px-3 py-1 text-xs font-bold tracking-wide text-primary-foreground uppercase">

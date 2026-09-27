@@ -57,6 +57,11 @@ function makeReviewRow(overrides: Record<string, unknown> = {}) {
     // shop's answer (or its absence) rides along.
     textStatus: "PENDING",
     ratingVisible: true,
+    // TASK-596/601 — why (and whether) the author's contribution is withdrawn,
+    // and the address the review came from.
+    hiddenAt: null as string | null,
+    hiddenReason: null as string | null,
+    createdIp: null as string | null,
     reply: null as { body: string; createdAt: string } | null,
     createdAt: "2026-06-01T10:00:00.000Z",
     userEmail: "olena@example.com",
@@ -526,10 +531,16 @@ describe("AdminReviewTable — hiding an author (TASK-446)", () => {
     await waitFor(() => expect(hiddenUserId).toBe("user-uuid-1"));
   });
 
-  it("offers the inverse once the author's ratings are not counting", async () => {
+  it("offers «повернути» for a moderator's hide (TASK-1004)", async () => {
     const user = userEvent.setup();
     let restoredUserId: string | null = null;
-    stubQueue([makeReviewRow({ ratingVisible: false })]);
+    stubQueue([
+      makeReviewRow({
+        ratingVisible: false,
+        hiddenAt: "2026-09-20T10:00:00.000Z",
+        hiddenReason: "MODERATOR",
+      }),
+    ]);
     server.use(
       http.post("*/api/admin/reviews/authors/:userId/unhide", ({ params }) => {
         restoredUserId = params.userId as string;
@@ -550,6 +561,298 @@ describe("AdminReviewTable — hiding an author (TASK-446)", () => {
     );
 
     await waitFor(() => expect(restoredUserId).toBe("user-uuid-1"));
+  });
+
+  it("does not offer «повернути» for an unconfirmed email — nobody hid it (TASK-1004)", async () => {
+    // `ratingVisible: false` with no `hiddenReason` is the email gate alone. The
+    // old inference offered a restore for a hide that never happened.
+    stubQueue([makeReviewRow({ ratingVisible: false, hiddenReason: null })]);
+
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(
+      screen.queryByRole("button", { name: dict.reviews.unhideAuthorAction }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.reviews.hideAuthorAction }),
+    ).toBeInTheDocument();
+  });
+
+  it.each(["BAN", "DELETED"])(
+    "offers no author action while the account itself holds the rows (%s)",
+    async (reason) => {
+      stubQueue([
+        makeReviewRow({
+          ratingVisible: false,
+          hiddenAt: "2026-09-20T10:00:00.000Z",
+          hiddenReason: reason,
+        }),
+      ]);
+
+      renderTable();
+      await screen.findByText("iPhone 15 Pro Case");
+
+      expect(
+        screen.queryByRole("button", { name: dict.reviews.unhideAuthorAction }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: dict.reviews.hideAuthorAction }),
+      ).not.toBeInTheDocument();
+    },
+  );
+});
+
+/**
+ * TASK-1004 — the UI half of TASK-596/601. The API has told WHY a row is
+ * withdrawn, filtered on the author's visibility, and accepted `status=all`,
+ * `productId` and `createdIp` since plan 192; the queue used none of it.
+ */
+describe("AdminReviewTable — withdrawn authors and the abuse series (TASK-1004)", () => {
+  beforeEach(() => {
+    mockReplace.mockClear();
+    mockSearchParamsRef.current = new URLSearchParams("");
+  });
+
+  function stubReviews(rows = [makeReviewRow()]) {
+    const params: URLSearchParams[] = [];
+    server.use(
+      http.get("*/api/admin/reviews", ({ request }) => {
+        params.push(new URL(request.url).searchParams);
+        return listResponse(rows);
+      }),
+    );
+    return params;
+  }
+
+  it.each([
+    ["MODERATOR", dict.reviews.hiddenByModerator],
+    ["BAN", dict.reviews.hiddenByBan],
+    ["DELETED", dict.reviews.hiddenByDeletion],
+  ])("names the reason a row is withdrawn (%s)", async (reason, label) => {
+    stubReviews([
+      makeReviewRow({
+        ratingVisible: false,
+        hiddenAt: "2026-09-20T10:00:00.000Z",
+        hiddenReason: reason,
+      }),
+    ]);
+
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(screen.getByText(label)).toBeInTheDocument();
+    // The cause replaces the effect-only guess.
+    expect(
+      screen.queryByText(dict.reviews.ratingNotCounted),
+    ).not.toBeInTheDocument();
+  });
+
+  it("asks for the visible authors by default and offers the withdrawn pile", async () => {
+    const params = stubReviews();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(params[0].get("visibility")).toBe("visible");
+
+    const trigger = screen.getByRole("combobox", {
+      name: dict.reviews.filterVisibilityAria,
+    });
+    expect(trigger).toHaveTextContent(dict.reviews.filterVisibilityVisible);
+
+    await userEvent.click(trigger);
+    await userEvent.click(
+      await screen.findByRole("option", {
+        name: dict.reviews.filterVisibilityHidden,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        expect.stringContaining("visibility=hidden"),
+      ),
+    );
+  });
+
+  it("forwards ?visibility=hidden so the restore button becomes reachable", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("visibility=hidden");
+    const params = stubReviews([
+      makeReviewRow({
+        ratingVisible: false,
+        hiddenAt: "2026-09-20T10:00:00.000Z",
+        hiddenReason: "MODERATOR",
+      }),
+    ]);
+
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(params[0].get("visibility")).toBe("hidden");
+    expect(
+      screen.getByRole("button", { name: dict.reviews.unhideAuthorAction }),
+    ).toBeInTheDocument();
+  });
+
+  it("labels status=all as «Усі» and offers it as an option", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("status=all");
+    const params = stubReviews();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(params[0].get("status")).toBe("all");
+    expect(
+      screen.getByRole("combobox", { name: dict.reviews.filterStatusAria }),
+    ).toHaveTextContent(dict.reviews.filterAll);
+  });
+
+  it("decides the verdict buttons per row on «Усі», and none for a rating without text", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("status=all");
+    stubReviews([
+      makeReviewRow({ textStatus: "APPROVED" }),
+      makeReviewRow({
+        id: "review-uuid-2",
+        productName: "Screen Protector",
+        textStatus: "APPROVED",
+        comment: null,
+      }),
+    ]);
+
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    // One approved row with text: «Відхилити текст» only. The rating-only row:
+    // no text to approve or reject.
+    expect(
+      screen.getAllByRole("button", { name: dict.reviews.reject }),
+    ).toHaveLength(1);
+    expect(
+      screen.queryByRole("button", { name: dict.reviews.approve }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("narrows to the product from a dashboard link, names it and clears it", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "status=all&productId=product-uuid-1",
+    );
+    const params = stubReviews();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(params[0].get("productId")).toBe("product-uuid-1");
+
+    const chip = await screen.findByRole("button", {
+      name: dict.reviews.productChipAria("iPhone 15 Pro Case"),
+    });
+    expect(chip).toHaveTextContent(
+      dict.reviews.productChip("iPhone 15 Pro Case"),
+    );
+
+    await userEvent.click(chip);
+    expect(mockReplace).toHaveBeenCalledWith("/reviews?status=all");
+  });
+
+  it("narrows to an address from a dashboard link and clears it", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "status=all&createdIp=203.0.113.7&page=2",
+    );
+    const params = stubReviews();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    expect(params[0].get("createdIp")).toBe("203.0.113.7");
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.reviews.ipChipAria("203.0.113.7"),
+      }),
+    );
+    // Clearing a narrowing resets the page, like every other filter.
+    expect(mockReplace).toHaveBeenCalledWith("/reviews?status=all");
+  });
+
+  it("clears the deep-link narrowing too when «Скинути все» is pressed", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "status=all&visibility=hidden&productId=product-uuid-1&createdIp=203.0.113.7&search=olena&page=3",
+    );
+    stubReviews();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    // One clear-all for all four chips, not one per filter group.
+    const clearAll = screen.getAllByRole("button", {
+      name: dict.common.table.clearAllFilters,
+    });
+    expect(clearAll).toHaveLength(1);
+
+    await userEvent.click(clearAll[0]);
+    // Every chip goes, and the page with them; the search term is not a chip.
+    expect(mockReplace).toHaveBeenCalledWith("/reviews?search=olena");
+  });
+
+  it("offers «Скинути все» once a deep-link chip joins a single filter", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "status=all&productId=product-uuid-1",
+    );
+    stubReviews();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.clearAllFilters }),
+    );
+    expect(mockReplace).toHaveBeenCalledWith("/reviews");
+  });
+
+  it.each([
+    [
+      "visibility=foo",
+      dict.reviews.filterVisibilityAria,
+      dict.reviews.filterVisibilityVisible,
+    ],
+    ["status=foo", dict.reviews.filterStatusAria, dict.reviews.filterPending],
+    [
+      "visibility=visible",
+      dict.reviews.filterVisibilityAria,
+      dict.reviews.filterVisibilityVisible,
+    ],
+  ])(
+    "shows what %s actually queries — the default, with no stray chip",
+    async (query, aria, label) => {
+      mockSearchParamsRef.current = new URLSearchParams(query);
+      const params = stubReviews();
+      renderTable();
+      await screen.findByText("iPhone 15 Pro Case");
+
+      expect(params[0].get("visibility")).toBe("visible");
+      expect(params[0].get("status")).toBe("pending");
+      expect(screen.getByRole("combobox", { name: aria })).toHaveTextContent(
+        label,
+      );
+      // No chip at all for a value the rows are not narrowed by — neither
+      // «…: foo» nor one naming the default.
+      expect(
+        screen.queryByRole("button", { name: /^Прибрати фільтр/ }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", {
+          name: dict.common.table.clearAllFilters,
+        }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("names the product by its id while the series is empty", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "productId=product-uuid-9",
+    );
+    stubReviews([]);
+    renderTable();
+
+    expect(
+      await screen.findByRole("button", {
+        name: dict.reviews.productChipAria("product-uuid-9"),
+      }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -615,10 +918,10 @@ describe("AdminReviewTable — search and page size (TASK-423)", () => {
   });
 
   /**
-   * The API treats an absent `status` as `pending`, so there is no "all" state to
-   * offer. The shared filter's no-filter option therefore READS as «На розгляді»
-   * — an «Усі» that silently returned the pending queue would be a lie the
-   * operator could not see through.
+   * The API treats an absent `status` as `pending`, so the shared filter's
+   * no-filter option READS as «На розгляді» — an «Усі» in that slot would
+   * silently return the pending queue, a lie the operator could not see
+   * through. The real «Усі» (`status=all`, TASK-601) is an option of its own.
    */
   it("labels the cleared status as «На розгляді», the queue an absent param really returns", async () => {
     stubReviews();

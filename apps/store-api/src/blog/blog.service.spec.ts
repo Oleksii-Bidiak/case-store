@@ -5,7 +5,7 @@ import { PinoLogger } from 'nestjs-pino';
 import { ReorderNotFoundError } from '../common/reorder';
 import { BlogRepository } from './blog.repository';
 import { BlogService } from './blog.service';
-import { BlogPostEntity, BlogCategoryEntity } from './entities';
+import { BlogPostEntity, BlogCategoryEntity, BlogPostSuggestionEntity } from './entities';
 import { RevalidationNotifier } from '../publishing';
 import { BlogIndexer } from '../search/blog-indexer';
 
@@ -59,6 +59,8 @@ const repositoryMock = {
   countPostsInCategory: jest.fn(),
   reorderCategories: jest.fn(),
   findPublishedByIds: jest.fn(),
+  findPublishedSuggestionsByIds: jest.fn(),
+  findPublishedSuggestions: jest.fn(),
 };
 
 const revalidationMock = { revalidate: jest.fn() };
@@ -330,6 +332,85 @@ describe('BlogService', () => {
       repositoryMock.update.mockResolvedValue(mockPost);
 
       await expect(service.publish('post-1')).resolves.toBeInstanceOf(BlogPostEntity);
+    });
+  });
+
+  // TASK-543 — the header popup's light read: id/slug/title/cover, never the
+  // article body, with the same index-first / Postgres-fallback order as findAll.
+  describe('suggest (search autocomplete)', () => {
+    const row = (id: string, slug: string) => ({
+      id,
+      slug,
+      title: `Title ${id}`,
+      coverImageUrl: null,
+    });
+
+    it('answers [] for a blank query without touching the index or Postgres', async () => {
+      await expect(service.suggest('   ')).resolves.toEqual([]);
+
+      expect(indexerMock.search).not.toHaveBeenCalled();
+      expect(repositoryMock.findPublishedSuggestions).not.toHaveBeenCalled();
+    });
+
+    it('hydrates engine hits through the light re-read, in engine order', async () => {
+      indexerMock.search.mockResolvedValue({ ids: ['post-3', 'post-1'], total: 2 });
+      repositoryMock.findPublishedSuggestionsByIds.mockResolvedValue([
+        row('post-1', 'a'),
+        row('post-3', 'b'),
+      ]);
+
+      const result = await service.suggest(' павербнак ', 4);
+
+      expect(indexerMock.search).toHaveBeenCalledWith({
+        q: 'павербнак',
+        page: 1,
+        limit: 4,
+        includeUnlisted: false,
+      });
+      expect(repositoryMock.findPublishedSuggestionsByIds).toHaveBeenCalledWith([
+        'post-3',
+        'post-1',
+      ]);
+      expect(result.map((s) => s.id)).toEqual(['post-3', 'post-1']);
+      expect(result[0]).toBeInstanceOf(BlogPostSuggestionEntity);
+      // The whole point: no body, no category, no author on the wire.
+      expect(Object.keys(result[0]).sort()).toEqual(['coverImageUrl', 'id', 'slug', 'title']);
+      expect(repositoryMock.findPublishedSuggestions).not.toHaveBeenCalled();
+      // Never the heavy reads.
+      expect(repositoryMock.findPublishedByIds).not.toHaveBeenCalled();
+      expect(repositoryMock.findAll).not.toHaveBeenCalled();
+    });
+
+    it('falls back to Postgres when the engine cannot answer', async () => {
+      indexerMock.search.mockResolvedValue(null);
+      repositoryMock.findPublishedSuggestions.mockResolvedValue([row('post-1', 'a')]);
+
+      const result = await service.suggest('чохол');
+
+      expect(repositoryMock.findPublishedSuggestions).toHaveBeenCalledWith('чохол', 5);
+      expect(result.map((s) => s.slug)).toEqual(['a']);
+    });
+
+    it('falls back to Postgres when the indexer throws', async () => {
+      indexerMock.search.mockRejectedValue(new Error('meili down'));
+      repositoryMock.findPublishedSuggestions.mockResolvedValue([row('post-1', 'a')]);
+
+      const result = await service.suggest('чохол', 3);
+
+      expect(repositoryMock.findPublishedSuggestions).toHaveBeenCalledWith('чохол', 3);
+      expect(result).toHaveLength(1);
+      expect(pinoLoggerMock.warn).toHaveBeenCalled();
+    });
+
+    it('falls back to Postgres when no engine hit survives the PUBLISHED re-read', async () => {
+      indexerMock.search.mockResolvedValue({ ids: ['stale-post'], total: 1 });
+      repositoryMock.findPublishedSuggestionsByIds.mockResolvedValue([]);
+      repositoryMock.findPublishedSuggestions.mockResolvedValue([row('post-1', 'a')]);
+
+      const result = await service.suggest('чохол');
+
+      expect(repositoryMock.findPublishedSuggestions).toHaveBeenCalledWith('чохол', 5);
+      expect(result.map((s) => s.id)).toEqual(['post-1']);
     });
   });
 

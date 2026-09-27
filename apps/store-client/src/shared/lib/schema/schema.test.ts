@@ -4,6 +4,7 @@ import { buildBreadcrumbSchema } from "./buildBreadcrumbSchema";
 import { buildFaqPageSchema } from "./buildFaqPageSchema";
 import { buildItemListSchema } from "./buildItemListSchema";
 import { buildProductSchema } from "./buildProductSchema";
+import { buildBlogPostingSchema } from "./buildBlogPostingSchema";
 import type {
   PublicProductEntity,
   ProductImageEntity,
@@ -62,6 +63,83 @@ describe("buildOrganizationSchema", () => {
     expect(
       buildOrganizationSchema(SITE, "CaseStore", [], "   ").logo,
     ).toBeUndefined();
+  });
+
+  // TASK-556
+  it("emits a customer-service ContactPoint from the contact settings", () => {
+    const schema = buildOrganizationSchema(SITE, "CaseStore", [], null, {
+      phone: " +380 44 000 00 00 ",
+      email: "help@example.com",
+    });
+
+    expect(schema.contactPoint).toEqual({
+      "@type": "ContactPoint",
+      contactType: "customer service",
+      telephone: "+380 44 000 00 00",
+      email: "help@example.com",
+      areaServed: "UA",
+      availableLanguage: ["uk"],
+    });
+  });
+
+  it("keeps the ContactPoint with only one of phone/email, and drops it with neither", () => {
+    const phoneOnly = buildOrganizationSchema(SITE, "CaseStore", [], null, {
+      phone: "+380440000000",
+      email: "  ",
+    });
+    expect(phoneOnly.contactPoint).toEqual(
+      expect.not.objectContaining({ email: expect.anything() }),
+    );
+    expect(
+      buildOrganizationSchema(SITE, "CaseStore", [], null, null).contactPoint,
+    ).toBeUndefined();
+    expect(
+      buildOrganizationSchema(SITE, "CaseStore", [], null, {}).contactPoint,
+    ).toBeUndefined();
+  });
+
+  it("never emits an address — there is no address data to state", () => {
+    const schema = buildOrganizationSchema(SITE, "CaseStore", [], null, {
+      phone: "+380440000000",
+    });
+    expect(schema.address).toBeUndefined();
+  });
+});
+
+describe("buildBlogPostingSchema (TASK-556)", () => {
+  const base = {
+    url: `${SITE}/blog/iphone16-vs-15`,
+    headline: "iPhone 16 чи 15",
+    authorName: "Редакція",
+    siteName: "CaseStore",
+  };
+
+  it("emits dateModified and the cover as image", () => {
+    const schema = buildBlogPostingSchema({
+      ...base,
+      datePublished: "2026-07-01T00:00:00.000Z",
+      dateModified: "2026-07-05T00:00:00.000Z",
+      image: "https://cdn.example.com/cover.jpg",
+    });
+
+    expect(schema.dateModified).toBe("2026-07-05T00:00:00.000Z");
+    expect(schema.image).toEqual(["https://cdn.example.com/cover.jpg"]);
+  });
+
+  it("absolutizes a site-relative cover against the article URL", () => {
+    const schema = buildBlogPostingSchema({
+      ...base,
+      image: "/uploads/cover.jpg",
+    });
+
+    expect(schema.image).toEqual([`${SITE}/uploads/cover.jpg`]);
+  });
+
+  it("omits image and dateModified when absent", () => {
+    const schema = buildBlogPostingSchema(base);
+
+    expect(schema).not.toHaveProperty("image");
+    expect(schema).not.toHaveProperty("dateModified");
   });
 });
 
@@ -141,6 +219,25 @@ describe("buildItemListSchema", () => {
     const schema = buildItemListSchema([]);
 
     expect(schema.itemListElement).toEqual([]);
+  });
+
+  it("lists articles as BlogPosting with a headline (TASK-556, /blog)", () => {
+    const schema = buildItemListSchema(
+      [{ name: "Гайд", url: `${SITE}/blog/guide` }],
+      { itemType: "BlogPosting" },
+    );
+
+    expect(schema.itemListElement).toEqual([
+      {
+        "@type": "ListItem",
+        position: 1,
+        item: {
+          "@type": "BlogPosting",
+          headline: "Гайд",
+          url: `${SITE}/blog/guide`,
+        },
+      },
+    ]);
   });
 });
 
@@ -315,6 +412,31 @@ describe("buildProductSchema", () => {
     });
     const offer = schema.offers as Record<string, unknown>;
     expect(offer.availability).toBe("https://schema.org/OutOfStock");
+  });
+
+  // TASK-556 — the statutory 14-day window, and nothing the owner never said.
+  it("states the 14-day return policy on the offer", () => {
+    const schema = buildProductSchema({
+      product: baseProduct,
+      images: [],
+      ...opts,
+    });
+    const offer = schema.offers as Record<string, unknown>;
+
+    expect(offer.hasMerchantReturnPolicy).toEqual({
+      "@type": "MerchantReturnPolicy",
+      applicableCountry: "UA",
+      returnPolicyCategory:
+        "https://schema.org/MerchantReturnFiniteReturnWindow",
+      merchantReturnDays: 14,
+      returnMethod: "https://schema.org/ReturnByMail",
+    });
+    // Who pays for the return and what delivery costs are not known anywhere
+    // in the data — guessing them would be a false claim.
+    expect(offer.shippingDetails).toBeUndefined();
+    expect(
+      (offer.hasMerchantReturnPolicy as Record<string, unknown>).returnFees,
+    ).toBeUndefined();
   });
 
   it("omits sku when null and omits offers when no usable price", () => {

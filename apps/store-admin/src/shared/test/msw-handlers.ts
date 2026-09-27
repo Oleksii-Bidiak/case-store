@@ -117,6 +117,17 @@ export const handlers = [
     }),
   ),
 
+  // Admin returns queue — empty by default. Since TASK-613 the dashboard's
+  // «Нові заявки на повернення» tile reads `meta.total` of
+  // `?status=REQUESTED&limit=1` from here for any session with `returns:read`,
+  // and the widget is mounted incidentally by dashboard suites. Override per-test.
+  http.get("*/api/admin/returns", () =>
+    HttpResponse.json({
+      data: [],
+      meta: { total: 0, page: 1, limit: 20, totalPages: 0 },
+    }),
+  ),
+
   // Admin review moderation queue — empty by default. Since TASK-722 the nav's
   // «Відгуки» badge reads `meta.total` of `?status=pending&limit=1` from here
   // (instead of the analytics-only needs-action endpoint), and the nav is

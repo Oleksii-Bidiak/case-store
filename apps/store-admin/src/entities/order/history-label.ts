@@ -43,10 +43,48 @@ export function historyActorLabel(
 }
 
 /**
+ * Whether the row records a provider event the shop REFUSED (TASK-621).
+ *
+ * The server writes such a row `current → current` — the payment status did not
+ * move, and the chain of rows must stay a chain — with the PAYMENT_EVENT_REFUSED
+ * note and the asked-for status in `rejectedPaymentStatus`. Rows written before
+ * that carry neither, so a PAYMENT_STATUS row whose `from` equals its `to`
+ * counts as a refusal too: no ordinary payment move writes one (the state
+ * machine has no self-transitions, and the manual correction always changes the
+ * status).
+ */
+export function isRefusedPaymentEvent(
+  entry: OrderStatusHistoryEntity,
+): boolean {
+  if (entry.changeType !== OrderStatusHistoryEntityChangeType.PAYMENT_STATUS) {
+    return false;
+  }
+  if (entry.note === OrderStatusHistoryEntityNote.PAYMENT_EVENT_REFUSED) {
+    return true;
+  }
+  return (
+    entry.note == null &&
+    entry.fromPaymentStatus != null &&
+    entry.fromPaymentStatus === entry.toPaymentStatus
+  );
+}
+
+/**
  * What a history row records: a status transition (with the order-creation row
- * treated as the order's birth), or a payment-status change.
+ * treated as the order's birth), a payment-status change, or a refused payment
+ * event (TASK-621).
  */
 export function historyChangeLabel(entry: OrderStatusHistoryEntity): string {
+  if (isRefusedPaymentEvent(entry)) {
+    const current = paymentStatusLabel(entry.toPaymentStatus ?? "");
+    return entry.rejectedPaymentStatus
+      ? dict.orderStatus.paymentEventRefusedLabel(
+          paymentStatusLabel(entry.rejectedPaymentStatus),
+          current,
+        )
+      : dict.orderStatus.paymentEventRefusedLegacyLabel(current);
+  }
+
   if (entry.changeType === OrderStatusHistoryEntityChangeType.PAYMENT_STATUS) {
     return `Оплата: ${paymentStatusLabel(
       entry.fromPaymentStatus ?? "",
@@ -72,6 +110,10 @@ export function historyChangeLabel(entry: OrderStatusHistoryEntity): string {
 export function historyNoteLabel(
   entry: OrderStatusHistoryEntity,
 ): string | null {
+  // TASK-621 — including the legacy rows that carry no note at all.
+  if (isRefusedPaymentEvent(entry)) {
+    return dict.orderStatus.paymentEventRefusedHistoryNote;
+  }
   switch (entry.note) {
     case OrderStatusHistoryEntityNote.SHIPPED_UNPAID:
       return dict.orderStatus.unpaidShipHistoryNote;

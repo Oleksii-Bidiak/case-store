@@ -170,8 +170,10 @@ describe("blog/[slug] generateMetadata — the openGraph block it must re-state"
 
     const meta = await runMeta("iphone-16-oglyad");
 
+    // A cover's proportions are unknown — no size is claimed; the alt is the
+    // article's title (TASK-568).
     expect(meta.openGraph?.images).toEqual([
-      { url: "https://cdn.example/cover.webp" },
+      { url: "https://cdn.example/cover.webp", alt: meta.openGraph?.title },
     ]);
   });
 
@@ -205,7 +207,12 @@ describe("blog/[slug] generateMetadata — the openGraph block it must re-state"
     const meta = await runMeta("iphone-16-oglyad");
 
     expect(meta.openGraph?.images).toEqual([
-      { url: "https://cdn.example/og-card.jpg" },
+      {
+        url: "https://cdn.example/og-card.jpg",
+        width: 1200,
+        height: 630,
+        alt: meta.openGraph?.title,
+      },
     ]);
   });
 });

@@ -1,36 +1,9 @@
-import type { PublicOrderEntity } from "@/entities/order";
+import {
+  statusBadgeClass as badgeClass,
+  type PublicOrderEntity,
+} from "@/entities/order";
 import { dict } from "@/shared/config";
-import { formatMoney } from "@/shared/lib/format";
-
-/** Token-based badge colours per status value (no raw hex) — same map the
- *  confirmation header uses, so one status never looks like two things. */
-const STATUS_BADGE: Record<string, string> = {
-  PENDING: "bg-muted text-muted-foreground",
-  CONFIRMED: "bg-primary/10 text-primary",
-  PROCESSING: "bg-primary/20 text-primary",
-  SHIPPED: "bg-primary/30 text-primary",
-  DELIVERED: "bg-primary/10 text-primary font-semibold",
-  CANCELLED: "bg-destructive/10 text-destructive",
-  REFUNDED: "bg-destructive/10 text-destructive",
-  PARTIALLY_REFUNDED: "bg-destructive/10 text-destructive",
-  PAID: "bg-primary/10 text-primary",
-  FAILED: "bg-destructive/10 text-destructive",
-};
-
-const dateFormatter = new Intl.DateTimeFormat("uk-UA", {
-  year: "numeric",
-  month: "long",
-  day: "numeric",
-});
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : dateFormatter.format(date);
-}
-
-function badgeClass(value: string): string {
-  return STATUS_BADGE[value] ?? "bg-muted text-muted-foreground";
-}
+import { formatDate, formatMoney } from "@/shared/lib/format";
 
 /**
  * OrderLookupResult — one order as the public form is allowed to show it
@@ -43,7 +16,9 @@ function badgeClass(value: string): string {
  * future edit wants the street here, it has to go and add the field to a class
  * whose docblock explains why it is missing.
  *
- * Server component: it renders data handed to it and owns no state.
+ * Presentational: it renders data handed to it and owns no state. It runs as a
+ * CLIENT component — its only caller is the `"use client"` `OrderLookupForm`,
+ * and anything imported from a client module is client code.
  */
 export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
   const d = dict.orderLookup;

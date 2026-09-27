@@ -62,7 +62,12 @@ const fsdBoundaryRules = [
       ],
     },
   },
-  // entities — can only import from shared
+  // entities — can only import from shared.
+  //
+  // `@/entities/**` is in the group too (TASK-640): an entity must not reach a
+  // SIBLING entity through the alias. The last two such imports (`staff` →
+  // `session`, `staff` → `permission`) were removed — the feature layer joins
+  // entities, an entity does not. Inside one entity, import relatively.
   {
     name: 'fsd-entities-boundaries',
     files: ['src/entities/**/*.{ts,tsx,js,jsx,mjs,mts,cts}'],
@@ -72,9 +77,9 @@ const fsdBoundaryRules = [
         {
           patterns: [
             {
-              group: ['@/app/**', '@/widgets/**', '@/features/**'],
+              group: ['@/app/**', '@/widgets/**', '@/features/**', '@/entities/**'],
               message:
-                'FSD boundary violation: "entities" layer must not import from "app", "widgets", or "features" layers. Only @/shared/ and @/entities/ imports are allowed.',
+                'FSD boundary violation: "entities" layer must not import from "app", "widgets", or "features" layers, nor from another entity via @/entities/ (let a feature join two entities; inside one entity use a relative import). Only @/shared/ imports are allowed.',
             },
           ],
           paths: [noSonnerOutsideWrapper],
@@ -248,6 +253,31 @@ const tailwindTokenGuard = [
  * a NUMBER is legitimate (see `DashboardTrafficCard`), and flagging it would
  * push people back to hand-rolled formatting.
  */
+/**
+ * Error-envelope guard (TASK-810 / TASK-622). Appended to `rawFetchGuard`'s
+ * array below — NOT a config object of its own, for the replace-not-merge reason
+ * documented there.
+ *
+ * Five admin modules used to open `error.response.data` themselves, and the two
+ * order/payment conflict mappers concluded "a conflict" from the mere presence
+ * of `error` in it — which `HttpExceptionFilter` puts in EVERY body. A manager
+ * who had just lost `orders:write` got a 403, read «замовлення змінилося,
+ * оновіть сторінку», and reloaded forever. The body is now read in exactly one
+ * place (`apiErrorStatus` / `apiErrorCode` / `apiErrorMessage` from
+ * `@/shared/lib`), where the rule "the status decides, the code refines" lives.
+ *
+ * Matches `X.response.data` / `X?.response?.data` — a `data` read off a
+ * `.response` MEMBER, which is what reading a rejection looks like. The success
+ * path (`(response) => response.data`, `instance.ts`, `transitions.ts`) reads
+ * `data` off a bare `response` IDENTIFIER and is deliberately not matched.
+ */
+const errorBodyReadSelector = {
+  selector:
+    "MemberExpression[property.name='data'][object.type='MemberExpression'][object.property.name='response']",
+  message:
+    "Не читай тіло помилки API напряму (error.response.data): кожне тіло має поле «error» — навіть 403 і 500 — тож висновок «є код → конфлікт» перетворював брак права на «замовлення змінилося, оновіть сторінку» (TASK-622). Використовуй apiErrorStatus / apiErrorCode / apiErrorMessage з @/shared/lib: спершу рішення за статусом, код лише уточнює.",
+};
+
 const rawFetchGuard = [
   {
     name: "no-raw-fetch",
@@ -279,7 +309,26 @@ const rawFetchGuard = [
           message:
             "Власний Intl.DateTimeFormat/RelativeTimeFormat поза shared/lib/format: саме так в адмінці з'явилося 18 різних форматерів — вісім з них в американському форматі («Sep 9, 2026, 6:40 PM») — і жоден не задавав timeZone, тому на сервері (UTC) час показувався зміщеним. Імпортуй formatDate / formatDateTime / formatTime / formatRelative з @/shared/lib. Якщо потрібен НОВИЙ формат дати — додай його у shared/lib/format/formatDate.ts, а не тут.",
         },
+        errorBodyReadSelector,
       ],
+    },
+  },
+];
+
+/**
+ * The one module allowed to open an error body: `shared/lib/api-error-message.ts`
+ * (TASK-810). Re-declares the SAME selectors minus the error-body one rather
+ * than switching the rule off, so the raw-fetch and date guards still apply to
+ * it — the flat-config replace-not-merge trap described above, used on purpose.
+ */
+const errorBodyReaderExemption = [
+  {
+    name: "error-body-reader-exemption",
+    files: ["src/shared/lib/api-error-message.ts"],
+    rules: {
+      "no-restricted-syntax": rawFetchGuard[0].rules[
+        "no-restricted-syntax"
+      ].filter((entry) => entry !== errorBodyReadSelector),
     },
   },
 ];
@@ -292,6 +341,7 @@ const eslintConfig = defineConfig([
   ...testOverrides,
   ...tailwindTokenGuard,
   ...rawFetchGuard,
+  ...errorBodyReaderExemption,
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

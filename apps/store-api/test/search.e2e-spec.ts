@@ -81,12 +81,19 @@ describe('Search (e2e)', () => {
     // the slug → id step runs against these rows. Each echoes the requested key
     // back, so a filter survives the round trip unchanged — and `findUnique`
     // returning `null` is what a test flips to exercise the unknown-slug path.
+    // `CategoryRepository` reads BOTH by id and by slug through `findFirst` since
+    // TASK-653 (the `deletedAt: null` filter is not part of the primary key), so the
+    // category fake answers either key, like the brand/device fakes below.
     category: {
       findUnique: jest.fn(({ where }: { where: { id: string } }) =>
         Promise.resolve({ id: where.id, slug: `slug-of-${where.id}` }),
       ),
-      findFirst: jest.fn(({ where }: { where: { slug: string } }) =>
-        Promise.resolve({ id: `id-of-${where.slug}`, slug: where.slug }),
+      findFirst: jest.fn(({ where }: { where: { slug?: string; id?: string } }) =>
+        Promise.resolve(
+          where.slug
+            ? { id: `id-of-${where.slug}`, slug: where.slug }
+            : { id: where.id, slug: `slug-of-${where.id}` },
+        ),
       ),
     },
     brand: {

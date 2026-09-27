@@ -1393,6 +1393,40 @@ describe('OrderRepository', () => {
       expect(tx.product.updateMany).not.toHaveBeenCalled();
     });
 
+    // TASK-621: a refused provider event. The row stays `current → current` (the
+    // chain of rows must stay a chain) but now says it IS a refusal and what the
+    // event asked for — before, it was indistinguishable from «Оплачено → Оплачено».
+    it('marks a refused payment event with its note and the requested status', async () => {
+      const tx = seedTx();
+
+      await repository.applyPaymentOutcome({
+        paymentId: 'payment-1',
+        orderId: 'order-1',
+        expected: { status: OrderStatus.CONFIRMED, paymentStatus: PaymentStatus.PAID },
+        attemptStatus: PaymentAttemptStatus.FAILED,
+        refusedPaymentStatusChange: {
+          current: PaymentStatus.PAID,
+          rejected: PaymentStatus.FAILED,
+          reason: 'table',
+        },
+      });
+
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledTimes(1);
+      expect(tx.orderStatusHistory.create).toHaveBeenCalledWith({
+        data: {
+          orderId: 'order-1',
+          changeType: OrderHistoryChangeType.PAYMENT_STATUS,
+          fromPaymentStatus: PaymentStatus.PAID,
+          toPaymentStatus: PaymentStatus.PAID,
+          note: OrderHistoryNote.PAYMENT_EVENT_REFUSED,
+          rejectedPaymentStatus: PaymentStatus.FAILED,
+          changedBy: null,
+        },
+      });
+      // Nothing on the order itself moved.
+      expect(tx.order.updateMany).not.toHaveBeenCalled();
+    });
+
     it('writes no STATUS row when the plan carries no status move', async () => {
       const tx = seedTx();
       const planWithoutStatusMove = { ...successPlan, statusChange: undefined };

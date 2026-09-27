@@ -15,6 +15,9 @@ import { useProductGroupControllerFindAll } from "@/entities/product-group";
 import { useAuth } from "@/entities/session";
 import { ProductStatusToggle } from "@/features/product-status-toggle";
 import { useProductBulkStatus } from "@/features/product-bulk-status";
+import { useProductBulkColor } from "@/features/product-bulk-color";
+import { useProductBulkGroup } from "@/features/product-bulk-group";
+import { useProductBulkUndo } from "@/features/product-bulk-undo";
 import { ProductDeleteAction } from "@/features/product-delete";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
@@ -25,6 +28,7 @@ import {
   Button,
   Checkbox,
   LiveAnnouncer,
+  ReorderUndoButton,
   SortableColumnHeader,
   Table,
   TableBody,
@@ -43,8 +47,6 @@ import {
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { colorsInUse, formatCurrency, formatDate } from "@/shared/lib";
-import { useProductBulkColor } from "../model/use-product-bulk-color";
-import { useProductBulkGroup } from "../model/use-product-bulk-group";
 import { AdminProductTableSkeleton } from "./admin-product-table-skeleton";
 import { MoveToGroupDialog } from "./move-to-group-dialog";
 import { SetColorDialog } from "./set-color-dialog";
@@ -169,6 +171,13 @@ function AdminProductTableView() {
     canReadAdminTree ? adminTreeQuery.data?.data : publicTreeQuery.data?.data,
   );
 
+  // TASK-837/838: all three bulk endpoints (status, group, colour) — and so the
+  // undo, which replays them — need `products:write`. Without it a selection
+  // has nothing to act on, so the checkbox column, the bulk bar and the undo
+  // are not rendered at all. The server guard is the real boundary; this only
+  // keeps a manager from meeting a 403 they cannot act on.
+  const canWrite = can(PERM.productsWrite);
+
   // TASK-423: the same two filters, declared as data so the chips, the clear-all
   // and the page reset come from the shared control rather than from two
   // hand-rolled native <select>s that had none of them.
@@ -214,7 +223,19 @@ function AdminProductTableView() {
     },
   });
 
-  const bulk = useProductBulkStatus({ onSuccess: selection.clear });
+  // ── «Скасувати» for the last bulk action (TASK-837 / AD-PROD-33) ─────────
+  // Each action snapshots the selected rows right before it writes (`prepare`)
+  // and offers the undo only once the server has confirmed (`commit`). The undo
+  // replays the forward endpoints per previous value — see the hook for what
+  // that does not promise (atomicity, a lossless colour restore).
+  const bulkUndo = useProductBulkUndo();
+
+  const bulk = useProductBulkStatus({
+    onSuccess: () => {
+      selection.clear();
+      bulkUndo.commit();
+    },
+  });
 
   // ── bulk «Перемістити до групи» (TASK-423 / AD-PROD-33) ───────────────────
   const [isGroupDialogOpen, setGroupDialogOpen] = useState(false);
@@ -228,6 +249,7 @@ function AdminProductTableView() {
     onSuccess: () => {
       selection.clear();
       setGroupDialogOpen(false);
+      bulkUndo.commit();
     },
   });
 
@@ -241,12 +263,21 @@ function AdminProductTableView() {
     onSuccess: () => {
       selection.clear();
       setColorDialogOpen(false);
+      bulkUndo.commit();
     },
   });
 
   const selectedIds = [...selection.selectedIds];
   const isMutating =
-    bulk.isPending || bulkGroup.isPending || bulkColor.isPending;
+    bulk.isPending ||
+    bulkGroup.isPending ||
+    bulkColor.isPending ||
+    bulkUndo.isPending;
+
+  const setStatus = (isActive: boolean) => {
+    bulkUndo.prepare("status", selectedIds, products, isActive);
+    bulk.setStatus(selectedIds, isActive);
+  };
 
   return (
     <div className="flex flex-col gap-4">
@@ -272,7 +303,7 @@ function AdminProductTableView() {
           />
         }
         selectAll={
-          products.length > 0 && !isDeletedView ? (
+          canWrite && products.length > 0 && !isDeletedView ? (
             <Checkbox
               checked={selection.headerChecked}
               onCheckedChange={selection.toggleAll}
@@ -294,37 +325,61 @@ function AdminProductTableView() {
         </p>
       )}
 
-      <BulkActionsBar
-        selectedCount={selection.selectedCount}
-        isPending={isMutating}
-        onClear={selection.clear}
-        actions={[
-          {
-            label: dict.products.bulk.activate(selection.selectedCount),
-            onClick: () => bulk.setStatus(selectedIds, true),
-          },
-          {
-            label: dict.products.bulk.deactivate(selection.selectedCount),
-            onClick: () => bulk.setStatus(selectedIds, false),
-          },
-          // TASK-423 / AD-PROD-33. Note what is NOT here: a bulk delete. Product
-          // deletion is a soft delete that mangles slug and sku, and is not
-          // something to hand an operator behind a checkbox column — the API has
-          // no bulk form of it for the same reason.
-          {
-            label: dict.products.bulk.moveToGroup(selection.selectedCount),
-            onClick: () => setGroupDialogOpen(true),
-          },
-          // TASK-487. Sits beside «Перемістити до групи» on purpose: assembling
-          // a colour family and giving its positions their colours is one job,
-          // and doing the second half one product at a time is why the colour
-          // facet was empty everywhere before this.
-          {
-            label: dict.products.bulk.setColor(selection.selectedCount),
-            onClick: () => setColorDialogOpen(true),
-          },
-        ]}
-      />
+      {canWrite && (
+        <BulkActionsBar
+          selectedCount={selection.selectedCount}
+          isPending={isMutating}
+          onClear={selection.clear}
+          actions={[
+            {
+              label: dict.products.bulk.activate(selection.selectedCount),
+              onClick: () => setStatus(true),
+            },
+            {
+              label: dict.products.bulk.deactivate(selection.selectedCount),
+              onClick: () => setStatus(false),
+            },
+            // TASK-423 / AD-PROD-33. Note what is NOT here: a bulk delete.
+            // Product deletion is a soft delete that mangles slug and sku, and
+            // is not something to hand an operator behind a checkbox column —
+            // the API has no bulk form of it for the same reason.
+            {
+              label: dict.products.bulk.moveToGroup(selection.selectedCount),
+              onClick: () => setGroupDialogOpen(true),
+            },
+            // TASK-487. Sits beside «Перемістити до групи» on purpose:
+            // assembling a colour family and giving its positions their colours
+            // is one job, and doing the second half one product at a time is
+            // why the colour facet was empty everywhere before this.
+            {
+              label: dict.products.bulk.setColor(selection.selectedCount),
+              onClick: () => setColorDialogOpen(true),
+            },
+          ]}
+        />
+      )}
+
+      {/* Mounted for good, like every other ReorderUndoButton: outside the
+          window it goes aria-disabled instead of unmounting, so a keyboard or
+          screen-reader user who pressed it (or sat on it while the offer
+          lapsed) keeps their focus. Gated on EVERY write in flight, not only
+          the undo's own: replaying while a newer forward write is pending would
+          let that write land last and commit an offer that can never reach the
+          value before both. The deleted view accepts no writes at all, and a
+          session without `products:write` has made no bulk write to undo. */}
+      {canWrite && !isDeletedView && (
+        <div className="flex">
+          <ReorderUndoButton
+            canUndo={bulkUndo.canUndo && !isMutating}
+            onUndo={bulkUndo.undo}
+            label={dict.products.bulk.undo}
+          />
+        </div>
+      )}
+
+      {/* TASK-812: the deactivate / clear-colour AlertDialogs (portalled). */}
+      {bulk.confirmDialog}
+      {bulkColor.confirmDialog}
 
       <MoveToGroupDialog
         open={isGroupDialogOpen}
@@ -333,7 +388,10 @@ function AdminProductTableView() {
         groups={groupsQuery.data?.data ?? []}
         isLoadingGroups={groupsQuery.isLoading}
         isPending={bulkGroup.isPending}
-        onConfirm={(groupId) => bulkGroup.setGroup(selectedIds, groupId)}
+        onConfirm={(groupId) => {
+          bulkUndo.prepare("group", selectedIds, products, groupId);
+          bulkGroup.setGroup(selectedIds, groupId);
+        }}
       />
 
       <SetColorDialog
@@ -345,7 +403,10 @@ function AdminProductTableView() {
         // neighbourhood whose spelling they should match.
         suggestions={colorsInUse(products)}
         isPending={bulkColor.isPending}
-        onConfirm={(color) => bulkColor.setColor(selectedIds, color)}
+        onConfirm={(color) => {
+          bulkUndo.prepare("color", selectedIds, products, color);
+          bulkColor.setColor(selectedIds, color);
+        }}
       />
 
       {isLoading ? (
@@ -373,12 +434,14 @@ function AdminProductTableView() {
           <Table layout="card">
             <TableHeader>
               <TableRow>
-                <TableSelectHead
-                  checked={selection.headerChecked}
-                  onCheckedChange={selection.toggleAll}
-                  disabled={isMutating || isDeletedView}
-                  label={dict.common.table.selectAll}
-                />
+                {canWrite && (
+                  <TableSelectHead
+                    checked={selection.headerChecked}
+                    onCheckedChange={selection.toggleAll}
+                    disabled={isMutating || isDeletedView}
+                    label={dict.common.table.selectAll}
+                  />
+                )}
                 <TableHead className="w-16">{dict.products.colPhoto}</TableHead>
                 <SortableColumnHeader
                   field="name"
@@ -425,16 +488,18 @@ function AdminProductTableView() {
                     selection.isSelected(product.id) ? "selected" : undefined
                   }
                 >
-                  <TableSelectCell
-                    checked={selection.isSelected(product.id)}
-                    onSelect={({ shiftKey }) =>
-                      shiftKey
-                        ? selection.extendTo(product.id)
-                        : selection.toggle(product.id)
-                    }
-                    disabled={isMutating || isDeletedView}
-                    label={dict.products.bulk.selectRow(product.name)}
-                  />
+                  {canWrite && (
+                    <TableSelectCell
+                      checked={selection.isSelected(product.id)}
+                      onSelect={({ shiftKey }) =>
+                        shiftKey
+                          ? selection.extendTo(product.id)
+                          : selection.toggle(product.id)
+                      }
+                      disabled={isMutating || isDeletedView}
+                      label={dict.products.bulk.selectRow(product.name)}
+                    />
+                  )}
                   {/* Thumbnail + a «без фото» chip (TASK-362). `primaryImage`
                       is already hydrated by the list query's enrichment step, so
                       this costs no extra request — and after a catalogue import,

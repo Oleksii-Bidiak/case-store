@@ -1,10 +1,9 @@
 import { z } from "zod";
 import type { CreateBrandDto, UpdateBrandDto } from "@/entities/brand";
 import { dict } from "@/shared/config";
+import { SLUG_PATTERN } from "@/shared/lib/slug";
 
 const e = dict.brandForm.errors;
-
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * Validation schema for the admin brand form.
@@ -21,7 +20,7 @@ export const brandSchema = z.object({
     .string()
     .trim()
     .max(255, e.slugMax)
-    .regex(SLUG_PATTERN, e.slugPattern)
+    .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
     .optional()
     .or(z.literal("")),
 

@@ -1,13 +1,16 @@
 import { http, HttpResponse } from "msw";
 import {
+  act,
   renderWithProviders,
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
+import { UNDO_WINDOW_MS } from "@/shared/lib/list-reorder/use-reorder-lifecycle";
 import { AdminProductTable } from "./admin-product-table";
 
 const mockReplace = jest.fn();
@@ -535,11 +538,13 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
  * pressing «Записати» on a half-typed field quietly destructive.
  */
 describe("AdminProductTable — bulk set colour (TASK-487)", () => {
+  // TASK-812: the clear prompt is an AlertDialog. The spy only proves that
+  // `window.confirm` is never reached any more.
   let confirmSpy: jest.SpyInstance;
 
   beforeEach(() => {
     mockReplace.mockClear();
-    confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    confirmSpy = jest.spyOn(window, "confirm");
   });
   afterEach(() => confirmSpy.mockRestore());
 
@@ -615,15 +620,23 @@ describe("AdminProductTable — bulk set colour (TASK-487)", () => {
       screen.getByRole("button", { name: dict.products.bulk.colorClear }),
     );
 
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ ids: ["product-1"], color: null });
     // Removing a colour takes the products out of the colour filter — the one
     // direction of this action that is worth asking about.
-    expect(confirmSpy).toHaveBeenCalled();
+    const prompt = await screen.findByRole("alertdialog");
+    expect(prompt).toHaveTextContent(dict.products.bulk.colorClearConfirm(1));
+    expect(bodies).toHaveLength(0);
+    await userEvent.click(
+      within(prompt).getByRole("button", {
+        name: dict.products.bulk.colorClear,
+      }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ ids: ["product-1"], color: null });
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it("writes nothing when the clear prompt is declined", async () => {
-    confirmSpy.mockReturnValue(false);
     stubEndpoints();
     const bodies = stubColorBulk();
     renderTable();
@@ -634,8 +647,20 @@ describe("AdminProductTable — bulk set colour (TASK-487)", () => {
     await userEvent.click(
       screen.getByRole("button", { name: dict.products.bulk.colorClear }),
     );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: dict.common.cancel,
+      }),
+    );
 
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
     expect(bodies).toHaveLength(0);
+    // The colour dialog is still open — declining the prompt is not «close».
+    expect(
+      screen.getByLabelText(dict.products.bulk.colorDialogLabel),
+    ).toBeInTheDocument();
   });
 
   it("refuses to submit an empty colour rather than treating it as a clear", async () => {
@@ -670,7 +695,13 @@ describe("AdminProductTable — bulk set colour (TASK-487)", () => {
       screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
     );
 
-    await waitFor(() => expect(confirmSpy).not.toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        screen.queryByLabelText(dict.products.bulk.colorDialogLabel),
+      ).toBeNull(),
+    );
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
   it("clears the selection once the server confirms", async () => {
@@ -956,5 +987,590 @@ describe("AdminProductTable — category column covers every depth (TASK-717)", 
     );
     await waitFor(() => expect(cell).toHaveTextContent("—"));
     expect(screen.queryByText("Чохли для iPhone")).toBeNull();
+  });
+});
+
+/**
+ * Bulk activate / deactivate (TASK-355) through the shared `useBulkStatus`
+ * engine, with the prompt as an AlertDialog (TASK-812).
+ */
+describe("AdminProductTable — bulk status confirm (TASK-812)", () => {
+  function stubStatusBulk() {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch("*/api/products/status", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ data: { updatedCount: 1 } });
+      }),
+    );
+    return bodies;
+  }
+
+  async function selectTheRow() {
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
+      }),
+    );
+  }
+
+  it("asks in an AlertDialog before deactivating; cancel sends nothing", async () => {
+    const confirmSpy = jest.spyOn(window, "confirm");
+    stubEndpoints();
+    const bodies = stubStatusBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.deactivate(1) }),
+    );
+    const prompt = await screen.findByRole("alertdialog");
+    expect(prompt).toHaveTextContent(dict.products.bulk.deactivateConfirm(1));
+
+    await userEvent.click(
+      within(prompt).getByRole("button", { name: dict.common.cancel }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(bodies).toHaveLength(0);
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+
+  it("deactivates once confirmed, and activating does not ask at all", async () => {
+    stubEndpoints();
+    const bodies = stubStatusBulk();
+    renderTable();
+    await screen.findByText("iPhone 15 Pro Case");
+    await selectTheRow();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.deactivate(1) }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: dict.products.bulk.deactivate(1),
+      }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({ ids: ["product-1"], isActive: false });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", {
+          name: dict.products.bulk.activate(1),
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    await selectTheRow();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.activate(1) }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({ ids: ["product-1"], isActive: true });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * «Скасувати» for the last bulk action (TASK-837 / AD-PROD-33).
+ *
+ * The undo replays the FORWARD endpoints, once per distinct previous value — so
+ * the assertions are on the request bodies of the replay: which ids go back to
+ * which value, and that rows which never changed are not written at all.
+ */
+describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
+  const P1 = "iPhone 15 Pro Case";
+  const P2 = "Galaxy S24 Case";
+
+  /** Two rows whose previous values differ on every undoable field. */
+  function stubTwoRows() {
+    server.use(
+      http.get("*/api/products/admin/list", () =>
+        HttpResponse.json({
+          data: [
+            {
+              ...makeProductRow(),
+              isActive: true,
+              groupId: "group-a",
+              attributes: { Колір: "Чорний" },
+            },
+            {
+              ...makeProductRow(),
+              id: "product-2",
+              name: P2,
+              slug: "galaxy-s24-case",
+              isActive: false,
+              groupId: null,
+              attributes: {},
+            },
+          ],
+          meta: { total: 2, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+      ...categoryTreeHandlers(),
+      http.get("*/api/product-groups", () =>
+        HttpResponse.json({
+          data: [
+            { id: "group-a", name: "Чохли Clear", isActive: true, axes: [] },
+            { id: "group-b", name: "Чохли Silicone", isActive: true, axes: [] },
+          ],
+        }),
+      ),
+    );
+  }
+
+  /** Record every body sent to one bulk endpoint. */
+  function recordPatch(path: string, status = 200) {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch(`*/api/products/${path}`, async ({ request }) => {
+        bodies.push(await request.json());
+        return status === 200
+          ? HttpResponse.json({ data: { updatedCount: 1 } })
+          : HttpResponse.json({ message: "boom" }, { status });
+      }),
+    );
+    return bodies;
+  }
+
+  async function selectBoth() {
+    for (const name of [P1, P2]) {
+      await userEvent.click(
+        screen.getByRole("checkbox", {
+          name: dict.products.bulk.selectRow(name),
+        }),
+      );
+    }
+  }
+
+  const undoButton = () =>
+    screen.findByRole("button", { name: dict.products.bulk.undo });
+
+  /**
+   * The control is PERSISTENT, like every other ReorderUndoButton: outside the
+   * window it is aria-disabled, never unmounted — unmounting would drop a
+   * keyboard user's focus to <body>.
+   */
+  it("offers no undo before any bulk action — the control is there, inert", async () => {
+    stubTwoRows();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(await undoButton()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("activate → undo deactivates only the row that was inactive before", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("status");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({
+      ids: ["product-1", "product-2"],
+      isActive: true,
+    });
+    // The commit names the control, so a screen-reader user learns it exists.
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+        dict.products.bulk.announceUndoAvailable(1, dict.products.bulk.undo),
+      ),
+    );
+
+    const button = await undoButton();
+    await waitFor(() =>
+      expect(button).not.toHaveAttribute("aria-disabled", "true"),
+    );
+    await userEvent.click(button);
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    // product-1 was already active — nothing to put back, so it is not written.
+    expect(bodies[1]).toEqual({ ids: ["product-2"], isActive: false });
+    // Used up: inert, but still mounted and still holding the focus.
+    await waitFor(() =>
+      expect(button).toHaveAttribute("aria-disabled", "true"),
+    );
+    expect(button).toBeInTheDocument();
+    expect(button).toHaveFocus();
+    expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+      dict.products.bulk.announceUndone(1),
+    );
+  });
+
+  it("move to group → undo sends one request per previous group, null included", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("group");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(2) }),
+    );
+    await userEvent.click(
+      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Чохли Silicone" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+
+    await userEvent.click(await undoButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(3));
+    expect(bodies.slice(1)).toEqual([
+      { ids: ["product-1"], groupId: "group-a" },
+      { ids: ["product-2"], groupId: null },
+    ]);
+  });
+
+  it("set colour → undo restores each row's previous colour (or clears it)", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("color");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.setColor(2) }),
+    );
+    await userEvent.type(
+      await screen.findByLabelText(dict.products.bulk.colorDialogLabel),
+      "Білий",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+
+    await userEvent.click(await undoButton());
+
+    await waitFor(() => expect(bodies).toHaveLength(3));
+    expect(bodies.slice(1)).toEqual([
+      { ids: ["product-1"], color: "Чорний" },
+      { ids: ["product-2"], color: null },
+    ]);
+  });
+
+  it("offers nothing after a cancelled action", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("status");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.deactivate(2) }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: dict.common.cancel,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(bodies).toHaveLength(0);
+    expect(await undoButton()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("a failed undo keeps the offer and says so", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("status");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+
+    // The replay hits a failing server.
+    const failed = recordPatch("status", 500);
+    await userEvent.click(await undoButton());
+
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-assertive")).toHaveTextContent(
+        dict.products.bulk.announceUndoFailed,
+      ),
+    );
+    expect(failed).toEqual([{ ids: ["product-2"], isActive: false }]);
+    // Still on offer — a second press retries what is left.
+    expect(await undoButton()).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  /** Move both rows to «Чохли Silicone» through the dialog. */
+  async function moveBothToGroupB() {
+    await selectBoth();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(2) }),
+    );
+    await userEvent.click(
+      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Чохли Silicone" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
+    );
+  }
+
+  /**
+   * Group endpoint answering from a script of statuses, one per call — so a
+   * two-step undo can succeed on the first step and fail on the second.
+   */
+  function scriptedGroupPatch(statuses: number[]) {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch("*/api/products/group", async ({ request }) => {
+        bodies.push(await request.json());
+        const status = statuses[bodies.length - 1] ?? 200;
+        return status === 200
+          ? HttpResponse.json({ data: { updatedCount: 1 } })
+          : HttpResponse.json({ message: "boom" }, { status });
+      }),
+    );
+    return bodies;
+  }
+
+  it("a partial failure keeps only the unfinished step: the retry sends just that", async () => {
+    stubTwoRows();
+    // forward ok · undo step 1 ok · undo step 2 fails · retry ok
+    const bodies = scriptedGroupPatch([200, 200, 500, 200]);
+    renderTable();
+    await screen.findByText(P1);
+    await moveBothToGroupB();
+    await waitFor(() => expect(bodies).toHaveLength(1));
+
+    const button = await undoButton();
+    await waitFor(() =>
+      expect(button).not.toHaveAttribute("aria-disabled", "true"),
+    );
+    await userEvent.click(button);
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-assertive")).toHaveTextContent(
+        dict.products.bulk.announceUndoFailed,
+      ),
+    );
+    expect(bodies.slice(1)).toEqual([
+      { ids: ["product-1"], groupId: "group-a" },
+      { ids: ["product-2"], groupId: null },
+    ]);
+
+    await waitFor(() =>
+      expect(button).not.toHaveAttribute("aria-disabled", "true"),
+    );
+    await userEvent.click(button);
+
+    await waitFor(() => expect(bodies).toHaveLength(4));
+    // product-1 already went back — it is NOT replayed a second time.
+    expect(bodies[3]).toEqual({ ids: ["product-2"], groupId: null });
+    await waitFor(() =>
+      expect(button).toHaveAttribute("aria-disabled", "true"),
+    );
+  });
+
+  describe("the offer lapses after UNDO_WINDOW_MS", () => {
+    beforeEach(() => {
+      // Timers advance with the wall clock too, so React Query and user-event
+      // keep working; `advanceTimersByTime` jumps over the window. The
+      // microtask / nextTick / setImmediate queues stay REAL: MSW's fetch
+      // interception runs on them, and faking them hangs the whole run with
+      // no test timeout ever firing (order-detail-view.test.tsx does the same).
+      jest.useFakeTimers({
+        advanceTimers: true,
+        doNotFake: ["queueMicrotask", "nextTick", "setImmediate"],
+      });
+    });
+
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+
+    it("goes inert when the window runs out, and a press then sends nothing", async () => {
+      stubTwoRows();
+      const bodies = recordPatch("status");
+      renderTable();
+      await screen.findByText(P1);
+      await selectBoth();
+      await userEvent.click(
+        screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
+      );
+      await waitFor(() => expect(bodies).toHaveLength(1));
+
+      const button = await undoButton();
+      await waitFor(() =>
+        expect(button).not.toHaveAttribute("aria-disabled", "true"),
+      );
+
+      act(() => {
+        jest.advanceTimersByTime(UNDO_WINDOW_MS);
+      });
+
+      await waitFor(() =>
+        expect(button).toHaveAttribute("aria-disabled", "true"),
+      );
+      // Still mounted — a focused user keeps their place.
+      expect(button).toBeInTheDocument();
+      await userEvent.click(button);
+      expect(bodies).toHaveLength(1);
+    });
+
+    it("a failed retry does not buy a fresh window: the deadline travels with the offer", async () => {
+      stubTwoRows();
+      // forward ok · undo step 1 ok · undo step 2 fails
+      const bodies = scriptedGroupPatch([200, 200, 500]);
+      renderTable();
+      await screen.findByText(P1);
+      await moveBothToGroupB();
+      await waitFor(() => expect(bodies).toHaveLength(1));
+
+      const button = await undoButton();
+      await waitFor(() =>
+        expect(button).not.toHaveAttribute("aria-disabled", "true"),
+      );
+
+      // Two thirds of the window pass before the (half-failing) undo.
+      act(() => {
+        jest.advanceTimersByTime(UNDO_WINDOW_MS - 10_000);
+      });
+      await userEvent.click(button);
+      await waitFor(() => expect(bodies).toHaveLength(3));
+      await waitFor(() =>
+        expect(button).not.toHaveAttribute("aria-disabled", "true"),
+      );
+
+      // Past the ORIGINAL deadline, but well inside a window restarted at the
+      // failure — the remaining step must no longer be on offer.
+      act(() => {
+        jest.advanceTimersByTime(11_000);
+      });
+      await waitFor(() =>
+        expect(button).toHaveAttribute("aria-disabled", "true"),
+      );
+    });
+  });
+
+  /**
+   * An undo replayed while a NEWER forward write is still in flight would land
+   * first; the forward write then commits an offer that can never reach the
+   * value from before both. So the control is inert until every write settles.
+   */
+  it("is inert while another bulk write is in flight", async () => {
+    stubTwoRows();
+    const bodies: unknown[] = [];
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.patch("*/api/products/status", async ({ request }) => {
+        bodies.push(await request.json());
+        // The second forward write hangs until the test lets it go.
+        if (bodies.length === 2) await gate;
+        return HttpResponse.json({ data: { updatedCount: 1 } });
+      }),
+    );
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    const button = await undoButton();
+    await waitFor(() =>
+      expect(button).not.toHaveAttribute("aria-disabled", "true"),
+    );
+
+    await selectBoth();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(2));
+
+    await waitFor(() =>
+      expect(button).toHaveAttribute("aria-disabled", "true"),
+    );
+    await userEvent.click(button);
+    expect(bodies).toHaveLength(2);
+
+    // Once the newer write lands, ITS undo is on offer.
+    release();
+    await waitFor(() =>
+      expect(button).not.toHaveAttribute("aria-disabled", "true"),
+    );
+    expect(bodies).toHaveLength(2);
+  });
+});
+
+/**
+ * TASK-837/838 — the bulk endpoints (status, group, colour) all require
+ * `products:write`, and the undo replays them. A session without it gets no
+ * selection column, no bulk bar and no undo: every one of those clicks would
+ * end in a 403. The server guard stays the real boundary.
+ */
+describe("AdminProductTable — bulk actions need products:write (TASK-837/838)", () => {
+  const P1 = "iPhone 15 Pro Case";
+
+  it("renders no selection, no bulk bar and no undo without products:write", async () => {
+    stubEndpoints();
+    renderTable({ permissions: ["products:read"] });
+    await screen.findByText(P1);
+
+    // Row checkboxes, the header select-all and the toolbar's (phone) one.
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(
+      screen.queryByRole("button", { name: dict.products.bulk.undo }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: dict.products.bulk.activate(1) }),
+    ).toBeNull();
+    // The column goes as a whole: header and row still have the same width.
+    const row = screen.getByText(P1).closest("tr") as HTMLElement;
+    expect(within(row).getAllByRole("cell")).toHaveLength(
+      screen.getAllByRole("columnheader").length,
+    );
+  });
+
+  it("renders the selection, the bulk bar and the undo with products:write", async () => {
+    stubEndpoints();
+    renderTable({ permissions: ["products:read", "products:write"] });
+    await screen.findByText(P1);
+
+    expect(
+      await screen.findByRole("button", { name: dict.products.bulk.undo }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(
+      screen.getAllByRole("checkbox", { name: dict.common.table.selectAll }),
+    ).not.toHaveLength(0);
+
+    await userEvent.click(
+      screen.getByRole("checkbox", {
+        name: dict.products.bulk.selectRow(P1),
+      }),
+    );
+
+    for (const label of [
+      dict.products.bulk.activate(1),
+      dict.products.bulk.deactivate(1),
+      dict.products.bulk.moveToGroup(1),
+      dict.products.bulk.setColor(1),
+    ]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
   });
 });

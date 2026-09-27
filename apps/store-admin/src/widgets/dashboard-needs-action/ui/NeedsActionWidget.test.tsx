@@ -16,6 +16,8 @@ interface NeedsActionCounts {
   unavailableItems?: number;
   /** TASK-352 — late-paid orders still cancelled. */
   paidAfterCancel?: number;
+  /** TASK-601 — the situations `ratingAbuse` counted, by name. */
+  ratingAbuseSignals?: { productIds: string[]; createdIps: string[] };
 }
 
 function mockNeedsAction(counts: NeedsActionCounts) {
@@ -24,6 +26,7 @@ function mockNeedsAction(counts: NeedsActionCounts) {
       HttpResponse.json({
         data: {
           ratingAbuse: 0,
+          ratingAbuseSignals: { productIds: [], createdIps: [] },
           unavailableItems: 0,
           paidAfterCancel: 0,
           ...counts,
@@ -76,7 +79,7 @@ describe("NeedsActionWidget (TASK-248)", () => {
    * collected a burst of ratings in an hour, an address behind a run of 1★ — and
    * the place to look at them is the reviews screen.
    */
-  it("deep-links the rating-abuse card to the reviews screen", async () => {
+  it("deep-links the rating-abuse card to the reviews screen for a moderator", async () => {
     mockNeedsAction({
       newOrders: 0,
       pendingReviews: 0,
@@ -84,14 +87,21 @@ describe("NeedsActionWidget (TASK-248)", () => {
       failedMails: 0,
       pendingOver48h: 0,
       ratingAbuse: 4,
+      ratingAbuseSignals: {
+        productIds: ["p-1", "p-2"],
+        createdIps: ["10.0.0.1", "10.0.0.2"],
+      },
     });
 
-    renderWithProviders(<NeedsActionWidget />);
+    renderWithProviders(<NeedsActionWidget />, {
+      auth: { permissions: ["analytics:read", "reviews:moderate"] },
+    });
 
     const link = (
       await screen.findByText(dict.dashboard.needsActionRatingAbuse)
     ).closest("a") as HTMLElement;
-    expect(link).toHaveAttribute("href", "/reviews");
+    // Several situations → the whole screen, every queue (TASK-601).
+    expect(link).toHaveAttribute("href", "/reviews?status=all");
     expect(within(link).getByText("4")).toHaveClass("text-warning");
   });
 
@@ -124,15 +134,16 @@ describe("NeedsActionWidget (TASK-248)", () => {
       "/orders?unpaidInTransit=true",
     );
 
-    // TASK-251: the ">48h in PENDING" card deep-links to the PENDING list. Its
-    // label contains regex-special chars, so match the text node and walk to the
-    // enclosing anchor rather than building a RegExp from the label.
+    // TASK-251 / TASK-607: the ">48h in PENDING" card deep-links to the list
+    // filtered by the SAME predicate it counts (`pendingOverdue`), not to every
+    // PENDING order. Its label contains regex-special chars, so match the text
+    // node and walk to the enclosing anchor rather than building a RegExp.
     const pendingOver48hLink = screen
       .getByText(dict.dashboard.needsActionPendingOver48h)
       .closest("a") as HTMLElement;
     expect(pendingOver48hLink).toHaveAttribute(
       "href",
-      "/orders?status=PENDING",
+      "/orders?pendingOverdue=true",
     );
     // Its count is toned as a warning (non-zero).
     expect(within(pendingOver48hLink).getByText("2")).toHaveClass(
@@ -318,6 +329,247 @@ describe("NeedsActionWidget (TASK-248)", () => {
       expect(
         screen.queryByText(dict.dashboard.needsActionAllClear),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * TASK-613 (E-22): a new return request signals from the dashboard. The count
+   * is `meta.total` of the returns queue under `returns:read` — not a field on
+   * the analytics-gated needs-action payload — so a session without the right
+   * never asks for it and never sees the tile.
+   */
+  describe("the «Нові заявки на повернення» tile (TASK-613)", () => {
+    const quiet = {
+      newOrders: 0,
+      pendingReviews: 0,
+      unpaidInTransit: 0,
+      failedMails: 0,
+      pendingOver48h: 0,
+    };
+
+    function mockReturns(total: number, seen: string[] = []) {
+      server.use(
+        http.get("*/api/admin/returns", ({ request }) => {
+          seen.push(new URL(request.url).search);
+          return HttpResponse.json({
+            data: [],
+            meta: { total, page: 1, limit: 1, totalPages: total },
+          });
+        }),
+      );
+      return seen;
+    }
+
+    it("counts REQUESTED returns and deep-links to the queue on that filter", async () => {
+      mockNeedsAction(quiet);
+      const seen = mockReturns(3);
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      const link = (
+        await screen.findByText(dict.dashboard.needsActionNewReturns)
+      ).closest("a") as HTMLElement;
+      expect(link).toHaveAttribute("href", "/returns?status=REQUESTED");
+      expect(await within(link).findByText("3")).toHaveClass("text-warning");
+      // One row is enough — only `meta.total` is read.
+      expect(seen.join(" ")).toContain("status=REQUESTED");
+      expect(seen.join(" ")).toContain("limit=1");
+    });
+
+    it("withholds «all clear» while a new return is the only signal", async () => {
+      mockNeedsAction(quiet);
+      mockReturns(1);
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      const link = (
+        await screen.findByText(dict.dashboard.needsActionNewReturns)
+      ).closest("a") as HTMLElement;
+      await within(link).findByText("1");
+      expect(
+        screen.queryByText(dict.dashboard.needsActionAllClear),
+      ).not.toBeInTheDocument();
+    });
+
+    it("still says «all clear» when the queue is empty", async () => {
+      mockNeedsAction(quiet);
+      mockReturns(0);
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      expect(
+        await screen.findByText(dict.dashboard.needsActionAllClear),
+      ).toBeInTheDocument();
+    });
+
+    /**
+     * The count is its own request. When it fails, a «0» on the tile would say
+     * «no new returns» about a queue nobody managed to read — and the tile must
+     * not unlock «all clear» either.
+     */
+    it("shows a placeholder, not «0», and withholds «all clear» when the returns list fails", async () => {
+      mockNeedsAction(quiet);
+      let calls = 0;
+      server.use(
+        http.get("*/api/admin/returns", () => {
+          calls += 1;
+          return HttpResponse.json(
+            {
+              error: "Internal Server Error",
+              message: "boom",
+              statusCode: 500,
+            },
+            { status: 500 },
+          );
+        }),
+      );
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      const link = (
+        await screen.findByText(dict.dashboard.needsActionNewReturns)
+      ).closest("a") as HTMLElement;
+      expect(
+        await within(link).findByText(dict.dashboard.needsActionCountFailed),
+      ).toBeInTheDocument();
+      expect(calls).toBeGreaterThan(0);
+      expect(within(link).getByText("—")).toBeInTheDocument();
+      expect(within(link).queryByText("0")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(dict.dashboard.needsActionAllClear),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows a placeholder, not «0», while the returns list has not answered", async () => {
+      mockNeedsAction(quiet);
+      server.use(
+        http.get("*/api/admin/returns", () => new Promise<Response>(() => {})),
+      );
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read", "returns:read"] },
+      });
+
+      const link = (
+        await screen.findByText(dict.dashboard.needsActionNewReturns)
+      ).closest("a") as HTMLElement;
+      expect(
+        within(link).getByText(dict.dashboard.needsActionCountPending),
+      ).toBeInTheDocument();
+      expect(within(link).queryByText("0")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(dict.dashboard.needsActionAllClear),
+      ).not.toBeInTheDocument();
+    });
+
+    it("has no tile and makes no request without returns:read", async () => {
+      mockNeedsAction(quiet);
+      const seen = mockReturns(5);
+
+      renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read"] },
+      });
+
+      await screen.findByText(dict.dashboard.needsActionNewOrders);
+      expect(
+        screen.queryByText(dict.dashboard.needsActionNewReturns),
+      ).not.toBeInTheDocument();
+      expect(seen).toHaveLength(0);
+    });
+  });
+
+  /**
+   * TASK-601 (UI part, row TASK-1004): the rating-abuse card opens the series
+   * it counted when there is exactly one, and never puts an IP address in a
+   * link for a session that cannot moderate reviews.
+   */
+  describe("the rating-abuse card link (TASK-601)", () => {
+    const quiet = {
+      newOrders: 0,
+      pendingReviews: 0,
+      unpaidInTransit: 0,
+      failedMails: 0,
+      pendingOver48h: 0,
+    };
+    const MODERATOR = {
+      auth: { permissions: ["analytics:read", "reviews:moderate"] },
+    };
+
+    async function cardLink() {
+      return (
+        await screen.findByText(dict.dashboard.needsActionRatingAbuse)
+      ).closest("a");
+    }
+
+    it("opens the one flagged product across every queue", async () => {
+      mockNeedsAction({
+        ...quiet,
+        ratingAbuse: 1,
+        ratingAbuseSignals: { productIds: ["prod-uuid-1"], createdIps: [] },
+      });
+      renderWithProviders(<NeedsActionWidget />, MODERATOR);
+
+      expect(await cardLink()).toHaveAttribute(
+        "href",
+        "/reviews?status=all&productId=prod-uuid-1",
+      );
+    });
+
+    it("opens the one flagged address across every queue", async () => {
+      mockNeedsAction({
+        ...quiet,
+        ratingAbuse: 1,
+        ratingAbuseSignals: { productIds: [], createdIps: ["2001:db8::1"] },
+      });
+      renderWithProviders(<NeedsActionWidget />, MODERATOR);
+
+      expect(await cardLink()).toHaveAttribute(
+        "href",
+        `/reviews?status=all&createdIp=${encodeURIComponent("2001:db8::1")}`,
+      );
+    });
+
+    it("opens the unfiltered screen for a product AND an address — one filter cannot show both", async () => {
+      mockNeedsAction({
+        ...quiet,
+        ratingAbuse: 2,
+        ratingAbuseSignals: {
+          productIds: ["prod-uuid-1"],
+          createdIps: ["10.0.0.7"],
+        },
+      });
+      renderWithProviders(<NeedsActionWidget />, MODERATOR);
+
+      expect(await cardLink()).toHaveAttribute("href", "/reviews?status=all");
+    });
+
+    it("opens the unfiltered screen when nothing is flagged", async () => {
+      mockNeedsAction(quiet);
+      renderWithProviders(<NeedsActionWidget />, MODERATOR);
+
+      expect(await cardLink()).toHaveAttribute("href", "/reviews?status=all");
+    });
+
+    it("is not a link — and leaks no IP — without reviews:moderate", async () => {
+      mockNeedsAction({
+        ...quiet,
+        ratingAbuse: 1,
+        ratingAbuseSignals: { productIds: [], createdIps: ["10.0.0.7"] },
+      });
+      const { container } = renderWithProviders(<NeedsActionWidget />, {
+        auth: { permissions: ["analytics:read"] },
+      });
+
+      expect(await cardLink()).toBeNull();
+      expect(container.innerHTML).not.toContain("10.0.0.7");
     });
   });
 });

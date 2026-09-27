@@ -4,11 +4,11 @@ import Link from "next/link";
 import { CheckCircle2, ShoppingBag } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
-import { Skeleton } from "@/shared/ui";
+import { Skeleton, Toaster } from "@/shared/ui";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/shared/ui";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { CartItemRow } from "./cart-item-row";
+import { CART_SHEET_TOASTER_ID, CartItemRow } from "./cart-item-row";
 
 interface CartSheetProps {
   open: boolean;
@@ -120,11 +120,14 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
                 // suppressed here to keep the mini-cart compact, which meant a
                 // shopper who never opened the full cart page never saw them —
                 // and never bought one. The offers are now in both places.
+                // `undoToasterId` (TASK-497): the undo toast goes to the
+                // toaster mounted inside this dialog, at the end of it.
                 <CartItemRow
                   key={item.id}
                   item={item}
                   showAddons
                   onNavigate={close}
+                  undoToasterId={CART_SHEET_TOASTER_ID}
                 />
               ))}
             </ul>
@@ -180,6 +183,18 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
             </div>
           </>
         )}
+
+        {/* TASK-497: this sheet is a Radix modal — it `aria-hidden`s and
+            focus-traps everything outside itself, the app's global Toaster
+            included, so the undo toast raised by a row here must render INSIDE
+            the dialog to be reachable by Tab and by a screen reader. Mounted
+            outside the branches above on purpose: removing the last line
+            swaps the list for the empty state, and «Повернути» has to survive
+            that. Same look — sonner's list is `position: fixed`, so it sits at
+            the viewport's bottom-centre exactly like the global one. The toast
+            lives as long as the sheet: closing it ends the undo window
+            together with the list the line belonged to. */}
+        <Toaster id={CART_SHEET_TOASTER_ID} />
       </SheetContent>
     </Sheet>
   );

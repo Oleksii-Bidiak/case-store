@@ -267,6 +267,54 @@ describe('BlogRepository', () => {
     });
   });
 
+  // TASK-543 — the header popup's reads select four columns and nothing else;
+  // above all never `content`, and no category/author joins.
+  describe('search-autocomplete suggestions', () => {
+    const SELECT = { id: true, slug: true, title: true, coverImageUrl: true };
+
+    it('re-reads engine hits PUBLISHED + listed, selecting only the popup columns', async () => {
+      prismaMock.blogPost.findMany.mockResolvedValue([]);
+
+      await repository.findPublishedSuggestionsByIds(['post-2', 'post-1']);
+
+      expect(prismaMock.blogPost.findMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['post-2', 'post-1'] },
+          status: PublishStatus.PUBLISHED,
+          listed: true,
+        },
+        select: SELECT,
+      });
+    });
+
+    it('skips the query entirely for an empty id list', async () => {
+      await expect(repository.findPublishedSuggestionsByIds([])).resolves.toEqual([]);
+      expect(prismaMock.blogPost.findMany).not.toHaveBeenCalled();
+    });
+
+    it('falls back to the title/excerpt scan with the list ordering and a take', async () => {
+      prismaMock.blogPost.findMany.mockResolvedValue([]);
+
+      await repository.findPublishedSuggestions('чохол', 5);
+
+      expect(prismaMock.blogPost.findMany).toHaveBeenCalledWith({
+        where: {
+          status: PublishStatus.PUBLISHED,
+          listed: true,
+          OR: [
+            { title: { contains: 'чохол', mode: 'insensitive' } },
+            { excerpt: { contains: 'чохол', mode: 'insensitive' } },
+          ],
+        },
+        select: SELECT,
+        take: 5,
+        orderBy: [{ featured: 'desc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
+      });
+      // No count — a suggestion list has no pagination.
+      expect(prismaMock.blogPost.count).not.toHaveBeenCalled();
+    });
+  });
+
   describe('findAllAdmin', () => {
     it('drops the PUBLISHED gate and applies the explicit status filter', async () => {
       prismaMock.blogPost.findMany.mockResolvedValue([]);

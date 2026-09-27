@@ -5,7 +5,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as Sentry from "@sentry/nextjs";
 import { Tag, X } from "lucide-react";
-import { usePreviewDiscount } from "@/entities/discount";
+import {
+  usePreviewDiscount,
+  useAppliedDiscount,
+  setAppliedDiscount,
+  clearAppliedDiscount,
+} from "@/entities/discount";
 import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
 import {
@@ -19,11 +24,6 @@ import {
   discountSchema,
   type DiscountFormValues,
 } from "../model/discount-schema";
-import {
-  useAppliedDiscount,
-  setAppliedDiscount,
-  clearAppliedDiscount,
-} from "../model/applied-discount-store";
 
 interface ApplyDiscountProps {
   /**

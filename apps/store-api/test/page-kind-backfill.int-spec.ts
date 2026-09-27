@@ -255,7 +255,11 @@ describe('Page kinds on a pre-wave-176 database: backfill migration (integration
       }
 
       const hubs = [...bySlug.values()].filter((row) => row.kind === 'HUB');
-      expect(hubs.map((row) => row.slug).sort()).toEqual([...HUB_SLUGS].sort());
+      // The migration names the six hubs that existed when it was written;
+      // `products` (TASK-549) came later and is seeded, not backfilled.
+      expect(hubs.map((row) => row.slug).sort()).toEqual(
+        HUB_SLUGS.filter((slug) => slug !== 'products').sort(),
+      );
       for (const hub of hubs) {
         // Visible to the storefront's public read, which serves PUBLISHED only.
         expect(hub.status).toBe('PUBLISHED');

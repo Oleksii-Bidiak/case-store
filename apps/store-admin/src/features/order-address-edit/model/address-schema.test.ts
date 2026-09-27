@@ -1,4 +1,9 @@
-import { addressValuesToDto, mapOrderToAddressValues } from "./address-schema";
+import { dict } from "@/shared/config";
+import {
+  addressValuesToDto,
+  mapOrderToAddressValues,
+  orderAddressSchema,
+} from "./address-schema";
 
 const CURRENT = {
   firstName: "Олена",
@@ -84,5 +89,31 @@ describe("addressValuesToDto — the write replaces the whole address (TASK-341)
     );
 
     expect(dto).not.toHaveProperty("postalCode");
+  });
+});
+
+describe("orderAddressSchema — phone as the API judges it (TASK-577)", () => {
+  const valid = mapOrderToAddressValues({ shippingAddress: CURRENT });
+
+  function phoneIssue(phone: string) {
+    const result = orderAddressSchema.safeParse({ ...valid, phone });
+    return result.success
+      ? undefined
+      : result.error.issues.find((issue) => issue.path[0] === "phone")?.message;
+  }
+
+  it("refuses a number the API would refuse, with the message under the field", () => {
+    expect(phoneIssue("123")).toBe(dict.orderCreate.contactPhoneInvalid);
+    expect(phoneIssue("(((((((((")).toBe(dict.orderCreate.contactPhoneInvalid);
+  });
+
+  it("keeps «required» for an empty value", () => {
+    expect(phoneIssue("")).toBe(dict.orderCreate.addressRequired);
+  });
+
+  it("accepts Ukrainian and foreign numbers, as @IsInternationalPhone does", () => {
+    expect(phoneIssue("+380501234567")).toBeUndefined();
+    expect(phoneIssue("0501234567")).toBeUndefined();
+    expect(phoneIssue("+48 123 456 789")).toBeUndefined();
   });
 });

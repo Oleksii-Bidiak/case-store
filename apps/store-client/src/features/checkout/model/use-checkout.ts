@@ -9,10 +9,7 @@ import {
   type OrderEntity,
 } from "@/entities/order";
 import { getGetCartQueryKey } from "@/entities/cart";
-import {
-  useAppliedDiscount,
-  clearAppliedDiscount,
-} from "@/features/apply-discount";
+import { useAppliedDiscount, clearAppliedDiscount } from "@/entities/discount";
 import { dict } from "@/shared/config";
 import { apiErrorMessage, apiErrorStatus } from "@/shared/lib";
 import type { CheckoutFormValues } from "./checkout-schema";

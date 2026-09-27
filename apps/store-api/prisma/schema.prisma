@@ -149,9 +149,16 @@ enum OrderHistoryChangeType {
 /// operator moved an ONLINE-paid order to SHIPPED while its payment was still
 /// PENDING/FAILED. Allowed (decision B-1: only the impossible is refused), but
 /// recorded on the STATUS row so the decision has a trace.
+///
+/// PAYMENT_EVENT_REFUSED — «подію оплати відхилено» (TASK-621): the provider
+/// reported an outcome the payment state machine (or the B-1 cross-rule) did not
+/// allow, so nothing moved. The row stays `current → current` — the chain of
+/// history rows must stay a chain — and carries what the event ASKED for in
+/// `OrderStatusHistory.rejectedPaymentStatus`.
 enum OrderHistoryNote {
   PAID_AFTER_CANCEL
   SHIPPED_UNPAID
+  PAYMENT_EVENT_REFUSED
 }
 
 /// Data type of a structured product characteristic (TASK-191, plan 112).
@@ -370,6 +377,16 @@ model Category {
   ogImage         String?    @map("og_image")
   createdAt       DateTime   @default(now()) @map("created_at")
   updatedAt       DateTime   @updatedAt @map("updated_at")
+  // Audit tombstone (TASK-651, decision B-2 of plan 178). Independent of
+  // `isActive`: `isActive` is the reversible "hide" toggle, `deletedAt` is set
+  // ONCE by `DELETE /admin/categories/:id` and never cleared. Deletion always
+  // tombstones the whole subtree and first moves every product out of it, so a
+  // tombstone never holds a product or a live child — every category read path
+  // filters `deletedAt: null`. Restoring a category is NOT offered by the
+  // decision, which is why the tombstone's `slug` is mangled to
+  // `deleted:<id>:<slug>`: the address is released for a new category instead of
+  // keeping `slug @unique` scoped to live rows.
+  deletedAt       DateTime?  @map("deleted_at")
 
   products Product[]
 
@@ -388,6 +405,7 @@ model Category {
 
   @@index([slug])
   @@index([parentId])
+  @@index([deletedAt])
   @@map("categories")
 }
 
@@ -805,6 +823,10 @@ model OrderStatusHistory {
   // Null for an ordinary move. Set when the row records an event the shop wrote
   // down but deliberately did not act on — see OrderHistoryNote (TASK-619).
   note              OrderHistoryNote?
+  // TASK-621: set only on a PAYMENT_EVENT_REFUSED row — the payment status the
+  // provider's event asked for and the shop refused. Kept out of
+  // `toPaymentStatus`, which stays the literal truth (`current → current`).
+  rejectedPaymentStatus PaymentStatus?     @map("rejected_payment_status")
   // Nullable: system/webhook-driven changes (order creation's initial PENDING
   // row today; a future Stripe/payment webhook tomorrow) have no acting
   // admin/customer user. Populated with the acting user's id when the change
@@ -1438,6 +1460,10 @@ enum ContactMessageStatus {
   IN_PROGRESS
   READ
   ARCHIVED
+  /// TASK-761: a honeypot hit, kept instead of dropped so a false positive (a
+  /// password manager filling the trap) can be seen. Out of the default inbox,
+  /// the unread count and the per-email cooldown; reached via `?status=SPAM`.
+  SPAM
 }
 
 /// Customer contact / support message submitted from the storefront contact
@@ -1459,6 +1485,10 @@ model ContactMessage {
   updatedAt DateTime             @updatedAt @map("updated_at")
 
   @@index([status, createdAt(sort: Desc)])
+  /// TASK-763: the per-email cooldown probe on every public POST —
+  /// `WHERE email = $1 ORDER BY created_at DESC LIMIT 1`. Exact match only:
+  /// `email` is stored lower(trim()) (TASK-772), so no ILIKE is needed.
+  @@index([email, createdAt(sort: Desc)])
   @@map("contact_messages")
 }
 
@@ -1936,6 +1966,13 @@ model Payment {
   /// mismatch: without this check a tampered amount would be accepted as payment
   /// in full.
   amount            Decimal              @db.Decimal(10, 2)
+  /// Running total of refunds the admin has asked the provider for (TASK-1302).
+  /// Reserved atomically BEFORE the provider is called and given back if it
+  /// refuses, so `amount - refundedAmount` is the ceiling for the next refund —
+  /// a partial refund leaves the attempt SUCCEEDED, and without this total
+  /// 600 + 500 out of 1000 would both pass. Callbacks do not touch it; a refund
+  /// made in the provider's own cabinet is not counted here.
+  refundedAmount    Decimal              @default(0) @map("refunded_amount") @db.Decimal(10, 2)
   currency          String               @default("UAH")
   status            PaymentAttemptStatus @default(PENDING)
   /// Provider error code/message, kept verbatim for support. "Why was my card
@@ -2395,4 +2432,31 @@ model UserNote {
   /// The only read this table has: one customer's notes, newest first.
   @@index([userId, createdAt(sort: Desc)])
   @@map("user_notes")
+}
+
+/// One group of search synonyms (TASK-559): every term is a synonym of every
+/// other term in the same group, in both directions («чохол» ↔ `case`).
+///
+/// The admin edits the WHOLE list at once on /settings/search (a PUT replaces
+/// every row), so there is no per-row identity anyone depends on and no update
+/// path — only delete-all + insert in one transaction.
+///
+/// An EMPTY table is not "no synonyms": it means the owner has never saved the
+/// list, and search uses the built-in UA↔EN dictionary
+/// (`src/search/search-synonyms.ts`). That keeps a fresh install and every
+/// existing deployment working with no seed step, and makes "restore the
+/// defaults" the same operation as saving an empty list.
+///
+/// Terms are stored normalised (trimmed, lowercase, single words, deduplicated
+/// within the group) — the DTO does that, so the column never has to be
+/// re-cleaned on read.
+model SearchSynonymGroup {
+  id        String   @id @default(uuid())
+  terms     String[]
+  /// Position in the admin list, so the operator's order survives a reload.
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("search_synonym_groups")
 }

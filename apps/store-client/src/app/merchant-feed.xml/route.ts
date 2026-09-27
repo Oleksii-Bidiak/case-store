@@ -2,7 +2,7 @@ import * as Sentry from "@sentry/nextjs";
 import { SITE_URL, CURRENCY, dict } from "@/shared/config";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSiteName } from "@/shared/lib/seo";
-import { fetchAllActiveProducts } from "@/shared/lib/schema";
+import { fetchAllActiveProducts } from "@/shared/lib/schema/server";
 import { buildCategoryPathMap } from "@/shared/lib/category-path";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";

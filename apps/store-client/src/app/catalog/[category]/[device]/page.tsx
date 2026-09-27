@@ -1,9 +1,9 @@
-import { Fragment, Suspense } from "react";
+import { Fragment, Suspense, cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, permanentRedirect } from "next/navigation";
 import { ProductListView, ProductListSkeleton } from "@/widgets";
-import { findCategoryPathBySlug } from "@/widgets/product-list/model/catalog-header";
+import { findCategoryPathBySlug } from "@/widgets/product-list";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import type {
   CategoryTreeNodeEntity,
@@ -25,6 +25,7 @@ import {
   toMetadataTitle,
   type ListingFilterParams,
 } from "@/shared/lib/seo";
+import { StaleCanonicalGuard } from "@/shared/lib/seo/stale-canonical-guard";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import { SITE_URL, dict } from "@/shared/config";
@@ -87,38 +88,50 @@ function isNotFound(error: unknown): boolean {
  * RETHROWN, so an outage renders the error boundary instead of quietly
  * de-indexing the whole `/catalog` tree behind a wall of 404s — the failure mode
  * a blanket `catch` would have produced.
+ *
+ * Wrapped in React `cache()` (TASK-703): `generateMetadata` and the page body
+ * both need the pair, and the Orval fetcher is axios — Next's `fetch`
+ * deduplication does not see it, so without the memo every render asked the API
+ * twice. `cache()` is scoped to one server request, so two visitors never share
+ * an answer. A rejected call is memoized too, which is what we want: the body
+ * rethrows the same outage the metadata already saw instead of retrying it.
  */
-async function resolveCompatPage(
-  categorySlug: string,
-  deviceSlug: string,
-): Promise<CompatLandingDetailEntity | null> {
-  try {
-    const { data } = await catalogLandingControllerFindCompatPage(
-      categorySlug,
-      deviceSlug,
-    );
-    return data;
-  } catch (error) {
-    if (isNotFound(error)) return null;
-    throw error;
-  }
-}
+const resolveCompatPage = cache(
+  async (
+    categorySlug: string,
+    deviceSlug: string,
+  ): Promise<CompatLandingDetailEntity | null> => {
+    try {
+      const { data } = await catalogLandingControllerFindCompatPage(
+        categorySlug,
+        deviceSlug,
+      );
+      return data;
+    } catch (error) {
+      if (isNotFound(error)) return null;
+      throw error;
+    }
+  },
+);
 
 /**
  * The category's ancestor path from the public (active-only) tree, for the
- * breadcrumb trail. Null on any failure — the crumbs degrade to the pair itself
- * rather than taking the page down with them.
+ * breadcrumb trail and the category's own picture for the link preview
+ * (TASK-569). Null on any failure — the crumbs degrade to the pair itself and
+ * the preview to the store-wide image, rather than taking the page down.
+ *
+ * `cache()`d like `resolveCompatPage`: metadata and body both read it.
  */
-async function resolveCategoryPath(
-  slug: string,
-): Promise<CategoryTreeNodeEntity[] | null> {
-  try {
-    const { data } = await categoryControllerGetCategoryTree();
-    return findCategoryPathBySlug(data ?? [], slug);
-  } catch {
-    return null;
-  }
-}
+const resolveCategoryPath = cache(
+  async (slug: string): Promise<CategoryTreeNodeEntity[] | null> => {
+    try {
+      const { data } = await categoryControllerGetCategoryTree();
+      return findCategoryPathBySlug(data ?? [], slug);
+    } catch {
+      return null;
+    }
+  },
+);
 
 /** The eight listing filter params, read from the query string. */
 function readFilters(resolved: {
@@ -137,6 +150,27 @@ function readFilters(resolved: {
     onSale: first(resolved.onSale),
     inStock: first(resolved.inStock),
   };
+}
+
+/**
+ * The canonical/robots policy for one view of a compat page. Shared by
+ * `generateMetadata` and the body, which hands the same canonical to
+ * `StaleCanonicalGuard` — the two must name the same URL, or the guard would
+ * wait for a tag that never comes.
+ */
+function compatListingMeta(
+  categorySlug: string,
+  modelSlug: string,
+  resolved: { [key: string]: string | string[] | undefined },
+) {
+  return buildListingMetadata({
+    basePath: `/catalog/${categorySlug}/${modelSlug}`,
+    page: Number(first(resolved.page)),
+    filters: readFilters(resolved),
+    // Where a FILTERED view of this page consolidates — the category, not the
+    // unfiltered compat page (B-10 §5 keeps the indexable set to one dimension).
+    filteredCanonicalPath: `/categories/${categorySlug}`,
+  });
 }
 
 /**
@@ -195,14 +229,11 @@ export async function generateMetadata({
     },
   });
 
-  const listingMeta = buildListingMetadata({
-    basePath: `/catalog/${page.categorySlug}/${model.slug}`,
-    page: Number(first(resolvedParams.page)),
-    filters: readFilters(resolvedParams),
-    // Where a FILTERED view of this page consolidates — the category, not the
-    // unfiltered compat page (B-10 §5 keeps the indexable set to one dimension).
-    filteredCanonicalPath: `/categories/${page.categorySlug}`,
-  });
+  const listingMeta = compatListingMeta(
+    page.categorySlug,
+    model.slug,
+    resolvedParams,
+  );
 
   const siteName = resolveSiteName(seo);
   const title = toMetadataTitle(seoMeta, {
@@ -211,6 +242,10 @@ export async function generateMetadata({
     fallback: heading,
   });
   const description = seoMeta.description ?? generatedDescription;
+
+  // TASK-569 — the category's own picture for the preview. Same cached tree read
+  // the body's breadcrumb makes, so it costs the request nothing extra.
+  const categoryNode = (await resolveCategoryPath(page.categorySlug))?.at(-1);
 
   return {
     title,
@@ -228,7 +263,13 @@ export async function generateMetadata({
       siteName,
       locale: "uk_UA",
       type: "website",
-      images: buildOgImages({ defaultOgImage: seoMeta.ogImage }),
+      images: buildOgImages({
+        // A compat page is a slice of that category, so its tile picture
+        // stands in before the store-wide default.
+        categoryImage: categoryNode?.image,
+        defaultOgImage: seoMeta.ogImage,
+        alt: title.absolute,
+      }),
     },
   };
 }
@@ -284,6 +325,9 @@ export default async function CompatLandingPage({
     minPrice: minPrice ? Number(minPrice) : undefined,
     maxPrice: maxPrice ? Number(maxPrice) : undefined,
     specs: specs || undefined,
+    // TASK-513 — same two boolean facets as /products; only "true" filters.
+    inStock: first(resolved.inStock) === "true" ? true : undefined,
+    onSale: first(resolved.onSale) === "true" ? true : undefined,
     page: pageParam ? Number(pageParam) : 1,
     limit: 20,
     isActive: true,
@@ -312,9 +356,21 @@ export default async function CompatLandingPage({
 
   const schemas = await buildCompatPageSchemas(page, trail);
 
+  // Always set on this route: self when unfiltered, the category when filtered.
+  const { canonicalPath } = compatListingMeta(
+    page.categorySlug,
+    model.slug,
+    resolved,
+  );
+
   return (
     // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products catalog page shell (shared grid must align pixel-for-pixel)
     <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8">
+      {/* TASK-835 — a facet ticked before the head hydrates would otherwise
+          leave the old canonical next to the new one. */}
+      {canonicalPath && (
+        <StaleCanonicalGuard href={`${SITE_URL}${canonicalPath}`} />
+      )}
       {schemas.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       {schemas.itemList && <JsonLd schema={schemas.itemList} />}
 

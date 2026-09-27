@@ -4,7 +4,11 @@ describe('publicProductSql — the SQL twin of the predicate (TASK-711)', () => 
   it('spells every half of PUBLIC_PRODUCT_WHERE against the given aliases', () => {
     const sql = publicProductSql({ product: 'p', category: 'c' });
 
-    expect(sql.sql).toBe('p.is_active = true AND p.deleted_at IS NULL AND c.is_active = true');
+    // The category half carries BOTH its nested keys (TASK-653) — the mapped-type
+    // guard only sees top-level keys, so this string is what pins the nested one.
+    expect(sql.sql).toBe(
+      'p.is_active = true AND p.deleted_at IS NULL AND c.is_active = true AND c.deleted_at IS NULL',
+    );
     // No bound values: the fragment is pure column logic, so it composes into
     // any aggregate without shifting the caller's parameter numbering.
     expect(sql.values).toEqual([]);
@@ -19,11 +23,11 @@ describe('publicProductSql — the SQL twin of the predicate (TASK-711)', () => 
 });
 
 describe('product visibility predicate (TASK-781)', () => {
-  it('requires an active, non-deleted product in an active category', () => {
+  it('requires an active, non-deleted product in an active, non-deleted category', () => {
     expect(PUBLIC_PRODUCT_WHERE).toEqual({
       isActive: true,
       deletedAt: null,
-      category: { isActive: true },
+      category: { isActive: true, deletedAt: null },
     });
   });
 
@@ -44,6 +48,16 @@ describe('product visibility predicate (TASK-781)', () => {
 
     it('rejects a product whose category is inactive', () => {
       expect(isPubliclyVisible({ ...visible, category: { isActive: false } })).toBe(false);
+    });
+
+    // TASK-653: parity with the Prisma rule, for a caller that loads the tombstone column.
+    it('rejects a product whose category is deleted', () => {
+      expect(
+        isPubliclyVisible({ ...visible, category: { isActive: true, deletedAt: new Date() } }),
+      ).toBe(false);
+      expect(isPubliclyVisible({ ...visible, category: { isActive: true, deletedAt: null } })).toBe(
+        true,
+      );
     });
 
     it('rejects a product whose category was not loaded', () => {

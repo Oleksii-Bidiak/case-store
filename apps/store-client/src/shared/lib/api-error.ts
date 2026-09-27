@@ -43,6 +43,40 @@ export function apiErrorCode(error: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/**
+ * How many seconds the API says to wait before retrying (TASK-762), or
+ * `undefined` when it did not say.
+ *
+ * Two channels, same number: `retryAfterSeconds` in the body (the API's
+ * `RetryAfterException`, e.g. the contact cooldown) and the standard
+ * `Retry-After` header (that exception AND the throttler's own 429). The body
+ * wins because it survives any proxy; the header is read only in its
+ * delta-seconds form — an HTTP-date is legal but nothing of ours sends one.
+ */
+export function apiErrorRetryAfterSeconds(error: unknown): number | undefined {
+  const fromBody = (errorBody(error) as { retryAfterSeconds?: unknown })
+    ?.retryAfterSeconds;
+  if (
+    typeof fromBody === "number" &&
+    Number.isFinite(fromBody) &&
+    fromBody > 0
+  ) {
+    return Math.ceil(fromBody);
+  }
+
+  const headers = (error as { response?: { headers?: unknown } })?.response
+    ?.headers as
+    { get?: (name: string) => unknown; [key: string]: unknown } | undefined;
+  const raw =
+    typeof headers?.get === "function"
+      ? headers.get("retry-after")
+      : headers?.["retry-after"];
+  const seconds = typeof raw === "string" ? Number(raw.trim()) : Number.NaN;
+  return Number.isFinite(seconds) && seconds > 0
+    ? Math.ceil(seconds)
+    : undefined;
+}
+
 /** The API's own human explanation, when it wrote one. */
 export function apiErrorMessage(error: unknown): string | undefined {
   const body = errorBody(error);

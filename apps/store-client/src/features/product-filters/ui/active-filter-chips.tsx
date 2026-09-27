@@ -141,6 +141,15 @@ export function ActiveFilterChips({
     });
   }
 
+  // TASK-742 — «Зі знижкою», the same boolean shape as availability.
+  if (currentParams.onSale === true) {
+    chips.push({
+      key: "onSale",
+      label: dict.filters.onSaleChip,
+      clear: () => onFilterChange({ onSale: undefined }),
+    });
+  }
+
   // Structured-spec facet chips (TASK-191; one chip PER SELECTED VALUE since
   // TASK-414). With multi-select a single "specs" chip would be the only way to
   // undo an entire many-facet selection — clicking × to drop one unwanted value

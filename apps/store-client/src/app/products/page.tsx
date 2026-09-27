@@ -1,21 +1,33 @@
-import { Suspense, Fragment } from "react";
+import { Suspense, Fragment, cache } from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { permanentRedirect } from "next/navigation";
+import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import { ProductListView, ProductListSkeleton } from "@/widgets";
 import {
   buildCatalogHeader,
+  buildCatalogListingParams,
   findCategoryNodeBySlug,
-} from "@/widgets/product-list/model/catalog-header";
+  readSearchParamsRecord,
+} from "@/widgets/product-list";
 import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import type { ProductControllerFindAllParams } from "@/entities/product";
 import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
 import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
+import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
+import {
+  createServerQueryClient,
+  dehydrateForClient,
+  prefetchQueries,
+  serverRequestOptions,
+} from "@/shared/api/query-prefetch-server";
 import { JsonLd } from "@/shared/ui";
-import { buildBreadcrumbSchema } from "@/shared/lib/schema";
+import {
+  buildBreadcrumbSchema,
+  buildProductItemListSchema,
+} from "@/shared/lib/schema";
 import {
   buildListingMetadata,
   buildOgImages,
@@ -24,6 +36,7 @@ import {
   toMetadataTitle,
   type ListingFilterParams,
 } from "@/shared/lib/seo";
+import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, dict } from "@/shared/config";
 
@@ -37,17 +50,21 @@ function first(value: string | string[] | undefined): string | undefined {
  * description + JSON-LD). Uses the public category tree so any node — root or
  * sub-category — resolves. Keyed by SLUG since TASK-420, the form the catalogue
  * URL now carries. Returns null on any failure so the catalog still renders.
+ *
+ * React `cache()` (TASK-703): `generateMetadata` and the page body both resolve
+ * the node, and the tree read is axios, which Next's `fetch` dedup does not see —
+ * so a `?category=` view used to download the tree twice. Scoped to one request.
  */
-async function resolveCategoryNode(
-  slug: string,
-): Promise<CategoryTreeNodeEntity | null> {
-  try {
-    const { data } = await categoryControllerGetCategoryTree();
-    return findCategoryNodeBySlug(data ?? [], slug);
-  } catch {
-    return null;
-  }
-}
+const resolveCategoryNode = cache(
+  async (slug: string): Promise<CategoryTreeNodeEntity | null> => {
+    try {
+      const { data } = await categoryControllerGetCategoryTree();
+      return findCategoryNodeBySlug(data ?? [], slug);
+    } catch {
+      return null;
+    }
+  },
+);
 
 /**
  * Serve the 308 from a pre-TASK-420 uuid URL to its slug form, if this is one.
@@ -174,32 +191,29 @@ export async function generateMetadata({
         // every filtered `/products?category=…` link.
         images: buildOgImages({
           entityOgImage: node.ogImage,
+          // TASK-569 — same chain as /categories/[slug]: the category's own
+          // tile picture before the store-wide default.
+          categoryImage: node.image,
           defaultOgImage: seoMeta.ogImage,
+          alt: title.absolute,
         }),
       },
     };
   }
 
-  // Unfiltered / keyword-search / unknown-category → generic listing metadata,
-  // still branded through the same helper so the title carries the store name.
-  const title = toMetadataTitle(
-    { title: dict.meta.productsTitle, titleAbsolute: false },
-    { settings: seo, siteName, fallback: dict.meta.productsTitle },
-  );
-  return {
-    title,
-    description: dict.meta.productsDescription,
-    ...canonicalAndRobots,
-    openGraph: {
-      title: title.absolute,
-      description: dict.meta.productsDescription,
-      url: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
-      siteName,
-      locale: "uk_UA",
-      type: "website",
-      images: buildOgImages({ defaultOgImage: seo?.defaultOgImage }),
-    },
-  };
+  // Unfiltered / keyword-search / unknown-category → the `products` HUB row
+  // (TASK-549): `/products` was the one indexed listing whose title and
+  // description the owner could change nowhere. Same three tiers as the other
+  // hubs (row meta → row title/excerpt → dictionary). The listing policy still
+  // decides canonical vs noindex: a clean view (incl. `?page=N`) is canonical, a
+  // filtered one carries the policy's robots instead.
+  return buildHubMetadata({
+    slug: "products",
+    canonical: `${SITE_URL}${listingMeta.canonicalPath ?? "/products"}`,
+    fallbackTitle: dict.meta.productsTitle,
+    fallbackDescription: dict.meta.productsDescription,
+    robots: listingMeta.robots,
+  });
 }
 
 /**
@@ -222,33 +236,38 @@ export default async function ProductsPage({
   // play; this one keeps the redirect true of the page in its own right.
   await redirectLegacyParams(resolved);
 
-  const categorySlug = first(resolved.category);
-  const search = first(resolved.search)?.trim() || undefined;
-  const minPrice = first(resolved.minPrice);
-  const maxPrice = first(resolved.maxPrice);
-  const specs = first(resolved.specs);
-  const page = first(resolved.page);
+  // The listing query of this URL — built by the same function the client view
+  // reads the URL with (TASK-563), so the prefetched page below is the very
+  // cache entry the grid asks for. It carries every rule the listing has
+  // (TASK-513's literal-"true" boolean facets included).
+  const initialParams = buildCatalogListingParams(
+    readSearchParamsRecord(resolved),
+  );
+  const categorySlug = initialParams.category;
+  const search = initialParams.search;
 
-  const initialParams: ProductControllerFindAllParams = {
-    category: categorySlug,
-    brand: first(resolved.brand),
-    device: first(resolved.device),
-    search,
-    sortBy: first(resolved.sortBy) ?? "createdAt",
-    sortOrder: first(resolved.sortOrder) ?? "desc",
-    minPrice: minPrice ? Number(minPrice) : undefined,
-    maxPrice: maxPrice ? Number(maxPrice) : undefined,
-    specs: specs || undefined,
-    page: page ? Number(page) : 1,
-    limit: 20,
-    isActive: true,
-  };
+  // First HTML with the product cards in it (TASK-563): prefetch the grid's
+  // page on the server and hand it over through the PrefetchBoundary below. A
+  // failed prefetch is simply absent from the dehydrated state — the grid then
+  // fetches on the client, as it always did.
+  const queryClient = createServerQueryClient();
+  const listingQuery = getProductControllerFindAllQueryOptions(initialParams, {
+    request: serverRequestOptions(),
+  });
 
   // Category-scoped catalog: resolve the name so the breadcrumb reveals the
   // categories hub + the specific category (and the title matches it).
-  const categoryName = categorySlug
-    ? await resolveCategoryName(categorySlug)
-    : null;
+  const [categoryName] = await Promise.all([
+    categorySlug ? resolveCategoryName(categorySlug) : Promise.resolve(null),
+    prefetchQueries(queryClient, [listingQuery]),
+  ]);
+
+  // ItemList from the same fetch as the grid (TASK-556 tail): the structured
+  // data lists exactly the cards the page shows.
+  const itemList = buildProductItemListSchema(
+    queryClient.getQueryData(listingQuery.queryKey)?.data,
+    SITE_URL,
+  );
 
   const { trail, title, subtitle, currentPath } = buildCatalogHeader({
     categorySlug,
@@ -266,6 +285,7 @@ export default async function ProductsPage({
           })),
         )}
       />
+      {itemList && <JsonLd schema={itemList} />}
 
       {/* Breadcrumbs */}
       <nav
@@ -313,9 +333,11 @@ export default async function ProductsPage({
       {/* The fallback stands in for ProductListView as a whole — chips row,
           toolbar and the 268px filter rail included (TASK-416) — so the grid
           does not render full-width and then shrink into a column. */}
-      <Suspense fallback={<ProductListSkeleton withSidebar />}>
-        <ProductListView initialParams={initialParams} />
-      </Suspense>
+      <PrefetchBoundary state={dehydrateForClient(queryClient)}>
+        <Suspense fallback={<ProductListSkeleton withSidebar />}>
+          <ProductListView initialParams={initialParams} />
+        </Suspense>
+      </PrefetchBoundary>
     </div>
   );
 }

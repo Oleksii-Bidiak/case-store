@@ -66,7 +66,15 @@ const open = async (user: ReturnType<typeof userEvent.setup>) => {
       name: dict.returnRequest.triggerAria("#ORDER-1"),
     }),
   );
-  return screen.findByText(dict.returnRequest.dialogTitle);
+  const title = await screen.findByText(dict.returnRequest.dialogTitle);
+  // TASK-631: the fields wait for the "already returned" ledger. Every suite
+  // below types into «Чохол», which always has something left in these stubs.
+  await waitFor(() =>
+    expect(
+      screen.getByLabelText(dict.returnRequest.quantityAria("Чохол")),
+    ).toBeEnabled(),
+  );
+  return title;
 };
 
 describe("ReturnRequestButton (TASK-373)", () => {
@@ -153,6 +161,64 @@ describe("ReturnRequestButton (TASK-373)", () => {
     await waitFor(() => expect(post.bodies).toHaveLength(1));
     expect(post.bodies[0]).toMatchObject({
       items: [{ orderItemId: "line-1", quantity: 1 }],
+    });
+  });
+
+  // TASK-631 — the race in the row: the dialog opens, the customer types 3
+  // before the ledger lands, the ledger says one unit is already claimed. The
+  // form used to keep showing 3 while sending 2 and toasting «готово».
+  it("does not take a quantity before it knows what is left, so what is shown is what is sent", async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    const ledgerArrived = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.get("*/api/orders/:orderId/returns", async () => {
+        await ledgerArrived;
+        return HttpResponse.json({
+          data: [
+            {
+              status: "REQUESTED",
+              items: [{ orderItemId: "line-1", quantity: 1 }],
+            },
+          ],
+        });
+      }),
+    );
+    const post = stubCreate(() =>
+      HttpResponse.json({ data: {} }, { status: 201 }),
+    );
+
+    renderButton();
+    await user.click(
+      screen.getByRole("button", {
+        name: dict.returnRequest.triggerAria("#ORDER-1"),
+      }),
+    );
+    const quantity = await screen.findByLabelText(
+      dict.returnRequest.quantityAria("Чохол"),
+    );
+
+    // Before the answer: the field refuses input instead of accepting a number
+    // the server may not honour.
+    expect(quantity).toBeDisabled();
+    await user.type(quantity, "3");
+    expect(quantity).toHaveValue(0);
+
+    release();
+    await waitFor(() => expect(quantity).toBeEnabled());
+    await user.clear(quantity);
+    await user.type(quantity, "3");
+
+    // Shown: the clamped 2. Sent: the same 2.
+    expect(quantity).toHaveValue(2);
+    await user.click(
+      screen.getByRole("button", { name: dict.returnRequest.submit }),
+    );
+    await waitFor(() => expect(post.bodies).toHaveLength(1));
+    expect(post.bodies[0]).toMatchObject({
+      items: [{ orderItemId: "line-1", quantity: 2 }],
     });
   });
 

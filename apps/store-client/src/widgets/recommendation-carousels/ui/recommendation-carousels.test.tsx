@@ -156,6 +156,26 @@ describe("CarouselRail", () => {
     expect(screen.getByText("Чохол Alpha")).toBeInTheDocument();
   });
 
+  it("offers quick view on every card, like the other five rails (TASK-828)", () => {
+    renderWithProviders(
+      <CarouselRail
+        carousel={makeCarousel("c1", "Хіти тижня", [
+          makeProduct("p1", "Чохол Alpha"),
+          makeProduct("p2", "Скло Beta"),
+        ])}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: dict.quickView.trigger("Чохол Alpha"),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.quickView.trigger("Скло Beta") }),
+    ).toBeInTheDocument();
+  });
+
   it("does not crash on a single-item carousel", () => {
     renderWithProviders(
       <CarouselRail

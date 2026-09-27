@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HttpException, HttpStatus, NotFoundException } from '@nestjs/common';
+import { RetryAfterException } from '../common/filters/retry-after.exception';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessage, ContactMessageStatus } from '@prisma/client';
 import { ContactMessagesNotFoundError, ContactRepository } from './contact.repository';
@@ -31,7 +32,7 @@ const contactRepositoryMock = {
   countByStatus: jest.fn(),
   findMatchingUserId: jest.fn(),
   findMatchingUserIds: jest.fn(),
-  findLatestCreatedAtByEmail: jest.fn(),
+  findLatestMessageAgeMsByEmail: jest.fn(),
 };
 
 const pinoLoggerMock = {
@@ -126,32 +127,46 @@ describe('ContactService', () => {
       email: 'ivan@example.com',
       message: 'Доброго дня! Питання по замовленню.',
     };
-    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
     beforeEach(() => {
-      contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+      contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(null);
       contactRepositoryMock.create.mockResolvedValue(makeMessage());
     });
 
     describe('honeypot', () => {
-      it('answers a filled honeypot with a plausible id but stores nothing', async () => {
+      // TASK-761: a hit used to be dropped without a trace, so a false positive
+      // (a password manager filling the trap) ate real mail invisibly.
+      it('keeps a filled honeypot as a SPAM row and answers with its id, like any success', async () => {
+        contactRepositoryMock.create.mockResolvedValue(
+          makeMessage({ id: 'spam-uuid-1', status: ContactMessageStatus.SPAM }),
+        );
+
         const result = await service.submit({ ...validDto, website: 'https://spam.example' });
 
-        expect(result.id).toMatch(UUID_RE);
-        expect(contactRepositoryMock.create).not.toHaveBeenCalled();
+        expect(result).toEqual({ id: 'spam-uuid-1' });
+        expect(contactRepositoryMock.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            email: 'ivan@example.com',
+            message: validDto.message,
+            status: ContactMessageStatus.SPAM,
+            adminNote: expect.stringContaining('https://spam.example'),
+          }),
+        );
       });
 
-      it('does not even consult the cooldown for a bot — no DB read at all', async () => {
-        await service.submit({ ...validDto, website: 'x' });
+      it('clips what the trap held before noting it', async () => {
+        await service.submit({ ...validDto, website: 'x'.repeat(400) });
 
-        expect(contactRepositoryMock.findLatestCreatedAtByEmail).not.toHaveBeenCalled();
+        const note = contactRepositoryMock.create.mock.calls[0][0].adminNote as string;
+        expect(note).toContain('x'.repeat(255));
+        expect(note).not.toContain('x'.repeat(256));
       });
 
-      it('mints a fresh id per bot submission, so the fake is not a constant to fingerprint', async () => {
-        const first = await service.submit({ ...validDto, website: 'x' });
-        const second = await service.submit({ ...validDto, website: 'x' });
+      it('neither consults nor feeds the cooldown for a hit', async () => {
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(1000);
 
-        expect(first.id).not.toBe(second.id);
+        await expect(service.submit({ ...validDto, website: 'x' })).resolves.toBeDefined();
+        expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).not.toHaveBeenCalled();
       });
 
       it('logs the trip without the sender PII', async () => {
@@ -193,15 +208,13 @@ describe('ContactService', () => {
       it('looks the sender up by the lower-cased, trimmed email', async () => {
         await service.submit({ ...validDto, email: '  Ivan@Example.COM ' });
 
-        expect(contactRepositoryMock.findLatestCreatedAtByEmail).toHaveBeenCalledWith(
+        expect(contactRepositoryMock.findLatestMessageAgeMsByEmail).toHaveBeenCalledWith(
           'ivan@example.com',
         );
       });
 
       it('refuses a second message from the same email inside 10 minutes with 429', async () => {
-        contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
-          new Date(NOW.getTime() - 9 * 60 * 1000),
-        );
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(9 * 60 * 1000);
 
         const error = await service.submit(validDto).catch((caught: unknown) => caught);
 
@@ -216,17 +229,45 @@ describe('ContactService', () => {
         expect(contactRepositoryMock.create).not.toHaveBeenCalled();
       });
 
+      it.each([
+        [9 * 60 * 1000, 60],
+        [1000, 599],
+        [10 * 60 * 1000 - 300, 1],
+      ])(
+        'carries the REAL remaining wait (written %p ms ago → %p s) (TASK-762)',
+        async (agoMs, expected) => {
+          contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(agoMs);
+
+          const error = await service.submit(validDto).catch((caught: unknown) => caught);
+
+          expect(error).toBeInstanceOf(RetryAfterException);
+          expect((error as RetryAfterException).retryAfterSeconds).toBe(expected);
+          expect((error as RetryAfterException).getResponse()).toEqual(
+            expect.objectContaining({ retryAfterSeconds: expected }),
+          );
+        },
+      );
+
+      it('never holds a sender longer than the window when the row is from the future (TASK-763)', async () => {
+        // A writer whose clock ran five minutes ahead stamped the row "in five
+        // minutes". The old arithmetic added those five minutes to the wait.
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(-5 * 60 * 1000);
+
+        const error = await service.submit(validDto).catch((caught: unknown) => caught);
+
+        expect(error).toBeInstanceOf(RetryAfterException);
+        expect((error as RetryAfterException).retryAfterSeconds).toBe(600);
+      });
+
       it('accepts the next message once 10 minutes have passed', async () => {
-        contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(
-          new Date(NOW.getTime() - 10 * 60 * 1000),
-        );
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(10 * 60 * 1000);
 
         await expect(service.submit(validDto)).resolves.toEqual({ id: 'msg-uuid-1' });
         expect(contactRepositoryMock.create).toHaveBeenCalledTimes(1);
       });
 
       it('accepts the first message from an email that never wrote before', async () => {
-        contactRepositoryMock.findLatestCreatedAtByEmail.mockResolvedValue(null);
+        contactRepositoryMock.findLatestMessageAgeMsByEmail.mockResolvedValue(null);
 
         await expect(service.submit(validDto)).resolves.toEqual({ id: 'msg-uuid-1' });
       });

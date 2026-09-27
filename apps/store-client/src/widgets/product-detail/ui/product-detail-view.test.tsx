@@ -87,7 +87,7 @@ describe("ProductDetailView — position model (TASK-142)", () => {
       http.get("*/api/products/:slug", () =>
         HttpResponse.json(detailEnvelope()),
       ),
-      // ProductRelated fires a list query; return an empty page.
+      // The «Схожі товари» ProductRail fires a list query; return an empty page.
       http.get("*/api/products", () =>
         HttpResponse.json({
           data: [],

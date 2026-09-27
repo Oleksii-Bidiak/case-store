@@ -86,7 +86,9 @@ export class OrderStatusHistoryEntity {
     description:
       'A flag on the row for an event the operator must see (TASK-932 / TASK-788): ' +
       'PAID_AFTER_CANCEL on a payment row — the money arrived after the order was cancelled; ' +
-      'SHIPPED_UNPAID on a status row — shipped while the online payment was unconfirmed. ' +
+      'SHIPPED_UNPAID on a status row — shipped while the online payment was unconfirmed; ' +
+      'PAYMENT_EVENT_REFUSED on a payment row — a provider event asked for a move the shop refused ' +
+      '(the row stays current → current; the asked-for status is in rejectedPaymentStatus, TASK-621). ' +
       'Null on an ordinary row.',
     enum: OrderHistoryNote,
     enumName: 'OrderHistoryNote',
@@ -95,6 +97,18 @@ export class OrderStatusHistoryEntity {
     example: null,
   })
   note!: OrderHistoryNote | null;
+
+  @ApiProperty({
+    description:
+      'TASK-621: on a PAYMENT_EVENT_REFUSED row, the payment status the provider event asked for ' +
+      'and the shop refused. Null on every other row, and on refusals recorded before the column ' +
+      'existed (those read from = to with no note).',
+    enum: PaymentStatus,
+    nullable: true,
+    type: String,
+    example: null,
+  })
+  rejectedPaymentStatus!: PaymentStatus | null;
 
   @ApiProperty({ description: 'When the change happened', example: '2024-01-01T00:00:00.000Z' })
   changedAt!: Date;
@@ -113,6 +127,7 @@ export class OrderStatusHistoryEntity {
     entity.toPaymentStatus = row.toPaymentStatus;
     entity.changedBy = row.changedBy;
     entity.note = row.note ?? null;
+    entity.rejectedPaymentStatus = row.rejectedPaymentStatus ?? null;
     entity.changedAt = row.changedAt;
     return entity;
   }

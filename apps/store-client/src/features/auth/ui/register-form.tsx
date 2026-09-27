@@ -14,7 +14,15 @@ import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
 import { customerPasswordSchema } from "@/shared/lib/password-policy";
+import { Honeypot } from "@/shared/ui";
 import { sanitizeRedirectTarget } from "../lib/sanitize-redirect-target";
+
+/**
+ * The registration honeypot's field — `RegisterDto.hpCheck` (TASK-749).
+ * Meaningless on purpose: a semantic name like the contact form's `website` is
+ * a slot password managers autofill, and a filled trap means no account.
+ */
+const REGISTER_HONEYPOT_FIELD = "hpCheck";
 
 const registerSchema = z
   .object({
@@ -27,6 +35,10 @@ const registerSchema = z
     terms: z.boolean().refine((v) => v === true, {
       message: dict.auth.register.validationTerms,
     }),
+    // Honeypot (TASK-749). NO rule, for the reason in
+    // `widgets/contact/model/contact-schema.ts`: a blocking rule on a field
+    // nothing renders an error for makes the submit button silently do nothing.
+    hpCheck: z.string().optional(),
   })
   .refine((data) => data.password === data.passwordConfirm, {
     message: dict.auth.register.validationPasswordMatch,
@@ -90,6 +102,9 @@ export function RegisterForm({
           password: values.password,
           firstName: values.firstName,
           lastName: values.lastName,
+          // Only a bot fills the trap; a person's request carries no key.
+          // Clamped to the DTO's 255 — the schema deliberately has no rule.
+          hpCheck: values.hpCheck?.slice(0, 255) || undefined,
         },
       },
       {
@@ -266,6 +281,13 @@ export function RegisterForm({
           </p>
         )}
       </div>
+
+      {/* TASK-749: bot trap. `sr-only` is absolutely positioned, so it takes no
+          place in this flex column — nothing on screen moves. */}
+      <Honeypot
+        label={dict.auth.register.honeypotLabel}
+        {...register(REGISTER_HONEYPOT_FIELD)}
+      />
 
       <div className="flex flex-col gap-1">
         <label className="flex cursor-pointer items-start gap-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">

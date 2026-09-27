@@ -1,12 +1,16 @@
-import { http, HttpResponse } from "msw";
+import { http, HttpResponse, delay } from "msw";
+import { act } from "@testing-library/react";
 import {
   renderWithProviders,
   screen,
   waitFor,
+  within,
   userEvent,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import type { BlogPostSuggestionEntity } from "@/entities/blog";
+import type { SearchSuggestionEntity } from "@/entities/search";
 import { SearchAutocomplete } from "./search-autocomplete";
 
 // next/navigation is unavailable under jsdom — mock the router.
@@ -15,7 +19,9 @@ jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush }),
 }));
 
-function suggestion(overrides: Record<string, unknown> = {}) {
+function suggestion(
+  overrides: Partial<SearchSuggestionEntity> = {},
+): SearchSuggestionEntity {
   return {
     id: "product-1",
     name: "iPhone 15 Case",
@@ -27,11 +33,44 @@ function suggestion(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Register a suggest handler returning the given rows for any query. */
-function mockSuggest(rows: ReturnType<typeof suggestion>[]) {
+/** A `/api/blog/suggest` row (TASK-543) — no body, no category, no author. */
+function blogPost(
+  overrides: Partial<BlogPostSuggestionEntity> = {},
+): BlogPostSuggestionEntity {
+  return {
+    id: "post-1",
+    slug: "how-to-pick-a-case",
+    title: "Як обрати чохол для iPhone",
+    coverImageUrl: null,
+    ...overrides,
+  };
+}
+
+/** Register the two endpoints the autocomplete hits, for any query. */
+function mockSuggest(
+  rows: SearchSuggestionEntity[],
+  posts: BlogPostSuggestionEntity[] = [],
+) {
   server.use(
     http.get("*/api/search/suggest", () => HttpResponse.json({ data: rows })),
+    http.get("*/api/blog/suggest", () => HttpResponse.json({ data: posts })),
   );
+}
+
+/** Render and type into the field (the 250ms debounce runs inside). */
+async function typeQuery(
+  text: string,
+  props: Partial<React.ComponentProps<typeof SearchAutocomplete>> = {},
+) {
+  const user = userEvent.setup();
+  renderWithProviders(<SearchAutocomplete {...props} />);
+  const input = screen.getByRole("combobox", { name: dict.search.inputAria });
+  await user.type(input, text);
+  return { user, input };
+}
+
+function productList() {
+  return screen.getByRole("listbox", { name: dict.search.inputAria });
 }
 
 describe("SearchAutocomplete", () => {
@@ -56,10 +95,8 @@ describe("SearchAutocomplete", () => {
         slug: "screen-protector",
       }),
     ]);
-    const user = userEvent.setup();
-    renderWithProviders(<SearchAutocomplete />);
 
-    await user.type(screen.getByRole("combobox"), "айф");
+    await typeQuery("айф");
 
     expect(await screen.findByText("iPhone 15 Case")).toBeInTheDocument();
     expect(screen.getByText("Screen Protector")).toBeInTheDocument();
@@ -67,22 +104,19 @@ describe("SearchAutocomplete", () => {
 
   it("navigates to the product PDP when a suggestion is picked", async () => {
     mockSuggest([suggestion()]);
-    const user = userEvent.setup();
-    renderWithProviders(<SearchAutocomplete />);
+    const onNavigate = jest.fn();
 
-    await user.type(screen.getByRole("combobox"), "айф");
+    const { user } = await typeQuery("айф", { onNavigate });
     await user.click(await screen.findByText("iPhone 15 Case"));
 
     expect(mockPush).toHaveBeenCalledWith("/products/iphone-15-case");
+    expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 
   it("selects the highlighted suggestion with ArrowDown + Enter (keyboard)", async () => {
     mockSuggest([suggestion()]);
-    const user = userEvent.setup();
-    renderWithProviders(<SearchAutocomplete />);
 
-    const input = screen.getByRole("combobox");
-    await user.type(input, "айф");
+    const { user } = await typeQuery("айф");
     await screen.findByText("iPhone 15 Case");
     await user.keyboard("{ArrowDown}{Enter}");
 
@@ -90,17 +124,19 @@ describe("SearchAutocomplete", () => {
   });
 
   it("submits to /search on Enter when nothing is highlighted", async () => {
-    mockSuggest([]);
-    const user = userEvent.setup();
-    renderWithProviders(<SearchAutocomplete />);
+    mockSuggest([suggestion()]);
+    const onNavigate = jest.fn();
 
-    await user.type(screen.getByRole("combobox"), "чохол{Enter}");
+    const { user } = await typeQuery("чохол", { onNavigate });
+    await screen.findByText("iPhone 15 Case");
+    await user.keyboard("{Enter}");
 
     await waitFor(() =>
       expect(mockPush).toHaveBeenCalledWith(
         `/search?q=${encodeURIComponent("чохол")}`,
       ),
     );
+    expect(onNavigate).toHaveBeenCalledTimes(1);
   });
 
   it("does not navigate on submit when the query is blank", async () => {
@@ -126,5 +162,302 @@ describe("SearchAutocomplete", () => {
     renderWithProviders(<SearchAutocomplete />);
 
     expect(screen.getByRole("combobox")).not.toHaveFocus();
+  });
+});
+
+// TASK-805: the compact panel and the mobile menu run the same autocomplete as
+// the desktop pill. Each TASK-411 behaviour is pinned here once more, on the
+// stand-alone field, so none of them can quietly go missing below `lg`.
+describe("SearchAutocomplete — the pill's behaviour at every width (TASK-805/507/509)", () => {
+  beforeEach(() => mockPush.mockClear());
+
+  it("mixes blog articles into a second labelled listbox", async () => {
+    mockSuggest(
+      [suggestion()],
+      [
+        blogPost(),
+        blogPost({ id: "post-2", slug: "magsafe", title: "MagSafe" }),
+      ],
+    );
+
+    await typeQuery("чохол");
+
+    const blogList = await screen.findByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    expect(within(blogList).getAllByRole("option")).toHaveLength(2);
+    expect(screen.getByText(dict.search.blogSectionLabel)).toBeInTheDocument();
+    expect(within(productList()).getAllByRole("option")).toHaveLength(1);
+  });
+
+  // TASK-759: a cover the CSP blocks fires `error`; the row falls back to the
+  // same newspaper icon a post without a cover has, not an empty 32px box.
+  it("swaps a blog cover that fails to load for the newspaper icon", async () => {
+    mockSuggest(
+      [],
+      [blogPost({ coverImageUrl: "https://blocked.example.com/cover.jpg" })],
+    );
+
+    await typeQuery("чохол");
+
+    const blogList = await screen.findByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    const option = within(blogList).getByRole("option");
+    const cover = option.querySelector("img");
+    expect(cover).toHaveAttribute(
+      "src",
+      "https://blocked.example.com/cover.jpg",
+    );
+
+    act(() => {
+      cover!.dispatchEvent(new Event("error"));
+    });
+
+    expect(option.querySelector("img")).toBeNull();
+    expect(option.querySelector("svg")).not.toBeNull();
+  });
+
+  // TASK-543: the article rows come from the light suggest endpoint, never the
+  // list endpoint that carries every article's body (the unhandled-request
+  // policy would also fail the test on a stray `/api/blog` call).
+  it("asks the light blog suggest endpoint for at most 5 articles", async () => {
+    const seen: URLSearchParams[] = [];
+    server.use(
+      http.get("*/api/search/suggest", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/blog/suggest", ({ request }) => {
+        seen.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ data: [blogPost()] });
+      }),
+    );
+
+    await typeQuery("чохол");
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+
+    expect(seen.at(-1)?.get("q")).toBe("чохол");
+    expect(seen.at(-1)?.get("limit")).toBe("5");
+  });
+
+  it("caps the blog section at 5 articles", async () => {
+    mockSuggest(
+      [],
+      Array.from({ length: 6 }, (_, i) =>
+        blogPost({ id: `post-${i}`, slug: `post-${i}`, title: `Стаття ${i}` }),
+      ),
+    );
+
+    await typeQuery("стаття");
+
+    const blogList = await screen.findByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    expect(within(blogList).getAllByRole("option")).toHaveLength(5);
+  });
+
+  it("opens a highlighted article on Enter and reports the navigation", async () => {
+    mockSuggest([suggestion()], [blogPost()]);
+    const onNavigate = jest.fn();
+
+    const { user } = await typeQuery("чохол", { onNavigate });
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+
+    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+
+    expect(mockPush).toHaveBeenCalledWith("/blog/how-to-pick-a-case");
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("turns an empty popup into a link to the full results page (TASK-507)", async () => {
+    mockSuggest([], []);
+    const onNavigate = jest.fn();
+
+    const { user } = await typeQuery("невідомо", { onNavigate });
+
+    const link = await screen.findByRole("link", {
+      name: dict.search.showAllResults("невідомо"),
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      `/search?q=${encodeURIComponent("невідомо")}`,
+    );
+    // A way OUT of the popup, not one of its rows.
+    expect(within(productList()).queryAllByRole("option")).toHaveLength(0);
+    expect(within(productList()).queryByRole("link")).not.toBeInTheDocument();
+
+    // Following it closes the mobile menu too. (jsdom cannot navigate — stop
+    // the anchor's default so it does not log "Not implemented: navigation".)
+    link.addEventListener("click", (event) => event.preventDefault());
+    await user.click(link);
+    expect(onNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not claim 'nothing found' when only articles match", async () => {
+    mockSuggest([], [blogPost()]);
+
+    await typeQuery("чохол");
+
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+    expect(screen.queryByText(dict.search.empty)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.search.showAllResults("чохол") }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the loading row, not 'nothing found', inside the debounce window (TASK-509)", async () => {
+    server.use(
+      http.get("*/api/search/suggest", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ data: [] });
+      }),
+      http.get("*/api/blog/suggest", async () => {
+        await delay("infinite");
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+
+    await typeQuery("ч");
+
+    // The request for «ч» has not been sent yet (250ms debounce): nothing is in
+    // flight and nothing has arrived, so there is no verdict to announce.
+    expect(screen.getByText(dict.search.loading)).toBeInTheDocument();
+    expect(screen.queryByText(dict.search.empty)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.search.showAllResults("ч") }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the previous suggestions on screen while the next query is in flight", async () => {
+    let nextRequested = false;
+    server.use(
+      http.get("*/api/search/suggest", async ({ request }) => {
+        const q = new URL(request.url).searchParams.get("q");
+        if (q === "ч") return HttpResponse.json({ data: [suggestion()] });
+        nextRequested = true;
+        await delay("infinite");
+        return HttpResponse.json({ data: [] });
+      }),
+      http.get("*/api/blog/suggest", async ({ request }) => {
+        const q = new URL(request.url).searchParams.get("q");
+        if (q === "ч") return HttpResponse.json({ data: [blogPost()] });
+        await delay("infinite");
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+
+    const { user } = await typeQuery("ч");
+    await screen.findByText("iPhone 15 Case");
+    await screen.findByText("Як обрати чохол для iPhone");
+
+    await user.keyboard("о");
+    await waitFor(() => expect(nextRequested).toBe(true));
+
+    expect(screen.getByText("iPhone 15 Case")).toBeInTheDocument();
+    expect(screen.getByText("Як обрати чохол для iPhone")).toBeInTheDocument();
+    expect(screen.queryByText(dict.search.loading)).not.toBeInTheDocument();
+  });
+
+  it("tracks the highlight with aria-activedescendant across both listboxes", async () => {
+    mockSuggest([suggestion()], [blogPost()]);
+
+    const { user, input } = await typeQuery("чохол");
+    const blogList = await screen.findByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    const options = [
+      ...within(productList()).getAllByRole("option"),
+      ...within(blogList).getAllByRole("option"),
+    ];
+
+    // Open, nothing highlighted → absent, not "".
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+    expect(input.getAttribute("aria-controls")).toBe(
+      `${productList().id} ${blogList.id}`,
+    );
+
+    for (const option of options) {
+      await user.keyboard("{ArrowDown}");
+      expect(input).toHaveAttribute("aria-activedescendant", option.id);
+      expect(option).toHaveAttribute("aria-selected", "true");
+      expect(input).toHaveFocus();
+    }
+
+    await user.keyboard("{Escape}");
+    expect(
+      screen.queryByRole("listbox", { name: dict.search.inputAria }),
+    ).not.toBeInTheDocument();
+    expect(input).not.toHaveAttribute("aria-activedescendant");
+  });
+
+  // APG combobox (TASK-508): ↑ from the input enters the combined list at the
+  // bottom — the last article — just as ↓ enters it at the first product.
+  it("moves ArrowUp from the input to the LAST option of the combined list", async () => {
+    mockSuggest(
+      [suggestion(), suggestion({ id: "p2", name: "Скло", slug: "glass" })],
+      [blogPost()],
+    );
+
+    const { user, input } = await typeQuery("чохол");
+    const blogList = await screen.findByRole("listbox", {
+      name: dict.search.blogSectionLabel,
+    });
+    const [firstProduct, secondProduct] =
+      within(productList()).getAllByRole("option");
+    const article = within(blogList).getByRole("option");
+
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", article.id);
+    expect(article).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", secondProduct.id);
+
+    // Clamped at the top, not wrapped.
+    await user.keyboard("{ArrowUp}{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", firstProduct.id);
+
+    // Enter commits what ↑ reached.
+    await user.keyboard("{Escape}");
+    await user.type(input, "и");
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+    await user.keyboard("{ArrowUp}{Enter}");
+    expect(mockPush).toHaveBeenCalledWith("/blog/how-to-pick-a-case");
+  });
+
+  it("gives two instances distinct option ids", async () => {
+    mockSuggest([suggestion()]);
+    const user = userEvent.setup();
+    renderWithProviders(
+      <>
+        <SearchAutocomplete id="mobile-search" />
+        <SearchAutocomplete id="compact-search" />
+      </>,
+    );
+
+    const [first, second] = screen.getAllByRole("combobox");
+    await user.type(first, "а");
+    await screen.findByText("iPhone 15 Case");
+    const firstId = screen.getByRole("option").id;
+    act(() => first.blur());
+
+    await user.type(second, "а");
+    await screen.findByText("iPhone 15 Case");
+    expect(screen.getByRole("option").id).not.toBe(firstId);
+  });
+
+  it("closes the popup when focus leaves the field", async () => {
+    mockSuggest([suggestion()]);
+
+    await typeQuery("айф");
+    await screen.findByText("iPhone 15 Case");
+
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    act(() => outside.focus());
+
+    expect(
+      screen.queryByRole("listbox", { name: dict.search.inputAria }),
+    ).not.toBeInTheDocument();
+    outside.remove();
   });
 });

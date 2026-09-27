@@ -25,7 +25,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
-import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import {
+  dict,
+  STICKY_ASIDE_TOP,
+  type InfoHubSectionKey,
+} from "@/shared/config";
+import { formatMoney } from "@/shared/lib/format";
 import {
   ABOUT_STATS,
   ABOUT_VALUES,
@@ -33,12 +38,15 @@ import {
   INFO_FAQS,
   INFO_SECTIONS,
   PAYMENT_OPTIONS,
-  PROTECTION_SERVICES,
   WARRANTY_CARDS,
   type InfoAbout,
   type InfoFaq,
   type InfoIconKey,
+  type InfoPageLink,
   type InfoSectionKey,
+  type InfoSectionPage,
+  type InfoSectionSource,
+  type InfoService,
 } from "../model/info-content";
 import { InfoContactForm } from "./info-contact-form";
 
@@ -72,6 +80,33 @@ const SUCCESS_TINT = {
 };
 
 const CARD = "rounded-[18px] border border-border bg-card p-[30px] shadow-card";
+const SECTION_HEADING =
+  "mb-1.5 font-display text-[23px] font-bold text-foreground";
+const SECTION_INTRO =
+  "mb-[22px] text-[14.5px] leading-[1.6] text-muted-foreground";
+const SUB_HEADING = "mb-3.5 font-display text-lg font-bold text-foreground";
+
+/** No page read at all (a test, or a caller that has none): the static copy. */
+const OFFLINE_SECTIONS: Record<InfoHubSectionKey, InfoSectionSource> = {
+  delivery: "unavailable",
+  payment: "unavailable",
+  warranty: "unavailable",
+  aboutStats: "unavailable",
+};
+
+/**
+ * One /info block: its CMS page, the static fallback when the API is down, or
+ * nothing when the owner unpublished / deleted the page (TASK-560).
+ */
+function sectionBlock(
+  source: InfoSectionSource,
+  fallback: () => React.ReactNode,
+  headingLevel: "h2" | "h3" = "h2",
+): React.ReactNode {
+  if (source === "missing") return null;
+  if (source === "unavailable") return fallback();
+  return <CmsSectionCard page={source} headingLevel={headingLevel} />;
+}
 
 const MESSENGERS: {
   key: keyof SiteContactSettingsEntity;
@@ -99,6 +134,9 @@ export function InfoView({
   contact,
   faqs = INFO_FAQS,
   about = null,
+  sections = OFFLINE_SECTIONS,
+  services = [],
+  pages = [],
 }: {
   contact: SiteContactSettingsEntity | null;
   /** FAQ entries from the admin-managed API; falls back to the static
@@ -106,6 +144,12 @@ export function InfoView({
   faqs?: readonly InfoFaq[];
   /** The `about` page from the CMS (pre-sanitized HTML); null → static copy. */
   about?: InfoAbout | null;
+  /** The delivery / payment / warranty / «у цифрах» pages (TASK-560). */
+  sections?: Record<InfoHubSectionKey, InfoSectionSource>;
+  /** The store's active add-on services with catalog prices (TASK-561). */
+  services?: readonly InfoService[];
+  /** Published INFO pages /info does not inline, listed as links (TASK-560). */
+  pages?: readonly InfoPageLink[];
 }) {
   const [section, setSection] = useState<InfoSectionKey>("delivery");
   const [openFaq, setOpenFaq] = useState<Record<number, boolean>>({});
@@ -188,142 +232,143 @@ export function InfoView({
         <section className="min-w-0">
           {section === "delivery" && (
             <div className="flex flex-col gap-[22px]">
-              <div className={CARD}>
-                <h2 className="mb-1.5 font-display text-[23px] font-bold text-foreground">
-                  {d.deliveryHeading}
-                </h2>
-                <p className="mb-[22px] text-[14.5px] leading-[1.6] text-muted-foreground">
-                  {d.deliveryIntro}
-                </p>
-                <div className="grid gap-3.5 sm:grid-cols-3">
-                  {DELIVERY_OPTIONS.map((opt) => {
-                    const Icon = CONTENT_ICONS[opt.icon];
-                    return (
-                      <div
-                        key={opt.title}
-                        className="rounded-[14px] border border-border bg-background p-[18px]"
-                      >
-                        <span
-                          className="mb-3 inline-flex size-[42px] items-center justify-center rounded-[11px] text-primary"
-                          style={PRIMARY_TINT}
+              {sectionBlock(sections.delivery, () => (
+                <div className={CARD}>
+                  <h2 className={SECTION_HEADING}>{d.deliveryHeading}</h2>
+                  <p className={SECTION_INTRO}>{d.deliveryIntro}</p>
+                  <div className="grid gap-3.5 sm:grid-cols-3">
+                    {DELIVERY_OPTIONS.map((opt) => {
+                      const Icon = CONTENT_ICONS[opt.icon];
+                      return (
+                        <div
+                          key={opt.title}
+                          className="rounded-[14px] border border-border bg-background p-[18px]"
                         >
-                          <Icon className="size-5" aria-hidden="true" />
-                        </span>
-                        <b className="mb-1.5 block text-[15px] text-foreground">
-                          {opt.title}
-                        </b>
-                        <p className="mb-2.5 text-[13px] leading-[1.5] text-muted-foreground">
-                          {opt.desc}
-                        </p>
-                        <span className="font-mono text-[13.5px] font-bold text-foreground">
-                          {opt.price}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className={CARD}>
-                <h2 className="mb-1.5 font-display text-[23px] font-bold text-foreground">
-                  {d.paymentHeading}
-                </h2>
-                <p className="mb-[22px] text-[14.5px] leading-[1.6] text-muted-foreground">
-                  {d.paymentIntro}
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {PAYMENT_OPTIONS.map((opt) => {
-                    const Icon = CONTENT_ICONS[opt.icon];
-                    return (
-                      <div
-                        key={opt.title}
-                        className="flex items-start gap-3.5 rounded-[13px] border border-border bg-background p-4"
-                      >
-                        <span
-                          className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-success"
-                          style={SUCCESS_TINT}
-                        >
-                          <Icon className="size-5" aria-hidden="true" />
-                        </span>
-                        <div>
-                          <b className="mb-0.5 block text-[14.5px] text-foreground">
+                          <span
+                            className="mb-3 inline-flex size-[42px] items-center justify-center rounded-[11px] text-primary"
+                            style={PRIMARY_TINT}
+                          >
+                            <Icon className="size-5" aria-hidden="true" />
+                          </span>
+                          <b className="mb-1.5 block text-[15px] text-foreground">
                             {opt.title}
                           </b>
-                          <span className="text-[12.5px] leading-[1.5] text-muted-foreground">
+                          <p className="mb-2.5 text-[13px] leading-[1.5] text-muted-foreground">
                             {opt.desc}
+                          </p>
+                          <span className="font-mono text-[13.5px] font-bold text-foreground">
+                            {opt.price}
                           </span>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
+              ))}
+
+              {sectionBlock(sections.payment, () => (
+                <div className={CARD}>
+                  <h2 className={SECTION_HEADING}>{d.paymentHeading}</h2>
+                  <p className={SECTION_INTRO}>{d.paymentIntro}</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {PAYMENT_OPTIONS.map((opt) => {
+                      const Icon = CONTENT_ICONS[opt.icon];
+                      return (
+                        <div
+                          key={opt.title}
+                          className="flex items-start gap-3.5 rounded-[13px] border border-border bg-background p-4"
+                        >
+                          <span
+                            className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-success"
+                            style={SUCCESS_TINT}
+                          >
+                            <Icon className="size-5" aria-hidden="true" />
+                          </span>
+                          <div>
+                            <b className="mb-0.5 block text-[14.5px] text-foreground">
+                              {opt.title}
+                            </b>
+                            <span className="text-[12.5px] leading-[1.5] text-muted-foreground">
+                              {opt.desc}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
           {section === "warranty" && (
             <div className="flex flex-col gap-[22px]">
-              <div className={CARD}>
-                <h2 className="mb-1.5 font-display text-[23px] font-bold text-foreground">
-                  {d.warrantyHeading}
-                </h2>
-                <p className="mb-[22px] text-[14.5px] leading-[1.6] text-muted-foreground">
-                  {d.warrantyIntro}
-                </p>
-                <div className="grid gap-3.5 sm:grid-cols-3">
-                  {WARRANTY_CARDS.map((card) => (
-                    <div
-                      key={card.title}
-                      className="rounded-[14px] border border-border bg-background p-5"
-                    >
-                      <span className="mb-2 block font-display text-[30px] font-bold text-primary">
-                        {card.big}
-                      </span>
-                      <b className="mb-1.5 block text-[14.5px] text-foreground">
-                        {card.title}
-                      </b>
-                      <p className="text-[13px] leading-[1.5] text-muted-foreground">
-                        {card.desc}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className={CARD}>
-                <h3 className="mb-4 font-display text-lg font-bold text-foreground">
-                  {d.servicesHeading}
-                </h3>
-                <div className="flex flex-col gap-3">
-                  {PROTECTION_SERVICES.map((svc) => {
-                    const Icon = CONTENT_ICONS[svc.icon];
-                    return (
+              {sectionBlock(sections.warranty, () => (
+                <div className={CARD}>
+                  <h2 className={SECTION_HEADING}>{d.warrantyHeading}</h2>
+                  <p className={SECTION_INTRO}>{d.warrantyIntro}</p>
+                  <div className="grid gap-3.5 sm:grid-cols-3">
+                    {WARRANTY_CARDS.map((card) => (
                       <div
-                        key={svc.title}
+                        key={card.title}
+                        className="rounded-[14px] border border-border bg-background p-5"
+                      >
+                        <span className="mb-2 block font-display text-[30px] font-bold text-primary">
+                          {card.big}
+                        </span>
+                        <b className="mb-1.5 block text-[14.5px] text-foreground">
+                          {card.title}
+                        </b>
+                        <p className="text-[13px] leading-[1.5] text-muted-foreground">
+                          {card.desc}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {/* TASK-561 — the store's real active add-ons at their catalog
+                  prices. No fallback list: when the API is down or nothing is
+                  offered, the card is simply absent — the old one advertised
+                  three services at prices nobody had entered anywhere. */}
+              {services.length > 0 && (
+                <div className={CARD}>
+                  <h3 className="mb-4 font-display text-lg font-bold text-foreground">
+                    {d.servicesHeading}
+                  </h3>
+                  <ul className="flex flex-col gap-3">
+                    {services.map((svc) => (
+                      <li
+                        key={svc.id}
                         className="flex items-center gap-4 rounded-[13px] border border-border bg-background px-[18px] py-[15px]"
                       >
                         <span
                           className="inline-flex size-[42px] shrink-0 items-center justify-center rounded-[11px] text-primary"
                           style={PRIMARY_TINT}
                         >
-                          <Icon className="size-5" aria-hidden="true" />
+                          <ShieldCheck className="size-5" aria-hidden="true" />
                         </span>
                         <div className="flex-1">
                           <b className="mb-0.5 block text-[14.5px] text-foreground">
-                            {svc.title}
+                            {svc.name}
                           </b>
-                          <span className="text-[12.5px] leading-[1.5] text-muted-foreground">
-                            {svc.desc}
-                          </span>
+                          {svc.description && (
+                            <span className="text-[12.5px] leading-[1.5] text-muted-foreground">
+                              {svc.description}
+                            </span>
+                          )}
                         </div>
+                        {/* A product may override the catalog price, so it
+                            is a starting price, never "the" price. */}
                         <span className="font-mono text-sm font-bold whitespace-nowrap text-foreground">
-                          {svc.price}
+                          {d.servicePriceFrom(formatMoney(svc.price))}
                         </span>
-                      </div>
-                    );
-                  })}
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -379,21 +424,6 @@ export function InfoView({
                   {about?.intro ?? d.aboutIntro}
                 </p>
               </div>
-              <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
-                {ABOUT_STATS.map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="rounded-[14px] border border-border bg-card p-[22px] text-center shadow-card"
-                  >
-                    <span className="block font-display text-[30px] font-bold text-primary">
-                      {stat.num}
-                    </span>
-                    <span className="text-[13px] text-muted-foreground">
-                      {stat.label}
-                    </span>
-                  </div>
-                ))}
-              </div>
               {/* The page body from the CMS. Rendered through the same
                   `legal-doc-body` typography as /legal/<slug> and /info/<slug>,
                   so a document written once looks the same wherever it appears.
@@ -418,31 +448,62 @@ export function InfoView({
                 </div>
               )}
 
-              <div className={CARD}>
-                <h3 className="mb-3.5 font-display text-lg font-bold text-foreground">
-                  {d.valuesHeading}
-                </h3>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {ABOUT_VALUES.map((value) => (
-                    <div key={value.title} className="flex items-start gap-3.5">
-                      <span
-                        className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-success"
-                        style={SUCCESS_TINT}
-                      >
-                        <Check className="size-[19px]" aria-hidden="true" />
-                      </span>
-                      <div>
-                        <b className="mb-0.5 block text-[14.5px] text-foreground">
-                          {value.title}
-                        </b>
-                        <span className="text-[13px] leading-[1.5] text-muted-foreground">
-                          {value.desc}
-                        </span>
+              {/* TASK-560 — «у цифрах» and «Чому обирають нас» come from the
+                  `info-about-stats` page; the stat tiles and value list below
+                  are only the outage fallback. */}
+              {sectionBlock(
+                sections.aboutStats,
+                () => (
+                  <>
+                    <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+                      {ABOUT_STATS.map((stat) => (
+                        <div
+                          key={stat.label}
+                          className="rounded-[14px] border border-border bg-card p-[22px] text-center shadow-card"
+                        >
+                          <span className="block font-display text-[30px] font-bold text-primary">
+                            {stat.num}
+                          </span>
+                          <span className="text-[13px] text-muted-foreground">
+                            {stat.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className={CARD}>
+                      <h3 className={SUB_HEADING}>{d.valuesHeading}</h3>
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        {ABOUT_VALUES.map((value) => (
+                          <div
+                            key={value.title}
+                            className="flex items-start gap-3.5"
+                          >
+                            <span
+                              className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-success"
+                              style={SUCCESS_TINT}
+                            >
+                              <Check
+                                className="size-[19px]"
+                                aria-hidden="true"
+                              />
+                            </span>
+                            <div>
+                              <b className="mb-0.5 block text-[14.5px] text-foreground">
+                                {value.title}
+                              </b>
+                              <span className="text-[13px] leading-[1.5] text-muted-foreground">
+                                {value.desc}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </>
+                ),
+                "h3",
+              )}
             </div>
           )}
 
@@ -503,9 +564,61 @@ export function InfoView({
               <InfoContactForm />
             </div>
           )}
+
+          {/* TASK-560 — every other published help page. Without a link in
+              from somewhere a page the owner writes under «Довідкова» is an
+              orphan reachable only from the sitemap. */}
+          {pages.length > 0 && (
+            <nav aria-label={d.pagesHeading} className={`${CARD} mt-6`}>
+              <h2 className={SUB_HEADING}>{d.pagesHeading}</h2>
+              <ul className="flex flex-col gap-2.5">
+                {pages.map((page) => (
+                  <li key={page.href}>
+                    <Link
+                      href={page.href}
+                      className="text-sm font-semibold text-primary hover:underline"
+                    >
+                      {page.title}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
         </section>
       </div>
     </>
+  );
+}
+
+/**
+ * An /info block rendered from its INFO page (TASK-560) inside the same card
+ * frame the static block used. The body goes through the `legal-doc-body`
+ * typography, like «Про нас» and `/info/<slug>`. The HTML was sanitized by the
+ * route (`app/info/page.tsx`) — this component never sanitizes and must never
+ * be handed raw admin input.
+ */
+function CmsSectionCard({
+  page,
+  headingLevel,
+}: {
+  page: InfoSectionPage;
+  headingLevel: "h2" | "h3";
+}) {
+  const Heading = headingLevel;
+  return (
+    <div className={CARD}>
+      <Heading
+        className={headingLevel === "h2" ? SECTION_HEADING : SUB_HEADING}
+      >
+        {page.heading}
+      </Heading>
+      {page.intro && <p className={SECTION_INTRO}>{page.intro}</p>}
+      <div
+        className="legal-doc-body"
+        dangerouslySetInnerHTML={{ __html: page.html }}
+      />
+    </div>
   );
 }
 

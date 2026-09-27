@@ -1,6 +1,6 @@
 // Add-on Service Module — public API (TASK-174)
 export { AddonServiceModule } from './addon-service.module';
-export { AddonServiceService } from './addon-service.service';
+export { AddonServiceService, ADDON_SERVICES_TAG } from './addon-service.service';
 export { AddonServiceController } from './addon-service.controller';
 export { AdminAddonServiceController } from './admin-addon-service.controller';
 export { AddonApplicabilityResolver } from './addon-applicability.resolver';
@@ -14,6 +14,7 @@ export {
 } from './addon-service.repository';
 export {
   AddonServiceEntity,
+  PublicAddonServiceEntity,
   ResolvedAddonEntity,
   AddonServiceDeltaEntity,
   ResolvedCategoryTemplateEntity,

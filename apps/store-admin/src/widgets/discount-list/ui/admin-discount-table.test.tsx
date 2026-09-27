@@ -108,7 +108,8 @@ describe("AdminDiscountTable", () => {
       expect(screen.getByText("SUMMER10")).toBeInTheDocument(),
     );
     expect(screen.getByText("10%")).toBeInTheDocument();
-    expect(screen.getByText("₴50.00")).toBeInTheDocument();
+    // TASK-801: through the one money formatter, like every other sum.
+    expect(screen.getByText(/^50\s₴$/)).toBeInTheDocument();
     expect(
       screen.getByText(dict.discounts.redeemedOf(3, 50)),
     ).toBeInTheDocument();

@@ -12,6 +12,7 @@ export { useContactControllerSubmit } from "@/shared/api/generated/contact/conta
 export { ContactHoneypot, CONTACT_HONEYPOT_FIELD } from "./ui/contact-honeypot";
 export {
   contactSubmitErrorKind,
+  contactRetryAfterMinutes,
   CONTACT_COOLDOWN_ERROR,
   type ContactSubmitErrorKind,
 } from "./lib/submit-error";

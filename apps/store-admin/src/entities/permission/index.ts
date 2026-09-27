@@ -8,10 +8,11 @@
 // question about a PERSON.
 //
 // What stays here is what the admin UI itself has to name in code: the key
-// constants the nav and the row actions reference, and the «не діє» set that
-// `PermissionZoneGrid` badges.
+// constants the nav and the row actions reference. The «не діє» set that
+// `PermissionZoneGrid` badges moved to `@/entities/staff` (TASK-640) — the grid
+// was its only reader, and importing it from here was one of the only two
+// entity→entity imports in the admin.
 
 export type { EffectivePermissionsEntity } from "@/shared/api";
 
 export { PERM, type PermissionKey } from "./model/permission-keys";
-export { PERMISSIONS_WITHOUT_ROUTES } from "./model/permissions-without-routes";

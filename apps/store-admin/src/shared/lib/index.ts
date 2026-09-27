@@ -1,9 +1,13 @@
 // Shared Lib — Utility functions and helpers
 export { cn } from "./utils";
 export * from "./format";
-export { slugify } from "./slug";
+export { slugify, SLUG_PATTERN } from "./slug";
 export { nullableTextField } from "./nullable-text-field";
-export { apiErrorMessage, apiErrorStatus } from "./api-error-message";
+export {
+  apiErrorMessage,
+  apiErrorStatus,
+  apiErrorCode,
+} from "./api-error-message";
 export {
   PASSWORD_MIN_LENGTH,
   CUSTOMER_PASSWORD_REGEX,

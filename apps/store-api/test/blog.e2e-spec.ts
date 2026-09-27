@@ -352,4 +352,117 @@ describe('Blog (e2e)', () => {
       expect(res.body.meta.total).toBe(1);
     });
   });
+
+  // TASK-543 — the header popup's own endpoint: the same index → re-read →
+  // Postgres chain as `?q=`, but four columns per article and never the body.
+  describe('GET /api/blog/suggest', () => {
+    const SELECT = { id: true, slug: true, title: true, coverImageUrl: true };
+
+    it('answers engine hits in engine order with id/slug/title/cover only', async () => {
+      sdkIndex.search.mockResolvedValue({
+        hits: [{ id: 'post-2' }, { id: 'post-1' }],
+        totalHits: 2,
+        totalPages: 1,
+      });
+      prismaServiceMock.blogPost.findMany.mockResolvedValue([
+        makePostRow({ id: 'post-1', slug: 'power-bank-guide' }),
+        makePostRow({ id: 'post-2', slug: 'magsafe-guide', title: 'MagSafe пояснюємо' }),
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/blog/suggest')
+        .query({ q: 'павербнак' })
+        .expect(200);
+
+      expect(sdkIndex.search).toHaveBeenCalledWith('павербнак', {
+        page: 1,
+        hitsPerPage: 5,
+        filter: ['listed = true'],
+      });
+      // A select-only re-read, gated like the list's: no `include`, no body.
+      expect(prismaServiceMock.blogPost.findMany).toHaveBeenCalledTimes(1);
+      expect(prismaServiceMock.blogPost.findMany).toHaveBeenCalledWith({
+        where: {
+          id: { in: ['post-2', 'post-1'] },
+          status: PublishStatus.PUBLISHED,
+          listed: true,
+        },
+        select: SELECT,
+      });
+      expect(prismaServiceMock.blogPost.count).not.toHaveBeenCalled();
+
+      expect(res.body).toEqual({
+        data: [
+          { id: 'post-2', slug: 'magsafe-guide', title: 'MagSafe пояснюємо', coverImageUrl: null },
+          {
+            id: 'post-1',
+            slug: 'power-bank-guide',
+            title: 'Як обрати павербанк',
+            coverImageUrl: null,
+          },
+        ],
+      });
+      expect(res.body.data[0]).not.toHaveProperty('content');
+      expect(res.body).not.toHaveProperty('meta');
+    });
+
+    it('falls back to the Postgres scan when the SDK request fails, honouring limit', async () => {
+      sdkIndex.search.mockRejectedValue(new Error('connect ECONNREFUSED 127.0.0.1:7700'));
+      prismaServiceMock.blogPost.findMany.mockResolvedValue([makePostRow()]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/blog/suggest')
+        .query({ q: 'павербанк', limit: 3 })
+        .expect(200);
+
+      expect(sdkIndex.search).toHaveBeenCalledWith('павербанк', {
+        page: 1,
+        hitsPerPage: 3,
+        filter: ['listed = true'],
+      });
+      expect(prismaServiceMock.blogPost.findMany).toHaveBeenCalledWith({
+        where: {
+          status: PublishStatus.PUBLISHED,
+          listed: true,
+          OR: [
+            { title: { contains: 'павербанк', mode: 'insensitive' } },
+            { excerpt: { contains: 'павербанк', mode: 'insensitive' } },
+          ],
+        },
+        select: SELECT,
+        take: 3,
+        orderBy: [{ featured: 'desc' }, { publishedAt: 'desc' }, { createdAt: 'desc' }],
+      });
+      expect(res.body.data).toEqual([
+        {
+          id: 'post-1',
+          slug: 'power-bank-guide',
+          title: 'Як обрати павербанк',
+          coverImageUrl: null,
+        },
+      ]);
+    });
+
+    it('is its own route, not a post slug', async () => {
+      // `findFirst` (the :slug read) is not even on the Prisma double — were
+      // the request routed there it would 500, not answer an empty list.
+      const res = await request(app.getHttpServer())
+        .get('/api/blog/suggest')
+        .query({ q: 'нічого' })
+        .expect(200);
+
+      expect(res.body).toEqual({ data: [] });
+    });
+
+    it('rejects a missing q and an out-of-range limit with 400', async () => {
+      await request(app.getHttpServer()).get('/api/blog/suggest').expect(400);
+      await request(app.getHttpServer())
+        .get('/api/blog/suggest')
+        .query({ q: 'чохол', limit: 11 })
+        .expect(400);
+
+      expect(sdkIndex.search).not.toHaveBeenCalled();
+      expect(prismaServiceMock.blogPost.findMany).not.toHaveBeenCalled();
+    });
+  });
 });

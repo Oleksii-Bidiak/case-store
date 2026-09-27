@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { E2E_PRODUCT_SLUG } from "./seed-e2e";
+import { waitForHydration } from "./hydration";
 
 /**
  * Put the seeded product in this context's cart.
@@ -19,10 +20,15 @@ export async function addSeededProductToCart(page: Page): Promise<void> {
   // The PDP add-to-cart CTA is «Додати до кошика». Match it exactly: the header
   // has a «Кошик» button and the PDP a stub «Купити в 1 клік» (TASK-178) that
   // looser regexes used to hit instead.
-  await page
+  const addToCart = page
     .getByRole("main")
-    .getByRole("button", { name: /додати до кошика/i })
-    .click();
+    .getByRole("button", { name: /додати до кошика/i });
+  // Since TASK-563 the PDP arrives server-rendered, so the button is in the
+  // HTML before React has attached its handler — a click in that window is a
+  // no-op. It used to be impossible: the button only ever appeared after the
+  // client had fetched the product, i.e. after hydration.
+  await waitForHydration(addToCart);
+  await addToCart.click();
 
   // Wait for the add to land: the header badge switches to the cart total.
   // Scoped to the header and matched exactly, because since TASK-409 the buy

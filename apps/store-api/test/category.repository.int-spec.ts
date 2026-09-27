@@ -159,3 +159,93 @@ describe('CategoryRepository traversal (integration)', () => {
     expect(await repo.findDescendantIds(MISSING_ID)).toEqual([]);
   });
 });
+
+/**
+ * The `deleted_at IS NULL` halves of the two downward CTEs (TASK-653). Under
+ * invariant I2 — deletion always tombstones a whole subtree — a live node has no
+ * deleted descendant, so the filter changes no result on real data. To prove the
+ * filter exists at all, this fixture BREAKS I2 on purpose: a tombstone under a live
+ * root, with a deleted grandchild and a LIVE orphan under it.
+ *
+ *   rootT
+ *     ├── liveT
+ *     └── tombT        (deleted)
+ *           ├── tombGrandT  (deleted)
+ *           └── orphanT     (LIVE — only possible if I2 were broken)
+ */
+describe('CategoryRepository traversal — tombstones (integration, TASK-653)', () => {
+  let app: INestApplication;
+  let prisma: PrismaService;
+  let repo: CategoryRepository;
+
+  let rootT: string;
+  let liveT: string;
+  let tombT: string;
+  let tombGrandT: string;
+  let orphanT: string;
+
+  beforeAll(async () => {
+    const url = process.env.DATABASE_URL ?? '';
+    if (!/test/i.test(url)) {
+      throw new Error(`Refusing to run integration tests against a non-test database: "${url}"`);
+    }
+
+    const moduleRef: TestingModule = await Test.createTestingModule({
+      imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
+      providers: [PrismaService, CategoryRepository, SlugRedirectRepository],
+    }).compile();
+
+    app = moduleRef.createNestApplication();
+    await app.init();
+
+    prisma = moduleRef.get(PrismaService);
+    repo = moduleRef.get(CategoryRepository);
+
+    const s = randomUUID();
+    const mk = async (name: string, parentId: string | null, deleted = false) => {
+      const cat = await prisma.category.create({
+        data: {
+          name,
+          slug: `${name}-${s}`,
+          parentId,
+          ...(deleted ? { deletedAt: new Date(), isActive: false } : {}),
+        },
+      });
+      return cat.id;
+    };
+
+    rootT = await mk('rootT', null);
+    liveT = await mk('liveT', rootT);
+    tombT = await mk('tombT', rootT, true);
+    tombGrandT = await mk('tombGrandT', tombT, true);
+    orphanT = await mk('orphanT', tombT);
+  });
+
+  afterAll(async () => {
+    if (!prisma) {
+      return;
+    }
+    await prisma.category.deleteMany({ where: { id: { in: [tombGrandT, orphanT] } } });
+    await prisma.category.deleteMany({ where: { id: { in: [tombT, liveT] } } });
+    await prisma.category.deleteMany({ where: { id: rootT } });
+    await app.close();
+  });
+
+  it('findSubtreeIds skips a deleted child — and everything below it', async () => {
+    expect(new Set(await repo.findSubtreeIds(rootT))).toEqual(new Set([rootT, liveT]));
+  });
+
+  it('findDescendantIds skips a deleted child — and everything below it', async () => {
+    expect(new Set(await repo.findDescendantIds(rootT))).toEqual(new Set([liveT]));
+  });
+
+  it('findSubtreeIds(tombstone) keeps the self id (the contract) but no deleted descendant', async () => {
+    const ids = await repo.findSubtreeIds(tombT);
+    expect(ids).toContain(tombT);
+    expect(ids).not.toContain(tombGrandT);
+  });
+
+  it('findDescendantIds(tombstone) returns only live rows', async () => {
+    expect(await repo.findDescendantIds(tombT)).toEqual([orphanT]);
+  });
+});

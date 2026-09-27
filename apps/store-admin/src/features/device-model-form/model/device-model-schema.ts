@@ -4,10 +4,11 @@ import type {
   UpdateDeviceModelDto,
 } from "@/entities/device";
 import { dict } from "@/shared/config";
+import { SLUG_PATTERN } from "@/shared/lib/slug";
+import { seoTextFields } from "@/shared/lib/seo-fields-schema";
 import { UUID_PATTERN } from "@/shared/lib/uuid";
 
 const e = dict.deviceModelForm.errors;
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /**
  * Validation schema for the admin device-model form (TASK-190). `releaseYear` is
@@ -21,7 +22,7 @@ export const deviceModelSchema = z.object({
     .string()
     .trim()
     .max(255, e.slugMax)
-    .regex(SLUG_PATTERN, e.slugPattern)
+    .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
     .optional()
     .or(z.literal("")),
   series: z.string().trim().max(255, e.seriesMax).optional().or(z.literal("")),
@@ -42,18 +43,7 @@ export const deviceModelSchema = z.object({
   // Compatibility-landing copy (TASK-490) — the texts of
   // `/catalog/<категорія>/<модель>`. Same caps as the category form's SEO pair,
   // so one admin habit covers both screens.
-  metaTitle: z
-    .string()
-    .trim()
-    .max(255, e.metaTitleMax)
-    .optional()
-    .or(z.literal("")),
-  metaDescription: z
-    .string()
-    .trim()
-    .max(500, e.metaDescriptionMax)
-    .optional()
-    .or(z.literal("")),
+  ...seoTextFields(),
   description: z
     .string()
     .trim()

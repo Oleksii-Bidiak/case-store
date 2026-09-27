@@ -13,12 +13,14 @@ import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchPublishedPages } from "@/shared/api/pages-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { Logo } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, isInfoSlugInlinedOnHub } from "@/shared/config";
 
 // Defensive cap on how many published legal pages render as footer links, so the
 // «Інформація» column can't grow unboundedly if the admin publishes many pages.
 // The /legal hub still lists all of them — only this footer rendering is capped.
 const FOOTER_LEGAL_LINKS_LIMIT = 6;
+// Same idea for published help pages (TASK-834); /info lists all of them.
+const FOOTER_INFO_LINKS_LIMIT = 4;
 
 const TRUST_ITEMS = [
   { icon: ShieldCheck, label: dict.trust.secure },
@@ -45,13 +47,19 @@ export async function Footer() {
   // store logo, TASK-299) in parallel — avoids turning independent reads into a
   // sequential await waterfall. The seo-settings request is the same tagged URL
   // the layout/homepage already read, so Next dedupes it within the request.
-  const [contact, legalPages, seo] = await Promise.all([
+  const [contact, legalPages, infoPages, seo] = await Promise.all([
     fetchSiteContactSettings(),
-    // TASK-435: the column is "Правова інформація", so it lists LEGAL pages —
-    // help pages now live on /info and hub rows are not pages at all.
+    // TASK-435: legal documents at /legal/<slug>; hub rows are not pages at all.
     fetchPublishedPages("LEGAL"),
+    // TASK-834: help pages at /info/<slug> had no inbound link anywhere — a
+    // page the owner published under «Довідкова» could be found only by URL.
+    // The ones /info renders inline are reached through /info itself.
+    fetchPublishedPages("INFO"),
     fetchSeoSettings(),
   ]);
+  const helpPages = infoPages.filter(
+    (page) => !isInfoSlugInlinedOnHub(page.slug),
+  );
 
   const email = contact?.email ?? dict.footer.contactEmail;
   const phone = contact?.phone ?? dict.footer.contactPhone;
@@ -129,7 +137,9 @@ export async function Footer() {
         </div>
 
         {/* Інформація — TASK-184: a dynamic list of admin-published legal pages
-            (/legal/<slug>), then two fixed /info anchors (About, FAQ — the FAQPage
+            (/legal/<slug>) and, since TASK-834, the /legal hub, the published
+            help pages (/info/<slug>) and the /info hub; then two fixed /info
+            anchors (About, FAQ — the FAQPage
             JSON-LD lives on /info per TASK-242, so FAQ is not a duplicate route),
             then the existing /blog link. Zero published legal pages still leaves a
             populated About/FAQ/Blog column. */}
@@ -142,6 +152,17 @@ export async function Footer() {
               {page.title}
             </FooterLink>
           ))}
+          {/* TASK-834 — the /legal hub lists every document, including the
+              ones past the cap above; it has nothing to show without any. */}
+          {legalPages.length > 0 && (
+            <FooterLink href="/legal">{dict.footer.infoLegalHub}</FooterLink>
+          )}
+          {helpPages.slice(0, FOOTER_INFO_LINKS_LIMIT).map((page) => (
+            <FooterLink key={`info-${page.slug}`} href={`/info/${page.slug}`}>
+              {page.title}
+            </FooterLink>
+          ))}
+          <FooterLink href="/info">{dict.footer.infoHelpHub}</FooterLink>
           <FooterLink href="/info#about">{dict.footer.infoAbout}</FooterLink>
           <FooterLink href="/info#faq">{dict.footer.infoFaq}</FooterLink>
           {/* TASK-483: the footer is where somebody looks when the confirmation

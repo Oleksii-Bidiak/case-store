@@ -56,7 +56,8 @@ function parseStatus(raw: string | null): AdminContactListStatus | undefined {
     raw === AdminContactListStatus.NEW ||
     raw === AdminContactListStatus.IN_PROGRESS ||
     raw === AdminContactListStatus.READ ||
-    raw === AdminContactListStatus.ARCHIVED
+    raw === AdminContactListStatus.ARCHIVED ||
+    raw === AdminContactListStatus.SPAM
   ) {
     return raw;
   }
@@ -158,6 +159,12 @@ function MessageInboxView() {
         {
           value: AdminContactListStatus.ARCHIVED,
           label: dict.messages.filterArchived,
+        },
+        // TASK-761: honeypot hits. «Усі» leaves them out (the API does), so
+        // this is the only way to see whether real mail is being caught.
+        {
+          value: AdminContactListStatus.SPAM,
+          label: dict.messages.filterSpam,
         },
       ],
       className: "w-48",

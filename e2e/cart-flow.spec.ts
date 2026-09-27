@@ -1,6 +1,7 @@
 import { test, expect } from "./fixtures/test";
 import { E2E_PRODUCT_SLUG } from "./fixtures/seed-e2e";
 import { addSeededProductToCart } from "./fixtures/cart";
+import { waitForHydration } from "./fixtures/hydration";
 
 /**
  * Guest browse → add-to-cart → checkout. Exercises the guest-cart cookie
@@ -31,10 +32,12 @@ test.describe("guest cart flow", () => {
       page.getByRole("heading", { name: /E2E Test Product/i }),
     ).toBeVisible();
 
-    await page
+    const addToCart = page
       .getByRole("main")
-      .getByRole("button", { name: /додати до кошика/i })
-      .click();
+      .getByRole("button", { name: /додати до кошика/i });
+    // Server-rendered since TASK-563: wait for React's handler before clicking.
+    await waitForHydration(addToCart);
+    await addToCart.click();
 
     await expect(
       page

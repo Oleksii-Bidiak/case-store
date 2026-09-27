@@ -89,4 +89,5 @@ export {
   historyActorLabel,
   historyChangeLabel,
   historyNoteLabel,
+  isRefusedPaymentEvent,
 } from "./history-label";

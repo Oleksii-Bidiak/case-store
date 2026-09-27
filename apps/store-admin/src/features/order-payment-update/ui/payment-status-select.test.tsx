@@ -232,6 +232,47 @@ describe("PaymentStatusSelect (TASK-151, TASK-431)", () => {
     expect(toastSuccess).not.toHaveBeenCalled();
   });
 
+  // TASK-622: the real 403 envelope carries `error: "Forbidden"`, which the old
+  // mapper read as a conflict — «статус уже змінився, оновіть сторінку».
+  it("names the missing grant on a 403, not a conflict", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
+    stubPatch(403, {
+      statusCode: 403,
+      error: "Forbidden",
+      message: "Missing permission: payments:write",
+    });
+    renderSelect();
+
+    await openSelect();
+    await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(dict.orderStatus.forbidden),
+    );
+    expect(toastError).not.toHaveBeenCalledWith(
+      dict.orderStatus.conflictUnknown,
+    );
+  });
+
+  it("keeps a coded 500 generic — the status decides, not the body", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
+    stubPatch(500, {
+      statusCode: 500,
+      error: "Internal Server Error",
+      message: "Internal server error",
+    });
+    renderSelect();
+
+    await openSelect();
+    await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith(
+        dict.orderStatus.paymentToastFailed,
+      ),
+    );
+  });
+
   // ── The two coded 409s (TASK-431) ──────────────────────────────────────────
   // A refused write must say WHICH refusal it was: "that move is impossible" and
   // "cancel the order first" have different next actions.

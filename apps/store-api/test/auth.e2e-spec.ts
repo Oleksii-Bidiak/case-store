@@ -277,6 +277,29 @@ describe('AuthController (e2e)', () => {
         })
         .expect(400);
     });
+
+    // TASK-749: the honeypot is DECLARED (forbidNonWhitelisted would otherwise
+    // 400 and name the field), and a filled one creates nothing.
+    it('answers a filled honeypot with the ordinary 201 and creates no account', async () => {
+      const response = await request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({ ...testUser, hpCheck: 'https://bot.example' })
+        .expect(201);
+
+      expect(typeof response.body.data.accessToken).toBe('string');
+      expect(authRepositoryMock.findByEmail).not.toHaveBeenCalled();
+      expect(authRepositoryMock.createUser).not.toHaveBeenCalled();
+      expect(authRepositoryMock.saveRefreshToken).not.toHaveBeenCalled();
+    });
+
+    it('bounds the honeypot like any other string (400 over 255 chars)', async () => {
+      await request(app.getHttpServer())
+        .post('/api/auth/register')
+        .send({ ...testUser, hpCheck: 'x'.repeat(256) })
+        .expect(400);
+
+      expect(authRepositoryMock.createUser).not.toHaveBeenCalled();
+    });
   });
 
   // ─── Login ─────────────────────────────────────────────────────────────────

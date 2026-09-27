@@ -23,8 +23,7 @@ import { ProductSiblingNavigator } from "./product-sibling-navigator";
 import { ProductTrustBadges } from "./product-trust-badges";
 import { ProductSpecsTabs } from "./product-specs-tabs";
 import { ProductHighlights } from "./product-highlights";
-import { ProductRelated } from "./product-related";
-import { ProductCompatible } from "./product-compatible";
+import { ProductRail } from "./product-rail";
 import { MobileAtcBar } from "./mobile-atc-bar";
 
 function truncate(value: string, max: number): string {
@@ -332,13 +331,20 @@ export function ProductDetailView({ slug }: { slug: string }) {
       />
 
       {product.compatibleDeviceModels?.[0] && (
-        <ProductCompatible
-          deviceModelId={product.compatibleDeviceModels[0].id}
+        <ProductRail
+          title={dict.product.compatibleTitle}
+          headingId="compatible-heading"
+          filter={{ deviceModelId: product.compatibleDeviceModels[0].id }}
           excludeId={product.id}
         />
       )}
 
-      <ProductRelated categoryId={category.id} excludeId={product.id} />
+      <ProductRail
+        title={dict.product.relatedTitle}
+        headingId="related-heading"
+        filter={{ categoryId: category.id }}
+        excludeId={product.id}
+      />
 
       <MobileAtcBar
         productId={product.id}

@@ -1,7 +1,13 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { SlugRedirectEntity } from '@prisma/client';
+import { Prisma, SlugRedirectEntity } from '@prisma/client';
 import { CategoryRepository } from './category.repository';
-import { CategoryNotFoundError } from './category.errors';
+import {
+  CategoryMoveTargetInSubtreeError,
+  CategoryMoveTargetNotFoundError,
+  CategoryNotFoundError,
+  CategorySlugConflictError,
+  CategoryTreeStaleError,
+} from './category.errors';
 import { PrismaService } from '../prisma';
 import { SlugRedirectRepository } from '../slug-redirect';
 import { PUBLIC_PRODUCT_WHERE } from '../product/product-visibility';
@@ -19,6 +25,7 @@ const txMock = {
   category: {
     update: jest.fn(),
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
     findMany: jest.fn(),
     updateMany: jest.fn(),
   },
@@ -76,11 +83,16 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
     // PUT re-sending the unchanged current parent must stay on the lock-free fast path —
     // and must never write `parentId` back outside the locks.
     it('takes the fast path (no transaction) when parentId is present but unchanged', async () => {
-      findUnique.mockResolvedValue({ parentId: 'parent-1' });
+      findFirst.mockResolvedValue({ parentId: 'parent-1' });
       update.mockResolvedValue({ id: 'cat-1', parentId: 'parent-1' });
 
       const result = await repo.update('cat-1', { name: 'Renamed', parentId: 'parent-1' });
 
+      // The unlocked parent hint reads live rows only (TASK-653).
+      expect(findFirst).toHaveBeenCalledWith({
+        where: { id: 'cat-1', deletedAt: null },
+        select: { parentId: true },
+      });
       expect(result.reparented).toBe(false);
       expect($transaction).not.toHaveBeenCalled();
       expect(update).toHaveBeenCalledWith({
@@ -90,12 +102,17 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
     });
 
     it('opens the locked transaction when parentId actually differs from the current one', async () => {
-      findUnique.mockResolvedValue({ parentId: 'parent-1' });
-      txMock.category.findUnique.mockResolvedValue(null); // prepareReparent's in-tx re-read
+      findFirst.mockResolvedValue({ parentId: 'parent-1' });
+      txMock.category.findFirst.mockResolvedValue(null); // prepareReparent's in-tx re-read
 
       await expect(repo.update('cat-1', { parentId: 'parent-2' })).rejects.toBeInstanceOf(
         CategoryNotFoundError,
       );
+      // Authoritative, under the tree lock: a deleted node cannot be moved (TASK-653).
+      expect(txMock.category.findFirst).toHaveBeenCalledWith({
+        where: { id: 'cat-1', deletedAt: null },
+        select: { parentId: true },
+      });
 
       // The locked path WAS entered (the tree lock was taken before the in-tx re-read).
       expect($transaction).toHaveBeenCalledTimes(1);
@@ -145,7 +162,7 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
 
       expect(result).toBeNull();
       expect(findFirst).toHaveBeenCalledWith({
-        where: { slug: 'phone-cases', isActive: true },
+        where: { slug: 'phone-cases', deletedAt: null, isActive: true },
       });
     });
 
@@ -158,7 +175,20 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
       const result = await repo.findBySlug('phone-cases', { activeOnly: false });
 
       expect(result).not.toBeNull();
-      expect(findFirst).toHaveBeenCalledWith({ where: { slug: 'phone-cases' } });
+      expect(findFirst).toHaveBeenCalledWith({ where: { slug: 'phone-cases', deletedAt: null } });
+    });
+
+    // TASK-653: a tombstone's slug is mangled to `deleted:<id>:<slug>` (invariant I3),
+    // so it can never collide with a live slug — not even the uniqueness check needs it.
+    it('never returns a deleted category, whatever activeOnly says', async () => {
+      findFirst.mockResolvedValue(null);
+
+      await repo.findBySlug('phone-cases', { activeOnly: false });
+      await repo.findBySlug('phone-cases');
+
+      for (const [args] of findFirst.mock.calls as Array<[{ where: object }]>) {
+        expect(args.where).toEqual(expect.objectContaining({ deletedAt: null }));
+      }
     });
   });
 
@@ -410,8 +440,13 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
       const result = await repo.setActiveMany(['cat-1', 'cat-2'], false);
 
       expect($transaction).toHaveBeenCalledTimes(1);
+      // Deleted ids are unknown here (TASK-653): never flip a tombstone back on.
+      expect(txMock.category.findMany).toHaveBeenNthCalledWith(1, {
+        where: { id: { in: ['cat-1', 'cat-2'] }, deletedAt: null },
+        select: { id: true },
+      });
       expect(txMock.category.updateMany).toHaveBeenCalledWith({
-        where: { id: { in: ['cat-1', 'cat-2'] } },
+        where: { id: { in: ['cat-1', 'cat-2'] }, deletedAt: null },
         data: { isActive: false },
       });
       expect(result.updatedCount).toBe(2);
@@ -559,7 +594,7 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
 
     describe('findWithProductCount', () => {
       it('adds up the whole subtree when the category has descendants', async () => {
-        findUnique.mockResolvedValue({ id: 'root', name: 'Root' });
+        findFirst.mockResolvedValue({ id: 'root', name: 'Root' });
         queryRaw.mockResolvedValue([{ id: 'root' }, { id: 'child' }]);
         productCount.mockResolvedValueOnce(0).mockResolvedValueOnce(19);
 
@@ -569,11 +604,20 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
         expect(result!.subtreeProductCount).toBe(19);
       });
 
+      // TASK-653: defence in depth — a tombstone is not found, even by id.
+      it('reads live categories only', async () => {
+        findFirst.mockResolvedValue(null);
+
+        await expect(repo.findWithProductCount('gone')).resolves.toBeNull();
+        expect(findFirst).toHaveBeenCalledWith({ where: { id: 'gone', deletedAt: null } });
+        expect(productCount).not.toHaveBeenCalled();
+      });
+
       // TASK-781: the number must equal what the listing below it shows — so a
       // product in a deactivated CHILD of the subtree, or a soft-deleted one, is
       // not counted. Both counts go through the one shared predicate.
       it('counts only publicly visible products, both directly and across the subtree', async () => {
-        findUnique.mockResolvedValue({ id: 'root', name: 'Root' });
+        findFirst.mockResolvedValue({ id: 'root', name: 'Root' });
         queryRaw.mockResolvedValue([{ id: 'root' }, { id: 'child' }]);
         productCount.mockResolvedValue(0);
 
@@ -590,7 +634,7 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
       // A leaf's subtree is itself, so the second count would be the first one
       // re-run — skipping it keeps the common read exactly as cheap as it was.
       it('skips the second count for a leaf and reuses the direct one', async () => {
-        findUnique.mockResolvedValue({ id: 'leaf', name: 'Leaf' });
+        findFirst.mockResolvedValue({ id: 'leaf', name: 'Leaf' });
         queryRaw.mockResolvedValue([{ id: 'leaf' }]);
         productCount.mockResolvedValue(4);
 
@@ -600,6 +644,290 @@ describe('CategoryRepository — subtree/ancestor traversal (TASK-236)', () => {
         expect(result!.subtreeProductCount).toBe(4);
         expect(productCount).toHaveBeenCalledTimes(1);
       });
+    });
+  });
+});
+
+/**
+ * `deleteSubtreeWithMove` (TASK-652) against a mocked transaction client — the
+ * ORDER and SHAPE of what the transaction does. That it is actually atomic, that
+ * the locks and raw CTEs work and that every read path then hides the tombstones is
+ * proven on a real Postgres in `test/category-deletion.int-spec.ts`.
+ */
+describe('CategoryRepository — deleteSubtreeWithMove (TASK-652)', () => {
+  let repo: CategoryRepository;
+  const calls: string[] = [];
+
+  const tx = {
+    $executeRaw: jest.fn((..._args: unknown[]) => {
+      calls.push('lock');
+      return Promise.resolve(1);
+    }),
+    $queryRaw: jest.fn(),
+    category: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      aggregate: jest.fn(),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    product: { updateMany: jest.fn() },
+    carousel: { updateMany: jest.fn() },
+  };
+
+  const NOW = new Date('2026-09-26T12:00:00.000Z');
+  const SUBTREE = [{ id: 'node' }, { id: 'child' }, { id: 'grandchild' }];
+  const lockKeys = (): unknown[] => tx.$executeRaw.mock.calls.map((args) => args[1]);
+  const liveUnless =
+    (missing: string[]) =>
+    ({ where }: { where: { id: string } }): Promise<unknown> =>
+      Promise.resolve(
+        missing.includes(where.id)
+          ? null
+          : where.id === 'node'
+            ? { id: 'node', parentId: 'parent' }
+            : { id: where.id },
+      );
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    calls.length = 0;
+
+    tx.category.findFirst.mockImplementation(liveUnless([]));
+    tx.$queryRaw.mockResolvedValue(SUBTREE);
+    tx.category.findMany.mockResolvedValue([
+      { id: 'node', slug: 'cases' },
+      { id: 'child', slug: 'iphone-cases' },
+      { id: 'grandchild', slug: 'iphone-15-cases' },
+    ]);
+    tx.product.updateMany.mockImplementation(() => {
+      calls.push('products');
+      return Promise.resolve({ count: 4 });
+    });
+    tx.carousel.updateMany.mockImplementation(() => {
+      calls.push('carousels');
+      return Promise.resolve({ count: 1 });
+    });
+    tx.category.update.mockImplementation(() => {
+      calls.push('tombstone');
+      return Promise.resolve({});
+    });
+    tx.category.aggregate.mockResolvedValue({ _max: { sortOrder: 6 } });
+    tx.category.create.mockResolvedValue({ id: 'new-target' });
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CategoryRepository,
+        {
+          provide: PrismaService,
+          useValue: {
+            $transaction: jest.fn((cb: (client: typeof tx) => Promise<unknown>) => cb(tx)),
+          },
+        },
+        { provide: SlugRedirectRepository, useValue: slugRedirectRepositoryMock },
+      ],
+    }).compile();
+    repo = module.get(CategoryRepository);
+  });
+
+  it('moves products and carousels BEFORE tombstoning, and reports the counts', async () => {
+    const result = await repo.deleteSubtreeWithMove(
+      'node',
+      { kind: 'existing', id: 'target' },
+      NOW,
+    );
+
+    expect(result).toEqual({
+      targetId: 'target',
+      targetCreated: false,
+      subtreeIds: ['node', 'child', 'grandchild'],
+      movedProducts: 4,
+      switchedCarousels: 1,
+    });
+    // Locks first, then the moves, then the three tombstones.
+    expect(calls.filter((c) => c !== 'lock')).toEqual([
+      'products',
+      'carousels',
+      'tombstone',
+      'tombstone',
+      'tombstone',
+    ]);
+    expect(calls.lastIndexOf('lock')).toBeLessThan(calls.indexOf('products'));
+  });
+
+  // The hardest condition of decision B-2: no product is deleted or deactivated, and a
+  // soft-deleted one moves too (no deletedAt filter), so a later restore never points at
+  // a tombstone.
+  it('re-files EVERY product of the subtree and touches nothing but categoryId', async () => {
+    await repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'target' }, NOW);
+
+    expect(tx.product.updateMany).toHaveBeenCalledWith({
+      where: { categoryId: { in: ['node', 'child', 'grandchild'] } },
+      data: { categoryId: 'target' },
+    });
+    expect(tx.carousel.updateMany).toHaveBeenCalledWith({
+      where: { categoryId: { in: ['node', 'child', 'grandchild'] } },
+      data: { categoryId: 'target' },
+    });
+  });
+
+  it('tombstones every subtree row: deletedAt, isActive=false, mangled slug', async () => {
+    await repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'target' }, NOW);
+
+    expect(tx.category.update).toHaveBeenCalledWith({
+      where: { id: 'child' },
+      data: { deletedAt: NOW, isActive: false, slug: 'deleted:child:iphone-cases' },
+    });
+    expect(tx.category.update).toHaveBeenCalledTimes(3);
+  });
+
+  it('takes the tree lock first, then the sorted bucket locks of the node and its subtree', async () => {
+    await repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'target' }, NOW);
+
+    const keys = lockKeys();
+    expect(keys[0]).toBe('categories:__tree__');
+    expect(keys.slice(1)).toEqual(
+      ['categories:parent', 'categories:node', 'categories:child', 'categories:grandchild'].sort(),
+    );
+  });
+
+  it('refuses a node that is missing or already deleted', async () => {
+    tx.category.findFirst.mockImplementation(liveUnless(['node']));
+
+    await expect(
+      repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'target' }, NOW),
+    ).rejects.toBeInstanceOf(CategoryNotFoundError);
+    expect(tx.category.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'node', deletedAt: null } }),
+    );
+    expect(tx.product.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses a target inside the subtree — decided under the lock', async () => {
+    await expect(
+      repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'grandchild' }, NOW),
+    ).rejects.toBeInstanceOf(CategoryMoveTargetInSubtreeError);
+    expect(tx.product.updateMany).not.toHaveBeenCalled();
+    expect(tx.category.update).not.toHaveBeenCalled();
+  });
+
+  it('refuses a target that is missing or deleted', async () => {
+    tx.category.findFirst.mockImplementation(liveUnless(['target']));
+
+    await expect(
+      repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'target' }, NOW),
+    ).rejects.toBeInstanceOf(CategoryMoveTargetNotFoundError);
+    expect(tx.category.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'target', deletedAt: null } }),
+    );
+    expect(tx.product.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('refuses with TREE_STALE when a child appeared between the two subtree reads', async () => {
+    tx.$queryRaw.mockResolvedValueOnce(SUBTREE).mockResolvedValueOnce([...SUBTREE, { id: 'new' }]);
+
+    await expect(
+      repo.deleteSubtreeWithMove('node', { kind: 'existing', id: 'target' }, NOW),
+    ).rejects.toBeInstanceOf(CategoryTreeStaleError);
+    expect(tx.product.updateMany).not.toHaveBeenCalled();
+  });
+
+  describe('new target', () => {
+    const newTarget = {
+      kind: 'new' as const,
+      name: 'Other',
+      slug: 'other',
+      parentId: 'elsewhere',
+    };
+
+    it('creates it at the end of its live bucket and moves everything into it', async () => {
+      const result = await repo.deleteSubtreeWithMove('node', newTarget, NOW);
+
+      expect(tx.category.aggregate).toHaveBeenCalledWith({
+        where: { parentId: 'elsewhere', deletedAt: null },
+        _max: { sortOrder: true },
+      });
+      expect(tx.category.create).toHaveBeenCalledWith({
+        data: { name: 'Other', slug: 'other', parentId: 'elsewhere', sortOrder: 7 },
+        select: { id: true },
+      });
+      expect(result).toEqual(
+        expect.objectContaining({ targetId: 'new-target', targetCreated: true }),
+      );
+      expect(tx.product.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { categoryId: 'new-target' } }),
+      );
+    });
+
+    it('also locks the destination bucket', async () => {
+      await repo.deleteSubtreeWithMove('node', newTarget, NOW);
+
+      expect(lockKeys()).toContain('categories:elsewhere');
+    });
+
+    it('refuses a parent inside the subtree', async () => {
+      await expect(
+        repo.deleteSubtreeWithMove('node', { ...newTarget, parentId: 'child' }, NOW),
+      ).rejects.toBeInstanceOf(CategoryMoveTargetInSubtreeError);
+      expect(tx.category.create).not.toHaveBeenCalled();
+    });
+
+    it('refuses a missing or deleted parent', async () => {
+      tx.category.findFirst.mockImplementation(liveUnless(['elsewhere']));
+
+      await expect(repo.deleteSubtreeWithMove('node', newTarget, NOW)).rejects.toBeInstanceOf(
+        CategoryMoveTargetNotFoundError,
+      );
+      expect(tx.category.create).not.toHaveBeenCalled();
+    });
+
+    it('turns a slug collision at the unique index into CategorySlugConflictError', async () => {
+      tx.category.create.mockRejectedValue(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+          code: 'P2002',
+          clientVersion: 'test',
+        }),
+      );
+
+      await expect(repo.deleteSubtreeWithMove('node', newTarget, NOW)).rejects.toBeInstanceOf(
+        CategorySlugConflictError,
+      );
+      expect(tx.product.updateMany).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('CategoryRepository — countDeletionImpact (TASK-652)', () => {
+  it('counts the live subtree minus self, ALL non-deleted products and the carousels', async () => {
+    const productCount = jest.fn().mockResolvedValue(9);
+    const carouselCount = jest.fn().mockResolvedValue(2);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        CategoryRepository,
+        {
+          provide: PrismaService,
+          useValue: {
+            $queryRaw: jest.fn().mockResolvedValue([{ id: 'node' }, { id: 'child' }]),
+            product: { count: productCount },
+            carousel: { count: carouselCount },
+          },
+        },
+        { provide: SlugRedirectRepository, useValue: slugRedirectRepositoryMock },
+      ],
+    }).compile();
+    const repo = module.get(CategoryRepository);
+
+    await expect(repo.countDeletionImpact('node')).resolves.toEqual({
+      subcategoryCount: 1,
+      productCount: 9,
+      carouselCount: 2,
+    });
+    // Inactive products move too, so the preview must not apply the public rule.
+    expect(productCount).toHaveBeenCalledWith({
+      where: { categoryId: { in: ['node', 'child'] }, deletedAt: null },
+    });
+    expect(carouselCount).toHaveBeenCalledWith({
+      where: { categoryId: { in: ['node', 'child'] } },
     });
   });
 });

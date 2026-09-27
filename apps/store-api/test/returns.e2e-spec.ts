@@ -501,6 +501,51 @@ describe('Admin returns queue (e2e)', () => {
   // by the order id, so the creation of a return and its resolution
   // (`/admin/returns/:returnId`) were filed under two different ids.
 
+  // ─── GET /api/returns — the customer's own list (TASK-608) ───────────────────
+  //
+  // The real service + repository run against the Prisma double, so the WHERE
+  // that reaches Prisma is the assertion: the route must never answer with rows
+  // whose order belongs to someone else.
+
+  describe('GET /api/returns (TASK-608)', () => {
+    it('returns 401 without a token', async () => {
+      await request(app.getHttpServer()).get('/api/returns').expect(401);
+    });
+
+    it("answers with the caller's returns, scoped to orders they own", async () => {
+      prismaServiceMock.return.findMany.mockResolvedValue([
+        makeReturnRow({ status: ReturnStatus.APPROVED, operatorNotes: 'внутрішнє' }),
+      ]);
+
+      const res = await request(app.getHttpServer())
+        .get('/api/returns')
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .expect(200);
+
+      const args = prismaServiceMock.return.findMany.mock.calls.at(-1)?.[0] as {
+        where: unknown;
+      };
+      expect(args.where).toEqual({ order: { userId: testCustomer.id, deletedAt: null } });
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0]).toMatchObject({
+        orderId: '550e8400-e29b-41d4-a716-4466554400ff',
+        status: 'APPROVED',
+      });
+      // The customer projection: what the shop wrote about them stays in the shop.
+      expect(res.body.data[0]).not.toHaveProperty('operatorNotes');
+    });
+
+    it('does not shadow the per-order route it now shares a controller with', async () => {
+      const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
+      prismaServiceMock.order.findFirst.mockResolvedValue(null);
+
+      await request(app.getHttpServer())
+        .get(`/api/orders/${orderId}/returns`)
+        .set('Authorization', `Bearer ${generateAccessToken(testCustomer.id, 'CUSTOMER')}`)
+        .expect(404);
+    });
+  });
+
   describe('POST /api/admin/orders/:orderId/returns — audit row', () => {
     const orderId = '550e8400-e29b-41d4-a716-4466554400ff';
     const returnId = '550e8400-e29b-41d4-a716-446655440abc';

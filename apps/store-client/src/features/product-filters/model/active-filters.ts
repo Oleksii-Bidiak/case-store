@@ -35,6 +35,9 @@ export const CATALOG_FILTER_KEYS = [
   "maxPrice",
   "specs",
   "inStock",
+  // TASK-742 — «Зі знижкою» (`?onSale=true`, server-side
+  // `compareAtPrice > price`). Boolean-shaped like `inStock`.
+  "onSale",
 ] as const;
 
 export type CatalogFilterKey = (typeof CATALOG_FILTER_KEYS)[number];
@@ -69,9 +72,9 @@ function isActive(
 ): boolean {
   const value = params[key];
   if (value === undefined || value === null || value === "") return false;
-  // `inStock` is boolean-shaped: only `true` narrows anything. `false` is a
-  // no-op, not "filter to out-of-stock".
-  if (key === "inStock") return value === true;
+  // `inStock` and `onSale` are boolean-shaped: only `true` narrows anything.
+  // `false` is a no-op, not "filter to out-of-stock" / "full price only".
+  if (key === "inStock" || key === "onSale") return value === true;
   return true;
 }
 

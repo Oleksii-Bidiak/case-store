@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLookupOrder, type PublicOrderEntity } from "@/entities/order";
@@ -45,6 +46,7 @@ export function OrderLookupForm() {
     register,
     handleSubmit,
     control,
+    setFocus,
     formState: { errors },
   } = useForm<OrderLookupFormValues>({
     resolver: zodResolver(orderLookupSchema),
@@ -64,29 +66,65 @@ export function OrderLookupForm() {
   };
 
   const orders: PublicOrderEntity[] = lookup.data?.data ?? [];
+  const showResults = lookup.isSuccess && orders.length > 0;
 
-  if (lookup.isSuccess && orders.length > 0) {
+  // TASK-626. The form is REPLACED by the result, so the submit button the focus
+  // was on unmounts and focus falls to <body>: a keyboard user is thrown to the
+  // top of the page and a screen reader hears nothing. Focus moves to the result
+  // instead, and back to the first field on «search again». The ref tracks the
+  // last state focus was moved for, so a re-render does not steal it again.
+  const resultsRef = useRef<HTMLDivElement>(null);
+  const focusedFor = useRef<"results" | "form" | null>(null);
+  useEffect(() => {
+    if (showResults && focusedFor.current !== "results") {
+      focusedFor.current = "results";
+      resultsRef.current?.focus();
+    } else if (!showResults && focusedFor.current === "results") {
+      focusedFor.current = "form";
+      setFocus("number");
+    }
+  }, [showResults, setFocus]);
+
+  // Kept at the same position in both branches below so React keeps ONE node
+  // mounted: a live region that is created already holding its text is not
+  // reliably announced, one whose text changes is.
+  const announcer = (
+    <p role="status" aria-live="polite" className="sr-only">
+      {showResults ? d.resultsAnnounce(orders.length) : ""}
+    </p>
+  );
+
+  if (showResults) {
     return (
-      <div className="flex flex-col gap-6">
-        {orders.length > 1 && (
-          <p className="text-sm text-muted-foreground">
-            {d.resultsMultiple(orders.length)}
-          </p>
-        )}
-        {orders.map((order) => (
-          <OrderLookupResult key={order.number} order={order} />
-        ))}
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {d.privacyNote}
-        </p>
-        <button
-          type="button"
-          onClick={() => lookup.reset()}
-          className="h-11 self-start rounded-xl border border-border bg-background px-6 text-sm font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      <>
+        {announcer}
+        <div
+          ref={resultsRef}
+          tabIndex={-1}
+          aria-label={d.resultsRegionAria}
+          role="region"
+          className="flex flex-col gap-6 focus:outline-none"
         >
-          {d.searchAgain}
-        </button>
-      </div>
+          {orders.length > 1 && (
+            <p className="text-sm text-muted-foreground">
+              {d.resultsMultiple(orders.length)}
+            </p>
+          )}
+          {orders.map((order) => (
+            <OrderLookupResult key={order.number} order={order} />
+          ))}
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {d.privacyNote}
+          </p>
+          <button
+            type="button"
+            onClick={() => lookup.reset()}
+            className="h-11 self-start rounded-xl border border-border bg-background px-6 text-sm font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {d.searchAgain}
+          </button>
+        </div>
+      </>
     );
   }
 
@@ -103,105 +141,116 @@ export function OrderLookupForm() {
     : null;
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-8 shadow-card">
-      <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
-        {d.intro}
-      </p>
+    <>
+      {announcer}
+      <div className="rounded-2xl border border-border bg-card p-8 shadow-card">
+        <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
+          {d.intro}
+        </p>
 
-      <form
-        onSubmit={handleSubmit(onSubmit)}
-        className="flex flex-col gap-4"
-        noValidate
-      >
-        {/* The hint and the error live OUTSIDE the <label>, wired by
+        <form
+          onSubmit={handleSubmit(onSubmit)}
+          className="flex flex-col gap-4"
+          noValidate
+        >
+          {/* The hint and the error live OUTSIDE the <label>, wired by
             `aria-describedby`. Inside it they would become part of the field's
             accessible NAME — a screen reader would read "Номер замовлення 8
             символів — можна з «#»…" as the name of the box, and every
             name-based query (tests included) would stop matching. Described-by
             is the relationship that means "extra information about", which is
             what a hint is. */}
-        <div className="flex flex-col gap-2">
-          <label className={LABEL} htmlFor="order-lookup-number">
-            {d.fieldNumber}
-          </label>
-          <input
-            id="order-lookup-number"
-            autoComplete="off"
-            placeholder={d.fieldNumberPlaceholder}
-            aria-invalid={Boolean(errors.number)}
-            aria-describedby={
-              errors.number
-                ? "order-lookup-number-error order-lookup-hint"
-                : "order-lookup-hint"
-            }
-            className={`${FIELD} font-mono uppercase`}
-            {...register("number")}
-          />
-          <span
-            id="order-lookup-hint"
-            className="text-xs text-muted-foreground"
-          >
-            {d.fieldNumberHint}
-          </span>
-          {errors.number && (
-            <span id="order-lookup-number-error" role="alert" className={ERROR}>
-              {errors.number.message}
+          <div className="flex flex-col gap-2">
+            <label className={LABEL} htmlFor="order-lookup-number">
+              {d.fieldNumber}
+            </label>
+            <input
+              id="order-lookup-number"
+              autoComplete="off"
+              placeholder={d.fieldNumberPlaceholder}
+              aria-invalid={Boolean(errors.number)}
+              aria-describedby={
+                errors.number
+                  ? "order-lookup-number-error order-lookup-hint"
+                  : "order-lookup-hint"
+              }
+              className={`${FIELD} font-mono uppercase`}
+              {...register("number")}
+            />
+            <span
+              id="order-lookup-hint"
+              className="text-xs text-muted-foreground"
+            >
+              {d.fieldNumberHint}
             </span>
-          )}
-        </div>
+            {errors.number && (
+              <span
+                id="order-lookup-number-error"
+                role="alert"
+                className={ERROR}
+              >
+                {errors.number.message}
+              </span>
+            )}
+          </div>
 
-        <label className="flex flex-col gap-2">
-          <span className={LABEL}>{d.fieldPhone}</span>
-          {/* Controlled, not `register`ed: the field shows the mask while the
+          <label className="flex flex-col gap-2">
+            <span className={LABEL}>{d.fieldPhone}</span>
+            {/* Controlled, not `register`ed: the field shows the mask while the
               form value stays the raw string the shopper typed — the same split
               the checkout and contact fields use. */}
-          <Controller
-            name="phone"
-            control={control}
-            render={({ field }) => (
-              <input
-                id="order-lookup-phone"
-                type="tel"
-                inputMode="numeric"
-                autoComplete="tel"
-                placeholder={d.fieldPhonePlaceholder}
-                aria-invalid={Boolean(errors.phone)}
-                aria-describedby={
-                  errors.phone ? "order-lookup-phone-error" : undefined
-                }
-                className={FIELD}
-                name={field.name}
-                ref={field.ref}
-                onBlur={field.onBlur}
-                value={formatUAPhone(field.value ?? "")}
-                onChange={(event) => field.onChange(event.target.value)}
-              />
+            <Controller
+              name="phone"
+              control={control}
+              render={({ field }) => (
+                <input
+                  id="order-lookup-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  autoComplete="tel"
+                  placeholder={d.fieldPhonePlaceholder}
+                  aria-invalid={Boolean(errors.phone)}
+                  aria-describedby={
+                    errors.phone ? "order-lookup-phone-error" : undefined
+                  }
+                  className={FIELD}
+                  name={field.name}
+                  ref={field.ref}
+                  onBlur={field.onBlur}
+                  value={formatUAPhone(field.value ?? "")}
+                  onChange={(event) => field.onChange(event.target.value)}
+                />
+              )}
+            />
+            {errors.phone && (
+              <span
+                id="order-lookup-phone-error"
+                role="alert"
+                className={ERROR}
+              >
+                {errors.phone.message}
+              </span>
             )}
-          />
-          {errors.phone && (
-            <span id="order-lookup-phone-error" role="alert" className={ERROR}>
-              {errors.phone.message}
-            </span>
+          </label>
+
+          {errorMessage && (
+            <p
+              role="alert"
+              className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+            >
+              {errorMessage}
+            </p>
           )}
-        </label>
 
-        {errorMessage && (
-          <p
-            role="alert"
-            className="rounded-xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          <button
+            type="submit"
+            disabled={lookup.isPending}
+            className="h-12 rounded-xl bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {errorMessage}
-          </p>
-        )}
-
-        <button
-          type="submit"
-          disabled={lookup.isPending}
-          className="h-12 rounded-xl bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {lookup.isPending ? d.submitting : d.submit}
-        </button>
-      </form>
-    </div>
+            {lookup.isPending ? d.submitting : d.submit}
+          </button>
+        </form>
+      </div>
+    </>
   );
 }

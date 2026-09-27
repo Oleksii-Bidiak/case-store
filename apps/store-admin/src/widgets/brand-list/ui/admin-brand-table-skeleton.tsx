@@ -9,10 +9,11 @@ import {
 import { dict } from "@/shared/config";
 
 const SKELETON_ROWS = 6;
-const COLUMN_COUNT = 4;
+const COLUMN_COUNT = 6;
 
 /**
- * Loading placeholder matching the AdminBrandTable column structure.
+ * Loading placeholder matching the AdminBrandTable column structure (logo and
+ * product-count columns since TASK-840).
  */
 export function AdminBrandTableSkeleton() {
   return (
@@ -20,8 +21,12 @@ export function AdminBrandTableSkeleton() {
       <Table>
         <TableHeader>
           <TableRow>
+            <TableHead className="w-16">{dict.brands.colLogo}</TableHead>
             <TableHead>{dict.brands.colName}</TableHead>
             <TableHead>{dict.brands.colSlug}</TableHead>
+            <TableHead className="text-right">
+              {dict.brands.colProducts}
+            </TableHead>
             <TableHead>{dict.brands.colStatus}</TableHead>
             <TableHead className="text-right">{dict.common.actions}</TableHead>
           </TableRow>

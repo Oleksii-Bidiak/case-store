@@ -8,6 +8,7 @@ import {
 import { PinoLogger } from 'nestjs-pino';
 import * as Sentry from '@sentry/nestjs';
 import { HttpExceptionFilter } from './http-exception.filter';
+import { RetryAfterException } from './retry-after.exception';
 
 // Sentry is stubbed so the spec asserts capture behaviour without any DSN/network.
 jest.mock('@sentry/nestjs', () => ({
@@ -85,6 +86,67 @@ describe('HttpExceptionFilter', () => {
       statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
       error: 'InternalServerError',
       message: 'Internal server error',
+    });
+  });
+
+  // ─── TASK-762: the one key allowed through the rebuilt envelope ──────────────
+  describe('RetryAfterException', () => {
+    let setHeader: jest.Mock;
+
+    function hostWithHeaders(): ArgumentsHost {
+      setHeader = jest.fn();
+      const response = { status: statusMock, json: jsonMock, setHeader };
+      return {
+        switchToHttp: () => ({
+          getResponse: () => response,
+          getRequest: () => ({ url: '/api/contact', method: 'POST' }),
+        }),
+      } as unknown as ArgumentsHost;
+    }
+
+    it('passes retryAfterSeconds through and sets the Retry-After header', () => {
+      filter.catch(
+        new RetryAfterException({
+          error: 'CONTACT_COOLDOWN',
+          message: 'wait',
+          retryAfterSeconds: 42,
+        }),
+        hostWithHeaders(),
+      );
+
+      expect(statusMock).toHaveBeenCalledWith(HttpStatus.TOO_MANY_REQUESTS);
+      expect(jsonMock.mock.calls[0][0]).toMatchObject({
+        statusCode: 429,
+        error: 'CONTACT_COOLDOWN',
+        message: 'wait',
+        retryAfterSeconds: 42,
+      });
+      expect(setHeader).toHaveBeenCalledWith('Retry-After', '42');
+    });
+
+    it('rounds a fractional wait UP and never advertises zero', () => {
+      filter.catch(
+        new RetryAfterException({ error: 'X', message: 'wait', retryAfterSeconds: 0.2 }),
+        hostWithHeaders(),
+      );
+
+      expect(jsonMock.mock.calls[0][0].retryAfterSeconds).toBe(1);
+      expect(setHeader).toHaveBeenCalledWith('Retry-After', '1');
+    });
+
+    it('still drops the same key from any other exception — the pass-through is by class', () => {
+      filter.catch(
+        new HttpException(
+          { statusCode: 429, error: 'X', message: 'm', retryAfterSeconds: 99, internal: 'secret' },
+          HttpStatus.TOO_MANY_REQUESTS,
+        ),
+        hostWithHeaders(),
+      );
+
+      const body = jsonMock.mock.calls[0][0];
+      expect(body).not.toHaveProperty('retryAfterSeconds');
+      expect(body).not.toHaveProperty('internal');
+      expect(setHeader).not.toHaveBeenCalled();
     });
   });
 });

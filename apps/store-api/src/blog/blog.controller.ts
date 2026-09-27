@@ -7,9 +7,10 @@ import {
   ApiProperty,
   ApiExtraModels,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { BlogService } from './blog.service';
-import { BlogPostListQueryDto } from './dto';
-import { BlogPostEntity, BlogCategoryEntity } from './entities';
+import { BlogPostListQueryDto, BlogSuggestQueryDto } from './dto';
+import { BlogPostEntity, BlogCategoryEntity, BlogPostSuggestionEntity } from './entities';
 
 /** Pagination metadata for paginated blog responses. */
 class BlogPaginationMeta {
@@ -47,21 +48,36 @@ class BlogCategoryListResponse {
   data!: BlogCategoryEntity[];
 }
 
+/** Response envelope for `GET /api/blog/suggest` (TASK-543). */
+class BlogSuggestResponse {
+  @ApiProperty({
+    type: [BlogPostSuggestionEntity],
+    description: 'Matching published, listed articles — id, slug, title and cover only',
+  })
+  data!: BlogPostSuggestionEntity[];
+}
+
 /**
  * Public (storefront) blog endpoints.
  *
  *   GET /api/blog             — list published posts (category, q, pagination)
  *   GET /api/blog/categories  — list all categories
+ *   GET /api/blog/suggest     — light article suggestions for the search autocomplete
  *   GET /api/blog/:slug       — single published post by slug
+ *
+ * The static segments are declared BEFORE `:slug` — Nest matches in declaration
+ * order, so a `suggest` route declared after it would be read as a post slug.
  */
 @ApiTags('Blog')
 @ApiExtraModels(
   BlogPostEntity,
   BlogCategoryEntity,
+  BlogPostSuggestionEntity,
   BlogPaginationMeta,
   BlogPostListResponse,
   BlogPostResponseEnvelope,
   BlogCategoryListResponse,
+  BlogSuggestResponse,
 )
 @Controller('blog')
 export class BlogController {
@@ -84,6 +100,22 @@ export class BlogController {
   async findCategories(): Promise<BlogCategoryListResponse> {
     const data = await this.blogService.findAllCategories();
     return { data };
+  }
+
+  // Throttled like the product suggest: the autocomplete calls it on every
+  // (debounced) keystroke.
+  @Get('suggest')
+  @Throttle({ default: { limit: 60, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Autocomplete blog-article suggestions (no article bodies)',
+    description:
+      'Typo-tolerant via the search index, Postgres fallback. Published, listed posts only. ' +
+      'Returns id, slug, title and coverImageUrl — never `content` (TASK-543).',
+  })
+  @ApiResponse({ status: 200, description: 'Article suggestions', type: BlogSuggestResponse })
+  @ApiResponse({ status: 400, description: 'Missing/blank q or limit out of range' })
+  async suggest(@Query() query: BlogSuggestQueryDto): Promise<BlogSuggestResponse> {
+    return { data: await this.blogService.suggest(query.q, query.limit) };
   }
 
   @Get(':slug')

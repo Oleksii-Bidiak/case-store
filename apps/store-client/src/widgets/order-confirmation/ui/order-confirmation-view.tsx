@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/entities/session";
 import { useGetOrder } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
+import { ReturnRequestButton } from "@/features/return-request";
 import { forgetPaymentAttempt, readPaymentAttempt } from "@/features/checkout";
 import { dict } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
@@ -199,6 +200,18 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
             </Link>
             {order.status === "PENDING" && (
               <CancelOrderButton orderId={order.id} />
+            )}
+            {/* TASK-609: the same door as the order history, under the same
+                rule — DELIVERED only (see the note there on why not SHIPPED).
+                A customer arriving from the email link lands HERE, not on the
+                list. Not on the guest view: a guest order has no owner for the
+                customer return route to check against. */}
+            {order.status === "DELIVERED" && (
+              <ReturnRequestButton
+                orderId={order.id}
+                orderNumber={`#${order.id.slice(0, 8).toUpperCase()}`}
+                items={order.items}
+              />
             )}
           </div>
         </div>

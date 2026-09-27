@@ -1,6 +1,14 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import {
+  CategoryDeletionResult,
+  CategoryDeletionTarget,
   CategoryRepository,
   CategoryUpdateResult,
   CreateCategoryInput,
@@ -9,12 +17,13 @@ import {
   FindAllParams,
 } from './category.repository';
 import {
+  AdminCategoryDetailEntity,
   AdminCategoryTreeNodeEntity,
   CategoryEntity,
   CategoryTreeNodeEntity,
   CategoryWithCountEntity,
 } from './entities';
-import { CategoryListQueryDto } from './dto';
+import { CategoryListQueryDto, DeleteCategoryDto } from './dto';
 import {
   CategoryDomainError,
   CategoryErrorCode,
@@ -32,6 +41,14 @@ import {
 } from '../cache';
 import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
+import { PermissionService } from '../auth/permissions';
+
+/**
+ * Creating a NEW move target while deleting a category is a category write, so it
+ * needs this permission on top of the route's delete permission (TASK-652, decision
+ * B-2 of plan 178). Body-dependent, hence checked here rather than by the guard.
+ */
+const CREATE_TARGET_PERMISSION = 'categories:write';
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -98,6 +115,7 @@ export class CategoryService {
     private readonly categorySubtreeIndexer: CategorySubtreeIndexer,
     private readonly logger: PinoLogger,
     private readonly revalidation: RevalidationNotifier,
+    private readonly permissionService: PermissionService,
   ) {
     this.logger.setContext(CategoryService.name);
   }
@@ -240,6 +258,19 @@ export class CategoryService {
   }
 
   /**
+   * Get a category by ID for the admin card (TASK-652): the category plus the
+   * `deletionImpact` preview the delete dialog shows — how many subcategories,
+   * products (inactive included) and carousels a delete would touch.
+   * Throws NotFoundException if the category is not found (or is deleted).
+   */
+  async findByIdForAdmin(id: string): Promise<AdminCategoryDetailEntity> {
+    const category = await this.findById(id);
+    const impact = await this.categoryRepository.countDeletionImpact(id);
+
+    return AdminCategoryDetailEntity.fromCategory(category, impact);
+  }
+
+  /**
    * Create a new category (admin-only).
    * Validates slug uniqueness and parent existence before creating.
    * Auto-generates slug from name if not provided.
@@ -266,10 +297,17 @@ export class CategoryService {
       }
     }
 
-    const category = await this.categoryRepository.create({
-      ...input,
-      slug,
-    });
+    // The repository re-checks the parent under the bucket lock (TASK-653): a parent
+    // deleted between the check above and the insert surfaces as a 404, not a 500.
+    let category;
+    try {
+      category = await this.categoryRepository.create({
+        ...input,
+        slug,
+      });
+    } catch (error) {
+      throw this.toHttp(error);
+    }
 
     return CategoryEntity.fromPrisma(category);
   }
@@ -444,8 +482,10 @@ export class CategoryService {
 
     switch (error.code) {
       case CategoryErrorCode.NOT_FOUND:
+      case CategoryErrorCode.MOVE_TARGET_NOT_FOUND:
         return notFoundCategory(error.code, error.message);
       case CategoryErrorCode.TREE_STALE:
+      case CategoryErrorCode.SLUG_CONFLICT:
         return conflictCategory(error.code, error.message);
       default:
         return badCategory(error.code, error.message);
@@ -509,6 +549,143 @@ export class CategoryService {
     await this.afterStatusChange([id], true, actorId, 1);
 
     return CategoryEntity.fromPrisma(activatedCategory);
+  }
+
+  /**
+   * Delete a category (TASK-652, decision B-2 of plan 178): tombstone its whole subtree
+   * and move every product — and every carousel — filed in it into ONE target outside
+   * the subtree, in one transaction. Products are never deleted or deactivated.
+   *
+   * Exactly one mode: `moveToId` (an existing live category) or `moveToNew` (create one
+   * in the same transaction — which additionally requires `categories:write`, checked
+   * BEFORE anything is read or written).
+   *
+   * The checks here are FAST-FAIL hints for clear messages; the authoritative ones run
+   * under the tree advisory lock in the repository and surface through {@link toHttp}:
+   * target in the subtree → 400 `CATEGORY_MOVE_TARGET_IN_SUBTREE`, target (or its
+   * parent) missing/deleted → 404 `CATEGORY_MOVE_TARGET_NOT_FOUND`, slug taken → 409.
+   *
+   * After the commit: the whole product cache namespace and the storefront catalogue
+   * are purged (as a status change does — a deleted category withdraws pages and
+   * moves products), and the target's subtree is re-indexed so the moved products'
+   * search documents carry their new category.
+   */
+  async delete(
+    id: string,
+    dto: DeleteCategoryDto,
+    actorId: string,
+  ): Promise<CategoryDeletionResult> {
+    const hasMoveTo = dto.moveToId !== undefined;
+    const hasMoveToNew = dto.moveToNew !== undefined;
+    if (hasMoveTo === hasMoveToNew) {
+      throw badCategory(
+        CategoryErrorCode.MOVE_TARGET_REQUIRED,
+        'Specify exactly one of moveToId or moveToNew — the products must move somewhere',
+      );
+    }
+
+    if (hasMoveToNew && !(await this.actorMay(actorId, CREATE_TARGET_PERMISSION))) {
+      throw new ForbiddenException(
+        'Creating a new category while deleting requires the categories:write permission',
+      );
+    }
+
+    const category = await this.categoryRepository.findById(id);
+    if (!category) {
+      throw new NotFoundException('Category not found');
+    }
+
+    const target = await this.resolveDeletionTarget(id, dto);
+
+    let result: CategoryDeletionResult;
+    try {
+      result = await this.categoryRepository.deleteSubtreeWithMove(id, target);
+    } catch (error) {
+      throw this.toHttp(error);
+    }
+
+    await this.purgeProductCaches(PRODUCT_CACHE_PREFIX);
+    this.reindexSubtreesInBackground([result.targetId]);
+
+    this.logger.info(
+      {
+        event: 'category.deleted',
+        id,
+        targetId: result.targetId,
+        targetCreated: result.targetCreated,
+        deletedIds: result.subtreeIds,
+        deletedCount: result.subtreeIds.length,
+        movedProducts: result.movedProducts,
+        switchedCarousels: result.switchedCarousels,
+        actorId,
+      },
+      'Category subtree deleted',
+    );
+
+    return result;
+  }
+
+  /** Does the actor — read from the database, never the token — hold `permission`? */
+  private async actorMay(actorId: string, permission: string): Promise<boolean> {
+    const actor = await this.permissionService.findActor(actorId);
+    return actor !== null && this.permissionService.actorHasPermission(actor, permission);
+  }
+
+  /** Fast-fail validation of a delete's move target, and its repository form. */
+  private async resolveDeletionTarget(
+    id: string,
+    dto: DeleteCategoryDto,
+  ): Promise<CategoryDeletionTarget> {
+    if (dto.moveToId !== undefined) {
+      if (dto.moveToId === id) {
+        throw badCategory(
+          CategoryErrorCode.MOVE_TARGET_IN_SUBTREE,
+          'The move target must be outside the category subtree being deleted',
+        );
+      }
+      const moveTo = await this.categoryRepository.findById(dto.moveToId);
+      if (!moveTo) {
+        throw notFoundCategory(
+          CategoryErrorCode.MOVE_TARGET_NOT_FOUND,
+          'Move target category not found',
+        );
+      }
+      return { kind: 'existing', id: dto.moveToId };
+    }
+
+    const { name, parentId = null } = dto.moveToNew!;
+    if (parentId !== null) {
+      if (parentId === id) {
+        throw badCategory(
+          CategoryErrorCode.MOVE_TARGET_IN_SUBTREE,
+          'The parent of the new category must be outside the subtree being deleted',
+        );
+      }
+      const parent = await this.categoryRepository.findById(parentId);
+      if (!parent) {
+        throw notFoundCategory(
+          CategoryErrorCode.MOVE_TARGET_NOT_FOUND,
+          'Parent category of the new move target not found',
+        );
+      }
+    }
+
+    const slug = generateSlug(name);
+    if (!slug) {
+      throw new BadRequestException(
+        'The new category name must contain at least one letter or digit',
+      );
+    }
+    // `activeOnly: false`, as in `create`: an inactive category still owns its slug.
+    const existingBySlug = await this.categoryRepository.findBySlug(slug, { activeOnly: false });
+    if (existingBySlug) {
+      throw conflictCategory(
+        CategoryErrorCode.SLUG_CONFLICT,
+        'A category with this slug already exists',
+      );
+    }
+
+    return { kind: 'new', name, slug, parentId };
   }
 
   /**

@@ -96,8 +96,14 @@ describe("root layout generateMetadata (TASK-279)", () => {
 
     const meta = await generateMetadata();
 
+    // Sized as the 1200×630 card it is uploaded for, with an alt (TASK-568).
     expect(meta.openGraph?.images).toEqual([
-      { url: "https://cdn.example/x.png" },
+      {
+        url: "https://cdn.example/x.png",
+        width: 1200,
+        height: 630,
+        alt: expect.any(String),
+      },
     ]);
   });
 

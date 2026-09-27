@@ -1,14 +1,18 @@
 "use client";
 
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   CONTACT_HONEYPOT_FIELD,
   ContactHoneypot,
+  contactRetryAfterMinutes,
   contactSubmitErrorKind,
   useContactControllerSubmit,
 } from "@/entities/contact";
 import { dict } from "@/shared/config";
+// The mask function, as in `widgets/contact/ui/contact-form.tsx` — this panel
+// draws its own fields, so `shared/ui`'s `PhoneInput` would bring foreign styles.
+import { formatUAPhone } from "@/shared/lib/phone";
 import {
   infoContactSchema,
   type InfoContactFormValues,
@@ -17,6 +21,14 @@ import {
 const FIELD =
   "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-[14.5px] text-foreground outline-none focus-visible:border-primary";
 const ERROR = "text-[12.5px] font-medium text-destructive";
+
+/** TASK-762: the real remaining minutes when the API sends them. */
+function cooldownText(error: unknown): string {
+  const minutes = contactRetryAfterMinutes(error);
+  return minutes !== undefined
+    ? dict.contact.errors.cooldownIn(minutes)
+    : dict.contact.errors.cooldown;
+}
 
 /**
  * InfoContactForm — the compact "Напишіть нам" form on the /info page. Submits
@@ -31,6 +43,7 @@ export function InfoContactForm() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors },
   } = useForm<InfoContactFormValues>({
     resolver: zodResolver(infoContactSchema),
@@ -84,17 +97,30 @@ export function InfoContactForm() {
             )}
           </div>
           <div className="flex flex-col gap-1">
-            <input
-              id="info-contact-phone"
-              type="tel"
-              aria-label={d.formPhone}
-              placeholder={d.formPhone}
-              aria-invalid={Boolean(errors.phone)}
-              aria-describedby={
-                errors.phone ? "info-contact-phone-error" : undefined
-              }
-              className={FIELD}
-              {...register("phone")}
+            {/* TASK-744: controlled with the `/contact` mask — the field shows
+                `+380 NN NNN NNNN` while the form value stays what was typed. */}
+            <Controller
+              name="phone"
+              control={control}
+              render={({ field }) => (
+                <input
+                  id="info-contact-phone"
+                  type="tel"
+                  inputMode="numeric"
+                  aria-label={d.formPhone}
+                  placeholder={d.formPhone}
+                  aria-invalid={Boolean(errors.phone)}
+                  aria-describedby={
+                    errors.phone ? "info-contact-phone-error" : undefined
+                  }
+                  className={FIELD}
+                  name={field.name}
+                  ref={field.ref}
+                  onBlur={field.onBlur}
+                  value={formatUAPhone(field.value ?? "")}
+                  onChange={(event) => field.onChange(event.target.value)}
+                />
+              )}
             />
             {errors.phone && (
               <span
@@ -163,7 +189,7 @@ export function InfoContactForm() {
               {/* The cooldown gets its own sentence (TASK-452): this form's
                   generic «спробуйте ще раз за хвилину» is wrong for it. */}
               {contactSubmitErrorKind(submit.error) === "cooldown"
-                ? dict.contact.errors.cooldown
+                ? cooldownText(submit.error)
                 : d.formError}
             </p>
           )}

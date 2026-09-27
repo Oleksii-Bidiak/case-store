@@ -88,9 +88,10 @@ describe('buildProductListWhere', () => {
     });
 
     it('joins on category.isActive only when categoryActiveOnly is set', () => {
+      // The joined category must also be live (TASK-653) — the same half of the rule.
       expect(buildProductListWhere({ categoryActiveOnly: true })).toEqual({
         deletedAt: null,
-        category: { isActive: true },
+        category: { isActive: true, deletedAt: null },
       });
       expect(buildProductListWhere({ categoryActiveOnly: false })).not.toHaveProperty('category');
     });

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CreateDiscountDto, UpdateDiscountDto } from "@/entities/discount";
 import { dict } from "@/shared/config";
+import { fromKyivDateEnd, fromKyivDateStart } from "@/shared/lib";
 
 const e = dict.discountForm.errors;
 
@@ -13,13 +14,29 @@ const e = dict.discountForm.errors;
  * PERCENT 1–100 bound and the start/expiry ordering are enforced here (mirroring
  * the server's `assertValidDefinition`), with the server as the final arbiter.
  */
+/**
+ * An optional positive-integer cap. `0` is rejected here (TASK-796): the API's
+ * `@Min(1)` refuses it, and a form that lets it through only earns the operator
+ * a generic "could not save" with no hint which field was wrong. Blank means
+ * "no cap".
+ */
 const optionalIntString = (message: string) =>
   z
     .string()
     .trim()
     .optional()
-    .refine((v) => v === undefined || v === "" || /^\d+$/.test(v), message)
+    .refine(
+      (v) => v === undefined || v === "" || (/^\d+$/.test(v) && Number(v) >= 1),
+      message,
+    )
     .transform((v) => (v === undefined || v === "" ? undefined : Number(v)));
+
+/**
+ * At most two digits after the decimal point — the API validates money with
+ * `@IsNumber({ maxDecimalPlaces: 2 })` (TASK-796).
+ */
+const hasAtMostTwoDecimals = (v: string | undefined) =>
+  v === undefined || !/[.,]\d{3,}/.test(v);
 
 export const discountSchema = z
   .object({
@@ -37,6 +54,7 @@ export const discountSchema = z
       .trim()
       .min(1, e.valueRequired)
       .refine((v) => Number(v) > 0, e.valuePositive)
+      .refine(hasAtMostTwoDecimals, e.decimalsMax)
       .transform((v) => Number(v)),
 
     minSpend: z
@@ -47,6 +65,7 @@ export const discountSchema = z
         (v) => v === undefined || v === "" || Number(v) >= 0,
         e.minSpendInvalid,
       )
+      .refine(hasAtMostTwoDecimals, e.decimalsMax)
       .transform((v) => (v === undefined || v === "" ? undefined : Number(v))),
 
     maxRedemptions: optionalIntString(e.intInvalid),
@@ -66,7 +85,8 @@ export const discountSchema = z
     (data) =>
       !data.startsAt ||
       !data.expiresAt ||
-      new Date(data.startsAt) <= new Date(data.expiresAt),
+      // Both are `YYYY-MM-DD`, which orders lexicographically — no zone needed.
+      data.startsAt <= data.expiresAt,
     { path: ["expiresAt"], message: e.dateOrder },
   );
 
@@ -77,7 +97,8 @@ export type DiscountFormValues = z.output<typeof discountSchema>;
  * Map parsed form values to a create/update payload. Blank optional fields are
  * dropped on create (backend stores null) and sent as `null` on update so an
  * admin can explicitly clear a previously-set cap/window. Date strings are
- * widened to ISO datetimes (`YYYY-MM-DD` → start of day UTC) for the API.
+ * widened to ISO instants of the KYIV day: `startsAt` → 00:00:00.000 Kyiv,
+ * `expiresAt` → 23:59:59.999 Kyiv (DST-safe, see `datetime-local.ts`).
  */
 export function discountFormValuesToDto(
   values: DiscountFormValues,
@@ -90,9 +111,18 @@ export function discountFormValuesToDto(
   values: DiscountFormValues,
   options: { isUpdate?: boolean } = {},
 ): CreateDiscountDto | UpdateDiscountDto {
-  const toIso = (date?: string): string | null | undefined => {
-    if (!date) return options.isUpdate ? null : undefined;
-    return new Date(date).toISOString();
+  // A day typed into `<input type="date">` is a KYIV calendar day, and the
+  // window is inclusive at both ends: the code works from 00:00 Kyiv on the
+  // start day through 23:59:59.999 Kyiv on the end day (TASK-795). What stood
+  // here was `new Date(date).toISOString()` — UTC midnight, i.e. 03:00 Kyiv —
+  // so «Діє до 1 вересня» stopped working at 03:00 on 1 September.
+  const toIso = (
+    date: string | undefined,
+    bound: (value: string) => Date | null,
+  ): string | null | undefined => {
+    const instant = date ? bound(date) : null;
+    if (!instant) return options.isUpdate ? null : undefined;
+    return instant.toISOString();
   };
   const orClear = <T>(v: T | undefined): T | null | undefined =>
     v === undefined ? (options.isUpdate ? null : undefined) : v;
@@ -104,8 +134,8 @@ export function discountFormValuesToDto(
     minSpend: orClear(values.minSpend),
     maxRedemptions: orClear(values.maxRedemptions),
     perUserLimit: orClear(values.perUserLimit),
-    startsAt: toIso(values.startsAt),
-    expiresAt: toIso(values.expiresAt),
+    startsAt: toIso(values.startsAt, fromKyivDateStart),
+    expiresAt: toIso(values.expiresAt, fromKyivDateEnd),
     isActive: values.isActive,
     showOnPromoPage: values.showOnPromoPage,
   } as CreateDiscountDto | UpdateDiscountDto;
