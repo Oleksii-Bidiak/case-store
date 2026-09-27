@@ -8,6 +8,11 @@ import { CategoryEntity } from './category.entity';
  * Deliberately NOT the public counts of `findWithProductCount`: those apply the
  * storefront visibility rule and would under-report the products that are about to
  * move. Deletion moves EVERY non-deleted product of the subtree, inactive ones too.
+ *
+ * Soft-deleted products of the subtree move as well (so a product restored later does
+ * not point at a tombstone) but are NOT counted here on purpose: the dialog talks about
+ * the catalogue the operator can see, and `productCount` can therefore be lower than
+ * the number the delete actually moves.
  */
 export class CategoryDeletionImpactEntity {
   @ApiProperty({

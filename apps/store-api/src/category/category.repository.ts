@@ -1435,7 +1435,9 @@ export class CategoryRepository {
    *   - `subcategoryCount` — the live subtree minus the category itself;
    *   - `productCount` — EVERY non-deleted product of the subtree, inactive ones
    *     included, because all of them move (NOT {@link PUBLIC_PRODUCT_WHERE}, which
-   *     would under-report);
+   *     would under-report). Soft-deleted products move too (step 5 of
+   *     {@link CategoryRepository.deleteSubtreeWithMove}) but are deliberately left out
+   *     of this count — the dialog describes the catalogue the operator can see;
    *   - `carouselCount` — carousels pointing into the subtree, which switch too.
    */
   async countDeletionImpact(id: string): Promise<CategoryDeletionImpact> {
