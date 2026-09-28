@@ -2313,6 +2313,16 @@
       створює.
       🎯 TASK-642
 
+- [🔁] **SYS-44 — Переіндексація не запускає другу копію воркерів.** **Зроби:** на сервері
+  `docker compose -f docker-compose.prod.yml --env-file .env.production exec -T store-api node dist/scripts/search-reindex.js`
+  — **без** `-e SCHEDULER_ENABLED=false`: контейнер і далі стартує з `SCHEDULER_ENABLED=true`.
+  **Має бути:** у виводі немає жодного рядка `…scheduled` / `Publishing scheduler started`
+  (до фіксу їх було п'ять: `mailOutbox`, `publishing`, `cart.guestCleanup`,
+  `refreshToken.cleanup`, `payment.reconcile`); наприкінці рядки `products: …` і
+  `blog_posts: …` з «documents indexed and verified», потім `Search reindex complete.`, код
+  виходу 0.
+  🎯 TASK-1027
+
 ---
 
 ## Додаток А — задача → чеки (що позначати 🔁 після мержу)
@@ -2536,4 +2546,5 @@
 - **TASK-694** — AD-DASH-20, AD-DASH-21
 - **TASK-1018** — SF-CHK-30
 - **TASK-642** — SYS-43
+- **TASK-1027** — SYS-44
 - **TASK-643** — SF-CHK-31, SF-CHK-32, SF-CHK-06
