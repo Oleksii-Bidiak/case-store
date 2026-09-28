@@ -29,7 +29,11 @@ export {
 } from './delivery-payment-matrix';
 export { flatShippingCost, isCourierFree, resolveDeliveryMethod } from './shipping-cost';
 export type { FlatPricedDeliveryMethod, FlatShippingInput } from './shipping-cost';
-export { OrderErrorCode, DeliveryOrderErrorCode } from './order.errors';
+export {
+  OrderErrorCode,
+  DeliveryOrderErrorCode,
+  deliveryPaymentNotAllowedError,
+} from './order.errors';
 export { CreateOrderDto, UpdateOrderStatusDto, OrderListQueryDto, AddressDto } from './dto';
 export type {
   OrderWithItems,

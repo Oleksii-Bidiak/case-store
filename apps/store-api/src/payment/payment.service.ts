@@ -7,10 +7,21 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { OrderStatus, Payment, PaymentAttemptStatus, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  OrderStatus,
+  Payment,
+  PaymentAttemptStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import type { OrderEntity } from '../order';
-import { OrderService } from '../order';
+import {
+  deliveryPaymentNotAllowedError,
+  isPaymentAllowedForDelivery,
+  OrderService,
+} from '../order';
 import { PAYMENT_CLOCK, type Clock } from './payment.clock';
 import { refundExceedsBalanceError } from './payment.errors';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
@@ -70,6 +81,8 @@ export class PaymentService {
    *
    * @throws ServiceUnavailableException when the provider has no credentials.
    * @throws ConflictException when the order is already paid or no longer payable.
+   * @throws BadRequestException (`DELIVERY_PAYMENT_NOT_ALLOWED`) when the order's
+   *   delivery method admits no online payment (OTHER — shipping not quoted yet).
    */
   async createCheckout(order: OrderEntity): Promise<PaymentCheckoutEntity> {
     if (!this.provider.isConfigured()) {
@@ -82,6 +95,13 @@ export class PaymentService {
 
     if (!PAYABLE_STATUSES.has(order.status)) {
       throw new ConflictException(`Order in status ${order.status} cannot be paid`);
+    }
+
+    // The delivery × payment matrix (TASK-643) is checked where money moves, not
+    // only at order creation: an OTHER order placed as cash on delivery must not
+    // be paid online here, because its total does not include shipping yet.
+    if (!isPaymentAllowedForDelivery(order.deliveryMethod, PaymentMethod.ONLINE)) {
+      throw deliveryPaymentNotAllowedError(order.deliveryMethod);
     }
 
     const payment = await this.paymentRepository.create({

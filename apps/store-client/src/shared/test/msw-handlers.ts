@@ -122,6 +122,8 @@ export function makeOrder(overrides: Partial<OrderEntity> = {}): {
       // same reason as trackingNumber: Partial<OrderEntity> makes them optional,
       // so relying on the overrides spread widens them to | undefined.
       paymentMethod: "ON_DELIVERY",
+      // Required on OrderEntity since TASK-642 (M184A): same reason as above.
+      deliveryMethod: "NOVA_POSHTA",
       paidAt: null,
       // Required-but-nullable on OrderEntity since TASK-471, which exposed the
       // reservation deadline so the derived «Очікує оплати · N хв» / «Резерв

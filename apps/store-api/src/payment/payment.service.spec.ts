@@ -5,10 +5,17 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import type { ConfigService } from '@nestjs/config';
-import { OrderStatus, Payment, PaymentAttemptStatus, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  DeliveryMethod,
+  OrderStatus,
+  Payment,
+  PaymentAttemptStatus,
+  PaymentStatus,
+  Prisma,
+} from '@prisma/client';
 import type { PinoLogger } from 'nestjs-pino';
 import type { OrderEntity } from '../order';
-import { OrderService } from '../order';
+import { DeliveryOrderErrorCode, OrderService } from '../order';
 import type { Clock } from './payment.clock';
 import type { PaymentProvider } from './payment.port';
 import { PaymentRepository } from './payment.repository';
@@ -115,6 +122,7 @@ function makeOrder(overrides: Partial<OrderEntity> = {}): OrderEntity {
     id: 'order-1',
     status: OrderStatus.PENDING,
     paymentStatus: PaymentStatus.PENDING,
+    deliveryMethod: DeliveryMethod.NOVA_POSHTA,
     total: '1249.00',
     ...overrides,
   } as OrderEntity;
@@ -225,6 +233,31 @@ describe('PaymentService', () => {
         ServiceUnavailableException,
       );
     });
+
+    // M184A review: the delivery × payment matrix was enforced only when the
+    // order was created, so an OTHER order placed as cash on delivery could
+    // still be paid online here — for a total whose shipping is not quoted yet.
+    it('refuses an online payment for an order whose shipping is still to be quoted', async () => {
+      const attempt = buildService().createCheckout(
+        makeOrder({ deliveryMethod: DeliveryMethod.OTHER }),
+      );
+
+      await expect(attempt).rejects.toThrow(BadRequestException);
+      await expect(attempt).rejects.toMatchObject({
+        response: { error: DeliveryOrderErrorCode.PAYMENT_NOT_ALLOWED },
+      });
+      expect(repositoryMock.create).not.toHaveBeenCalled();
+      expect(providerMock.createCheckout).not.toHaveBeenCalled();
+    });
+
+    it.each([DeliveryMethod.NOVA_POSHTA, DeliveryMethod.PICKUP, DeliveryMethod.COURIER])(
+      'opens an online payment for a %s order',
+      async (deliveryMethod) => {
+        await buildService().createCheckout(makeOrder({ deliveryMethod }));
+
+        expect(repositoryMock.create).toHaveBeenCalledTimes(1);
+      },
+    );
   });
 
   describe('handleCallback', () => {

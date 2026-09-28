@@ -212,6 +212,8 @@ export interface OrderWithItems {
 
   /** How the customer chose to pay (TASK-330). */
   paymentMethod?: PaymentMethod;
+  /** How the order ships (TASK-642); the column defaults to NOVA_POSHTA. */
+  deliveryMethod?: DeliveryMethod;
   /** When money actually settled (TASK-330); null while unpaid. */
   paidAt?: Date | null;
   /** Deadline on an unpaid ONLINE order's stock reservation (TASK-330). */

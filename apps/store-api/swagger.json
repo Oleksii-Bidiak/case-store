@@ -25825,6 +25825,17 @@
             ],
             "example": "ON_DELIVERY"
           },
+          "deliveryMethod": {
+            "type": "string",
+            "description": "How the order ships",
+            "enum": [
+              "NOVA_POSHTA",
+              "PICKUP",
+              "COURIER",
+              "OTHER"
+            ],
+            "example": "NOVA_POSHTA"
+          },
           "paidAt": {
             "type": "string",
             "description": "When the payment settled; null while unpaid",
@@ -25961,6 +25972,7 @@
           "status",
           "paymentStatus",
           "paymentMethod",
+          "deliveryMethod",
           "paidAt",
           "reservationExpiresAt",
           "subtotal",

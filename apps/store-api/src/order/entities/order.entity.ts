@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
+import { DeliveryMethod, OrderStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import { OrderItemEntity } from './order-item.entity';
 import { centsToString, toCents, toTwoDecimals } from '../../addon-service';
 import type { OrderWithItems, ShippingAddressData } from '../order.types';
@@ -199,6 +199,18 @@ export class OrderEntity {
     example: PaymentMethod.ON_DELIVERY,
   })
   paymentMethod!: PaymentMethod;
+
+  /**
+   * How the order ships (TASK-642). Exposed first for the payment handoff: it
+   * must ask the delivery × payment matrix before opening an online payment,
+   * and it only ever sees this entity (M184A review).
+   */
+  @ApiProperty({
+    description: 'How the order ships',
+    enum: DeliveryMethod,
+    example: DeliveryMethod.NOVA_POSHTA,
+  })
+  deliveryMethod!: DeliveryMethod;
 
   /** When money actually settled (TASK-330); null while unpaid. */
   @ApiProperty({
@@ -413,6 +425,8 @@ export class OrderEntity {
     // `?? ON_DELIVERY` mirrors the column default so a fixture predating TASK-330
     // reads as what it actually was, rather than as undefined.
     entity.paymentMethod = order.paymentMethod ?? PaymentMethod.ON_DELIVERY;
+    // Same reasoning: the column default, for fixtures predating TASK-642.
+    entity.deliveryMethod = order.deliveryMethod ?? DeliveryMethod.NOVA_POSHTA;
     entity.paidAt = order.paidAt ? order.paidAt.toISOString() : null;
     // TASK-471: `?? null` because the column is optional on `OrderWithItems` —
     // fixtures predating TASK-330 simply do not carry it, and "no reservation"

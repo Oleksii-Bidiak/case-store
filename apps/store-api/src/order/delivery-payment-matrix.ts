@@ -11,7 +11,9 @@ import { DeliveryMethod, PaymentMethod } from '@prisma/client';
  *
  * The rule therefore lives HERE, in one pure table beside `order-state-machine.ts`
  * (same role: the table every writer asks), and is enforced by the order service
- * at creation. The storefront renders the same table — it reaches the client via
+ * at creation and again by `PaymentService.createCheckout`, where money actually
+ * moves (an OTHER order created as cash on delivery must not be paid online
+ * afterwards). The storefront renders the same table — it reaches the client via
  * `GET /api/delivery/methods` (`paymentMatrix`), so the buttons it disables and
  * the requests the server refuses cannot drift apart (plan 184, risk «Два
  * джерела правди»). Pure on purpose: no NestJS, no Prisma client, no clock.
