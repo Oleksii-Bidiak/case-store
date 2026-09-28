@@ -1,4 +1,5 @@
-import { ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { DeliveryMethod } from '@prisma/client';
 import type { OrderStatus, PaymentStatus } from '@prisma/client';
 
 /**
@@ -156,5 +157,90 @@ export function staleOrderError(): ConflictException {
   return new ConflictException({
     error: OrderErrorCode.STALE,
     message: 'This order changed since it was loaded — reload and retry',
+  });
+}
+
+// ─── Delivery method at checkout (TASK-643) ─────────────────────────────────
+
+/**
+ * Stable codes for a checkout refused over its delivery method (TASK-643).
+ *
+ * Same envelope as the codes above (`{ error: code, message }`), but a different
+ * audience: these reach the SHOPPER. The storefront shows the server's 400
+ * message verbatim (`use-checkout.ts`), so every message below is one plain
+ * Ukrainian sentence that says what to do next; the code is for the client to
+ * key UI behaviour off (e.g. refetch `GET /api/delivery/methods`).
+ */
+export const DeliveryOrderErrorCode = {
+  /** The method is switched off in the shop's delivery settings. */
+  METHOD_UNAVAILABLE: 'DELIVERY_METHOD_UNAVAILABLE',
+  /** The delivery × payment matrix forbids this pair (OTHER + ONLINE/INSTALLMENTS). */
+  PAYMENT_NOT_ALLOWED: 'DELIVERY_PAYMENT_NOT_ALLOWED',
+  /** NOVA_POSHTA was chosen explicitly but no NP city ref came with it. */
+  NP_CITY_REQUIRED: 'DELIVERY_NP_CITY_REQUIRED',
+  /** PICKUP was chosen without naming a point. */
+  PICKUP_POINT_REQUIRED: 'DELIVERY_PICKUP_POINT_REQUIRED',
+  /** The named pickup point does not exist or has been deactivated. */
+  PICKUP_POINT_UNAVAILABLE: 'DELIVERY_PICKUP_POINT_UNAVAILABLE',
+} as const;
+
+export type DeliveryOrderErrorCode =
+  (typeof DeliveryOrderErrorCode)[keyof typeof DeliveryOrderErrorCode];
+
+/** What each method is called on the storefront, for the messages below. */
+const UNAVAILABLE_MESSAGE: Record<DeliveryMethod, string> = {
+  NOVA_POSHTA: 'Доставка Новою Поштою зараз недоступна — оберіть інший спосіб доставки',
+  PICKUP: 'Самовивіз зараз недоступний — оберіть інший спосіб доставки',
+  COURIER: 'Кур’єрська доставка зараз недоступна — оберіть інший спосіб доставки',
+  OTHER:
+    'Доставка за адресою без вибору міста Нової Пошти зараз недоступна — ' +
+    'оберіть місто зі списку або інший спосіб доставки',
+};
+
+/** 400 for a method the shop has switched off (explicit or derived). */
+export function deliveryMethodUnavailableError(method: DeliveryMethod): BadRequestException {
+  return new BadRequestException({
+    error: DeliveryOrderErrorCode.METHOD_UNAVAILABLE,
+    message: UNAVAILABLE_MESSAGE[method],
+  });
+}
+
+/**
+ * 400 for a delivery × payment pair the matrix forbids. Today only OTHER
+ * restricts anything, and the reason is always the same: its shipping is quoted
+ * later, so there is no final amount to pay online.
+ */
+export function deliveryPaymentNotAllowedError(method: DeliveryMethod): BadRequestException {
+  return new BadRequestException({
+    error: DeliveryOrderErrorCode.PAYMENT_NOT_ALLOWED,
+    message:
+      method === DeliveryMethod.OTHER
+        ? 'Вартість такої доставки уточнить оператор, тому оплатити замовлення можна лише при ' +
+          'отриманні — оберіть оплату при отриманні'
+        : 'Обраний спосіб оплати недоступний для цього способу доставки — оберіть інший',
+  });
+}
+
+/** 400 for an explicit NOVA_POSHTA that carries no NP city to price it by. */
+export function deliveryNpCityRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: DeliveryOrderErrorCode.NP_CITY_REQUIRED,
+    message: 'Оберіть місто зі списку Нової Пошти, щоб ми могли розрахувати доставку',
+  });
+}
+
+/** 400 for PICKUP without a point. */
+export function deliveryPickupPointRequiredError(): BadRequestException {
+  return new BadRequestException({
+    error: DeliveryOrderErrorCode.PICKUP_POINT_REQUIRED,
+    message: 'Оберіть пункт самовивозу',
+  });
+}
+
+/** 400 for a pickup point that is gone or deactivated. */
+export function deliveryPickupPointUnavailableError(): BadRequestException {
+  return new BadRequestException({
+    error: DeliveryOrderErrorCode.PICKUP_POINT_UNAVAILABLE,
+    message: 'Обраний пункт самовивозу більше недоступний — оберіть інший',
   });
 }

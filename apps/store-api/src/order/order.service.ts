@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { createHash, randomBytes } from 'crypto';
 import {
+  DeliveryMethod,
   OrderHistoryNote,
   OrderStatus,
   PaymentStatus,
@@ -33,7 +34,15 @@ import {
   canTransitionPayment,
   canCorrectPayment,
 } from './order-state-machine';
+// TASK-643: the delivery × payment matrix and the non-NP pricing rules.
+import { isPaymentAllowedForDelivery } from './delivery-payment-matrix';
+import { flatShippingCost, resolveDeliveryMethod } from './shipping-cost';
 import {
+  deliveryMethodUnavailableError,
+  deliveryNpCityRequiredError,
+  deliveryPaymentNotAllowedError,
+  deliveryPickupPointRequiredError,
+  deliveryPickupPointUnavailableError,
   invalidPaymentTransitionError,
   paymentCorrectionProviderRefundError,
   invalidTransitionError,
@@ -328,30 +337,24 @@ export class OrderService {
       }
     }
 
-    // Compute the Nova Poshta shipping cost when the order carries an NP city
-    // ref (TASK-080). A transient courier failure must never block an order, so
-    // the fallback to 0 stays — but it is a fallback for a BAD MINUTE, not for a
-    // bad deployment (TASK-337).
     // Absent means cash on delivery — the honest reading of a request that never
     // mentions payment, and what every pre-TASK-330 order actually was.
     const paymentMethod = dto.paymentMethod ?? PaymentMethod.ON_DELIVERY;
 
-    let shippingCost: number | undefined;
-    const npCityRef = dto.shippingAddress.npCityRef;
-    if (npCityRef) {
-      try {
-        const estimate = await this.deliveryService.estimateShipping(npCityRef);
-        shippingCost = Number(estimate.cost);
-      } catch (err) {
-        // A missing NP_API_KEY is a deployment defect, not a courier hiccup.
-        // Swallowing it here would book a 0.00 shipping cost on every real order
-        // — the shop paying for delivery out of its own pocket, silently, with
-        // nothing in the logs louder than a warning. Let it out.
-        if (isDeliveryNotConfigured(err)) throw err;
-        this.logger.warn({ err, npCityRef }, 'Shipping estimate failed at order creation; using 0');
-        shippingCost = 0;
-      }
-    }
+    // The PRODUCT subtotal, before any discount and without add-ons: the base of
+    // the discount (TASK-079) AND of the courier's free-delivery threshold
+    // (TASK-643). One number, computed once, so the two can never be measured
+    // against different bases.
+    const subtotal = computeSubtotalString(cart.items);
+
+    // ─── TASK-643 delivery block ───────────────────────────────────────────────
+    // Resolve the method (explicit, or derived from npCityRef for every client
+    // that predates the method step), validate it against the shop's settings
+    // and the delivery × payment matrix, price it SERVER-SIDE, and snapshot it
+    // into the address — all before anything is written. Nova Poshta keeps its
+    // exact pre-wave pricing, including the TASK-337 not-configured rethrow.
+    const delivery = await this.resolveDelivery(dto, paymentMethod, subtotal);
+    // ───────────────────────────────────────────────────────────────────────────
 
     // ─── TASK-174 add-on block ─────────────────────────────────────────────────
     // Re-resolve every line's applicable add-ons FRESH (one batched call), in the
@@ -382,7 +385,6 @@ export class OrderService {
           'Promo codes require an account — sign in or register to use this code',
         );
       }
-      const subtotal = computeSubtotalString(cart.items);
       const { discount: applied, amount } = await this.discountService.computeDiscount(
         dto.discountCode,
         subtotal,
@@ -431,7 +433,8 @@ export class OrderService {
         cartId: cart.id,
         cartItems: cart.items,
         addonsByCartItemId,
-        shippingAddress: dto.shippingAddress,
+        // TASK-643: the typed address plus the delivery snapshot.
+        shippingAddress: delivery.shippingAddress,
         billingAddress: dto.billingAddress,
         notes: dto.notes,
         // ─── TASK-330: the payment method and its consequence ──────────────────
@@ -443,7 +446,12 @@ export class OrderService {
         // by abandoned card payments was never returned.
         paymentMethod,
         reservationExpiresAt: this.resolveReservationDeadline(paymentMethod),
-        ...(shippingCost !== undefined ? { shippingCost } : {}),
+        // ─── TASK-643: the delivery decision ───────────────────────────────────
+        // Always explicit, so a 0 is a decided value (pickup, OTHER, a free
+        // courier) and never a repository default standing in for "unknown".
+        deliveryMethod: delivery.deliveryMethod,
+        ...(delivery.pickupPointId ? { pickupPointId: delivery.pickupPointId } : {}),
+        shippingCost: delivery.shippingCost,
         ...(discount ? { discount } : {}),
       },
       // ── TASK-103-F: transactional outbox ──────────────────────────────────
@@ -486,6 +494,122 @@ export class OrderService {
     );
 
     return OrderEntity.fromPrisma(order);
+  }
+
+  /**
+   * Decide how a checkout is delivered and what that costs (TASK-643, plan 184).
+   *
+   * Four steps, in this order, every one of them before any write:
+   *
+   *  1. **Resolve.** An explicit `dto.deliveryMethod` is used as is; absent, the
+   *     address decides (`npCityRef` → NOVA_POSHTA, else OTHER). That keeps every
+   *     pre-TASK-643 client working, with the same NP total as before the wave.
+   *  2. **Validate.** The method must be enabled in the shop's settings — the
+   *     derived one too — and the delivery × payment matrix must admit the
+   *     payment method. Then the method's own requirements: NP needs a city ref
+   *     (never a silent 0), PICKUP an active point.
+   *  3. **Price.** NOVA_POSHTA → the carrier estimate ({@link estimateNpShipping});
+   *     everything else → {@link flatShippingCost} on the PRODUCT subtotal.
+   *  4. **Snapshot.** The method, the carrier and — for pickup — the point's
+   *     name and address go into the persisted address JSON, so a later edit of
+   *     the point cannot rewrite this order's history. Refs that belong to a
+   *     different method (a stray `pickupPointId`, NP refs on a non-NP order) are
+   *     dropped rather than persisted as contradictions.
+   *
+   * @throws BadRequestException with a `DELIVERY_*` code (see order.errors.ts).
+   */
+  private async resolveDelivery(
+    dto: CreateOrderDto,
+    paymentMethod: PaymentMethod,
+    subtotal: string,
+  ): Promise<ResolvedDelivery> {
+    const npCityRef = dto.shippingAddress.npCityRef;
+    const deliveryMethod = resolveDeliveryMethod({
+      deliveryMethod: dto.deliveryMethod,
+      npCityRef,
+    });
+
+    const { enabledMethods, courier } = await this.deliveryService.getMethodSettings();
+    if (!enabledMethods.includes(deliveryMethod)) {
+      throw deliveryMethodUnavailableError(deliveryMethod);
+    }
+    if (!isPaymentAllowedForDelivery(deliveryMethod, paymentMethod)) {
+      throw deliveryPaymentNotAllowedError(deliveryMethod);
+    }
+
+    if (deliveryMethod === DeliveryMethod.NOVA_POSHTA) {
+      if (!npCityRef) throw deliveryNpCityRequiredError();
+      return {
+        deliveryMethod,
+        shippingCost: await this.estimateNpShipping(npCityRef),
+        shippingAddress: { ...dto.shippingAddress, deliveryMethod, carrier: 'NOVA_POSHTA' },
+      };
+    }
+
+    const shippingCost = Number(
+      flatShippingCost(deliveryMethod, {
+        subtotal,
+        courierPrice: courier.price,
+        courierFreeFrom: courier.freeFrom,
+      }),
+    );
+    const address = withoutNpRefs(dto.shippingAddress);
+
+    if (deliveryMethod === DeliveryMethod.PICKUP) {
+      if (!dto.pickupPointId) throw deliveryPickupPointRequiredError();
+      const point = await this.deliveryService.resolveActivePickupPoint(dto.pickupPointId);
+      if (!point) throw deliveryPickupPointUnavailableError();
+      return {
+        deliveryMethod,
+        pickupPointId: point.id,
+        shippingCost,
+        shippingAddress: {
+          ...address,
+          // The server's copy of the point wins over whatever the client typed:
+          // the parcel is collected THERE, whatever the form said.
+          city: point.city,
+          address1: point.address,
+          deliveryMethod,
+          carrier: null,
+          pickupPointName: point.name,
+          pickupPointAddress: point.address,
+        },
+      };
+    }
+
+    return {
+      deliveryMethod,
+      shippingCost,
+      shippingAddress: {
+        ...address,
+        deliveryMethod,
+        carrier: null,
+        // OTHER books 0 now and the operator quotes later — say so in the
+        // record, so no surface renders the 0 as "free delivery" (B-6 §4).
+        ...(deliveryMethod === DeliveryMethod.OTHER ? { shippingCostPending: true } : {}),
+      },
+    };
+  }
+
+  /**
+   * The Nova Poshta shipping cost for an order (TASK-080), unchanged by TASK-643.
+   * A transient courier failure must never block an order, so the fallback to 0
+   * stays — but it is a fallback for a BAD MINUTE, not for a bad deployment
+   * (TASK-337).
+   */
+  private async estimateNpShipping(npCityRef: string): Promise<number> {
+    try {
+      const estimate = await this.deliveryService.estimateShipping(npCityRef);
+      return Number(estimate.cost);
+    } catch (err) {
+      // A missing NP_API_KEY is a deployment defect, not a courier hiccup.
+      // Swallowing it here would book a 0.00 shipping cost on every real order
+      // — the shop paying for delivery out of its own pocket, silently, with
+      // nothing in the logs louder than a warning. Let it out.
+      if (isDeliveryNotConfigured(err)) throw err;
+      this.logger.warn({ err, npCityRef }, 'Shipping estimate failed at order creation; using 0');
+      return 0;
+    }
   }
 
   /**
@@ -1211,6 +1335,9 @@ export class OrderService {
         accessTokenHash: hashGuestToken(accessToken),
         items,
         shippingAddress: dto.shippingAddress,
+        // TASK-643: classified by the same rule as a legacy checkout and the
+        // TASK-642 backfill. Pricing of a phone order is deliberately unchanged.
+        deliveryMethod: resolveDeliveryMethod({ npCityRef: dto.shippingAddress.npCityRef }),
         ...(dto.notes ? { notes: dto.notes } : {}),
         ...(dto.internalNotes ? { internalNotes: dto.internalNotes } : {}),
         ...(dto.paymentMethod ? { paymentMethod: dto.paymentMethod } : {}),
@@ -2314,11 +2441,35 @@ export class OrderService {
   }
 }
 
+/** What {@link OrderService.resolveDelivery} decided for a checkout (TASK-643). */
+interface ResolvedDelivery {
+  deliveryMethod: DeliveryMethod;
+  /** Set only for PICKUP. */
+  pickupPointId?: string;
+  shippingCost: number;
+  shippingAddress: ShippingAddressData;
+}
+
+/**
+ * A copy of the typed address without the Nova Poshta refs (TASK-643). Used for
+ * every non-NP method: an `npCityRef` on a courier order would make any reader
+ * that recognises NP parcels by that ref (the TASK-642 backfill rule, the admin
+ * card) treat it as one.
+ */
+function withoutNpRefs(address: AddressDto): ShippingAddressData {
+  const copy: ShippingAddressData = { ...address };
+  delete copy.npCityRef;
+  delete copy.npWarehouseName;
+  delete copy.npWarehouseRef;
+  return copy;
+}
+
 /**
  * Compute the cart subtotal as a "XX.YY" decimal string with the one shared
  * line-total rule (`money.util`, TASK-807) — the same one CartEntity uses for
  * the subtotal the discount preview shows. Feeds the authoritative discount
- * recomputation in {@link OrderService.createOrder}.
+ * recomputation in {@link OrderService.createOrder} and, since TASK-643, the
+ * courier's free-delivery threshold.
  */
 function computeSubtotalString(items: CartWithItems['items']): string {
   return centsToString(

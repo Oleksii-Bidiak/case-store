@@ -1,8 +1,9 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiExtraModels } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiExtraModels, ApiOkResponse } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { DeliveryService } from './delivery.service';
 import {
+  DeliveryMethodsResponse,
   NpCitySearchQueryDto,
   NpWarehouseSearchQueryDto,
   NpEstimateQueryDto,
@@ -75,5 +76,28 @@ export class DeliveryController {
   @ApiResponse({ status: 200, description: 'Shipping estimate', type: NpEstimateResponse })
   async estimate(@Query() query: NpEstimateQueryDto): Promise<NpEstimateResponse> {
     return { data: await this.deliveryService.estimateShipping(query.cityRef) };
+  }
+
+  /**
+   * What the checkout may offer right now (TASK-643): the enabled methods, the
+   * courier's terms, the active pickup points and the delivery × payment matrix.
+   * The storefront's delivery step renders from this — never from an env var or
+   * a constant (B-6 §7) — and the server enforces the same settings and matrix
+   * when the order is placed. No NP call behind it, but throttled like its
+   * neighbours: it is public and reads the database.
+   */
+  @Get('methods')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  @ApiOperation({
+    summary: 'Delivery methods available at checkout',
+    description:
+      'Enabled methods (fixed order NOVA_POSHTA, PICKUP, COURIER, OTHER), courier price and ' +
+      'free-delivery threshold, active pickup points, and which payment methods each ' +
+      'delivery method admits.',
+    operationId: 'getDeliveryMethods',
+  })
+  @ApiOkResponse({ description: 'Checkout delivery options', type: DeliveryMethodsResponse })
+  async getMethods(): Promise<DeliveryMethodsResponse> {
+    return { data: await this.deliveryService.getMethods() };
   }
 }

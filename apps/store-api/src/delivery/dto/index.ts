@@ -6,3 +6,10 @@ export { NpWarehouseDto, NpWarehouseListResponse } from './np-warehouse.dto';
 export { NpEstimateDto, NpEstimateResponse } from './np-estimate.dto';
 export { DeliverySettingDto, DeliverySettingResponse } from './delivery-setting.dto';
 export { UpdateDeliverySettingDto } from './update-delivery-setting.dto';
+export {
+  CourierTermsDto,
+  DeliveryMethodsDto,
+  DeliveryMethodsResponse,
+  DeliveryPaymentMatrixDto,
+  PickupPointPublicDto,
+} from './delivery-methods.dto';

@@ -407,6 +407,22 @@ export class OrderRepository {
             : {}),
           status: OrderStatus.PENDING,
           paymentStatus: PaymentStatus.PENDING,
+          // TASK-1018: TASK-330/650 wired the payment method and the reservation
+          // deadline through OrderService, but this write dropped both, so every
+          // storefront order landed as ON_DELIVERY with a null deadline and
+          // `findExpiredReservations` never released an abandoned card order's
+          // stock. Mocked-repository tests could not see it — see
+          // test/order-create-from-cart.int-spec.ts. Same shape as createManual.
+          ...(params.paymentMethod ? { paymentMethod: params.paymentMethod } : {}),
+          ...(params.reservationExpiresAt !== undefined
+            ? { reservationExpiresAt: params.reservationExpiresAt }
+            : {}),
+          // TASK-643: always written. The column defaults to NOVA_POSHTA (honest
+          // for pre-column orders), so leaning on it would book every pickup,
+          // courier and free-text order as a Nova Poshta parcel. The point FK is
+          // `onDelete: SetNull`; the address snapshot keeps its name and address.
+          deliveryMethod: params.deliveryMethod,
+          ...(params.pickupPointId ? { pickupPointId: params.pickupPointId } : {}),
           subtotal,
           discount: discountAmount,
           discountCode: discountParam?.code ?? null,
@@ -575,6 +591,9 @@ export class OrderRepository {
           ...(params.reservationExpiresAt !== undefined
             ? { reservationExpiresAt: params.reservationExpiresAt }
             : {}),
+          // TASK-643: the service classifies a phone order (NP ref → NOVA_POSHTA,
+          // else OTHER); absent → the column default.
+          ...(params.deliveryMethod ? { deliveryMethod: params.deliveryMethod } : {}),
           subtotal,
           discount: new Prisma.Decimal(0),
           shippingCost: shipping,

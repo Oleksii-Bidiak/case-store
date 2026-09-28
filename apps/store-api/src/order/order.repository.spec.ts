@@ -147,6 +147,8 @@ const baseParams: CreateOrderParams = {
     city: 'Kyiv',
     country: 'UA',
   },
+  // TASK-643: the service always resolves a method; a free-text address is OTHER.
+  deliveryMethod: 'OTHER',
 };
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
@@ -341,6 +343,64 @@ describe('OrderRepository', () => {
   //   total = subtotal + shipping + addonsTotal - discount
   // with `discount` computed and clamped against `subtotal` ALONE — a coupon can
   // never reduce what an add-on contributes to the payable total.
+
+  // ─── createFromCart / createManual — delivery method (TASK-643) ─────────────
+  // The column defaults to NOVA_POSHTA, so a write that forgets the method books
+  // a free-text order as a Nova Poshta parcel. The method is always written.
+
+  describe('delivery method (TASK-643)', () => {
+    const orderData = (tx: ReturnType<typeof makeTx>) =>
+      (tx.order.create.mock.calls[0][0] as { data: Record<string, unknown> }).data;
+
+    const withTx = () => {
+      const tx = makeTx();
+      tx.order.create.mockResolvedValue({ id: 'order-1', items: [] });
+      tx.product.updateMany.mockResolvedValue({ count: 1 });
+      prismaMock.$transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx));
+      return tx;
+    };
+
+    it('createFromCart writes the resolved method', async () => {
+      const tx = withTx();
+
+      await repository.createFromCart({ ...baseParams, deliveryMethod: 'COURIER' });
+
+      expect(orderData(tx).deliveryMethod).toBe('COURIER');
+      expect(orderData(tx)).not.toHaveProperty('pickupPointId');
+    });
+
+    it('createFromCart links the pickup point of a PICKUP order', async () => {
+      const tx = withTx();
+
+      await repository.createFromCart({
+        ...baseParams,
+        deliveryMethod: 'PICKUP',
+        pickupPointId: 'point-uuid-1',
+        shippingCost: 0,
+      });
+
+      expect(orderData(tx)).toMatchObject({
+        deliveryMethod: 'PICKUP',
+        pickupPointId: 'point-uuid-1',
+      });
+    });
+
+    it('createManual writes the method it is given', async () => {
+      const tx = withTx();
+
+      await repository.createManual(
+        {
+          userId: 'user-uuid-1',
+          items: [{ productId: 'product-uuid-1', quantity: 1, price: '10.00', name: 'Case' }],
+          shippingAddress: baseParams.shippingAddress as never,
+          deliveryMethod: 'OTHER',
+        },
+        'admin-uuid-1',
+      );
+
+      expect(orderData(tx).deliveryMethod).toBe('OTHER');
+    });
+  });
 
   describe('createFromCart — add-on snapshots (TASK-174)', () => {
     const arrangeTx = () => {

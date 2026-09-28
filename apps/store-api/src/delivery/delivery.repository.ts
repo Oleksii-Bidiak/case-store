@@ -25,6 +25,16 @@ export interface UpsertDeliverySettingInput {
   senderCityName?: string | null;
   senderWarehouseRef?: string | null;
   defaultWeightKg?: number;
+  // ─── Delivery methods (TASK-643) ───────────────────────────────────────────
+  npEnabled?: boolean;
+  pickupEnabled?: boolean;
+  courierEnabled?: boolean;
+  otherEnabled?: boolean;
+  courierCityName?: string | null;
+  /** UAH, at most two decimals (validated by the DTO); Prisma stores it as Decimal(10,2). */
+  courierPrice?: number;
+  /** UAH, or null to remove the free-courier threshold. */
+  courierFreeFrom?: number | null;
 }
 
 /**

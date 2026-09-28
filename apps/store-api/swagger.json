@@ -13602,6 +13602,29 @@
         ]
       }
     },
+    "/api/delivery/methods": {
+      "get": {
+        "description": "Enabled methods (fixed order NOVA_POSHTA, PICKUP, COURIER, OTHER), courier price and free-delivery threshold, active pickup points, and which payment methods each delivery method admits.",
+        "operationId": "getDeliveryMethods",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Checkout delivery options",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeliveryMethodsResponse"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delivery methods available at checkout",
+        "tags": [
+          "Delivery"
+        ]
+      }
+    },
     "/api/admin/delivery-settings": {
       "get": {
         "operationId": "getDeliverySettings",
@@ -25802,6 +25825,17 @@
             ],
             "example": "ON_DELIVERY"
           },
+          "deliveryMethod": {
+            "type": "string",
+            "description": "How the order ships",
+            "enum": [
+              "NOVA_POSHTA",
+              "PICKUP",
+              "COURIER",
+              "OTHER"
+            ],
+            "example": "NOVA_POSHTA"
+          },
           "paidAt": {
             "type": "string",
             "description": "When the payment settled; null while unpaid",
@@ -25938,6 +25972,7 @@
           "status",
           "paymentStatus",
           "paymentMethod",
+          "deliveryMethod",
           "paidAt",
           "reservationExpiresAt",
           "subtotal",
@@ -26237,6 +26272,16 @@
           "name"
         ]
       },
+      "DeliveryMethod": {
+        "type": "string",
+        "enum": [
+          "NOVA_POSHTA",
+          "PICKUP",
+          "COURIER",
+          "OTHER"
+        ],
+        "description": "Delivery method. Omitted → derived from the address: shippingAddress.npCityRef present → NOVA_POSHTA, otherwise OTHER. The server computes the shipping cost for the method and refuses (400) a method that is disabled, a PICKUP without an active pickupPointId, a NOVA_POSHTA without npCityRef, and a payment method the delivery method does not admit (OTHER allows ON_DELIVERY only)."
+      },
       "AddressDto": {
         "type": "object",
         "properties": {
@@ -26334,6 +26379,19 @@
               "INSTALLMENTS"
             ],
             "default": "ON_DELIVERY"
+          },
+          "deliveryMethod": {
+            "description": "Delivery method. Omitted → derived from the address: shippingAddress.npCityRef present → NOVA_POSHTA, otherwise OTHER. The server computes the shipping cost for the method and refuses (400) a method that is disabled, a PICKUP without an active pickupPointId, a NOVA_POSHTA without npCityRef, and a payment method the delivery method does not admit (OTHER allows ON_DELIVERY only).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DeliveryMethod"
+              }
+            ]
+          },
+          "pickupPointId": {
+            "type": "string",
+            "description": "Pickup point id (from GET /api/delivery/methods). Required for PICKUP; ignored otherwise.",
+            "format": "uuid"
           },
           "shippingAddress": {
             "description": "Shipping address",
@@ -27380,6 +27438,169 @@
           "data"
         ]
       },
+      "CourierTermsDto": {
+        "type": "object",
+        "properties": {
+          "price": {
+            "type": "string",
+            "description": "Flat courier price, UAH (decimal string)",
+            "example": "120.00"
+          },
+          "freeFrom": {
+            "type": "string",
+            "description": "Product subtotal (UAH, decimal string) from which the courier is free, inclusive. Null = never free.",
+            "nullable": true,
+            "example": "1500.00"
+          },
+          "cityName": {
+            "type": "string",
+            "description": "The city the courier works in",
+            "nullable": true,
+            "example": "Київ"
+          }
+        },
+        "required": [
+          "price",
+          "freeFrom",
+          "cityName"
+        ]
+      },
+      "PickupPointPublicDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "example": "6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11"
+          },
+          "name": {
+            "type": "string",
+            "example": "Магазин на Хрещатику"
+          },
+          "city": {
+            "type": "string",
+            "example": "Київ"
+          },
+          "address": {
+            "type": "string",
+            "example": "вул. Хрещатик, 1"
+          },
+          "phone": {
+            "type": "string",
+            "nullable": true,
+            "example": "+380441234567"
+          },
+          "workingHours": {
+            "type": "string",
+            "description": "Free text, shown as typed",
+            "nullable": true,
+            "example": "Пн–Пт 10:00–19:00"
+          },
+          "mapUrl": {
+            "type": "string",
+            "nullable": true,
+            "example": "https://maps.app.goo.gl/…"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "city",
+          "address",
+          "phone",
+          "workingHours",
+          "mapUrl"
+        ]
+      },
+      "PaymentMethod": {
+        "type": "string",
+        "enum": [
+          "ONLINE",
+          "ON_DELIVERY",
+          "INSTALLMENTS"
+        ]
+      },
+      "DeliveryPaymentMatrixDto": {
+        "type": "object",
+        "properties": {
+          "NOVA_POSHTA": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethod"
+            }
+          },
+          "PICKUP": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethod"
+            }
+          },
+          "COURIER": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethod"
+            }
+          },
+          "OTHER": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PaymentMethod"
+            }
+          }
+        },
+        "required": [
+          "NOVA_POSHTA",
+          "PICKUP",
+          "COURIER",
+          "OTHER"
+        ]
+      },
+      "DeliveryMethodsDto": {
+        "type": "object",
+        "properties": {
+          "methods": {
+            "type": "array",
+            "description": "Enabled delivery methods, always in the order NOVA_POSHTA, PICKUP, COURIER, OTHER. PICKUP is listed only while at least one active pickup point exists.",
+            "example": [
+              "NOVA_POSHTA",
+              "OTHER"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/DeliveryMethod"
+            }
+          },
+          "courier": {
+            "$ref": "#/components/schemas/CourierTermsDto"
+          },
+          "pickupPoints": {
+            "description": "Active pickup points in the shop’s order; empty while pickup is disabled",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PickupPointPublicDto"
+            }
+          },
+          "paymentMatrix": {
+            "$ref": "#/components/schemas/DeliveryPaymentMatrixDto"
+          }
+        },
+        "required": [
+          "methods",
+          "courier",
+          "pickupPoints",
+          "paymentMatrix"
+        ]
+      },
+      "DeliveryMethodsResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/DeliveryMethodsDto"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
       "DeliverySettingDto": {
         "type": "object",
         "properties": {
@@ -27406,6 +27627,43 @@
             "description": "Parcel weight (kg) used for the estimate when the real weight is unknown",
             "example": 0.5
           },
+          "npEnabled": {
+            "type": "boolean",
+            "description": "Nova Poshta is offered at checkout",
+            "example": true
+          },
+          "pickupEnabled": {
+            "type": "boolean",
+            "description": "Pickup from a shop point is offered at checkout",
+            "example": false
+          },
+          "courierEnabled": {
+            "type": "boolean",
+            "description": "Courier delivery is offered at checkout",
+            "example": false
+          },
+          "otherEnabled": {
+            "type": "boolean",
+            "description": "Free-text delivery (\"the operator will quote shipping\") is offered at checkout. Such orders can only be paid on delivery.",
+            "example": true
+          },
+          "courierCityName": {
+            "type": "string",
+            "description": "The city the courier works in; shown to the customer, not enforced",
+            "example": "Київ",
+            "nullable": true
+          },
+          "courierPrice": {
+            "type": "string",
+            "description": "Flat courier price, UAH (decimal string)",
+            "example": "120.00"
+          },
+          "courierFreeFrom": {
+            "type": "string",
+            "description": "Product subtotal (UAH, decimal string) from which the courier is free, inclusive. Null = never free.",
+            "example": "1500.00",
+            "nullable": true
+          },
           "updatedAt": {
             "type": "string",
             "description": "When the settings were last changed. Null when never written.",
@@ -27418,6 +27676,13 @@
           "senderCityName",
           "senderWarehouseRef",
           "defaultWeightKg",
+          "npEnabled",
+          "pickupEnabled",
+          "courierEnabled",
+          "otherEnabled",
+          "courierCityName",
+          "courierPrice",
+          "courierFreeFrom",
           "updatedAt"
         ]
       },
@@ -27456,6 +27721,48 @@
             "example": 0.5,
             "minimum": 0.1,
             "maximum": 30
+          },
+          "npEnabled": {
+            "type": "boolean",
+            "description": "Offer Nova Poshta at checkout",
+            "example": true
+          },
+          "pickupEnabled": {
+            "type": "boolean",
+            "description": "Offer pickup from a shop point at checkout",
+            "example": false
+          },
+          "courierEnabled": {
+            "type": "boolean",
+            "description": "Offer courier delivery at checkout",
+            "example": false
+          },
+          "otherEnabled": {
+            "type": "boolean",
+            "description": "Offer free-text delivery (shipping quoted later by the operator; payable on delivery only)",
+            "example": true
+          },
+          "courierCityName": {
+            "type": "string",
+            "description": "The city the courier works in (shown to the customer). Null clears it.",
+            "example": "Київ",
+            "nullable": true,
+            "maxLength": 255
+          },
+          "courierPrice": {
+            "type": "number",
+            "description": "Flat courier price, UAH (0–100000, at most 2 decimals)",
+            "example": 120,
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "courierFreeFrom": {
+            "type": "number",
+            "description": "Product subtotal (UAH) from which the courier is free, inclusive (0–100000, at most 2 decimals). Null removes the threshold.",
+            "example": 1500,
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 100000
           }
         }
       },

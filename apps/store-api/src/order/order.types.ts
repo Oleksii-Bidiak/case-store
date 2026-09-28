@@ -1,5 +1,6 @@
 import {
   Prisma,
+  DeliveryMethod,
   OrderStatus,
   PaymentStatus,
   PaymentMethod,
@@ -59,7 +60,38 @@ export interface ShippingAddressData {
   npCityRef?: string;
   npWarehouseName?: string;
   npWarehouseRef?: string;
+
+  // ─── Delivery snapshot (TASK-643) ──────────────────────────────────────────
+  // Written at checkout and never rewritten, like the rest of this object. All
+  // optional: snapshots created before TASK-643 lack them, and readers fall back
+  // to `Order.deliveryMethod` (backfilled by TASK-642).
+
+  /** How the order is delivered, as decided at checkout. */
+  deliveryMethod?: DeliveryMethod;
+  /**
+   * Which carrier moves the parcel — `'NOVA_POSHTA'` for NP, null for pickup,
+   * the shop's courier and "operator will quote". A neutral field, so adding
+   * Ukrposhta later is a new value here rather than a migration of history
+   * (B-6 §3).
+   */
+  carrier?: DeliveryCarrier | null;
+  /**
+   * True only for OTHER: the booked shipping cost (0) is a placeholder the
+   * operator will replace, not free delivery. Surfaces must say "вартість
+   * доставки уточнить оператор" instead of "Доставка: 0 грн" (B-6 §4).
+   */
+  shippingCostPending?: boolean;
+  /**
+   * PICKUP only: the point's name and address AS THEY WERE at checkout, so a
+   * later edit or deletion of the point cannot rewrite this order's history.
+   * `city`/`address1` carry the point's city/address too.
+   */
+  pickupPointName?: string;
+  pickupPointAddress?: string;
 }
+
+/** Carriers an order can be handed to (TASK-643). One value today, by design. */
+export type DeliveryCarrier = 'NOVA_POSHTA';
 
 /**
  * A single order line as returned by repository queries, including the
@@ -180,6 +212,8 @@ export interface OrderWithItems {
 
   /** How the customer chose to pay (TASK-330). */
   paymentMethod?: PaymentMethod;
+  /** How the order ships (TASK-642); the column defaults to NOVA_POSHTA. */
+  deliveryMethod?: DeliveryMethod;
   /** When money actually settled (TASK-330); null while unpaid. */
   paidAt?: Date | null;
   /** Deadline on an unpaid ONLINE order's stock reservation (TASK-330). */
@@ -265,14 +299,28 @@ export interface CreateOrderParams {
    * line with no selected add-ons is simply absent from the map.
    */
   addonsByCartItemId?: Map<string, OrderAddonSnapshot[]>;
-  shippingAddress: AddressDto;
+  /**
+   * The address as typed, plus the delivery snapshot the service adds
+   * (TASK-643: method, carrier, pickup point, "to be quoted" marker).
+   */
+  shippingAddress: AddressDto | ShippingAddressData;
   billingAddress?: AddressDto;
   notes?: string;
   /**
-   * Estimated Nova Poshta shipping cost (UAH) computed by the service from the
-   * delivery estimate. Absent for free-text/manual orders → repository writes 0.
+   * Shipping cost (UAH) decided by the service for the resolved delivery method
+   * (TASK-643): the NP estimate, 0 for pickup and OTHER, the courier price or 0
+   * past its threshold. The client never supplies it. Absent → repository
+   * writes 0 (kept for callers that predate TASK-643).
    */
   shippingCost?: number;
+  /**
+   * How the order is delivered (TASK-643). Required: the service always
+   * resolves one, and leaving it to the column default would book a free-text
+   * order as NOVA_POSHTA.
+   */
+  deliveryMethod: DeliveryMethod;
+  /** The pickup point of a PICKUP order (TASK-643); absent for every other method. */
+  pickupPointId?: string;
   /**
    * How the shopper chose to pay (TASK-330). Absent → the column default,
    * ON_DELIVERY.
@@ -510,6 +558,12 @@ export interface ManualOrderParams {
   internalNotes?: string;
   shippingCost?: number;
   paymentMethod?: PaymentMethod;
+  /**
+   * How the phone order is delivered (TASK-643), classified by the same rule as
+   * a legacy checkout: NP city ref → NOVA_POSHTA, otherwise OTHER. Absent → the
+   * column default (NOVA_POSHTA).
+   */
+  deliveryMethod?: DeliveryMethod;
   /**
    * Reservation deadline for an operator-created order (TASK-330). Present for
    * the same reason as on {@link CreateOrderParams}: an operator can take a phone

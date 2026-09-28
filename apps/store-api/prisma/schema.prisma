@@ -2,7 +2,7 @@
 // Models will be added in TASK-006 (Design and create Prisma schema).
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
   // `partialIndexes` (TASK-474) lets `User.isOwner` declare its "at most one
   // owner" index HERE rather than as hand-written SQL in a migration. The rule is
   // the hinge of the whole access model, and a rule that lives only in a past
@@ -56,6 +56,21 @@ enum PaymentMethod {
   ONLINE
   ON_DELIVERY
   INSTALLMENTS
+}
+
+/// How the order travels to the customer (TASK-642, B-6 decision of 2026-09-15).
+/// Exactly four values and no carrier abstraction: Ukrposhta/Meest are "some day",
+/// and the seam an abstraction needs only shows on the second real carrier. The
+/// address snapshot on the order is written carrier-neutrally instead, so adding
+/// one means a new value plus an adapter, not a migration of historical orders.
+/// OTHER is the honest "the operator will quote the shipping cost" — never paid
+/// online, because there is no final amount to sign (see the delivery × payment
+/// matrix in `src/order/delivery-payment-matrix.ts`).
+enum DeliveryMethod {
+  NOVA_POSHTA
+  PICKUP
+  COURIER
+  OTHER
 }
 
 /// Lifecycle of ONE attempt to collect money (TASK-330). Deliberately not the same
@@ -690,65 +705,76 @@ model CartItem {
 }
 
 model Order {
-  id                   String        @id @default(uuid())
+  id                   String         @id @default(uuid())
   // Nullable since TASK-338: a guest checkout produces a real order with no
   // account behind it. Exactly one of `userId` and the guest contact block is
   // populated — the application enforces that, since Prisma cannot express "one
   // of these two". Guest orders are claimed by an account later by setting
   // `userId`; the guest columns are kept as the snapshot of what was actually
   // typed at checkout.
-  userId               String?       @map("user_id")
+  userId               String?        @map("user_id")
   // onDelete: Restrict is EXPLICIT, not left to Prisma's default. An order is the
   // record of money taken; it must outlive anything it references. Spelling the
   // rule out here means a future "tidy up the relations" edit that adds Cascade
   // has to consciously delete this line, rather than silently changing behaviour
   // by adding one. Users are soft-deleted (deletedAt) for exactly this reason.
-  user                 User?         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user                 User?          @relation(fields: [userId], references: [id], onDelete: Restrict)
   /// Contact details for a guest order (TASK-338). Null on account orders, where
   /// the user row is the source of truth.
-  guestEmail           String?       @map("guest_email")
-  guestPhone           String?       @map("guest_phone")
-  guestName            String?       @map("guest_name")
+  guestEmail           String?        @map("guest_email")
+  guestPhone           String?        @map("guest_phone")
+  guestName            String?        @map("guest_name")
   /// SHA-256 of the token in the guest's confirmation-email link (same at-rest
   /// pattern as RefreshToken / PasswordResetToken). It is the ONLY way a guest can
   /// reach their own order status — without it they are blind the moment the cart
   /// cookie is gone or they switch device (edge case E-17). Unique so a lookup by
   /// token is a single indexed hit rather than a scan.
-  accessTokenHash      String?       @unique @map("access_token_hash")
+  accessTokenHash      String?        @unique @map("access_token_hash")
   /// When `accessTokenHash` was last issued (TASK-484, B-5 decision 4). The guest
   /// link's TTL is counted from HERE, not from `createdAt`: an operator who
   /// re-issues the link a month after the order was taken would otherwise hand the
   /// customer a URL that is already dead at birth. Null on orders created before
   /// this column existed and on orders that never had a token — both are read as
   /// "fall back to `createdAt`", which is exactly what the TTL used to mean.
-  accessTokenIssuedAt  DateTime?     @map("access_token_issued_at")
-  status               OrderStatus   @default(PENDING)
-  paymentStatus        PaymentStatus @default(PENDING) @map("payment_status")
+  accessTokenIssuedAt  DateTime?      @map("access_token_issued_at")
+  status               OrderStatus    @default(PENDING)
+  paymentStatus        PaymentStatus  @default(PENDING) @map("payment_status")
   /// Defaults to ON_DELIVERY because that is what every pre-TASK-330 order
   /// actually was — the storefront offered no other method, so backfilling
   /// anything else would invent history.
-  paymentMethod        PaymentMethod @default(ON_DELIVERY) @map("payment_method")
-  subtotal             Decimal       @db.Decimal(10, 2)
-  discount             Decimal       @default(0) @db.Decimal(10, 2)
+  paymentMethod        PaymentMethod  @default(ON_DELIVERY) @map("payment_method")
+  /// TASK-642. The default is the honest reading of an order placed before this
+  /// column existed only when it carried an NP city ref; the migration backfills
+  /// OTHER for every order without one (they were free-text addresses whose
+  /// shipping NP never priced). The service always writes it explicitly.
+  deliveryMethod       DeliveryMethod @default(NOVA_POSHTA) @map("delivery_method")
+  /// Pickup point the customer chose (TASK-642). SetNull, not Restrict: the
+  /// point's name and address are also snapshotted into `shippingAddress`, so
+  /// deleting a point never orphans the order's history — the FK exists for
+  /// filters and reports.
+  pickupPointId        String?        @map("pickup_point_id")
+  pickupPoint          PickupPoint?   @relation(fields: [pickupPointId], references: [id], onDelete: SetNull)
+  subtotal             Decimal        @db.Decimal(10, 2)
+  discount             Decimal        @default(0) @db.Decimal(10, 2)
   // Snapshot of the redeemed promo code (TASK-079), for admin order readability.
-  discountCode         String?       @map("discount_code")
-  shippingCost         Decimal       @default(0) @map("shipping_cost") @db.Decimal(10, 2)
-  tax                  Decimal       @default(0) @db.Decimal(10, 2)
+  discountCode         String?        @map("discount_code")
+  shippingCost         Decimal        @default(0) @map("shipping_cost") @db.Decimal(10, 2)
+  tax                  Decimal        @default(0) @db.Decimal(10, 2)
   // Sum of the frozen OrderItemAddon prices across every line (TASK-174).
   // Like `shippingCost`, it is NEVER part of the discount base — the invariant
   // is `total = subtotal + shippingCost + addonsTotal - discount`, with
   // `discount` computed and clamped against `subtotal` alone (plan 150, owner
   // decision 4).
-  addonsTotal          Decimal       @default(0) @map("addons_total") @db.Decimal(10, 2)
-  total                Decimal       @db.Decimal(10, 2)
-  shippingAddress      Json?         @map("shipping_address") // {city, warehouse, address, ref}
-  billingAddress       Json?         @map("billing_address") // Same structure
+  addonsTotal          Decimal        @default(0) @map("addons_total") @db.Decimal(10, 2)
+  total                Decimal        @db.Decimal(10, 2)
+  shippingAddress      Json?          @map("shipping_address") // {city, warehouse, address, ref}
+  billingAddress       Json?          @map("billing_address") // Same structure
   notes                String?
-  createdAt            DateTime      @default(now()) @map("created_at")
-  updatedAt            DateTime      @updatedAt @map("updated_at")
+  createdAt            DateTime       @default(now()) @map("created_at")
+  updatedAt            DateTime       @updatedAt @map("updated_at")
   // Audit tombstone (TASK-104). NULL = live; non-null = soft-deleted and hidden
   // from every read path. Child OrderItems are left in place.
-  deletedAt            DateTime?     @map("deleted_at")
+  deletedAt            DateTime?      @map("deleted_at")
   // TASK-228: stamped when an automatic cancellation returned this order's
   // reserved stock to inventory; cleared when the order is revived and the
   // stock is re-reserved. NULL = the order still "owns" its items (reserved in
@@ -756,28 +782,28 @@ model Order {
   // credited back to sellable stock, so reviving the order must decrement
   // stock again first (or 409 if it is gone). Tracks only automatic restocks —
   // manual stock adjustments after a physical return are invisible to it.
-  restockedAt          DateTime?     @map("restocked_at")
+  restockedAt          DateTime?      @map("restocked_at")
   /// Stamped when a payment actually settled (TASK-330). `paymentStatus = PAID`
   /// says the state; this says when, which is what reconciliation against the
   /// provider's payout register needs.
-  paidAt               DateTime?     @map("paid_at")
+  paidAt               DateTime?      @map("paid_at")
   /// Deadline after which an unpaid ONLINE order is auto-cancelled and its stock
   /// returned (TASK-330; owner decision 2026-07-28). Null for ON_DELIVERY orders,
   /// which hold their reservation indefinitely, and cleared the moment payment
   /// settles. Stock is decremented at order creation regardless of method — two
   /// shoppers must not be able to pay for the same last unit — so this column is
   /// what stops an abandoned card payment from holding inventory forever.
-  reservationExpiresAt DateTime?     @map("reservation_expires_at")
+  reservationExpiresAt DateTime?      @map("reservation_expires_at")
   /// Nova Poshta waybill (ТТН), typed in by the operator (TASK-335). Not created
   /// through the API: `InternetDocument/save` needs a counterparty in the client's
   /// NP account, so waybill creation stays out of scope — but the number belongs
   /// on the order so the "Відправлено" email and the customer's tracking view have
   /// something to quote.
-  trackingNumber       String?       @map("tracking_number")
+  trackingNumber       String?        @map("tracking_number")
   /// Operator-only notes (TASK-336). Strictly distinct from `notes`, which is what
   /// the CUSTOMER typed at checkout and is shown back to them — mixing the two
   /// would leak internal remarks to the buyer.
-  internalNotes        String?       @map("internal_notes")
+  internalNotes        String?        @map("internal_notes")
 
   items         OrderItem[]
   statusHistory OrderStatusHistory[]
@@ -798,6 +824,9 @@ model Order {
   @@index([deletedAt])
   // TASK-625: the public order lookup matches a guest order by phone equality.
   @@index([guestPhone])
+  // TASK-642: the admin order list filters by delivery method and by pickup point.
+  @@index([deliveryMethod])
+  @@index([pickupPointId])
   @@map("orders")
 }
 
@@ -1191,24 +1220,24 @@ model FaqItem {
 /// or a fixed UAH amount when FIXED. Eligibility is gated by the active flag,
 /// the optional starts/expires window, `minSpend`, and the redemption caps.
 model Discount {
-  id             String       @id @default(uuid())
-  code           String       @unique
-  type           DiscountType
-  value          Decimal      @db.Decimal(10, 2)
-  minSpend       Decimal?     @map("min_spend") @db.Decimal(10, 2)
-  maxRedemptions Int?         @map("max_redemptions")
-  redeemedCount  Int          @default(0) @map("redeemed_count")
-  perUserLimit   Int?         @map("per_user_limit")
-  startsAt       DateTime?    @map("starts_at")
-  expiresAt      DateTime?    @map("expires_at")
-  isActive       Boolean      @default(true) @map("is_active")
+  id              String       @id @default(uuid())
+  code            String       @unique
+  type            DiscountType
+  value           Decimal      @db.Decimal(10, 2)
+  minSpend        Decimal?     @map("min_spend") @db.Decimal(10, 2)
+  maxRedemptions  Int?         @map("max_redemptions")
+  redeemedCount   Int          @default(0) @map("redeemed_count")
+  perUserLimit    Int?         @map("per_user_limit")
+  startsAt        DateTime?    @map("starts_at")
+  expiresAt       DateTime?    @map("expires_at")
+  isActive        Boolean      @default(true) @map("is_active")
   /// «Показувати на сторінці «Акції»» (TASK-731, рішення B-11). A new code is
   /// private until the operator publishes it; the public feed
   /// (`GET /discounts/active`) filters on this in the repository, so an
   /// unpublished code is invisible in the API too — it still applies by code.
-  showOnPromoPage Boolean     @default(false) @map("show_on_promo_page")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  showOnPromoPage Boolean      @default(false) @map("show_on_promo_page")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
 
   redemptions DiscountRedemption[]
 
@@ -2280,17 +2309,59 @@ model ReturnItem {
 /// rather than the `@default("singleton")` sketched in plan 068, so all three
 /// singletons in this schema behave the same way.
 model DeliverySetting {
-  id                 String   @id
-  senderCityRef      String?  @map("sender_city_ref")
+  id                 String  @id
+  senderCityRef      String? @map("sender_city_ref")
   /// Human-readable, shown in the admin form so the operator never faces a bare UUID.
-  senderCityName     String?  @map("sender_city_name")
-  senderWarehouseRef String?  @map("sender_warehouse_ref")
+  senderCityName     String? @map("sender_city_name")
+  senderWarehouseRef String? @map("sender_warehouse_ref")
   /// Used when a parcel's real weight is unknown; the NP price estimate demands one.
-  defaultWeightKg    Float    @default(0.5) @map("default_weight_kg")
-  createdAt          DateTime @default(now()) @map("created_at")
-  updatedAt          DateTime @updatedAt @map("updated_at")
+  defaultWeightKg    Float   @default(0.5) @map("default_weight_kg")
+
+  // ─── Delivery methods (TASK-642) ───────────────────────────────────────────
+  // Defaults keep today's behaviour on a shop that never opened the settings
+  // screen: Nova Poshta and the free-text "operator will quote" path stay on,
+  // the two new methods stay off until the owner configures them.
+  npEnabled       Boolean  @default(true) @map("np_enabled")
+  pickupEnabled   Boolean  @default(false) @map("pickup_enabled")
+  courierEnabled  Boolean  @default(false) @map("courier_enabled")
+  otherEnabled    Boolean  @default(true) @map("other_enabled")
+  /// The one city the courier works in; shown to the customer, not enforced.
+  courierCityName String?  @map("courier_city_name")
+  /// Flat courier price. A fixed number, not a range: LiqPay signs one amount.
+  courierPrice    Decimal  @default(0) @map("courier_price") @db.Decimal(10, 2)
+  /// Subtotal from which the courier is free; null = no threshold. Courier only —
+  /// Nova Poshta's price is the carrier's money (B-6 decision 2).
+  courierFreeFrom Decimal? @map("courier_free_from") @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("delivery_settings")
+}
+
+/// A physical place the customer collects an order from (TASK-642, B-6 decision 1).
+/// An entity rather than a constant so the owner can change opening hours without a
+/// developer. `isActive` is the reversible visibility toggle; there is no
+/// `deletedAt` — the audit tombstone is reserved for User/Product/Order, and an
+/// order that used a point keeps its own snapshot of the name and address.
+model PickupPoint {
+  id           String   @id @default(uuid())
+  name         String
+  city         String
+  address      String
+  phone        String?
+  /// Free text ("Пн–Пт 10:00–19:00"), shown as typed.
+  workingHours String?  @map("working_hours")
+  mapUrl       String?  @map("map_url")
+  isActive     Boolean  @default(true) @map("is_active")
+  sortOrder    Int      @default(0) @map("sort_order")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  orders Order[]
+
+  @@index([isActive, sortOrder])
+  @@map("pickup_points")
 }
 
 /// Lifecycle of one catalogue import run (TASK-360).

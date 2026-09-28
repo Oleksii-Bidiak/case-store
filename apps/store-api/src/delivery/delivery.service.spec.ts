@@ -1,11 +1,12 @@
 import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import type { DeliverySetting } from '@prisma/client';
+import { Prisma, type DeliverySetting } from '@prisma/client';
 import type { PinoLogger } from 'nestjs-pino';
 import type { CacheService } from '../cache';
 import { DeliveryService, KYIV_CITY_REF } from './delivery.service';
 import { DeliveryNotConfiguredException } from './delivery.errors';
 import type { DeliveryRepository } from './delivery.repository';
+import type { PickupPoint, PickupPointRepository } from './pickup-point.repository';
 import type { NovaPoshtaClient, NpSettlementRaw, NpWarehouseRaw } from './nova-poshta.client';
 
 // ─── Stubs ─────────────────────────────────────────────────────────────────
@@ -49,6 +50,14 @@ const settingRow = (over: Partial<DeliverySetting> = {}): DeliverySetting => ({
   senderCityName: null,
   senderWarehouseRef: null,
   defaultWeightKg: 0.5,
+  // TASK-642 schema defaults.
+  npEnabled: true,
+  pickupEnabled: false,
+  courierEnabled: false,
+  otherEnabled: true,
+  courierCityName: null,
+  courierPrice: new Prisma.Decimal(0),
+  courierFreeFrom: null,
   createdAt: new Date('2026-07-28T00:00:00Z'),
   updatedAt: new Date('2026-07-28T00:00:00Z'),
   ...over,
@@ -65,6 +74,28 @@ function makeRepository(
   } as unknown as jest.Mocked<DeliveryRepository>;
 }
 
+/** PickupPointRepository stub — no active points by default (TASK-643). */
+function makePickupPoints(
+  overrides: Partial<jest.Mocked<PickupPointRepository>> = {},
+): jest.Mocked<PickupPointRepository> {
+  return {
+    findActive: jest.fn(async () => []),
+    findActiveById: jest.fn(async () => null),
+    ...overrides,
+  } as unknown as jest.Mocked<PickupPointRepository>;
+}
+
+const pickupPoint = (over: Partial<PickupPoint> = {}): PickupPoint => ({
+  id: '6f1c1f4e-6d8c-4c86-9d57-2a3f5f0c9a11',
+  name: 'Магазин на Хрещатику',
+  city: 'Київ',
+  address: 'вул. Хрещатик, 1',
+  phone: null,
+  workingHours: 'Пн–Пт 10:00–19:00',
+  mapUrl: null,
+  ...over,
+});
+
 function makeClient(
   overrides: Partial<jest.Mocked<NovaPoshtaClient>> = {},
 ): jest.Mocked<NovaPoshtaClient> {
@@ -80,22 +111,25 @@ function makeClient(
 function makeService(opts: {
   client?: jest.Mocked<NovaPoshtaClient>;
   repository?: jest.Mocked<DeliveryRepository>;
+  pickupPoints?: jest.Mocked<PickupPointRepository>;
   cache?: ReturnType<typeof makeCache>;
   config?: ConfigService;
 }) {
   const client = opts.client ?? makeClient();
   const repository = opts.repository ?? makeRepository();
+  const pickupPoints = opts.pickupPoints ?? makePickupPoints();
   const cache = opts.cache ?? makeCache();
   const config = opts.config ?? makeConfig();
   const logger = makeLogger();
   const service = new DeliveryService(
     client,
     repository,
+    pickupPoints,
     cache as unknown as CacheService,
     config,
     logger,
   );
-  return { service, client, repository, cache, config, logger };
+  return { service, client, repository, pickupPoints, cache, config, logger };
 }
 
 const cityRaw = (over: Partial<NpSettlementRaw> = {}): NpSettlementRaw => ({
@@ -384,7 +418,40 @@ describe('DeliveryService', () => {
         senderCityName: null,
         senderWarehouseRef: null,
         defaultWeightKg: 0.5,
+        // TASK-643: the schema defaults, so the admin form shows what is in force.
+        npEnabled: true,
+        pickupEnabled: false,
+        courierEnabled: false,
+        otherEnabled: true,
+        courierCityName: null,
+        courierPrice: '0.00',
+        courierFreeFrom: null,
         updatedAt: null,
+      });
+    });
+
+    it('exposes the method flags and courier money as padded strings (TASK-643)', async () => {
+      const repository = makeRepository({
+        findSettings: jest.fn(async () =>
+          settingRow({
+            courierEnabled: true,
+            pickupEnabled: true,
+            courierCityName: 'Київ',
+            courierPrice: new Prisma.Decimal('120.5'),
+            courierFreeFrom: new Prisma.Decimal('1500'),
+          }),
+        ),
+      });
+      const { service } = makeService({ repository });
+
+      await expect(service.getSettings()).resolves.toMatchObject({
+        npEnabled: true,
+        pickupEnabled: true,
+        courierEnabled: true,
+        otherEnabled: true,
+        courierCityName: 'Київ',
+        courierPrice: '120.50',
+        courierFreeFrom: '1500.00',
       });
     });
 
@@ -424,6 +491,25 @@ describe('DeliveryService', () => {
       expect(cache.delByPrefix).toHaveBeenCalledWith('np:estimate:');
     });
 
+    it('passes the new method flags and courier terms through to the repository (TASK-643)', async () => {
+      const repository = makeRepository();
+      const { service } = makeService({ repository });
+      const input = {
+        npEnabled: false,
+        pickupEnabled: true,
+        courierEnabled: true,
+        otherEnabled: false,
+        courierCityName: 'Львів',
+        courierPrice: 99.9,
+        courierFreeFrom: null,
+      };
+
+      const result = await service.updateSettings(input);
+
+      expect(repository.upsertSettings).toHaveBeenCalledWith(input);
+      expect(result).toMatchObject({ courierEnabled: true, courierFreeFrom: null });
+    });
+
     it('takes effect on the very next estimate — no restart required', async () => {
       const c = makeClient({ estimateShipping: jest.fn(async () => ({ cost: 75, etaDays: 1 })) });
       const cache = makeCache();
@@ -448,6 +534,133 @@ describe('DeliveryService', () => {
       expect(c.estimateShipping).toHaveBeenLastCalledWith(
         expect.objectContaining({ senderCityRef: 'odesa-ref' }),
       );
+    });
+  });
+
+  // ─── TASK-643: delivery methods ────────────────────────────────────────────
+
+  describe('getMethodSettings', () => {
+    it('falls back to the schema defaults when the row was never written', async () => {
+      const { service } = makeService({});
+
+      await expect(service.getMethodSettings()).resolves.toEqual({
+        enabledMethods: ['NOVA_POSHTA', 'OTHER'],
+        courier: { price: '0.00', freeFrom: null, cityName: null },
+      });
+    });
+
+    it('lists enabled methods in the fixed order NP, PICKUP, COURIER, OTHER', async () => {
+      const repository = makeRepository({
+        findSettings: jest.fn(async () =>
+          settingRow({
+            npEnabled: true,
+            pickupEnabled: true,
+            courierEnabled: true,
+            otherEnabled: true,
+          }),
+        ),
+      });
+      const { service } = makeService({ repository });
+
+      const { enabledMethods } = await service.getMethodSettings();
+
+      expect(enabledMethods).toEqual(['NOVA_POSHTA', 'PICKUP', 'COURIER', 'OTHER']);
+    });
+
+    it('omits every disabled method and carries the courier terms', async () => {
+      const repository = makeRepository({
+        findSettings: jest.fn(async () =>
+          settingRow({
+            npEnabled: false,
+            courierEnabled: true,
+            otherEnabled: false,
+            courierCityName: 'Київ',
+            courierPrice: new Prisma.Decimal('80'),
+            courierFreeFrom: new Prisma.Decimal('1500.5'),
+          }),
+        ),
+      });
+      const { service } = makeService({ repository });
+
+      await expect(service.getMethodSettings()).resolves.toEqual({
+        enabledMethods: ['COURIER'],
+        courier: { price: '80.00', freeFrom: '1500.50', cityName: 'Київ' },
+      });
+    });
+  });
+
+  describe('getMethods', () => {
+    it('answers with the defaults and no points when nothing is configured', async () => {
+      const { service, pickupPoints } = makeService({});
+
+      await expect(service.getMethods()).resolves.toEqual({
+        methods: ['NOVA_POSHTA', 'OTHER'],
+        courier: { price: '0.00', freeFrom: null, cityName: null },
+        pickupPoints: [],
+        paymentMatrix: {
+          NOVA_POSHTA: ['ON_DELIVERY', 'ONLINE', 'INSTALLMENTS'],
+          PICKUP: ['ON_DELIVERY', 'ONLINE', 'INSTALLMENTS'],
+          COURIER: ['ON_DELIVERY', 'ONLINE', 'INSTALLMENTS'],
+          OTHER: ['ON_DELIVERY'],
+        },
+      });
+      // Pickup is off, so there is nothing to list — and nothing to read.
+      expect(pickupPoints.findActive).not.toHaveBeenCalled();
+    });
+
+    it('lists the active pickup points when pickup is enabled', async () => {
+      const points = [pickupPoint(), pickupPoint({ id: 'p2', name: 'Склад' })];
+      const repository = makeRepository({
+        findSettings: jest.fn(async () => settingRow({ pickupEnabled: true })),
+      });
+      const { service } = makeService({
+        repository,
+        pickupPoints: makePickupPoints({ findActive: jest.fn(async () => points) }),
+      });
+
+      const result = await service.getMethods();
+
+      expect(result.methods).toEqual(['NOVA_POSHTA', 'PICKUP', 'OTHER']);
+      expect(result.pickupPoints).toEqual(points);
+    });
+
+    it('hides PICKUP while it has no active point — a method nobody can pick is not offered', async () => {
+      const repository = makeRepository({
+        findSettings: jest.fn(async () => settingRow({ pickupEnabled: true })),
+      });
+      const { service } = makeService({ repository });
+
+      const result = await service.getMethods();
+
+      expect(result.methods).toEqual(['NOVA_POSHTA', 'OTHER']);
+      expect(result.pickupPoints).toEqual([]);
+    });
+
+    it('serves a copy of the matrix the storefront cannot mutate back into the rules', async () => {
+      const { service } = makeService({});
+
+      const first = await service.getMethods();
+      first.paymentMatrix.OTHER.push('ONLINE');
+      const second = await service.getMethods();
+
+      expect(second.paymentMatrix.OTHER).toEqual(['ON_DELIVERY']);
+    });
+  });
+
+  describe('resolveActivePickupPoint', () => {
+    it('returns the active point', async () => {
+      const point = pickupPoint();
+      const pickupPoints = makePickupPoints({ findActiveById: jest.fn(async () => point) });
+      const { service } = makeService({ pickupPoints });
+
+      await expect(service.resolveActivePickupPoint(point.id)).resolves.toEqual(point);
+      expect(pickupPoints.findActiveById).toHaveBeenCalledWith(point.id);
+    });
+
+    it('returns null for a missing or inactive point', async () => {
+      const { service } = makeService({});
+
+      await expect(service.resolveActivePickupPoint('gone')).resolves.toBeNull();
     });
   });
 });

@@ -19,11 +19,26 @@ export {
   allowedPaymentTransitions,
   canTransitionPayment,
 } from './order-state-machine';
-export { OrderErrorCode } from './order.errors';
+// TASK-643: the delivery × payment matrix is public for the same reason as the
+// transition tables — the delivery module serves it to the storefront, and a
+// second copy of the rule would be a second rule.
+export {
+  DELIVERY_PAYMENT_MATRIX,
+  allowedPaymentMethods,
+  isPaymentAllowedForDelivery,
+} from './delivery-payment-matrix';
+export { flatShippingCost, isCourierFree, resolveDeliveryMethod } from './shipping-cost';
+export type { FlatPricedDeliveryMethod, FlatShippingInput } from './shipping-cost';
+export {
+  OrderErrorCode,
+  DeliveryOrderErrorCode,
+  deliveryPaymentNotAllowedError,
+} from './order.errors';
 export { CreateOrderDto, UpdateOrderStatusDto, OrderListQueryDto, AddressDto } from './dto';
 export type {
   OrderWithItems,
   OrderItemRow,
   CreateOrderParams,
+  DeliveryCarrier,
   ShippingAddressData,
 } from './order.types';
