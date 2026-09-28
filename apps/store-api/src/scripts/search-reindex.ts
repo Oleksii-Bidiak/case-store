@@ -28,18 +28,19 @@
  * It boots its own copy of the application WITHOUT HTTP and with background
  * scheduling switched off (`SCHEDULER_ENABLED=false`), so this second process
  * never works the mail outbox, payment reconciliation or publishing queues that
- * the live API owns.
+ * the live API owns. That holds even though the production container is started
+ * with `SCHEDULER_ENABLED=true`: `AppModule` is loaded through
+ * `loadAppModuleWithoutScheduler`, never imported statically (TASK-1027).
  */
 import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../app.module';
 import { MeiliClient } from '../search/meili.client';
 import { SearchService } from '../search/search.service';
 import { BlogSearchService } from '../search/blog-search.service';
 import { runSearchReindex } from '../search/search-reindex.runner';
+import { loadAppModuleWithoutScheduler } from './without-scheduler';
 
 async function main(): Promise<void> {
-  // Must be set before the app boots: every worker reads it in onModuleInit.
-  process.env.SCHEDULER_ENABLED = 'false';
+  const AppModule = loadAppModuleWithoutScheduler();
 
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn'],
