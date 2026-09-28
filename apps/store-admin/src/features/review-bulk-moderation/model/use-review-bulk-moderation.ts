@@ -1,13 +1,13 @@
 "use client";
 
-import { useCallback } from "react";
+import type { ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   getAdminReviewControllerListQueryKey,
   useAdminReviewControllerModerateMany,
 } from "@/entities/review";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
-import { useAnnouncer } from "@/shared/ui";
+import { useBulkStatus } from "@/features/bulk-status";
 import { dict } from "@/shared/config";
 
 const t = dict.reviews.bulk;
@@ -22,10 +22,14 @@ export interface UseReviewBulkModerationOptions {
 export interface ReviewBulkModerationApi {
   moderate: (ids: string[], action: ReviewBulkAction) => void;
   isPending: boolean;
+  /** The reject prompt (TASK-812) — render once in the caller's JSX. */
+  confirmDialog: ReactNode;
 }
 
 /**
- * Bulk approve / reject the selected review texts (TASK-356).
+ * Bulk approve / reject the selected review texts (TASK-356), on top of the
+ * shared `useBulkStatus` engine (TASK-812) — the prompt is an AlertDialog now,
+ * not `window.confirm`.
  *
  * ── Reject is NOT a delete any more (TASK-446) ───────────────────────────────
  * It used to be. The per-row button called `DELETE /admin/reviews/:id`, which
@@ -42,10 +46,8 @@ export interface ReviewBulkModerationApi {
  * The prompt therefore stayed, but stopped lying. It still asks, because the
  * texts do leave the site and the count is worth seeing first, and cancelling
  * still issues ZERO requests. What it no longer does is warn about a permanent
- * loss — an operator who believes that will refuse to reject a text they should,
- * or reject a one-star review expecting the product's score to recover. It says
- * the two things that are actually at stake: the texts disappear from the site,
- * and the ratings do not.
+ * loss. It says the two things that are actually at stake: the texts disappear
+ * from the site, and the ratings do not.
  *
  * Approving does not ask at all — publishing a review is reversible by rejecting
  * it, and prompting on every safe action is how operators learn to dismiss
@@ -55,51 +57,40 @@ export function useReviewBulkModeration({
   onSuccess,
 }: UseReviewBulkModerationOptions = {}): ReviewBulkModerationApi {
   const queryClient = useQueryClient();
-  const { announcePolite, announceAssertive } = useAnnouncer();
   const mutation = useAdminReviewControllerModerateMany();
 
-  const moderate = useCallback(
-    (ids: string[], action: ReviewBulkAction) => {
-      if (mutation.isPending || ids.length === 0) return;
-
-      if (action === "reject" && !window.confirm(t.rejectConfirm(ids.length))) {
-        return;
-      }
-
-      announcePolite(t.announceSaving(ids.length));
-
-      mutation.mutate(
-        { data: { ids, action } },
-        {
-          onSuccess: (response) => {
-            void queryClient.invalidateQueries({
-              queryKey: getAdminReviewControllerListQueryKey(),
-            });
-            // TASK-248 contract: a bulk verdict moves the pending-reviews
-            // counter exactly as a single one does, so the needs-action payload
-            // (shared cache entry with the sidebar badge) has to go too. The
-            // caller's `onSuccess` also invalidates it; this hook does not rely
-            // on that, because a second caller that forgot would leave a stale
-            // badge with nothing on screen looking wrong.
-            void queryClient.invalidateQueries({
-              queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
-            });
-            const written = response.data.updatedCount;
-            announcePolite(
-              action === "reject"
-                ? t.announceRejected(written)
-                : t.announceApproved(written),
-            );
-            onSuccess?.();
-          },
-          onError: () => {
-            announceAssertive(t.announceFailed);
-          },
-        },
-      );
+  const { run, isPending, confirmDialog } = useBulkStatus({
+    mutation,
+    toVariables: (ids, action: ReviewBulkAction) => ({ data: { ids, action } }),
+    confirmFor: (ids, action) =>
+      action === "reject"
+        ? {
+            description: t.rejectConfirm(ids.length),
+            confirmLabel: t.reject(ids.length),
+            destructive: true,
+          }
+        : null,
+    announceSaving: (count) => t.announceSaving(count),
+    announceDone: (response, _ids, action) =>
+      action === "reject"
+        ? t.announceRejected(response.data.updatedCount)
+        : t.announceApproved(response.data.updatedCount),
+    announceFailed: t.announceFailed,
+    onWritten: () => {
+      void queryClient.invalidateQueries({
+        queryKey: getAdminReviewControllerListQueryKey(),
+      });
+      // TASK-248 contract: a bulk verdict moves the pending-reviews counter
+      // exactly as a single one does, so the needs-action payload (shared cache
+      // entry with the sidebar badge) has to go too. The caller's `onSuccess`
+      // also invalidates it; this hook does not rely on that, because a second
+      // caller that forgot would leave a stale badge.
+      void queryClient.invalidateQueries({
+        queryKey: getAdminDashboardControllerGetNeedsActionQueryKey(),
+      });
     },
-    [announceAssertive, announcePolite, mutation, onSuccess, queryClient],
-  );
+    onSuccess,
+  });
 
-  return { moderate, isPending: mutation.isPending };
+  return { moderate: run, isPending, confirmDialog };
 }

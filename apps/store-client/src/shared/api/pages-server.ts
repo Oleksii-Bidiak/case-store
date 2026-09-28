@@ -32,9 +32,36 @@ export function pageDetailTag(slug: string): string {
 const PAGE_SIZE = 100;
 
 /**
+ * Read one page off the API: the page, `null` for a genuine 404, and a THROW for
+ * everything else (TASK-793).
+ *
+ * The two detail readers below used to return `null` on ANY failure, and their
+ * routes turn `null` into `notFound()` — so a 502, a timeout or a restarting API
+ * answered HTTP 404 on canonical `/legal/<slug>` and `/info/<slug>` URLs taken
+ * straight from the sitemap. A crawler that sees that drops the URL; an outage
+ * must surface as a 5xx the crawler retries. Same rule the compat landing page
+ * has followed since TASK-490 (`catalog/[category]/[device]/page.tsx`).
+ */
+async function readPage(
+  url: string,
+  tags: string[],
+): Promise<PageEntity | null> {
+  const res = await serverFetch(url, { next: { tags } });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Page read failed: ${res.status} ${url}`);
+  }
+  const body = (await res.json()) as PageResponseEnvelope;
+  return body.data ?? null;
+}
+
+/**
  * Fetch a single PUBLISHED page by slug, tagged for on-demand revalidation.
- * Returns null on 404 (draft / scheduled / missing) or any transport error so
- * the caller can render a Next.js `notFound()`.
+ * Returns null on a 404 (draft / scheduled / missing / wrong kind) so the caller
+ * can render a Next.js `notFound()`; THROWS on any other failure (5xx, timeout,
+ * refused connection) so an outage is a 5xx, not a 404 — see {@link readPage}.
+ * A caller that must render regardless (a hub's meta tags, the `/info` section
+ * copy) catches for itself.
  *
  * `kind` is REQUIRED (TASK-435): every caller is a route that serves exactly one
  * kind, and the API 404s a mismatch, so `/legal/<slug>` can never render a help
@@ -46,17 +73,10 @@ export async function fetchPublishedPage(
   slug: string,
   kind: PageEntityKind,
 ): Promise<PageEntity | null> {
-  try {
-    const res = await serverFetch(
-      `${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}?kind=${kind}`,
-      { next: { tags: [PAGES_COLLECTION_TAG, pageDetailTag(slug)] } },
-    );
-    if (!res.ok) return null;
-    const body = (await res.json()) as PageResponseEnvelope;
-    return body.data ?? null;
-  } catch {
-    return null;
-  }
+  return readPage(
+    `${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}?kind=${kind}`,
+    [PAGES_COLLECTION_TAG, pageDetailTag(slug)],
+  );
 }
 
 /**
@@ -71,21 +91,18 @@ export async function fetchPublishedPage(
  * re-open the wrong-kind hole `fetchPublishedPage`'s mandatory argument closes.
  *
  * HUB rows stay excluded by the API itself, whatever we ask for.
+ *
+ * Same contract as {@link fetchPublishedPage}: null only for a 404, a throw for
+ * anything else. Its one caller, `resolvePageRedirect`, decides what an outage
+ * means there.
  */
 export async function fetchPublishedPageAnyKind(
   slug: string,
 ): Promise<PageEntity | null> {
-  try {
-    const res = await serverFetch(
-      `${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}`,
-      { next: { tags: [PAGES_COLLECTION_TAG, pageDetailTag(slug)] } },
-    );
-    if (!res.ok) return null;
-    const body = (await res.json()) as PageResponseEnvelope;
-    return body.data ?? null;
-  } catch {
-    return null;
-  }
+  return readPage(`${API_BASE_URL}/api/pages/${encodeURIComponent(slug)}`, [
+    PAGES_COLLECTION_TAG,
+    pageDetailTag(slug),
+  ]);
 }
 
 /**

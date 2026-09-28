@@ -42,7 +42,12 @@ class AdminBrandPaginationMeta {
  * Response envelope for the paginated admin brand list.
  */
 class AdminBrandListResponse {
-  @ApiProperty({ type: [BrandEntity], description: 'Brands for the current page' })
+  @ApiProperty({
+    type: [BrandEntity],
+    description:
+      'Brands for the current page, each with its logo and `productCount` ' +
+      '(live products, visible or hidden — TASK-840)',
+  })
   data!: BrandEntity[];
 
   @ApiProperty({ type: AdminBrandPaginationMeta })

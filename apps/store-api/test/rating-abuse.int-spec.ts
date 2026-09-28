@@ -3,6 +3,8 @@ import { ConfigModule } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import { ReviewHiddenReason } from '@prisma/client';
+import { ProductsReportRepository } from '../src/analytics/reports/products-report.repository';
+import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { PrismaService } from '../src/prisma';
 
@@ -85,7 +87,8 @@ describe('Rating-abuse signal (integration, TASK-602)', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, DashboardRepository],
+      // The dashboard reads the reports' queries (TASK-688/694).
+      providers: [PrismaService, DashboardRepository, ProductsReportRepository, SalesRepository],
     }).compile();
     app = moduleRef.createNestApplication();
     await app.init();

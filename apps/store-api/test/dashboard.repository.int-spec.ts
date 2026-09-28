@@ -6,9 +6,13 @@ import {
   MailOutboxStatus,
   OrderStatus,
   PaymentStatus,
+  ReturnStatus,
   OrderHistoryChangeType,
   ReviewTextStatus,
 } from '@prisma/client';
+import { ProductsReportRepository } from '../src/analytics/reports/products-report.repository';
+import { lastKyivDays } from '../src/analytics/reports/report-period';
+import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { LOW_STOCK_THRESHOLD } from '../src/dashboard/dashboard.types';
 import { PrismaService } from '../src/prisma';
@@ -51,7 +55,7 @@ describe('DashboardRepository (integration)', () => {
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true })],
-      providers: [PrismaService, DashboardRepository],
+      providers: [PrismaService, DashboardRepository, ProductsReportRepository, SalesRepository],
     }).compile();
 
     app = moduleRef.createNestApplication();
@@ -196,12 +200,102 @@ describe('DashboardRepository (integration)', () => {
       // A product whose only order is CANCELLED must not appear.
       expect(topProducts.find((p) => p.productId === cancelledProductId)).toBeUndefined();
     });
+
+    it('keeps a product whose order was partly refunded — the report leaders’ base (TASK-688)', async () => {
+      const partial = await prisma.product.create({
+        data: {
+          name: 'Dash Partial',
+          slug: `dash-partial-${randomUUID()}`,
+          price: '5.00',
+          categoryId,
+        },
+      });
+      let orderId: string | undefined;
+      try {
+        ({ id: orderId } = await prisma.order.create({
+          data: {
+            userId,
+            status: OrderStatus.DELIVERED,
+            paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+            subtotal: '500.00',
+            total: '500.00',
+            items: { create: [{ productId: partial.id, quantity: 50, price: '10.00' }] },
+          },
+        }));
+
+        const { topProducts } = (await repo.getSummary({ topProductsRankedBy: 'units' })).products;
+        // Before TASK-688 the PAID-only join dropped it; one refunded line
+        // does not un-sell the other forty-nine.
+        expect(topProducts.find((p) => p.productId === partial.id)).toMatchObject({
+          unitsSold: 50,
+          totalRevenue: 500,
+        });
+      } finally {
+        if (orderId) await prisma.order.delete({ where: { id: orderId } });
+        await prisma.product.delete({ where: { id: partial.id } });
+      }
+    });
+
+    it('reports units sold beside the revenue (TASK-684)', async () => {
+      const summary = await repo.getSummary({ topProductsRankedBy: 'revenue' });
+      const top = summary.products.topProducts.find((p) => p.productId === paidProductId);
+
+      // The PAID line is qty 3 — the operational figure a manager without
+      // `analytics:revenue` is still allowed to see.
+      expect(top?.unitsSold).toBe(3);
+    });
+
+    it('ranks by units when asked, so the order itself does not rank money (TASK-684)', async () => {
+      // A cheap, fast-moving product: more units than the paid product (5 > 3),
+      // far less money ($5 < $30). Ranked by revenue it comes second; ranked by
+      // units it must come first.
+      const cheap = await prisma.product.create({
+        data: {
+          name: 'Dash Cheap Product',
+          slug: `dash-cheap-${randomUUID()}`,
+          price: '1.00',
+          categoryId,
+          stock: LOW_STOCK_THRESHOLD + 50,
+        },
+      });
+      const order = await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '5.00',
+          total: '5.00',
+          items: { create: [{ productId: cheap.id, quantity: 5, price: '1.00' }] },
+        },
+      });
+
+      try {
+        const byRevenue = (await repo.getSummary({ topProductsRankedBy: 'revenue' })).products
+          .topProducts;
+        const byUnits = (await repo.getSummary({ topProductsRankedBy: 'units' })).products
+          .topProducts;
+
+        expect(byRevenue.map((p) => p.productId)).toEqual([paidProductId, cheap.id]);
+        expect(byUnits.map((p) => p.productId)).toEqual([cheap.id, paidProductId]);
+      } finally {
+        await prisma.orderItem.deleteMany({ where: { orderId: order.id } });
+        await prisma.order.delete({ where: { id: order.id } });
+        await prisma.product.delete({ where: { id: cheap.id } });
+      }
+    });
   });
 
-  describe('getSummary — revenue series gap-fill', () => {
-    it('returns a full 30-point series with today summing the PAID orders only', async () => {
+  describe('getSummary — carries no revenue block (TASK-684)', () => {
+    it('leaves the money to getRevenueMetrics, so it is computed only on request', async () => {
       const summary = await repo.getSummary();
-      const series = summary.revenue.revenueByDay;
+
+      expect('revenue' in summary).toBe(false);
+    });
+  });
+
+  describe('getRevenueMetrics — revenue series gap-fill', () => {
+    it('returns a full 30-point series with today summing the PAID orders only', async () => {
+      const series = (await repo.getRevenueMetrics()).revenueByDay;
 
       // generate_series always yields the full window.
       expect(series).toHaveLength(30);
@@ -214,10 +308,9 @@ describe('DashboardRepository (integration)', () => {
     });
   });
 
-  describe('getSummary — unrealized revenue', () => {
+  describe('getRevenueMetrics — unrealized revenue', () => {
     it('sums Order.total for active unpaid orders only, leaving earned revenue untouched (TASK-137)', async () => {
-      const summary = await repo.getSummary();
-      const { revenue } = summary;
+      const revenue = await repo.getRevenueMetrics();
 
       // Only the CONFIRMED + PENDING order (qty 2 @ $20 = $40) is unrealized.
       // The DELIVERED + PAID order is earned, the CANCELLED order is neither.
@@ -266,7 +359,7 @@ describe('DashboardRepository (integration)', () => {
    * PAID orders (plus an unpaid order that must be ignored), then verifies the
    * divide-by-zero guard by clearing every order.
    */
-  describe('getSummary — average order value', () => {
+  describe('getRevenueMetrics — average order value', () => {
     beforeAll(async () => {
       await prisma.orderItem.deleteMany({});
       await prisma.order.deleteMany({});
@@ -303,14 +396,107 @@ describe('DashboardRepository (integration)', () => {
     });
 
     it('divides window revenue by the paid-order count ($150 / 2 = $75)', async () => {
-      const summary = await repo.getSummary();
-      expect(summary.revenue.averageOrderValueLast30Days).toBe(75);
+      const revenue = await repo.getRevenueMetrics();
+      expect(revenue.averageOrderValueLast30Days).toBe(75);
     });
 
     it('returns 0 (no divide-by-zero) when there are no paid orders in the window', async () => {
       await prisma.order.deleteMany({});
-      const summary = await repo.getSummary();
-      expect(summary.revenue.averageOrderValueLast30Days).toBe(0);
+      const revenue = await repo.getRevenueMetrics();
+      expect(revenue.averageOrderValueLast30Days).toBe(0);
+    });
+  });
+
+  /**
+   * TASK-694: the dashboard's money is the `/analytics` sales report's money —
+   * one formula and one Kyiv day on both screens.
+   */
+  describe('getRevenueMetrics — one truth with the sales report (TASK-694)', () => {
+    let sales: SalesRepository;
+    let partialOrderId: string;
+    let earlyOrderId: string;
+
+    beforeAll(async () => {
+      sales = app.get(SalesRepository);
+      await prisma.orderItem.deleteMany({});
+      await prisma.order.deleteMany({});
+
+      // 1 000 ₴ with 200 ₴ returned: stays in sales in full, the 200 is a refund.
+      ({ id: partialOrderId } = await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          subtotal: '1000.00',
+          total: '1000.00',
+        },
+      }));
+      await prisma.return.create({
+        data: {
+          orderId: partialOrderId,
+          status: ReturnStatus.REFUNDED,
+          refundedAmount: '200.00',
+          resolvedAt: new Date(),
+        },
+      });
+
+      // A minute after Kyiv midnight today — still "yesterday" in UTC.
+      const kyivMidnight = lastKyivDays(1, new Date()).start;
+      const createdAt = new Date(Math.min(kyivMidnight.getTime() + 60_000, Date.now()));
+      ({ id: earlyOrderId } = await prisma.order.create({
+        data: {
+          userId,
+          status: OrderStatus.DELIVERED,
+          paymentStatus: PaymentStatus.PAID,
+          subtotal: '50.00',
+          total: '50.00',
+          createdAt,
+        },
+      }));
+    });
+
+    afterAll(async () => {
+      // Returns are Restrict on the order: they go first.
+      await prisma.return.deleteMany({ where: { orderId: partialOrderId } });
+      await prisma.order.deleteMany({ where: { id: { in: [partialOrderId, earlyOrderId] } } });
+    });
+
+    it('keeps a partly refunded order and subtracts only the refund', async () => {
+      const revenue = await repo.getRevenueMetrics();
+
+      expect(revenue.revenueLast30Days).toBe(850);
+      expect(revenue.totalRevenue).toBe(850);
+      // (1 000 + 50 − 200) ÷ 2 orders.
+      expect(revenue.averageOrderValueLast30Days).toBe(425);
+    });
+
+    it('gives the same numbers as the sales report over the same days', async () => {
+      const window = lastKyivDays(30, new Date());
+      const [revenue, inWindow, allTime, daily] = await Promise.all([
+        repo.getRevenueMetrics(),
+        sales.getTotals(window),
+        sales.getTotals(null),
+        sales.getDaily(window),
+      ]);
+
+      expect(revenue.revenueLast30Days).toBe(inWindow.sales - inWindow.refunds);
+      expect(revenue.totalRevenue).toBe(allTime.sales - allTime.refunds);
+      expect(revenue.revenueByDay).toEqual(daily.map((d) => ({ date: d.date, value: d.net })));
+    });
+
+    it('puts an order placed just after Kyiv midnight on today, in money and in counts', async () => {
+      const today = lastKyivDays(1, new Date()).fromDay;
+      const [revenue, summary] = await Promise.all([repo.getRevenueMetrics(), repo.getSummary()]);
+
+      const lastRevenue = revenue.revenueByDay[revenue.revenueByDay.length - 1];
+      const lastOrders = summary.orders.ordersByDay[summary.orders.ordersByDay.length - 1];
+      expect(lastRevenue.date).toBe(today);
+      expect(lastOrders.date).toBe(today);
+      // Both orders of this block were placed today (Kyiv): 1 000 + 50 − 200.
+      expect(lastRevenue.value).toBe(850);
+      expect(lastOrders.value).toBe(2);
+      expect(summary.orders.ordersByDay).toHaveLength(30);
+      expect(summary.users.newUsersByDay[summary.users.newUsersByDay.length - 1].date).toBe(today);
     });
   });
 

@@ -160,6 +160,41 @@ describe("WishlistView (TASK-076)", () => {
     expect(applyButton).toBeEnabled();
     expect(applyButton).toHaveTextContent("Показати 1 товар");
   });
+
+  // TASK-804: at zero matches the drawer's footer used to be a disabled
+  // button, the «Скинути фільтри» lay under the drawer, and the × was the only
+  // way out.
+  it("offers a working reset in the drawer when no saved item matches", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      // Full price only — «Зі знижкою» matches nothing.
+      queryClient: seededClient([buildItem()]),
+    });
+
+    await user.click(
+      screen.getAllByRole("checkbox", { name: /Зі знижкою/ })[0],
+    );
+    expect(screen.getByText(dict.wishlist.noMatchHeading)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^Фільтри/ }));
+    const drawer = await screen.findByRole("dialog", {
+      name: dict.filters.legend,
+    });
+    expect(
+      within(drawer).getByText(dict.filters.mobileApply(0)),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(drawer).getByRole("button", { name: dict.filters.clear }),
+    );
+
+    // The filter is gone: the footer counts the saved item again.
+    expect(
+      await within(drawer).findByRole("button", {
+        name: dict.filters.mobileApply(1),
+      }),
+    ).toBeEnabled();
+  });
 });
 
 describe("WishlistView quick-view triggers (TASK-290)", () => {

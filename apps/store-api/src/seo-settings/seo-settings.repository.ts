@@ -86,7 +86,9 @@ export class SeoSettingsRepository {
    * Design Decision 2), so draft/inactive/soft-deleted rows are excluded from
    * BOTH the missing-metaTitle numerator and the total denominator:
    *   - Products:   `isActive: true, deletedAt: null` (visibility toggle + tombstone)
-   *   - Categories: `isActive: true` (no soft-delete column on Category)
+   *   - Categories: `isActive: true, deletedAt: null` (visibility toggle + the
+   *                 tombstone TASK-651 added — a tombstone is also inactive, the
+   *                 explicit filter keeps the rule from resting on that)
    *   - Pages:      `status: PUBLISHED` (the Етап-2 publishing gate — NOT the
    *                 derived `isActive` mirror, per plan 104)
    */
@@ -105,8 +107,8 @@ export class SeoSettingsRepository {
         where: { metaTitle: null, isActive: true, deletedAt: null },
       }),
       this.prisma.product.count({ where: { isActive: true, deletedAt: null } }),
-      this.prisma.category.count({ where: { metaTitle: null, isActive: true } }),
-      this.prisma.category.count({ where: { isActive: true } }),
+      this.prisma.category.count({ where: { metaTitle: null, isActive: true, deletedAt: null } }),
+      this.prisma.category.count({ where: { isActive: true, deletedAt: null } }),
       this.prisma.page.count({
         where: { metaTitle: null, status: PublishStatus.PUBLISHED },
       }),

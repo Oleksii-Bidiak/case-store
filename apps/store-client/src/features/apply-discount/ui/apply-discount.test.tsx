@@ -9,7 +9,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { ApplyDiscount } from "./apply-discount";
-import { clearAppliedDiscount } from "../model/applied-discount-store";
+import { clearAppliedDiscount } from "@/entities/discount";
 
 const addBreadcrumb = Sentry.addBreadcrumb as jest.Mock;
 

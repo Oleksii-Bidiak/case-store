@@ -52,8 +52,10 @@ function buildContactOrderBy(
 }
 
 /**
- * Allowed fields for creating a contact message. `status` is always NEW on
- * insert (the DB default) — never accepted from the caller.
+ * Allowed fields for creating a contact message. `status` is NEW on insert (the
+ * DB default) unless the SERVICE says otherwise — it is never taken from the
+ * request; the one other value written here is `SPAM` for a honeypot hit
+ * (TASK-761), with a note saying why.
  */
 export interface CreateContactMessageInput {
   name: string;
@@ -62,6 +64,8 @@ export interface CreateContactMessageInput {
   message: string;
   topic?: string | null;
   orderRef?: string | null;
+  status?: ContactMessageStatus;
+  adminNote?: string | null;
 }
 
 /**
@@ -114,6 +118,8 @@ export class ContactRepository {
         message: data.message,
         topic: data.topic ?? null,
         orderRef: data.orderRef ?? null,
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.adminNote !== undefined && { adminNote: data.adminNote }),
       },
     });
   }
@@ -126,8 +132,11 @@ export class ContactRepository {
   async findAll(params: FindAllParams): Promise<PaginatedContactMessagesResult> {
     const { page, limit, status, search } = params;
     const skip = (page - 1) * limit;
+    // TASK-761: "all" means all the MAIL — honeypot hits are kept for the record
+    // but reached only by asking for them (`?status=SPAM`), or a burst of bot
+    // traffic would bury the inbox it was kept out of.
     const where: Prisma.ContactMessageWhereInput = {
-      ...(status !== undefined && { status }),
+      status: status !== undefined ? status : { not: ContactMessageStatus.SPAM },
     };
 
     // TASK-423: the inbox had no search. Every column an operator would look
@@ -234,24 +243,39 @@ export class ContactRepository {
   }
 
   /**
-   * When did this email last write to us? Returns the newest `createdAt`, or null
-   * for a first-time sender. Feeds the per-email cooldown in
-   * `ContactService.submit` (TASK-452) — the rule lives there, this is the read.
+   * How long ago, in milliseconds, did this email last write to us — measured
+   * by the DATABASE clock? Null for a first-time sender. Feeds the per-email
+   * cooldown in `ContactService.submit` (TASK-452); the rule lives there, this
+   * is the read.
    *
-   * Case-insensitive because `email` is stored as the sender typed it: a
-   * cooldown matched exactly would let `Ivan@Example.com` and `ivan@example.com`
-   * each send once.
+   * TASK-763, three changes from the first version:
    *
-   * No index backs this (`email` is unindexed on `contact_messages`): the table is
-   * a human-answered inbox, orders of magnitude below where a scan matters.
+   * - **Exact match.** `email` has been stored `lower(trim())` since TASK-772,
+   *   and migration `20260926130000_contact_message_email_index` folded the rows
+   *   that predate it, so `mode: 'insensitive'` (an `ILIKE` no b-tree can serve)
+   *   bought nothing but a sequential scan on every public POST. The caller
+   *   passes the normalised address.
+   * - **An index.** `@@index([email, createdAt(sort: Desc)])` answers
+   *   `WHERE email = $1 ORDER BY created_at DESC LIMIT 1` from one index probe.
+   * - **One clock.** The window used to be `Date.now()` on this app instance
+   *   against a `createdAt` stamped by whichever instance (or database) wrote
+   *   the row; a few minutes of skew and a `createdAt` from the future refused a
+   *   sender for longer than the window. The age is now computed in SQL against
+   *   `now()` — `AT TIME ZONE 'UTC'` because the column is a zone-less
+   *   timestamp Prisma writes in UTC. The service still clamps a negative age.
+   *
+   * `SPAM` rows (TASK-761) never count: a bot that put a real person's address
+   * into the form must not lock that person out of it for ten minutes.
    */
-  async findLatestCreatedAtByEmail(email: string): Promise<Date | null> {
-    const latest = await this.prisma.contactMessage.findFirst({
-      where: { email: { equals: email, mode: 'insensitive' } },
-      orderBy: { createdAt: 'desc' },
-      select: { createdAt: true },
-    });
-    return latest?.createdAt ?? null;
+  async findLatestMessageAgeMsByEmail(email: string): Promise<number | null> {
+    const rows = await this.prisma.$queryRaw<Array<{ age_ms: number }>>`
+      SELECT (EXTRACT(EPOCH FROM ((now() AT TIME ZONE 'UTC') - created_at)) * 1000)::float8 AS age_ms
+        FROM contact_messages
+       WHERE email = ${email}
+         AND status <> 'SPAM'
+       ORDER BY created_at DESC
+       LIMIT 1`;
+    return rows.length > 0 ? Number(rows[0].age_ms) : null;
   }
 
   /**

@@ -105,8 +105,10 @@ export class MediaUsageRepository {
           },
           select: { id: true, name: true, ogImage: true, description: true },
         }),
+        // Live categories only (TASK-653): a deleted category is never restored
+        // (decision B-2), so its image must not block deleting the media file.
         this.prisma.category.findMany({
-          where: { OR: [{ image: exact }, { ogImage: exact }] },
+          where: { deletedAt: null, OR: [{ image: exact }, { ogImage: exact }] },
           select: { id: true, name: true, image: true, ogImage: true },
         }),
         this.prisma.brand.findMany({

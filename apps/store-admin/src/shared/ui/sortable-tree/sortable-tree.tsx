@@ -38,6 +38,16 @@
  * changing a line. The decision itself lives in {@link resolveDropHint}, which is
  * pure and reads the SAME `getProjection` the drop path reads; a hint that could
  * disagree with the drop would be worse than no hint at all.
+ *
+ * ── One projection per frame (TASK-578) ─────────────────────────────────────
+ * "The same pure function" was not quite "the same answer": the hint projected
+ * from the `overId` held in state, the drop projected AGAIN from `over.id` on
+ * the end event, and the drag list was flattened three times. dnd-kit derives
+ * both ids from one collision pass, so they agree in practice — but nothing
+ * made them. Now the projection is computed ONCE per rendered frame
+ * ({@link resolveDrop}); the hint is painted from it, and the drop CONSUMES the
+ * one that was painted. Only when no frame was painted for this drag (a release
+ * before any move event) does the drop project for itself.
  */
 
 import {
@@ -60,7 +70,9 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type HTMLAttributes,
@@ -79,6 +91,7 @@ import {
   toNested,
   toReorderGroups,
   type FlattenedItem,
+  type Projection,
   type TreeItem,
 } from "@/shared/lib/sortable-tree";
 import { useAnnouncer } from "@/shared/ui/live-announcer";
@@ -164,6 +177,43 @@ export function resolveDropHint(
   indentationWidth: number,
   maxDepthClamp: number,
 ): DropHint | null {
+  return (
+    resolveDrop(
+      items,
+      activeId,
+      overId,
+      offsetLeft,
+      indentationWidth,
+      maxDepthClamp,
+    )?.hint ?? null
+  );
+}
+
+/**
+ * One resolved drop target: the projection AND the hint read off it (TASK-578).
+ * The hint and the drop both come from this one object, so they cannot diverge.
+ */
+export interface ResolvedDrop {
+  activeId: string;
+  overId: string;
+  /** The drag list the projection was computed against. */
+  dragList: FlattenedItem[];
+  projection: Projection;
+  hint: DropHint;
+}
+
+/**
+ * Project once and derive the hint from that projection. `null` when either id
+ * is not in the drag list (the same guard {@link resolveDropHint} always had).
+ */
+export function resolveDrop(
+  items: FlattenedItem[],
+  activeId: string,
+  overId: string,
+  offsetLeft: number,
+  indentationWidth: number,
+  maxDepthClamp: number,
+): ResolvedDrop | null {
   const overIndex = items.findIndex((i) => i.id === overId);
   const activeIndex = items.findIndex((i) => i.id === activeId);
   if (overIndex === -1 || activeIndex === -1) return null;
@@ -176,7 +226,23 @@ export function resolveDropHint(
     indentationWidth,
     maxDepthClamp,
   );
+  const hint = hintFromProjection(
+    items,
+    activeIndex,
+    overIndex,
+    overId,
+    projection,
+  );
+  return { activeId, overId, dragList: items, projection, hint };
+}
 
+function hintFromProjection(
+  items: FlattenedItem[],
+  activeIndex: number,
+  overIndex: number,
+  overId: string,
+  projection: Projection,
+): DropHint {
   const moved = arrayMove(items, activeIndex, overIndex);
   const previous = moved[overIndex - 1];
 
@@ -308,31 +374,51 @@ export function SortableTree({
     }),
   );
 
-  /** Rows actually rendered: while dragging, the active node's subtree collapses. */
-  const rows = useMemo(() => {
-    const flattened = flattenTree(toNested(items));
-    return activeId ? removeChildrenOf(flattened, [activeId]) : flattened;
-  }, [items, activeId]);
+  /** The whole tree, flattened ONCE per `items` (TASK-578). */
+  const flattened = useMemo(() => flattenTree(toNested(items)), [items]);
+
+  /**
+   * Rows actually rendered: while dragging, the active node's subtree collapses.
+   * That is also exactly the DRAG list the projection reads, so the hint and the
+   * drop reuse this array instead of re-flattening the tree.
+   */
+  const rows = useMemo(
+    () => (activeId ? removeChildrenOf(flattened, [activeId]) : flattened),
+    [flattened, activeId],
+  );
 
   const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
   const rowIds = useMemo(() => rows.map((r) => r.id), [rows]);
 
-  /** Where a release right now would put the row — recomputed on every move. */
-  const dropHint = useMemo(() => {
+  /**
+   * Where a release right now would put the row — projected ONCE per move, and
+   * the single source for both the painted hint and the drop (TASK-578).
+   */
+  const resolved = useMemo(() => {
     if (!activeId || !overId) return null;
-    const dragList = removeChildrenOf(flattenTree(toNested(items)), [activeId]);
-    return resolveDropHint(
-      dragList,
+    return resolveDrop(
+      rows,
       activeId,
       overId,
       offsetLeft,
       indentationWidth,
       depthClampFor(items, activeId, maxDepth),
     );
-  }, [activeId, indentationWidth, items, maxDepth, offsetLeft, overId]);
+  }, [activeId, indentationWidth, items, maxDepth, offsetLeft, overId, rows]);
+  const dropHint = resolved?.hint ?? null;
+
+  // The frame that is ON SCREEN, for the drop to consume. Written after commit,
+  // so it is always the projection the operator actually saw — if a move event
+  // and the release land in the same tick, the unrendered move never painted a
+  // hint and must not decide the drop either.
+  const paintedRef = useRef<ResolvedDrop | null>(null);
+  useEffect(() => {
+    paintedRef.current = resolved;
+  }, [resolved]);
 
   const handleDragStart = ({ active }: DragStartEvent) => {
     const id = String(active.id);
+    paintedRef.current = null;
     setActiveId(id);
     setOffsetLeft(0);
     setOverId(null);
@@ -355,28 +441,38 @@ export function SortableTree({
     setActiveId(null);
     setOffsetLeft(0);
     setOverId(null);
+    paintedRef.current = null;
   };
 
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
     const id = String(active.id);
     const item = byId.get(id);
+    const painted = paintedRef.current;
     reset();
     if (!over || !item) return;
 
-    const dragList = removeChildrenOf(flattenTree(toNested(items)), [id]);
-    const projection = getProjection(
-      dragList,
-      id,
-      String(over.id),
-      offsetLeft,
-      indentationWidth,
-      depthClampFor(items, id, maxDepth),
-    );
+    // Land where the hint said (TASK-578): consume the painted projection for
+    // this drag. Its `overId` wins over the end event's `over.id` — the
+    // operator released on what they were SHOWN. Only a drag that never painted
+    // a frame (released before any move) projects here, from the event.
+    const target =
+      painted && painted.activeId === id
+        ? painted
+        : resolveDrop(
+            removeChildrenOf(flattened, [id]),
+            id,
+            String(over.id),
+            offsetLeft,
+            indentationWidth,
+            depthClampFor(items, id, maxDepth),
+          );
+    if (!target) return;
+
     const point = projectionToInsertionPoint(
-      dragList,
+      target.dragList,
       id,
-      String(over.id),
-      projection,
+      target.overId,
+      target.projection,
     );
     const next = applyMove(items, id, point, maxDepth);
 

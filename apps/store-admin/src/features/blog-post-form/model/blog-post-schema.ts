@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { CreateBlogPostDto, UpdateBlogPostDto } from "@/entities/blog";
 import { dict } from "@/shared/config";
+import { SLUG_PATTERN } from "@/shared/lib/slug";
+import { ogImageField, seoTextFields } from "@/shared/lib/seo-fields-schema";
 import { fromKyivDateTimeLocal } from "@/shared/lib";
 import {
   KEYWORDS_MAX_COUNT,
@@ -10,8 +12,6 @@ import {
 
 const e = dict.blogPostForm.errors;
 const seoErrors = dict.seoFields.errors;
-
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** Publish lifecycle values — mirror of the API's PublishStatus enum. */
 export const BLOG_POST_STATUS = ["DRAFT", "SCHEDULED", "PUBLISHED"] as const;
@@ -34,7 +34,7 @@ export const blogPostSchema = z
       .string()
       .trim()
       .max(255, e.slugMax)
-      .regex(SLUG_PATTERN, e.slugPattern)
+      .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
       .optional()
       .or(z.literal("")),
 
@@ -78,19 +78,7 @@ export const blogPostSchema = z
     // SEO overrides (TASK-437). Until now the article had none: the storefront
     // derived its <title> from the heading and its description from the excerpt,
     // with no way to write either.
-    metaTitle: z
-      .string()
-      .trim()
-      .max(255, e.metaTitleMax)
-      .optional()
-      .or(z.literal("")),
-
-    metaDescription: z
-      .string()
-      .trim()
-      .max(500, e.metaDescriptionMax)
-      .optional()
-      .or(z.literal("")),
+    ...seoTextFields(),
 
     // Internal tags as one comma-separated field, validated on the PARSED list.
     keywords: z
@@ -106,12 +94,7 @@ export const blogPostSchema = z
         seoErrors.keywordLength(KEYWORD_MAX_LENGTH),
       ),
 
-    ogImage: z
-      .string()
-      .trim()
-      .url(seoErrors.ogImageUrl)
-      .optional()
-      .or(z.literal("")),
+    ogImage: ogImageField(),
 
     status: z.enum(BLOG_POST_STATUS),
 

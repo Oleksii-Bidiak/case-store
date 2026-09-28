@@ -87,6 +87,14 @@ Best for forms where the user always edits the same entity (e.g. the storefront 
 `apps/store-client/src/features/profile/ui/profile-form.tsx`): a background refetch surfaces
 server-side changes to untouched fields without discarding in-progress edits.
 
+> **Not for a whole-list `useFieldArray` form.** `keepDirtyValues` merges per array INDEX, not
+> per list: a refetch that adds, removes or reorders rows while the user edits mixes the two
+> lists, and the next save sends a list nobody wrote (measured on RHF 7.83 in TASK-559 — an
+> edited row kept, the server's new third row dropped, a removed row resurrected). It also
+> leaks into every later `reset()`, so the form's own post-save reset keeps un-normalised input.
+> For such forms re-seed only while pristine — `useEffect` on the query data calling
+> `reset(mapped)` when `!formState.isDirty` (see `features/search-synonyms-form`).
+
 ### 2b. `reset()` in a `useEffect` keyed to the entity id
 
 ```tsx

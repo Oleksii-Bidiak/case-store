@@ -1,4 +1,5 @@
 import { dict } from "@/shared/config";
+import { formatDayMonth } from "@/shared/lib/format";
 import type { PublicDiscountEntity } from "@/entities/discount";
 
 /**
@@ -24,11 +25,7 @@ function couponCondition(discount: PublicDiscountEntity): string {
     return dict.promo.couponMinSpend(String(Number(discount.minSpend)));
   }
   if (discount.expiresAt) {
-    const date = new Date(discount.expiresAt).toLocaleDateString("uk-UA", {
-      day: "numeric",
-      month: "long",
-    });
-    return dict.promo.couponExpires(date);
+    return dict.promo.couponExpires(formatDayMonth(discount.expiresAt));
   }
   return dict.promo.couponGeneric;
 }

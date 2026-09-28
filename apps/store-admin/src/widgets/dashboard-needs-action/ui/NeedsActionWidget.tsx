@@ -2,7 +2,16 @@
 
 import Link from "next/link";
 import { useAdminDashboardControllerGetNeedsAction } from "@/entities/dashboard";
+import { PERM } from "@/entities/permission";
+import {
+  ReturnEntityStatus,
+  useAdminReturnControllerFindAll,
+} from "@/entities/return";
+import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
+import { cn } from "@/shared/lib";
+import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
+import { ratingAbuseHref } from "../model/rating-abuse-href";
 import { NeedsActionWidgetSkeleton } from "./NeedsActionWidgetSkeleton";
 
 /**
@@ -11,17 +20,25 @@ import { NeedsActionWidgetSkeleton } from "./NeedsActionWidgetSkeleton";
  * when the count is zero ("all clear"). Cards with an `href` are `<Link>`s (the
  * one-click deep link into the filtered section); the failed-mail card has no
  * admin destination, so it renders as a plain, non-interactive stat.
+ *
+ * TASK-613: `count` is `undefined` when the number is not known — a tile fed by
+ * its own request that has not answered yet, or failed. It renders a muted «—»
+ * with a spoken `unknownLabel`, never a «0»: a zero there reads as «nothing
+ * waiting», which is exactly what an unanswered request cannot say.
  */
 function NeedsActionCard({
   label,
   count,
   href,
+  unknownLabel,
 }: {
   label: string;
-  count: number;
+  count: number | undefined;
   href?: string;
+  unknownLabel?: string;
 }) {
-  const countClass = count > 0 ? "text-warning" : "text-muted-foreground";
+  const countClass =
+    count !== undefined && count > 0 ? "text-warning" : "text-muted-foreground";
   const base = "block rounded-lg border border-border bg-card p-6 shadow-card";
 
   const body = (
@@ -30,7 +47,14 @@ function NeedsActionCard({
       <p
         className={`mt-2 font-display text-3xl font-bold tracking-tight tabular-nums ${countClass}`}
       >
-        {count}
+        {count === undefined ? (
+          <>
+            <span aria-hidden="true">—</span>
+            <span className="sr-only">{unknownLabel}</span>
+          </>
+        ) : (
+          count
+        )}
       </p>
     </>
   );
@@ -61,10 +85,31 @@ function NeedsActionCard({
  * signals all deep-link into their section; failed mail is an info-only card (no
  * admin destination). Zero-count cards still render (so the owner sees "all
  * clear"), visually de-emphasized.
+ *
+ * TASK-613 (edge case E-22): a ninth tile, «Нові заявки на повернення», for a
+ * session with `returns:read`. Its count is NOT on the needs-action payload —
+ * that endpoint is analytics-gated, and widening it would hand the returns count
+ * to anyone with the dashboard. Like the sidebar badges (TASK-722) it reads
+ * `meta.total` of the returns list under the section's own right, one row, with
+ * the queue's operational freshness; the deep link carries the same filter.
+ * Without the right the request is never made and the tile does not exist.
  */
 export function NeedsActionWidget() {
   const { data, isLoading, isError } =
     useAdminDashboardControllerGetNeedsAction();
+  const { can } = useAuth();
+  const canReadReturns = can(PERM.returnsRead);
+  // TASK-601: the rating-abuse card links only for a moderator — its href can
+  // carry an IP address (see `ratingAbuseHref`).
+  const canModerateReviews = can(PERM.reviewsModerate);
+  const { data: returnsData, isError: returnsFailed } =
+    useAdminReturnControllerFindAll(
+      { status: ReturnEntityStatus.REQUESTED, limit: 1 },
+      { query: { ...OPERATIONAL_LIST_QUERY, enabled: canReadReturns } },
+    );
+  // `undefined` until the list answers, and for good if it fails — see
+  // `nothingToDo` and the tile's placeholder.
+  const newReturns = returnsData?.meta?.total;
 
   if (isLoading) {
     return <NeedsActionWidgetSkeleton />;
@@ -97,7 +142,10 @@ export function NeedsActionWidget() {
     // only notification there is, denying itself.
     counts.unavailableItems === 0 &&
     // TASK-352: money held for an order that is not being fulfilled.
-    counts.paidAfterCancel === 0;
+    counts.paidAfterCancel === 0 &&
+    // TASK-613: only once the count is KNOWN — an «Все під контролем» printed
+    // before the returns list answers could sit over a non-zero tile.
+    (!canReadReturns || newReturns === 0);
 
   return (
     <section aria-label={dict.dashboard.needsActionHeading}>
@@ -112,11 +160,17 @@ export function NeedsActionWidget() {
         ) : null}
       </div>
 
-      {/* Eight cards since TASK-352 (4 + 4 at four columns). Seven since TASK-470; the column count moved 3 → 4 with it: at
-          three columns the seventh card sat alone on a third row, which is the
-          same "reads as an afterthought" problem `lg:grid-cols-5` caused at six.
-          Four gives 4 + 3, so no card stands by itself on a wide screen. */}
-      <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+      {/* Eight cards since TASK-352 (4 + 4 at four columns); nine with the
+          returns tile (TASK-613), which only a `returns:read` session sees. At
+          four columns the ninth would sit alone on a third row — the
+          "reads as an afterthought" problem TASK-470 moved away from — so nine
+          lay out 3 × 3 and eight stay 4 × 2. */}
+      <div
+        className={cn(
+          "mt-4 grid grid-cols-2 gap-4",
+          canReadReturns ? "lg:grid-cols-3" : "lg:grid-cols-4",
+        )}
+      >
         <NeedsActionCard
           label={dict.dashboard.needsActionNewOrders}
           count={counts.newOrders}
@@ -132,28 +186,37 @@ export function NeedsActionWidget() {
           count={counts.unpaidInTransit}
           href="/orders?unpaidInTransit=true"
         />
-        {/* TASK-251: PENDING orders sitting longer than 48h — a subset of new
-            orders, so it deep-links to the same PENDING-filtered list. */}
+        {/* TASK-251: PENDING orders sitting longer than 48h. TASK-607: it
+            used to open `?status=PENDING` — ALL new orders — so the operator
+            saw 3 on the tile and 27 rows after the click. The list has the
+            exact predicate (`pendingOverdue`, the same condition as the
+            dashboard's `pendingOver48hWhere`), so the click opens what the
+            tile counts, like `hasUnavailableItems` below. */}
         <NeedsActionCard
           label={dict.dashboard.needsActionPendingOver48h}
           count={counts.pendingOver48h}
-          href="/orders?status=PENDING"
+          href="/orders?pendingOverdue=true"
         />
         {/* TASK-446: situations worth OPENING, not reviews to moderate — a
             product that collected a burst of ratings in an hour, an address
-            behind a run of 1★. The destination is the reviews screen with no
-            status filter, because the rows behind a burst can sit in any of the
-            three queues and a `?status=` would hide most of them. */}
+            behind a run of 1★. TASK-601: the payload names them, so a single
+            situation opens the reviews screen filtered to that product or that
+            address, with `status=all` — the rows behind a burst sit in every
+            queue. Several situations open the unfiltered screen. A link only for
+            `reviews:moderate`: the href can carry an IP, and an analytics-only
+            viewer could neither act on the screen nor should copy the address. */}
         <NeedsActionCard
           label={dict.dashboard.needsActionRatingAbuse}
           count={counts.ratingAbuse}
-          href="/reviews"
+          href={
+            canModerateReviews
+              ? ratingAbuseHref(counts.ratingAbuseSignals)
+              : undefined
+          }
         />
         {/* TASK-470: orders holding a line that can no longer be supplied. The
             deep link carries the SAME predicate the tile counts
-            (`hasUnavailableItems`), not an approximation of it — the mistake
-            `pendingOver48h` still makes, where the tile counts one thing and the
-            click opens another (see the report). */}
+            (`hasUnavailableItems`), not an approximation of it. */}
         <NeedsActionCard
           label={dict.dashboard.needsActionUnavailableItems}
           count={counts.unavailableItems}
@@ -168,6 +231,22 @@ export function NeedsActionWidget() {
           count={counts.paidAfterCancel}
           href="/orders?paidAfterCancel=true"
         />
+        {/* TASK-613: a new return request, counted by the queue's own
+            filter and opening the queue on it. Its count arrives on its own
+            request, so until that answers (or when it fails) the tile shows a
+            placeholder, not a «0» that would read as «no new returns». */}
+        {canReadReturns ? (
+          <NeedsActionCard
+            label={dict.dashboard.needsActionNewReturns}
+            count={newReturns}
+            unknownLabel={
+              returnsFailed
+                ? dict.dashboard.needsActionCountFailed
+                : dict.dashboard.needsActionCountPending
+            }
+            href="/returns?status=REQUESTED"
+          />
+        ) : null}
         <NeedsActionCard
           label={dict.dashboard.needsActionFailedMails}
           count={counts.failedMails}

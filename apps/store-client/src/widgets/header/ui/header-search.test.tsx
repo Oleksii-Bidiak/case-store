@@ -3,12 +3,13 @@ import { act } from "@testing-library/react";
 import {
   renderWithProviders,
   screen,
+  waitFor,
   within,
   userEvent,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import type { BlogPostEntity } from "@/entities/blog";
+import type { BlogPostSuggestionEntity } from "@/entities/blog";
 import type { CategoryTreeNodeEntity } from "@/entities/category";
 import type { SearchSuggestionEntity } from "@/entities/search";
 import { HeaderSearch } from "./header-search";
@@ -38,27 +39,18 @@ function makeSuggestion(
   };
 }
 
-/** Build a published blog post with sensible defaults; override per-test. */
-function makeBlogPost(overrides: Partial<BlogPostEntity> = {}): BlogPostEntity {
+/**
+ * Build a blog-article suggestion (the light `/api/blog/suggest` row, TASK-543)
+ * with sensible defaults; override per-test.
+ */
+function makeBlogPost(
+  overrides: Partial<BlogPostSuggestionEntity> = {},
+): BlogPostSuggestionEntity {
   return {
     id: "post-1",
     slug: "how-to-pick-a-case",
     title: "Як обрати чохол для iPhone",
-    excerpt: "Гайд із вибору чохла.",
-    content: "",
     coverImageUrl: null,
-    coverBlurDataUrl: null,
-    authorName: "Олег Пилипенко",
-    author: null,
-    readingMinutes: 6,
-    featured: false,
-    listed: true,
-    category: { id: "cat-1", slug: "guides", name: "Гайди" },
-    status: "PUBLISHED",
-    publishedAt: "2026-06-28T09:00:00.000Z",
-    scheduledAt: null,
-    createdAt: "2026-06-01T00:00:00.000Z",
-    updatedAt: "2026-06-01T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -115,7 +107,8 @@ function makeTree(): CategoryTreeNodeEntity[] {
 
 /**
  * Wire the three endpoints `HeaderSearch` hits: the category tree (mega-menu,
- * fires on mount — TASK-082), product suggest, and the blog list (TASK-218).
+ * fires on mount — TASK-082), product suggest, and the blog suggest (TASK-218,
+ * its own light endpoint since TASK-543).
  */
 function setupHandlers({
   products = [],
@@ -123,7 +116,7 @@ function setupHandlers({
   categories = [],
 }: {
   products?: SearchSuggestionEntity[];
-  posts?: BlogPostEntity[];
+  posts?: BlogPostSuggestionEntity[];
   categories?: CategoryTreeNodeEntity[];
 } = {}) {
   server.use(
@@ -133,12 +126,7 @@ function setupHandlers({
     http.get("*/api/search/suggest", () =>
       HttpResponse.json({ data: products }),
     ),
-    http.get("*/api/blog", () =>
-      HttpResponse.json({
-        data: posts,
-        meta: { total: posts.length, page: 1, limit: 5, totalPages: 1 },
-      }),
-    ),
+    http.get("*/api/blog/suggest", () => HttpResponse.json({ data: posts })),
   );
 }
 
@@ -384,6 +372,29 @@ describe("HeaderSearch — APG combobox ARIA contract (TASK-275)", () => {
     expect(options[2]).toHaveAttribute("aria-selected", "false");
   });
 
+  it("enters the combined list at the bottom on ArrowUp (APG, TASK-508)", async () => {
+    setupHandlers({
+      products: [
+        makeSuggestion(),
+        makeSuggestion({ id: "product-2", name: "Скло", slug: "glass" }),
+      ],
+      posts: [makeBlogPost()],
+    });
+
+    const { user, input } = await typeQuery("чохол");
+    await screen.findByRole("listbox", { name: dict.search.blogSectionLabel });
+    const options = combinedOptions();
+
+    // ↑ with nothing highlighted → the last option (the article), not the
+    // first product it used to clamp to.
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", options[2].id);
+    expect(options[2]).toHaveAttribute("aria-selected", "true");
+
+    await user.keyboard("{ArrowUp}");
+    expect(input).toHaveAttribute("aria-activedescendant", options[1].id);
+  });
+
   it("selects the option named by aria-activedescendant on Enter", async () => {
     setupHandlers({
       products: [
@@ -551,7 +562,7 @@ describe("HeaderSearch — mega-menu flyout (TASK-082)", () => {
         return HttpResponse.json({ data: [] });
       }),
       http.get("*/api/search/suggest", () => HttpResponse.json({ data: [] })),
-      http.get("*/api/blog", () => HttpResponse.json({ data: [], meta: {} })),
+      http.get("*/api/blog/suggest", () => HttpResponse.json({ data: [] })),
     );
     await openCatalog();
 
@@ -569,7 +580,7 @@ describe("HeaderSearch — mega-menu flyout (TASK-082)", () => {
         ),
       ),
       http.get("*/api/search/suggest", () => HttpResponse.json({ data: [] })),
-      http.get("*/api/blog", () => HttpResponse.json({ data: [], meta: {} })),
+      http.get("*/api/blog/suggest", () => HttpResponse.json({ data: [] })),
     );
     await openCatalog();
 
@@ -681,9 +692,9 @@ describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () 
         await delay("infinite");
         return HttpResponse.json({ data: [] });
       }),
-      http.get("*/api/blog", async () => {
+      http.get("*/api/blog/suggest", async () => {
         await delay("infinite");
-        return HttpResponse.json({ data: [], meta: {} });
+        return HttpResponse.json({ data: [] });
       }),
     );
 
@@ -693,6 +704,42 @@ describe("HeaderSearch — hover, Enter and the compact trigger (TASK-411)", () 
     // nothing is in flight and nothing has arrived — the popup must not
     // announce a verdict it cannot have.
     expect(screen.getByText(dict.search.loading)).toBeInTheDocument();
+    expect(screen.queryByText(dict.search.empty)).not.toBeInTheDocument();
+  });
+
+  it("keeps the previous suggestions on screen while the next query is in flight", async () => {
+    let nextRequested = false;
+    server.use(
+      http.get("*/api/categories/tree", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/search/suggest", async ({ request }) => {
+        const q = new URL(request.url).searchParams.get("q");
+        if (q === "ч") return HttpResponse.json({ data: [makeSuggestion()] });
+        nextRequested = true;
+        await delay("infinite");
+        return HttpResponse.json({ data: [] });
+      }),
+      http.get("*/api/blog/suggest", async ({ request }) => {
+        const q = new URL(request.url).searchParams.get("q");
+        if (q === "ч") {
+          return HttpResponse.json({ data: [makeBlogPost()] });
+        }
+        await delay("infinite");
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+
+    const { user } = await typeQuery("ч");
+    await screen.findByText("Чохол iPhone 15 Pro");
+    await screen.findByText("Як обрати чохол для iPhone");
+
+    await user.keyboard("о");
+    await waitFor(() => expect(nextRequested).toBe(true));
+
+    // keepPreviousData: the rows for «ч» stay put while «чо» is loading — the
+    // popup neither empties nor blinks through the loading row between letters.
+    expect(screen.getByText("Чохол iPhone 15 Pro")).toBeInTheDocument();
+    expect(screen.getByText("Як обрати чохол для iPhone")).toBeInTheDocument();
+    expect(screen.queryByText(dict.search.loading)).not.toBeInTheDocument();
     expect(screen.queryByText(dict.search.empty)).not.toBeInTheDocument();
   });
 

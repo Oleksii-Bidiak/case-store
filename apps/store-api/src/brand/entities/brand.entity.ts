@@ -35,6 +35,15 @@ export class BrandEntity {
   })
   isActive!: boolean;
 
+  @ApiProperty({
+    description:
+      'Number of live (not soft-deleted) products of this brand, visible or hidden ' +
+      '(admin listing only, TASK-840)',
+    example: 42,
+    required: false,
+  })
+  productCount?: number;
+
   @ApiProperty({ description: 'Creation timestamp', example: '2026-07-01T00:00:00.000Z' })
   createdAt!: Date;
 
@@ -42,17 +51,21 @@ export class BrandEntity {
   updatedAt!: Date;
 
   /**
-   * Create a BrandEntity from a Prisma Brand model.
+   * Create a BrandEntity from a Prisma Brand model. `productCount` is passed
+   * separately, for the admin listing only (pattern: `DeviceBrandEntity.modelCount`).
    */
-  static fromPrisma(brand: {
-    id: string;
-    name: string;
-    slug: string;
-    logo: string | null;
-    isActive: boolean;
-    createdAt: Date;
-    updatedAt: Date;
-  }): BrandEntity {
+  static fromPrisma(
+    brand: {
+      id: string;
+      name: string;
+      slug: string;
+      logo: string | null;
+      isActive: boolean;
+      createdAt: Date;
+      updatedAt: Date;
+    },
+    productCount?: number,
+  ): BrandEntity {
     const entity = new BrandEntity();
     entity.id = brand.id;
     entity.name = brand.name;
@@ -61,6 +74,9 @@ export class BrandEntity {
     entity.isActive = brand.isActive;
     entity.createdAt = brand.createdAt;
     entity.updatedAt = brand.updatedAt;
+    if (productCount !== undefined) {
+      entity.productCount = productCount;
+    }
     return entity;
   }
 }

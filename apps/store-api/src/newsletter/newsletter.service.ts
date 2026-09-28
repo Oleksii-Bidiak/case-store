@@ -5,7 +5,7 @@ import { NewsletterExportQueryDto, NewsletterListQueryDto, SubscribeDto } from '
 // Shared with the order export. This file used to carry its own byte-identical
 // `escapeCsv`, and the formula-injection hole was found in both copies at once —
 // which is the argument for there being only one.
-import { escapeCsvField } from '../common/utils/csv.util';
+import { buildCsvDocument, escapeCsvField } from '../common/utils/csv.util';
 
 /**
  * Pagination metadata returned alongside paginated results.
@@ -80,7 +80,9 @@ export class NewsletterService {
    * Build the subscriber CSV (admin export). Columns: email,status,source,createdAt.
    * Fields go through the shared {@link escapeCsvField}, which quote-escapes so
    * commas/quotes in values never break the layout AND neutralises a value the
-   * operator's spreadsheet would otherwise execute as a formula.
+   * operator's spreadsheet would otherwise execute as a formula. Starts with the
+   * UTF-8 BOM like every export (TASK-691) — it did not, so the list opened in
+   * Excel on Windows with every Cyrillic source label in mojibake.
    */
   async exportCsv(query: NewsletterExportQueryDto): Promise<string> {
     const rows = await this.newsletterRepository.findAllForExport({
@@ -88,7 +90,7 @@ export class NewsletterService {
       search: query.search,
     });
 
-    const lines = [
+    return buildCsvDocument([
       CSV_HEADER.join(','),
       ...rows.map((row) =>
         [
@@ -98,9 +100,7 @@ export class NewsletterService {
           escapeCsvField(row.createdAt.toISOString()),
         ].join(','),
       ),
-    ];
-
-    return lines.join('\r\n');
+    ]);
   }
 
   // ─── helpers ──────────────────────────────────────────────────────────────

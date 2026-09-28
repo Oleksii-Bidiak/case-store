@@ -45,21 +45,45 @@ class ReturnListResponseEnvelope {
  * `RolesGuard` sat alongside it until TASK-475 carrying no `@Roles` metadata,
  * which made it a no-op that returned true for every authenticated caller — so
  * removing it admits exactly the same set of callers it did.
+ *
+ * Paths are spelled per route rather than as a controller prefix since TASK-608
+ * added `GET /returns` — the one route here that is not under an order. A second
+ * controller would have needed its own registration in `OrderModule` for a
+ * single handler with the same guard and the same service.
  */
 @ApiTags('Returns')
 @ApiBearerAuth('access-token')
 @ApiExtraModels(ReturnEntity, ReturnItemEntity, ReturnResponseEnvelope, ReturnListResponseEnvelope)
-@Controller('orders/:orderId/returns')
+@Controller()
 @UseGuards(JwtAuthGuard)
 export class ReturnController {
   constructor(private readonly returnService: ReturnService) {}
+
+  /**
+   * GET /api/returns
+   *
+   * Every return opened against one of the caller's orders, newest first
+   * (TASK-608).
+   */
+  @Get('returns')
+  @ApiOperation({ summary: 'List my returns', operationId: 'getMyReturns' })
+  @ApiResponse({
+    status: 200,
+    description: "The caller's returns across all their orders, newest request first",
+    type: ReturnListResponseEnvelope,
+  })
+  @ApiResponse({ status: 401, description: 'Not signed in' })
+  async getMyReturns(@CurrentUser('id') userId: string): Promise<ReturnListResponseEnvelope> {
+    const data = await this.returnService.getMyReturns(userId);
+    return { data };
+  }
 
   /**
    * POST /api/orders/:orderId/returns
    *
    * Open a return against one of the caller's own orders.
    */
-  @Post()
+  @Post('orders/:orderId/returns')
   @HttpCode(HttpStatus.CREATED)
   // Opening a return is cheap for the customer and expensive for the shop
   // (someone has to read every one), so cap it well below the global rate.
@@ -86,7 +110,7 @@ export class ReturnController {
    *
    * The returns the caller has opened against this order.
    */
-  @Get()
+  @Get('orders/:orderId/returns')
   @ApiOperation({ summary: 'List returns for an order', operationId: 'getOrderReturns' })
   @ApiParam({ name: 'orderId', description: 'Order UUID' })
   @ApiResponse({

@@ -60,8 +60,22 @@ export interface UserMetrics {
 export interface TopProduct {
   productId: string;
   name: string;
-  totalRevenue: number;
+  /**
+   * Revenue earned by this product. MONEY (TASK-684): present only for callers
+   * holding `analytics:revenue`; `DashboardService` deletes it for everybody
+   * else, so the key is absent from their JSON rather than null.
+   */
+  totalRevenue?: number;
+  /** Units sold (sum of line quantities) — operational, always present (TASK-684). */
+  unitsSold: number;
 }
+
+/**
+ * How the top-products list is ranked (TASK-684). By revenue only for a caller
+ * allowed to see revenue: an order by money is itself a statement about money,
+ * so everybody else gets the list ranked — and SELECTED — by units sold.
+ */
+export type TopProductsRanking = 'revenue' | 'units';
 
 export interface ProductMetrics {
   totalProducts: number;
@@ -92,8 +106,14 @@ export interface OperationsMetrics {
   averageProcessingHoursLast30Days: number;
 }
 
+/**
+ * The dashboard payload. `revenue` is optional because it is MONEY (TASK-684,
+ * plan 188): it is present only for callers holding `analytics:revenue`, and for
+ * everybody else the key is absent — not null — so the response body carries
+ * no trace of it.
+ */
 export interface DashboardSummary {
-  revenue: RevenueMetrics;
+  revenue?: RevenueMetrics;
   orders: OrderMetrics;
   users: UserMetrics;
   customers: CustomerMetrics;
@@ -101,6 +121,14 @@ export interface DashboardSummary {
   inventory: InventoryMetrics;
   operations: OperationsMetrics;
 }
+
+/**
+ * Everything the repository's `getSummary` returns: the dashboard minus its
+ * money, which `getRevenueMetrics` computes separately and only on request
+ * (TASK-684). Top products still carry `totalRevenue` at this layer — the
+ * service decides whether it survives.
+ */
+export type DashboardSummaryBase = Omit<DashboardSummary, 'revenue'>;
 
 /**
  * "Needs action" counters for the admin dashboard widget + sidebar badges

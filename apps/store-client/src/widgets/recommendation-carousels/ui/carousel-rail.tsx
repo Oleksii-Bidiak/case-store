@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { PublicCarouselEntity } from "@/shared/api/generated/models";
 import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
+import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
 import { dict } from "@/shared/config";
 
 /** Rail slides are fixed-width (`w-[244px] sm:w-[260px]`), not grid-fluid.
@@ -86,6 +87,7 @@ export function CarouselRail({ carousel }: CarouselRailProps) {
               product={product}
               imageSizes={RAIL_IMAGE_SIZES}
               action={<ProductCardActions product={product} />}
+              hoverAction={<ProductQuickViewTrigger product={product} />}
             />
           </div>
         ))}

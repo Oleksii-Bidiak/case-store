@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import {
+  fireEvent,
   renderWithProviders,
   screen,
   waitFor,
@@ -189,5 +190,77 @@ describe("RegisterForm", () => {
       await screen.findByText(dict.common.genericError),
     ).toBeInTheDocument();
     expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  // ── TASK-749: the registration honeypot ────────────────────────────────────
+  describe("honeypot", () => {
+    const trap = (container: HTMLElement) =>
+      container.querySelector<HTMLInputElement>('input[name="hpCheck"]');
+
+    /** Capture the register request body. */
+    function captureRegister(): { current: Record<string, unknown> | null } {
+      const captured: { current: Record<string, unknown> | null } = {
+        current: null,
+      };
+      server.use(
+        http.post("*/api/auth/register", async ({ request }) => {
+          captured.current = (await request.json()) as Record<string, unknown>;
+          return HttpResponse.json(
+            { data: { accessToken: "test.access.token" } },
+            { status: 201 },
+          );
+        }),
+      );
+      return captured;
+    }
+
+    it("renders a field people cannot see, reach by Tab or have autofilled", () => {
+      const { container } = renderWithProviders(<RegisterForm />);
+
+      const input = trap(container);
+      expect(input).not.toBeNull();
+      expect(input).toHaveAttribute("tabindex", "-1");
+      expect(input).toHaveAttribute("autocomplete", "off");
+      expect(input).toHaveAttribute("data-1p-ignore");
+      expect(input).toHaveAttribute("data-lpignore", "true");
+      expect(input).toHaveAttribute("data-bwignore");
+      expect(input!.closest("div")).toHaveAttribute("inert");
+      expect(input!.closest("div")).toHaveAttribute("aria-hidden", "true");
+      // Not the contact form's `website`: that name is an autofill slot.
+      expect(container.querySelector('input[name="website"]')).toBeNull();
+    });
+
+    it("sends no honeypot key for a person", async () => {
+      const captured = captureRegister();
+      const user = userEvent.setup();
+      renderWithProviders(<RegisterForm />);
+
+      await fillValidForm(user);
+      await user.click(
+        screen.getByRole("button", { name: dict.auth.register.submit }),
+      );
+
+      await waitFor(() => expect(captured.current).not.toBeNull());
+      expect(captured.current).not.toHaveProperty("hpCheck");
+    });
+
+    it("passes a filled trap through, clamped, so the API can refuse quietly", async () => {
+      const captured = captureRegister();
+      const user = userEvent.setup();
+      const { container } = renderWithProviders(<RegisterForm />);
+
+      await fillValidForm(user);
+      // A bot writes into the DOM directly — `inert` keeps people (and
+      // user-event) out, so the value is set the way a script would set it.
+      fireEvent.change(trap(container)!, {
+        target: { value: "x".repeat(300) },
+      });
+      await user.click(
+        screen.getByRole("button", { name: dict.auth.register.submit }),
+      );
+
+      await waitFor(() => expect(captured.current).not.toBeNull());
+      expect(captured.current?.hpCheck).toBe("x".repeat(255));
+    });
   });
 });

@@ -17,15 +17,21 @@ import {
   TopProductDto,
   UserMetricsDto,
 } from './dto';
-import { PermissionGuard, RequirePermission } from '../auth/permissions';
+import {
+  CurrentActor,
+  PermissionGuard,
+  RequirePermission,
+  type PermissionActor,
+} from '../auth/permissions';
 
 /**
  * Admin dashboard endpoint.
  *
  *   GET /api/admin/dashboard/summary — all metrics in one read-only payload.
  *
- * Admin-only, gated on `analytics:read` (TASK-334) — the revenue figures here
- * are exactly what a limited role should not see by default. Mirrors the
+ * Admin-only, gated on `analytics:read` (TASK-334). The revenue figures are a
+ * second key, `analytics:revenue` (TASK-684): the service omits them from the
+ * summary for anyone who holds only the first. Mirrors the
  * `admin/orders` controller split: a flat response (no `{ data }` wrapper),
  * since the summary IS the resource and has no identity or pagination.
  */
@@ -55,8 +61,11 @@ export class DashboardController {
   /**
    * GET /api/admin/dashboard/summary
    *
-   * Returns revenue, order, user, product, and inventory metrics in a single
-   * payload to avoid waterfall fetches on the dashboard page load.
+   * Returns order, user, product, and inventory metrics — plus revenue, for a
+   * caller holding `analytics:revenue` — in a single payload to avoid waterfall
+   * fetches on the dashboard page load. The actor is the one `PermissionGuard`
+   * just resolved from the database, so the money decision is made on the same
+   * rights the guard checked, never on the token.
    */
   @Get('summary')
   @ApiBearerAuth('access-token')
@@ -66,13 +75,16 @@ export class DashboardController {
   })
   @ApiResponse({
     status: 200,
-    description: 'Aggregated dashboard metrics',
+    description:
+      'Aggregated dashboard metrics. `revenue`, and `totalRevenue` on each top product, are ' +
+      'present only for callers holding `analytics:revenue`; for everybody else the keys are ' +
+      'absent (not null) and top products are ranked by units sold.',
     type: DashboardSummaryResponse,
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
-  async getSummary(): Promise<DashboardSummaryResponse> {
-    return this.dashboardService.getSummary();
+  async getSummary(@CurrentActor() actor: PermissionActor): Promise<DashboardSummaryResponse> {
+    return this.dashboardService.getSummary(actor);
   }
 
   /**

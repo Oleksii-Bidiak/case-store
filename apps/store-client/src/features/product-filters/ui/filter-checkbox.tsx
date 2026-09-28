@@ -19,6 +19,15 @@ interface FilterCheckboxProps {
    * way a sighted one does.
    */
   count?: number;
+  /**
+   * The value cannot be added to the current selection (TASK-540 — the
+   * `?specs=` caps). A native `disabled`, so it drops out of the tab order and
+   * is announced as unavailable; `describedBy` should point at the visible note
+   * saying why.
+   */
+  disabled?: boolean;
+  /** Id of the element explaining a `disabled` state. */
+  describedBy?: string;
 }
 
 /**
@@ -40,17 +49,23 @@ export function FilterCheckbox({
   label,
   hint,
   count,
+  disabled = false,
+  describedBy,
 }: FilterCheckboxProps) {
   return (
     <label
       htmlFor={id}
-      className="flex cursor-pointer items-center gap-3 py-1.5 text-sm text-foreground"
+      className={`flex items-center gap-3 py-1.5 text-sm text-foreground ${
+        disabled ? "cursor-not-allowed opacity-50" : "cursor-pointer"
+      }`}
     >
       <input
         id={id}
         type="checkbox"
         className="peer sr-only"
         checked={checked}
+        disabled={disabled}
+        aria-describedby={disabled ? describedBy : undefined}
         onChange={(event) => onCheckedChange(event.target.checked)}
       />
       <span

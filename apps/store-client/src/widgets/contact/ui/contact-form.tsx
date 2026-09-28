@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import {
   CONTACT_HONEYPOT_FIELD,
   ContactHoneypot,
+  contactRetryAfterMinutes,
   contactSubmitErrorKind,
   useContactControllerSubmit,
 } from "@/entities/contact";
@@ -108,9 +109,15 @@ export function ContactForm() {
 
   // The per-email cooldown and the per-IP throttle both answer 429 but clear
   // after 10 minutes vs one (TASK-452); anything else → generic submit error.
+  // TASK-762: the cooldown sentence names the REAL remaining minutes when the
+  // API sends them, and falls back to the fixed text when it does not.
+  const cooldownMinutes = contactRetryAfterMinutes(submit.error);
   const errorMessage = submit.isError
     ? {
-        cooldown: d.errors.cooldown,
+        cooldown:
+          cooldownMinutes !== undefined
+            ? d.errors.cooldownIn(cooldownMinutes)
+            : d.errors.cooldown,
         rateLimited: d.errors.rateLimited,
         failed: d.errors.submitFailed,
       }[contactSubmitErrorKind(submit.error)]

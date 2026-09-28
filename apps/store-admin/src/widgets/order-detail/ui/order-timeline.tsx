@@ -4,10 +4,11 @@ import {
   historyActorLabel,
   historyChangeLabel,
   historyNoteLabel,
+  isRefusedPaymentEvent,
   useAdminOrderControllerGetHistory,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
-import { formatDateTime } from "@/shared/lib";
+import { cn, formatDateTime } from "@/shared/lib";
 import { OrderTimelineSkeleton } from "./order-timeline-skeleton";
 
 interface OrderTimelineProps {
@@ -22,6 +23,10 @@ interface OrderTimelineProps {
  * Self-fetching (independent of the parent order query, like NeedsActionWidget),
  * it renders the oldest-first list returned by the admin history endpoint. Each
  * row shows what changed, who changed it (customer / admin / system), and when.
+ *
+ * A refused provider event (TASK-621) is set apart in the warning tone: it is
+ * the one row that records something that did NOT happen, and reading it as an
+ * ordinary move is exactly the mistake the old «Оплачено → Оплачено» invited.
  */
 export function OrderTimeline({ orderId, customerUserId }: OrderTimelineProps) {
   const { data, isLoading, isError } =
@@ -52,10 +57,15 @@ export function OrderTimeline({ orderId, customerUserId }: OrderTimelineProps) {
     <ol className="flex flex-col gap-3">
       {entries.map((entry) => {
         const note = historyNoteLabel(entry);
+        const refused = isRefusedPaymentEvent(entry);
         return (
           <li
             key={entry.id}
-            className="flex flex-col gap-1 rounded-md border border-border p-3"
+            data-refused={refused ? "true" : undefined}
+            className={cn(
+              "flex flex-col gap-1 rounded-md border p-3",
+              refused ? "border-warning/40 bg-warning/10" : "border-border",
+            )}
           >
             <span className="text-sm font-medium text-foreground">
               {historyChangeLabel(entry)}

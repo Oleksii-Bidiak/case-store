@@ -1174,7 +1174,7 @@ describe("AdminCategoryTree — multi-select + bulk status (TASK-293)", () => {
   it("sends ONE PATCH with every selected id and clears the selection on success", async () => {
     mockReorder();
     mockBulkStatus();
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmSpy = jest.spyOn(window, "confirm");
     await renderTree();
 
     await userEvent.click(checkboxOf(A));
@@ -1183,6 +1183,13 @@ describe("AdminCategoryTree — multi-select + bulk status (TASK-293)", () => {
     await userEvent.click(
       screen.getByRole("button", { name: bulkDict.deactivate(2) }),
     );
+    // TASK-812: an AlertDialog, not `window.confirm`.
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: bulkDict.deactivate(2),
+      }),
+    );
+    expect(confirmSpy).not.toHaveBeenCalled();
 
     await waitFor(() => expect(bulkBodies).toHaveLength(1));
     expect(bulkBodies[0]).toEqual({ ids: [A, B], isActive: false });
@@ -1200,7 +1207,7 @@ describe("AdminCategoryTree — multi-select + bulk status (TASK-293)", () => {
   it("cancelling the blast-radius confirmation fires ZERO mutations", async () => {
     mockReorder();
     mockBulkStatus();
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(false);
+    const confirmSpy = jest.spyOn(window, "confirm");
     await renderTree();
 
     await userEvent.click(checkboxOf(A));
@@ -1208,7 +1215,15 @@ describe("AdminCategoryTree — multi-select + bulk status (TASK-293)", () => {
       screen.getByRole("button", { name: bulkDict.deactivate(1) }),
     );
 
-    expect(confirmSpy).toHaveBeenCalledWith(bulkDict.deactivateConfirm(1));
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(bulkDict.deactivateConfirm(1));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(confirmSpy).not.toHaveBeenCalled();
     expect(bulkBodies).toHaveLength(0);
     // The selection survives a cancel — the operator did not lose their work.
     expect(rowEl(A)).toHaveAttribute("aria-selected", "true");
@@ -1219,7 +1234,7 @@ describe("AdminCategoryTree — multi-select + bulk status (TASK-293)", () => {
   it("activating asks for no confirmation (nothing is hidden by it)", async () => {
     mockReorder();
     mockBulkStatus();
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmSpy = jest.spyOn(window, "confirm");
     await renderTree();
 
     await userEvent.click(checkboxOf(A));
@@ -1229,6 +1244,7 @@ describe("AdminCategoryTree — multi-select + bulk status (TASK-293)", () => {
 
     await waitFor(() => expect(bulkBodies).toHaveLength(1));
     expect(bulkBodies[0]).toEqual({ ids: [A], isActive: true });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(confirmSpy).not.toHaveBeenCalled();
 
     confirmSpy.mockRestore();
@@ -1239,12 +1255,17 @@ describe("AdminCategoryTree — multi-select + bulk status (TASK-293)", () => {
     mockBulkStatus(() =>
       HttpResponse.json({ message: "boom" }, { status: 500 }),
     );
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    const confirmSpy = jest.spyOn(window, "confirm");
     await renderTree();
 
     await userEvent.click(checkboxOf(A));
     await userEvent.click(
       screen.getByRole("button", { name: bulkDict.deactivate(1) }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: bulkDict.deactivate(1),
+      }),
     );
 
     await waitFor(() => expect(assertive()).toBe(bulkDict.announce.failed));

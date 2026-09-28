@@ -21,6 +21,7 @@ describe('AddonService controllers (TASK-174)', () => {
     resolveForProductForAdmin: jest.fn(),
     findAllAdmin: jest.fn(),
     findAllActive: jest.fn(),
+    findPublicActive: jest.fn(),
     findById: jest.fn(),
     create: jest.fn(),
     update: jest.fn(),
@@ -54,6 +55,16 @@ describe('AddonService controllers (TASK-174)', () => {
 
       expect(await publicController.resolveForProduct('p1')).toEqual({ data: addons });
       expect(addonServiceService.resolveForProduct).toHaveBeenCalledWith('p1');
+    });
+
+    it('GET /addon-services/active returns the offered services in { data } (TASK-561)', async () => {
+      const services = [{ id: 'svc-a', name: 'Warranty', description: null, price: '499.00' }];
+      addonServiceService.findPublicActive.mockResolvedValue(services);
+
+      expect(await publicController.findActive()).toEqual({ data: services });
+      expect(addonServiceService.findPublicActive).toHaveBeenCalled();
+      // Not the admin picker's read — that one carries isActive and timestamps.
+      expect(addonServiceService.findAllActive).not.toHaveBeenCalled();
     });
 
     it('carries no guard — the resolved list is public', () => {

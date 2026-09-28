@@ -7,6 +7,11 @@ import {
   Prisma,
   ReviewTextStatus,
 } from '@prisma/client';
+import { roundMoney } from '../analytics/reports/entities/report-common.entity';
+import { ProductsReportRepository } from '../analytics/reports/products-report.repository';
+import { lastKyivDays, type ReportRange } from '../analytics/reports/report-period';
+import { SalesRepository } from '../analytics/reports/sales.repository';
+import { kyivDaySql } from '../common/time/kyiv-day';
 import { PrismaService } from '../prisma';
 import { moderationQueueWhere } from '../review/review.constants';
 import {
@@ -21,23 +26,26 @@ import {
   REPEAT_BUYER_WINDOW_DAYS,
   TOP_PRODUCTS_LIMIT,
   type DailyDataPoint,
-  type DashboardSummary,
+  type DashboardSummaryBase,
   type LowStockProduct,
   type NeedsAction,
   type RatingAbuseSignals,
   type OrderStatusCount,
+  type RevenueMetrics,
   type TopProduct,
+  type TopProductsRanking,
 } from './dashboard.types';
 import { computeAverageOrderValue, computeRepeatBuyerRate } from './dashboard.formulas';
 
 /**
- * Revenue is counted only for orders the admin has actually marked PAID
- * (`paymentStatus = PAID`). Since TASK-151 decoupled payment status from the
- * order-status pipeline (`derivePaymentStatus` was removed), order status is no
- * longer a proxy for "money received" — an order can sit at CONFIRMED/PROCESSING
- * while still unpaid (e.g. cash-on-delivery awaiting collection). Every revenue
- * aggregate and the top-products list therefore filter on `paymentStatus = PAID`
- * so the dashboard reflects earned revenue, not merely accepted orders (TASK-152).
+ * Revenue is counted by PAYMENT status, never by order status: since TASK-151
+ * decoupled the two, an order can sit at CONFIRMED/PROCESSING while still unpaid
+ * (e.g. cash-on-delivery awaiting collection), so the dashboard reflects earned
+ * revenue, not merely accepted orders (TASK-152). Since TASK-694 "earned" is the
+ * `/analytics` formula, read through `SalesRepository`: sales of PAID /
+ * PARTIALLY_REFUNDED / REFUNDED orders by creation day, minus refunds by the day
+ * the money went back — see {@link DashboardRepository.getRevenueMetrics}. The
+ * top products read the reports' leaders query (TASK-688) over the same base.
  *
  * Alongside earned revenue, TASK-137 adds an "unrealized" revenue pair
  * (`getUnrealizedRevenue` / `getUnrealizedRevenueSince`): the value of orders that
@@ -51,7 +59,7 @@ import { computeAverageOrderValue, computeRepeatBuyerRate } from './dashboard.fo
  * changes — see that plan for why it deliberately keeps a single all-active-unpaid
  * figure rather than splitting off a narrower "shipped-but-unpaid" number. What
  * TASK-249 adds instead is average order value and repeat-buyer rate (see
- * `dashboard.formulas.ts` + `getPaidOrderCountSince` / `getRepeatBuyerRate` below).
+ * `dashboard.formulas.ts` + `getRevenueMetrics` / `getRepeatBuyerRate` below).
  */
 
 /** Raw-query row shape for the gap-filled daily series. */
@@ -60,40 +68,44 @@ interface DailyRow {
   value: number;
 }
 
-/** Raw-query row shape for the top-products query. */
-interface TopProductRow {
-  productId: string;
-  name: string;
-  totalRevenue: number;
-}
-
 /**
  * Read-only repository assembling all admin-dashboard metrics from existing
  * tables. No writes, no migrations — every method is an aggregate query.
  *
- * Time-series methods use raw SQL with PostgreSQL `generate_series` +
- * `DATE_TRUNC` so the returned series always spans the full window (missing
- * days come back as 0 rather than gaps). The project is PostgreSQL-only across
+ * Time-series methods use raw SQL with PostgreSQL `generate_series` over the
+ * window's KYIV days (TASK-694) so the returned series always spans the full
+ * window (missing days come back as 0 rather than gaps), bucketed by the same
+ * Kyiv day as `/analytics`. The project is PostgreSQL-only across
  * all environments (Docker Compose dev + `store_test` e2e DB), so these raw
  * queries are safe — there is no SQLite fallback to consider.
  */
 @Injectable()
 export class DashboardRepository {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly productsReportRepository: ProductsReportRepository,
+    private readonly salesRepository: SalesRepository,
+  ) {}
 
   /**
-   * Run every metric query in parallel and assemble the summary payload.
+   * Run every NON-money metric query in parallel and assemble the summary
+   * payload (TASK-684).
+   *
+   * The `revenue` block is not here: {@link getRevenueMetrics} computes it, and
+   * the service calls that only for a caller holding `analytics:revenue`. A query
+   * that never runs cannot leak through a later refactor that forgets to drop
+   * its result. Top products still carry `totalRevenue` — the service strips it —
+   * but they are SELECTED and ordered by `topProductsRankedBy`, which defaults to
+   * units: the safe answer for a caller that forgets to ask, because a list
+   * ranked by money tells its reader which product earns most even with every
+   * sum removed.
    */
-  async getSummary(windowDays: number = DASHBOARD_WINDOW_DAYS): Promise<DashboardSummary> {
-    const windowStart = this.windowStart(windowDays);
+  async getSummary(
+    options: { windowDays?: number; topProductsRankedBy?: TopProductsRanking } = {},
+  ): Promise<DashboardSummaryBase> {
+    const window = this.window(options.windowDays ?? DASHBOARD_WINDOW_DAYS);
 
     const [
-      totalRevenue,
-      revenueLast30Days,
-      unrealizedRevenue,
-      unrealizedRevenueLast30Days,
-      paidOrderCountLast30Days,
-      revenueByDay,
       totalOrders,
       ordersByStatus,
       ordersByDay,
@@ -107,38 +119,21 @@ export class DashboardRepository {
       lowStockProducts,
       averageProcessingHoursLast30Days,
     ] = await Promise.all([
-      this.getTotalRevenue(),
-      this.getRevenueSince(windowStart),
-      this.getUnrealizedRevenue(),
-      this.getUnrealizedRevenueSince(windowStart),
-      this.getPaidOrderCountSince(windowStart),
-      this.getRevenueByDay(windowDays),
       this.prisma.order.count(),
       this.getOrderCountByStatus(),
-      this.getOrdersByDay(windowDays),
+      this.getOrdersByDay(window),
       this.prisma.user.count(),
-      this.getNewUsersByDay(windowDays),
+      this.getNewUsersByDay(window),
       this.getRepeatBuyerRate(),
-      this.getRepeatBuyerRate(this.windowStart(REPEAT_BUYER_WINDOW_DAYS)),
+      this.getRepeatBuyerRate(this.window(REPEAT_BUYER_WINDOW_DAYS).start),
       this.prisma.product.count(),
       this.prisma.product.count({ where: { isActive: true } }),
-      this.getTopProducts(TOP_PRODUCTS_LIMIT),
+      this.getTopProducts(TOP_PRODUCTS_LIMIT, options.topProductsRankedBy ?? 'units'),
       this.getLowStockProducts(LOW_STOCK_THRESHOLD, LOW_STOCK_LIMIT),
-      this.getAverageProcessingHours(windowStart),
+      this.getAverageProcessingHours(window.start),
     ]);
 
     return {
-      revenue: {
-        totalRevenue,
-        revenueLast30Days,
-        unrealizedRevenue,
-        unrealizedRevenueLast30Days,
-        averageOrderValueLast30Days: computeAverageOrderValue(
-          revenueLast30Days,
-          paidOrderCountLast30Days,
-        ),
-        revenueByDay,
-      },
       orders: { totalOrders, ordersByStatus, ordersByDay },
       users: { totalUsers, newUsersByDay },
       customers: { repeatBuyerRate, repeatBuyerRateLast90Days },
@@ -149,40 +144,60 @@ export class DashboardRepository {
   }
 
   /**
-   * Start of the rolling window (midnight, `windowDays - 1` days ago).
+   * The dashboard's money (TASK-684): earned and unrealized revenue, average
+   * order value and the daily revenue series. Split out of {@link getSummary} so
+   * it is computed only for a caller allowed to see it — see `DashboardService`.
    *
-   * NOTE — timezone alignment: this uses the Node.js server's local timezone
-   * (`new Date()` + `setHours(0,0,0,0)`), while the SQL series anchor
-   * `DATE_TRUNC('day', NOW())` uses the PostgreSQL session timezone (UTC under
-   * Docker Compose). When both the server and the DB run UTC — the standard
-   * deployment here — the two coincide and the 30-day window is consistent.
-   * If either is reconfigured to a non-UTC zone the boundaries can diverge by
-   * up to ~24h. MVP assumption: both run UTC. To make this fully robust, drive
-   * both the JS filter and the SQL series from a single UTC timestamp.
+   * Earned revenue is the `/analytics` sales report's formula, read through the
+   * same `SalesRepository` (TASK-694): **net** = sales (PAID / PARTIALLY_REFUNDED
+   * / REFUNDED orders by creation) − refunds (by the day the money went back).
+   * Before, the tile summed PAID orders only, so an order of 30 000 ₴ with 500 ₴
+   * returned vanished from revenue whole, and a full refund of an old purchase
+   * rewrote a month already seen. Two formulas on two screens are two answers to
+   * "how much did I earn", and an operator cannot tell which one is right.
+   *
+   * - `totalRevenue` — net over all time;
+   * - `revenueLast30Days` — net over the last 30 Kyiv days;
+   * - `averageOrderValueLast30Days` — that net ÷ the sales-base orders of the
+   *   window, as in the report;
+   * - `revenueByDay` — the report's daily net, one point per Kyiv day.
+   * Unrealized revenue is not revenue (money still owed) and keeps its own
+   * formula; only its window moves to the Kyiv days.
    */
-  private windowStart(windowDays: number): Date {
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - (windowDays - 1));
-    return start;
+  async getRevenueMetrics(windowDays: number = DASHBOARD_WINDOW_DAYS): Promise<RevenueMetrics> {
+    const window = this.window(windowDays);
+
+    const [allTime, inWindow, daily, unrealizedRevenue, unrealizedRevenueLast30Days] =
+      await Promise.all([
+        this.salesRepository.getTotals(null),
+        this.salesRepository.getTotals(window),
+        this.salesRepository.getDaily(window),
+        this.getUnrealizedRevenue(),
+        this.getUnrealizedRevenueSince(window.start),
+      ]);
+
+    const revenueLast30Days = roundMoney(inWindow.sales - inWindow.refunds);
+    return {
+      totalRevenue: roundMoney(allTime.sales - allTime.refunds),
+      revenueLast30Days,
+      unrealizedRevenue,
+      unrealizedRevenueLast30Days,
+      averageOrderValueLast30Days: computeAverageOrderValue(revenueLast30Days, inWindow.orders),
+      revenueByDay: daily.map(({ date, net }) => ({ date, value: net })),
+    };
   }
 
-  /** Lifetime revenue: sum of `Order.total` for PAID orders only (TASK-152). */
-  private async getTotalRevenue(): Promise<number> {
-    const result = await this.prisma.order.aggregate({
-      _sum: { total: true },
-      where: { paymentStatus: PaymentStatus.PAID },
-    });
-    return Number(result._sum.total ?? 0);
-  }
-
-  /** Revenue since a given date, PAID orders only (TASK-152). */
-  private async getRevenueSince(since: Date): Promise<number> {
-    const result = await this.prisma.order.aggregate({
-      _sum: { total: true },
-      where: { paymentStatus: PaymentStatus.PAID, createdAt: { gte: since } },
-    });
-    return Number(result._sum.total ?? 0);
+  /**
+   * The rolling window of the last `windowDays` KYIV days, today included —
+   * the same range `/analytics` gives its «30 днів» preset (`lastKyivDays`).
+   *
+   * It replaces a start built from the server's local midnight beside a SQL
+   * series anchored on `DATE_TRUNC('day', NOW())` in the session zone: the two
+   * agreed only while both ran UTC, and even then the shop's day was not UTC's —
+   * an order at 01:30 in Kyiv landed on the day before (TASK-694).
+   */
+  private window(windowDays: number): ReportRange {
+    return lastKyivDays(windowDays, new Date());
   }
 
   /**
@@ -296,18 +311,6 @@ export class DashboardRepository {
       where: { ...this.unrealizedOrderWhere(), createdAt: { gte: since } },
     });
     return Number(result._sum.total ?? 0);
-  }
-
-  /**
-   * Count of PAID orders created since a given date — the denominator for the
-   * 30-day average-order-value figure (TASK-249). Uses the same `paymentStatus =
-   * PAID` ground truth as `getRevenueSince` so AOV = revenue ÷ count stays
-   * internally consistent (both count the same set of orders).
-   */
-  private async getPaidOrderCountSince(since: Date): Promise<number> {
-    return this.prisma.order.count({
-      where: { paymentStatus: PaymentStatus.PAID, createdAt: { gte: since } },
-    });
   }
 
   /**
@@ -530,95 +533,77 @@ export class DashboardRepository {
     return grouped.map((row) => ({ status: row.status, count: row._count.id }));
   }
 
+  /** Daily order count over the window's Kyiv days, gap-filled (every order, as before). */
+  private async getOrdersByDay(window: ReportRange): Promise<DailyDataPoint[]> {
+    return this.countByKyivDay(window, Prisma.sql`orders`, Prisma.raw('created_at'));
+  }
+
+  /** Daily new-user registrations over the window's Kyiv days, gap-filled. */
+  private async getNewUsersByDay(window: ReportRange): Promise<DailyDataPoint[]> {
+    return this.countByKyivDay(window, Prisma.sql`users`, Prisma.raw('created_at'));
+  }
+
   /**
-   * Daily revenue for the last `windowDays`, gap-filled to a complete series.
-   * Counts PAID orders only, matching the revenue definition (TASK-152).
+   * Rows of `table` per Kyiv day of `window`, one point per day, zeros kept.
+   *
+   * The same day as every other series and the `/analytics` reports (TASK-694):
+   * rows are filtered by the window's instants and bucketed by `kyivDaySql`, the
+   * SQL half of the Kyiv day those instants were built from — the JS filter and
+   * the SQL series can no longer disagree about which day a row belongs to. The
+   * series is generated from calendar days as zone-less timestamps, so a DST
+   * switch can neither skip nor repeat a day. `table` and `column` are trusted
+   * identifiers from this file, never input.
    */
-  private async getRevenueByDay(windowDays: number): Promise<DailyDataPoint[]> {
+  private async countByKyivDay(
+    window: ReportRange,
+    table: Prisma.Sql,
+    column: Prisma.Sql,
+  ): Promise<DailyDataPoint[]> {
+    const day = kyivDaySql(Prisma.sql`t.${column}`);
     const rows = await this.prisma.$queryRaw<DailyRow[]>`
-      SELECT TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
-             COALESCE(SUM(o.total), 0)::float8 AS value
-      FROM generate_series(
-             DATE_TRUNC('day', NOW()) - MAKE_INTERVAL(days => ${windowDays - 1}::int),
-             DATE_TRUNC('day', NOW()),
-             INTERVAL '1 day'
-           ) AS d(day)
-      LEFT JOIN orders o
-        ON DATE_TRUNC('day', o.created_at) = d.day
-        AND o.payment_status = 'PAID'
-      GROUP BY d.day
-      ORDER BY d.day ASC
-    `;
-    return this.normalizeSeries(rows);
-  }
-
-  /** Daily order count for the last `windowDays`, gap-filled. */
-  private async getOrdersByDay(windowDays: number): Promise<DailyDataPoint[]> {
-    const rows = await this.prisma.$queryRaw<DailyRow[]>`
-      SELECT TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
-             COUNT(o.id)::int AS value
-      FROM generate_series(
-             DATE_TRUNC('day', NOW()) - MAKE_INTERVAL(days => ${windowDays - 1}::int),
-             DATE_TRUNC('day', NOW()),
-             INTERVAL '1 day'
-           ) AS d(day)
-      LEFT JOIN orders o
-        ON DATE_TRUNC('day', o.created_at) = d.day
-      GROUP BY d.day
-      ORDER BY d.day ASC
-    `;
-    return this.normalizeSeries(rows);
-  }
-
-  /** Daily new-user registrations for the last `windowDays`, gap-filled. */
-  private async getNewUsersByDay(windowDays: number): Promise<DailyDataPoint[]> {
-    const rows = await this.prisma.$queryRaw<DailyRow[]>`
-      SELECT TO_CHAR(d.day, 'YYYY-MM-DD') AS date,
-             COUNT(u.id)::int AS value
-      FROM generate_series(
-             DATE_TRUNC('day', NOW()) - MAKE_INTERVAL(days => ${windowDays - 1}::int),
-             DATE_TRUNC('day', NOW()),
-             INTERVAL '1 day'
-           ) AS d(day)
-      LEFT JOIN users u
-        ON DATE_TRUNC('day', u.created_at) = d.day
-      GROUP BY d.day
-      ORDER BY d.day ASC
+      WITH days AS (
+        SELECT d::date AS day
+        FROM generate_series(
+          ${window.fromDay}::date::timestamp,
+          ${window.toDay}::date::timestamp,
+          INTERVAL '1 day'
+        ) AS d
+      ),
+      counted AS (
+        SELECT ${day} AS day, COUNT(*) AS n
+        FROM ${table} t
+        WHERE t.${column} >= ${window.start} AND t.${column} < ${window.end}
+        GROUP BY 1
+      )
+      SELECT TO_CHAR(days.day, 'YYYY-MM-DD') AS date,
+             COALESCE(c.n, 0)::int AS value
+      FROM days
+      LEFT JOIN counted c ON c.day = days.day
+      ORDER BY days.day
     `;
     return this.normalizeSeries(rows);
   }
 
   /**
-   * Top products by total revenue earned.
+   * Top products, all time — the SAME query as the `/analytics` leaders
+   * (`ProductsReportRepository.getLeaders`, TASK-688), over no date bound.
    *
-   * Revenue is `SUM(price * quantity)` — multiplying by quantity matters, since
-   * a line of 3 units at $10 earns $30, not $10. Prisma's `groupBy` can only
-   * `_sum` a single column, so a raw query is used. The product name is joined
-   * in the same query (no second lookup, no N+1).
+   * Revenue is `SUM(price * quantity)` over lines of the sales base (PAID,
+   * PARTIALLY_REFUNDED, REFUNDED). Before TASK-688 this counted PAID lines only,
+   * so an order with one line refunded took all its lines out of the ranking,
+   * and "top 5" here disagreed with the report's leaders.
    *
-   * Only items from PAID orders count: the `INNER JOIN orders` filters
-   * `payment_status = 'PAID'` so top-products revenue stays consistent with
-   * `getTotalRevenue` (TASK-152 — earned revenue, not merely accepted orders;
-   * order status is no longer a payment proxy after the TASK-151 decoupling).
+   * `rankedBy` picks the list itself, not just its order (TASK-684): ranked by
+   * units, a tie falls back to the product id, so nothing about money decides
+   * a list shown to someone who may not see money.
    */
-  private async getTopProducts(limit: number): Promise<TopProduct[]> {
-    const rows = await this.prisma.$queryRaw<TopProductRow[]>`
-      SELECT oi.product_id AS "productId",
-             p.name AS name,
-             SUM(oi.price * oi.quantity)::float8 AS "totalRevenue"
-      FROM order_items oi
-      INNER JOIN orders o
-        ON o.id = oi.order_id
-        AND o.payment_status = 'PAID'
-      JOIN products p ON p.id = oi.product_id
-      GROUP BY oi.product_id, p.name
-      ORDER BY "totalRevenue" DESC
-      LIMIT ${limit}
-    `;
+  private async getTopProducts(limit: number, rankedBy: TopProductsRanking): Promise<TopProduct[]> {
+    const rows = await this.productsReportRepository.getLeaders(null, limit, rankedBy);
     return rows.map((row) => ({
       productId: row.productId,
       name: row.name,
-      totalRevenue: Number(row.totalRevenue),
+      totalRevenue: Number(row.revenue),
+      unitsSold: Number(row.units),
     }));
   }
 

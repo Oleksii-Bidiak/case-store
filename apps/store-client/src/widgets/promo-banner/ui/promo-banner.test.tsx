@@ -50,6 +50,27 @@ describe("PromoBanner", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows the banner's uploaded picture behind the copy (TASK-740)", () => {
+    const imageUrl = "http://localhost:3001/uploads/banners/wide.webp";
+    const { container } = renderWithProviders(
+      <PromoBanner banner={makeBanner({ imageUrl })} />,
+    );
+
+    const img = container.querySelector("img");
+    expect(img).toHaveAttribute("alt", "");
+    expect(img?.getAttribute("src")).toContain(encodeURIComponent(imageUrl));
+    // The copy is still there, on top.
+    expect(screen.getByText("Custom promo title")).toBeInTheDocument();
+  });
+
+  it("keeps the gradient alone when the banner has no picture", () => {
+    const { container } = renderWithProviders(
+      <PromoBanner banner={makeBanner({ imageUrl: null })} />,
+    );
+
+    expect(container.querySelector("img")).toBeNull();
+  });
+
   it("omits the CTA button when the banner has no label/href", () => {
     renderWithProviders(
       <PromoBanner banner={makeBanner({ ctaLabel: null, ctaHref: null })} />,

@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, ReturnStatus } from '@prisma/client';
-import { ReturnService } from './return.service';
+import { MY_RETURNS_LIMIT, ReturnService } from './return.service';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
 import { ReturnEntity } from './entities';
@@ -78,6 +78,7 @@ const returnRepositoryMock = {
   create: jest.fn(),
   findById: jest.fn(),
   findByOrderId: jest.fn(),
+  findByUserId: jest.fn(),
   findAll: jest.fn(),
   resolve: jest.fn(),
 };
@@ -449,6 +450,37 @@ describe('ReturnService (TASK-340)', () => {
       returnRepositoryMock.findByOrderId.mockResolvedValue([]);
 
       await expect(service.adminGetOrderReturns(ORDER_ID)).resolves.toEqual([]);
+    });
+  });
+
+  // ─── getMyReturns (TASK-608) ────────────────────────────────────────────────
+
+  describe('getMyReturns', () => {
+    it("reads the caller's returns across their orders, capped", async () => {
+      returnRepositoryMock.findByUserId.mockResolvedValue([makeReturn()]);
+
+      const result = await service.getMyReturns(USER_ID);
+
+      expect(returnRepositoryMock.findByUserId).toHaveBeenCalledWith(USER_ID, MY_RETURNS_LIMIT);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ orderId: ORDER_ID, status: ReturnStatus.REQUESTED });
+    });
+
+    it('answers with the customer projection — no operator notes, no author id', async () => {
+      returnRepositoryMock.findByUserId.mockResolvedValue([
+        makeReturn({ operatorNotes: 'Клієнт сварився' }),
+      ]);
+
+      const [entity] = await service.getMyReturns(USER_ID);
+
+      expect(entity).not.toHaveProperty('operatorNotes');
+      expect(entity).not.toHaveProperty('createdByUserId');
+    });
+
+    it('is empty for a customer who never asked for a return', async () => {
+      returnRepositoryMock.findByUserId.mockResolvedValue([]);
+
+      await expect(service.getMyReturns(OTHER_USER_ID)).resolves.toEqual([]);
     });
   });
 

@@ -8,6 +8,7 @@ import {
   getAdminListDiscountsQueryKey,
   useAdminDeactivateDiscount,
 } from "@/entities/discount";
+import { useStatusToggle } from "@/features/bulk-status";
 
 interface DiscountStatusToggleProps {
   discountId: string;
@@ -18,7 +19,8 @@ interface DiscountStatusToggleProps {
  * Status cell for the discount table: an active code shows a one-click
  * "deactivate" button (soft-deactivate via DELETE); an inactive code shows a
  * muted badge. Re-activation is done through the edit form (`isActive` toggle),
- * mirroring the single soft-deactivate endpoint. Invalidates the admin list on
+ * mirroring the single soft-deactivate endpoint — hence no `activate` passed to
+ * the shared `useStatusToggle` engine (TASK-812). Invalidates the admin list on
  * success.
  */
 export function DiscountStatusToggle({
@@ -28,38 +30,34 @@ export function DiscountStatusToggle({
   const queryClient = useQueryClient();
   const deactivate = useAdminDeactivateDiscount();
 
+  const { toggle, isPending, confirmDialog } = useStatusToggle({
+    id: discountId,
+    isActive,
+    deactivate,
+    onWritten: () => {
+      void queryClient.invalidateQueries({
+        queryKey: getAdminListDiscountsQueryKey(),
+      });
+      toast.success(dict.discounts.toastDeactivated);
+    },
+    onFailed: () => {
+      toast.error(dict.discounts.toastDeactivateFailed);
+    },
+  });
+
   if (!isActive) {
     return <Badge variant="secondary">{dict.discounts.statusInactive}</Badge>;
   }
 
-  const handleDeactivate = () => {
-    if (deactivate.isPending) return;
-    deactivate.mutate(
-      { id: discountId },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: getAdminListDiscountsQueryKey(),
-          });
-          toast.success(dict.discounts.toastDeactivated);
-        },
-        onError: () => {
-          toast.error(dict.discounts.toastDeactivateFailed);
-        },
-      },
-    );
-  };
-
+  // `confirmDialog` is null today (no `confirmDeactivate` is passed), but it
+  // is rendered anyway: a prompt added later must not await a dialog nobody
+  // mounted (TASK-812).
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={handleDeactivate}
-      disabled={deactivate.isPending}
-    >
-      {deactivate.isPending
-        ? dict.discounts.deactivating
-        : dict.discounts.deactivate}
-    </Button>
+    <>
+      <Button variant="outline" size="sm" onClick={toggle} disabled={isPending}>
+        {isPending ? dict.discounts.deactivating : dict.discounts.deactivate}
+      </Button>
+      {confirmDialog}
+    </>
   );
 }

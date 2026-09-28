@@ -131,7 +131,7 @@ export function ProductList({
           className="mt-5"
           onClick={onClearFilters}
         >
-          {dict.catalog.clearFilters}
+          {dict.catalog.clearAllFilters}
         </Button>
       </div>
     );

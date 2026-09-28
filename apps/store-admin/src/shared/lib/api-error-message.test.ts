@@ -1,4 +1,8 @@
-import { apiErrorMessage, apiErrorStatus } from "./api-error-message";
+import {
+  apiErrorCode,
+  apiErrorMessage,
+  apiErrorStatus,
+} from "./api-error-message";
 
 /**
  * TASK-574: two simultaneous ownership transfers used to answer HTTP 500 — the
@@ -37,5 +41,39 @@ describe("apiErrorMessage — translated Prisma failures (TASK-574)", () => {
 
   it("returns undefined without a message, so the caller's own copy is shown", () => {
     expect(apiErrorMessage(axiosError(500, {}))).toBeUndefined();
+  });
+});
+
+describe("apiErrorCode — the envelope code, read in one place (TASK-810)", () => {
+  it("returns the stable code the API put in `error`", () => {
+    expect(
+      apiErrorCode(
+        axiosError(409, {
+          statusCode: 409,
+          error: "ORDER_STALE",
+          message: "x",
+        }),
+      ),
+    ).toBe("ORDER_STALE");
+  });
+
+  it("returns the exception name for an uncoded failure — so it is never proof of a conflict", () => {
+    const forbidden = axiosError(403, {
+      statusCode: 403,
+      error: "Forbidden",
+      message: "Missing permission",
+    });
+    expect(apiErrorCode(forbidden)).toBe("Forbidden");
+    expect(apiErrorStatus(forbidden)).toBe(403);
+  });
+
+  it("returns undefined for an empty, non-object or missing body", () => {
+    expect(apiErrorCode(axiosError(500, {}))).toBeUndefined();
+    expect(apiErrorCode(axiosError(500, { error: "" }))).toBeUndefined();
+    expect(
+      apiErrorCode(axiosError(502, "<html>Bad Gateway</html>")),
+    ).toBeUndefined();
+    expect(apiErrorCode({})).toBeUndefined();
+    expect(apiErrorCode(undefined)).toBeUndefined();
   });
 });

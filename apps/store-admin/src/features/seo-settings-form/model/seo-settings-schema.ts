@@ -4,6 +4,7 @@ import type {
   UpdateSeoSettingsDto,
 } from "@/entities/seo-settings";
 import { dict } from "@/shared/config";
+import { isHttpUrl, optionalHttpUrl } from "@/shared/lib/http-url";
 
 const e = dict.seoSettingsForm.errors;
 
@@ -30,16 +31,6 @@ export function normalizeSiteVerificationValue(raw: string): string {
   const trimmed = raw.trim();
   const match = trimmed.match(/content=["']([^"']+)["']/i);
   return match ? match[1] : trimmed;
-}
-
-/** True when `value` is a syntactically valid http(s) URL. */
-function isHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -86,12 +77,9 @@ export const seoSettingsSchema = z.object({
     .optional()
     .or(z.literal("")),
 
-  defaultOgImage: z
-    .string()
-    .trim()
-    .url(e.urlInvalid)
-    .optional()
-    .or(z.literal("")),
+  // http(s) only (TASK-573): zod's `.url()` let `javascript:` / `data:` through
+  // to a generic 400 from the API.
+  defaultOgImage: optionalHttpUrl(e.urlInvalid),
 
   googleSiteVerification: z
     .string()

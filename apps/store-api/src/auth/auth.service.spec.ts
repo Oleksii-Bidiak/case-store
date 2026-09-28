@@ -165,6 +165,49 @@ describe('AuthService', () => {
       lastName: 'Doe',
     };
 
+    // ─── TASK-749: the registration honeypot ──────────────────────────────────
+    describe('honeypot', () => {
+      it('answers a filled trap like a success and creates nothing', async () => {
+        const result = await service.register({ ...registerDto, hpCheck: 'filled' });
+
+        expect(result.userId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(result.accessToken).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/);
+        expect(result.refreshToken).toEqual(expect.any(String));
+        // Nothing read, nothing written, nothing signed.
+        expect(authRepository.findByEmail).not.toHaveBeenCalled();
+        expect(authRepository.createUser).not.toHaveBeenCalled();
+        expect(authRepository.saveRefreshToken).not.toHaveBeenCalled();
+        expect(jwtService.sign).not.toHaveBeenCalled();
+      });
+
+      it('still spends the argon2 hash, so the trap is no timing oracle', async () => {
+        await service.register({ ...registerDto, hpCheck: 'filled' });
+
+        expect(argon2.hash).toHaveBeenCalledWith(registerDto.password);
+      });
+
+      it('does not even reveal whether the address is taken', async () => {
+        authRepository.findByEmail.mockResolvedValue(mockUser);
+
+        await expect(service.register({ ...registerDto, hpCheck: 'filled' })).resolves.toEqual(
+          expect.objectContaining({ accessToken: expect.any(String) }),
+        );
+      });
+
+      it.each([undefined, ''])('treats an empty trap (%p) as a person', async (hpCheck) => {
+        authRepository.findByEmail.mockResolvedValue(null);
+        authRepository.createUser.mockResolvedValue(mockUser);
+        jwtService.sign.mockReturnValueOnce('access-token-value');
+        jwtService.sign.mockReturnValueOnce('refresh-token-value');
+        authRepository.saveRefreshToken.mockResolvedValue(mockRefreshTokenRecord);
+
+        const result = await service.register({ ...registerDto, hpCheck });
+
+        expect(result.userId).toBe(mockUser.id);
+        expect(authRepository.createUser).toHaveBeenCalledTimes(1);
+      });
+    });
+
     it('should throw ConflictException when email already exists', async () => {
       authRepository.findByEmail.mockResolvedValue(mockUser);
 

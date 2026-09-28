@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { keepPreviousData } from "@tanstack/react-query";
 import { SlidersHorizontal } from "lucide-react";
@@ -16,24 +16,30 @@ import {
   CategoryChips,
   SortSelect,
   ViewToggle,
+  FiltersDrawer,
   clearFilterUpdates,
   countActiveFilters,
   type CatalogView,
 } from "@/features/product-filters";
-import {
-  Sheet,
-  SheetContent,
-  SheetFooter,
-  SheetHeader,
-  SheetTitle,
-} from "@/shared/ui";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
 import { findCategoryNodeBySlug } from "../model/catalog-header";
+import { buildCatalogListingParams } from "../model/listing-params";
 import { ProductList } from "./product-list";
 
+// Hydration flag (TASK-534): `false` for the server render and for hydration,
+// `true` for every client render after that — and for a fresh client mount.
+const subscribeNever = () => () => {};
+const clientSnapshot = () => true;
+const serverSnapshot = () => false;
+
 interface ProductListViewProps {
-  /** Server-resolved initial params (from `await searchParams`). */
-  initialParams: ProductControllerFindAllParams;
+  /**
+   * Server-resolved params of the first render. No longer read (TASK-563): the
+   * widget derives its params from the URL through `buildCatalogListingParams`,
+   * the builder the server prefetches with, so the two cannot disagree. Optional
+   * and kept only for `/catalog/[category]/[device]`, which still passes it.
+   */
+  initialParams?: ProductControllerFindAllParams;
   /**
    * Fix the category to the one the route names (TASK-277 — `/categories/[slug]`
    * landing pages). When set: the effective category is always this one
@@ -61,8 +67,6 @@ interface ProductListViewProps {
   lockedDevice?: { slug: string };
 }
 
-const PAGE_SIZE = 20;
-
 /**
  * Desktop sidebar scroll box (TASK-414). A sticky aside with no height cap runs
  * straight off the bottom of a short viewport, and because it is `position:
@@ -86,7 +90,6 @@ const ASIDE_SCROLL_BOX =
  * the sidebar (desktop aside + mobile drawer) and the results grid/list.
  */
 export function ProductListView({
-  initialParams,
   lockedCategory,
   lockedDevice,
 }: ProductListViewProps) {
@@ -96,38 +99,14 @@ export function ProductListView({
 
   const [filtersOpen, setFiltersOpen] = useState(false);
 
-  // Derive active params from the live URL, falling back to server-resolved
-  // initials (which match the URL on first render).
-  const minPriceRaw = searchParams.get("minPrice");
-  const maxPriceRaw = searchParams.get("maxPrice");
-  const pageRaw = searchParams.get("page");
-
-  const params: ProductControllerFindAllParams = {
-    // The three taxonomy axes ride the URL as SLUGS since TASK-420 —
-    // `?category=phone-cases&brand=apple&device=iphone-15`.
-    category:
-      lockedCategory?.slug ??
-      searchParams.get("category") ??
-      initialParams.category,
-    brand: searchParams.get("brand") ?? initialParams.brand,
-    device:
-      lockedDevice?.slug ?? searchParams.get("device") ?? initialParams.device,
-    search: searchParams.get("search") ?? initialParams.search,
-    sortBy: searchParams.get("sortBy") ?? initialParams.sortBy ?? "createdAt",
-    sortOrder:
-      searchParams.get("sortOrder") ?? initialParams.sortOrder ?? "desc",
-    minPrice: minPriceRaw ? Number(minPriceRaw) : initialParams.minPrice,
-    maxPrice: maxPriceRaw ? Number(maxPriceRaw) : initialParams.maxPrice,
-    specs: searchParams.get("specs") ?? initialParams.specs,
-    // Only the literal "true" turns the filter on (TASK-414): anything else in
-    // the URL — including "false" — means "no availability filter", which is
-    // also what the API's own boolean transform does with it.
-    inStock:
-      searchParams.get("inStock") === "true" ? true : initialParams.inStock,
-    page: pageRaw ? Number(pageRaw) : (initialParams.page ?? 1),
-    limit: PAGE_SIZE,
-    isActive: true,
-  };
+  // Derive the active params from the live URL through the SAME builder the
+  // server page prefetched the first page with (TASK-563): one set of rules on
+  // both sides gives one React Query key, so the hydrated cards are this
+  // query's own data — see `model/listing-params.ts` for why that matters.
+  const params = buildCatalogListingParams((key) => searchParams.get(key), {
+    categorySlug: lockedCategory?.slug,
+    deviceSlug: lockedDevice?.slug,
+  });
 
   const view: CatalogView =
     searchParams.get("view") === "list" ? "list" : "grid";
@@ -211,7 +190,20 @@ export function ProductListView({
   // row can offer a second, "narrow to a subcategory" level without a second
   // request (TASK-236). Only active categories are returned.
   const { data: categoriesData } = useCategoryControllerGetCategoryTree();
-  const categories = categoriesData?.data ?? [];
+  // TASK-534: the tree is not prefetched on the server, so the server always
+  // renders this widget without it (no chips row). On the client the header's
+  // category menu can have fetched the same tree before this Suspense boundary
+  // hydrates, and rendering the chips then made the first child disagree with
+  // the server's (the toolbar) — «Hydration failed», the whole subtree thrown
+  // away. Until hydration is done, render exactly what the server had: no tree.
+  // If the tree is ever prefetched into a HydrationBoundary (TASK-563), the
+  // server has it too and this gate must go, or it becomes the mismatch.
+  const hydrated = useSyncExternalStore(
+    subscribeNever,
+    clientSnapshot,
+    serverSnapshot,
+  );
+  const categories = hydrated ? (categoriesData?.data ?? []) : [];
 
   // Slug → id, once, for the id-addressed side endpoints (brands-per-category,
   // filterable specs) that the TASK-420 URL migration did not touch. Resolved
@@ -308,44 +300,25 @@ export function ProductListView({
         </section>
       </div>
 
-      {/* Mobile filters drawer */}
-      <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-        <SheetContent
-          side="left"
-          // `overscroll-contain` stops iOS Safari scroll-chaining — dragging past
-          // the top/bottom of the filter list no longer rubber-bands the page
-          // underneath the open drawer (TASK-084).
-          className="w-[342px] max-w-[88vw] gap-0 overflow-y-auto overscroll-contain p-0"
-        >
-          <SheetHeader className="border-b border-border">
-            <SheetTitle className="font-display text-lg font-bold">
-              {dict.filters.legend}
-            </SheetTitle>
-          </SheetHeader>
-          <div className="p-4">
-            <ProductFilters
-              idPrefix="filter-m"
-              currentParams={params}
-              categoryId={activeCategoryId}
-              lockedDevice={Boolean(lockedDevice)}
-              onFilterChange={applyFilters}
-              collapsible
-            />
-          </div>
-          <SheetFooter className="border-t border-border">
-            <button
-              type="button"
-              onClick={() => setFiltersOpen(false)}
-              disabled={resultCount === 0}
-              className="h-12 w-full rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {resultCount == null
-                ? dict.filters.mobileApplyPending
-                : dict.filters.mobileApply(resultCount)}
-            </button>
-          </SheetFooter>
-        </SheetContent>
-      </Sheet>
+      {/* Mobile filters drawer — the shared one (TASK-804). At zero results
+          its footer offers the SAME reset as the empty state under it, which
+          used to be reachable only after closing the drawer. */}
+      <FiltersDrawer
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        resultCount={resultCount}
+        onReset={clearFilters}
+        resetLabel={dict.catalog.clearAllFilters}
+      >
+        <ProductFilters
+          idPrefix="filter-m"
+          currentParams={params}
+          categoryId={activeCategoryId}
+          lockedDevice={Boolean(lockedDevice)}
+          onFilterChange={applyFilters}
+          collapsible
+        />
+      </FiltersDrawer>
     </div>
   );
 }

@@ -9,17 +9,14 @@ import {
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-// Imported from the module rather than the `@/shared/api` barrel: the barrel
-// does not re-export the session-marker helpers yet (TASK-526 — it belongs to
-// another agent's file in this wave). Same module either way.
 import {
   clearSessionMarker,
+  getGetCartQueryKey,
   onSessionExpired,
   refreshSession,
   setAccessToken,
   shouldAttemptSessionRefresh,
-} from "@/shared/api/instance";
-import { getGetCartQueryKey } from "@/shared/api/generated/cart/cart";
+} from "@/shared/api";
 import { getGetWishlistQueryKey } from "@/shared/api/generated/wishlist/wishlist";
 
 export interface AuthContextValue {

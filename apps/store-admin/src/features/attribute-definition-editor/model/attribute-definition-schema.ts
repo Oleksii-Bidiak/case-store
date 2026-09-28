@@ -13,6 +13,12 @@ const t = dict.attributeDefinitions.errors;
  */
 export const ATTRIBUTE_KEY_PATTERN = /^[a-zA-Z][a-zA-Z0-9-]*$/;
 
+/**
+ * The characters the storefront's `?specs=` filter reserves (TASK-514) —
+ * mirrors `SPEC_VALUE_SEPARATORS` in the API's attribute-definition DTOs.
+ */
+export const SPEC_VALUE_SEPARATORS = /[,;]/;
+
 const TYPES = [
   AttributeDefinitionEntityType.TEXT,
   AttributeDefinitionEntityType.NUMBER,
@@ -66,6 +72,20 @@ export const attributeDefinitionSchema = z
           code: z.ZodIssueCode.custom,
           path: ["options"],
           message: t.optionsRequired,
+        });
+      }
+      // Same rule the API enforces (`NoSpecValueSeparators`, TASK-514): the
+      // catalogue's `?specs=` format splits on «,» and «;» with no escape, so
+      // such an option would become two values no product carries. Stopped
+      // here so the operator reads WHICH option, not the generic save toast.
+      const offending = parsed.find((option) =>
+        SPEC_VALUE_SEPARATORS.test(option),
+      );
+      if (offending !== undefined) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["options"],
+          message: t.optionSeparator(offending),
         });
       }
     }

@@ -14,8 +14,9 @@ import {
   FindAllAdminPostsParams,
   FindAllAdminCategoriesParams,
 } from './blog.repository';
-import { BlogPostEntity, BlogCategoryEntity } from './entities';
+import { BlogPostEntity, BlogCategoryEntity, BlogPostSuggestionEntity } from './entities';
 import {
+  BLOG_SUGGEST_DEFAULT_LIMIT,
   CreateBlogPostDto,
   UpdateBlogPostDto,
   BlogPostListQueryDto,
@@ -155,6 +156,49 @@ export class BlogService {
     if (data.length === 0) return null;
 
     return { data, meta: this.buildMeta(hits.total, params.page, params.limit) };
+  }
+
+  /**
+   * Article suggestions for the storefront search autocomplete (TASK-543).
+   *
+   * Same resolution order as {@link findAll}'s free-text path — search index
+   * first (typos, UA↔EN synonyms), PUBLISHED + listed re-read, Postgres
+   * `contains` scan when the engine cannot answer or nothing survives — but it
+   * reads only `id`/`slug`/`title`/`coverImageUrl`. The popup used to call the
+   * full list endpoint and throw away the article bodies it had just
+   * downloaded, five at a time, on every debounced keystroke.
+   *
+   * Always the LISTED set (TASK-436): suggestions are a list surface. A blank
+   * query answers `[]` without touching either store.
+   */
+  async suggest(
+    q: string,
+    limit: number = BLOG_SUGGEST_DEFAULT_LIMIT,
+  ): Promise<BlogPostSuggestionEntity[]> {
+    const query = q.trim();
+    if (!query) return [];
+
+    const hits = await this.blogIndexer
+      .search({ q: query, page: 1, limit, includeUnlisted: false })
+      .catch((err: unknown) => {
+        this.logger.warn({ err }, 'Blog suggest index query failed; falling back to Postgres');
+        return null;
+      });
+
+    if (hits && hits.ids.length > 0) {
+      const rows = await this.blogRepository.findPublishedSuggestionsByIds(hits.ids);
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      const ranked = hits.ids
+        .map((id) => byId.get(id))
+        .filter((row): row is NonNullable<typeof row> => row != null)
+        .map((row) => BlogPostSuggestionEntity.fromRow(row));
+      // Nothing survived the re-read: the index is stale, so "no articles"
+      // would be a lie. Let Postgres have the query, as findAll does.
+      if (ranked.length > 0) return ranked;
+    }
+
+    const rows = await this.blogRepository.findPublishedSuggestions(query, limit);
+    return rows.map((row) => BlogPostSuggestionEntity.fromRow(row));
   }
 
   /** Get a single PUBLISHED post by slug (public). 404 when missing / unpublished. */

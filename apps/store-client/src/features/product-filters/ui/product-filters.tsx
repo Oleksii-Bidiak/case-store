@@ -72,6 +72,19 @@ interface ProductFiltersProps {
    * spelling is a bug, not a filter.
    */
   lockedDevice?: boolean;
+  /**
+   * Leave out the «Зі знижкою» section (TASK-742). For a consumer whose
+   * endpoint has no `onSale` param — `/search` (`GET /api/search`) — where the
+   * box would be ticked with no effect on the results.
+   */
+  hideOnSale?: boolean;
+  /**
+   * Leave out the structured-spec facets even when a category is active
+   * (TASK-523). `/search` narrows by category — so it passes `categoryId`,
+   * which scopes the brand list — but `GET /api/search` has no `?specs=`, and
+   * facet checkboxes there would be ticked with no effect on the results.
+   */
+  hideSpecFacets?: boolean;
 }
 
 const cardClass =
@@ -93,6 +106,8 @@ export function ProductFilters({
   idPrefix = "filter",
   collapsible = false,
   lockedDevice = false,
+  hideOnSale = false,
+  hideSpecFacets = false,
 }: ProductFiltersProps) {
   // Committed price bounds from the URL, clamped into the slider domain.
   const committedMin = clampPrice(currentParams.minPrice ?? 0);
@@ -201,9 +216,14 @@ export function ProductFilters({
     // second, differently-keyed copy of the facet list — and could then open a
     // disclosure onto a control that self-hides because its own list is narrower.
     toFacetQueryParams(currentParams),
-    { query: { enabled: collapsible && Boolean(categoryId) } },
+    {
+      query: {
+        enabled: collapsible && Boolean(categoryId) && !hideSpecFacets,
+      },
+    },
   );
-  const hasSpecs = Boolean(categoryId) && (specsData?.data.length ?? 0) > 0;
+  const hasSpecs =
+    !hideSpecFacets && Boolean(categoryId) && (specsData?.data.length ?? 0) > 0;
 
   /**
    * Render one filter section's chrome. In `collapsible` mode it is a native
@@ -273,6 +293,25 @@ export function ProductFilters({
         />,
         currentParams.inStock === true,
       )}
+
+      {/* «Зі знижкою» — TASK-742. `?onSale=true`; the server reads it as
+          `compareAtPrice > price`. Same absent-when-unticked rule as the
+          availability box above. Hidden where the endpoint behind the panel
+          does not take the param (`/search`), so it can never be a control
+          that silently does nothing. */}
+      {!hideOnSale &&
+        renderSection(
+          dict.filters.saleTitle,
+          <FilterCheckbox
+            id={`${idPrefix}-on-sale`}
+            label={dict.filters.onSaleOnly}
+            checked={currentParams.onSale === true}
+            onCheckedChange={(checked) =>
+              onFilterChange({ onSale: checked ? "true" : undefined })
+            }
+          />,
+          currentParams.onSale === true,
+        )}
 
       {/* Manufacturer (brand) filter — TASK-189. Hidden when no brands exist.
           Collapsible drawer gates on `hasBrands` and strips BrandFilter's own
@@ -379,8 +418,9 @@ export function ProductFilters({
 
       {/* Structured-spec facets (TASK-191) — category-scoped; renders nothing
           when no category is active or it has no filterable specs. Collapsible
-          drawer gates on `hasSpecs` and strips the facet card's own chrome. */}
-      {collapsible ? (
+          drawer gates on `hasSpecs` and strips the facet card's own chrome.
+          Left out altogether with `hideSpecFacets` (TASK-523). */}
+      {hideSpecFacets ? null : collapsible ? (
         hasSpecs &&
         renderSection(
           dict.filters.specsTitle,

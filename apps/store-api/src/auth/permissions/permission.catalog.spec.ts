@@ -4,6 +4,8 @@ import { GUARDS_METADATA, METHOD_METADATA, PATH_METADATA } from '@nestjs/common/
 import { PermissionGuard } from './permission.guard';
 import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.decorator';
 import {
+  ANALYTICS_REVENUE_BACKFILL_SOURCE_PERMISSIONS,
+  ANALYTICS_REVENUE_PERMISSIONS,
   GRANTABLE_PERMISSIONS,
   CUSTOMERS_CARD_BACKFILL_SOURCE_PERMISSIONS,
   CUSTOMERS_CARD_PERMISSIONS,
@@ -950,6 +952,99 @@ describe('media permission backfill migration, per person (TASK-614)', () => {
   it('grants to a PERSON and to TEMPLATES, never to a role', () => {
     expect(statement).toContain('"user_permissions"');
     expect(statement).toContain('"permission_template_items"');
+    expect(statement).not.toContain('role_permissions');
+    expect(statement).not.toContain('"allowed"');
+    expect(statement).not.toContain('ADMIN');
+    expect(statement).not.toContain('MANAGER');
+  });
+
+  it('is idempotent in BOTH halves, so a restore-then-migrate cannot fail', () => {
+    expect(statement.match(/ON CONFLICT[\s\S]*?DO NOTHING/g) ?? []).toHaveLength(2);
+  });
+});
+
+/**
+ * `analytics:revenue` — the money carved out of `analytics:read` (TASK-684,
+ * plan 188, owner's decision B-8 №9).
+ *
+ * Until this key existed there was no way to show a manager the dashboard
+ * without showing them the till: one key covered order counts and revenue alike.
+ * The split is only safe if the new key is a SEPARATE entry — `analytics:read`
+ * must keep opening the operational dashboard for everybody who holds it today.
+ */
+describe('analytics:revenue — the split key (TASK-684)', () => {
+  const revenue = (PERMISSIONS as ReadonlyArray<{ key: string; zone: string; label: string }>).find(
+    (permission) => permission.key === 'analytics:revenue',
+  );
+
+  it('exists, sits in the analytics zone, and says on the screen that it is money', () => {
+    expect(revenue).toBeDefined();
+    expect(revenue?.zone).toBe(PERMISSION_ZONES.ANALYTICS);
+    expect(revenue?.label).toMatch(/виторг/i);
+  });
+
+  it('is grantable, and is a separate key from analytics:read rather than a rename of it', () => {
+    expect(isGrantablePermission('analytics:revenue')).toBe(true);
+    expect(isKnownPermission('analytics:read')).toBe(true);
+  });
+
+  it('is declared as backfilled from exactly analytics:read', () => {
+    expect([...ANALYTICS_REVENUE_BACKFILL_SOURCE_PERMISSIONS]).toEqual(['analytics:read']);
+    expect([...ANALYTICS_REVENUE_PERMISSIONS]).toEqual(['analytics:revenue']);
+  });
+});
+
+/**
+ * The `analytics:revenue` backfill migration (TASK-684).
+ *
+ * Pinned like the per-person media and returns backfills above. The stake is the
+ * mirror image of a too-wide grant: WITHOUT this file, every manager who reads the
+ * dashboard today opens it after the deploy and finds the revenue tiles simply
+ * gone — no 403, no message, just a dashboard that looks as if the shop stopped
+ * selling. So it must follow `analytics:read` one-for-one, per PERSON (wave 180:
+ * a conditional backfill written against the role matrix granted nobody) and into
+ * templates, and name nothing else.
+ */
+describe('analytics:revenue permission backfill migration (TASK-684)', () => {
+  const MIGRATIONS_ROOT = resolve(SRC_ROOT, '../prisma/migrations');
+
+  const sql = (() => {
+    const dir = readdirSync(MIGRATIONS_ROOT).find((entry) =>
+      entry.endsWith('_backfill_analytics_revenue_permission'),
+    );
+    if (!dir) {
+      throw new Error(
+        `No *_backfill_analytics_revenue_permission migration under ${MIGRATIONS_ROOT}. ` +
+          'Without it the split silently takes the revenue off the dashboard of every ' +
+          'manager who reads it today.',
+      );
+    }
+    return readFileSync(join(MIGRATIONS_ROOT, dir, 'migration.sql'), 'utf8');
+  })();
+
+  const statement = sql
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('--'))
+    .join('\n');
+
+  it('grants exactly the revenue key, read off exactly the declared source', () => {
+    const declared = [
+      ...ANALYTICS_REVENUE_PERMISSIONS,
+      ...ANALYTICS_REVENUE_BACKFILL_SOURCE_PERMISSIONS,
+    ];
+    for (const key of declared) {
+      expect(statement).toContain(`'${key}'`);
+    }
+    const quoted = new Set(statement.match(/'[a-z]+:[a-z]+'/g) ?? []);
+    const allowed = new Set(declared.map((key) => `'${key}'`));
+    expect([...quoted].filter((token) => !allowed.has(token))).toEqual([]);
+  });
+
+  it('grants to a PERSON and to TEMPLATES, never to a role', () => {
+    expect(statement).toContain('"user_permissions"');
+    expect(statement).toContain('"user_id"');
+    expect(statement).toContain('"permission_template_items"');
+    expect(statement).toContain('"template_id"');
     expect(statement).not.toContain('role_permissions');
     expect(statement).not.toContain('"allowed"');
     expect(statement).not.toContain('ADMIN');

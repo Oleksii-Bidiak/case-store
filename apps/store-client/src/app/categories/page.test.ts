@@ -17,8 +17,32 @@ jest.mock("@/shared/api/seo-settings-server", () => ({
   fetchSeoSettings: jest.fn(),
   SEO_SETTINGS_TAG: "seo-settings",
 }));
+// The hub's server prefetch (TASK-563) — options builders stubbed with the
+// generated key shapes, so the reads are assertable mocks rather than axios.
+jest.mock("@/shared/api/generated/categories/categories", () => {
+  const getTree = jest.fn().mockResolvedValue({ data: [] });
+  return {
+    categoryControllerGetCategoryTree: getTree,
+    getCategoryControllerGetCategoryTreeQueryOptions: () => ({
+      queryKey: ["/api/categories/tree"],
+      queryFn: () => getTree(),
+    }),
+  };
+});
+jest.mock("@/shared/api/generated/brands/brands", () => {
+  const findBrands = jest.fn().mockResolvedValue({ data: [] });
+  return {
+    brandControllerFindAll: findBrands,
+    getBrandControllerFindAllQueryOptions: () => ({
+      queryKey: ["/api/brands"],
+      queryFn: () => findBrands(),
+    }),
+  };
+});
 
-import { generateMetadata } from "./page";
+import CategoriesPage, { generateMetadata, revalidate } from "./page";
+import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
+import { findDehydratedQueryKeys } from "@/shared/test/element-tree";
 import { fetchPublishedPage } from "@/shared/api/pages-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { dict } from "@/shared/config";
@@ -136,6 +160,19 @@ describe("categories hub generateMetadata", () => {
     expect(meta.openGraph).toBeDefined();
   });
 
+  // TASK-793 — the page reader THROWS on an outage now (a document route must
+  // 5xx, not 404). A hub is code, not a document: it keeps rendering on the
+  // dictionary tier.
+  it("keeps rendering on the dictionary strings when the hub row read throws", async () => {
+    fetchPage.mockRejectedValue(new Error("Page read failed: 502"));
+    fetchSeo.mockResolvedValue(settings);
+
+    const meta = await generateMetadata();
+
+    expect(meta.description).toBe(dict.meta.categoriesDescription);
+    expect(meta.alternates?.canonical).toMatch(/\/categories$/);
+  });
+
   // TASK-437 — a hub row is a Page row, so it can carry its own `ogImage`. Wiring
   // it here is what keeps the new field from being editable in the panel and dead
   // on the six hubs.
@@ -151,7 +188,12 @@ describe("categories hub generateMetadata", () => {
     const meta = await generateMetadata();
 
     expect(meta.openGraph?.images).toEqual([
-      { url: "https://cdn.example.com/og/categories.jpg" },
+      {
+        url: "https://cdn.example.com/og/categories.jpg",
+        width: 1200,
+        height: 630,
+        alt: meta.openGraph?.title,
+      },
     ]);
   });
 
@@ -165,7 +207,39 @@ describe("categories hub generateMetadata", () => {
     const meta = await generateMetadata();
 
     expect(meta.openGraph?.images).toEqual([
-      { url: "https://cdn.example.com/og/store.png" },
+      {
+        url: "https://cdn.example.com/og/store.png",
+        width: 1200,
+        height: 630,
+        alt: meta.openGraph?.title,
+      },
     ]);
+  });
+});
+
+describe("categories hub — the first HTML carries the category tiles (TASK-563)", () => {
+  const getTree = categoryControllerGetCategoryTree as jest.MockedFunction<
+    typeof categoryControllerGetCategoryTree
+  >;
+
+  it("hands the tree and the brand strip to CategoriesView under its own keys", async () => {
+    const tree = await CategoriesPage();
+
+    expect(findDehydratedQueryKeys(tree)).toEqual([
+      ["/api/categories/tree"],
+      ["/api/brands"],
+    ]);
+  });
+
+  it("still renders when the API is down — the view fetches on the client", async () => {
+    getTree.mockRejectedValueOnce(new Error("connect ECONNREFUSED"));
+
+    const tree = await CategoriesPage();
+
+    expect(findDehydratedQueryKeys(tree)).toEqual([["/api/brands"]]);
+  });
+
+  it("is prerendered with an hourly floor, so a copy baked without the API heals", () => {
+    expect(revalidate).toBe(3600);
   });
 });

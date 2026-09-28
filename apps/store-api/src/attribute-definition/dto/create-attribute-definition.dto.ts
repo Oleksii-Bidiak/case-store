@@ -12,6 +12,7 @@ import {
 import { ApiProperty } from '@nestjs/swagger';
 import { AttributeType } from '@prisma/client';
 import { ATTRIBUTE_KEY_PATTERN } from '../attribute-definition.constants';
+import { NoSpecValueSeparators } from './spec-option-separators';
 
 /**
  * DTO for creating a structured-spec template on a category (admin-only).
@@ -58,7 +59,8 @@ export class CreateAttributeDefinitionDto {
   unit?: string | null;
 
   @ApiProperty({
-    description: 'Allowed values (required and non-empty when type is SELECT)',
+    description:
+      'Allowed values (required and non-empty when type is SELECT). An option may not contain «,» or «;» — they separate values in the catalogue ?specs= filter (TASK-514)',
     example: ['Силікон', 'Шкіра'],
     type: [String],
     required: false,
@@ -66,6 +68,7 @@ export class CreateAttributeDefinitionDto {
   @IsOptional()
   @IsArray()
   @IsString({ each: true, message: 'Each option must be a string' })
+  @NoSpecValueSeparators()
   options?: string[];
 
   @ApiProperty({

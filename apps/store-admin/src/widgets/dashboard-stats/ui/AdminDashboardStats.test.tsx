@@ -9,15 +9,17 @@ import {
 } from "@/shared/lib";
 import { AdminDashboardStats } from "./AdminDashboardStats";
 
+const revenue = {
+  totalRevenue: 48230.75,
+  revenueLast30Days: 8120.4,
+  unrealizedRevenue: 12400,
+  unrealizedRevenueLast30Days: 3800,
+  averageOrderValueLast30Days: 812.04,
+  revenueByDay: [],
+};
+
 const summary: DashboardSummaryResponse = {
-  revenue: {
-    totalRevenue: 48230.75,
-    revenueLast30Days: 8120.4,
-    unrealizedRevenue: 12400,
-    unrealizedRevenueLast30Days: 3800,
-    averageOrderValueLast30Days: 812.04,
-    revenueByDay: [],
-  },
+  revenue,
   orders: {
     totalOrders: 312,
     ordersByStatus: [{ status: "PENDING", count: 12 }],
@@ -44,15 +46,13 @@ describe("AdminDashboardStats (TASK-137)", () => {
     render(<AdminDashboardStats summary={summary} />);
 
     expect(screen.getByText(dict.dashboard.totalRevenue)).toBeInTheDocument();
-    expect(
-      screen.getByText(money(summary.revenue.totalRevenue)),
-    ).toBeInTheDocument();
+    expect(screen.getByText(money(revenue.totalRevenue))).toBeInTheDocument();
 
     expect(
       screen.getByText(dict.dashboard.unrealizedRevenue),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(money(summary.revenue.unrealizedRevenue)),
+      screen.getByText(money(revenue.unrealizedRevenue)),
     ).toBeInTheDocument();
     expect(
       screen.getByText(dict.dashboard.unrealizedRevenue30),
@@ -69,7 +69,7 @@ describe("AdminDashboardStats — metrics v2 (TASK-249)", () => {
       screen.getByText(dict.dashboard.averageOrderValue30),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(money(summary.revenue.averageOrderValueLast30Days)),
+      screen.getByText(money(revenue.averageOrderValueLast30Days)),
     ).toBeInTheDocument();
 
     // Repeat-buyer rate (all-time + 90d) — formatted as a percentage.
@@ -132,6 +132,48 @@ describe("AdminDashboardStats — metrics v2 (TASK-249)", () => {
       screen.getByRole("button", {
         name: dict.dashboard.metricInfoAria(dict.dashboard.unrealizedRevenue30),
       }),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-684: without `analytics:revenue` the API omits `revenue` from the
+ * summary altogether. The widget must render what it has — the operational
+ * cards — and no money tile at all: not a «0 ₴», which would be a false
+ * statement about the shop, and not a crash on `undefined.totalRevenue`.
+ */
+describe("AdminDashboardStats — without analytics:revenue (TASK-684)", () => {
+  // The key is ABSENT, as the API sends it — not `revenue: undefined`.
+  const withoutRevenue: DashboardSummaryResponse = { ...summary };
+  delete withoutRevenue.revenue;
+
+  it("renders no money tile when the summary carries no revenue", () => {
+    const { container } = render(
+      <AdminDashboardStats summary={withoutRevenue} />,
+    );
+
+    for (const label of [
+      dict.dashboard.totalRevenue,
+      dict.dashboard.revenue30,
+      dict.dashboard.unrealizedRevenue,
+      dict.dashboard.unrealizedRevenue30,
+      dict.dashboard.averageOrderValue30,
+    ]) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+    expect(container.textContent).not.toContain("₴");
+  });
+
+  it("still renders every operational card", () => {
+    render(<AdminDashboardStats summary={withoutRevenue} />);
+
+    expect(screen.getByText(dict.dashboard.totalOrders)).toBeInTheDocument();
+    expect(screen.getByText(dict.dashboard.totalUsers)).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.dashboard.repeatBuyerRate),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.dashboard.averageProcessingTime),
     ).toBeInTheDocument();
   });
 });

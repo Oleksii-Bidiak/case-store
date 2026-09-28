@@ -16,7 +16,7 @@ export interface CatalogHeader {
 }
 
 /** Depth-first search of the category tree for a node by id (name, description, …). */
-export function findCategoryNode(
+function findCategoryNode(
   nodes: CategoryTreeNodeEntity[],
   id: string,
 ): CategoryTreeNodeEntity | null {

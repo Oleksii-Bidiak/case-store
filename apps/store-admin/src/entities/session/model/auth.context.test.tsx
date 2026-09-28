@@ -1,5 +1,10 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, waitFor } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { AuthProvider } from "./auth.context";
 import { useAuth } from "./use-auth";
@@ -75,6 +80,25 @@ function stubSession(
   );
 }
 
+const SESSION_MARKER_KEY = "case-store-admin:session";
+
+function expireAdminUiSessionCookie() {
+  document.cookie = "admin_ui_session=; path=/; max-age=0";
+}
+
+// TASK-528: the bootstrap refresh only runs when this browser holds a session
+// marker. Every suite below except the marker suite describes a browser that
+// signed in before — so the marker is set by default, and the jsdom storage and
+// cookie jar (which outlive a single test) are wiped after each one.
+beforeEach(() => {
+  window.localStorage.setItem(SESSION_MARKER_KEY, "1");
+});
+
+afterEach(() => {
+  window.localStorage.clear();
+  expireAdminUiSessionCookie();
+});
+
 /**
  * fix/196: a transient bootstrap failure (429 from the rate limiter, 5xx,
  * network blip) must not kick the admin to /login on a page reload — the
@@ -121,6 +145,145 @@ describe("AuthProvider — bootstrap refresh resilience (fix/196)", () => {
       expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
     );
     expect(calls).toBe(1);
+  });
+});
+
+/** Exposes `clearTokens` so a test can sign out the way the logout button does. */
+function SignOutProbe() {
+  const { clearTokens } = useAuth();
+  return (
+    <button type="button" onClick={clearTokens}>
+      sign-out
+    </button>
+  );
+}
+
+/**
+ * TASK-528 — the storefront's session marker (TASK-419), ported. A browser with
+ * no session must not ask POST /api/auth/refresh on load: the answer is a 401
+ * that the BROWSER logs to the console on every visit to /login, and no handler
+ * in the app can suppress it. Only a 401 or a sign-out forgets the marker; a
+ * transient bootstrap failure must not.
+ */
+describe("AuthProvider — session marker (TASK-528)", () => {
+  it("does not call refresh at all when this browser holds no session", async () => {
+    window.localStorage.clear();
+    let calls = 0;
+    server.use(
+      http.post("*/api/auth/refresh", () => {
+        calls += 1;
+        return HttpResponse.json({ data: {} }, { status: 401 });
+      }),
+    );
+
+    renderProvider();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
+    );
+    expect(calls).toBe(0);
+  });
+
+  it("still restores a session signed in before the marker existed (admin_ui_session cookie)", async () => {
+    // An operator signed in before TASK-528 shipped: live refresh cookie and
+    // the proxy's marker cookie, but no localStorage marker. The first load
+    // after the deploy must not send them back to /login.
+    window.localStorage.clear();
+    document.cookie = "admin_ui_session=1; path=/";
+    stubSession("ADMIN", {
+      role: "ADMIN",
+      isOwner: true,
+      isAdmin: true,
+      permissions: [],
+    });
+
+    renderProvider();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("owner"),
+    );
+    // …and from then on the two markers agree.
+    expect(window.localStorage.getItem(SESSION_MARKER_KEY)).toBe("1");
+  });
+
+  it("forgets the marker when refresh answers 401", async () => {
+    server.use(
+      http.post("*/api/auth/refresh", () =>
+        HttpResponse.json({ data: {} }, { status: 401 }),
+      ),
+    );
+
+    renderProvider();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
+    );
+    expect(window.localStorage.getItem(SESSION_MARKER_KEY)).toBeNull();
+  });
+
+  it("keeps the marker when the bootstrap gives up on a 5xx — the next load tries again", async () => {
+    let calls = 0;
+    server.use(
+      http.post("*/api/auth/refresh", () => {
+        calls += 1;
+        return HttpResponse.json({ message: "boom" }, { status: 503 });
+      }),
+    );
+
+    renderProvider();
+
+    // One retry after ~2s, then the provider settles signed out for this load.
+    await waitFor(
+      () => expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
+      { timeout: 5000 },
+    );
+    expect(calls).toBe(2);
+    expect(window.localStorage.getItem(SESSION_MARKER_KEY)).toBe("1");
+  }, 10000);
+
+  it("forgets the marker on sign-out", async () => {
+    stubSession("ADMIN", {
+      role: "ADMIN",
+      isOwner: true,
+      isAdmin: true,
+      permissions: [],
+    });
+
+    renderWithProviders(
+      <AuthProvider>
+        <Probe />
+        <SignOutProbe />
+      </AuthProvider>,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("owner"),
+    );
+    expect(window.localStorage.getItem(SESSION_MARKER_KEY)).toBe("1");
+
+    await userEvent.click(screen.getByRole("button", { name: "sign-out" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
+    );
+    expect(window.localStorage.getItem(SESSION_MARKER_KEY)).toBeNull();
+    expect(document.cookie).not.toContain("admin_ui_session=1");
+  });
+
+  it("forgets the marker when the restored session is not staff", async () => {
+    server.use(
+      http.post("*/api/auth/refresh", () =>
+        HttpResponse.json({ data: { accessToken: makeToken("CUSTOMER") } }),
+      ),
+    );
+
+    renderProvider();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
+    );
+    // A shopper's refresh cookie is no reason to keep asking on every load.
+    expect(window.localStorage.getItem(SESSION_MARKER_KEY)).toBeNull();
   });
 });
 

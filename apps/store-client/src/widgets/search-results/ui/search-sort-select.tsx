@@ -15,7 +15,7 @@ import {
 export type SearchSortValue = NonNullable<SearchParams["sort"]>;
 
 /** The default: ranked engine relevance, which no column can express. */
-export const DEFAULT_SEARCH_SORT: SearchSortValue = "relevance";
+const DEFAULT_SEARCH_SORT: SearchSortValue = "relevance";
 
 const SORT_OPTIONS: { value: SearchSortValue; label: string }[] = [
   { value: "relevance", label: dict.catalog.searchPage.sortRelevance },

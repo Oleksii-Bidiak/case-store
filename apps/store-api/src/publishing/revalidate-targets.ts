@@ -34,10 +34,20 @@ import type { RevalidateTarget } from './publishing.tokens';
  * it by widening the target here: no set of tags or paths can expire a cache
  * that is not on this machine.
  *
+ * ## `/categories` and `/promo` (TASK-563)
+ *
+ * Two more prerendered pages now bake catalogue data into their HTML: the
+ * storefront prefetches the category tree (`/categories`) and the on-sale grid
+ * plus the category tabs (`/promo`) on the server, so the first HTML links to
+ * real categories and products. Those reads are axios too — no tag can reach
+ * them — so the paths are purged by name, exactly like `/`. The homepage's own
+ * prefetch (root categories, the fallback «Популярне» tab) rides the existing
+ * `/`. The dynamic catalogue routes need nothing: they render per request.
+ *
  * Exported as one shared constant rather than written out per call site so
  * product and category cannot drift apart (TASK-384).
  */
 export const CATALOGUE_REVALIDATE_TARGET: RevalidateTarget = {
   tags: ['carousels'],
-  paths: ['/'],
+  paths: ['/', '/categories', '/promo'],
 };

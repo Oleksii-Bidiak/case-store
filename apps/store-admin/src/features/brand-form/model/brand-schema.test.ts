@@ -1,3 +1,4 @@
+import { dict } from "@/shared/config";
 import {
   brandSchema,
   brandFormValuesToDto,
@@ -33,6 +34,10 @@ describe("brandSchema", () => {
   it("rejects a slug with invalid characters", () => {
     const result = brandSchema.safeParse({ ...baseInput, slug: "Spigen UA" });
     expect(result.success).toBe(false);
+    // TASK-811: the same wording as the other seven entity forms.
+    expect(result.error?.issues[0]?.message).toBe(
+      dict.seoFields.errors.slugPattern,
+    );
   });
 
   it("accepts a valid lowercase-hyphen slug", () => {

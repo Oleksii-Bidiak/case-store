@@ -13,6 +13,13 @@
  * against `siteUrl` rather than shipped as-is, because a relative `logo` value is
  * useless to a crawler. Omitted entirely when no logo is set.
  *
+ * `contactPoint` (TASK-556) is the customer-service phone/email from the
+ * admin-managed `SiteContactSettings` — the same values the footer and `/contact`
+ * print, so the entity Google builds and the page a person reads cannot
+ * disagree. Omitted when neither is set. `address` is NOT emitted: the settings
+ * have no address column yet (its own BACKLOG row), and a placeholder address
+ * in structured data would be a false statement about the business.
+ *
  * Pure function — no React, routing, or API dependency (unit-testable).
  */
 export function buildOrganizationSchema(
@@ -20,6 +27,7 @@ export function buildOrganizationSchema(
   siteName: string,
   sameAs: readonly (string | null | undefined)[] = [],
   logoUrl?: string | null,
+  contact?: { phone?: string | null; email?: string | null } | null,
 ): Record<string, unknown> {
   const schema: Record<string, unknown> = {
     "@context": "https://schema.org",
@@ -38,6 +46,19 @@ export function buildOrganizationSchema(
   );
   if (links.length > 0) {
     schema.sameAs = links;
+  }
+
+  const telephone = contact?.phone?.trim();
+  const email = contact?.email?.trim();
+  if (telephone || email) {
+    schema.contactPoint = {
+      "@type": "ContactPoint",
+      contactType: "customer service",
+      ...(telephone ? { telephone } : {}),
+      ...(email ? { email } : {}),
+      areaServed: "UA",
+      availableLanguage: ["uk"],
+    };
   }
 
   return schema;

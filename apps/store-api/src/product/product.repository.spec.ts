@@ -484,6 +484,47 @@ describe('ProductRepository (soft-delete behaviour)', () => {
         expect(tailArgs.skip).toBe(15);
       });
 
+      // TASK-830 (SF-CAT-13): the partitions set `stock` themselves, so running
+      // them over a slice the caller already narrowed by stock REPLACED the
+      // filter — «Тільки в наявності» topped a short page up with sold-out rows.
+      it('does not partition an inStock slice — no sold-out tail can leak back in', async () => {
+        prismaMock.product.count.mockResolvedValueOnce(5);
+        prismaMock.product.findMany.mockResolvedValueOnce(rows('in', 5));
+
+        const result = await repository.findAll({ ...args, inStock: true });
+
+        expect(prismaMock.product.findMany).toHaveBeenCalledTimes(1);
+        for (const [call] of prismaMock.product.findMany.mock.calls) {
+          expect(call.where.stock).toEqual({ gt: 0 });
+        }
+        expect(prismaMock.product.count).toHaveBeenCalledTimes(1);
+        expect(prismaMock.product.count.mock.calls[0][0].where.stock).toEqual({ gt: 0 });
+        expect(result.products).toHaveLength(5);
+        expect(result.total).toBe(5);
+      });
+
+      it('pages an inStock slice past page 1 by plain offset, never against a tail', async () => {
+        prismaMock.product.count.mockResolvedValueOnce(25);
+        prismaMock.product.findMany.mockResolvedValueOnce(rows('in', 5));
+
+        await repository.findAll({ page: 2, limit: 20, inStockFirst: true, inStock: true });
+
+        expect(prismaMock.product.findMany).toHaveBeenCalledTimes(1);
+        const pageArgs = prismaMock.product.findMany.mock.calls[0][0];
+        expect(pageArgs.where.stock).toEqual({ gt: 0 });
+        expect(pageArgs.skip).toBe(20);
+      });
+
+      it('keeps an outOfStock slice to the zero-stock side as well', async () => {
+        prismaMock.product.count.mockResolvedValueOnce(3);
+        prismaMock.product.findMany.mockResolvedValueOnce(rows('out', 3));
+
+        await repository.findAll({ ...args, outOfStock: true });
+
+        expect(prismaMock.product.findMany).toHaveBeenCalledTimes(1);
+        expect(prismaMock.product.findMany.mock.calls[0][0].where.stock).toEqual({ lte: 0 });
+      });
+
       it('keeps the id tiebreaker inside each partition', async () => {
         prismaMock.product.count.mockResolvedValueOnce(0).mockResolvedValueOnce(0);
         prismaMock.product.findMany.mockResolvedValueOnce([]);
@@ -531,12 +572,14 @@ describe('ProductRepository (soft-delete behaviour)', () => {
 
       const findManyArgs = prismaMock.product.findMany.mock.calls[0][0];
       expect(findManyArgs.where).toEqual(
-        expect.objectContaining({ isActive: true, category: { isActive: true } }),
+        expect.objectContaining({ isActive: true, category: { isActive: true, deletedAt: null } }),
       );
       // The count must carry the SAME predicate, or pagination `total` would
       // advertise pages of products the list itself refuses to return.
       const countArgs = prismaMock.product.count.mock.calls[0][0];
-      expect(countArgs.where).toEqual(expect.objectContaining({ category: { isActive: true } }));
+      expect(countArgs.where).toEqual(
+        expect.objectContaining({ category: { isActive: true, deletedAt: null } }),
+      );
     });
 
     it('leaves the category join off when categoryActiveOnly is unset (admin list)', async () => {
@@ -564,7 +607,7 @@ describe('ProductRepository (soft-delete behaviour)', () => {
       expect(findManyArgs.where).toEqual(
         expect.objectContaining({
           categoryId: { in: ['root', 'child'] },
-          category: { isActive: true },
+          category: { isActive: true, deletedAt: null },
         }),
       );
     });

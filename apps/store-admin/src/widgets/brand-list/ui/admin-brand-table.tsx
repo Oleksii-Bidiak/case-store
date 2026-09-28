@@ -28,8 +28,24 @@ import {
   pageSizeFrom,
   type TableFilterDef,
 } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_URL } from "@/shared/config";
 import { AdminBrandTableSkeleton } from "./admin-brand-table-skeleton";
+
+/**
+ * The API documents a brand logo as "absolute or storefront-relative". A
+ * storefront-relative path (`/brands/spigen.svg`) would resolve against the
+ * ADMIN origin here and render a broken image, so it is anchored to the
+ * storefront. Anything unparsable is passed through untouched — a broken
+ * thumbnail is a smaller failure than a crashed table.
+ */
+function logoSrc(logo: string): string {
+  if (!logo.startsWith("/") || logo.startsWith("//")) return logo;
+  try {
+    return new URL(logo, STOREFRONT_URL).toString();
+  } catch {
+    return logo;
+  }
+}
 
 const ACTIVE_OPTION = "active";
 const INACTIVE_OPTION = "inactive";
@@ -50,6 +66,11 @@ const INACTIVE_OPTION = "inactive";
  * carries the page size too. Behaviour is unchanged — this was already one of the
  * five tables that debounced to the URL — but it no longer keeps its own copy of
  * the logic to drift.
+ *
+ * TASK-840 (AD-CAT-12) added the two columns an operator actually scans a brand
+ * list by: the logo (the thing a brand is recognised by) and the number of live
+ * products carrying it — hidden ones included, deleted ones not — so a brand in
+ * use is told apart from an empty one without a trip to the catalogue.
  *
  * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
  * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
@@ -172,8 +193,15 @@ function AdminBrandView() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-16">{dict.brands.colLogo}</TableHead>
                 <TableHead>{dict.brands.colName}</TableHead>
                 <TableHead hideOnMobile>{dict.brands.colSlug}</TableHead>
+                <TableHead
+                  className="text-right"
+                  title={dict.brands.colProductsHint}
+                >
+                  {dict.brands.colProducts}
+                </TableHead>
                 <TableHead>{dict.brands.colStatus}</TableHead>
                 <TableHead className="text-right">
                   {dict.common.actions}
@@ -183,6 +211,21 @@ function AdminBrandView() {
             <TableBody>
               {brands.map((brand) => (
                 <TableRow key={brand.id}>
+                  <TableCell label={dict.brands.colLogo}>
+                    {brand.logo ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- admin thumbnail off arbitrary upload hosts; next/image would need every one allowlisted
+                      <img
+                        src={logoSrc(brand.logo)}
+                        alt={dict.brands.logoAlt(brand.name)}
+                        loading="lazy"
+                        className="size-10 rounded border border-border bg-background object-contain"
+                      />
+                    ) : (
+                      <span className="text-xs text-muted-foreground">
+                        {dict.brands.noLogo}
+                      </span>
+                    )}
+                  </TableCell>
                   <TableCell className="font-medium">
                     <Link
                       href={`/brands/${brand.id}/edit`}
@@ -193,6 +236,14 @@ function AdminBrandView() {
                   </TableCell>
                   <TableCell hideOnMobile className="text-muted-foreground">
                     {brand.slug}
+                  </TableCell>
+                  <TableCell
+                    label={dict.brands.colProducts}
+                    className="text-right tabular-nums"
+                  >
+                    {/* Absent only if the API predates TASK-840 — say so with a
+                        dash rather than claim the brand is empty. */}
+                    {brand.productCount ?? "—"}
                   </TableCell>
                   <TableCell>
                     <Badge variant={brand.isActive ? "default" : "secondary"}>

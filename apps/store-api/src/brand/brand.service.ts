@@ -109,7 +109,7 @@ export class BrandService {
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      data: brands.map((brand) => BrandEntity.fromPrisma(brand)),
+      data: brands.map(({ brand, productCount }) => BrandEntity.fromPrisma(brand, productCount)),
       meta: { total, page: params.page, limit: params.limit, totalPages },
     };
   }

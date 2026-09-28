@@ -17,6 +17,9 @@ import { BrandRepository } from '../brand/brand.repository';
 import { DeviceRepository } from '../device/device.repository';
 import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import { SlugRedirectModule } from '../slug-redirect';
+// Direct file import, not the barrel: the barrel re-exports the controller, and
+// this module only needs the Nest module class.
+import { SearchSynonymsModule } from '../search-synonyms/search-synonyms.module';
 import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
 import { MeiliClient } from './meili.client';
 import { SearchService } from './search.service';
@@ -45,7 +48,10 @@ import { AdminSearchController } from './admin-search.controller';
   // dependency of the module-local ProductRepository since TASK-285-G.
   // The CategoryModule edge is now a CYCLE (TASK-291): CategoryModule needs the
   // CategorySubtreeIndexer seam exported here, so BOTH sides use `forwardRef`.
-  imports: [forwardRef(() => CategoryModule), SlugRedirectModule],
+  // SearchSynonymsModule (TASK-559) supplies the admin-edited synonym map both
+  // index settings and document `searchTerms` are built from. One-directional:
+  // it never imports this module back.
+  imports: [forwardRef(() => CategoryModule), SlugRedirectModule, SearchSynonymsModule],
   controllers: [SearchController, AdminSearchController],
   providers: [
     MeiliClient,

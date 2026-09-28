@@ -177,6 +177,28 @@ export class ReturnRepository {
   }
 
   /**
+   * Every return opened against the customer's own orders, newest request first
+   * (TASK-608).
+   *
+   * Scoped through `order.userId`, not `createdByUserId`: a return the shop filed
+   * on the customer's behalf is still THEIR return, while `createdByUserId` names
+   * whoever pressed the button. Soft-deleted orders are left out for the same
+   * reason `GET /orders` leaves them out — the customer can no longer see the
+   * order, so a status line pointing at it would point at nothing.
+   *
+   * @param limit hard cap; a customer's list is short, and an unbounded read on a
+   *   public route is a cost nobody asked for.
+   */
+  findByUserId(userId: string, limit: number): Promise<ReturnWithItems[]> {
+    return this.prisma.return.findMany({
+      where: { order: { userId, deletedAt: null } },
+      include: RETURNS_INCLUDE,
+      orderBy: [{ requestedAt: 'desc' }, { id: 'asc' }],
+      take: limit,
+    }) as Promise<ReturnWithItems[]>;
+  }
+
+  /**
    * Admin — paginated list, newest request first by default, optionally filtered
    * by status and sorted on one of {@link RETURN_SORT_FIELDS} (TASK-354).
    */

@@ -1,15 +1,28 @@
-import { Suspense } from "react";
+import { Suspense, cache } from "react";
 import type { Metadata } from "next";
 import { permanentRedirect } from "next/navigation";
+import type { QueryClient } from "@tanstack/react-query";
+import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import { ProductDetailView, ProductDetailSkeleton } from "@/widgets";
-import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
-import { productControllerFindBySlug } from "@/shared/api/generated/products/products";
-import { JsonLd } from "@/shared/ui";
 import {
-  buildProductSchema,
-  buildBreadcrumbSchema,
-  buildFaqPageSchema,
-} from "@/shared/lib/schema";
+  buildProductRailParams,
+  type ProductRailFilter,
+} from "@/widgets/product-detail";
+import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import {
+  getProductControllerFindAllQueryOptions,
+  getProductControllerFindBySlugQueryKey,
+  productControllerFindBySlug,
+} from "@/shared/api/generated/products/products";
+import type { ProductDetailResponseEnvelope } from "@/shared/api/generated/models";
+import {
+  createServerQueryClient,
+  dehydrateForClient,
+  prefetchQueries,
+  serverRequestOptions,
+} from "@/shared/api/query-prefetch-server";
+import { JsonLd } from "@/shared/ui";
+import { buildProductSchema, buildBreadcrumbSchema } from "@/shared/lib/schema";
 import {
   buildOgImages,
   resolveSeo,
@@ -17,12 +30,23 @@ import {
   toMetadataTitle,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { fetchFaqItems } from "@/shared/api/faq-server";
 import { SITE_URL, CURRENCY, dict } from "@/shared/config";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
 }
+
+/**
+ * The product read of one request, shared by `generateMetadata`, the JSON-LD
+ * and the React Query prefetch (TASK-563). It is axios, which Next's `fetch`
+ * dedup does not see, so without React `cache()` every PDP render downloaded the
+ * product twice — and would now do it three times. The deadline keeps a silent
+ * API from holding the response open (see `serverRequestOptions`).
+ */
+const fetchProductBySlug = cache(
+  (slug: string): Promise<ProductDetailResponseEnvelope> =>
+    productControllerFindBySlug(slug, serverRequestOptions()),
+);
 
 export async function generateMetadata({
   params,
@@ -31,7 +55,7 @@ export async function generateMetadata({
 
   try {
     const [{ data: product, images }, seo] = await Promise.all([
-      productControllerFindBySlug(slug),
+      fetchProductBySlug(slug),
       fetchSeoSettings(),
     ]);
 
@@ -78,6 +102,7 @@ export async function generateMetadata({
           entityOgImage: product.ogImage,
           pageImage: images[0]?.url,
           defaultOgImage: resolved.ogImage,
+          alt: title.absolute,
         }),
       },
     };
@@ -91,14 +116,16 @@ export default async function ProductDetailPage({
 }: ProductDetailPageProps) {
   const { slug } = await params;
 
-  // Fetch server-side for structured data. The actual UI is rendered by
-  // ProductDetailView (client) via its own cached query; the API side is backed
-  // by the Redis product cache. On any failure JSON-LD is simply omitted —
-  // ProductDetailView still handles the 404/UI. Schema objects are built here
-  // (plain data); the JSX is constructed outside the try/catch.
-  const schemas = await buildProductPageSchemas(slug);
+  // Fetch server-side for structured data AND for the first HTML (TASK-563):
+  // the same response is seeded into the query ProductDetailView reads, so the
+  // server renders the whole product — name, price, breadcrumb links — instead
+  // of a skeleton. On any failure JSON-LD is simply omitted and nothing is
+  // seeded — ProductDetailView still fetches and handles the 404/UI itself.
+  // Schema objects are built here (plain data); the JSX is constructed outside
+  // the try/catch.
+  const detail = await fetchProductBySlug(slug).catch(() => null);
 
-  // TASK-285: a failed product fetch (schemas === null) is the 404 candidate
+  // TASK-285: a failed product fetch (detail === null) is the 404 candidate
   // path — check the slug-redirect ledger and serve a permanent (308) redirect
   // when the admin renamed the slug. A genuinely dead slug (no redirect row)
   // falls through unchanged: ProductDetailView still renders its own
@@ -118,41 +145,80 @@ export default async function ProductDetailPage({
   //
   // The in-page <Suspense> fallback below keeps the skeleton UX while
   // ProductDetailView hydrates.
-  if (!schemas) {
+  if (!detail) {
     const newSlug = await resolveSlugRedirect("PRODUCT", slug);
     if (newSlug) {
       permanentRedirect(`/products/${newSlug}`);
     }
   }
 
+  const schemas = detail ? await buildProductPageSchemas(detail) : null;
+  const queryClient = createServerQueryClient();
+  if (detail) {
+    await seedProductQueries(queryClient, slug, detail);
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-8">
       {schemas?.product && <JsonLd schema={schemas.product} />}
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
-      {schemas?.faq && <JsonLd schema={schemas.faq} />}
-      <Suspense fallback={<ProductDetailSkeleton />}>
-        <ProductDetailView slug={slug} />
-      </Suspense>
+      <PrefetchBoundary state={dehydrateForClient(queryClient)}>
+        <Suspense fallback={<ProductDetailSkeleton />}>
+          <ProductDetailView slug={slug} />
+        </Suspense>
+      </PrefetchBoundary>
     </div>
   );
 }
 
 /**
- * Fetch the product and build its Product + BreadcrumbList JSON-LD graphs.
- * Returns null on any error so the page renders without structured data rather
- * than failing.
+ * Fill the request's query client with what the PDP renders first (TASK-563):
+ * the product itself — the response already in hand, not a second request —
+ * and the «Сумісні аксесуари» / «Схожі товари» rails, so the first HTML links
+ * on to other products too. Rail prefetches that fail are left to the client.
  */
-async function buildProductPageSchemas(slug: string): Promise<{
+async function seedProductQueries(
+  queryClient: QueryClient,
+  slug: string,
+  detail: ProductDetailResponseEnvelope,
+): Promise<void> {
+  queryClient.setQueryData(
+    getProductControllerFindBySlugQueryKey(slug),
+    detail,
+  );
+
+  const railFilters: ProductRailFilter[] = [{ categoryId: detail.category.id }];
+  const compatible = detail.data.compatibleDeviceModels?.[0];
+  if (compatible) railFilters.push({ deviceModelId: compatible.id });
+
+  await prefetchQueries(
+    queryClient,
+    railFilters.map((filter) =>
+      getProductControllerFindAllQueryOptions(buildProductRailParams(filter), {
+        request: serverRequestOptions(),
+      }),
+    ),
+  );
+}
+
+/**
+ * Build the product's Product + BreadcrumbList JSON-LD graphs from the fetched
+ * response. Returns null on any error so the page renders without structured
+ * data rather than failing.
+ */
+async function buildProductPageSchemas(
+  detail: ProductDetailResponseEnvelope,
+): Promise<{
   product: Record<string, unknown>;
   breadcrumb: Record<string, unknown>;
-  faq: Record<string, unknown> | null;
 } | null> {
   try {
-    // FAQ is the global, admin-managed list (plan 116 Decision 3 — one reusable
-    // list, not per-product) fetched alongside the product. The visible FAQ
-    // accordion lives on the /info hub; the PDP only emits the FAQPage JSON-LD
-    // (structured data) from the same source so it stays a single source of
-    // truth. Null on failure → the block is simply omitted.
+    // No FAQPage here (TASK-555). The PDP used to emit one from the GLOBAL FAQ
+    // list on every product — structured data asserting questions and answers
+    // the reader cannot see on this page (Google's guidelines call that out as
+    // grounds for a manual action), including `[вартість]`-style placeholders.
+    // The FAQ is visible on /info, and that is the one page that marks it up.
+    //
     // The SEO singleton joins the fetch for one reason: `fallbackBrandName`
     // below is the brand of a product that has none of its own, and that
     // fallback is the store's name — admin-managed since TASK-433, so it can no
@@ -161,23 +227,9 @@ async function buildProductPageSchemas(slug: string): Promise<{
     // (This comment claimed "FALLBACK" before TASK-437 while the schema builder
     // emitted the store name unconditionally — the rename is what makes the two
     // agree.)
-    const [{ data: product, images, category }, faqItems, seo] =
-      await Promise.all([
-        productControllerFindBySlug(slug),
-        fetchFaqItems(),
-        fetchSeoSettings(),
-      ]);
+    const { data: product, images, category } = detail;
+    const seo = await fetchSeoSettings();
     const canonical = `${SITE_URL}/products/${product.slug}`;
-
-    const faq =
-      faqItems && faqItems.length > 0
-        ? buildFaqPageSchema(
-            faqItems.map((item) => ({
-              question: item.question,
-              answer: item.answer,
-            })),
-          )
-        : null;
 
     return {
       product: buildProductSchema({
@@ -196,7 +248,6 @@ async function buildProductPageSchemas(slug: string): Promise<{
         },
         { name: product.name, item: canonical },
       ]),
-      faq,
     };
   } catch {
     return null;

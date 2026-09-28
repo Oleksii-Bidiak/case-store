@@ -9,3 +9,8 @@ export { CreateBlogCategoryDto } from './create-blog-category.dto';
 export { UpdateBlogCategoryDto } from './update-blog-category.dto';
 export { ReorderBlogCategoriesDto } from './reorder-blog-categories.dto';
 export { AdminBlogCategoryListQueryDto } from './blog-category-list-query.dto';
+export {
+  BlogSuggestQueryDto,
+  BLOG_SUGGEST_DEFAULT_LIMIT,
+  BLOG_SUGGEST_MAX_LIMIT,
+} from './blog-suggest-query.dto';

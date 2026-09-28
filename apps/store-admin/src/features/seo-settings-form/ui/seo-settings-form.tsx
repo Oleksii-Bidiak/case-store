@@ -68,12 +68,19 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.id]);
 
-  // Self-referential SERP preview (TASK-268, Design Decision 4). This form edits
-  // the site-wide defaults, so there is no separate entity — a filled default is
-  // shown verbatim (tier "own"), and a blank one demonstrates the template
-  // applied to an illustrative sample page (tier "derived"), i.e. exactly what
-  // an untitled real page would render. The `control` is not otherwise
-  // destructured here, so it is added solely for these live watches.
+  // Self-referential SERP preview (TASK-268, Design Decision 4), in the REAL
+  // tier order since TASK-552. This form edits the site-wide defaults, which
+  // since TASK-432 are the LAST resort (own → derived → default): a page with a
+  // name of its own never falls through to them. Feeding the defaults in as the
+  // sample page's own title — what stood here — showed the owner that the
+  // default wins over every product name, i.e. the pre-TASK-432 behaviour.
+  //
+  // So there are two samples, each honest about its tier:
+  //   - a NAMED page (a product with no SEO fields): name + template, tier
+  //     "derived" — the default is passed in and correctly loses;
+  //   - an UNNAMED page (no SEO fields, no content — e.g. a bare listing): the
+  //     only place the defaults actually surface, tier "default" (or "empty"
+  //     while they are blank).
   const defaultMetaTitleValue = useWatch({ control, name: "defaultMetaTitle" });
   const defaultMetaDescriptionValue = useWatch({
     control,
@@ -85,17 +92,25 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
   // stays as the fallback for a blank field — it is the same constant the
   // storefront falls back to (`SITE_NAME`) when `SeoSettings.siteName` is null.
   const siteNameValue = useWatch({ control, name: "siteName" });
-  const previewTitle = resolveSeoPreviewTitle({
-    entityTitle: defaultMetaTitleValue,
+  const titleTemplate = resolveEffectiveTitleTemplate(
+    titleTemplateValue,
+    (siteNameValue ?? "").trim() || dict.brand,
+  );
+  const namedTitle = resolveSeoPreviewTitle({
     contentName: dict.seoSnippetPreview.samplePageName,
-    titleTemplate: resolveEffectiveTitleTemplate(
-      titleTemplateValue,
-      (siteNameValue ?? "").trim() || dict.brand,
-    ),
+    defaultTitle: defaultMetaTitleValue,
+    titleTemplate,
   });
-  const previewDescription = resolveSeoPreviewDescription({
-    entityDescription: defaultMetaDescriptionValue,
+  const namedDescription = resolveSeoPreviewDescription({
     contentDescription: dict.seoSnippetPreview.samplePageDescription,
+    defaultDescription: defaultMetaDescriptionValue,
+  });
+  const unnamedTitle = resolveSeoPreviewTitle({
+    defaultTitle: defaultMetaTitleValue,
+    titleTemplate,
+  });
+  const unnamedDescription = resolveSeoPreviewDescription({
+    defaultDescription: defaultMetaDescriptionValue,
   });
 
   // Visible half of plan 146 Design Decision 1: on blur a pasted full
@@ -197,22 +212,45 @@ export function SeoSettingsForm({ settings }: SeoSettingsFormProps) {
         )}
       </div>
 
-      {/* Self-referential SERP preview of the defaults on a sample page. */}
-      <div className="flex flex-col gap-1.5">
+      {/* SERP previews in the real tier order (TASK-552): first a page that
+          has a name — the defaults lose to it — then one that has none, the
+          only place the defaults below actually show up. */}
+      <div className="flex flex-col gap-1.5" data-testid="seo-preview-named">
+        <p className="text-sm font-medium text-foreground">
+          {f.previewNamedHeading}
+        </p>
         <SeoSnippetPreview
-          title={previewTitle.text}
-          titleTier={previewTitle.tier}
-          description={previewDescription.text || undefined}
-          descriptionTier={previewDescription.tier}
+          title={namedTitle.text}
+          titleTier={namedTitle.tier}
+          description={namedDescription.text || undefined}
+          descriptionTier={namedDescription.tier}
+          url={`${STOREFRONT_HOST} › …`}
+          // The sample has no SEO fields of its own; the counters measure
+          // what Google would get, so a template that bloats every title
+          // shows up red here.
+          rawTitleLength={namedTitle.text.length}
+          rawDescriptionLength={namedDescription.text.length}
+        />
+        <p className="text-sm text-muted-foreground">
+          {f.previewNamedNote(dict.seoSnippetPreview.samplePageName)}
+        </p>
+      </div>
+      <div className="flex flex-col gap-1.5" data-testid="seo-preview-unnamed">
+        <p className="text-sm font-medium text-foreground">
+          {f.previewUnnamedHeading}
+        </p>
+        <SeoSnippetPreview
+          title={unnamedTitle.text}
+          titleTier={unnamedTitle.tier}
+          description={unnamedDescription.text || undefined}
+          descriptionTier={unnamedDescription.tier}
           url={`${STOREFRONT_HOST} › …`}
           rawTitleLength={(defaultMetaTitleValue ?? "").trim().length}
           rawDescriptionLength={
             (defaultMetaDescriptionValue ?? "").trim().length
           }
         />
-        <p className="text-sm text-muted-foreground">
-          {dict.seoSnippetPreview.sampleNote}
-        </p>
+        <p className="text-sm text-muted-foreground">{f.previewUnnamedNote}</p>
       </div>
 
       {/* Title template */}

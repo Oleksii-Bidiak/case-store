@@ -6,7 +6,7 @@ import { PageKind } from '@prisma/client';
  * A `PageKind.HUB` row is not a page: it carries `metaTitle`/`metaDescription`
  * for a listing route that already exists in the storefront's own code. Its
  * `slug` is therefore not a free-form address but the NAME of that route, and
- * only the six slugs below mean anything. A HUB row with any other slug would be
+ * only the seven slugs below mean anything. A HUB row with any other slug would be
  * a ghost — editable in the panel, rendered nowhere — so `create`/`update`
  * reject one (see PageService.assertHubSlug).
  *
@@ -28,6 +28,9 @@ export const HUB_ROUTES: Readonly<Record<string, string>> = {
   contact: '/contact',
   info: '/info',
   promo: '/promo',
+  // TASK-549 — `/products` was the one indexed listing whose meta the owner could
+  // change nowhere; a HUB row now carries it like the other six.
+  products: '/products',
 };
 
 /** The slugs a HUB row may carry, in storefront-navigation order. */

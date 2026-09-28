@@ -3,6 +3,7 @@ import * as Sentry from '@sentry/nestjs';
 import { PinoLogger } from 'nestjs-pino';
 import { Request, Response } from 'express';
 import { translatePrismaError } from './prisma-error.translator';
+import { RetryAfterException } from './retry-after.exception';
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
@@ -80,13 +81,23 @@ export class HttpExceptionFilter implements ExceptionFilter {
       });
     }
 
-    const responseBody = {
+    const responseBody: Record<string, unknown> = {
       statusCode: status,
       error,
       message,
       timestamp: new Date().toISOString(),
       path: request.url,
     };
+
+    // TASK-762: the one key allowed through the rebuilt envelope, and only from
+    // the one class that owns it — see `RetryAfterException`. The header is the
+    // standard channel (the throttler's own 429 sets it too); the body key is
+    // for the storefront, which reads JSON more easily than a header through
+    // CORS. main.ts exposes `Retry-After` for the same reason.
+    if (exception instanceof RetryAfterException) {
+      responseBody.retryAfterSeconds = exception.retryAfterSeconds;
+      response.setHeader('Retry-After', String(exception.retryAfterSeconds));
+    }
 
     response.status(status).json(responseBody);
   }

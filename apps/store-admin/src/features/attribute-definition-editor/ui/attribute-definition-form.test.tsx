@@ -74,6 +74,64 @@ describe("AttributeDefinitionForm (TASK-191)", () => {
   });
 
   /**
+   * TASK-514: «,» and «;» separate values in the catalogue's `?specs=` filter,
+   * so an option carrying one would become two values no product has. The API
+   * refuses it; the form names the option instead of a generic save toast.
+   */
+  describe("SELECT options with a filter separator (TASK-514)", () => {
+    async function fillSelect(options: string) {
+      await userEvent.type(screen.getByLabelText(d.key), "material");
+      await userEvent.type(screen.getByLabelText(d.label), "Матеріал");
+      await userEvent.click(screen.getByRole("combobox"));
+      await userEvent.click(
+        await screen.findByRole("option", { name: d.typeSelect }),
+      );
+      await userEvent.type(await screen.findByLabelText(d.options), options);
+      await userEvent.click(
+        screen.getByRole("button", { name: d.submitCreate }),
+      );
+    }
+
+    it.each([
+      ["a comma", "Силікон, мʼякий"],
+      ["a semicolon", "TPU;PC"],
+    ])("refuses an option with %s and names it", async (_label, bad) => {
+      const onSubmit = jest.fn();
+      renderWithProviders(
+        <AttributeDefinitionForm
+          onSubmit={onSubmit}
+          onCancel={jest.fn()}
+          isPending={false}
+          submitLabel={d.submitCreate}
+        />,
+      );
+
+      await fillSelect(`Шкіра{Enter}${bad}`);
+
+      expect(
+        await screen.findByText(d.errors.optionSeparator(bad)),
+      ).toBeInTheDocument();
+      await waitFor(() => expect(onSubmit).not.toHaveBeenCalled());
+    });
+
+    it("submits options that use a dash or brackets instead", async () => {
+      const onSubmit = jest.fn();
+      renderWithProviders(
+        <AttributeDefinitionForm
+          onSubmit={onSubmit}
+          onCancel={jest.fn()}
+          isPending={false}
+          submitLabel={d.submitCreate}
+        />,
+      );
+
+      await fillSelect("Силікон — мʼякий{Enter}Шкіра (еко)");
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  /**
    * The facet type rule (TASK-488 / owner decision B-10): a catalogue filter is
    * «Так/Ні» or «Вибір зі списку». The API returns a 400 for anything else; the
    * form stops the operator before they get there and says why.

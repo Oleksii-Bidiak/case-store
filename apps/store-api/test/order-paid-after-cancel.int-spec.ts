@@ -7,6 +7,8 @@ import {
   PaymentStatus,
 } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { ProductsReportRepository } from '../src/analytics/reports/products-report.repository';
+import { SalesRepository } from '../src/analytics/reports/sales.repository';
 import { CacheService } from '../src/cache';
 import { DashboardRepository } from '../src/dashboard/dashboard.repository';
 import { OrderRepository } from '../src/order/order.repository';
@@ -46,6 +48,9 @@ describe('«Оплачено після скасування»: dashboard tile �
       providers: [
         PrismaService,
         DashboardRepository,
+        // The dashboard reads the reports' queries (TASK-688/694).
+        ProductsReportRepository,
+        SalesRepository,
         OrderRepository,
         { provide: CacheService, useValue: { del: jest.fn(), delByPrefix: jest.fn() } },
         {

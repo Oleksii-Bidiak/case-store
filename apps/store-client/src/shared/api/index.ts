@@ -5,6 +5,10 @@ export {
   getAccessToken,
   setAccessToken,
   refreshSession,
+  markSessionActive,
+  clearSessionMarker,
+  shouldAttemptSessionRefresh,
+  onSessionExpired,
 } from "./instance";
 export type { ErrorType, BodyType, RefreshOutcome } from "./instance";
 

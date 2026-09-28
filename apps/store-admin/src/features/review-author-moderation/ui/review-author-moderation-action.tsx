@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
+  ReviewHiddenReason,
   getAdminReviewControllerListQueryKey,
   useAdminReviewControllerHideAuthor,
   useAdminReviewControllerUnhideAuthor,
@@ -32,10 +33,11 @@ interface ReviewAuthorModerationActionProps {
   /** Shown in the confirm copy — the email local-part, as the queue displays it. */
   author: string;
   /**
-   * Whether this author's rating is currently counting. The ONLY signal the
-   * moderation row carries about the hide — see the header note.
+   * Why this row's author contribution is withdrawn, straight from the server
+   * (`AdminReviewEntity.hiddenReason`), or `null` when it is not — see the
+   * header note for which value offers which action.
    */
-  ratingVisible: boolean;
+  hiddenReason: ReviewHiddenReason | null;
 }
 
 /**
@@ -50,24 +52,31 @@ interface ReviewAuthorModerationActionProps {
  * «ВСІ» and «на всіх товарах» in as many words — the surrounding context is
  * actively misleading about what is about to happen.
  *
- * ── What «hidden» is inferred from, and why that is a compromise ─────────────
- * `AdminReviewEntity` does NOT expose `hiddenAt`, so the panel cannot actually
- * tell a moderator's hide from an unconfirmed email address: `ratingVisible`
- * folds both gates into one boolean and the moderation row carries nothing else.
- * We therefore offer the inverse whenever the rating is not counting, which is a
- * SUPERSET of "hidden by a moderator".
+ * ── Which action a row offers, from `hiddenReason` (TASK-1004) ──────────────
+ * `AdminReviewEntity` carries `hiddenAt` and `hiddenReason` since TASK-596/599,
+ * so the choice is read, not inferred. It used to be inferred from
+ * `ratingVisible`, which folds a moderator's hide and an unconfirmed email into
+ * one boolean — so every unverified author was offered «повернути» for a hide
+ * that never happened.
  *
- * That over-offer is safe in the only direction that matters. Restoring an
- * author who was never hidden is idempotent — `ReviewService.unhideAuthor`
- * re-asks the email gate and writes `hiddenAt: null` (already null) plus
- * whatever visibility the address earns — so the worst case is a no-op, never a
- * counting rating handed to an unproven address. The copy is worded to match:
- * it promises the ratings return ONLY if the email is confirmed.
+ *   - `null` — nothing is withdrawn: offer «приховати». An unconfirmed email
+ *     does not change that; the rating not counting is the email gate, and no
+ *     moderator action lifts it.
+ *   - `MODERATOR` — a moderator withdrew it: offer «повернути», the only lever
+ *     that lifts it. The server re-asks the email gate on restore, so the copy
+ *     promises the ratings return ONLY if the email is confirmed.
+ *   - `BAN` / `DELETED` — the ACCOUNT is switched off or deleted, and the rows
+ *     went with it. Offer NOTHING: «повернути» here would be lifted by the
+ *     wrong hand (`ReviewService.unhideAuthor` only lifts what its own reason
+ *     put down — an un-ban restores a ban, nothing restores a deletion), and
+ *     «приховати» would stack a moderator verdict under a hold the operator
+ *     cannot see from this row. The badge beside the rating already names the
+ *     reason; the remedy lives on the customer card, not here.
  */
 export function ReviewAuthorModerationAction({
   userId,
   author,
-  ratingVisible,
+  hiddenReason,
 }: ReviewAuthorModerationActionProps) {
   const queryClient = useQueryClient();
   const { can } = useAuth();
@@ -79,7 +88,13 @@ export function ReviewAuthorModerationAction({
     return null;
   }
 
-  const isRestore = !ratingVisible;
+  // Held by the account itself (ban / deletion) — see the header note. Loose
+  // `!= null`: an absent field reads as "not withdrawn", like the API's null.
+  if (hiddenReason != null && hiddenReason !== ReviewHiddenReason.MODERATOR) {
+    return null;
+  }
+
+  const isRestore = hiddenReason === ReviewHiddenReason.MODERATOR;
   const mutation = isRestore ? unhide : hide;
 
   const handleConfirm = () => {

@@ -37,8 +37,25 @@ function isAddressableKind(
  *
  * Never redirects to the address that was just requested: a self-redirect is an
  * infinite loop, and the caller only reaches here after that address missed.
+ *
+ * Never throws (TASK-793). The page readers throw on anything but a 404 now,
+ * so an outage on the primary read already surfaces as a 5xx before this runs.
+ * Reaching here means the API just answered a real 404 — a failure of the
+ * follow-up probe is then "no redirect known", and the caller's 404 stands.
  */
 export async function resolvePageRedirect(
+  slug: string,
+  requestedKind: Extract<PageEntityKind, "LEGAL" | "INFO">,
+  requestedPath: string,
+): Promise<string | null> {
+  try {
+    return await findPageRedirect(slug, requestedKind, requestedPath);
+  } catch {
+    return null;
+  }
+}
+
+async function findPageRedirect(
   slug: string,
   requestedKind: Extract<PageEntityKind, "LEGAL" | "INFO">,
   requestedPath: string,

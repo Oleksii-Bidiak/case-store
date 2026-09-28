@@ -4,9 +4,24 @@ import { DashboardTopProductsTable } from "./DashboardTopProductsTable";
 
 function makeProducts() {
   return [
-    { productId: "p-1", name: "USB-C Cable 2m", totalRevenue: 3420 },
-    { productId: "p-2", name: "Silicone Case", totalRevenue: 1290 },
-    { productId: "p-3", name: "Screen Protector", totalRevenue: 540 },
+    {
+      productId: "p-1",
+      name: "USB-C Cable 2m",
+      totalRevenue: 3420,
+      unitsSold: 12,
+    },
+    {
+      productId: "p-2",
+      name: "Silicone Case",
+      totalRevenue: 1290,
+      unitsSold: 3,
+    },
+    {
+      productId: "p-3",
+      name: "Screen Protector",
+      totalRevenue: 540,
+      unitsSold: 9,
+    },
   ];
 }
 
@@ -55,6 +70,49 @@ describe("DashboardTopProductsTable (TASK-152)", () => {
     expect(
       screen.getAllByRole("link").map((a) => a.getAttribute("href")),
     ).toEqual(["/products/p-1", "/products/p-2", "/products/p-3"]);
+  });
+
+  /**
+   * TASK-684: without `analytics:revenue` the API strips `totalRevenue` from
+   * every row and ranks the list by units sold. The table must follow: no money
+   * column (a column of blanks, or of «0 ₴», would misreport the shop), units
+   * in its place, and a heading that no longer claims the list is by revenue.
+   */
+  it("shows units instead of money when the API withheld the sums (TASK-684)", () => {
+    const unitsOnly = [
+      { productId: "p-3", name: "Screen Protector", unitsSold: 9 },
+      { productId: "p-2", name: "Silicone Case", unitsSold: 3 },
+    ];
+    const { container } = renderWithProviders(
+      <DashboardTopProductsTable products={unitsOnly} />,
+    );
+
+    expect(
+      screen.queryByText(dict.dashboard.totalRevenue),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(dict.dashboard.topProducts),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(dict.dashboard.topProductsByUnits),
+    ).toBeInTheDocument();
+    expect(screen.getByText(dict.dashboard.unitsSold)).toBeInTheDocument();
+    expect(container.textContent).not.toContain("₴");
+
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("Screen Protector");
+    expect(rows[0]).toHaveTextContent("9");
+  });
+
+  it("keeps the revenue heading for a revenue holder whose list is still empty (TASK-684)", () => {
+    // An empty list cannot say whether its caller was sent money, so the view
+    // says it: an owner with no paid sales yet is not a manager without the key.
+    renderWithProviders(
+      <DashboardTopProductsTable products={[]} showsRevenue />,
+    );
+
+    expect(screen.getByText(dict.dashboard.topProducts)).toBeInTheDocument();
+    expect(screen.getByText(dict.dashboard.totalRevenue)).toBeInTheDocument();
   });
 
   it("renders the empty-state row when there are no products", () => {

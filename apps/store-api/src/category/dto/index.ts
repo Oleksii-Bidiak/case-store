@@ -3,3 +3,4 @@ export { UpdateCategoryDto } from './update-category.dto';
 export { CategoryListQueryDto } from './category-list-query.dto';
 export { ReorderCategoriesDto } from './reorder-categories.dto';
 export { BulkCategoryStatusDto } from './bulk-category-status.dto';
+export { DeleteCategoryDto, DeleteCategoryMoveToNewDto } from './delete-category.dto';

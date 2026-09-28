@@ -10,6 +10,7 @@ export {
   ORDER_CONFLICT_CODE,
   isOrderConflict,
   orderConflictMessage,
+  orderWriteErrorMessage,
   requiresReload,
   type ApiErrorLike,
   type OrderConflictCode,

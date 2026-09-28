@@ -14,12 +14,14 @@ import {
 } from "@/entities/order";
 import {
   orderConflictMessage,
+  orderWriteErrorMessage,
   type ApiErrorLike,
 } from "@/features/order-status-update";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { Button, Input, Label, Textarea } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { useEditLockToken } from "@/shared/lib/use-edit-lock-token";
 import {
   createOrderDetailsSchema,
   isWaybillRejection,
@@ -130,26 +132,38 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
     resetOptions: { keepDirtyValues: true },
   });
 
-  // A 400 that names the waybill is a RULE, not a lost update, and must not be
-  // reported as one. `orderConflictMessage` keys off any string `error` field in
-  // the body, and Nest's validation envelope carries `error: "Bad Request"` — so
-  // without this the operator is told their order "changed elsewhere, reload the
-  // page" when what actually happened is that they typed the ТТН wrong.
-  const conflict = isWaybillRejection(updateDetails.error)
-    ? null
-    : orderConflictMessage(updateDetails.error as ApiErrorLike);
+  // TASK-629: the card polls, so `order.updatedAt` moves while the operator
+  // types. Send the version they started editing, or a colleague's save that
+  // landed meanwhile is overwritten without a 409 — see `useEditLockToken`.
+  // `dirtyFields`, not `isDirty`: a values-driven reset drops `isDirty` for a
+  // render even though the typed text is kept, which would let go of the token.
+  const lock = useEditLockToken(
+    Object.keys(form.formState.dirtyFields).length > 0,
+    order.updatedAt,
+  );
+
+  // A 409 conflict or a 403 «немає права» (TASK-622). A 400 — the waybill rule
+  // included — is neither and yields null: the conflict check is gated on the
+  // status now, so the old `isWaybillRejection` carve-out here is gone.
+  const conflict = orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
 
   const onSubmit = (values: OrderDetailsFormValues) => {
     updateDetails.mutate(
       {
         orderId: order.id,
-        data: orderDetailsValuesToDto(values, seeded, order.updatedAt),
+        data: orderDetailsValuesToDto(values, seeded, lock.token),
       },
       {
         onSuccess: (response) => {
           // Re-seed from the server's answer and drop the dirty flags, so the
           // next background refetch is free to update these fields again.
-          form.reset(mapOrderToDetailsValues(response.data));
+          // `keepDirtyValues: false` overrides the form-level reset option:
+          // with it, this reset would keep the dirty flags it means to drop
+          // (and with them the held lock token — TASK-629).
+          form.reset(mapOrderToDetailsValues(response.data), {
+            keepDirtyValues: false,
+          });
+          lock.rebase(response.data.updatedAt);
           void queryClient.invalidateQueries({
             queryKey: getAdminOrderControllerFindByIdQueryKey(order.id),
           });
@@ -167,8 +181,8 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
           toast.success(dict.orders.detailsSaved);
         },
         onError: (error) => {
-          // FIRST, for the reason given above `conflict`: the server refused ONE
-          // named field, which is neither a conflict nor an unknowable failure.
+          // FIRST: the server refused ONE named field, which is neither a
+          // conflict nor an unknowable failure.
           // Say which field and which rule — and put the message under the field
           // as well, because the toast will go and the box that needs fixing
           // stays.
@@ -183,13 +197,26 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
 
           const message = orderConflictMessage(error as ApiErrorLike);
           if (message) {
-            void queryClient.invalidateQueries({
-              queryKey: getAdminOrderControllerFindByIdQueryKey(order.id),
-            });
+            // The operator has now been told the order changed; the refetch
+            // refreshes the fields they did not touch. Their next save is made
+            // over THAT version, so it becomes the held token (TASK-629) —
+            // otherwise every retry would send the refused one again.
+            const key = getAdminOrderControllerFindByIdQueryKey(order.id);
+            void queryClient
+              .invalidateQueries({ queryKey: key })
+              .then(() =>
+                lock.rebase(
+                  queryClient.getQueryData<{ data?: OrderEntity }>(key)?.data
+                    ?.updatedAt,
+                ),
+              );
             toast.error(message);
             return;
           }
-          toast.error(dict.orders.detailsFailed);
+          toast.error(
+            orderWriteErrorMessage(error as ApiErrorLike) ??
+              dict.orders.detailsFailed,
+          );
         },
       },
     );

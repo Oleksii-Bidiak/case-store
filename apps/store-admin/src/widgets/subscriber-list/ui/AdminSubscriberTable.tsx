@@ -31,7 +31,7 @@ import {
   type TableFilterDef,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { downloadCsv } from "../model/download-csv";
+import { downloadCsv } from "@/shared/lib/download-csv";
 import { AdminSubscriberTableSkeleton } from "./AdminSubscriberTableSkeleton";
 
 const EXPORT_FILENAME = "newsletter-subscribers.csv";

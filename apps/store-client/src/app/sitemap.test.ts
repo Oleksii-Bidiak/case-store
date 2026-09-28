@@ -1,12 +1,10 @@
 jest.mock("@sentry/nextjs", () => ({ captureException: jest.fn() }));
-jest.mock("@/shared/lib/schema", () => ({
+jest.mock("@/shared/lib/schema/server", () => ({
   fetchAllActiveProducts: jest.fn(),
   fetchAllActiveCategories: jest.fn(),
   fetchAllPublishedPages: jest.fn(),
   fetchAllCompatLandingPages: jest.fn(),
-}));
-jest.mock("@/shared/api/blog-server", () => ({
-  fetchPublishedPosts: jest.fn(),
+  fetchAllPublishedPosts: jest.fn(),
 }));
 // The noindexSite kill switch (TASK-550). null by default — unconfigured, i.e.
 // the normal indexable path every older case below was written against.
@@ -20,8 +18,8 @@ import {
   fetchAllActiveCategories,
   fetchAllCompatLandingPages,
   fetchAllPublishedPages,
-} from "@/shared/lib/schema";
-import { fetchPublishedPosts } from "@/shared/api/blog-server";
+  fetchAllPublishedPosts,
+} from "@/shared/lib/schema/server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import type { SeoSettingsEntity } from "@/shared/api/generated/models";
 import { INFO_SLUG_INLINED_ON_HUB, SITE_URL } from "@/shared/config";
@@ -31,7 +29,7 @@ const captureException = Sentry.captureException as jest.Mock;
 const products = fetchAllActiveProducts as jest.Mock;
 const categories = fetchAllActiveCategories as jest.Mock;
 const pages = fetchAllPublishedPages as jest.Mock;
-const posts = fetchPublishedPosts as jest.Mock;
+const posts = fetchAllPublishedPosts as jest.Mock;
 const compat = fetchAllCompatLandingPages as jest.Mock;
 const seoSettings = fetchSeoSettings as jest.Mock;
 
@@ -46,7 +44,7 @@ describe("sitemap", () => {
     products.mockResolvedValue([]);
     categories.mockResolvedValue([]);
     pages.mockResolvedValue([]);
-    posts.mockResolvedValue({ posts: [] });
+    posts.mockResolvedValue([]);
     compat.mockResolvedValue([]);
     seoSettings.mockResolvedValue(null);
   });
@@ -67,6 +65,39 @@ describe("sitemap", () => {
       `${SITE_URL}/products/case-alpha`,
     );
     expect(captureException).not.toHaveBeenCalled();
+  });
+
+  // TASK-551 — the blog branch read ONE page of 100 through a reader that
+  // swallowed errors: post 101 vanished, and an outage emptied it silently.
+  it("lists every blog post the paginating reader returns, beyond the first hundred", async () => {
+    posts.mockResolvedValue(
+      Array.from({ length: 150 }, (_, i) => ({
+        slug: `post-${i}`,
+        publishedAt: "2026-06-01T00:00:00.000Z",
+      })),
+    );
+
+    const routes = await sitemap();
+
+    const blogUrls = routes.filter((route) => route.url.includes("/blog/"));
+    expect(blogUrls).toHaveLength(150);
+    expect(blogUrls.map((route) => route.url)).toContain(
+      `${SITE_URL}/blog/post-149`,
+    );
+  });
+
+  it("reports a blog outage to Sentry instead of listing no articles quietly", async () => {
+    posts.mockRejectedValue(new Error("502"));
+
+    const routes = await sitemap();
+
+    expect(routes.some((route) => route.url.includes("/blog/"))).toBe(false);
+    expect(captureException).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        tags: { route: "sitemap", source: "blog posts" },
+      }),
+    );
   });
 
   it("keeps the other sources when one fails, and reports the failure to Sentry", async () => {

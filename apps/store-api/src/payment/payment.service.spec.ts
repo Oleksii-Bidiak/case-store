@@ -32,6 +32,8 @@ const repositoryMock = {
   insertEvent: jest.fn(),
   deleteEvent: jest.fn(),
   settle: jest.fn(),
+  reserveRefund: jest.fn(),
+  releaseRefund: jest.fn(),
 };
 
 const providerMock = {
@@ -82,6 +84,7 @@ function makePayment(overrides: Partial<Payment> = {}): Payment {
     createdAt: NOW,
     updatedAt: NOW,
     settledAt: null,
+    refundedAmount: new Prisma.Decimal(0),
     ...overrides,
   } as Payment;
 }
@@ -124,6 +127,9 @@ describe('PaymentService', () => {
     repositoryMock.insertEvent.mockResolvedValue({ id: 'evt-1' });
     repositoryMock.settle.mockResolvedValue(makePayment());
     orderServiceMock.applyPaymentEvent.mockResolvedValue({ applied: true, orderId: 'order-1' });
+    repositoryMock.reserveRefund.mockReset().mockResolvedValue(true);
+    repositoryMock.releaseRefund.mockReset().mockResolvedValue(undefined);
+    providerMock.refund.mockReset().mockResolvedValue(undefined);
   });
 
   describe('createCheckout', () => {
@@ -589,6 +595,116 @@ describe('PaymentService', () => {
       repositoryMock.findById.mockResolvedValue(null);
 
       await expect(buildService().refund('ghost')).rejects.toThrow(NotFoundException);
+    });
+
+    // TASK-1302: the ceiling is what is LEFT on the attempt, not what it charged.
+    // A partial refund leaves the attempt SUCCEEDED, so without a running total
+    // 600 + 500 out of 1000 would both pass and send back more than was paid.
+    describe('cumulative ceiling (TASK-1302)', () => {
+      const succeeded = (refunded: string) =>
+        makePayment({
+          status: PaymentAttemptStatus.SUCCEEDED,
+          amount: new Prisma.Decimal('1000.00'),
+          refundedAmount: new Prisma.Decimal(refunded),
+        });
+
+      it('refuses an amount above what is left after earlier refunds, with a stable code', async () => {
+        repositoryMock.findById.mockResolvedValue(succeeded('600.00'));
+
+        const error = await buildService()
+          .refund('pay-1', '500.00')
+          .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).getResponse()).toMatchObject({
+          error: 'PAYMENT_REFUND_EXCEEDS_BALANCE',
+        });
+        expect(repositoryMock.reserveRefund).not.toHaveBeenCalled();
+        expect(providerMock.refund).not.toHaveBeenCalled();
+      });
+
+      it('reserves the amount before asking the provider', async () => {
+        repositoryMock.findById.mockResolvedValue(succeeded('600.00'));
+        const calls: string[] = [];
+        repositoryMock.reserveRefund.mockImplementation(async () => {
+          calls.push('reserve');
+          return true;
+        });
+        providerMock.refund.mockImplementation(async () => {
+          calls.push('provider');
+        });
+
+        await buildService().refund('pay-1', '400.00');
+
+        expect(repositoryMock.reserveRefund).toHaveBeenCalledWith('pay-1', '400.00');
+        expect(providerMock.refund).toHaveBeenCalledWith({ paymentId: 'pay-1', amount: '400.00' });
+        expect(calls).toEqual(['reserve', 'provider']);
+      });
+
+      it('refunds only the remainder when the amount is omitted', async () => {
+        repositoryMock.findById.mockResolvedValue(succeeded('600.00'));
+
+        await buildService().refund('pay-1');
+
+        expect(repositoryMock.reserveRefund).toHaveBeenCalledWith('pay-1', '400');
+        expect(providerMock.refund).toHaveBeenCalledWith({ paymentId: 'pay-1', amount: '400' });
+      });
+
+      it('refuses when nothing is left to refund', async () => {
+        repositoryMock.findById.mockResolvedValue(succeeded('1000.00'));
+
+        await expect(buildService().refund('pay-1')).rejects.toThrow(BadRequestException);
+        expect(providerMock.refund).not.toHaveBeenCalled();
+      });
+
+      it('refuses a refund of zero', async () => {
+        repositoryMock.findById.mockResolvedValue(succeeded('0'));
+
+        await expect(buildService().refund('pay-1', '0')).rejects.toThrow(BadRequestException);
+        await expect(buildService().refund('pay-1', '0.00')).rejects.toThrow(BadRequestException);
+        expect(repositoryMock.reserveRefund).not.toHaveBeenCalled();
+        expect(providerMock.refund).not.toHaveBeenCalled();
+      });
+
+      it('refuses when a concurrent refund took the balance first', async () => {
+        // The read says 600 is left; by the time the atomic reservation runs,
+        // another request has already reserved 500 of it.
+        repositoryMock.findById
+          .mockResolvedValueOnce(succeeded('400.00'))
+          .mockResolvedValueOnce(succeeded('900.00'));
+        repositoryMock.reserveRefund.mockResolvedValue(false);
+
+        const error = await buildService()
+          .refund('pay-1', '600.00')
+          .catch((e: unknown) => e);
+
+        expect(error).toBeInstanceOf(BadRequestException);
+        expect((error as BadRequestException).getResponse()).toMatchObject({
+          error: 'PAYMENT_REFUND_EXCEEDS_BALANCE',
+        });
+        expect(providerMock.refund).not.toHaveBeenCalled();
+      });
+
+      it('409s when the attempt stopped being refundable before the reservation', async () => {
+        repositoryMock.findById.mockResolvedValueOnce(succeeded('0')).mockResolvedValueOnce(
+          makePayment({
+            status: PaymentAttemptStatus.REFUNDED,
+            amount: new Prisma.Decimal('1000.00'),
+          }),
+        );
+        repositoryMock.reserveRefund.mockResolvedValue(false);
+
+        await expect(buildService().refund('pay-1', '100.00')).rejects.toThrow(ConflictException);
+        expect(providerMock.refund).not.toHaveBeenCalled();
+      });
+
+      it('gives the reservation back when the provider refuses', async () => {
+        repositoryMock.findById.mockResolvedValue(succeeded('0'));
+        providerMock.refund.mockRejectedValue(new Error('LiqPay said no'));
+
+        await expect(buildService().refund('pay-1', '250.00')).rejects.toThrow('LiqPay said no');
+        expect(repositoryMock.releaseRefund).toHaveBeenCalledWith('pay-1', '250.00');
+      });
     });
   });
 });

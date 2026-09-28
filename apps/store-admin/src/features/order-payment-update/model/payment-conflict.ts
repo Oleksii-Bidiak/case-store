@@ -1,4 +1,5 @@
 import { dict } from "@/shared/config";
+import { apiErrorCode, apiErrorStatus } from "@/shared/lib";
 
 /**
  * Decoding the 409s the payment endpoint raises, into something an operator can
@@ -33,19 +34,15 @@ export interface ApiErrorLike {
   };
 }
 
-function codeOf(error: ApiErrorLike | null | undefined): string | undefined {
-  const data = error?.response?.data;
-  if (!data || typeof data !== "object") {
-    return undefined;
-  }
-  const code = (data as { error?: unknown }).error;
-  return typeof code === "string" ? code : undefined;
-}
-
 /**
  * The Ukrainian sentence for a rejected payment write, or `null` when the
  * failure was not a conflict at all (network, 500, 403) and the caller should
  * fall back to its generic message.
+ *
+ * Gated on the HTTP status ALONE; the code only refines (TASK-622). Every error
+ * body carries an `error` field — `Forbidden`, `Internal Server Error` — so
+ * treating "has a code" as "is a conflict" turned a missing grant into «статус
+ * уже змінився, оновіть сторінку».
  *
  * A 409 whose code we do not recognise still gets a conflict sentence: the one
  * thing certainly true of any 409 here is that the change did not land and the
@@ -54,13 +51,11 @@ function codeOf(error: ApiErrorLike | null | undefined): string | undefined {
 export function paymentConflictMessage(
   error: ApiErrorLike | null | undefined,
 ): string | null {
-  const code = codeOf(error);
-  const isConflict = error?.response?.status === 409 || code !== undefined;
-
-  if (!isConflict) {
+  if (apiErrorStatus(error) !== 409) {
     return null;
   }
 
+  const code = apiErrorCode(error);
   if (code === PAYMENT_CONFLICT_CODE.TRANSITION_INVALID) {
     return dict.orderStatus.conflict.ORDER_PAYMENT_TRANSITION_INVALID;
   }
@@ -71,4 +66,18 @@ export function paymentConflictMessage(
     return dict.orderStatus.conflict.ORDER_PAYMENT_CORRECTION_PROVIDER_REFUND;
   }
   return dict.orderStatus.conflictUnknown;
+}
+
+/**
+ * What an operator reads when a payment write is refused: the conflict sentence
+ * for a 409, «немає права» for a 403 (TASK-622), `null` otherwise so the caller
+ * shows its generic failure.
+ */
+export function paymentWriteErrorMessage(
+  error: ApiErrorLike | null | undefined,
+): string | null {
+  if (apiErrorStatus(error) === 403) {
+    return dict.orderStatus.forbidden;
+  }
+  return paymentConflictMessage(error);
 }
