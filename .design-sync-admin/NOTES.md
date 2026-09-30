@@ -204,8 +204,15 @@ Update this file when `admin-nav-list.tsx`, `admin-header.tsx` or the drawer cha
 One file per section (`Login`, `Dashboard`, `Orders`, `Products`, `Categories`, `Staff`,
 `Settings`, `Profile`.dc.html — group «База»; `Returns`, `Reviews`, `Users`, `Messages`,
 `Subscribers`, `AuditLog`.dc.html — group «CRM»; then «Контент» and «Каталог і маркетинг». All four groups
-were brought up to develop `badb77fc` by Д-ж0 (2026-09-27, TASK-852) — the base commit per group lives in
-the registry in `docs/plans/189-design-track-cycle-2.md`). Each file is a canvas like AdminShell's showcase:
+were brought up to develop `badb77fc` by Д-ж0 (2026-09-27, TASK-852) and to `1e09651d` by Д-ж2 (2026-09-30) —
+the base commit per group lives in the registry in `docs/plans/189-design-track-cycle-2.md`). Д-ж2 proposals
+for «База» and «CRM» are separate files next to them — `OrdersProposal`, `OrderNewProposal`, `ProductsProposal`,
+`ProductFormProposal`, `StaffProposal`, `CategoriesProposal`, `SettingsProposal`, `ProfileProposal`,
+`ReturnsProposal`, `ReviewsProposal`, `UsersProposal`, `MessagesProposal`, `SubscribersProposal`,
+`AuditLogProposal`.dc.html — and the pre-session state is kept as `<Name>-before.dc.html`. Proposals pass
+`proposed="true"` to AdminShell (Returns counter, help button, «Клієнти» / «Співробітники» labels); the
+as-is files do not, so they keep drawing the code. Keep proposal files under ~70 KB each: a larger
+`write_files` payload was cut off before it ran — split a section into its own file instead. Each file is a canvas like AdminShell's showcase:
 the section's screens at 1440 and 390, then the states the code has (loading, empty, error,
 confirm dialogs) at 1440 only, unless 390 lays them out differently. They draw the code **as
 is** — every known defect they reproduce is listed in the file's `<style>` header comment, and
