@@ -178,4 +178,20 @@ describe("Header — responsive class contract (TASK-539)", () => {
     const cart = screen.getByRole("button", { name: dict.cart.openAria });
     expect(classesOf(cart.closest("div.ml-auto"))).toContain("shrink-0");
   });
+
+  it("keeps the phone action spacing tight so the 44×44 icons leave the wordmark whole at 390", () => {
+    renderHeader();
+
+    // Measured (e2e/header-widths): with Обране / Кабінет at 44×44, the old
+    // `gap-1` + cart `ml-1` cut the wordmark to «CaseSt…» at 390. The spacing
+    // opens up again from `sm`, where the row has room.
+    const cart = screen.getByRole("button", { name: dict.cart.openAria });
+    const cluster = cart.closest("div.ml-auto");
+    expect(classesOf(cluster)).toEqual(
+      expect.arrayContaining(["gap-0.5", "sm:gap-1.5"]),
+    );
+    expect(classesOf(cluster)).not.toContain("gap-1");
+    expect(classesOf(cart)).toContain("sm:ml-1");
+    expect(classesOf(cart)).not.toContain("ml-1");
+  });
 });

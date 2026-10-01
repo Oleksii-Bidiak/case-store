@@ -35,6 +35,32 @@ function searchInput(page: Page) {
 }
 
 test.describe("header row by width (TASK-511, TASK-512)", () => {
+  test("390: the 44×44 Обране / Кабінет icons leave the wordmark whole", async ({
+    page,
+  }) => {
+    await openAt(page, 390);
+    const row = header(page);
+
+    // 390 is the first width that shows Обране and Кабінет next to the cart.
+    // Making them full 44×44 targets once cost the brand 6px here and cut the
+    // wordmark to «CaseSt…» — the phone spacing now pays for them instead.
+    for (const action of [
+      row.locator('a[href="/wishlist"]'),
+      row.getByRole("button", { name: "Відкрити особистий кабінет" }),
+    ]) {
+      await expect(action).toBeVisible();
+      const box = await action.boundingBox();
+      expect(box?.width ?? 0).toBeGreaterThanOrEqual(44);
+    }
+
+    const wordmark = row.locator('a[href="/"] span.truncate');
+    await expect(wordmark).toHaveText("CaseStore");
+    const truncated = await wordmark.evaluate(
+      (el) => el.scrollWidth > el.clientWidth,
+    );
+    expect(truncated, "the wordmark is cut at 390").toBe(false);
+  });
+
   test("768: compact pill, icon-only 44×44 actions, the rest in the menu", async ({
     page,
   }) => {

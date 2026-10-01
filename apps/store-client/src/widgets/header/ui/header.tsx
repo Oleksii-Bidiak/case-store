@@ -275,8 +275,13 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
               cluster instead of 402), captions from `xl` (TASK-511).
               Below 390px only the cart survives: Обране and Кабінет are hidden
               (both are in the slide-out menu above) rather than letting four
-              targets collide on the narrowest phones. */}
-          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
+              targets collide on the narrowest phones.
+
+              Phone spacing is tighter (`gap-0.5`, cart `ml-0`) because the 44×44
+              Обране / Кабінет targets cost the row 6px at 390 — measured, the
+              wordmark was cut to «CaseSt…» (100/103). Each icon already carries
+              11px of padding either side, so the glyphs stay 24px apart. */}
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1.5">
             {/* Theme switch — leftmost, so the commerce actions stay grouped
                 next to the cart.
 
@@ -302,7 +307,7 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
             <div className="hidden min-[390px]:block">
               <HeaderAuth />
             </div>
-            <HeaderCartBadge className="ml-1" />
+            <HeaderCartBadge className="sm:ml-1" />
           </div>
         </div>
       </header>
