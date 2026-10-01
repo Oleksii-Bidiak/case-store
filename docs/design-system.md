@@ -172,15 +172,16 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
   gradient — accessory photos arrive in mixed aspect ratios and must never be cropped
   (TASK-415). Banners and category tiles keep `object-cover`: there the frame matters more
   than the edges of the subject.
-- **Known debt:** the `/products` and `/wishlist` grids still carry a grandfathered
-  `gap-[18px]` (see `eslint-suppressions.json`). New grids use `gap-4 md:gap-6`; moving the
-  old ones onto the scale is a single separate pass, not a drive-by edit.
 - **Sticky asides** (filter rails, summary panels, TOCs, side navs): the site header is
   `sticky top-0 z-50` (64px), so any other sticky panel must clear it with a **96px** top
   offset — `lg:sticky` + `STICKY_ASIDE_TOP` (`lg:top-24`) from
   `store-client/src/shared/config/layout.ts`; scroll-spy / `scrollTo` math uses
   `STICKY_HEADER_OFFSET` (96) from the same module. Never hardcode the offset. Known
-  exception: the PDP aside still sticks at `md:top-24` until TASK-519.
+  exception: the PDP aside still sticks at `md:top-24` until TASK-519. An aside that can
+  be taller than the screen (the catalogue and search filter rails) also takes
+  `max-h-sticky-aside overflow-y-auto overscroll-contain`. The `--max-height-sticky-aside`
+  token is the viewport minus that 96px offset and a 16px gap, so the aside scrolls inside
+  itself instead of running off a short laptop screen.
 - **Mobile sticky bar** (below `md`): the primary action of a long page is pinned to the bottom
   edge. This covers the PDP `MobileAtcBar` (price + add to cart), plus the cart and checkout
   («До сплати» + CTA, owner decision 7.6, TASK-864). The page content reserves room for it with

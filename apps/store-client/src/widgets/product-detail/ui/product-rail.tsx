@@ -56,11 +56,14 @@ export function ProductRail({
 
   if (isPending) {
     return (
-      <section aria-labelledby={headingId} className="flex flex-col gap-4">
+      <section
+        aria-labelledby={headingId}
+        className="flex flex-col gap-4 md:gap-6"
+      >
         <h2 id={headingId} className={`${H2_CLASS} text-foreground`}>
           {title}
         </h2>
-        <div className="flex gap-[18px] overflow-hidden">
+        <div className="flex gap-4 md:gap-6 overflow-hidden">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton
               key={i}
@@ -81,7 +84,10 @@ export function ProductRail({
   }
 
   return (
-    <section aria-labelledby={headingId} className="flex flex-col gap-[18px]">
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col gap-4 md:gap-6"
+    >
       <div className="flex items-center justify-between gap-3">
         <h2 id={headingId} className={`${H2_CLASS} text-foreground`}>
           {title}
@@ -108,7 +114,7 @@ export function ProductRail({
 
       <div
         ref={scrollRef}
-        className="flex snap-x snap-mandatory gap-[18px] overflow-x-auto pb-3.5 [scrollbar-width:thin]"
+        className="flex snap-x snap-mandatory gap-4 md:gap-6 overflow-x-auto pb-3.5 [scrollbar-width:thin]"
       >
         {products.map((product) => (
           <div key={product.id} className="w-[244px] shrink-0 snap-start">

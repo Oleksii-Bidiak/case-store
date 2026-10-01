@@ -18,8 +18,8 @@ export function WishlistSkeleton() {
             would be full-width here and narrow once the real toolbar renders. */}
         <div className="hidden animate-pulse rounded-2xl bg-muted lg:block lg:h-96" />
         <div className="min-w-0">
-          {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- byte-identical to the WishlistView card grid; any drift is a visible reflow */}
-          <div className="grid grid-cols-1 items-stretch gap-[18px] min-[390px]:grid-cols-2 lg:grid-cols-4">
+          {/* Byte-identical to the WishlistView card grid; any drift is a visible reflow. */}
+          <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
             {Array.from({ length: 8 }).map((_, index) => (
               <div
                 key={index}

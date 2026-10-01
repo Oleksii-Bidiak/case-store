@@ -385,7 +385,7 @@ export function CartItemRow({
 
   return (
     <li
-      className={`flex gap-[18px] border-b border-border p-[22px] last:border-b-0 ${
+      className={`flex gap-4 md:gap-6 border-b border-border p-[22px] last:border-b-0 ${
         removeItem.isPending ? "pointer-events-none opacity-60" : ""
       }`}
     >

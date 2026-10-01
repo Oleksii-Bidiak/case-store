@@ -48,3 +48,43 @@ describe("page container (TASK-860)", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/**
+ * TASK-500 / TASK-517 — card grids sit on the 4px scale (`gap-4 md:gap-6`,
+ * design-system §4) and the sticky-aside height cap is a `@theme` token. The
+ * per-file suppression count cannot hold this on its own (a file may swap one
+ * arbitrary value for another at the same count), and a class string kept in
+ * a module constant is invisible to the lint rule — so both are pinned here.
+ */
+describe("spacing scale (TASK-500, TASK-517)", () => {
+  const files = sourceFiles(SRC);
+
+  it("scans the storefront source", () => {
+    // Guards the scan itself: a walk that found nothing would pass vacuously.
+    expect(files.length).toBeGreaterThan(100);
+  });
+
+  it("leaves no 18px gap anywhere in src", () => {
+    const offenders = files
+      .filter((file) =>
+        /\bgap-(?:[xy]-)?\[18px\]/.test(readFileSync(file, "utf8")),
+      )
+      .map((file) => relative(SRC, file));
+    expect(offenders).toEqual([]);
+  });
+
+  it("declares the sticky-aside height cap in @theme inline", () => {
+    const css = readFileSync(join(SRC, "app", "globals.css"), "utf8");
+    const theme = css.slice(css.indexOf("@theme inline"));
+    expect(theme).toMatch(
+      /--max-height-sticky-aside:\s*calc\(100dvh - 7rem\);/,
+    );
+  });
+
+  it("caps sticky asides with the token, not a hand-written calc", () => {
+    const offenders = files
+      .filter((file) => /max-h-\[calc\(100dvh/.test(readFileSync(file, "utf8")))
+      .map((file) => relative(SRC, file));
+    expect(offenders).toEqual([]);
+  });
+});

@@ -56,7 +56,7 @@ export function ProductListSkeleton({
       // Guarded by a parity test in `product-list.test.tsx` (TASK-415): never
       // edit this class list without editing `ProductList`'s to match.
       <div
-        className="grid grid-cols-1 items-stretch gap-[18px] min-[390px]:grid-cols-2 lg:grid-cols-4"
+        className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4"
         aria-hidden="true"
       >
         {Array.from({ length: 12 }).map((_, i) => (

@@ -33,7 +33,7 @@ export function ProductDetailSkeleton() {
         </div>
 
         {/* Info column: title (up to two lines), rating/SKU row, variant selector. */}
-        <div className="flex min-w-0 flex-col gap-[18px] md:col-start-1 md:row-start-2 lg:col-start-2 lg:row-start-1">
+        <div className="flex min-w-0 flex-col gap-4 md:gap-6 md:col-start-1 md:row-start-2 lg:col-start-2 lg:row-start-1">
           <div className="flex flex-col gap-2">
             <Skeleton className="h-8 w-full" />
             <Skeleton className="h-8 w-2/3" />

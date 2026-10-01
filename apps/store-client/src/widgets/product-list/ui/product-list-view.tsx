@@ -68,21 +68,6 @@ interface ProductListViewProps {
 }
 
 /**
- * Desktop sidebar scroll box (TASK-414). A sticky aside with no height cap runs
- * straight off the bottom of a short viewport, and because it is `position:
- * sticky` the page scroll never brings the overflow back — the lower filters
- * (price, spec facets) are simply unreachable on a laptop in landscape. Capping
- * it at the viewport minus the sticky offset (`lg:top-24` = 6rem, plus a 1rem
- * breathing gap) gives the aside its own scrollbar instead.
- *
- * A module constant like the `STICKY_ASIDE_TOP` it sits beside: `calc()` over
- * `dvh` has no design-token equivalent, and keeping the pair together makes the
- * two halves of the offset obviously related.
- */
-const ASIDE_SCROLL_BOX =
-  "lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:overscroll-contain";
-
-/**
  * Orchestrates the catalog page: keeps filter/sort/view state in the URL, fetches
  * categories for the chips row, and renders the category chips (TASK-216 — the
  * category selector moved out of the sidebar into a horizontal row above the
@@ -278,9 +263,11 @@ export function ProductListView({
 
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
-        {/* Desktop sidebar */}
+        {/* Desktop sidebar. A sticky aside with no height cap runs off a short
+            viewport, and page scroll never brings the overflow back — so it is
+            capped at `max-h-sticky-aside` and scrolls inside itself (TASK-414). */}
         <aside
-          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} ${ASIDE_SCROLL_BOX} lg:block lg:self-start`}
+          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:block lg:max-h-sticky-aside lg:self-start lg:overflow-y-auto lg:overscroll-contain`}
         >
           <ProductFilters
             currentParams={params}

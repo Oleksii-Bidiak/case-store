@@ -30,14 +30,6 @@ import {
 
 const PAGE_SIZE = 20;
 
-/**
- * Same sidebar scroll box the catalogue uses: a sticky aside with no height cap
- * runs off a short viewport and, being `position: sticky`, page scroll never
- * brings the overflow back.
- */
-const ASIDE_SCROLL_BOX =
-  "lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:overscroll-contain";
-
 interface SearchResultsViewProps {
   /** The search query from the URL (`?q=`). May be blank. */
   query: string;
@@ -320,9 +312,11 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
 
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
-        {/* Desktop sidebar */}
+        {/* Desktop sidebar. A sticky aside with no height cap runs off a short
+            viewport, and page scroll never brings the overflow back — so it is
+            capped at `max-h-sticky-aside` and scrolls inside itself (TASK-414). */}
         <aside
-          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} ${ASIDE_SCROLL_BOX} lg:block lg:self-start`}
+          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:block lg:max-h-sticky-aside lg:self-start lg:overflow-y-auto lg:overscroll-contain`}
         >
           <ProductFilters
             idPrefix="search-filter"

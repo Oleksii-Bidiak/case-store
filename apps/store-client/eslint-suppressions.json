@@ -246,7 +246,7 @@
   },
   "src/widgets/cart/ui/cart-item-row.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 10
+      "count": 9
     }
   },
   "src/widgets/cart/ui/cart-sheet.tsx": {
@@ -346,7 +346,7 @@
   },
   "src/widgets/info-support/ui/info-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 42
+      "count": 41
     }
   },
   "src/widgets/legal-doc/ui/legal-doc-actions.tsx": {
@@ -381,12 +381,12 @@
   },
   "src/widgets/product-detail/ui/product-detail-skeleton.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 5
+      "count": 4
     }
   },
   "src/widgets/product-detail/ui/product-detail-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 6
+      "count": 5
     }
   },
   "src/widgets/product-detail/ui/product-highlights.tsx": {
@@ -396,7 +396,7 @@
   },
   "src/widgets/product-detail/ui/product-rail.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 8
+      "count": 5
     }
   },
   "src/widgets/product-detail/ui/product-specs-tabs.tsx": {
@@ -426,7 +426,7 @@
   },
   "src/widgets/product-list/ui/product-list-skeleton.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 2
+      "count": 1
     }
   },
   "src/widgets/product-list/ui/product-list-view.tsx": {
@@ -436,7 +436,7 @@
   },
   "src/widgets/product-list/ui/product-list.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 7
+      "count": 6
     }
   },
   "src/widgets/promo/ui/promo-countdown.tsx": {
@@ -446,7 +446,7 @@
   },
   "src/widgets/promo/ui/promo-coupons.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 13
+      "count": 11
     }
   },
   "src/widgets/promo/ui/promo-deals.tsx": {
@@ -481,7 +481,7 @@
   },
   "src/widgets/wishlist/ui/wishlist-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 14
+      "count": 13
     }
   }
 }

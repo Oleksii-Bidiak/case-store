@@ -365,7 +365,7 @@ describe("ProductListView — filters (TASK-414)", () => {
     installCatalogHandlers();
 
     const aside = container.querySelector("aside")!;
-    expect(aside.className).toContain("lg:max-h-[calc(100dvh-7rem)]");
+    expect(aside.className).toContain("lg:max-h-sticky-aside");
     expect(aside.className).toContain("lg:overflow-y-auto");
     expect(aside.className).toContain("lg:overscroll-contain");
   });

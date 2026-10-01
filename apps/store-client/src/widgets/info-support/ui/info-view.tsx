@@ -512,7 +512,7 @@ export function InfoView({
                 <h2 className="mb-5 font-display text-2xl font-bold text-foreground">
                   {d.contactsHeading}
                 </h2>
-                <div className="flex flex-col gap-[18px]">
+                <div className="flex flex-col gap-4 md:gap-6">
                   <ContactRow icon={Phone} label={d.contactPhoneLabel}>
                     <a
                       href={`tel:${phone.replace(/\s+/g, "")}`}

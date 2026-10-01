@@ -341,6 +341,12 @@
      `--container-*` is Tailwind's max-width namespace → `max-w-page`. Use it
      through `PAGE_CONTAINER` (shared/config/layout.ts), not on its own. */
   --container-page: 1320px;
+  /* Height cap of a sticky filter aside (TASK-414, TASK-517): the viewport
+     minus the 6rem sticky offset (`top-24`, STICKY_ASIDE_TOP) and a 1rem
+     breathing gap, so a tall aside scrolls inside itself instead of running
+     off a short screen. `--max-height-*` is Tailwind's max-height namespace →
+     `max-h-sticky-aside`. Pair with `overflow-y-auto overscroll-contain`. */
+  --max-height-sticky-aside: calc(100dvh - 7rem);
 
   /* Fonts */
   --font-sans: var(--font-geist-sans);

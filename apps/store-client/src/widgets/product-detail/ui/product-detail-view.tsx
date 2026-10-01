@@ -182,7 +182,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
         </div>
 
         {/* Info column — under the gallery at `md`, beside it at `lg`. */}
-        <div className="flex min-w-0 flex-col gap-[18px] md:col-start-1 md:row-start-2 lg:col-start-2 lg:row-start-1">
+        <div className="flex min-w-0 flex-col gap-4 md:gap-6 md:col-start-1 md:row-start-2 lg:col-start-2 lg:row-start-1">
           <div className="flex flex-col gap-1.5">
             {product.brand && (
               <Link

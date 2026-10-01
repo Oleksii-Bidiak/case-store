@@ -185,11 +185,9 @@ export function ProductList({
           // `ProductListSkeleton` — the skeleton must lay out in exactly the
           // same columns as the cards that replace it, or the page reflows on
           // every load. `items-stretch` is explicit: sibling cards in a row
-          // share one height whatever their title/badge count. The 18px gap is
-          // pre-existing debt (grandfathered in eslint-suppressions.json) and
-          // is left untouched here so the whole storefront can move to the 4px
-          // scale in one pass — see BACKLOG.
-          <div className="grid grid-cols-1 items-stretch gap-[18px] min-[390px]:grid-cols-2 lg:grid-cols-4">
+          // share one height whatever their title/badge count. The gap is the
+          // design-system card rhythm, `gap-4 md:gap-6` (TASK-500).
+          <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
             {products.map((product, index) => (
               <ProductCard
                 key={product.id}

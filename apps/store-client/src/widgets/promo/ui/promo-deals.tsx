@@ -131,7 +131,7 @@ export function PromoDeals() {
 
       {isPending ? (
         // eslint-disable-next-line tailwindcss/no-arbitrary-value -- auto-fill fluid card grid has no named grid-cols-N equivalent
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-[18px]">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-4 md:gap-6">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-[430px] w-full rounded-2xl" />
           ))}
@@ -145,7 +145,7 @@ export function PromoDeals() {
       ) : (
         <>
           {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- auto-fill fluid card grid has no named grid-cols-N equivalent */}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-[18px]">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(232px,1fr))] gap-4 md:gap-6">
             {deals.map((product, index) => (
               <ProductCard
                 key={product.id}

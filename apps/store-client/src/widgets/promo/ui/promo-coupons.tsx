@@ -56,13 +56,13 @@ export function PromoCoupons() {
           {coupons.map((coupon) => (
             <div
               key={coupon.code}
-              className="relative flex items-center gap-[18px] overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card"
+              className="relative flex items-center gap-4 md:gap-6 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card"
             >
               {/* Ticket notches. */}
               <span className="absolute top-1/2 -left-[9px] size-[18px] -translate-y-1/2 rounded-full bg-background" />
               <span className="absolute top-1/2 -right-[9px] size-[18px] -translate-y-1/2 rounded-full bg-background" />
 
-              <div className="shrink-0 border-r-2 border-dashed border-border pr-[18px] text-center">
+              <div className="shrink-0 border-r-2 border-dashed border-border pr-4 md:pr-6 text-center">
                 <span className="block font-display text-3xl leading-none font-bold text-sale">
                   {coupon.amount}
                 </span>
