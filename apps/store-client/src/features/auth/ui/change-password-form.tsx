@@ -11,6 +11,8 @@ import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
 import { customerPasswordSchema } from "@/shared/lib/password-policy";
+import { Button } from "@/shared/ui";
+import { AuthField } from "./auth-field";
 
 const changePasswordSchema = z
   .object({
@@ -37,9 +39,6 @@ const changePasswordSchema = z
   });
 
 type ChangePasswordValues = z.infer<typeof changePasswordSchema>;
-
-const fieldClass =
-  "rounded-lg border border-border bg-background px-3 py-2 text-foreground transition-colors hover:border-muted-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * ChangePasswordForm — change your own password from `/account` (TASK-333).
@@ -115,92 +114,33 @@ export function ChangePasswordForm({ onCancel }: { onCancel?: () => void }) {
       className="mt-4 flex max-w-md flex-col gap-4"
       noValidate
     >
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="change-password-current"
-          className="text-sm font-medium text-foreground"
-        >
-          {d.currentPassword}
-        </label>
-        <input
-          id="change-password-current"
-          type="password"
-          autoComplete="current-password"
-          className={fieldClass}
-          aria-invalid={errors.currentPassword ? true : undefined}
-          aria-describedby={
-            errors.currentPassword ? "change-password-current-error" : undefined
-          }
-          {...register("currentPassword")}
-        />
-        {errors.currentPassword && (
-          <p
-            id="change-password-current-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.currentPassword.message}
-          </p>
-        )}
-      </div>
+      <AuthField
+        id="change-password-current"
+        label={d.currentPassword}
+        type="password"
+        autoComplete="current-password"
+        error={errors.currentPassword?.message}
+        {...register("currentPassword")}
+      />
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="change-password-new"
-          className="text-sm font-medium text-foreground"
-        >
-          {d.newPassword}
-        </label>
-        <input
-          id="change-password-new"
-          type="password"
-          autoComplete="new-password"
-          className={fieldClass}
-          aria-invalid={errors.newPassword ? true : undefined}
-          aria-describedby={
-            errors.newPassword ? "change-password-new-error" : undefined
-          }
-          {...register("newPassword")}
-        />
-        {errors.newPassword && (
-          <p
-            id="change-password-new-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.newPassword.message}
-          </p>
-        )}
-      </div>
+      <AuthField
+        id="change-password-new"
+        label={d.newPassword}
+        type="password"
+        autoComplete="new-password"
+        error={errors.newPassword?.message}
+        hint={dict.auth.register.passwordHint}
+        {...register("newPassword")}
+      />
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="change-password-confirm"
-          className="text-sm font-medium text-foreground"
-        >
-          {d.confirmPassword}
-        </label>
-        <input
-          id="change-password-confirm"
-          type="password"
-          autoComplete="new-password"
-          className={fieldClass}
-          aria-invalid={errors.confirmPassword ? true : undefined}
-          aria-describedby={
-            errors.confirmPassword ? "change-password-confirm-error" : undefined
-          }
-          {...register("confirmPassword")}
-        />
-        {errors.confirmPassword && (
-          <p
-            id="change-password-confirm-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.confirmPassword.message}
-          </p>
-        )}
-      </div>
+      <AuthField
+        id="change-password-confirm"
+        label={d.confirmPassword}
+        type="password"
+        autoComplete="new-password"
+        error={errors.confirmPassword?.message}
+        {...register("confirmPassword")}
+      />
 
       {/* Not an error — a consequence the user must know about before they
           commit. Styled as a notice, and announced politely so screen-reader
@@ -219,23 +159,26 @@ export function ChangePasswordForm({ onCancel }: { onCancel?: () => void }) {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <button
+        {/* Same primitives as the auth pages (TASK-871); not full-width here —
+            the form sits inside an /account section, beside a cancel action. */}
+        <Button
           type="submit"
           disabled={changePassword.isPending}
-          className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-99 disabled:cursor-not-allowed disabled:opacity-50"
+          className="h-11 rounded-cta px-6 text-base font-semibold"
         >
           {changePassword.isPending ? d.submitting : d.submit}
-        </button>
+        </Button>
 
         {onCancel && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={onCancel}
             disabled={changePassword.isPending}
-            className="rounded-lg px-4 py-2.5 font-medium text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="h-11 rounded-cta px-4 text-base text-muted-foreground hover:text-foreground"
           >
             {d.cancel}
-          </button>
+          </Button>
         )}
       </div>
     </form>

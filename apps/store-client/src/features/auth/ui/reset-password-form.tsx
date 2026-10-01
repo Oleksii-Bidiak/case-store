@@ -10,6 +10,9 @@ import { dict } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
 import { customerPasswordSchema } from "@/shared/lib/password-policy";
+import { Button } from "@/shared/ui";
+import { PASSWORD_RESET_DONE_PARAM } from "../lib/password-reset-done";
+import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
 
 const resetSchema = z
   .object({
@@ -25,8 +28,8 @@ const resetSchema = z
 
 type ResetValues = z.infer<typeof resetSchema>;
 
-const fieldClass =
-  "rounded-lg border border-border bg-background px-3 py-2 text-foreground transition-colors hover:border-muted-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+/** Where a successful reset lands: the login page, told to say so (TASK-871). */
+const LOGIN_AFTER_RESET = `/login?${PASSWORD_RESET_DONE_PARAM}=1`;
 
 /**
  * ResetPasswordForm — set a new password from an emailed single-use link.
@@ -35,6 +38,8 @@ const fieldClass =
  * rendered (an error state is shown instead) so an empty token is never
  * submitted. On success the user is sent to /login to re-authenticate — the
  * backend has just revoked every existing session, so we never auto-login here.
+ * The login page reads the flag on that URL and confirms the change; it used to
+ * land there with no word that anything had happened.
  */
 export function ResetPasswordForm() {
   const router = useRouter();
@@ -49,18 +54,24 @@ export function ResetPasswordForm() {
     formState: { errors },
   } = useForm<ResetValues>({ resolver: zodResolver(resetSchema) });
 
+  const d = dict.auth.resetPassword;
+
+  const backToLogin = (
+    <p className="text-center text-sm text-muted-foreground">
+      <Link href="/login" className={AUTH_LINK_CLASS}>
+        {d.backToLogin}
+      </Link>
+    </p>
+  );
+
   // No token → the link is incomplete. Show an error state, never submit.
   if (!token) {
     return (
       <div className="flex flex-col gap-4">
         <p role="alert" className="text-sm text-destructive">
-          {dict.auth.resetPassword.errorMissingToken}
+          {d.errorMissingToken}
         </p>
-        <p className="text-center text-sm text-muted-foreground">
-          <Link href="/login" className="text-primary hover:underline">
-            {dict.auth.resetPassword.backToLogin}
-          </Link>
-        </p>
+        {backToLogin}
       </div>
     );
   }
@@ -69,18 +80,18 @@ export function ResetPasswordForm() {
     confirmReset.mutate(
       { data: { token, newPassword: values.newPassword } },
       {
-        onSuccess: () => router.push("/login"),
+        onSuccess: () => router.push(LOGIN_AFTER_RESET),
       },
     );
   };
 
   const status = confirmReset.error?.response?.status;
-  const errorMessage =
-    status === 401
-      ? dict.auth.resetPassword.errorInvalidToken
-      : confirmReset.isError
-        ? dict.common.genericError
-        : null;
+  const tokenRejected = status === 401;
+  const errorMessage = tokenRejected
+    ? d.errorInvalidToken
+    : confirmReset.isError
+      ? dict.common.genericError
+      : null;
 
   return (
     <form
@@ -88,89 +99,53 @@ export function ResetPasswordForm() {
       className="flex flex-col gap-4"
       noValidate
     >
-      <p className="text-sm text-muted-foreground">
-        {dict.auth.resetPassword.description}
-      </p>
+      <p className="text-sm text-muted-foreground">{d.description}</p>
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="reset-password"
-          className="text-sm font-medium text-foreground"
-        >
-          {dict.auth.resetPassword.newPassword}
-        </label>
-        <input
-          id="reset-password"
-          type="password"
-          autoComplete="new-password"
-          className={fieldClass}
-          aria-invalid={errors.newPassword ? true : undefined}
-          aria-describedby={
-            errors.newPassword ? "reset-password-error" : undefined
-          }
-          {...register("newPassword")}
-        />
-        {errors.newPassword && (
-          <p
-            id="reset-password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.newPassword.message}
-          </p>
-        )}
-      </div>
+      <AuthField
+        id="reset-password"
+        label={d.newPassword}
+        type="password"
+        autoComplete="new-password"
+        error={errors.newPassword?.message}
+        hint={dict.auth.register.passwordHint}
+        {...register("newPassword")}
+      />
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="reset-password-confirm"
-          className="text-sm font-medium text-foreground"
-        >
-          {dict.auth.resetPassword.confirmPassword}
-        </label>
-        <input
-          id="reset-password-confirm"
-          type="password"
-          autoComplete="new-password"
-          className={fieldClass}
-          aria-invalid={errors.confirmPassword ? true : undefined}
-          aria-describedby={
-            errors.confirmPassword ? "reset-password-confirm-error" : undefined
-          }
-          {...register("confirmPassword")}
-        />
-        {errors.confirmPassword && (
-          <p
-            id="reset-password-confirm-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.confirmPassword.message}
-          </p>
-        )}
-      </div>
+      <AuthField
+        id="reset-password-confirm"
+        label={d.confirmPassword}
+        type="password"
+        autoComplete="new-password"
+        error={errors.confirmPassword?.message}
+        {...register("confirmPassword")}
+      />
 
       {errorMessage && (
-        <p role="alert" className="text-sm text-destructive">
-          {errorMessage}
-        </p>
+        <div className="flex flex-col gap-1">
+          <p role="alert" className="text-sm text-destructive">
+            {errorMessage}
+          </p>
+          {/* A rejected link cannot be retried — the way forward is a new one. */}
+          {tokenRejected && (
+            <Link
+              href="/forgot-password"
+              className={`self-start text-sm ${AUTH_LINK_CLASS}`}
+            >
+              {d.requestNewLink}
+            </Link>
+          )}
+        </div>
       )}
 
-      <button
+      <Button
         type="submit"
         disabled={confirmReset.isPending}
-        className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        className={AUTH_SUBMIT_CLASS}
       >
-        {confirmReset.isPending
-          ? dict.auth.resetPassword.submitting
-          : dict.auth.resetPassword.submit}
-      </button>
+        {confirmReset.isPending ? d.submitting : d.submit}
+      </Button>
 
-      <p className="text-center text-sm text-muted-foreground">
-        <Link href="/login" className="text-primary hover:underline">
-          {dict.auth.resetPassword.backToLogin}
-        </Link>
-      </p>
+      {backToLogin}
     </form>
   );
 }

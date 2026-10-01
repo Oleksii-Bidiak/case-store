@@ -3,8 +3,10 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { useAuthControllerConfirmEmailVerification } from "@/entities/session";
 import { dict } from "@/shared/config";
+import { AUTH_LINK_CLASS } from "./auth-field";
 
 /**
  * VerifyEmailConfirm — the landing page for the link in the verification email
@@ -75,10 +77,7 @@ export function VerifyEmailConfirm() {
         </h2>
         <p className="text-sm text-muted-foreground">{d.successBody}</p>
         <p>
-          <Link
-            href={accountHref}
-            className="font-medium text-primary hover:underline"
-          >
+          <Link href={accountHref} className={`font-medium ${AUTH_LINK_CLASS}`}>
             {d.toAccount}
           </Link>
         </p>
@@ -97,10 +96,7 @@ export function VerifyEmailConfirm() {
         </p>
         <p className="text-sm text-muted-foreground">{d.errorNextStep}</p>
         <p>
-          <Link
-            href="/account"
-            className="font-medium text-primary hover:underline"
-          >
+          <Link href="/account" className={`font-medium ${AUTH_LINK_CLASS}`}>
             {d.toAccount}
           </Link>
         </p>
@@ -108,9 +104,21 @@ export function VerifyEmailConfirm() {
     );
   }
 
+  // Waiting on the API (TASK-871): a spinner next to the text, so a slow
+  // network does not read as a frozen page. The live region is the text; the
+  // icon is decorative and stops spinning under prefers-reduced-motion.
   return (
-    <p role="status" className="text-sm text-muted-foreground">
-      {d.checking}
+    <p
+      role="status"
+      aria-busy="true"
+      className="flex items-center gap-2 text-sm text-muted-foreground"
+    >
+      <Loader2
+        aria-hidden="true"
+        data-testid="verify-email-spinner"
+        className="size-4 shrink-0 text-primary motion-safe:animate-spin"
+      />
+      <span>{d.checking}</span>
     </p>
   );
 }
@@ -118,7 +126,7 @@ export function VerifyEmailConfirm() {
 function BackLink() {
   return (
     <p className="text-center text-sm text-muted-foreground">
-      <Link href="/login" className="text-primary hover:underline">
+      <Link href="/login" className={AUTH_LINK_CLASS}>
         {dict.auth.resetPassword.backToLogin}
       </Link>
     </p>

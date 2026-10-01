@@ -7,15 +7,15 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuthControllerRequestPasswordReset } from "@/entities/session";
 import { dict } from "@/shared/config";
+import { apiErrorStatus } from "@/shared/lib";
+import { Button } from "@/shared/ui";
+import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
 
 const forgotSchema = z.object({
   email: z.string().email(dict.auth.forgotPassword.validationEmail),
 });
 
 type ForgotValues = z.infer<typeof forgotSchema>;
-
-const fieldClass =
-  "rounded-lg border border-border bg-background px-3 py-2 text-foreground transition-colors hover:border-muted-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 interface ForgotPasswordFormProps {
   /** Slide-out mode: switch back to the login view instead of linking to /login. */
@@ -29,6 +29,11 @@ interface ForgotPasswordFormProps {
  * registered and an unknown email (existence-hiding). This form must never
  * undermine that — on ANY success it shows one fixed "check your email" state
  * and never branches on the response content or a 404.
+ *
+ * Failures are a different matter (TASK-871): they used to vanish, leaving a
+ * button that did nothing. A 429 is the IP throttle and anything else is the
+ * network or the API — neither depends on the address, so naming them leaks
+ * nothing about any account.
  */
 export function ForgotPasswordForm({
   onSwitchToLogin,
@@ -52,17 +57,21 @@ export function ForgotPasswordForm({
     );
   };
 
+  const d = dict.auth.forgotPassword;
+
+  const errorMessage = requestReset.isError
+    ? apiErrorStatus(requestReset.error) === 429
+      ? d.errorTooMany
+      : d.errorNetwork
+    : null;
+
   const backToLogin = onSwitchToLogin ? (
-    <button
-      type="button"
-      onClick={onSwitchToLogin}
-      className="font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-    >
-      {dict.auth.forgotPassword.backToLogin}
+    <button type="button" onClick={onSwitchToLogin} className={AUTH_LINK_CLASS}>
+      {d.backToLogin}
     </button>
   ) : (
-    <Link href="/login" className="text-primary hover:underline">
-      {dict.auth.forgotPassword.backToLogin}
+    <Link href="/login" className={AUTH_LINK_CLASS}>
+      {d.backToLogin}
     </Link>
   );
 
@@ -70,7 +79,7 @@ export function ForgotPasswordForm({
     return (
       <div className="flex flex-col gap-4">
         <p role="status" className="text-sm text-foreground">
-          {dict.auth.forgotPassword.success}
+          {d.success}
         </p>
         <p className="text-center text-sm text-muted-foreground">
           {backToLogin}
@@ -85,46 +94,30 @@ export function ForgotPasswordForm({
       className="flex flex-col gap-4"
       noValidate
     >
-      <p className="text-sm text-muted-foreground">
-        {dict.auth.forgotPassword.description}
-      </p>
+      <p className="text-sm text-muted-foreground">{d.description}</p>
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="forgot-email"
-          className="text-sm font-medium text-foreground"
-        >
-          {dict.auth.forgotPassword.email}
-        </label>
-        <input
-          id="forgot-email"
-          type="email"
-          autoComplete="email"
-          className={fieldClass}
-          aria-invalid={errors.email ? true : undefined}
-          aria-describedby={errors.email ? "forgot-email-error" : undefined}
-          {...register("email")}
-        />
-        {errors.email && (
-          <p
-            id="forgot-email-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.email.message}
-          </p>
-        )}
-      </div>
+      <AuthField
+        id="forgot-email"
+        label={d.email}
+        type="email"
+        autoComplete="email"
+        error={errors.email?.message}
+        {...register("email")}
+      />
 
-      <button
+      {errorMessage && (
+        <p role="alert" className="text-sm text-destructive">
+          {errorMessage}
+        </p>
+      )}
+
+      <Button
         type="submit"
         disabled={requestReset.isPending}
-        className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        className={AUTH_SUBMIT_CLASS}
       >
-        {requestReset.isPending
-          ? dict.auth.forgotPassword.submitting
-          : dict.auth.forgotPassword.submit}
-      </button>
+        {requestReset.isPending ? d.submitting : d.submit}
+      </Button>
 
       <p className="text-center text-sm text-muted-foreground">{backToLogin}</p>
     </form>

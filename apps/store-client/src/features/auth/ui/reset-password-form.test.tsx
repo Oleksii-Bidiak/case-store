@@ -95,7 +95,7 @@ describe("ResetPasswordForm", () => {
     expect(mockPush).not.toHaveBeenCalled();
   });
 
-  it("submits { token, newPassword } and redirects to /login on success", async () => {
+  it("submits { token, newPassword } and redirects to /login with the done flag", async () => {
     let sentBody: unknown = null;
     server.use(
       http.post("*/api/auth/password-reset/confirm", async ({ request }) => {
@@ -119,7 +119,10 @@ describe("ResetPasswordForm", () => {
       screen.getByRole("button", { name: dict.auth.resetPassword.submit }),
     );
 
-    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/login"));
+    // TASK-871: the flag is what makes /login confirm the change.
+    await waitFor(() =>
+      expect(mockPush).toHaveBeenCalledWith("/login?passwordReset=1"),
+    );
     expect(sentBody).toEqual({
       token: "valid-token-123",
       newPassword: "StrongP@ss123",
@@ -150,5 +153,58 @@ describe("ResetPasswordForm", () => {
       await screen.findByText(dict.auth.resetPassword.errorInvalidToken),
     ).toBeInTheDocument();
     expect(mockPush).not.toHaveBeenCalled();
+    // A rejected link cannot be retried; the way forward is a fresh one.
+    expect(
+      screen.getByRole("link", {
+        name: dict.auth.resetPassword.requestNewLink,
+      }),
+    ).toHaveAttribute("href", "/forgot-password");
+  });
+
+  it("offers no new-link CTA for a non-token failure", async () => {
+    server.use(
+      http.post("*/api/auth/password-reset/confirm", () =>
+        HttpResponse.json({ statusCode: 500 }, { status: 500 }),
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderWithProviders(<ResetPasswordForm />);
+
+    await user.type(
+      screen.getByLabelText(dict.auth.resetPassword.newPassword),
+      "StrongP@ss123",
+    );
+    await user.type(
+      screen.getByLabelText(dict.auth.resetPassword.confirmPassword),
+      "StrongP@ss123",
+    );
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.resetPassword.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.common.genericError),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", {
+        name: dict.auth.resetPassword.requestNewLink,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("links the field error to its input (a11y)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ResetPasswordForm />);
+
+    await user.click(
+      screen.getByRole("button", { name: dict.auth.resetPassword.submit }),
+    );
+
+    const input = screen.getByLabelText(dict.auth.resetPassword.newPassword);
+    await waitFor(() => expect(input).toHaveAttribute("aria-invalid", "true"));
+    expect(input).toHaveAccessibleDescription(
+      dict.auth.register.validationPassword,
+    );
   });
 });

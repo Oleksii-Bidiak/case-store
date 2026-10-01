@@ -1733,6 +1733,12 @@ export const dict = {
         "Якщо такий email зареєстровано, ми надіслали посилання для скидання пароля. Перевірте вашу пошту.",
       backToLogin: "Повернутися до входу",
       validationEmail: "Введіть дійсну email-адресу",
+      // TASK-871: the request used to fail silently. Neither line depends on
+      // whether the address exists — a 429 is the IP throttle (5 per 60 s) and
+      // anything else is the network or the API, so existence-hiding holds.
+      errorTooMany: "Забагато спроб. Спробуйте ще раз за хвилину.",
+      errorNetwork:
+        "Не вдалося надіслати посилання. Перевірте з'єднання з інтернетом і спробуйте ще раз.",
     },
     resetPassword: {
       heading: "Новий пароль",
@@ -1746,6 +1752,8 @@ export const dict = {
       errorMissingToken:
         "Посилання неповне або пошкоджене. Скористайтеся посиланням з листа ще раз.",
       backToLogin: "Повернутися до входу",
+      // TASK-871: a rejected (401) link cannot be retried — offer a fresh one.
+      requestNewLink: "Надіслати нове посилання",
     },
     // Change password from /account (TASK-333). Distinct from `resetPassword`,
     // which is the emailed-token flow for someone who cannot sign in at all.
@@ -1897,6 +1905,14 @@ export const dict = {
       validationTerms: "Потрібно прийняти умови використання",
       // TASK-749: підпис поля-пастки для ботів (людина його не бачить).
       honeypotLabel: "Не заповнюйте це поле",
+      // TASK-871: the consent names AND links the documents. `consentPrefix`
+      // labels the checkbox; the two links describe it. `terms` above is the
+      // old unlinked sentence (append-only block — left in place, unused).
+      consentPrefix: "Погоджуюсь з",
+      consentOfferLink: "умовами публічної оферти",
+      consentAnd: " та ",
+      consentPrivacyLink: "політикою конфіденційності",
+      consentNewTab: "(відкривається в новій вкладці)",
     },
     logout: {
       signOut: "Вийти",

@@ -10,12 +10,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useAuthControllerRegister } from "@/entities/session";
 import { getGetCartQueryKey } from "@/entities/cart";
 import { getGetWishlistQueryKey } from "@/entities/wishlist";
-import { dict } from "@/shared/config";
+import { dict, LEGAL_OFFER_PATH, LEGAL_PRIVACY_PATH } from "@/shared/config";
 // Direct import (not the barrel) — the shared/lib barrel pulls in the JSON-LD
 // schema builders, which this client form does not need.
 import { customerPasswordSchema } from "@/shared/lib/password-policy";
-import { Honeypot } from "@/shared/ui";
+import { Button, Honeypot } from "@/shared/ui";
 import { sanitizeRedirectTarget } from "../lib/sanitize-redirect-target";
+import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
 
 /**
  * The registration honeypot's field — `RegisterDto.hpCheck` (TASK-749).
@@ -46,9 +47,6 @@ const registerSchema = z
   });
 
 type RegisterValues = z.infer<typeof registerSchema>;
-
-const fieldClass =
-  "rounded-lg border border-border bg-background px-3 py-2 text-foreground transition-colors hover:border-muted-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 interface RegisterFormProps {
   /**
@@ -130,10 +128,12 @@ export function RegisterForm({
     );
   };
 
+  const d = dict.auth.register;
+
   const status = registerUser.error?.response?.status;
   const errorMessage =
     status === 409
-      ? dict.auth.register.errorConflict
+      ? d.errorConflict
       : registerUser.isError
         ? dict.common.genericError
         : null;
@@ -144,163 +144,109 @@ export function RegisterForm({
       className="flex flex-col gap-4"
       noValidate
     >
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="reg-email"
-          className="text-sm font-medium text-foreground"
-        >
-          {dict.auth.register.email}
-        </label>
-        <input
-          id="reg-email"
-          type="email"
-          autoComplete="email"
-          className={fieldClass}
-          aria-invalid={errors.email ? true : undefined}
-          aria-describedby={errors.email ? "reg-email-error" : undefined}
-          {...register("email")}
+      <AuthField
+        id="reg-email"
+        label={d.email}
+        type="email"
+        autoComplete="email"
+        error={errors.email?.message}
+        {...register("email")}
+      />
+
+      {/* One column on phones (TASK-871): two ~150px inputs on a 390 screen
+          clipped longer Ukrainian surnames and their error lines. */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <AuthField
+          id="reg-first"
+          label={d.firstName}
+          type="text"
+          autoComplete="given-name"
+          error={errors.firstName?.message}
+          {...register("firstName")}
         />
-        {errors.email && (
-          <p
-            id="reg-email-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.email.message}
-          </p>
-        )}
+        <AuthField
+          id="reg-last"
+          label={d.lastName}
+          type="text"
+          autoComplete="family-name"
+          error={errors.lastName?.message}
+          {...register("lastName")}
+        />
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <div className="flex flex-col gap-1">
-          <label
-            htmlFor="reg-first"
-            className="text-sm font-medium text-foreground"
-          >
-            {dict.auth.register.firstName}
-          </label>
-          <input
-            id="reg-first"
-            type="text"
-            autoComplete="given-name"
-            className={fieldClass}
-            aria-invalid={errors.firstName ? true : undefined}
-            aria-describedby={errors.firstName ? "reg-first-error" : undefined}
-            {...register("firstName")}
-          />
-          {errors.firstName && (
-            <p
-              id="reg-first-error"
-              role="alert"
-              className="text-sm text-destructive"
-            >
-              {errors.firstName.message}
-            </p>
-          )}
-        </div>
-        <div className="flex flex-col gap-1">
-          <label
-            htmlFor="reg-last"
-            className="text-sm font-medium text-foreground"
-          >
-            {dict.auth.register.lastName}
-          </label>
-          <input
-            id="reg-last"
-            type="text"
-            autoComplete="family-name"
-            className={fieldClass}
-            aria-invalid={errors.lastName ? true : undefined}
-            aria-describedby={errors.lastName ? "reg-last-error" : undefined}
-            {...register("lastName")}
-          />
-          {errors.lastName && (
-            <p
-              id="reg-last-error"
-              role="alert"
-              className="text-sm text-destructive"
-            >
-              {errors.lastName.message}
-            </p>
-          )}
-        </div>
-      </div>
+      <AuthField
+        id="reg-password"
+        label={d.password}
+        type="password"
+        autoComplete="new-password"
+        error={errors.password?.message}
+        hint={d.passwordHint}
+        {...register("password")}
+      />
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="reg-password"
-          className="text-sm font-medium text-foreground"
-        >
-          {dict.auth.register.password}
-        </label>
-        <input
-          id="reg-password"
-          type="password"
-          autoComplete="new-password"
-          className={fieldClass}
-          aria-invalid={errors.password ? true : undefined}
-          aria-describedby={errors.password ? "reg-password-error" : undefined}
-          {...register("password")}
-        />
-        {errors.password && (
-          <p
-            id="reg-password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.password.message}
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="reg-password-confirm"
-          className="text-sm font-medium text-foreground"
-        >
-          {dict.auth.register.confirmPassword}
-        </label>
-        <input
-          id="reg-password-confirm"
-          type="password"
-          autoComplete="new-password"
-          className={fieldClass}
-          aria-invalid={errors.passwordConfirm ? true : undefined}
-          aria-describedby={
-            errors.passwordConfirm ? "reg-password-confirm-error" : undefined
-          }
-          {...register("passwordConfirm")}
-        />
-        {errors.passwordConfirm && (
-          <p
-            id="reg-password-confirm-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.passwordConfirm.message}
-          </p>
-        )}
-      </div>
+      <AuthField
+        id="reg-password-confirm"
+        label={d.confirmPassword}
+        type="password"
+        autoComplete="new-password"
+        error={errors.passwordConfirm?.message}
+        {...register("passwordConfirm")}
+      />
 
       {/* TASK-749: bot trap. `sr-only` is absolutely positioned, so it takes no
           place in this flex column — nothing on screen moves. */}
       <Honeypot
-        label={dict.auth.register.honeypotLabel}
+        label={d.honeypotLabel}
         {...register(REGISTER_HONEYPOT_FIELD)}
       />
 
+      {/* Consent (TASK-871): the documents are named AND linked, so the person
+          can read what they agree to. The links sit outside the <label> — a
+          link inside a label is a second click target on one control, and a
+          mis-tap on it would tick the box instead of opening the document. They
+          open in a new tab so the half-filled form survives the visit. */}
       <div className="flex flex-col gap-1">
-        <label className="flex cursor-pointer items-start gap-2.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+        <div className="flex items-start gap-2.5 text-sm text-muted-foreground">
           <input
             id="reg-terms"
             type="checkbox"
             className="mt-0.5 size-4 shrink-0 cursor-pointer accent-primary"
             aria-invalid={errors.terms ? true : undefined}
-            aria-describedby={errors.terms ? "reg-terms-error" : undefined}
+            aria-describedby={
+              errors.terms ? "reg-terms-docs reg-terms-error" : "reg-terms-docs"
+            }
             {...register("terms")}
           />
-          <span>{dict.auth.register.terms}</span>
-        </label>
+          <p>
+            <label
+              htmlFor="reg-terms"
+              className="cursor-pointer transition-colors hover:text-foreground"
+            >
+              {d.consentPrefix}
+            </label>{" "}
+            <span id="reg-terms-docs">
+              <Link
+                href={LEGAL_OFFER_PATH}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={AUTH_LINK_CLASS}
+              >
+                {d.consentOfferLink}
+                <span className="sr-only"> {d.consentNewTab}</span>
+              </Link>
+              {d.consentAnd}
+              <Link
+                href={LEGAL_PRIVACY_PATH}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={AUTH_LINK_CLASS}
+              >
+                {d.consentPrivacyLink}
+                <span className="sr-only"> {d.consentNewTab}</span>
+              </Link>
+            </span>
+          </p>
+        </div>
         {errors.terms && (
           <p
             id="reg-terms-error"
@@ -318,29 +264,27 @@ export function RegisterForm({
         </p>
       )}
 
-      <button
+      <Button
         type="submit"
         disabled={registerUser.isPending}
-        className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        className={AUTH_SUBMIT_CLASS}
       >
-        {registerUser.isPending
-          ? dict.auth.register.submitting
-          : dict.auth.register.submit}
-      </button>
+        {registerUser.isPending ? d.submitting : d.submit}
+      </Button>
 
       <p className="text-center text-sm text-muted-foreground">
-        {dict.auth.register.haveAccount}{" "}
+        {d.haveAccount}{" "}
         {onSwitchToLogin ? (
           <button
             type="button"
             onClick={onSwitchToLogin}
-            className="font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={AUTH_LINK_CLASS}
           >
-            {dict.auth.register.signInLink}
+            {d.signInLink}
           </button>
         ) : (
-          <Link href="/login" className="text-primary hover:underline">
-            {dict.auth.register.signInLink}
+          <Link href="/login" className={AUTH_LINK_CLASS}>
+            {d.signInLink}
           </Link>
         )}
       </p>

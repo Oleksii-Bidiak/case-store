@@ -76,3 +76,12 @@ export const UMAMI_ENABLED = Boolean(UMAMI_SRC && UMAMI_WEBSITE_ID);
 // Literal `process.env.X` access on purpose — that is the form Next.js inlines
 // at build time for NEXT_PUBLIC_*, so flipping it means rebuilding the image.
 export const FEATURE_STUBS = process.env.NEXT_PUBLIC_FEATURE_STUBS === "true";
+
+// ─── Legal documents linked from forms (TASK-871) ────────────────────────────
+// The registration consent links the public offer and the privacy policy. Both
+// are owner-editable CMS pages (`/legal/[slug]`); these are the slugs the seed
+// creates (`prisma/seed/data/content/pages.data.ts`). Renaming either page in
+// the admin breaks these links — there is no "role" field on a page to look the
+// document up by (see BACKLOG, plan 197 neighbour rows).
+export const LEGAL_OFFER_PATH = "/legal/offer";
+export const LEGAL_PRIVACY_PATH = "/legal/privacy-policy";

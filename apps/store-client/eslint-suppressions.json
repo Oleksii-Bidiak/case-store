@@ -49,26 +49,6 @@
       "count": 1
     }
   },
-  "src/features/auth/ui/forgot-password-form.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/features/auth/ui/login-form.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/features/auth/ui/register-form.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/features/auth/ui/reset-password-form.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/features/newsletter-subscribe/ui/newsletter-subscribe-form.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1
