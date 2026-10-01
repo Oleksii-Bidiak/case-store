@@ -79,6 +79,12 @@ interface ProductFiltersProps {
    */
   hideOnSale?: boolean;
   /**
+   * «Зі знижкою» is fixed by the route — `/promo` (TASK-1301). The section is
+   * left out (as with `hideOnSale`) AND the reset neither counts nor clears
+   * it: on that page the discount is the listing itself, not a filter.
+   */
+  lockedOnSale?: boolean;
+  /**
    * Leave out the structured-spec facets even when a category is active
    * (TASK-523). `/search` narrows by category — so it passes `categoryId`,
    * which scopes the brand list — but `GET /api/search` has no `?specs=`, and
@@ -107,6 +113,7 @@ export function ProductFilters({
   collapsible = false,
   lockedDevice = false,
   hideOnSale = false,
+  lockedOnSale = false,
   hideSpecFacets = false,
 }: ProductFiltersProps) {
   // Committed price bounds from the URL, clamped into the slider domain.
@@ -190,6 +197,7 @@ export function ProductFilters({
   const panelFilterScope = {
     includeCategory: false,
     includeDevice: !lockedDevice,
+    includeOnSale: !lockedOnSale,
   } as const;
   const hasActiveFilters = computeHasActiveFilters(
     currentParams,
@@ -300,6 +308,7 @@ export function ProductFilters({
           does not take the param (`/search`), so it can never be a control
           that silently does nothing. */}
       {!hideOnSale &&
+        !lockedOnSale &&
         renderSection(
           dict.filters.saleTitle,
           <FilterCheckbox

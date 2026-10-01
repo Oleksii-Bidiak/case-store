@@ -35,6 +35,12 @@ interface ActiveFilterChipsProps {
    * same way it already leaves a locked category's.
    */
   lockedDevice?: boolean;
+  /**
+   * «Зі знижкою» is fixed by the route — `/promo` (TASK-1301). No discount chip
+   * is rendered (its × would be overridden by the lock), and «скинути всі»
+   * leaves it alone, like a locked device.
+   */
+  lockedOnSale?: boolean;
   onFilterChange: (updates: Record<string, string | undefined>) => void;
 }
 
@@ -51,6 +57,7 @@ export function ActiveFilterChips({
   brandName,
   categoryId,
   lockedDevice = false,
+  lockedOnSale = false,
   onFilterChange,
 }: ActiveFilterChipsProps) {
   // The facet list of the active category, for chip labels only (TASK-488).
@@ -142,7 +149,7 @@ export function ActiveFilterChips({
   }
 
   // TASK-742 — «Зі знижкою», the same boolean shape as availability.
-  if (currentParams.onSale === true) {
+  if (currentParams.onSale === true && !lockedOnSale) {
     chips.push({
       key: "onSale",
       label: dict.filters.onSaleChip,
@@ -212,7 +219,12 @@ export function ActiveFilterChips({
         // `/catalog/chohly/iphone-15-pro?device=…`, where a blanket clear would
         // rewrite the query out from under a heading that still says otherwise.
         onClick={() =>
-          onFilterChange(clearFilterUpdates({ includeDevice: !lockedDevice }))
+          onFilterChange(
+            clearFilterUpdates({
+              includeDevice: !lockedDevice,
+              includeOnSale: !lockedOnSale,
+            }),
+          )
         }
         className="text-sm font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >

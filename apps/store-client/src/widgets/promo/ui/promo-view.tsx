@@ -1,18 +1,37 @@
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { dict, H1_CLASS } from "@/shared/config";
+import { dict, H1_CLASS, H2_CLASS } from "@/shared/config";
 import { PromoCountdown } from "./promo-countdown";
 import { PromoCoupons } from "./promo-coupons";
-import { PromoDeals } from "./promo-deals";
 import { PromoNewsletter } from "./promo-newsletter";
 
 /**
- * PromoView — the Акції (promo) page from the Promo.dc.html import: a gradient
- * hero with a live countdown, the weekly coupon tickets, a real on-sale product
- * grid (category-filtered), and a subscribe block. Server component shell; the
- * interactive parts (countdown, copy, deals, subscribe) are client sub-widgets.
+ * Id of the «Товари зі знижкою» section: the hero CTA jumps to it, and the
+ * listing in the `deals` slot points every URL it writes back at it
+ * (`ProductListView` `anchorId`, TASK-1301) so a filter click stays on the deals.
  */
-export function PromoView() {
+export const PROMO_DEALS_ANCHOR = "deals";
+
+interface PromoViewProps {
+  /**
+   * The «Товари зі знижкою» listing (TASK-1301). Since the section became the
+   * catalogue itself — rail, drawer, chips, sort, view toggle, pagination —
+   * the route composes `ProductListView` with its discount lock and hands it in
+   * here: one widget never imports another, and the listing keeps the ONE
+   * params builder the server prefetches with.
+   */
+  deals?: ReactNode;
+}
+
+/**
+ * PromoView — the Акції (promo) page from the Promo.dc.html import: a gradient
+ * hero with a live countdown, the weekly coupon tickets, the on-sale catalogue
+ * (the `deals` slot, under its own heading and the hero CTA's `#deals` anchor)
+ * and a subscribe block. Server component shell; the interactive parts
+ * (countdown, copy, subscribe) are client sub-widgets.
+ */
+export function PromoView({ deals }: PromoViewProps) {
   const d = dict.promo;
 
   return (
@@ -48,7 +67,7 @@ export function PromoView() {
           </p>
           <div className="flex flex-wrap items-center gap-3.5">
             <a
-              href="#deals"
+              href={`#${PROMO_DEALS_ANCHOR}`}
               className="inline-flex h-[52px] items-center gap-2.5 rounded-cta bg-white px-6 text-base font-bold text-sale transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               {d.hero.cta}
@@ -66,7 +85,19 @@ export function PromoView() {
       </div>
 
       <PromoCoupons />
-      <PromoDeals />
+      <section
+        id={PROMO_DEALS_ANCHOR}
+        aria-labelledby="promo-deals-heading"
+        className="mt-10 scroll-mt-24"
+      >
+        <h2
+          id="promo-deals-heading"
+          className={`mb-4 ${H2_CLASS} text-foreground`}
+        >
+          {d.dealsHeading}
+        </h2>
+        {deals}
+      </section>
       <PromoNewsletter />
     </div>
   );

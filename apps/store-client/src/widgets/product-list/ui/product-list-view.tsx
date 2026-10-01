@@ -65,6 +65,23 @@ interface ProductListViewProps {
    * the H1, the `<title>` and the canonical all kept naming the old one.
    */
   lockedDevice?: { slug: string };
+  /**
+   * Fix the listing to discounted positions — `/promo` «Товари зі знижкою»
+   * (TASK-1301). The page reuses the whole catalogue (rail, drawer, chips, sort,
+   * view toggle, load-more + pagination) instead of a grid of its own, with the
+   * discount as a route lock: the «Зі знижкою» section and chip disappear, the
+   * drawer badge does not count it, and «скинути всі» never lifts it.
+   */
+  lockedOnSale?: boolean;
+  /**
+   * Id of the element every URL this listing writes points back at — filters,
+   * sort, view and the page links (TASK-1301). Next scrolls a search-param
+   * navigation to the top of the page; on `/products` that is where the
+   * toolbar is, but on `/promo` the listing sits under the hero and coupons,
+   * and each chip click flung the shopper back up to the hero. With an anchor
+   * the navigation lands on the listing's own section instead.
+   */
+  anchorId?: string;
 }
 
 /**
@@ -77,12 +94,15 @@ interface ProductListViewProps {
 export function ProductListView({
   lockedCategory,
   lockedDevice,
+  lockedOnSale = false,
+  anchorId,
 }: ProductListViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const fragment = anchorId ? `#${anchorId}` : "";
 
   // Derive the active params from the live URL through the SAME builder the
   // server page prefetched the first page with (TASK-563): one set of rules on
@@ -91,6 +111,7 @@ export function ProductListView({
   const params = buildCatalogListingParams((key) => searchParams.get(key), {
     categorySlug: lockedCategory?.slug,
     deviceSlug: lockedDevice?.slug,
+    onSale: lockedOnSale,
   });
 
   const view: CatalogView =
@@ -118,6 +139,7 @@ export function ProductListView({
     // A route-locked device is not a filter the drawer can change (TASK-490),
     // so badging it would promise a control that is not in there.
     includeDevice: !lockedDevice,
+    includeOnSale: !lockedOnSale,
   });
 
   const applyFilters = useCallback(
@@ -131,9 +153,9 @@ export function ProductListView({
         }
       }
       next.set("page", "1"); // reset pagination on any filter/sort change
-      router.replace(`${pathname}?${next.toString()}`);
+      router.replace(`${pathname}?${next.toString()}${fragment}`);
     },
-    [searchParams, pathname, router],
+    [searchParams, pathname, router, fragment],
   );
 
   // View toggle preserves the current page (it does not change the result set).
@@ -145,9 +167,9 @@ export function ProductListView({
       } else {
         next.set("view", nextView);
       }
-      router.replace(`${pathname}?${next.toString()}`);
+      router.replace(`${pathname}?${next.toString()}${fragment}`);
     },
-    [searchParams, pathname, router],
+    [searchParams, pathname, router, fragment],
   );
 
   const clearFilters = useCallback(() => {
@@ -158,17 +180,18 @@ export function ProductListView({
       clearFilterUpdates({
         includeCategory: !lockedCategory,
         includeDevice: !lockedDevice,
+        includeOnSale: !lockedOnSale,
       }),
     );
-  }, [applyFilters, lockedCategory, lockedDevice]);
+  }, [applyFilters, lockedCategory, lockedDevice, lockedOnSale]);
 
   const buildPageHref = useCallback(
     (targetPage: number) => {
       const next = new URLSearchParams(searchParams.toString());
       next.set("page", String(targetPage));
-      return `${pathname}?${next.toString()}`;
+      return `${pathname}?${next.toString()}${fragment}`;
     },
-    [searchParams, pathname],
+    [searchParams, pathname, fragment],
   );
 
   // The public tree carries roots + their children in one payload, so the chips
@@ -258,6 +281,7 @@ export function ProductListView({
         brandName={activeBrandName}
         categoryId={activeCategoryId}
         lockedDevice={Boolean(lockedDevice)}
+        lockedOnSale={lockedOnSale}
         onFilterChange={applyFilters}
       />
 
@@ -273,6 +297,7 @@ export function ProductListView({
             currentParams={params}
             categoryId={activeCategoryId}
             lockedDevice={Boolean(lockedDevice)}
+            lockedOnSale={lockedOnSale}
             onFilterChange={applyFilters}
           />
         </aside>
@@ -302,6 +327,7 @@ export function ProductListView({
           currentParams={params}
           categoryId={activeCategoryId}
           lockedDevice={Boolean(lockedDevice)}
+          lockedOnSale={lockedOnSale}
           onFilterChange={applyFilters}
           collapsible
         />

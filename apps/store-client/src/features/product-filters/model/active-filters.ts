@@ -63,6 +63,14 @@ export interface ActiveFilterOptions {
    * for the second segment.
    */
   includeDevice?: boolean;
+  /**
+   * Count/clear «Зі знижкою» alongside the rest. Defaults to `true`.
+   *
+   * Set `false` on `/promo` (TASK-1301), where the discount is the page itself
+   * — the listing route locks it on. Counting it would badge the drawer with a
+   * filter it does not offer; clearing it would be a no-op the lock overrides.
+   */
+  includeOnSale?: boolean;
 }
 
 /** Is this one filter currently narrowing the list? */
@@ -81,12 +89,17 @@ function isActive(
 /** The filters currently narrowing the list, in `CATALOG_FILTER_KEYS` order. */
 export function activeFilterKeys(
   params: ProductControllerFindAllParams,
-  { includeCategory = true, includeDevice = true }: ActiveFilterOptions = {},
+  {
+    includeCategory = true,
+    includeDevice = true,
+    includeOnSale = true,
+  }: ActiveFilterOptions = {},
 ): CatalogFilterKey[] {
   return CATALOG_FILTER_KEYS.filter(
     (key) =>
       (includeCategory || key !== "category") &&
       (includeDevice || key !== "device") &&
+      (includeOnSale || key !== "onSale") &&
       isActive(params, key),
   );
 }
@@ -115,11 +128,13 @@ export function hasActiveFilters(
 export function clearFilterUpdates({
   includeCategory = true,
   includeDevice = true,
+  includeOnSale = true,
 }: ActiveFilterOptions = {}): Record<string, undefined> {
   const updates: Record<string, undefined> = {};
   for (const key of CATALOG_FILTER_KEYS) {
     if (!includeCategory && key === "category") continue;
     if (!includeDevice && key === "device") continue;
+    if (!includeOnSale && key === "onSale") continue;
     updates[key] = undefined;
   }
   return updates;

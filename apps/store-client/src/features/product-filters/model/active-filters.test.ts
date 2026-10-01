@@ -111,6 +111,20 @@ describe("catalog active-filter helpers", () => {
     expect(countActiveFilters({ page: 1, limit: 20, onSale: false })).toBe(0);
   });
 
+  // TASK-1301 — on `/promo` the discount is the page, not a drawer filter.
+  it("excludes onSale when the route locks it", () => {
+    const params = { page: 1, limit: 20, onSale: true, brand: "apple" };
+
+    expect(countActiveFilters(params)).toBe(2);
+    expect(countActiveFilters(params, { includeOnSale: false })).toBe(1);
+    expect(
+      hasActiveFilters(
+        { page: 1, limit: 20, onSale: true },
+        { includeOnSale: false },
+      ),
+    ).toBe(false);
+  });
+
   describe("clearFilterUpdates", () => {
     it("clears the FULL set, not only what is currently active", () => {
       expect(clearFilterUpdates()).toEqual({
@@ -147,6 +161,13 @@ describe("catalog active-filter helpers", () => {
       expect("category" in updates).toBe(false);
       expect("brand" in updates).toBe(true);
       expect("specs" in updates).toBe(true);
+    });
+
+    it("keeps onSale out of the updates when the route locks it", () => {
+      const updates = clearFilterUpdates({ includeOnSale: false });
+
+      expect("onSale" in updates).toBe(false);
+      expect("inStock" in updates).toBe(true);
     });
 
     // A reset that does not clear everything the panel can set is the exact

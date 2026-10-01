@@ -204,6 +204,105 @@ describe("ProductListView — lockedCategory (/categories/[slug], TASK-277)", ()
 });
 
 /**
+ * TASK-1301 — `/promo` «Товари зі знижкою» is this listing with the discount
+ * as a route lock: the full catalogue toolbar, minus the «Зі знижкою» control.
+ */
+describe("ProductListView — lockedOnSale (/promo, TASK-1301)", () => {
+  it("queries on-sale positions only, whatever the URL says", async () => {
+    const productRequests = installCatalogHandlers();
+    currentPathname = "/promo";
+    currentQuery = "onSale=false&category=cases";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+
+    await screen.findByText("Alpha Case");
+    const lastRequest = productRequests.at(-1)!;
+    expect(lastRequest.searchParams.get("onSale")).toBe("true");
+    expect(lastRequest.searchParams.get("category")).toBe("cases");
+  });
+
+  it("keeps the catalogue chips row, but neither the discount control nor its chip", async () => {
+    installCatalogHandlers();
+    currentPathname = "/promo";
+    currentQuery = "inStock=true";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+    await screen.findByText("Alpha Case");
+
+    expect(
+      await screen.findByRole("group", {
+        name: dict.filters.categoryChipsAria,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("checkbox", { name: dict.filters.onSaleOnly }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: new RegExp(`^${dict.filters.onSaleChip}`),
+      }),
+    ).not.toBeInTheDocument();
+    // The availability chip stays: only the locked axis disappears.
+    expect(
+      screen.getByRole("button", {
+        name: new RegExp(`^${dict.filters.inStockChip}`),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("badges the filters button without the locked discount", async () => {
+    installCatalogHandlers();
+    currentPathname = "/promo";
+    currentQuery = "brand=apple";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+    await screen.findByText("Alpha Case");
+
+    const button = screen.getByRole("button", {
+      name: new RegExp(dict.filters.filtersButton),
+    });
+    expect(within(button).getByText("1")).toBeInTheDocument();
+  });
+
+  it("stays on /promo and keeps the lock when every filter is reset", async () => {
+    const user = userEvent.setup();
+    const productRequests = installCatalogHandlers({ empty: true });
+    currentPathname = "/promo";
+    currentQuery = "minPrice=9999";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+
+    await user.click(
+      await screen.findByRole("button", { name: dict.catalog.clearAllFilters }),
+    );
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    const [path, query] = target.split("?");
+    expect(path).toBe("/promo");
+    expect(new URLSearchParams(query).has("minPrice")).toBe(false);
+    expect(productRequests.at(-1)?.searchParams.get("onSale")).toBe("true");
+  });
+
+  // Next scrolls a search-param navigation to the page top — on /promo that is
+  // the hero, two screens above the listing. The anchor keeps it on the deals.
+  it("points filter changes and page links back at its anchor", async () => {
+    const user = userEvent.setup();
+    installCatalogHandlers({ empty: true });
+    currentPathname = "/promo";
+    currentQuery = "minPrice=9999";
+
+    renderWithProviders(<ProductListView lockedOnSale anchorId="deals" />);
+
+    await user.click(
+      await screen.findByRole("button", { name: dict.catalog.clearAllFilters }),
+    );
+
+    const target = mockReplace.mock.calls.at(-1)![0] as string;
+    expect(target).toMatch(/^\/promo\?[^#]*#deals$/);
+  });
+});
+
+/**
  * TASK-414 — the catalogue filters: one reset set, the availability param, and
  * the per-category brand query.
  */

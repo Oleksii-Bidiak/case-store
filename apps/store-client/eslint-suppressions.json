@@ -449,11 +449,6 @@
       "count": 11
     }
   },
-  "src/widgets/promo/ui/promo-deals.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 3
-    }
-  },
   "src/widgets/promo/ui/promo-newsletter.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 3

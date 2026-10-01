@@ -1,8 +1,13 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
-import { buildPromoDealsParams, PromoView } from "@/widgets/promo";
-import { ACTIVE_ROOT_CATEGORIES_PARAMS } from "@/entities/category";
-import { getCategoryControllerGetRootCategoriesQueryOptions } from "@/shared/api/generated/categories/categories";
+import { PROMO_DEALS_ANCHOR, PromoView } from "@/widgets/promo";
+import {
+  ProductListSkeleton,
+  ProductListView,
+  buildCatalogListingParams,
+  readSearchParamsRecord,
+} from "@/widgets/product-list";
 import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
 import {
   createServerQueryClient,
@@ -15,55 +20,96 @@ import {
   buildBreadcrumbSchema,
   buildProductItemListSchema,
 } from "@/shared/lib/schema";
+import {
+  buildListingMetadata,
+  type ListingFilterParams,
+} from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
+type PromoSearchParams = Promise<{
+  [key: string]: string | string[] | undefined;
+}>;
+
+/** Take the first value when a query param appears more than once. */
+function first(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 /**
- * Time floor for the prerendered page (TASK-563). The deals grid is baked into
- * this page's HTML from an axios read, which Next's Data Cache cannot tag, so
- * on-demand revalidation reaches it only through the catalogue target's
- * `paths` (store-api `revalidate-targets.ts`) — i.e. on a product or category
- * write. A build that ran while the API was unreachable would otherwise ship a
- * page without products until the next such write; an hour bounds that. The
- * shopper is unaffected either way: a baked copy older than the client's
- * `staleTime` is refetched on mount.
+ * The discount lock of the «Товари зі знижкою» listing (TASK-1301). One
+ * constant for the server prefetch and the client view, so both build the same
+ * params — and therefore the same React Query key (TASK-563).
  */
-export const revalidate = 3600;
+const PROMO_LISTING_LOCKS = { onSale: true } as const;
 
 // TASK-435 — admin-managed via the `promo` HUB page row; dictionary fallback.
-export function generateMetadata(): Promise<Metadata> {
+// Since TASK-1301 the deals are a filterable listing, so the same canonical /
+// noindex policy as `/products` applies (plan 143): a clean view — `?page=N`
+// included — is canonical, any filter is noindex. `onSale` is the page itself
+// here, not a filter, so it is not passed.
+export async function generateMetadata({
+  searchParams,
+}: {
+  searchParams: PromoSearchParams;
+}): Promise<Metadata> {
+  const resolved = await searchParams;
+  const filters: ListingFilterParams = {
+    search: first(resolved.search)?.trim() || undefined,
+    minPrice: first(resolved.minPrice),
+    maxPrice: first(resolved.maxPrice),
+    specs: first(resolved.specs),
+    brand: first(resolved.brand),
+    device: first(resolved.device),
+    inStock: first(resolved.inStock),
+  };
+  const listingMeta = buildListingMetadata({
+    basePath: "/promo",
+    page: Number(first(resolved.page)),
+    filters,
+  });
+
   return buildHubMetadata({
     slug: "promo",
-    canonical: `${SITE_URL}/promo`,
+    canonical: `${SITE_URL}${listingMeta.canonicalPath ?? "/promo"}`,
     fallbackTitle: dict.meta.promoTitle,
     fallbackDescription: dict.meta.promoDescription,
+    robots: listingMeta.robots,
   });
 }
 
 /**
- * `/promo` — the Акції (promotions) landing page. Static shell + client widgets;
- * the deals grid reads real on-sale products. Its first page and the category
- * tabs are prefetched on the server (TASK-563), so the prerendered HTML already
- * links to the discounted products instead of showing a skeleton.
+ * `/promo` — the Акції (promotions) landing page: hero, coupons, the on-sale
+ * catalogue and the subscribe block.
+ *
+ * The deals are the catalogue listing with a discount lock (TASK-1301): the
+ * page reads the URL through `buildCatalogListingParams`, the builder the
+ * client view uses, and prefetches that first page on the server (TASK-563) so
+ * the first HTML carries the discounted products' links and the ItemList names
+ * exactly those cards. Reading `searchParams` makes the route dynamic — the same
+ * trade `/products` makes, since a filter or `?page=` is part of what it shows.
  */
-export default async function PromoPage() {
-  const queryClient = createServerQueryClient();
-  const dealsQuery = getProductControllerFindAllQueryOptions(
-    buildPromoDealsParams(null),
-    { request: serverRequestOptions() },
+export default async function PromoPage({
+  searchParams,
+}: {
+  searchParams: PromoSearchParams;
+}) {
+  const resolved = await searchParams;
+  const listingParams = buildCatalogListingParams(
+    readSearchParamsRecord(resolved),
+    PROMO_LISTING_LOCKS,
   );
-  await prefetchQueries(queryClient, [
-    dealsQuery,
-    getCategoryControllerGetRootCategoriesQueryOptions(
-      ACTIVE_ROOT_CATEGORIES_PARAMS,
-      { request: serverRequestOptions() },
-    ),
-  ]);
+
+  const queryClient = createServerQueryClient();
+  const listingQuery = getProductControllerFindAllQueryOptions(listingParams, {
+    request: serverRequestOptions(),
+  });
+  await prefetchQueries(queryClient, [listingQuery]);
 
   // ItemList from the grid's own fetch (TASK-556 tail): the structured data
   // names exactly the deals the page shows.
   const itemList = buildProductItemListSchema(
-    queryClient.getQueryData(dealsQuery.queryKey)?.data,
+    queryClient.getQueryData(listingQuery.queryKey)?.data,
     SITE_URL,
   );
 
@@ -77,7 +123,18 @@ export default async function PromoPage() {
       />
       {itemList && <JsonLd schema={itemList} />}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
-        <PromoView />
+        <PromoView
+          deals={
+            // The fallback stands in for the whole listing — chips row,
+            // toolbar and the filter rail — like on /products (TASK-416).
+            <Suspense fallback={<ProductListSkeleton withSidebar />}>
+              <ProductListView
+                lockedOnSale={PROMO_LISTING_LOCKS.onSale}
+                anchorId={PROMO_DEALS_ANCHOR}
+              />
+            </Suspense>
+          }
+        />
       </PrefetchBoundary>
     </div>
   );
