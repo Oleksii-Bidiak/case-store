@@ -205,6 +205,12 @@ funnel: cart, checkout, order confirmation, `/orders`, `/orders/status` and the 
 view all use `rounded-card`. New code picks the role from this table and does not invent a
 new radius: no `rounded-[..px]`.
 
+Tailwind v4 emits the radius utilities in alphabetical order (`card`, `cta` come before `lg`,
+`md`, `xl`), so when a role radius and a scale radius land on one element the scale one wins.
+Override a component's default radius through `cn` (`shared/lib/utils.ts`), which registers
+`card` / `cta` / `menu` with tailwind-merge and drops the default. Never join class strings by
+hand when a radius can come from both sides.
+
 | Shadow            | Use                                                           |
 | ----------------- | ------------------------------------------------------------- |
 | `shadow-card`     | Resting product/info cards                                    |
