@@ -290,7 +290,7 @@ export default async function ProductsPage({
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-[13.5px] text-muted-foreground"
+        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
       >
         {trail.map((crumb, i) => {
           const isLast = i === trail.length - 1;

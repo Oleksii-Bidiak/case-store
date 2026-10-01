@@ -113,13 +113,10 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                   </span>
 
                   <span className="min-w-0 flex-1">
-                    <b className="block text-[14.5px] text-foreground">
+                    <b className="block text-sm text-foreground">
                       {option.title}
                     </b>
-                    <span
-                      id={noteId}
-                      className="text-[12.5px] text-muted-foreground"
-                    >
+                    <span id={noteId} className="text-xs text-muted-foreground">
                       {option.blockedBy === "account-required"
                         ? dict.checkout.payment.accountRequired
                         : option.note}
@@ -129,7 +126,7 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                   {option.blockedBy === "account-required" && (
                     <Link
                       href="/login?redirect=/checkout"
-                      className="shrink-0 rounded text-[12.5px] font-medium text-primary underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      className="shrink-0 rounded text-xs font-medium text-primary underline underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       {dict.checkout.payment.signIn}
                     </Link>
@@ -141,7 +138,7 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
         )}
       />
 
-      <p className="mt-3.5 flex items-start gap-2 text-[12.5px] text-muted-foreground">
+      <p className="mt-3.5 flex items-start gap-2 text-xs text-muted-foreground">
         <Phone className="mt-px size-3.5 shrink-0" aria-hidden="true" />
         {dict.checkout.paymentManagerNote}
       </p>

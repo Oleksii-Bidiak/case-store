@@ -23,7 +23,7 @@ export function BlogRelatedCard({ post }: { post: BlogPostView }) {
         <h3 className="mb-2 font-display text-[16.5px] font-bold leading-[1.3] tracking-[-0.01em] text-foreground">
           {post.title}
         </h3>
-        <span className="mt-auto text-[12.5px] text-muted-foreground">
+        <span className="mt-auto text-xs text-muted-foreground">
           {post.date} · {post.read}
         </span>
       </div>

@@ -19,7 +19,7 @@ export function PromoView() {
     <div>
       <nav
         aria-label={d.breadcrumb}
-        className="mb-[18px] flex items-center gap-2.5 text-[13.5px] text-muted-foreground"
+        className="mb-[18px] flex items-center gap-2.5 text-sm text-muted-foreground"
       >
         <Link href="/" className="hover:text-foreground">
           {d.breadcrumbHome}
@@ -39,7 +39,7 @@ export function PromoView() {
         }}
       >
         <div className="relative z-[2] max-w-[560px]">
-          <span className="inline-block rounded-full bg-white/[0.18] px-3.5 py-1.5 text-[12.5px] font-bold tracking-[0.08em] uppercase">
+          <span className="inline-block rounded-full bg-white/[0.18] px-3.5 py-1.5 text-xs font-bold tracking-[0.08em] uppercase">
             {d.hero.badge}
           </span>
           <h1 className={`mt-4 mb-3 ${H1_CLASS}`}>{d.hero.heading}</h1>

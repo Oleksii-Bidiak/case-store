@@ -20,9 +20,9 @@ import { formatUAPhone } from "@/shared/lib/phone";
 import { contactSchema, type ContactFormValues } from "../model/contact-schema";
 
 const FIELD =
-  "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-[14.5px] text-foreground outline-none focus-visible:border-primary";
+  "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-base text-foreground outline-none focus-visible:border-primary md:text-sm";
 const LABEL = "text-[13px] font-semibold text-foreground";
-const ERROR = "text-[12.5px] font-medium text-destructive";
+const ERROR = "text-xs font-medium text-destructive";
 
 /**
  * ContactForm — the "Напишіть нам" message form. Submits to `POST /api/contact`
@@ -150,7 +150,7 @@ export function ContactForm() {
                   onClick={() =>
                     setValue("topic", t.key, { shouldDirty: true })
                   }
-                  className={`h-[38px] rounded-md border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`h-[38px] rounded-md border px-3.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     active
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-background text-foreground hover:border-primary"
@@ -256,7 +256,7 @@ export function ContactForm() {
             aria-describedby={
               errors.message ? "contact-message-error" : undefined
             }
-            className="resize-y rounded-xl border-[1.5px] border-border bg-background px-[15px] py-3 text-[14.5px] text-foreground outline-none focus-visible:border-primary"
+            className="resize-y rounded-xl border-[1.5px] border-border bg-background px-[15px] py-3 text-base text-foreground outline-none focus-visible:border-primary md:text-sm"
             {...register("message")}
           />
           {errors.message && (
@@ -268,7 +268,7 @@ export function ContactForm() {
 
         <ContactHoneypot {...register(CONTACT_HONEYPOT_FIELD)} />
 
-        <label className="flex cursor-pointer items-start gap-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
+        <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-muted-foreground">
           <input
             id="contact-consent"
             type="checkbox"

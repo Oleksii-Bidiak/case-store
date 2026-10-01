@@ -252,7 +252,7 @@ export function ProductListView({
           <SlidersHorizontal className="size-[18px]" />
           {dict.filters.filtersButton}
           {activeFilterCount > 0 && (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11.5px] font-bold text-primary-foreground">
+            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
               {activeFilterCount}
             </span>
           )}

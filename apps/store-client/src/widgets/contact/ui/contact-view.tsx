@@ -64,7 +64,7 @@ export function ContactView({
     <div>
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-[18px] flex items-center gap-2.5 text-[13.5px] text-muted-foreground"
+        className="mb-[18px] flex items-center gap-2.5 text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {d.breadcrumbHome}
@@ -105,11 +105,11 @@ export function ContactView({
           <span className={CHANNEL_ICON}>
             <Phone className="size-[21px]" aria-hidden="true" />
           </span>
-          <span className="mb-1 block text-[12.5px] text-muted-foreground">
+          <span className="mb-1 block text-xs text-muted-foreground">
             {d.channels.phoneLabel}
           </span>
           <b className="block font-mono text-[17px] text-foreground">{phone}</b>
-          <span className="mt-1.5 block text-[12.5px] text-muted-foreground">
+          <span className="mt-1.5 block text-xs text-muted-foreground">
             {d.channels.phoneNote}
           </span>
         </a>
@@ -118,11 +118,11 @@ export function ContactView({
           <span className={CHANNEL_ICON}>
             <Mail className="size-[21px]" aria-hidden="true" />
           </span>
-          <span className="mb-1 block text-[12.5px] text-muted-foreground">
+          <span className="mb-1 block text-xs text-muted-foreground">
             {d.channels.emailLabel}
           </span>
           <b className="block text-[17px] break-all text-foreground">{email}</b>
-          <span className="mt-1.5 block text-[12.5px] text-muted-foreground">
+          <span className="mt-1.5 block text-xs text-muted-foreground">
             {d.channels.emailNote}
           </span>
         </a>
@@ -131,13 +131,13 @@ export function ContactView({
           <span className={CHANNEL_ICON}>
             <MessageCircle className="size-[21px]" aria-hidden="true" />
           </span>
-          <span className="mb-1 block text-[12.5px] text-muted-foreground">
+          <span className="mb-1 block text-xs text-muted-foreground">
             {d.channels.chatLabel}
           </span>
           <b className="block text-[17px] text-foreground">
             {d.channels.chatValue}
           </b>
-          <span className="mt-1.5 block text-[12.5px] text-muted-foreground">
+          <span className="mt-1.5 block text-xs text-muted-foreground">
             {d.channels.chatNote}
           </span>
         </a>
@@ -148,11 +148,11 @@ export function ContactView({
           <span className={CHANNEL_ICON}>
             <Clock className="size-[21px]" aria-hidden="true" />
           </span>
-          <span className="mb-1 block text-[12.5px] text-muted-foreground">
+          <span className="mb-1 block text-xs text-muted-foreground">
             {d.channels.hoursLabel}
           </span>
           <b className="block text-[17px] text-foreground">{hours}</b>
-          <span className="mt-1.5 block text-[12.5px] text-muted-foreground">
+          <span className="mt-1.5 block text-xs text-muted-foreground">
             {d.channels.hoursNote}
           </span>
         </div>
@@ -184,13 +184,13 @@ export function ContactView({
                       <b className="block text-sm text-foreground">
                         {dep.title}
                       </b>
-                      <span className="text-[12.5px] text-muted-foreground">
+                      <span className="text-xs text-muted-foreground">
                         {dep.desc}
                       </span>
                     </div>
                     <a
                       href={`mailto:${dep.email}`}
-                      className="text-[13.5px] font-semibold whitespace-nowrap text-primary hover:underline"
+                      className="text-sm font-semibold whitespace-nowrap text-primary hover:underline"
                     >
                       {dep.email}
                     </a>
@@ -208,7 +208,7 @@ export function ContactView({
             <h2 className="mb-1.5 font-display text-xl font-bold text-foreground">
               {d.messengersHeading}
             </h2>
-            <p className="mb-4 text-[13.5px] text-muted-foreground">
+            <p className="mb-4 text-sm text-muted-foreground">
               {d.messengersIntro}
             </p>
             {messengers.length > 0 ? (
@@ -283,7 +283,7 @@ export function ContactView({
                 href={mapHref}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-[18px] inline-flex items-center gap-2 text-[13.5px] font-semibold text-primary hover:underline"
+                className="mt-[18px] inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
               >
                 {d.officeRoute}
                 <ArrowRight className="size-[15px]" aria-hidden="true" />
@@ -303,9 +303,7 @@ export function ContactView({
             <b className="block font-display text-base text-foreground">
               {d.faqHeading}
             </b>
-            <span className="text-[13.5px] text-muted-foreground">
-              {d.faqBody}
-            </span>
+            <span className="text-sm text-muted-foreground">{d.faqBody}</span>
           </div>
         </div>
         <Link

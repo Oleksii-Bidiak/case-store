@@ -34,7 +34,7 @@ export function BlogArticleView({
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-[22px] flex flex-wrap items-center gap-[9px] text-[13.5px] text-muted-foreground"
+        className="mb-[22px] flex flex-wrap items-center gap-[9px] text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {dict.blog.breadcrumbHome}
@@ -54,7 +54,7 @@ export function BlogArticleView({
       {/* Article head */}
       <div className="mx-auto max-w-[760px]">
         <span
-          className="inline-flex items-center gap-[7px] rounded-full px-[13px] py-[5px] text-[12.5px] font-bold tracking-[0.04em] text-primary"
+          className="inline-flex items-center gap-[7px] rounded-full px-[13px] py-[5px] text-xs font-bold tracking-[0.04em] text-primary"
           style={{
             background:
               "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
@@ -74,7 +74,7 @@ export function BlogArticleView({
               {authorInitial(post.author)}
             </span>
             <div className="flex flex-col leading-[1.35]">
-              <span className="text-[14.5px] font-semibold text-foreground">
+              <span className="text-sm font-semibold text-foreground">
                 {post.author}
               </span>
               <span className="text-[13px] text-muted-foreground">

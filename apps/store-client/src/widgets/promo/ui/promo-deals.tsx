@@ -23,7 +23,7 @@ import {
 import { buildPromoDealsParams } from "../model/deals-params";
 
 const TAB_BASE =
-  "h-[38px] rounded-md border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "h-[38px] rounded-md border px-4 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * PromoDeals — the "Товари зі знижкою" section: real root categories as filter

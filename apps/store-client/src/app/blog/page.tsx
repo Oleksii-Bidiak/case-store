@@ -140,7 +140,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-5 flex items-center gap-[9px] text-[13.5px] text-muted-foreground"
+        className="mb-5 flex items-center gap-[9px] text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {dict.blog.breadcrumbHome}

@@ -193,7 +193,7 @@ export function WishlistView() {
     <div>
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-[18px] flex items-center gap-2.5 text-[13.5px] text-muted-foreground"
+        className="mb-[18px] flex items-center gap-2.5 text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {dict.wishlist.breadcrumbHome}
@@ -226,7 +226,7 @@ export function WishlistView() {
             <SlidersHorizontal className="size-[18px]" />
             {dict.filters.filtersButton}
             {activeFilterCount > 0 && (
-              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11.5px] font-bold text-primary-foreground">
+              <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
                 {activeFilterCount}
               </span>
             )}
@@ -280,7 +280,7 @@ export function WishlistView() {
               key={chip.key}
               type="button"
               onClick={chip.remove}
-              className="inline-flex h-[34px] items-center gap-2 rounded-full border border-primary bg-[color-mix(in_oklab,var(--color-primary)_8%,var(--color-card))] py-0 pr-2 pl-[13px] text-[13.5px] font-semibold text-primary"
+              className="inline-flex h-[34px] items-center gap-2 rounded-full border border-primary bg-[color-mix(in_oklab,var(--color-primary)_8%,var(--color-card))] py-0 pr-2 pl-[13px] text-sm font-semibold text-primary"
             >
               {chip.label}
               <span className="inline-flex size-[18px] items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -291,7 +291,7 @@ export function WishlistView() {
           <button
             type="button"
             onClick={clearFilters}
-            className="text-[13.5px] font-semibold text-muted-foreground underline underline-offset-[3px] transition-colors hover:text-foreground"
+            className="text-sm font-semibold text-muted-foreground underline underline-offset-[3px] transition-colors hover:text-foreground"
           >
             {dict.filters.clearAll}
           </button>

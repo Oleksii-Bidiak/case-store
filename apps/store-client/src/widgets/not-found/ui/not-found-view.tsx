@@ -3,7 +3,7 @@ import { Home, Search } from "lucide-react";
 import { dict, H1_CLASS } from "@/shared/config";
 
 const PILL_BASE =
-  "inline-flex h-[38px] items-center rounded-full border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-flex h-[38px] items-center rounded-full border px-4 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * NotFoundView — the storefront 404 screen from the NotFound.dc.html design.

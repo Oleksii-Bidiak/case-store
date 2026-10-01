@@ -81,7 +81,7 @@ export function CategoriesView() {
                 type="button"
                 onClick={() => setGroupId(root.id)}
                 aria-current={active ? "true" : undefined}
-                className={`relative mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-[14.5px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                className={`relative mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-sm transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   active
                     ? "font-semibold text-primary"
                     : "font-medium text-foreground hover:bg-muted"
@@ -122,7 +122,7 @@ export function CategoriesView() {
       <section className="min-w-0">
         <nav
           aria-label={dict.product.breadcrumbAria}
-          className="mb-3.5 flex flex-wrap items-center gap-[9px] text-[13.5px] text-muted-foreground"
+          className="mb-3.5 flex flex-wrap items-center gap-[9px] text-sm text-muted-foreground"
         >
           <Link href="/" className="transition-colors hover:text-foreground">
             {dict.categories.breadcrumbHome}
@@ -134,7 +134,7 @@ export function CategoriesView() {
         </nav>
 
         <h1 className={`${H1_CLASS} text-foreground`}>{activeRoot.name}</h1>
-        <p className="mt-1.5 mb-6 max-w-[680px] text-[14.5px] leading-[1.5] text-muted-foreground">
+        <p className="mt-1.5 mb-6 max-w-[680px] text-sm leading-[1.5] text-muted-foreground">
           {activeRoot.description ?? dict.categories.descFallback}
         </p>
 

@@ -80,3 +80,40 @@ describe("heading scale (TASK-861)", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+/** Production `.ts`/`.tsx` source (class constants live in both). */
+function classSourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) {
+      return name === "generated" ? [] : classSourceFiles(full);
+    }
+    return /\.tsx?$/.test(name) && !/\.(test|spec)\.tsx?$/.test(name)
+      ? [full]
+      : [];
+  });
+}
+
+/**
+ * TASK-863 — the half-step text sizes are folded onto the Tailwind scale
+ * (owner decision 7.10). The per-file suppression count alone cannot hold
+ * this: a file may swap a removed arbitrary value for a new one at the same
+ * count, so the four sizes are pinned by name.
+ */
+describe("text scale (TASK-863)", () => {
+  it("leaves no 13.5 / 14.5 / 12.5 / 11.5px text size in the storefront", () => {
+    const files = classSourceFiles(SRC);
+    // Guards the scan itself: a walk that found nothing would pass vacuously.
+    expect(files.length).toBeGreaterThan(100);
+    const offenders = files
+      .filter((file) =>
+        /\btext-\[1[1-4]\.5px\]/.test(readFileSync(file, "utf8")),
+      )
+      .map((file) => relative(SRC, file).replace(/\\/g, "/"));
+    expect(offenders).toEqual([]);
+  });
+
+  it("is the rule the design-system document states (owner decision 7.10)", () => {
+    expect(readFileSync(DOC, "utf8")).toMatch(/half-steps[\s\S]*?7\.10/);
+  });
+});

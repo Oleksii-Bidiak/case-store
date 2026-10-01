@@ -149,7 +149,7 @@ export function ProductSpecsTabs({
                   <Icon className="size-[22px]" aria-hidden="true" />
                 </span>
                 <div className="flex-1">
-                  <b className="block text-[14.5px] font-semibold text-foreground">
+                  <b className="block text-sm font-semibold text-foreground">
                     {option.title}
                   </b>
                   <span className="text-[13px] text-muted-foreground">

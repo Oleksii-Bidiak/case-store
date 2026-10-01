@@ -47,7 +47,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-[22px] flex flex-wrap items-center gap-[9px] text-[13.5px] text-muted-foreground"
+        className="mb-[22px] flex flex-wrap items-center gap-[9px] text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {dict.legal.breadcrumbHome}
@@ -63,7 +63,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
       {/* Hero */}
       <div className="mb-[30px] max-w-[640px]">
         <span
-          className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-[12.5px] font-bold tracking-[0.04em] text-primary"
+          className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary"
           style={{
             background:
               "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
@@ -108,11 +108,11 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
                   {doc.title}
                 </b>
                 {doc.excerpt && (
-                  <span className="mb-4 text-[13.5px] leading-[1.5] text-muted-foreground">
+                  <span className="mb-4 text-sm leading-[1.5] text-muted-foreground">
                     {doc.excerpt}
                   </span>
                 )}
-                <span className="mt-auto inline-flex items-center gap-1.5 text-[12.5px] text-muted-foreground">
+                <span className="mt-auto inline-flex items-center gap-1.5 text-xs text-muted-foreground">
                   <LegalClockIcon width={14} height={14} />
                   {dict.legal.hub.updatedPrefix}{" "}
                   {formatLegalDateShort(doc.updatedAt)}
@@ -141,7 +141,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
             <b className="block font-display text-base text-foreground">
               {dict.legal.hub.supportHeading}
             </b>
-            <span className="text-[13.5px] text-muted-foreground">
+            <span className="text-sm text-muted-foreground">
               {dict.legal.hub.supportSubtitle}
             </span>
           </div>

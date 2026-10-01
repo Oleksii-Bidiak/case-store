@@ -149,7 +149,7 @@ export function CartView() {
             <button
               type="button"
               onClick={() => setConfirmOpen(true)}
-              className="text-[13.5px] text-muted-foreground transition-colors hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="text-sm text-muted-foreground transition-colors hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {dict.cart.clear}
             </button>

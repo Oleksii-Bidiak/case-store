@@ -270,8 +270,7 @@ export default async function CategoryLandingPage({
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products breadcrumb type size
-        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-[13.5px] text-muted-foreground"
+        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
       >
         {trail.map((crumb, i) => {
           const isLast = i === trail.length - 1;

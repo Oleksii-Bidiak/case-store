@@ -199,7 +199,7 @@ export function SpecFacets({
           type="button"
           onClick={() => setShowAll((previous) => !previous)}
           aria-expanded={showAll}
-          className="mt-3 text-[13.5px] font-semibold text-muted-foreground underline decoration-1 underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          className="mt-3 text-sm font-semibold text-muted-foreground underline decoration-1 underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           {showAll
             ? dict.filters.fewerFacets

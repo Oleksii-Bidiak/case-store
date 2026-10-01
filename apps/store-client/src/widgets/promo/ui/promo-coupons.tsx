@@ -72,7 +72,7 @@ export function PromoCoupons() {
               </div>
 
               <div className="min-w-0 flex-1">
-                <b className="mb-1 block text-[14.5px] text-foreground">
+                <b className="mb-1 block text-sm text-foreground">
                   {coupon.title}
                 </b>
                 <p className="mb-2.5 text-xs leading-snug text-muted-foreground">

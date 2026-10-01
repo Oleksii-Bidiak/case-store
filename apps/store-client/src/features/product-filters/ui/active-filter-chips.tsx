@@ -179,7 +179,7 @@ export function ActiveFilterChips({
           key={chip.key}
           type="button"
           onClick={chip.clear}
-          className={`inline-flex h-[34px] items-center gap-2 rounded-full border py-0 pr-2 pl-3.5 text-[13.5px] font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
+          className={`inline-flex h-[34px] items-center gap-2 rounded-full border py-0 pr-2 pl-3.5 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
             chip.isSearch
               ? "border-primary/30 bg-primary/10 text-primary"
               : "border-border bg-card text-foreground hover:border-primary/40"
@@ -214,7 +214,7 @@ export function ActiveFilterChips({
         onClick={() =>
           onFilterChange(clearFilterUpdates({ includeDevice: !lockedDevice }))
         }
-        className="text-[13.5px] font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        className="text-sm font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
       >
         {dict.filters.clearAll}
       </button>

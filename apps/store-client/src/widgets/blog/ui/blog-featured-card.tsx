@@ -17,7 +17,7 @@ export function BlogFeaturedCard({ post }: { post: BlogPostView }) {
         className="relative min-h-[320px]"
         style={{ background: blogGradient(post.hue) }}
       >
-        <span className="absolute left-[18px] top-[18px] rounded-full bg-card px-[13px] py-1.5 text-[12.5px] font-bold text-foreground">
+        <span className="absolute left-[18px] top-[18px] rounded-full bg-card px-[13px] py-1.5 text-xs font-bold text-foreground">
           {post.categoryName}
         </span>
         <span className="absolute bottom-[18px] right-[18px] rounded-full bg-black/35 px-3 py-[5px] text-xs font-semibold text-white backdrop-blur-[4px]">
@@ -34,10 +34,10 @@ export function BlogFeaturedCard({ post }: { post: BlogPostView }) {
             {authorInitial(post.author)}
           </span>
           <div className="flex flex-col leading-[1.3]">
-            <span className="text-[13.5px] font-semibold text-foreground">
+            <span className="text-sm font-semibold text-foreground">
               {post.author}
             </span>
-            <span className="text-[12.5px] text-muted-foreground">
+            <span className="text-xs text-muted-foreground">
               {post.date} · {post.read}
             </span>
           </div>

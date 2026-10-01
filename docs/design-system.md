@@ -119,8 +119,12 @@ Rules:
 - Max **one** `h1` per page, and never skip heading levels.
 - Line length ≤ ~70ch for prose (`max-w-prose`).
 - **Text sizes come only from the scale** (`text-xs` … `text-6xl`). The half-steps `13.5 / 14.5
-/ 12.5 / 11.5px` are not allowed (owner decision 7.10). The existing ones are folded into the
-  scale in one pass via TASK-863.
+/ 12.5 / 11.5px` are not allowed (owner decision 7.10). They were folded onto the nearest step
+  in one pass (TASK-863): `13.5 / 14.5` → `text-sm`, `12.5 / 11.5` → `text-xs`.
+  `typography.test.ts` fails the build if one comes back.
+- **Hand-rolled form fields** (the raw `<input>`/`<textarea>` of `/contact`, `/info`,
+  `/orders/status` and the blog search) use `text-base md:text-sm`, like `shared/ui/input`.
+  Below 16px iOS Safari zooms the page on focus.
 - **Price figures use `font-mono` (Geist Mono)**. This is the house equivalent of `tabular-nums`,
   so columns of prices align.
 

@@ -45,7 +45,7 @@ export function AccountProfileSection({ user }: { user: UserEntity }) {
         <h2 className="mb-1.5 text-lg font-semibold text-foreground">
           {d.securityHeading}
         </h2>
-        <p className="text-[13.5px] text-muted-foreground">{d.securityNote}</p>
+        <p className="text-sm text-muted-foreground">{d.securityNote}</p>
 
         {isChangingPassword ? (
           <ChangePasswordForm onCancel={() => setIsChangingPassword(false)} />

@@ -38,9 +38,7 @@ export function AccountSettingsSection() {
         <h2 className="mb-1.5 text-lg font-semibold text-foreground">
           {d.appearanceHeading}
         </h2>
-        <p className="text-[13.5px] text-muted-foreground">
-          {d.appearanceNote}
-        </p>
+        <p className="text-sm text-muted-foreground">{d.appearanceNote}</p>
         {/* The control itself, not a sentence about it. `hideLabel`: the card
             heading and the line above already name this field, so the switch's
             own caption would be a third title — it stays as the group's
@@ -61,12 +59,8 @@ export function AccountSettingsSection() {
               className="flex cursor-pointer items-center justify-between gap-4 border-t border-border py-[13px]"
             >
               <span className="flex flex-col">
-                <b className="text-[14.5px] font-medium text-foreground">
-                  {n.label}
-                </b>
-                <span className="text-[12.5px] text-muted-foreground">
-                  {n.desc}
-                </span>
+                <b className="text-sm font-medium text-foreground">{n.label}</b>
+                <span className="text-xs text-muted-foreground">{n.desc}</span>
               </span>
               <input
                 type="checkbox"
@@ -89,9 +83,7 @@ export function AccountSettingsSection() {
             </label>
           );
         })}
-        <p className="mt-3 text-[12.5px] text-muted-foreground">
-          {d.notifStub}
-        </p>
+        <p className="mt-3 text-xs text-muted-foreground">{d.notifStub}</p>
       </div>
     </div>
   );

@@ -44,7 +44,7 @@ export function LegalDocView({
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-[18px] flex flex-wrap items-center gap-[9px] text-[13.5px] text-muted-foreground"
+        className="mb-[18px] flex flex-wrap items-center gap-[9px] text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {dict.legal.breadcrumbHome}
@@ -68,7 +68,7 @@ export function LegalDocView({
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <span
-            className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-[12.5px] font-bold tracking-[0.04em] text-primary"
+            className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary"
             style={{
               background:
                 "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
@@ -79,7 +79,7 @@ export function LegalDocView({
           <h1 className={`mt-3.5 mb-2.5 ${H1_CLASS} text-foreground`}>
             {page.title}
           </h1>
-          <p className="m-0 inline-flex items-center gap-[7px] text-[13.5px] text-muted-foreground">
+          <p className="m-0 inline-flex items-center gap-[7px] text-sm text-muted-foreground">
             <LegalClockIcon width={15} height={15} />
             {dict.legal.updatedPrefix} {formatLegalDate(page.updatedAt)}
           </p>
@@ -109,10 +109,10 @@ export function LegalDocView({
                 <LegalChatIcon width={22} height={22} />
               </span>
               <div>
-                <b className="block font-display text-[14.5px] text-foreground">
+                <b className="block font-display text-sm text-foreground">
                   {dict.legal.contactHeading}
                 </b>
-                <span className="text-[13.5px] text-muted-foreground">
+                <span className="text-sm text-muted-foreground">
                   {dict.legal.contactSubtitle}
                 </span>
               </div>

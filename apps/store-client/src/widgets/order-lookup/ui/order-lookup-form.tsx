@@ -17,9 +17,9 @@ import {
 import { OrderLookupResult } from "./order-lookup-result";
 
 const FIELD =
-  "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-[14.5px] text-foreground outline-none focus-visible:border-primary";
+  "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-base text-foreground outline-none focus-visible:border-primary md:text-sm";
 const LABEL = "text-[13px] font-semibold text-foreground";
-const ERROR = "text-[12.5px] font-medium text-destructive";
+const ERROR = "text-xs font-medium text-destructive";
 
 /**
  * OrderLookupForm — the public "номер + телефон" form (TASK-483).

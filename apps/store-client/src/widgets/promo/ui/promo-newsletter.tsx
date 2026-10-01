@@ -15,7 +15,7 @@ export function PromoNewsletter() {
         <h2 className="mb-2 font-display text-2xl font-bold tracking-tight text-foreground">
           {d.heading}
         </h2>
-        <p className="text-[14.5px] leading-relaxed text-muted-foreground">
+        <p className="text-sm leading-relaxed text-muted-foreground">
           {d.subtitle}
         </p>
       </div>

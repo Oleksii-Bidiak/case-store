@@ -137,11 +137,11 @@ export function AccountView() {
               {initials}
             </span>
             <span className="flex min-w-0 flex-col">
-              <b className="truncate font-display text-[14.5px] leading-tight text-foreground">
+              <b className="truncate font-display text-sm leading-tight text-foreground">
                 {d.greeting(fullName)}
               </b>
               {user?.phone && (
-                <span className="mt-0.5 font-mono text-[12.5px] text-muted-foreground">
+                <span className="mt-0.5 font-mono text-xs text-muted-foreground">
                   {user.phone}
                 </span>
               )}
@@ -153,7 +153,7 @@ export function AccountView() {
             {NAV.map((entry) => {
               const label = d.nav[entry.key as keyof typeof d.nav];
               const active = !entry.href && section === entry.key;
-              const className = `relative mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-[14.5px] no-underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              const className = `relative mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-sm no-underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 active
                   ? "font-semibold text-primary"
                   : "font-medium text-foreground hover:bg-muted"
@@ -208,7 +208,7 @@ export function AccountView() {
             type="button"
             onClick={handleLogout}
             disabled={logout.isPending}
-            className="flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-[14.5px] font-medium text-destructive transition-colors hover:bg-destructive/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-sm font-medium text-destructive transition-colors hover:bg-destructive/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             <AccountLogoutIcon width={20} height={20} />
             {d.logout}

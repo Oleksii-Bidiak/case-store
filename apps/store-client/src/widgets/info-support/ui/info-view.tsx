@@ -84,8 +84,7 @@ const SUCCESS_TINT = {
 const CARD = "rounded-card border border-border bg-card p-[30px] shadow-card";
 const SECTION_HEADING =
   "mb-1.5 font-display text-2xl font-bold text-foreground";
-const SECTION_INTRO =
-  "mb-[22px] text-[14.5px] leading-[1.6] text-muted-foreground";
+const SECTION_INTRO = "mb-[22px] text-sm leading-[1.6] text-muted-foreground";
 const SUB_HEADING = "mb-3.5 font-display text-lg font-bold text-foreground";
 
 /** No page read at all (a test, or a caller that has none): the static copy. */
@@ -185,7 +184,7 @@ export function InfoView({
     <>
       <nav
         aria-label={dict.product.breadcrumbAria}
-        className="mb-[18px] flex items-center gap-[9px] text-[13.5px] text-muted-foreground"
+        className="mb-[18px] flex items-center gap-[9px] text-sm text-muted-foreground"
       >
         <Link href="/" className="transition-colors hover:text-foreground">
           {d.breadcrumbHome}
@@ -214,7 +213,7 @@ export function InfoView({
                   type="button"
                   onClick={() => go(key)}
                   aria-current={active ? "true" : undefined}
-                  className={`mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-3 text-left text-[14.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-3 text-left text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     active
                       ? "bg-primary text-primary-foreground"
                       : "text-foreground hover:bg-muted"
@@ -256,7 +255,7 @@ export function InfoView({
                           <p className="mb-2.5 text-[13px] leading-[1.5] text-muted-foreground">
                             {opt.desc}
                           </p>
-                          <span className="font-mono text-[13.5px] font-bold text-foreground">
+                          <span className="font-mono text-sm font-bold text-foreground">
                             {opt.price}
                           </span>
                         </div>
@@ -285,10 +284,10 @@ export function InfoView({
                             <Icon className="size-5" aria-hidden="true" />
                           </span>
                           <div>
-                            <b className="mb-0.5 block text-[14.5px] text-foreground">
+                            <b className="mb-0.5 block text-sm text-foreground">
                               {opt.title}
                             </b>
-                            <span className="text-[12.5px] leading-[1.5] text-muted-foreground">
+                            <span className="text-xs leading-[1.5] text-muted-foreground">
                               {opt.desc}
                             </span>
                           </div>
@@ -316,7 +315,7 @@ export function InfoView({
                         <span className="mb-2 block font-display text-[30px] font-bold text-primary">
                           {card.big}
                         </span>
-                        <b className="mb-1.5 block text-[14.5px] text-foreground">
+                        <b className="mb-1.5 block text-sm text-foreground">
                           {card.title}
                         </b>
                         <p className="text-[13px] leading-[1.5] text-muted-foreground">
@@ -350,11 +349,11 @@ export function InfoView({
                           <ShieldCheck className="size-5" aria-hidden="true" />
                         </span>
                         <div className="flex-1">
-                          <b className="mb-0.5 block text-[14.5px] text-foreground">
+                          <b className="mb-0.5 block text-sm text-foreground">
                             {svc.name}
                           </b>
                           {svc.description && (
-                            <span className="text-[12.5px] leading-[1.5] text-muted-foreground">
+                            <span className="text-xs leading-[1.5] text-muted-foreground">
                               {svc.description}
                             </span>
                           )}
@@ -489,7 +488,7 @@ export function InfoView({
                               />
                             </span>
                             <div>
-                              <b className="mb-0.5 block text-[14.5px] text-foreground">
+                              <b className="mb-0.5 block text-sm text-foreground">
                                 {value.title}
                               </b>
                               <span className="text-[13px] leading-[1.5] text-muted-foreground">
@@ -549,7 +548,7 @@ export function InfoView({
                             href={contact?.[m.key] as string}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex h-[42px] items-center gap-2 rounded-menu border border-border bg-background px-4 text-[13.5px] font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="inline-flex h-[42px] items-center gap-2 rounded-menu border border-border bg-background px-4 text-sm font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <Icon className="size-[18px]" aria-hidden="true" />
                             {m.label}
@@ -643,9 +642,7 @@ function ContactRow({
         <Icon className="size-5" aria-hidden="true" />
       </span>
       <div>
-        <span className="block text-[12.5px] text-muted-foreground">
-          {label}
-        </span>
+        <span className="block text-xs text-muted-foreground">{label}</span>
         {children}
       </div>
     </div>
