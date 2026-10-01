@@ -43,17 +43,29 @@ function first(value: string | string[] | undefined): string | undefined {
  */
 const PROMO_LISTING_LOCKS = { onSale: true } as const;
 
+/** The robots of a narrowed view — the same value the listing policy returns. */
+const NOINDEX_FOLLOW = { index: false, follow: true } as const;
+
 // TASK-435 — admin-managed via the `promo` HUB page row; dictionary fallback.
 // Since TASK-1301 the deals are a filterable listing, so the same canonical /
 // noindex policy as `/products` applies (plan 143): a clean view — `?page=N`
 // included — is canonical, any filter is noindex. `onSale` is the page itself
 // here, not a filter, so it is not passed.
+//
+// `?category=` is the one difference. On `/products` a clean category view has
+// a landing page of its own to canonicalise onto (`/categories/<slug>`); the
+// deals have no per-category landing, so here it is a narrowing like any other
+// filter — noindex,follow and no canonical. Left to the helper (which keeps
+// `category` out of its filter list for the `/products` reason), the CategoryChips
+// links would each canonicalise onto `/promo` or `/promo?page=N`, a different
+// result set.
 export async function generateMetadata({
   searchParams,
 }: {
   searchParams: PromoSearchParams;
 }): Promise<Metadata> {
   const resolved = await searchParams;
+  const category = first(resolved.category)?.trim() || undefined;
   const filters: ListingFilterParams = {
     search: first(resolved.search)?.trim() || undefined,
     minPrice: first(resolved.minPrice),
@@ -63,11 +75,13 @@ export async function generateMetadata({
     device: first(resolved.device),
     inStock: first(resolved.inStock),
   };
-  const listingMeta = buildListingMetadata({
-    basePath: "/promo",
-    page: Number(first(resolved.page)),
-    filters,
-  });
+  const listingMeta = category
+    ? { canonicalPath: undefined, robots: NOINDEX_FOLLOW }
+    : buildListingMetadata({
+        basePath: "/promo",
+        page: Number(first(resolved.page)),
+        filters,
+      });
 
   return buildHubMetadata({
     slug: "promo",

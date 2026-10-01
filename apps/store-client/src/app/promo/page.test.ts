@@ -165,4 +165,29 @@ describe("/promo metadata — the listing's canonical / noindex policy", () => {
 
     expect(filtered.robots).toEqual({ index: false, follow: true });
   });
+
+  // The deals have no per-category landing page, so — unlike /products, where a
+  // clean ?category= view canonicalises onto /categories/<slug> — a category
+  // view here is a narrowing: never indexed, never canonicalised onto the
+  // unfiltered /promo (a different result set).
+  it("is noindex, follow with no canonical for a category view", async () => {
+    const categoryView = await meta({ category: "cases" });
+
+    expect(categoryView.robots).toEqual({ index: false, follow: true });
+    expect(categoryView.alternates?.canonical).toBeUndefined();
+  });
+
+  it("keeps a paginated category view out of the page-N canonical too", async () => {
+    const paged = await meta({ category: "cases", page: "2" });
+
+    expect(paged.robots).toEqual({ index: false, follow: true });
+    expect(paged.alternates?.canonical).toBeUndefined();
+  });
+
+  it("treats an empty ?category= as no category", async () => {
+    const empty = await meta({ category: " " });
+
+    expect(empty.robots).toBeUndefined();
+    expect(empty.alternates?.canonical).toBe(`${SITE_URL}/promo`);
+  });
 });

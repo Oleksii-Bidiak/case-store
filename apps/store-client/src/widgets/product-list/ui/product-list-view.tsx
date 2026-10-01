@@ -255,7 +255,7 @@ export function ProductListView({
         <button
           type="button"
           onClick={() => setFiltersOpen(true)}
-          className="inline-flex h-11 items-center gap-2 rounded-xl border-[1.5px] border-border bg-card px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+          className="inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border-[1.5px] border-border bg-card px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
         >
           <SlidersHorizontal className="size-[18px]" />
           {dict.filters.filtersButton}
@@ -266,7 +266,10 @@ export function ProductListView({
           )}
         </button>
 
-        <div className="ml-auto flex items-center gap-3">
+        {/* `min-w-0` lets the sort trigger shrink on a 320px phone (it
+            truncates its label) instead of widening the page; the filters
+            button beside it keeps its size. */}
+        <div className="ml-auto flex min-w-0 items-center gap-3">
           <ViewToggle
             view={view}
             onChange={setView}

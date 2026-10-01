@@ -28,8 +28,19 @@ const SORT_OPTIONS = [
  * Catalog sort control — a pill-shaped dropdown for the page toolbar. Wraps the
  * shared Select so keyboard/screen-reader behaviour comes for free; the selected
  * label renders in the brand colour to match the design.
+ *
+ * Narrow phones: the toolbar puts this beside the «Фільтри» button, and the
+ * longest labels («Ціна: від низької до високої») are wider than a 320px row.
+ * So the trigger may shrink (`min-w-0`) and its label truncates with an
+ * ellipsis instead of pushing the page sideways; the icon and the «Спочатку:»
+ * prefix appear from `sm`, where there is room. The open list still shows every
+ * label in full.
  */
 export function SortSelect({ currentSort, onChange }: SortSelectProps) {
+  const currentLabel = SORT_OPTIONS.find(
+    (option) => option.value === currentSort,
+  )?.label;
+
   return (
     <Select
       value={currentSort}
@@ -40,13 +51,19 @@ export function SortSelect({ currentSort, onChange }: SortSelectProps) {
     >
       <SelectTrigger
         aria-label={dict.filters.sortBy}
-        className="h-11 gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-4 font-semibold text-foreground shadow-none *:data-[slot=select-value]:text-primary hover:border-primary"
+        className="h-11 min-w-0 gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-3 font-semibold text-foreground shadow-none *:data-[slot=select-value]:text-primary hover:border-primary sm:px-4"
       >
-        <ArrowDownWideNarrow className="size-[18px]" />
+        <ArrowDownWideNarrow className="hidden size-[18px] sm:block" />
         <span className="hidden font-medium text-muted-foreground sm:inline">
           {dict.filters.sortPrefix}
         </span>
-        <SelectValue />
+        <SelectValue className="min-w-0">
+          {/* A block child so the ellipsis applies: the value slot itself is a
+              flex box, where `text-overflow` has no effect. */}
+          {currentLabel && (
+            <span className="block truncate">{currentLabel}</span>
+          )}
+        </SelectValue>
       </SelectTrigger>
       <SelectContent align="end" className="rounded-xl">
         {SORT_OPTIONS.map((option) => (
