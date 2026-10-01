@@ -3,7 +3,7 @@ import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { formatMoney } from "@/shared/lib/format";
-import { statusBadgeClass, type PublicOrderEntity } from "@/entities/order";
+import { statusBadgeStyle, type PublicOrderEntity } from "@/entities/order";
 import { OrderLookupForm } from "./order-lookup-form";
 
 const d = dict.orderLookup;
@@ -156,16 +156,41 @@ describe("OrderLookupForm (TASK-483)", () => {
     renderWithProviders(<OrderLookupForm />);
     await fillAndSubmit(user);
 
-    const badge = await screen.findByLabelText(
-      dict.order.paymentStatusAria("PARTIALLY_REFUNDED"),
-    );
-    expect(badge).toHaveClass(
-      ...statusBadgeClass("PARTIALLY_REFUNDED").split(" "),
-    );
-    expect(badge).toHaveTextContent(
+    const label = await screen.findByText(
       dict.order.paymentLabel("PARTIALLY_REFUNDED"),
     );
+    const badge = label.closest('[data-slot="badge"]');
+    expect(badge).toHaveAttribute(
+      "data-variant",
+      statusBadgeStyle("PARTIALLY_REFUNDED").variant,
+    );
+    // §2 (TASK-868): muted, not destructive.
+    expect(badge).toHaveAttribute("data-variant", "tint-muted");
   });
+
+  // TASK-868: a <dl> may hold only dt/dd groups. The two delivery sentences
+  // used to be bare <p>s inside it.
+  it.each([
+    ["no city", { city: null, warehouse: null }, d.deliveryUnknown],
+    ["a courier", { city: "Київ", warehouse: null }, d.deliveryCourier],
+  ] as const)(
+    "keeps the delivery list valid with %s",
+    async (_case, delivery, sentence) => {
+      respondWith([{ ...order, delivery: { ...delivery } }]);
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      await fillAndSubmit(user);
+
+      const text = await screen.findByText(sentence);
+      expect(text.tagName).toBe("DD");
+      expect(text.previousElementSibling).toHaveTextContent(d.deliveryHeading);
+      expect(text.previousElementSibling).toHaveClass("sr-only");
+      for (const dl of document.querySelectorAll("dl")) {
+        expect(dl.querySelector("p")).toBeNull();
+      }
+    },
+  );
 
   describe("focus and announcement (TASK-626)", () => {
     it("moves focus to the result and announces it", async () => {

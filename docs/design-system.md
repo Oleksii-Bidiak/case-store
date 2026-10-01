@@ -79,8 +79,17 @@ attribute. The two dark blocks in `globals.css` must stay in sync.
   | `REFUNDED`, `PARTIALLY_REFUNDED`                      | `muted` / `muted-foreground` |
   | `CANCELLED`, `FAILED`                                 | `destructive`                |
 
-  The single shared map is rolling out via TASK-868. Until then some screens still carry their
-  own mapping.
+  The map is `STATUS_BADGE` in `entities/order/lib/status-badge.ts`, and every one of the four
+  screens renders it through `OrderStatusBadge` (`entities/order`), which is the `shared/ui`
+  `Badge` with `size="pill"` and `dot` (TASK-868). The four in-progress stages share the
+  `tint-primary` variant and get darker step by step (`/10` → `/15` → `/20` → `/30`). The
+  colour sits in the **tint and the leading dot only**. The label is always `text-foreground`,
+  because role-coloured `text-xs` on its own tint is below 4.5:1 with the current tokens
+  (light: success ≈3.0, destructive ≈3.3; dark: primary ≈3.9, destructive ≈3.7). Foreground on
+  any of the tints is ≥ 9:1, and each dot is ≥ 3:1 against the page in both themes. The badge
+  is named by an `sr-only` `<dt>` (or an `sr-only` prefix where no `<dl>` is around it), never
+  by an `aria-label` on the `<span>`. The `Badge` variants are `tint-primary`, `tint-success`,
+  `tint-destructive` and `tint-muted`. Use them for any other status pill too.
 
 ---
 

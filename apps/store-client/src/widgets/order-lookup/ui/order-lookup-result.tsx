@@ -1,7 +1,4 @@
-import {
-  statusBadgeClass as badgeClass,
-  type PublicOrderEntity,
-} from "@/entities/order";
+import { OrderStatusBadge, type PublicOrderEntity } from "@/entities/order";
 import { dict } from "@/shared/config";
 import { formatDate, formatMoney } from "@/shared/lib/format";
 
@@ -45,21 +42,15 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
         <dl className="flex flex-wrap items-center gap-2">
           <dt className="sr-only">{dict.order.orderStatusSr}</dt>
           <dd>
-            <span
-              aria-label={dict.order.orderStatusAria(order.status)}
-              className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${badgeClass(order.status)}`}
-            >
+            <OrderStatusBadge status={order.status}>
               {dict.order.orderStatusLabels[order.status] ?? order.status}
-            </span>
+            </OrderStatusBadge>
           </dd>
           <dt className="sr-only">{dict.order.paymentStatusSr}</dt>
           <dd>
-            <span
-              aria-label={dict.order.paymentStatusAria(order.paymentStatus)}
-              className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${badgeClass(order.paymentStatus)}`}
-            >
+            <OrderStatusBadge status={order.paymentStatus}>
               {dict.order.paymentLabel(order.paymentStatus)}
-            </span>
+            </OrderStatusBadge>
           </dd>
         </dl>
       </header>
@@ -121,11 +112,15 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
         <h2 className="text-base font-semibold text-foreground">
           {d.deliveryHeading}
         </h2>
+        {/* Only <div>-wrapped dt/dd groups inside the <dl> (TASK-868): the two
+            plain statements used to be bare <p>s in it, which is invalid
+            content for a description list. They are now a dd under a visually
+            hidden «Доставка» term, and look exactly as before. */}
         <dl className="flex flex-col gap-1 text-sm">
           {order.delivery.city ? (
             <Row label={d.deliveryCity} value={order.delivery.city} />
           ) : (
-            <p className="text-muted-foreground">{d.deliveryUnknown}</p>
+            <Statement term={d.deliveryHeading} text={d.deliveryUnknown} />
           )}
           {/* A branch name, or the plain statement that a courier is bringing it
               — never the street. The API has no field for the street to arrive
@@ -137,7 +132,7 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
                 value={order.delivery.warehouse}
               />
             ) : (
-              <p className="text-muted-foreground">{d.deliveryCourier}</p>
+              <Statement term={d.deliveryHeading} text={d.deliveryCourier} />
             ))}
           <Row
             label={d.trackingHeading}
@@ -154,6 +149,16 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex items-baseline justify-between gap-2">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-foreground">{value}</dd>
+    </div>
+  );
+}
+
+/** A sentence in place of a value: the term is for screen readers only. */
+function Statement({ term, text }: { term: string; text: string }) {
+  return (
+    <div>
+      <dt className="sr-only">{term}</dt>
+      <dd className="text-muted-foreground">{text}</dd>
     </div>
   );
 }

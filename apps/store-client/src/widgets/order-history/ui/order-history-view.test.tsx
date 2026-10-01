@@ -2,7 +2,7 @@ import { http, HttpResponse } from "msw";
 import { renderWithProviders, screen } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { makeOrder } from "@/shared/test/msw-handlers";
-import { statusBadgeClass, type OrderEntityStatus } from "@/entities/order";
+import { statusBadgeStyle, type OrderEntityStatus } from "@/entities/order";
 import { dict } from "@/shared/config";
 import { OrderHistoryView } from "./order-history-view";
 
@@ -94,15 +94,26 @@ describe("OrderHistoryView — return request (TASK-373)", () => {
     expect(await screen.findByText("1 червня 2026")).toBeInTheDocument();
   });
 
-  it("paints the status badge from the shared map (TASK-802)", async () => {
+  it("paints the status badge from the shared map (TASK-802, TASK-868)", async () => {
     stubOrders(["DELIVERED"]);
 
     renderHistory();
 
-    const badge = await screen.findByLabelText(
+    const label = await screen.findByText(
+      dict.order.orderStatusLabels.DELIVERED,
+    );
+    const badge = label.closest('[data-slot="badge"]');
+    // §2: a delivered order is success, rendered through shared/ui Badge.
+    expect(badge).toHaveAttribute(
+      "data-variant",
+      statusBadgeStyle("DELIVERED").variant,
+    );
+    expect(badge).toHaveAttribute("data-variant", "tint-success");
+    // Named by plain sr-only text — the row has no <dt> to do it.
+    expect(badge).not.toHaveAttribute("aria-label");
+    expect(badge).toHaveTextContent(
       `${dict.orderHistory.statusSr}: ${dict.order.orderStatusLabels.DELIVERED}`,
     );
-    expect(badge).toHaveClass(...statusBadgeClass("DELIVERED").split(" "));
   });
 
   describe("return request status (TASK-608)", () => {

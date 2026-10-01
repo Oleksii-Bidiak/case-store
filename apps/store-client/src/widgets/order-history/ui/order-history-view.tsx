@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/entities/session";
-import { statusBadgeClass, useGetOrders } from "@/entities/order";
+import { OrderStatusBadge, useGetOrders } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
 import { useGetMyReturns, type ReturnEntity } from "@/entities/return";
 import { ReturnRequestButton } from "@/features/return-request";
@@ -120,16 +120,12 @@ export function OrderHistoryView() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                  <span
-                    aria-label={`${dict.orderHistory.statusSr}: ${
-                      dict.order.orderStatusLabels[order.status] ?? order.status
-                    }`}
-                    className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${statusBadgeClass(
-                      order.status,
-                    )}`}
+                  <OrderStatusBadge
+                    status={order.status}
+                    srLabel={dict.orderHistory.statusSr}
                   >
                     {dict.order.orderStatusLabels[order.status] ?? order.status}
-                  </span>
+                  </OrderStatusBadge>
                   <ReturnStatusBadge status={latestReturn.get(order.id)} />
                   <span className="font-semibold text-foreground">
                     {formatMoney(order.total)}
