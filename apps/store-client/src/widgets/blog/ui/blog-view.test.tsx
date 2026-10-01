@@ -72,6 +72,45 @@ describe("BlogView", () => {
     ).toBeInTheDocument();
   });
 
+  it("names the journal after the shop and shows each post's cover (TASK-873)", () => {
+    const { container } = renderWithProviders(
+      <BlogView
+        posts={[
+          makePost({
+            slug: "a",
+            title: "With cover",
+            coverImageUrl: "/uploads/blog/a.webp",
+          }),
+          makePost({ slug: "b", title: "Without cover" }),
+        ]}
+        categories={categories}
+        featured={makePost({
+          slug: "f",
+          title: "Featured Hero",
+          featured: true,
+          coverImageUrl: "/uploads/blog/f.webp",
+        })}
+        activeCategory="all"
+        query=""
+        page={1}
+        totalPages={1}
+        siteName="Volta"
+      />,
+    );
+
+    expect(screen.getByText(dict.blog.badgeNamed("Volta"))).toBeInTheDocument();
+    expect(screen.queryByText(/MOBILESTORE/i)).not.toBeInTheDocument();
+    // The featured hero and the grid card with a cover render it; the card
+    // without one keeps the gradient only.
+    expect(
+      container.querySelector('img[src="/uploads/blog/f.webp"]'),
+    ).not.toBeNull();
+    const withCover = screen.getByRole("link", { name: /With cover/ });
+    expect(withCover.querySelector("img")).toHaveAttribute("alt", "");
+    const withoutCover = screen.getByRole("link", { name: /Without cover/ });
+    expect(withoutCover.querySelector("img")).toBeNull();
+  });
+
   it("shows the empty state when there are no posts and no featured", () => {
     renderWithProviders(
       <BlogView

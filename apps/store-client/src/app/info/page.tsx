@@ -8,6 +8,8 @@ import {
   type InfoPageLink,
   type InfoSectionSource,
   type InfoService,
+  stripUnfilledBlocks,
+  stripUnfilledSentences,
 } from "@/widgets/info-support";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema, buildFaqPageSchema } from "@/shared/lib/schema";
@@ -51,7 +53,12 @@ async function getFaqs(): Promise<readonly InfoFaq[]> {
   if (!items || items.length === 0) {
     return INFO_FAQS;
   }
-  return items.map((item) => ({ q: item.question, a: item.answer }));
+  // TASK-873 — an answer's sentence with an unfilled `[placeholder]` is
+  // dropped; an answer left with nothing is neither shown nor marked up.
+  return items.flatMap((item) => {
+    const a = stripUnfilledSentences(item.answer);
+    return a ? [{ q: item.question, a }] : [];
+  });
 }
 
 /**
@@ -94,8 +101,8 @@ async function getAbout(): Promise<InfoAbout | null> {
   }
   return {
     heading: page.title,
-    intro: page.excerpt?.trim() || null,
-    html: sanitizeHtml(page.content),
+    intro: stripUnfilledSentences(page.excerpt?.trim() ?? "") || null,
+    html: sanitizeHtml(stripUnfilledBlocks(page.content)),
     href: `/info/${page.slug}`,
   };
 }
@@ -110,10 +117,13 @@ async function getSection(slug: string): Promise<InfoSectionSource> {
   try {
     const page = await fetchPublishedPage(slug, "INFO");
     if (!page) return "missing";
+    // TASK-873 — a sentence holding an unfilled `[placeholder]` is dropped
+    // before sanitizing (see `stripUnfilledBlocks`): the owner has not written
+    // that fact yet, so the shopper does not see the brackets.
     return {
       heading: page.title,
-      intro: page.excerpt?.trim() || null,
-      html: sanitizeHtml(page.content),
+      intro: stripUnfilledSentences(page.excerpt?.trim() ?? "") || null,
+      html: sanitizeHtml(stripUnfilledBlocks(page.content)),
     };
   } catch {
     return "unavailable";

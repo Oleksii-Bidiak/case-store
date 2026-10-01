@@ -182,7 +182,10 @@ export const dict = {
 
   trust: {
     shipping: "Безкоштовна доставка від 1 000 ₴",
-    returns: "Повернення протягом 30 днів",
+    // TASK-873 — 14 days, the statutory window (Закон «Про захист прав
+    // споживачів», ст. 9) that RETURN_POLICY, /info, /contact and the seeded
+    // «Повернення та обмін» page all state; the footer used to promise 30.
+    returns: "Повернення протягом 14 днів",
     secure: "Безпечна оплата",
     support: "Підтримка 24/7",
   },
@@ -259,31 +262,26 @@ export const dict = {
       loading: "Завантаження…",
     },
 
-    // Three static promo tiles under the hero.
+    // Static promo tiles under the hero — the fallback when the owner has
+    // published no PROMO_TILE banner. TASK-873: every tile leads to a real page;
+    // the «Покупка частинами» and «Trade-in» tiles pointed at `#` (no such page,
+    // no trade-in service) and are gone.
     promoTiles: [
       {
         badge: "−30%",
         title: "Розпродаж аксесуарів",
         text: "Чохли, зарядки та захисне скло за зниженою ціною.",
         cta: "Дивитись акцію",
-        href: "/products",
+        href: "/promo",
         accent: "sale" as const,
       },
       {
-        badge: "КРЕДИТ 0%",
-        title: "Покупка частинами",
-        text: "До 24 платежів без переплат на замовлення.",
-        cta: "Дізнатись більше",
-        href: "#",
+        badge: "ВІД 1 000 ₴",
+        title: "Безкоштовна доставка",
+        text: "Нова Пошта по всій Україні — відправка день у день.",
+        cta: "Умови доставки",
+        href: "/info#delivery",
         accent: "primary" as const,
-      },
-      {
-        badge: "TRADE-IN",
-        title: "Обміняй старий ґаджет",
-        text: "Знижка на нові аксесуари за твій старий пристрій.",
-        cta: "Оцінити",
-        href: "#",
-        accent: "success" as const,
       },
     ],
 
@@ -298,7 +296,7 @@ export const dict = {
         subtitle: "Лише оригінальні аксесуари",
       },
       {
-        title: "Повернення 30 днів",
+        title: "Повернення 14 днів",
         subtitle: "Легкий обмін і повернення",
       },
       {
@@ -351,15 +349,8 @@ export const dict = {
       heading: "−10% на перше замовлення",
       subtitle:
         "Підпишись на розсилку та отримуй добірки новинок і персональні промокоди.",
-      // External social links — no real URLs yet (href "#"). The widget renders a
-      // "coming soon" toast for any placeholder href and a real <a> once set.
-      socials: [
-        { label: "Telegram", href: "#" },
-        { label: "Instagram", href: "#" },
-        { label: "YouTube", href: "#" },
-        { label: "Viber", href: "#" },
-      ],
-      socialSoon: "Наші канали скоро запрацюють.",
+      // The social buttons come from «Контакти магазину» (TASK-741); the old
+      // `href: "#"` list here was dead and is gone (TASK-873).
     },
   },
 
@@ -368,7 +359,9 @@ export const dict = {
   blog: {
     breadcrumbHome: "Головна",
     breadcrumb: "Блог",
-    badge: "ЖУРНАЛ MOBILESTORE",
+    // TASK-873 — the neutral badge; with the shop name from «SEO-налаштування»
+    // the hub renders `badgeNamed` instead (no more hardcoded «MOBILESTORE»).
+    badge: "Журнал",
     heading: "Блог про техніку та ґаджети",
     subtitle:
       "Огляди, гайди й поради від команди CaseStore — щоб обрати саме те, що потрібно, і вичавити з ґаджета максимум.",
@@ -392,14 +385,9 @@ export const dict = {
       heading: "Не пропускай нові статті",
       subtitle:
         "Підписуйся на канали CaseStore — огляди, гайди та знижки першими.",
-      // External social links — no real URLs yet (href "#"). The widget renders a
-      // "coming soon" toast for any placeholder href and a real <a> once set.
-      socials: [
-        { label: "Telegram", href: "#" },
-        { label: "Instagram", href: "#" },
-        { label: "YouTube", href: "#" },
-      ],
-      socialSoon: "Наші канали скоро запрацюють.",
+      // TASK-873 — the social buttons are the shop's real channels from
+      // «Контакти магазину», as on the home page (TASK-741); the old `href: "#"`
+      // list with its «скоро запрацюють» toast is gone.
     },
     // Article detail page (/blog/[slug], Article.dc.html import). The body and
     // the author's role/bio come from the API (TASK-170, TASK-554) — there is
@@ -410,7 +398,6 @@ export const dict = {
       copied: "Посилання скопійовано",
       telegramAria: "Поділитись у Telegram",
       facebookAria: "Поділитись у Facebook",
-      coverCaption: "[ обкладинка статті ]",
       tocHeading: "Зміст",
       relatedHeading: "Читайте також",
       // "{read} читання" — e.g. "8 хв читання".
@@ -421,6 +408,7 @@ export const dict = {
     // link says what it actually does: it opens the next page.
     nextPageLink: "Наступні статті",
     paginationAria: "Навігація сторінками статей",
+    badgeNamed: (name: string) => `Журнал ${name}`,
   },
 
   // Admin-authored static/legal pages (/legal + /legal/[slug], Legal.dc.html
@@ -561,12 +549,11 @@ export const dict = {
     paymentHeading: "Оплата",
     paymentIntro: "Обирайте зручний спосіб — онлайн або при отриманні.",
     warrantyHeading: "Гарантія та сервіс",
-    warrantyIntro:
-      "Уся техніка — офіційна, з гарантією виробника. Сервісне обслуговування — [сервісний центр / партнер].",
+    warrantyIntro: "Уся техніка — офіційна, з гарантією виробника.",
     servicesHeading: "Додаткові сервіси захисту",
     aboutHeading: "Ми — CaseStore",
     aboutIntro:
-      "Інтернет-магазин електроніки, який з [рік заснування] року допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
+      "Інтернет-магазин електроніки, який допомагає українцям обирати техніку без зайвого клопоту. Тільки оригінальні пристрої, офіційна гарантія та чесні ціни.",
     valuesHeading: "Чому обирають нас",
     contactsHeading: "Звʼяжіться з нами",
     contactPhoneLabel: "Телефон",
@@ -683,35 +670,33 @@ export const dict = {
       "Ми вже отримали ваш запит і відповімо на вказану пошту найближчим часом.",
     sentAgain: "Надіслати ще одне",
     departmentsHeading: "Відділи",
+    // TASK-873 — no per-department mailboxes exist in «Контакти магазину», so
+    // each row writes to the shop's one support email with the department as
+    // the subject (`departmentWrite`) instead of showing «[email відділу…]».
     departments: [
-      // TASK-311: department mailboxes are a company fact — placeholders until
-      // the owner confirms which addresses actually exist.
       {
         key: "sales",
         title: "Відділ продажів",
         desc: "Допомога з вибором і замовленням",
-        email: "[email відділу продажів]",
       },
       {
         key: "service",
         title: "Сервіс і гарантія",
         desc: "Ремонт, обмін, повернення",
-        email: "[email сервісу]",
       },
       {
         key: "b2b",
         title: "Співпраця",
         desc: "Опт, партнерство, реклама",
-        email: "[email для співпраці]",
       },
     ],
     messengersHeading: "Ми у месенджерах",
     messengersIntro: "Швидка відповідь у зручному для вас чаті.",
     messengersEmpty: "Зателефонуйте нам — ми на звʼязку щодня.",
+    // TASK-873 — the office card renders only with a real address, which
+    // «Контакти магазину» does not store yet (TASK-721); the placeholder
+    // address, note and hours that stood here are gone.
     officeHeading: "Офіс",
-    officeAddress: "[адреса офісу]",
-    officeAddressNote: "[уточнення адреси — поверх, орієнтир]",
-    officeHours: "[графік роботи офісу]",
     officeRoute: "Прокласти маршрут",
     officeMapAria: "Розташування офісу",
     faqHeading: "Можливо, відповідь уже є",
@@ -721,6 +706,9 @@ export const dict = {
     // LEGAL page), not to the /legal hub. A renamed slug still lands: the
     // document route 308-redirects old slugs (TASK-435).
     consentHref: "/legal/privacy-policy",
+    // TASK-873 — a department row's link: the support email, subject = title.
+    departmentWrite: "Написати",
+    departmentWriteAria: (title: string) => `Написати: ${title}`,
   },
 
   notFound: {
@@ -736,12 +724,13 @@ export const dict = {
     catalog: "До каталогу",
     /** Popular-section quick links. */
     popularHeading: "Популярні розділи",
+    // TASK-873 — the category chips are the store's real root categories
+    // (they were «Смартфони / Ноутбуки / Аудіо», all pointing at /products).
     popular: {
-      smartphones: "Смартфони",
-      laptops: "Ноутбуки",
-      audio: "Аудіо",
       promo: "Акції",
     },
+    /** Shortcut to the category hub when the tree could not be read. */
+    allCategories: "Усі категорії",
   },
 
   // TASK-167-N — Акції (promo) page. Hero copy + countdown are static marketing

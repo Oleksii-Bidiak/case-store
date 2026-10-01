@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { dict, H2_CLASS } from "@/shared/config";
+import { FallbackImg } from "@/shared/ui";
 import { authorInitial, blogGradient, type BlogPostView } from "../model/posts";
 
 /**
@@ -17,6 +18,13 @@ export function BlogFeaturedCard({ post }: { post: BlogPostView }) {
         className="relative min-h-[320px]"
         style={{ background: blogGradient(post.hue) }}
       >
+        {/* TASK-873 — the post's own cover when it has one; the gradient
+            stays behind it as the no-cover look and the failed-load fallback. */}
+        <FallbackImg
+          src={post.coverImageUrl}
+          alt=""
+          className="absolute inset-0 size-full object-cover"
+        />
         <span className="absolute left-[18px] top-[18px] rounded-full bg-card px-[13px] py-1.5 text-xs font-bold text-foreground">
           {post.categoryName}
         </span>

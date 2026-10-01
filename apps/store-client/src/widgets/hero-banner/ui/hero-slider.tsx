@@ -20,7 +20,8 @@ type HeroSlide = {
   title: string;
   subtitle?: string;
   cta?: string;
-  href: string;
+  /** CTA target; a slide without one shows no button (TASK-873). */
+  href?: string;
   /** Admin banner picture (TASK-740); the theme gradient shows without one. */
   imageUrl?: string;
 };
@@ -34,7 +35,7 @@ function bannersToSlides(banners: BannerEntity[]): HeroSlide[] {
     title: b.title,
     subtitle: b.subtitle ?? undefined,
     cta: b.ctaLabel ?? undefined,
-    href: b.ctaHref ?? "#",
+    href: b.ctaHref?.trim() || undefined,
     imageUrl: b.imageUrl ?? undefined,
   }));
 }
@@ -186,7 +187,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
               {slide.subtitle}
             </p>
           )}
-          {slide.cta && (
+          {slide.cta && slide.href && (
             <Button
               asChild
               className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-lift ${theme.cta}`}

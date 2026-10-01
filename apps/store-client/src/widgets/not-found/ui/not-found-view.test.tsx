@@ -37,13 +37,46 @@ describe("NotFoundView", () => {
     );
   });
 
-  it("shows the popular-section shortcuts", () => {
-    renderWithProviders(<NotFoundView />);
+  it("offers the store's real root categories as shortcuts (TASK-873)", () => {
+    renderWithProviders(
+      <NotFoundView
+        categories={[
+          { name: "Чохли", slug: "chokhly" },
+          { name: "Павербанки", slug: "powerbanky" },
+          { name: "Навушники", slug: "navushnyky" },
+          { name: "Кабелі", slug: "kabeli" },
+        ]}
+      />,
+    );
 
     expect(screen.getByText(d.popularHeading)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Чохли" })).toHaveAttribute(
+      "href",
+      "/categories/chokhly",
+    );
+    expect(screen.getByRole("link", { name: "Навушники" })).toHaveAttribute(
+      "href",
+      "/categories/navushnyky",
+    );
+    // A row of four: three categories, then «Акції».
     expect(
-      screen.getByRole("link", { name: d.popular.smartphones }),
-    ).toBeInTheDocument();
+      screen.queryByRole("link", { name: "Кабелі" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: d.popular.promo })).toHaveAttribute(
+      "href",
+      "/promo",
+    );
+    // The invented «Смартфони / Ноутбуки» chips are gone.
+    expect(screen.queryByText("Смартфони")).not.toBeInTheDocument();
+  });
+
+  it("offers the category hub when the tree could not be read", () => {
+    renderWithProviders(<NotFoundView categories={[]} />);
+
+    expect(screen.getByRole("link", { name: d.allCategories })).toHaveAttribute(
+      "href",
+      "/categories",
+    );
     expect(
       screen.getByRole("link", { name: d.popular.promo }),
     ).toBeInTheDocument();

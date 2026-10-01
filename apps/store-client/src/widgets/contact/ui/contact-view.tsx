@@ -7,11 +7,9 @@ import {
   ShoppingCart,
   Wrench,
   Building2,
-  MapPin,
   HelpCircle,
   Send,
   Camera,
-  ArrowRight,
   type LucideIcon,
 } from "lucide-react";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
@@ -43,7 +41,7 @@ const CHANNEL_ICON =
 /**
  * ContactView — the `/contact` page (Contact.dc.html redesign). A gradient hero,
  * four quick-contact channels, the message form (stub) + a side column
- * (departments / messengers / showroom) and a FAQ strip. Contact details,
+ * (departments / messengers) and a FAQ strip. Contact details,
  * working hours and messenger links come from the real admin-managed
  * SiteContactSettings (TASK-154) with localized fallbacks; the form has no
  * backend yet (TASK-177). Server component — only the form is interactive.
@@ -58,7 +56,6 @@ export function ContactView({
   const email = contact?.email ?? dict.footer.contactEmail;
   const hours = contact?.workingHours ?? dict.footer.contactHours;
   const messengers = MESSENGERS.filter((m) => contact?.[m.key]);
-  const mapHref = `https://maps.google.com/?q=${encodeURIComponent(d.officeAddress)}`;
 
   return (
     <div>
@@ -188,11 +185,15 @@ export function ContactView({
                         {dep.desc}
                       </span>
                     </div>
+                    {/* TASK-873 — the shop's one support email, with the
+                        department as the subject: no per-department
+                        mailboxes exist in «Контакти магазину». */}
                     <a
-                      href={`mailto:${dep.email}`}
-                      className="text-sm font-semibold whitespace-nowrap text-primary hover:underline"
+                      href={`mailto:${email}?subject=${encodeURIComponent(dep.title)}`}
+                      aria-label={d.departmentWriteAria(dep.title)}
+                      className="inline-flex min-h-11 items-center text-sm font-semibold whitespace-nowrap text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      {dep.email}
+                      {d.departmentWrite}
                     </a>
                   </div>
                 );
@@ -236,60 +237,10 @@ export function ContactView({
             )}
           </div>
 
-          {/* Office / showroom */}
-          <div className="overflow-hidden rounded-card border border-border bg-card shadow-card">
-            <div
-              role="img"
-              aria-label={d.officeMapAria}
-              className="flex h-[150px] items-center justify-center"
-              style={{
-                background:
-                  "linear-gradient(120deg, color-mix(in oklab, var(--color-primary) 18%, var(--color-card)), color-mix(in oklab, var(--color-primary) 4%, var(--color-card)))",
-              }}
-            >
-              <span className="inline-flex size-[52px] items-center justify-center rounded-full bg-primary text-white shadow-elevated">
-                <MapPin className="size-6" aria-hidden="true" />
-              </span>
-            </div>
-            <div className="px-[30px] pt-6 pb-7">
-              <h2 className="mb-3.5 font-display text-xl font-bold text-foreground">
-                {d.officeHeading}
-              </h2>
-              <div className="flex flex-col gap-3">
-                <div className="flex items-start gap-3">
-                  <MapPin
-                    className="mt-0.5 size-[18px] shrink-0 text-primary"
-                    aria-hidden="true"
-                  />
-                  <span className="text-sm leading-normal text-foreground">
-                    {d.officeAddress}
-                    <br />
-                    <span className="text-[13px] text-muted-foreground">
-                      {d.officeAddressNote}
-                    </span>
-                  </span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Clock
-                    className="size-[18px] shrink-0 text-primary"
-                    aria-hidden="true"
-                  />
-                  <span className="text-sm text-foreground">
-                    {d.officeHours}
-                  </span>
-                </div>
-              </div>
-              <a
-                href={mapHref}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-[18px] inline-flex items-center gap-2 text-sm font-semibold text-primary hover:underline"
-              >
-                {d.officeRoute}
-                <ArrowRight className="size-[15px]" aria-hidden="true" />
-              </a>
-            </div>
-          </div>
+          {/* TASK-873 — no office card: «Контакти магазину» stores no address
+              yet (TASK-721), and the card showed «[адреса офісу]»,
+              «[графік роботи офісу]» and a route to that placeholder. It
+              comes back with a real address field. */}
         </div>
       </div>
 

@@ -1,10 +1,11 @@
 import Link from "next/link";
+import { FallbackImg } from "@/shared/ui";
 import { authorInitial, blogGradient, type BlogPostView } from "../model/posts";
 
 /**
  * BlogPostCard — a single article card in the responsive grid. Presentational;
- * links to the article page. The cover is a token-derived placeholder gradient
- * when the post has no cover image.
+ * links to the article page. The cover is the post's `coverImageUrl`, over a
+ * token-derived gradient that shows when there is none (or it fails to load).
  */
 export function BlogPostCard({ post }: { post: BlogPostView }) {
   return (
@@ -16,6 +17,13 @@ export function BlogPostCard({ post }: { post: BlogPostView }) {
         className="relative h-[184px]"
         style={{ background: blogGradient(post.hue) }}
       >
+        {/* TASK-873 — the post's own cover when it has one; the gradient
+            stays behind it as the no-cover look and the failed-load fallback. */}
+        <FallbackImg
+          src={post.coverImageUrl}
+          alt=""
+          className="absolute inset-0 size-full object-cover"
+        />
         <span className="absolute left-3.5 top-3.5 rounded-full bg-card px-3 py-[5px] text-xs font-bold text-foreground">
           {post.categoryName}
         </span>

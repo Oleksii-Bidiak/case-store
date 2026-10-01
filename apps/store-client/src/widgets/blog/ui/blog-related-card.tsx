@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { FallbackImg } from "@/shared/ui";
 import { blogGradient, type BlogPostView } from "../model/posts";
 
 /**
@@ -15,6 +16,13 @@ export function BlogRelatedCard({ post }: { post: BlogPostView }) {
         className="relative h-[172px]"
         style={{ background: blogGradient(post.hue) }}
       >
+        {/* TASK-873 — the post's own cover when it has one; the gradient
+            stays behind it as the no-cover look and the failed-load fallback. */}
+        <FallbackImg
+          src={post.coverImageUrl}
+          alt=""
+          className="absolute inset-0 size-full object-cover"
+        />
         <span className="absolute left-3.5 top-3.5 rounded-full bg-card px-3 py-[5px] text-xs font-bold text-foreground">
           {post.categoryName}
         </span>

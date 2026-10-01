@@ -12,7 +12,8 @@ type PromoTile = {
   title: string;
   text?: string;
   cta?: string;
-  href: string;
+  /** Where the tile leads; a banner without a link renders as a plain card. */
+  href?: string;
   accent: Accent;
   /** Admin banner picture (TASK-740); the accent tint shows without one. */
   imageUrl?: string;
@@ -36,7 +37,9 @@ function bannersToTiles(banners: BannerEntity[]): PromoTile[] {
       title: b.title,
       text: b.subtitle ?? undefined,
       cta: b.ctaLabel ?? undefined,
-      href: b.ctaHref ?? "#",
+      // TASK-873 — no `#` stand-in: a banner the owner left without a link
+      // is a card, not a link to the top of the page.
+      href: b.ctaHref?.trim() || undefined,
       accent: themed ?? ACCENT_CYCLE[i % ACCENT_CYCLE.length],
       imageUrl: b.imageUrl ?? undefined,
     };
@@ -85,12 +88,9 @@ export function PromoTiles({ banners }: PromoTilesProps = {}) {
     <div className="grid gap-5 sm:grid-cols-3">
       {tiles.map((tile, i) => {
         const accent = ACCENTS[tile.accent];
-        return (
-          <Link
-            key={`${tile.title}-${i}`}
-            href={tile.href}
-            className={`group relative isolate flex flex-col overflow-hidden rounded-2xl border p-6 transition-shadow hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${accent.surface}`}
-          >
+        const surface = `group relative isolate flex flex-col overflow-hidden rounded-2xl border p-6 ${accent.surface}`;
+        const body = (
+          <>
             {/* Admin picture under the copy (TASK-740). The tile's text is
                 foreground-on-background, so the scrim is the background
                 colour — the picture reads as a texture, the copy stays legible. */}
@@ -110,7 +110,7 @@ export function PromoTiles({ banners }: PromoTilesProps = {}) {
             {tile.text && (
               <p className="mt-1 text-sm text-muted-foreground">{tile.text}</p>
             )}
-            {tile.cta && (
+            {tile.href && tile.cta && (
               <span
                 className={`mt-4 inline-flex items-center gap-1.5 text-sm font-semibold ${accent.cta}`}
               >
@@ -118,7 +118,20 @@ export function PromoTiles({ banners }: PromoTilesProps = {}) {
                 <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
               </span>
             )}
+          </>
+        );
+        return tile.href ? (
+          <Link
+            key={`${tile.title}-${i}`}
+            href={tile.href}
+            className={`${surface} transition-shadow hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring`}
+          >
+            {body}
           </Link>
+        ) : (
+          <div key={`${tile.title}-${i}`} className={surface}>
+            {body}
+          </div>
         );
       })}
     </div>

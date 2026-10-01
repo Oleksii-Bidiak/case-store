@@ -44,6 +44,27 @@ describe("ContactView", () => {
     );
   });
 
+  it("shows no bracketed placeholder and no office without an address (TASK-873)", () => {
+    const { container } = renderWithProviders(
+      <ContactView contact={contact} />,
+    );
+
+    expect(container.textContent).not.toMatch(/\[[^\]]*[а-яіїєґa-z][^\]]*\]/i);
+    // «Контакти магазину» stores no address yet, so there is no office card.
+    expect(
+      screen.queryByRole("heading", { name: d.officeHeading }),
+    ).not.toBeInTheDocument();
+    // Each department writes to the shop's one support email, subject = title.
+    for (const dep of d.departments) {
+      expect(
+        screen.getByRole("link", { name: d.departmentWriteAria(dep.title) }),
+      ).toHaveAttribute(
+        "href",
+        `mailto:${contact.email}?subject=${encodeURIComponent(dep.title)}`,
+      );
+    }
+  });
+
   it("falls back to the localized defaults when no contact settings exist", () => {
     renderWithProviders(<ContactView contact={null} />);
 

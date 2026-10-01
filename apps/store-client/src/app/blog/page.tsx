@@ -5,12 +5,14 @@ import {
   fetchPublishedPosts,
   fetchBlogCategories,
 } from "@/shared/api/blog-server";
+import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { JsonLd } from "@/shared/ui";
 import {
   buildBreadcrumbSchema,
   buildItemListSchema,
 } from "@/shared/lib/schema";
-import { buildListingMetadata } from "@/shared/lib/seo";
+import { buildListingMetadata, resolveSiteName } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
@@ -81,7 +83,10 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
   // promoted above the results the reader actually asked for.
   const isUnfiltered = !category && !query;
 
-  const [{ posts, meta }, categories] = await Promise.all([
+  // TASK-873 — the shop name for the hub badge («Журнал <назва>») and the real
+  // social channels for the newsletter block come from the admin settings
+  // (both tagged fetches that never throw — null falls back).
+  const [{ posts, meta }, categories, seo, contact] = await Promise.all([
     // develop paginates the hub (TASK-417); this branch keeps unlisted posts out
     // of it (TASK-436). A list surface wants both.
     fetchPublishedPosts({
@@ -92,6 +97,8 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
       includeUnlisted: false,
     }),
     fetchBlogCategories(),
+    fetchSeoSettings(),
+    fetchSiteContactSettings(),
   ]);
 
   const views = posts.map(toBlogPostView);
@@ -161,6 +168,8 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
         query={query}
         page={pageNum}
         totalPages={totalPages}
+        siteName={resolveSiteName(seo)}
+        contact={contact}
       />
     </div>
   );

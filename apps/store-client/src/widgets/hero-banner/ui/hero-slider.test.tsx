@@ -153,4 +153,23 @@ describe("HeroSlider — banner pictures (TASK-740)", () => {
     ).toBeInTheDocument();
     expect(container.querySelector("img")).toBeNull();
   });
+
+  it("shows no CTA for a slide the owner left without a link (TASK-873)", () => {
+    setReducedMotion(true);
+    const { container } = render(
+      <HeroSlider
+        banners={[
+          {
+            ...heroBanner("b1", "Без посилання", null),
+            ctaLabel: "Детальніше",
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("link", { name: /Детальніше/ }),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('a[href="#"]')).toBeNull();
+  });
 });

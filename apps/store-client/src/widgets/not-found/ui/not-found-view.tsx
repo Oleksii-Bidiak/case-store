@@ -2,6 +2,15 @@ import Link from "next/link";
 import { Home, Search } from "lucide-react";
 import { dict, H1_CLASS } from "@/shared/config";
 
+/** A root category the 404 offers as a shortcut (TASK-873). */
+export interface NotFoundCategoryLink {
+  name: string;
+  slug: string;
+}
+
+/** How many category chips sit before «Акції» — the mockup's row of four. */
+export const NOT_FOUND_CATEGORY_LIMIT = 3;
+
 const PILL_BASE =
   "inline-flex h-[38px] items-center rounded-full border px-4 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
@@ -13,8 +22,17 @@ const PILL_BASE =
  * to the real `/search` results page, primary/secondary CTAs (home + catalog),
  * and a row of popular-section shortcuts. Everything here is static navigation,
  * so this stays a server component with no client JS.
+ *
+ * TASK-873 — the shortcuts are the store's real root categories, read by
+ * `app/not-found.tsx`; they used to be «Смартфони / Ноутбуки / Аудіо», all
+ * pointing at /products. Without a tree (API down) the row offers the category
+ * hub instead, so it is never a row of guesses.
  */
-export function NotFoundView() {
+export function NotFoundView({
+  categories = [],
+}: {
+  categories?: readonly NotFoundCategoryLink[];
+} = {}) {
   const d = dict.notFound;
 
   return (
@@ -81,24 +99,24 @@ export function NotFoundView() {
             {d.popularHeading}
           </p>
           <div className="flex flex-wrap justify-center gap-2.5">
-            <Link
-              href="/products"
-              className={`${PILL_BASE} border-border bg-card text-foreground hover:border-primary hover:text-primary`}
-            >
-              {d.popular.smartphones}
-            </Link>
-            <Link
-              href="/products"
-              className={`${PILL_BASE} border-border bg-card text-foreground hover:border-primary hover:text-primary`}
-            >
-              {d.popular.laptops}
-            </Link>
-            <Link
-              href="/products"
-              className={`${PILL_BASE} border-border bg-card text-foreground hover:border-primary hover:text-primary`}
-            >
-              {d.popular.audio}
-            </Link>
+            {categories.length > 0 ? (
+              categories.slice(0, NOT_FOUND_CATEGORY_LIMIT).map((category) => (
+                <Link
+                  key={category.slug}
+                  href={`/categories/${category.slug}`}
+                  className={`${PILL_BASE} border-border bg-card text-foreground hover:border-primary hover:text-primary`}
+                >
+                  {category.name}
+                </Link>
+              ))
+            ) : (
+              <Link
+                href="/categories"
+                className={`${PILL_BASE} border-border bg-card text-foreground hover:border-primary hover:text-primary`}
+              >
+                {d.allCategories}
+              </Link>
+            )}
             {/* Акції keeps the sale accent, mirroring the header promo link. */}
             <Link
               href="/promo"

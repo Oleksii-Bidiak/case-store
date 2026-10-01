@@ -10,7 +10,7 @@ import type { BlogPostView } from "../model/posts";
 import { BlogArrowDownIcon, BlogSearchIcon } from "./blog-icons";
 import { BlogEmptyState } from "./blog-empty-state";
 import { BlogFeaturedCard } from "./blog-featured-card";
-import { BlogNewsletter } from "./blog-newsletter";
+import { BlogNewsletter, type BlogNewsletterContact } from "./blog-newsletter";
 import { BlogPostCard } from "./blog-post-card";
 
 /** A category chip descriptor (the synthetic "all" bucket is added first). */
@@ -34,6 +34,13 @@ interface BlogViewProps {
   page: number;
   /** How many pages the current filter selection has. */
   totalPages: number;
+  /**
+   * The shop name from «SEO-налаштування» (TASK-873) — the badge reads
+   * «Журнал <назва>»; without it, the neutral «Журнал».
+   */
+  siteName?: string;
+  /** «Контакти магазину» — the newsletter block's social channels (TASK-873). */
+  contact?: BlogNewsletterContact | null;
 }
 
 /**
@@ -74,6 +81,8 @@ export function BlogView({
   query,
   page,
   totalPages,
+  siteName,
+  contact,
 }: BlogViewProps) {
   const router = useRouter();
 
@@ -115,13 +124,13 @@ export function BlogView({
       <div className="mb-[26px] flex flex-wrap items-end justify-between gap-6">
         <div className="max-w-[640px]">
           <span
-            className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary"
+            className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary uppercase"
             style={{
               background:
                 "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
             }}
           >
-            {dict.blog.badge}
+            {siteName ? dict.blog.badgeNamed(siteName) : dict.blog.badge}
           </span>
           <h1 className={`mt-3.5 mb-2.5 ${H1_CLASS} text-foreground`}>
             {dict.blog.heading}
@@ -213,7 +222,7 @@ export function BlogView({
       )}
 
       {/* Newsletter / social channels */}
-      <BlogNewsletter />
+      <BlogNewsletter contact={contact} />
     </>
   );
 }

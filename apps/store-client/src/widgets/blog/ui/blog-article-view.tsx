@@ -95,15 +95,14 @@ export function BlogArticleView({
         style={{ background: blogGradient(post.hue) }}
       >
         {/* A cover the CSP blocks or that fails to load leaves the gradient,
-            not a broken box (TASK-759). */}
+            not a broken box (TASK-759). TASK-873: the mockup's
+            «[ обкладинка статті ]» caption is gone — it was printed over the
+            real photo too. */}
         <FallbackImg
           src={post.coverImageUrl}
           alt=""
           className="size-full object-cover"
         />
-        <span className="absolute right-[18px] bottom-4 font-mono text-xs text-white/70">
-          {dict.blog.article.coverCaption}
-        </span>
       </div>
 
       {/* Body + TOC */}

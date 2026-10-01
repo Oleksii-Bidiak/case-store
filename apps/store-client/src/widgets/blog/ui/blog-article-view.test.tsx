@@ -108,10 +108,8 @@ describe("BlogArticleView", () => {
         'img[src="https://blocked.example.com/cover.jpg"]',
       ),
     ).toBeNull();
-    // The caption over the gradient backdrop stays.
-    expect(
-      screen.getByText(dict.blog.article.coverCaption),
-    ).toBeInTheDocument();
+    // TASK-873 — no «[ обкладинка статті ]» caption, with or without a photo.
+    expect(container.textContent).not.toContain("обкладинка статті");
   });
 
   it("renders related posts, excluding the current article", () => {

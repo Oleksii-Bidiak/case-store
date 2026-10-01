@@ -483,21 +483,24 @@ export function InfoView({
               sections.aboutStats,
               () => (
                 <>
-                  <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
-                    {ABOUT_STATS.map((stat) => (
-                      <div
-                        key={stat.label}
-                        className="rounded-[14px] border border-border bg-card p-[22px] text-center shadow-card"
-                      >
-                        <span className="block font-display text-[30px] font-bold text-primary">
-                          {stat.num}
-                        </span>
-                        <span className="text-[13px] text-muted-foreground">
-                          {stat.label}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
+                  {/* TASK-873 — no figures in the fallback, so no empty row. */}
+                  {ABOUT_STATS.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+                      {ABOUT_STATS.map((stat) => (
+                        <div
+                          key={stat.label}
+                          className="rounded-[14px] border border-border bg-card p-[22px] text-center shadow-card"
+                        >
+                          <span className="block font-display text-[30px] font-bold text-primary">
+                            {stat.num}
+                          </span>
+                          <span className="text-[13px] text-muted-foreground">
+                            {stat.label}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   <div className={CARD}>
                     <h3 className={SUB_HEADING}>{d.valuesHeading}</h3>
