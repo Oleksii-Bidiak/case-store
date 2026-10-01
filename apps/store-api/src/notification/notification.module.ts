@@ -2,6 +2,7 @@ import { Global, Module } from '@nestjs/common';
 import { AdminNotificationController } from './admin-notification.controller';
 import { NotificationBindingRepository } from './notification-binding.repository';
 import { NotificationBindingService } from './notification-binding.service';
+import { ShopNotifier } from './shop-notifier.service';
 import { TelegramClient } from './telegram/telegram.client';
 import { TelegramChannelState } from './telegram/telegram-channel.state';
 import { TelegramAdapter } from './telegram/telegram.adapter';
@@ -24,12 +25,12 @@ import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
  * outbox but the `NotificationChannelAdapter` interface and
  * `PermanentDeliveryError`, which are plain imports, not providers.
  *
- * It is `@Global()` for TASK-677's three shop events, which read the active SHOP
- * bindings from `OrderService`, the contact form and returns — each would
- * otherwise re-import this module. Same reasoning as `MailModule` and
- * `NotificationOutboxModule`. This module may inject the (also global)
- * `NotificationOutboxService` without an import cycle: global modules are
- * linked, not imported.
+ * It is `@Global()` for TASK-677's three shop events: {@link ShopNotifier} is
+ * injected by `OrderService`, `ContactService` and `ReturnService`, each of which
+ * would otherwise re-import this module. Same reasoning as `MailModule` and
+ * `NotificationOutboxModule`. `ShopNotifier` injects the (also global)
+ * `NotificationOutboxRepository` without an import cycle: global modules are
+ * linked, not imported, and none of those three modules is imported back here.
  */
 @Global()
 @Module({
@@ -37,6 +38,7 @@ import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
   providers: [
     NotificationBindingRepository,
     NotificationBindingService,
+    ShopNotifier,
     TelegramClient,
     TelegramChannelState,
     TelegramRendererRegistry,
@@ -46,6 +48,7 @@ import { TelegramUpdatesWorker } from './telegram/telegram-updates.worker';
   ],
   exports: [
     NotificationBindingService,
+    ShopNotifier,
     TelegramClient,
     TelegramChannelState,
     TelegramRendererRegistry,

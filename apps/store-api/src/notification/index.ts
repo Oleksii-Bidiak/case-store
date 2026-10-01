@@ -1,6 +1,18 @@
 // Notification Module — public API (plan 187)
 export { NotificationModule } from './notification.module';
 export { adminUrl } from './notification-links';
+export { ShopNotifier } from './shop-notifier.service';
+export {
+  SHOP_NEW_ORDER_TYPE,
+  SHOP_CONTACT_MESSAGE_TYPE,
+  SHOP_RETURN_REQUESTED_TYPE,
+  type ShopNotificationType,
+  type ShopNewOrderPayload,
+  type ShopContactMessageInput,
+  type ShopContactMessagePayload,
+  type ShopReturnRequestedInput,
+  type ShopReturnRequestedPayload,
+} from './shop-notification.types';
 export {
   NotificationBindingService,
   BINDING_TOKEN_TTL_MS,
@@ -31,5 +43,6 @@ export {
   TelegramRendererRegistry,
   DEFAULT_TELEGRAM_RENDERERS,
   type TelegramRenderer,
+  type TelegramRenderContext,
 } from './telegram/telegram-renderers';
 export { escapeHtml } from './telegram/telegram-html';

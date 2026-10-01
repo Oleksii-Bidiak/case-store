@@ -25,6 +25,7 @@ import { ORDER_EXPORT_MAX_ROWS } from '../src/order/order.service';
 import { DiscountRepository } from '../src/discount';
 import { MailService } from '../src/mail/mail.service';
 import { NotificationOutboxService } from '../src/notification-outbox';
+import { ShopNotifier } from '../src/notification/shop-notifier.service';
 import { NovaPoshtaClient } from '../src/delivery';
 import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
@@ -620,7 +621,11 @@ describe('OrderController (e2e)', () => {
       // Drive the in-transaction afterCreate hook so the outbox enqueue runs,
       // mirroring the real repository (TASK-103-F).
       const createdOrder = makeOrder();
-      const txStub = { notificationOutbox: { create: jest.fn() } };
+      // TASK-677: the shop ping reads the SHOP chats through the same tx — none here.
+      const txStub = {
+        notificationOutbox: { create: jest.fn() },
+        notificationBinding: { findMany: jest.fn().mockResolvedValue([]) },
+      };
       orderRepositoryMock.createFromCart.mockImplementation(
         async (
           _params: unknown,
@@ -855,7 +860,11 @@ describe('OrderController (e2e)', () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
       const createdOrder = makeOrder();
-      const txStub = { notificationOutbox: { create: jest.fn() } };
+      // TASK-677: the shop ping reads the SHOP chats through the same tx — none here.
+      const txStub = {
+        notificationOutbox: { create: jest.fn() },
+        notificationBinding: { findMany: jest.fn().mockResolvedValue([]) },
+      };
       orderRepositoryMock.createFromCart.mockImplementation(
         async (
           _params: unknown,
@@ -2372,6 +2381,104 @@ describe('OrderController (e2e)', () => {
 
   // ─── POST /api/admin/orders — the phone order (TASK-341 / TASK-426) ───────────
 
+  // ─── TASK-677: the shop's Telegram ping ──────────────────────────────────────
+  //
+  // NotificationOutboxService is mocked in this suite, so the ONLY outbox insert
+  // that can reach the transaction stub is the shop ping — written by the real
+  // ShopNotifier → NotificationBindingService → NotificationOutboxRepository.
+
+  describe('POST /api/orders — shop ping (TASK-677)', () => {
+    const SHOP_CHAT_ID = '-1001234567890';
+
+    const makeTxStub = (bindings: Array<{ externalId: string }>) => ({
+      notificationOutbox: { create: jest.fn().mockResolvedValue({}) },
+      notificationBinding: {
+        findMany: jest.fn().mockResolvedValue(
+          bindings.map((binding, index) => ({
+            id: `binding-${index}`,
+            channel: 'TELEGRAM',
+            audience: 'SHOP',
+            externalId: binding.externalId,
+            label: null,
+            userId: null,
+            orderId: null,
+            createdAt: new Date('2026-10-01T00:00:00.000Z'),
+            revokedAt: null,
+          })),
+        ),
+      },
+    });
+
+    const armCheckout = (txStub: ReturnType<typeof makeTxStub>) => {
+      userRepositoryMock.findById.mockResolvedValue({
+        id: userA.id,
+        email: 'usera@example.com',
+        firstName: 'User',
+        lastName: 'A',
+        isActive: true,
+      });
+      cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
+      const createdOrder = makeOrder();
+      orderRepositoryMock.createFromCart.mockImplementation(
+        async (
+          _params: unknown,
+          afterCreate?: (tx: unknown, created: OrderWithItems) => Promise<void>,
+        ) => {
+          if (afterCreate) await afterCreate(txStub, createdOrder);
+          return createdOrder;
+        },
+      );
+    };
+
+    it('queues one TELEGRAM row for the shop chat, in the order transaction', async () => {
+      const txStub = makeTxStub([{ externalId: SHOP_CHAT_ID }]);
+      armCheckout(txStub);
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${generateAccessToken(userA.id, userA.role)}`)
+        .send({ shippingAddress: validAddress })
+        .expect(201);
+
+      // The active SHOP chats were read through the order's tx…
+      expect(txStub.notificationBinding.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { channel: 'TELEGRAM', audience: 'SHOP', revokedAt: null },
+        }),
+      );
+      // …and the ping was written through it too.
+      expect(txStub.notificationOutbox.create).toHaveBeenCalledTimes(1);
+      expect(txStub.notificationOutbox.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          type: 'shop-new-order',
+          channel: 'TELEGRAM',
+          recipientAddress: SHOP_CHAT_ID,
+          payload: expect.objectContaining({
+            orderId: 'order-e2e-1',
+            total: '59.98',
+            itemsCount: 2,
+            customerName: 'User A',
+            city: 'Kyiv',
+          }),
+        }),
+      });
+    });
+
+    it('queues nothing when no shop chat is connected — and the order still succeeds', async () => {
+      const txStub = makeTxStub([]);
+      armCheckout(txStub);
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${generateAccessToken(userA.id, userA.role)}`)
+        .send({ shippingAddress: validAddress })
+        .expect(201);
+
+      expect(txStub.notificationBinding.findMany).toHaveBeenCalledTimes(1);
+      expect(txStub.notificationOutbox.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('POST /api/admin/orders', () => {
     // `ManualOrderItemDto.productId` is `@IsUUID('loose')`, so this suite's
     // `prod-e2e-1` fixture id cannot appear in a request body.
@@ -2423,6 +2530,21 @@ describe('OrderController (e2e)', () => {
       // number however the next operator spells it.
       expect(guestArg()).toEqual({ name: 'Олена Шевченко', phone: '380501234567' });
       expect(guestArg().email).toBeUndefined();
+    });
+
+    it('never pings the shop for an order staff took by phone (TASK-677)', async () => {
+      const token = generateAccessToken(admin.id, admin.role);
+      armCatalogue();
+      const shopPing = jest.spyOn(app.get(ShopNotifier), 'enqueueNewOrder');
+
+      await request(app.getHttpServer())
+        .post('/api/admin/orders')
+        .set('Authorization', `Bearer ${token}`)
+        .send(manualBody({ name: 'Олена Шевченко', phone: '050 123 4567' }))
+        .expect(201);
+
+      expect(shopPing).not.toHaveBeenCalled();
+      shopPing.mockRestore();
     });
 
     it('treats an empty email field as "not given" rather than a bad address (201)', async () => {

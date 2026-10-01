@@ -108,9 +108,18 @@ export class ContactRepository {
 
   /**
    * Insert a new contact message. Status defaults to NEW at the DB level.
+   *
+   * @param afterCreate optional in-transaction hook (TASK-677): when given, the
+   *   insert and the hook run in ONE `$transaction`, so whatever the hook writes
+   *   (the shop's Telegram ping) commits with the message or not at all, and a
+   *   throwing hook rolls the message back. Without it this stays a single plain
+   *   insert, as before — no transaction is opened for the SPAM path.
    */
-  create(data: CreateContactMessageInput): Promise<ContactMessage> {
-    return this.prisma.contactMessage.create({
+  create(
+    data: CreateContactMessageInput,
+    afterCreate?: (tx: Prisma.TransactionClient, created: ContactMessage) => Promise<void>,
+  ): Promise<ContactMessage> {
+    const args = {
       data: {
         name: data.name,
         phone: data.phone,
@@ -121,6 +130,16 @@ export class ContactRepository {
         ...(data.status !== undefined && { status: data.status }),
         ...(data.adminNote !== undefined && { adminNote: data.adminNote }),
       },
+    } satisfies Prisma.ContactMessageCreateArgs;
+
+    if (!afterCreate) {
+      return this.prisma.contactMessage.create(args);
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const created = await tx.contactMessage.create(args);
+      await afterCreate(tx, created);
+      return created;
     });
   }
 

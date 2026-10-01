@@ -24,6 +24,7 @@ import { createCartRepositoryMock } from '../../test/cart-repository.mock';
 import { CartEntity } from '../cart/entities/cart.entity';
 import { UserRepository } from '../user/user.repository';
 import { NotificationOutboxService } from '../notification-outbox';
+import { ShopNotifier } from '../notification/shop-notifier.service';
 import {
   DeliveryService,
   DeliveryNotConfiguredException,
@@ -242,6 +243,13 @@ const mailOutboxServiceMock = {
 /** Fake transaction client handed to the createFromCart afterCreate hook. */
 const txMock = { notificationOutbox: { create: jest.fn() } };
 
+// TASK-677: the shop's Telegram ping, queued in the same hook.
+const shopNotifierMock = {
+  enqueueNewOrder: jest.fn(),
+  enqueueContactMessage: jest.fn(),
+  enqueueReturnRequested: jest.fn(),
+};
+
 /**
  * Default createFromCart behaviour: resolve to a created order AND drive the
  * in-transaction afterCreate hook (so the outbox enqueue runs), mirroring the
@@ -333,6 +341,7 @@ describe('OrderService', () => {
         { provide: DiscountService, useValue: discountServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
+        { provide: ShopNotifier, useValue: shopNotifierMock },
       ],
     }).compile();
 
@@ -1255,6 +1264,84 @@ describe('OrderService', () => {
 
       expect(userRepositoryMock.findById).toHaveBeenCalledTimes(1);
       expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── TASK-677: the shop's Telegram ping ─────────────────────────────────────
+
+  describe('createOrder — shop ping (TASK-677)', () => {
+    beforeEach(() => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+      shopNotifierMock.enqueueNewOrder.mockResolvedValue(1);
+    });
+
+    it('queues the ping through the order transaction, next to the confirmation letter', async () => {
+      resolveCreateWithHook(
+        makeOrder({ paymentMethod: 'ON_DELIVERY', deliveryMethod: 'NOVA_POSHTA' } as never),
+      );
+
+      await service.createOrder(userActor, createDto);
+
+      expect(shopNotifierMock.enqueueNewOrder).toHaveBeenCalledTimes(1);
+      const [payload, tx] = shopNotifierMock.enqueueNewOrder.mock.calls[0];
+      // The order's tx, not the base client: the ping commits with the order.
+      expect(tx).toBe(txMock);
+      expect(payload).toEqual({
+        orderId: 'order-uuid-1',
+        total: '69.97',
+        paymentMethod: 'ON_DELIVERY',
+        deliveryMethod: 'NOVA_POSHTA',
+        itemsCount: 2,
+        // The account's name — the buyer, not the parcel's recipient.
+        customerName: 'Olena Shevchenko',
+        city: 'Kyiv',
+      });
+      // Both in-transaction writes ran.
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+    });
+
+    it('pings for an ONLINE order at creation too (TASK-678 narrows this)', async () => {
+      resolveCreateWithHook(makeOrder({ paymentMethod: 'ONLINE' } as never));
+      // NP-routed: a free-text (OTHER) order may not be paid online at all.
+      deliveryServiceMock.estimateShipping.mockResolvedValue({ cost: '60.00', etaDays: 2 });
+
+      await service.createOrder(userActor, {
+        shippingAddress: { ...address, npCityRef: 'city-ref-1' },
+        paymentMethod: 'ONLINE',
+      });
+
+      expect(shopNotifierMock.enqueueNewOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ paymentMethod: 'ONLINE' }),
+        txMock,
+      );
+    });
+
+    it('names a guest buyer by the name typed at checkout', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue({
+        ...cartWithItems,
+        userId: null,
+        token: GUEST_CART_TOKEN,
+      });
+      resolveCreateWithHook(makeOrder({ userId: null, guestName: guestContact.name }));
+
+      await service.createOrder(guestActor, createDto);
+
+      expect(shopNotifierMock.enqueueNewOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ customerName: guestContact.name }),
+        txMock,
+      );
+    });
+
+    it('fails the whole checkout when the ping cannot be queued (the hook error propagates)', async () => {
+      resolveCreateWithHook();
+      shopNotifierMock.enqueueNewOrder.mockRejectedValueOnce(new Error('outbox insert failed'));
+
+      // The real repository runs the hook inside its $transaction, so this
+      // rejection is what rolls the order back.
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(
+        'outbox insert failed',
+      );
     });
   });
 
@@ -2543,6 +2630,12 @@ describe('OrderService', () => {
     beforeEach(() => {
       orderRepositoryMock.findOrderableProducts.mockResolvedValue([catalogueProduct]);
       orderRepositoryMock.createManual.mockResolvedValue(makeOrder());
+    });
+
+    it('never pings the shop — staff took this order (TASK-677)', async () => {
+      await service.adminCreateOrder(dto, ADMIN_ID);
+
+      expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
     });
 
     it('prices the order from the catalogue, never from the request', async () => {

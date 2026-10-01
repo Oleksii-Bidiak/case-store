@@ -5,6 +5,7 @@ import { TelegramApiError, type TelegramClient } from './telegram.client';
 import type { TelegramChannelSnapshot, TelegramChannelState } from './telegram-channel.state';
 import { TelegramRendererRegistry } from './telegram-renderers';
 import { escapeHtml } from './telegram-html';
+import { ConfigService } from '@nestjs/config';
 import type { NotificationBindingService } from '../notification-binding.service';
 import type { PinoLogger } from 'nestjs-pino';
 
@@ -46,7 +47,7 @@ describe('TelegramAdapter', () => {
     client.sendMessage.mockResolvedValue({ message_id: 1 });
     bindings.hasActiveRecipient.mockResolvedValue(true);
     bindings.revokeByExternalId.mockResolvedValue(1);
-    renderers = new TelegramRendererRegistry();
+    renderers = new TelegramRendererRegistry(new ConfigService({}));
     renderers.register('test-ping', (row) => {
       const { name } = row.payload as { name: string };
       return `<b>Привіт</b>, ${escapeHtml(name)}`;
@@ -224,7 +225,7 @@ describe('TelegramAdapter', () => {
 
 describe('TelegramRendererRegistry', () => {
   it('refuses a second renderer for the same type', () => {
-    const registry = new TelegramRendererRegistry();
+    const registry = new TelegramRendererRegistry(new ConfigService({}));
     registry.register('x', () => 'a');
 
     expect(() => registry.register('x', () => 'b')).toThrow(
@@ -232,7 +233,23 @@ describe('TelegramRendererRegistry', () => {
     );
   });
 
-  it('ships no business renderers yet — TASK-677 adds them', () => {
-    expect(new TelegramRendererRegistry().has('order-confirmation')).toBe(false);
+  it('ships the three shop pings (TASK-677) and nothing for the customer letters', () => {
+    const registry = new TelegramRendererRegistry(new ConfigService({}));
+
+    expect(registry.has('shop-new-order')).toBe(true);
+    expect(registry.has('shop-contact-message')).toBe(true);
+    expect(registry.has('shop-return-requested')).toBe(true);
+    expect(registry.has('order-confirmation')).toBe(false);
+  });
+
+  it('hands a renderer the admin link built from STORE_ADMIN_URL at render time', () => {
+    const registry = new TelegramRendererRegistry({
+      get: (key: string) => (key === 'STORE_ADMIN_URL' ? 'https://admin.example.com/' : undefined),
+    } as unknown as ConfigService);
+    registry.register('link-ping', (_row, context) => context.adminUrl('/orders/1') ?? 'none');
+
+    expect(registry.render({ type: 'link-ping' } as NotificationOutbox)).toBe(
+      'https://admin.example.com/orders/1',
+    );
   });
 });

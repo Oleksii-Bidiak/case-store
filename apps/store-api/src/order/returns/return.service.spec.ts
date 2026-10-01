@@ -8,6 +8,7 @@ import { OrderRepository } from '../order.repository';
 import { ReturnEntity } from './entities';
 import type { ReturnWithItems } from './return.types';
 import type { OrderWithItems } from '../order.types';
+import { ShopNotifier } from '../../notification/shop-notifier.service';
 
 const USER_ID = 'user-uuid-1';
 const OTHER_USER_ID = 'user-uuid-2';
@@ -94,6 +95,16 @@ const pinoLoggerMock = {
   error: jest.fn(),
 };
 
+// TASK-677: the shop's Telegram ping for a customer's request.
+const shopNotifierMock = {
+  enqueueNewOrder: jest.fn(),
+  enqueueContactMessage: jest.fn(),
+  enqueueReturnRequested: jest.fn(),
+};
+
+/** The transaction client the repository hands the afterCreate hook. */
+const txMock = { marker: 'return-tx' };
+
 /**
  * The returns already opened against the order, as the repository reads them
  * INSIDE its locked transaction and hands them to the service's check
@@ -113,10 +124,17 @@ describe('ReturnService (TASK-340)', () => {
     inserted = [];
     returnRepositoryMock.findByOrderId.mockResolvedValue([]);
     returnRepositoryMock.create.mockImplementation(
-      async (params: unknown, assertClaimable?: (rows: ReturnWithItems[]) => void) => {
+      async (
+        params: unknown,
+        assertClaimable?: (rows: ReturnWithItems[]) => void,
+        afterCreate?: (tx: unknown, created: ReturnWithItems) => Promise<void>,
+      ) => {
         assertClaimable?.(ledger);
         inserted.push(params);
-        return makeReturn();
+        const created = makeReturn();
+        // Like the real repository: the hook runs inside the same transaction.
+        if (afterCreate) await afterCreate(txMock, created);
+        return created;
       },
     );
 
@@ -126,6 +144,7 @@ describe('ReturnService (TASK-340)', () => {
         { provide: ReturnRepository, useValue: returnRepositoryMock },
         { provide: OrderRepository, useValue: orderRepositoryMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
+        { provide: ShopNotifier, useValue: shopNotifierMock },
       ],
     }).compile();
 
@@ -146,7 +165,27 @@ describe('ReturnService (TASK-340)', () => {
       expect(returnRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ orderId: ORDER_ID, items: dto.items }),
         expect.any(Function),
+        expect.any(Function),
       );
+    });
+
+    it("queues the shop ping through the return's transaction (TASK-677)", async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await service.createReturn(USER_ID, ORDER_ID, dto);
+
+      expect(shopNotifierMock.enqueueReturnRequested).toHaveBeenCalledTimes(1);
+      expect(shopNotifierMock.enqueueReturnRequested).toHaveBeenCalledWith(
+        { returnId: RETURN_ID, orderId: ORDER_ID, itemsCount: 1, reason: 'Not the right size' },
+        txMock,
+      );
+    });
+
+    it('fails the request when the ping cannot be queued — the hook error propagates (TASK-677)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+      shopNotifierMock.enqueueReturnRequested.mockRejectedValueOnce(new Error('outbox down'));
+
+      await expect(service.createReturn(USER_ID, ORDER_ID, dto)).rejects.toThrow('outbox down');
     });
 
     // TASK-469: the customer door has always known who it was serving and threw
@@ -159,6 +198,7 @@ describe('ReturnService (TASK-340)', () => {
 
       expect(returnRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ createdByUserId: USER_ID }),
+        expect.any(Function),
         expect.any(Function),
       );
     });
@@ -238,6 +278,7 @@ describe('ReturnService (TASK-340)', () => {
       expect(returnRepositoryMock.create).toHaveBeenCalledWith(
         expect.objectContaining({ orderId: ORDER_ID }),
         expect.any(Function),
+        expect.any(Function),
       );
       expect(returnRepositoryMock.findByOrderId).not.toHaveBeenCalled();
     });
@@ -314,6 +355,15 @@ describe('ReturnService (TASK-340)', () => {
         expect.objectContaining({ orderId: ORDER_ID, createdByUserId: OPERATOR_ID }),
         expect.any(Function),
       );
+    });
+
+    it('never pings the shop and hands the repository no hook — staff opened it (TASK-677)', async () => {
+      orderRepositoryMock.findById.mockResolvedValue(makeOrder());
+
+      await service.adminCreateReturn(OPERATOR_ID, ORDER_ID, dto);
+
+      expect(returnRepositoryMock.create.mock.calls[0]).toHaveLength(2);
+      expect(shopNotifierMock.enqueueReturnRequested).not.toHaveBeenCalled();
     });
 
     it('records the OPERATOR as the author, not the customer whose order it is', async () => {

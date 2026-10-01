@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma';
 import { OrderService } from '../order';
 import { CacheService } from '../cache';
 import { NotificationOutboxService } from '../notification-outbox';
+import { ShopNotifier } from '../notification/shop-notifier.service';
 import { LiqPayAdapter } from './adapters/liqpay/liqpay.adapter';
 import { PaymentReconcileWorker } from './payment-reconcile.worker';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './payment.port';
@@ -39,8 +40,10 @@ const prismaStub = {
     { provide: PrismaService, useValue: prismaStub },
     { provide: CacheService, useValue: { get: jest.fn(), set: jest.fn(), del: jest.fn() } },
     { provide: NotificationOutboxService, useValue: { enqueue: jest.fn() } },
+    // TASK-677: provided app-wide by the @Global NotificationModule.
+    { provide: ShopNotifier, useValue: { enqueueNewOrder: jest.fn() } },
   ],
-  exports: [PrismaService, CacheService, NotificationOutboxService],
+  exports: [PrismaService, CacheService, NotificationOutboxService, ShopNotifier],
 })
 class InfraStubModule {}
 

@@ -15,6 +15,7 @@ import {
   PaymentStatus,
   PaymentAttemptStatus,
   PaymentMethod,
+  type Prisma,
 } from '@prisma/client';
 import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 // TASK-483: the public lookup has its own repository — see its docblock for why
@@ -23,6 +24,8 @@ import { OrderLookupRepository } from './order-lookup.repository';
 import { CartRepository, type CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
 import { NotificationOutboxService } from '../notification-outbox';
+// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
+import { ShopNotifier } from '../notification/shop-notifier.service';
 import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
@@ -267,6 +270,8 @@ export class OrderService {
     // status link stays usable.
     private readonly configService: ConfigService,
     private readonly logger: PinoLogger,
+    // TASK-677: the shop's Telegram ping for a storefront order.
+    private readonly shopNotifier: ShopNotifier,
   ) {
     this.logger.setContext(OrderService.name);
   }
@@ -417,6 +422,12 @@ export class OrderService {
         ? { email: actor.contact.email, name: actor.contact.name }
         : { email: user!.email, name: user!.firstName ?? undefined };
 
+    // TASK-677: who the shop's ping names — the buyer, not the parcel's recipient.
+    const customerName =
+      actor.type === 'guest'
+        ? actor.contact.name
+        : [user!.firstName, user!.lastName].filter(Boolean).join(' ') || null;
+
     const order = await this.orderRepository.createFromCart(
       {
         userId,
@@ -478,6 +489,10 @@ export class OrderService {
           },
           tx,
         );
+        // TASK-677: tell the shop, in the same transaction. Every payment method
+        // pings at creation for now; TASK-678 narrows this one call to
+        // ON_DELIVERY and moves the online ones to the moment they are paid.
+        await this.enqueueShopNewOrder(created, tx, customerName);
       },
     );
 
@@ -651,6 +666,37 @@ export class OrderService {
   private buildOrderLookupUrl(): string | null {
     const storeUrl = this.configService.get<string>('STORE_CLIENT_URL');
     return storeUrl ? `${storeUrl.replace(/\/+$/, '')}/orders/status` : null;
+  }
+
+  /**
+   * Queue the shop's «нове замовлення» Telegram ping (TASK-677) inside the
+   * order's transaction `tx` — never on the base client, so the ping and the
+   * order commit together or not at all (plan 187, constraint #2).
+   *
+   * Built from the order row alone, plus the buyer's name when the caller has
+   * it (an account's name is not on the row): TASK-678 calls this from the
+   * payment path too, where only the order is at hand. Without a name it falls
+   * back to the guest contact, then to the recipient on the shipping address.
+   */
+  private enqueueShopNewOrder(
+    order: OrderWithItems,
+    tx: Prisma.TransactionClient,
+    customerName?: string | null,
+  ): Promise<number> {
+    const address = (order.shippingAddress ?? null) as Partial<ShippingAddressData> | null;
+    const recipientName = [address?.firstName, address?.lastName].filter(Boolean).join(' ');
+    return this.shopNotifier.enqueueNewOrder(
+      {
+        orderId: order.id,
+        total: order.total.toString(),
+        paymentMethod: order.paymentMethod ?? null,
+        deliveryMethod: order.deliveryMethod ?? null,
+        itemsCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+        customerName: customerName || order.guestName || recipientName || null,
+        city: typeof address?.city === 'string' ? address.city : null,
+      },
+      tx,
+    );
   }
 
   /**
