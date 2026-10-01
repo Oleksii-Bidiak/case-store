@@ -209,7 +209,11 @@ the base commit per group lives in the registry in `docs/plans/189-design-track-
 for «База» and «CRM» are separate files next to them — `OrdersProposal`, `OrderNewProposal`, `ProductsProposal`,
 `ProductFormProposal`, `StaffProposal`, `CategoriesProposal`, `SettingsProposal`, `ProfileProposal`,
 `ReturnsProposal`, `ReviewsProposal`, `UsersProposal`, `MessagesProposal`, `SubscribersProposal`,
-`AuditLogProposal`.dc.html — and the pre-session state is kept as `<Name>-before.dc.html`. Proposals pass
+`AuditLogProposal`.dc.html; Д-ж3 (2026-10-01) did the same for «Контент» and «Каталог і маркетинг» —
+`PagesProposal`, `BlogProposal`, `RichTextEditorProposal`, `BlogCategoriesProposal`, `BannersProposal`,
+`CarouselsProposal`, `FaqProposal`, `ContentMapProposal`, `MediaProposal`, `BrandsProposal`, `DevicesProposal`,
+`AddonServicesProposal`, `ProductGroupsProposal`, `DiscountsProposal`, `CatalogImportProposal`,
+`ProductPreviewProposal`.dc.html — and the pre-session state is kept as `<Name>-before.dc.html`. Proposals pass
 `proposed="true"` to AdminShell (Returns counter, help button, «Клієнти» / «Співробітники» labels); the
 as-is files do not, so they keep drawing the code. Keep proposal files under ~70 KB each: a larger
 `write_files` payload was cut off before it ran — split a section into its own file instead. Each file is a canvas like AdminShell's showcase:
