@@ -16,7 +16,7 @@ import {
   buildProductItemListSchema,
 } from "@/shared/lib/schema";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
 /**
  * Time floor for the prerendered page (TASK-563). The deals grid is baked into
@@ -68,7 +68,7 @@ export default async function PromoPage() {
   );
 
   return (
-    <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.promo.breadcrumbHome, item: SITE_URL },

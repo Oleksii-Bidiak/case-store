@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { OrderLookupView } from "@/widgets";
 import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
 /**
  * `/orders/status` — the public "check my order" page (TASK-483).
@@ -26,7 +26,7 @@ export const metadata: Metadata = {
 
 export default function OrderStatusLookupPage() {
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className={`${PAGE_CONTAINER} py-8`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.orderLookup.breadcrumbHome, item: SITE_URL },

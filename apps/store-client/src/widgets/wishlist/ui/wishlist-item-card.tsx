@@ -10,9 +10,9 @@ import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 /**
- * Wishlist grid: 1 / 2 / 4 columns (TASK-415) inside the `max-w-[1320px]` page,
- * minus the 268px sidebar + 28px gap on `lg`. The widest a column gets is
- * ~313px (three 18px-gapped columns in the 976px content area), so cap the
+ * Wishlist grid: 1 / 2 / 4 columns (TASK-415) inside the `PAGE_CONTAINER`
+ * page, minus the 268px sidebar + 28px gap on `lg`. The widest a column gets is
+ * ~308px (three 18px-gapped columns in the 960px content area), so cap the
  * srcset hint at 320px instead of the generic viewport-based default
  * (TASK-210).
  *

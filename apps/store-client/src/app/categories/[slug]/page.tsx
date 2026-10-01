@@ -42,7 +42,7 @@ import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
 interface CategoryLandingPageProps {
   params: Promise<{ slug: string }>;
@@ -263,8 +263,7 @@ export default async function CategoryLandingPage({
   const schemas = buildCategoryPageSchemas(path, listing?.data);
 
   return (
-    // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products catalog page shell (shared grid must align pixel-for-pixel)
-    <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8">
+    <div className={`${PAGE_CONTAINER} py-6 sm:py-8`}>
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       {schemas?.itemList && <JsonLd schema={schemas.itemList} />}
 

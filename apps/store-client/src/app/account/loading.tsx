@@ -1,4 +1,5 @@
 import { AccountSkeleton } from "@/widgets";
+import { PAGE_CONTAINER } from "@/shared/config";
 
 /**
  * Route-level loading UI for `/account`; mirrors the page's `<Suspense>`
@@ -6,7 +7,7 @@ import { AccountSkeleton } from "@/widgets";
  */
 export default function Loading() {
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className={`${PAGE_CONTAINER} py-8`}>
       <AccountSkeleton />
     </div>
   );

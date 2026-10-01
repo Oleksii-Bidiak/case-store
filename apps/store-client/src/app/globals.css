@@ -332,6 +332,11 @@
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
 
+  /* Layout — the one page-container width (owner decision 7.1, TASK-860).
+     `--container-*` is Tailwind's max-width namespace → `max-w-page`. Use it
+     through `PAGE_CONTAINER` (shared/config/layout.ts), not on its own. */
+  --container-page: 1320px;
+
   /* Fonts */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);

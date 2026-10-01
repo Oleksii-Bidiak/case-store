@@ -22,7 +22,7 @@ import {
   toMetadataTitle,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
 const RELATED_LIMIT = 3;
 
@@ -131,7 +131,7 @@ export default async function BlogArticlePage({
   const canonical = `${SITE_URL}/blog/${post.slug}`;
 
   return (
-    <div className="mx-auto w-full max-w-[1180px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.blog.breadcrumbHome, item: SITE_URL },

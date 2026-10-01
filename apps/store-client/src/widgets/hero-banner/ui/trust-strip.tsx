@@ -1,5 +1,5 @@
 import { Truck, ShieldCheck, RotateCcw, CreditCard } from "lucide-react";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 
 // Icons + accent colour pair with dict.home.trust by index (copy is data,
 // visuals stay in code).
@@ -17,10 +17,7 @@ const ICONS = [
  */
 export function TrustStrip() {
   return (
-    <section
-      aria-label={dict.trust.secure}
-      className="mx-auto w-full max-w-7xl px-4"
-    >
+    <section aria-label={dict.trust.secure} className={PAGE_CONTAINER}>
       <ul className="grid gap-4 rounded-2xl border border-border bg-card p-6 shadow-card sm:grid-cols-2 lg:grid-cols-4">
         {dict.home.trust.map((item, i) => {
           const { icon: Icon, color } = ICONS[i];

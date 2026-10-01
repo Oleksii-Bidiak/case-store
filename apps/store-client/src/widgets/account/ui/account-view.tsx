@@ -7,7 +7,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
 import { useUserControllerGetProfile, type UserEntity } from "@/entities/user";
 import { Skeleton } from "@/shared/ui";
-import { dict, FEATURE_STUBS, STICKY_ASIDE_TOP } from "@/shared/config";
+import {
+  dict,
+  FEATURE_STUBS,
+  STICKY_ASIDE_TOP,
+  PAGE_CONTAINER,
+} from "@/shared/config";
 import {
   AccountIcon,
   AccountBackIcon,
@@ -73,8 +78,10 @@ export function AccountView() {
   }, [isInitializing, isAuthenticated, router]);
 
   if (isInitializing || !isAuthenticated || isLoading) {
+    // Same container as `app/account/loading.tsx` and the page Suspense
+    // fallback — this branch used to run edge to edge with no gutter (TASK-860).
     return (
-      <div className="flex flex-col gap-4">
+      <div className={`${PAGE_CONTAINER} flex flex-col gap-4 py-8`}>
         <Skeleton className="h-9 w-48" />
         <Skeleton className="h-40 w-full" />
       </div>
@@ -104,7 +111,7 @@ export function AccountView() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <Link
         href="/"
         className="mb-[22px] inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"

@@ -28,7 +28,7 @@ import {
 import { StaleCanonicalGuard } from "@/shared/lib/seo/stale-canonical-guard";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
 /**
  * `/catalog/<категорія>/<модель>` — the compatibility landing pages (TASK-490,
@@ -364,8 +364,7 @@ export default async function CompatLandingPage({
   );
 
   return (
-    // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products catalog page shell (shared grid must align pixel-for-pixel)
-    <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8">
+    <div className={`${PAGE_CONTAINER} py-6 sm:py-8`}>
       {/* TASK-835 — a facet ticked before the head hydrates would otherwise
           leave the old canonical next to the new one. */}
       {canonicalPath && (

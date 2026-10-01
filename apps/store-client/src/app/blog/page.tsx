@@ -12,7 +12,7 @@ import {
 } from "@/shared/lib/schema";
 import { buildListingMetadata } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
 // TASK-435 — title/description come from the `blog` HUB page row so the owner
 // can edit them in the panel; the dictionary strings remain the fallback.
@@ -115,7 +115,7 @@ export default async function BlogPage({ searchParams }: BlogPageProps) {
   const listed = featured ? [featured, ...rest] : rest;
 
   return (
-    <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.blog.breadcrumbHome, item: SITE_URL },

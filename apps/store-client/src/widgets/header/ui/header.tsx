@@ -15,7 +15,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 import { SearchAutocomplete } from "@/features/search";
 import { ThemeToggle } from "@/features/theme";
@@ -76,7 +76,9 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
     <>
       <AnnouncementBar banner={announcement} />
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3">
+        <div
+          className={`${PAGE_CONTAINER} flex h-16 items-center gap-2 sm:gap-3`}
+        >
           {/* Left: mobile menu trigger + logo. `min-w-0` (here and on the logo
               link) makes this the cluster that yields on a 320px screen — the
               wordmark truncates instead of pushing the cart off-canvas. */}

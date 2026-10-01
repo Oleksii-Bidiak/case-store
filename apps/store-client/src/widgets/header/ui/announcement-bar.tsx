@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
 interface AnnouncementBarProps {
@@ -21,7 +21,9 @@ export function AnnouncementBar({ banner }: AnnouncementBarProps = {}) {
 
   return (
     <div className="bg-footer text-footer-foreground">
-      <div className="mx-auto flex h-10 max-w-7xl items-center justify-between gap-3 px-4 text-[13px]">
+      <div
+        className={`${PAGE_CONTAINER} flex h-10 items-center justify-between gap-3 text-[13px]`}
+      >
         <span className="inline-flex min-w-0 items-center gap-2">
           <span
             aria-hidden="true"

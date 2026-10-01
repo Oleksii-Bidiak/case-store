@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { BannerBackdrop, Button } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
 interface PromoBannerProps {
@@ -26,7 +26,7 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
   const imageUrl = banner?.imageUrl ?? undefined;
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4">
+    <section className={PAGE_CONTAINER}>
       <div className="relative isolate flex flex-wrap items-center justify-between gap-8 overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-10 sm:p-12">
         {/* Admin picture under the copy (TASK-740); the gradient without one. */}
         <BannerBackdrop

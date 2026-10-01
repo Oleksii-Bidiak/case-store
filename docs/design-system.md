@@ -121,17 +121,24 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 `1 (4px) · 2 (8px) · 3 (12px) · 4 (16px) · 6 (24px) · 8 (32px) · 12 (48px) · 16 (64px) · 24 (96px)`.
 
 - **Page container:** one width token of **1320px** for every page, the header and the footer
-  (owner decision 7.1): `mx-auto w-full max-w-(--container-page) px-4 sm:px-6 lg:px-8`. It is
-  rolling out via TASK-860. Until then the code still uses `max-w-7xl` (1280px) in some places
-  and 1320 in others. Don't add a third width.
-- **Inner widths** are not containers. They sit inside the page container:
+  (owner decision 7.1). The token is `--container-page: 1320px` in `@theme inline`
+  (globals.css), which Tailwind turns into the utility `max-w-page`. Don't write the classes by
+  hand: import `PAGE_CONTAINER` from `@/shared/config` (`shared/config/layout.ts`), which is
+  `mx-auto w-full max-w-page px-4 sm:px-6 lg:px-8`, and add only the vertical padding next to it
+  (``className={`${PAGE_CONTAINER} py-8`}``). Every page, every `loading.tsx`, the header, the
+  announcement bar, the footer and every homepage section use it (TASK-860). No `max-w-7xl` and
+  no `max-w-[…px]` page shells.
+- **Inner widths** are not containers. They sit inside the page container, centred with
+  `mx-auto`, so the outer gutter stays the same on every page:
 
-  | Content                    | Width       |
-  | -------------------------- | ----------- |
-  | Article prose              | 760px       |
-  | Auth forms                 | `max-w-md`  |
-  | Order lists (`/orders`, …) | `max-w-3xl` |
-  | 404 block                  | 560px       |
+  | Content                            | Width       |
+  | ---------------------------------- | ----------- |
+  | Article prose                      | 760px       |
+  | Legal / info document (TOC + text) | `max-w-6xl` |
+  | Legal hub (`/legal`)               | `max-w-5xl` |
+  | Auth forms                         | `max-w-md`  |
+  | Order lists (`/orders`, …)         | `max-w-3xl` |
+  | 404 block                          | 560px       |
 
 - **Section vertical rhythm:** `py-12 md:py-16` (hero may go `py-20 md:py-28`).
 - **Grid gaps:** cards `gap-4 md:gap-6`; form fields `gap-4`.

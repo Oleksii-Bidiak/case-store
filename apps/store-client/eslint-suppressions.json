@@ -1,37 +1,27 @@
 {
   "src/app/blog/[slug]/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/blog/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 4
-    }
-  },
-  "src/app/cart/page.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
+      "count": 3
     }
   },
   "src/app/categories/page.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
-    }
-  },
-  "src/app/checkout/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1
     }
   },
   "src/app/contact/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/info/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/layout.tsx": {
@@ -41,27 +31,27 @@
   },
   "src/app/legal/[slug]/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/legal/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/products/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 4
+      "count": 3
     }
   },
   "src/app/promo/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 2
+      "count": 1
     }
   },
   "src/app/wishlist/page.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/add-to-cart/ui/add-to-cart-button.tsx": {
@@ -201,7 +191,7 @@
   },
   "src/widgets/account/ui/account-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 14
+      "count": 13
     }
   },
   "src/widgets/blog/ui/blog-article-body.tsx": {

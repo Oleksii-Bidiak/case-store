@@ -30,7 +30,7 @@ import {
   toMetadataTitle,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, CURRENCY, dict } from "@/shared/config";
+import { SITE_URL, CURRENCY, dict, PAGE_CONTAINER } from "@/shared/config";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
@@ -159,7 +159,7 @@ export default async function ProductDetailPage({
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className={`${PAGE_CONTAINER} py-8`}>
       {schemas?.product && <JsonLd schema={schemas.product} />}
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>

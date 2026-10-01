@@ -15,7 +15,7 @@ import {
   toMetadataTitle,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, dict } from "@/shared/config";
+import { PAGE_CONTAINER, SITE_URL, dict } from "@/shared/config";
 
 /**
  * Fetch a published LEGAL page by slug through the ISR-tagged server fetcher;
@@ -127,14 +127,18 @@ export default async function LegalDocPage({ params }: LegalDocPageProps) {
   const otherDocs = await getOtherDocs(slug);
 
   return (
-    <div className="mx-auto w-full max-w-[1160px] px-4 pt-[22px] pb-16 sm:px-6">
+    // Page container outside, document width inside: the outer gutter matches
+    // every other page while the TOC + article column keeps its reading width.
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.legal.breadcrumbHome, item: SITE_URL },
           { name: page.title, item: `${SITE_URL}/legal/${page.slug}` },
         ])}
       />
-      <LegalDocView page={page} otherDocs={otherDocs} />
+      <div className="mx-auto max-w-6xl">
+        <LegalDocView page={page} otherDocs={otherDocs} />
+      </div>
     </div>
   );
 }

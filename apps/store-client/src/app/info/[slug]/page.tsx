@@ -19,7 +19,12 @@ import {
   toMetadataTitle,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { isInfoSlugInlinedOnHub, SITE_URL, dict } from "@/shared/config";
+import {
+  isInfoSlugInlinedOnHub,
+  PAGE_CONTAINER,
+  SITE_URL,
+  dict,
+} from "@/shared/config";
 
 /**
  * `/info/<slug>` — admin-authored help / reference pages (TASK-435).
@@ -137,7 +142,7 @@ export default async function InfoDocPage({ params }: InfoDocPageProps) {
 
   return (
     // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /legal/[slug] document shell (same template, so the two surfaces must align pixel-for-pixel)
-    <div className="mx-auto w-full max-w-[1160px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.info.breadcrumbHome, item: SITE_URL },
@@ -145,7 +150,9 @@ export default async function InfoDocPage({ params }: InfoDocPageProps) {
           { name: page.title, item: `${SITE_URL}/info/${page.slug}` },
         ])}
       />
-      <LegalDocView page={page} otherDocs={otherDocs} hub={INFO_DOC_HUB} />
+      <div className="mx-auto max-w-6xl">
+        <LegalDocView page={page} otherDocs={otherDocs} hub={INFO_DOC_HUB} />
+      </div>
     </div>
   );
 }

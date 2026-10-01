@@ -23,6 +23,7 @@ import { buildHubMetadata } from "@/shared/lib/seo/server";
 import {
   INFO_HUB_SECTION_SLUGS,
   INFO_SLUG_INLINED_ON_HUB,
+  PAGE_CONTAINER,
   SITE_URL,
   dict,
   isInfoSlugInlinedOnHub,
@@ -168,7 +169,7 @@ export default async function InfoPage() {
   ]);
 
   return (
-    <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.info.breadcrumbHome, item: SITE_URL },

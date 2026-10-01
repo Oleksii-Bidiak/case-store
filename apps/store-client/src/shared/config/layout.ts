@@ -18,3 +18,15 @@ export const STICKY_HEADER_OFFSET = 96;
  * always pair with `lg:sticky`. `top-24` = 96px = `STICKY_HEADER_OFFSET`.
  */
 export const STICKY_ASIDE_TOP = "lg:top-24";
+
+/**
+ * The one page container (owner decision 7.1, TASK-860): 1320px wide via the
+ * `--container-page` token (`max-w-page`), with the house gutter
+ * `px-4 sm:px-6 lg:px-8`. Every page, every `loading.tsx`, the header, the
+ * announcement bar, the footer and every full-width homepage section use it,
+ * so their left edges line up at every viewport. Add vertical padding next to
+ * it (`${PAGE_CONTAINER} py-8`); narrower content (article prose, auth forms,
+ * order lists, legal documents) is an INNER width placed inside it, never a
+ * replacement for it.
+ */
+export const PAGE_CONTAINER = "mx-auto w-full max-w-page px-4 sm:px-6 lg:px-8";

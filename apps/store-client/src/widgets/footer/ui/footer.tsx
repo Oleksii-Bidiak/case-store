@@ -13,7 +13,7 @@ import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchPublishedPages } from "@/shared/api/pages-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { Logo } from "@/shared/ui";
-import { dict, isInfoSlugInlinedOnHub } from "@/shared/config";
+import { dict, isInfoSlugInlinedOnHub, PAGE_CONTAINER } from "@/shared/config";
 
 // Defensive cap on how many published legal pages render as footer links, so the
 // «Інформація» column can't grow unboundedly if the admin publishes many pages.
@@ -71,7 +71,9 @@ export async function Footer() {
     <footer className="mt-16 bg-footer text-footer-foreground">
       {/* Trust strip */}
       <div className="border-b border-footer-foreground/10">
-        <ul className="mx-auto grid max-w-7xl grid-cols-1 gap-4 px-4 py-6 sm:grid-cols-3">
+        <ul
+          className={`${PAGE_CONTAINER} grid grid-cols-1 gap-4 py-6 sm:grid-cols-3`}
+        >
           {TRUST_ITEMS.map(({ icon: Icon, label }) => (
             <li
               key={label}
@@ -85,8 +87,10 @@ export async function Footer() {
       </div>
 
       {/* Link columns */}
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
-      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-8 px-4 py-12 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
+      <div
+        // eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent
+        className={`${PAGE_CONTAINER} grid grid-cols-1 gap-8 py-12 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr_1fr]`}
+      >
         {/* Brand + socials */}
         <div className="flex flex-col gap-4">
           <Link href="/">
@@ -201,7 +205,9 @@ export async function Footer() {
 
       {/* Bottom bar */}
       <div className="border-t border-footer-foreground/10">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 py-5 sm:flex-row">
+        <div
+          className={`${PAGE_CONTAINER} flex flex-col items-center justify-between gap-4 py-5 sm:flex-row`}
+        >
           <p className="text-xs text-footer-foreground/60">
             {dict.footer.rights(year)}
           </p>

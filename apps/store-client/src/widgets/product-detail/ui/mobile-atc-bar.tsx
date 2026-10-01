@@ -22,7 +22,7 @@ export function MobileAtcBar({
 }: MobileAtcBarProps) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 p-3 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80 md:hidden">
-      <div className="mx-auto flex max-w-7xl items-center gap-3">
+      <div className="mx-auto flex max-w-page items-center gap-3">
         <span className="font-display text-lg font-bold tracking-tight text-foreground">
           {formatMoney(price)}
         </span>

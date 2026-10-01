@@ -14,7 +14,7 @@ import type {
 import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 import { isCarouselTab, toTabs } from "../model/popular-tabs";
 import { PopularRailSkeleton } from "./product-grid-skeleton";
 
@@ -52,10 +52,7 @@ export function PopularRail({
   }
 
   return (
-    <section
-      aria-labelledby="popular-heading"
-      className="mx-auto w-full max-w-7xl px-4"
-    >
+    <section aria-labelledby="popular-heading" className={PAGE_CONTAINER}>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-border">
         <div className="flex flex-wrap items-end gap-x-7 gap-y-1">
           <h2

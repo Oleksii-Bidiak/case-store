@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { WishlistView, WishlistSkeleton } from "@/widgets";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 
 export const metadata: Metadata = {
   title: dict.wishlist.metaTitle,
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function WishlistPage() {
   return (
-    <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <Suspense fallback={<WishlistSkeleton />}>
         <WishlistView />
       </Suspense>

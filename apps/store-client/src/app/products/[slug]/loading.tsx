@@ -1,4 +1,5 @@
 import { ProductDetailSkeleton } from "@/widgets";
+import { PAGE_CONTAINER } from "@/shared/config";
 
 /**
  * Route-level loading UI for `/products/[slug]` (TASK-409, SF-PDP-03/05).
@@ -19,7 +20,7 @@ import { ProductDetailSkeleton } from "@/widgets";
  */
 export default function Loading() {
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className={`${PAGE_CONTAINER} py-8`}>
       <ProductDetailSkeleton />
     </div>
   );

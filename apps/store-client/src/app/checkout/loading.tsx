@@ -1,4 +1,5 @@
 import { CheckoutSkeleton } from "@/shared/ui";
+import { PAGE_CONTAINER } from "@/shared/config";
 
 /**
  * Route-level loading UI for `/checkout`; mirrors the page's `<Suspense>`
@@ -6,7 +7,7 @@ import { CheckoutSkeleton } from "@/shared/ui";
  */
 export default function Loading() {
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className={`${PAGE_CONTAINER} py-8`}>
       <CheckoutSkeleton />
     </div>
   );
