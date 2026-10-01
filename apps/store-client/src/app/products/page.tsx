@@ -330,9 +330,17 @@ export default async function ProductsPage({
 
       {/* The fallback stands in for ProductListView as a whole — chips row,
           toolbar and the 268px filter rail included (TASK-416) — so the grid
-          does not render full-width and then shrink into a column. */}
+          does not render full-width and then shrink into a column. With a
+          `?category=` the rail also reserves «Характеристики» (TASK-515). */}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
-        <Suspense fallback={<ProductListSkeleton withSidebar />}>
+        <Suspense
+          fallback={
+            <ProductListSkeleton
+              withSidebar
+              hasCategory={Boolean(categorySlug)}
+            />
+          }
+        >
           <ProductListView initialParams={initialParams} />
         </Suspense>
       </PrefetchBoundary>

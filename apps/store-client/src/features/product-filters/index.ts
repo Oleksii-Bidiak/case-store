@@ -25,3 +25,11 @@ export {
 // Listing params → facet-request params (TASK-489): one mapping, so every
 // caller of the facet endpoint shares one React Query key and one request.
 export { toFacetQueryParams } from "./model/facet-query";
+// The rail's section order (TASK-515) — the panel gates on it and the catalogue
+// skeleton draws its placeholder cards from it, so the two cannot drift.
+export {
+  FILTER_SECTION_ORDER,
+  filterRailSections,
+  type FilterSectionId,
+  type FilterSectionOptions,
+} from "./model/filter-sections";

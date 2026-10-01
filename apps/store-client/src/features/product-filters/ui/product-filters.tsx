@@ -12,6 +12,7 @@ import {
   hasActiveFilters as computeHasActiveFilters,
 } from "../model/active-filters";
 import { toFacetQueryParams } from "../model/facet-query";
+import { filterRailSections } from "../model/filter-sections";
 import { SearchInput } from "./search-input";
 import { BrandFilter } from "./brand-filter";
 import { DeviceModelFilter } from "./device-model-filter";
@@ -129,6 +130,19 @@ export function ProductFilters({
     panelFilterScope,
   );
 
+  // Which sections this rail shows, in render order (TASK-515). The catalogue
+  // skeleton draws its placeholder cards from the same `filterRailSections`, so
+  // gating here — not on ad-hoc prop checks — keeps the two from drifting.
+  const sections = new Set(
+    filterRailSections({
+      lockedDevice,
+      hideOnSale,
+      lockedOnSale,
+      hideSpecFacets,
+      hasCategory: Boolean(categoryId),
+    }),
+  );
+
   // Presence gates for the collapsible mobile drawer only: BrandFilter and
   // SpecFacets self-hide (return null) when they have no data, but a `<details>`
   // wrapper would still show a bare header. So in collapsible mode we mirror
@@ -151,12 +165,11 @@ export function ProductFilters({
     toFacetQueryParams(currentParams),
     {
       query: {
-        enabled: collapsible && Boolean(categoryId) && !hideSpecFacets,
+        enabled: collapsible && sections.has("specs"),
       },
     },
   );
-  const hasSpecs =
-    !hideSpecFacets && Boolean(categoryId) && (specsData?.data.length ?? 0) > 0;
+  const hasSpecs = sections.has("specs") && (specsData?.data.length ?? 0) > 0;
 
   /**
    * Render one filter section's chrome. In `collapsible` mode it is a native
@@ -231,9 +244,9 @@ export function ProductFilters({
           `compareAtPrice > price`. Same absent-when-unticked rule as the
           availability box above. Hidden where the endpoint behind the panel
           does not take the param (`/search`), so it can never be a control
-          that silently does nothing. */}
-      {!hideOnSale &&
-        !lockedOnSale &&
+          that silently does nothing, and on `/promo`, where the route fixes it
+          (TASK-1301) — both read from the section list (TASK-515). */}
+      {sections.has("onSale") &&
         renderSection(
           dict.filters.saleTitle,
           <FilterCheckbox
@@ -275,7 +288,7 @@ export function ProductFilters({
 
       {/* Device compatibility (TASK-190) — brand → model cascade. Absent when
           the route already names the device (TASK-490). */}
-      {!lockedDevice &&
+      {sections.has("device") &&
         renderSection(
           dict.filters.deviceTitle,
           <DeviceModelFilter
@@ -303,8 +316,9 @@ export function ProductFilters({
       {/* Structured-spec facets (TASK-191) — category-scoped; renders nothing
           when no category is active or it has no filterable specs. Collapsible
           drawer gates on `hasSpecs` and strips the facet card's own chrome.
-          Left out altogether with `hideSpecFacets` (TASK-523). */}
-      {hideSpecFacets ? null : collapsible ? (
+          Left out altogether with `hideSpecFacets` (TASK-523) or with no
+          category (TASK-515 — the section list says so either way). */}
+      {!sections.has("specs") ? null : collapsible ? (
         hasSpecs &&
         renderSection(
           dict.filters.specsTitle,

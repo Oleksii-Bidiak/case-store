@@ -413,7 +413,18 @@ export default async function CompatLandingPage({
         </p>
       </div>
 
-      <Suspense fallback={<ProductListSkeleton />}>
+      {/* Same shell as /categories/[slug] (TASK-515), and no device card —
+          the route fixes the device. */}
+      <Suspense
+        fallback={
+          <ProductListSkeleton
+            withSidebar
+            withCategoryChips={false}
+            hasCategory
+            lockedDevice
+          />
+        }
+      >
         <ProductListView
           initialParams={initialParams}
           lockedCategory={{ id: page.categoryId, slug: page.categorySlug }}

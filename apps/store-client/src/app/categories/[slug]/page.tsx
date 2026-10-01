@@ -313,7 +313,18 @@ export default async function CategoryLandingPage({
       <SubcategoryChips categories={node.children ?? []} />
 
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
-        <Suspense fallback={<ProductListSkeleton />}>
+        {/* The whole catalogue shell, like /products (TASK-416), minus the
+            category chips the locked view never shows, plus «Характеристики»
+            — a category is always set here (TASK-515). */}
+        <Suspense
+          fallback={
+            <ProductListSkeleton
+              withSidebar
+              withCategoryChips={false}
+              hasCategory
+            />
+          }
+        >
           <ProductListView
             initialParams={initialParams}
             // Slug for the listing filter, id for the id-addressed side

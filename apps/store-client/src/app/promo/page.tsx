@@ -140,8 +140,18 @@ export default async function PromoPage({
         <PromoView
           deals={
             // The fallback stands in for the whole listing — chips row,
-            // toolbar and the filter rail — like on /products (TASK-416).
-            <Suspense fallback={<ProductListSkeleton withSidebar />}>
+            // toolbar and the filter rail — like on /products (TASK-416). Its
+            // rail has no «Знижки» (the route fixes it) and reserves
+            // «Характеристики» under a `?category=` (TASK-515).
+            <Suspense
+              fallback={
+                <ProductListSkeleton
+                  withSidebar
+                  lockedOnSale={PROMO_LISTING_LOCKS.onSale}
+                  hasCategory={Boolean(listingParams.category)}
+                />
+              }
+            >
               <ProductListView
                 lockedOnSale={PROMO_LISTING_LOCKS.onSale}
                 anchorId={PROMO_DEALS_ANCHOR}
