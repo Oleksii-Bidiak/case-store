@@ -1,6 +1,5 @@
 "use client";
 
-import { Search, X } from "lucide-react";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { useDeviceControllerFindModels } from "@/entities/device";
 import { useCategoryControllerGetFilterableSpecs } from "@/entities/category";
@@ -13,6 +12,7 @@ import {
 } from "../model/spec-facet";
 import { clearFilterUpdates } from "../model/active-filters";
 import { toFacetQueryParams } from "../model/facet-query";
+import { FilterChipList, type FilterChip } from "./filter-chip-list";
 
 interface ActiveFilterChipsProps {
   currentParams: ProductControllerFindAllParams;
@@ -92,19 +92,14 @@ export function ActiveFilterChips({
   });
   const deviceModel = modelsData?.data.find((m) => m.slug === deviceSlug);
 
-  const chips: {
-    key: string;
-    label: string;
-    isSearch?: boolean;
-    clear: () => void;
-  }[] = [];
+  const chips: FilterChip[] = [];
 
   if (currentParams.search) {
     chips.push({
       key: "search",
       label: `«${currentParams.search}»`,
       isSearch: true,
-      clear: () => onFilterChange({ search: undefined }),
+      onRemove: () => onFilterChange({ search: undefined }),
     });
   }
 
@@ -112,7 +107,7 @@ export function ActiveFilterChips({
     chips.push({
       key: "brand",
       label: `${dict.filters.brandTitle}: ${brandName}`,
-      clear: () => onFilterChange({ brand: undefined }),
+      onRemove: () => onFilterChange({ brand: undefined }),
     });
   }
 
@@ -120,7 +115,7 @@ export function ActiveFilterChips({
     chips.push({
       key: "minPrice",
       label: `${dict.filters.minPlaceholder}: ${formatMoney(String(currentParams.minPrice))}`,
-      clear: () => onFilterChange({ minPrice: undefined }),
+      onRemove: () => onFilterChange({ minPrice: undefined }),
     });
   }
 
@@ -128,7 +123,7 @@ export function ActiveFilterChips({
     chips.push({
       key: "maxPrice",
       label: `${dict.filters.maxPlaceholder}: ${formatMoney(String(currentParams.maxPrice))}`,
-      clear: () => onFilterChange({ maxPrice: undefined }),
+      onRemove: () => onFilterChange({ maxPrice: undefined }),
     });
   }
 
@@ -136,7 +131,7 @@ export function ActiveFilterChips({
     chips.push({
       key: "device",
       label: `${dict.filters.deviceLabel}: ${deviceModel?.name ?? "…"}`,
-      clear: () => onFilterChange({ device: undefined }),
+      onRemove: () => onFilterChange({ device: undefined }),
     });
   }
 
@@ -144,7 +139,7 @@ export function ActiveFilterChips({
     chips.push({
       key: "inStock",
       label: dict.filters.inStockChip,
-      clear: () => onFilterChange({ inStock: undefined }),
+      onRemove: () => onFilterChange({ inStock: undefined }),
     });
   }
 
@@ -153,7 +148,7 @@ export function ActiveFilterChips({
     chips.push({
       key: "onSale",
       label: dict.filters.onSaleChip,
-      clear: () => onFilterChange({ onSale: undefined }),
+      onRemove: () => onFilterChange({ onSale: undefined }),
     });
   }
 
@@ -167,7 +162,7 @@ export function ActiveFilterChips({
       chips.push({
         key: `specs:${facet.key}:${value}`,
         label: formatFacetChipLabel(value, definitionByKey.get(facet.key)),
-        clear: () =>
+        onRemove: () =>
           onFilterChange({
             specs: removeSpecValue(currentParams.specs, facet.key, value),
           }),
@@ -175,61 +170,26 @@ export function ActiveFilterChips({
     }
   }
 
-  if (chips.length === 0) {
-    return null;
-  }
-
   return (
-    <div className="mb-5 flex min-h-[34px] flex-wrap items-center gap-2.5">
-      {chips.map((chip) => (
-        <button
-          key={chip.key}
-          type="button"
-          onClick={chip.clear}
-          className={`inline-flex h-[34px] items-center gap-2 rounded-full border py-0 pr-2 pl-3.5 text-sm font-semibold outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring ${
-            chip.isSearch
-              ? "border-primary/30 bg-primary/10 text-primary"
-              : "border-border bg-card text-foreground hover:border-primary/40"
-          }`}
-        >
-          {chip.isSearch && <Search className="size-3.5" aria-hidden="true" />}
-          {chip.label}
-          <span
-            aria-hidden="true"
-            className={`inline-flex size-[18px] items-center justify-center rounded-full ${
-              chip.isSearch
-                ? "bg-primary text-primary-foreground"
-                : "bg-muted text-muted-foreground"
-            }`}
-          >
-            <X className="size-[11px]" strokeWidth={3} />
-          </span>
-          <span className="sr-only">{dict.filters.removeFilter}</span>
-        </button>
-      ))}
-      <button
-        type="button"
-        // The full set, from the one shared definition (TASK-414). On a locked
-        // category landing page `category` is not in the URL query at all, so
-        // clearing it there is a harmless no-op — the route keeps the category.
-        // A locked DEVICE is excluded for the same reason and with the same
-        // usual no-op: the compat page's clean URL carries no `?device=` either
-        // (the route segment supplies it). The exclusion earns its keep on the
-        // one URL where it is NOT a no-op — a hand-edited
-        // `/catalog/chohly/iphone-15-pro?device=…`, where a blanket clear would
-        // rewrite the query out from under a heading that still says otherwise.
-        onClick={() =>
-          onFilterChange(
-            clearFilterUpdates({
-              includeDevice: !lockedDevice,
-              includeOnSale: !lockedOnSale,
-            }),
-          )
-        }
-        className="text-sm font-semibold text-muted-foreground underline decoration-1 underline-offset-[3px] outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-      >
-        {dict.filters.clearAll}
-      </button>
-    </div>
+    <FilterChipList
+      chips={chips}
+      // The full set, from the one shared definition (TASK-414). On a locked
+      // category landing page `category` is not in the URL query at all, so
+      // clearing it there is a harmless no-op — the route keeps the category.
+      // A locked DEVICE is excluded for the same reason and with the same
+      // usual no-op: the compat page's clean URL carries no `?device=` either
+      // (the route segment supplies it). The exclusion earns its keep on the
+      // one URL where it is NOT a no-op — a hand-edited
+      // `/catalog/chohly/iphone-15-pro?device=…`, where a blanket clear would
+      // rewrite the query out from under a heading that still says otherwise.
+      onClearAll={() =>
+        onFilterChange(
+          clearFilterUpdates({
+            includeDevice: !lockedDevice,
+            includeOnSale: !lockedOnSale,
+          }),
+        )
+      }
+    />
   );
 }

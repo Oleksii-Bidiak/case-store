@@ -1,41 +1,27 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 import type { WishlistItemEntity } from "@/entities/wishlist";
-import { Input, Label } from "@/shared/ui";
+import { FilterCheckbox, PriceRangeFilter } from "@/features/product-filters";
 import { dict } from "@/shared/config";
-
-export interface WishlistFilterState {
-  saleOnly: boolean;
-  inStockOnly: boolean;
-  minPrice: string;
-  maxPrice: string;
-}
-
-export const EMPTY_WISHLIST_FILTERS: WishlistFilterState = {
-  saleOnly: false,
-  inStockOnly: false,
-  minPrice: "",
-  maxPrice: "",
-};
-
-export function isOnSale(item: WishlistItemEntity): boolean {
-  return (
-    item.compareAtPrice != null &&
-    Number(item.compareAtPrice) > Number(item.price)
-  );
-}
-
-export function isInStock(item: WishlistItemEntity): boolean {
-  // The API exposes the capped orderable quantity (maxQty), never the raw
-  // stock figure (TASK-231); 0 means the position is out of stock.
-  return item.maxQty > 0 && item.isActive;
-}
+import {
+  FACET_VISIBLE_COUNT,
+  isInStock,
+  isOnSale,
+  type FacetOption,
+  type WishlistFilterState,
+} from "../model/wishlist-catalog";
 
 interface WishlistFiltersProps {
   /** All saved items (used only to show per-filter counts). */
-  items: WishlistItemEntity[];
+  items: readonly WishlistItemEntity[];
+  /** Categories present in the list, most frequent first. */
+  categoryOptions: readonly FacetOption[];
+  /** Brands present in the list, most frequent first. */
+  brandOptions: readonly FacetOption[];
+  /** Upper edge of the price slider (the priciest saved item, rounded up). */
+  priceDomain: number;
   value: WishlistFilterState;
   onChange: (next: WishlistFilterState) => void;
   /** Distinct DOM ids per instance (desktop aside + mobile drawer). */
@@ -50,29 +36,100 @@ interface WishlistFiltersProps {
   collapsible?: boolean;
 }
 
-const cardClass =
-  "rounded-2xl border border-border bg-card p-[18px] shadow-card";
-const cardTitle = "font-display text-[15px] font-bold text-card-foreground";
+// The mockup's 18px section padding is on the spacing scale (`p-4.5`); its
+// 15px title is not on the type scale (TASK-1604), so the title takes the next
+// step up and stays above the 14px rows.
+const cardClass = "rounded-2xl border border-border bg-card p-4.5 shadow-card";
+const cardTitle = "font-display text-base font-bold text-card-foreground";
 
-/** Highest saved price, rounded up — the domain for the display-only track. */
-function priceDomain(items: WishlistItemEntity[]): number {
-  const max = items.reduce((m, i) => Math.max(m, Number(i.price)), 0);
-  return Math.max(1000, Math.ceil(max / 1000) * 1000);
+/** Toggle `id` in a list of ticked ids. */
+function toggleId(ids: readonly string[], id: string, on: boolean): string[] {
+  return on ? [...ids, id] : ids.filter((existing) => existing !== id);
 }
 
-function clampPct(value: number): number {
-  return Math.max(0, Math.min(100, value));
+interface FacetCheckboxListProps {
+  idPrefix: string;
+  options: readonly FacetOption[];
+  selected: readonly string[];
+  onToggle: (id: string, checked: boolean) => void;
 }
 
 /**
- * WishlistFilters — the wishlist sidebar (quick filters + price). All real,
- * client-side over the already-fetched saved items: "Зі знижкою" and "В
- * наявності" derive from each item's compareAtPrice/maxQty, and the price bounds
- * filter by the item price. Brand is intentionally omitted (the wishlist item
- * carries no brand — TASK-176), so no dead control is shown.
+ * The checkbox rows of one facet (category, brand) with counts. Past
+ * `FACET_VISIBLE_COUNT` rows the rest fold behind «Показати всі (N)» — a
+ * disclosure button (`aria-expanded`/`aria-controls`) — but a ticked value is
+ * never folded away: a hidden active filter is one the shopper cannot see why
+ * the grid is narrow, nor untick.
+ */
+function FacetCheckboxList({
+  idPrefix,
+  options,
+  selected,
+  onToggle,
+}: FacetCheckboxListProps) {
+  const [expanded, setExpanded] = useState(false);
+  const foldable = options.length > FACET_VISIBLE_COUNT;
+  const shown =
+    expanded || !foldable
+      ? options
+      : options.filter(
+          (option, index) =>
+            index < FACET_VISIBLE_COUNT || selected.includes(option.id),
+        );
+  const listId = `${idPrefix}-list`;
+
+  return (
+    <>
+      <div id={listId} className="flex flex-col">
+        {shown.map((option) => (
+          <FilterCheckbox
+            key={option.id}
+            id={`${idPrefix}-${option.id}`}
+            label={option.label}
+            count={option.count}
+            checked={selected.includes(option.id)}
+            onCheckedChange={(checked) => onToggle(option.id, checked)}
+          />
+        ))}
+      </div>
+      {foldable && (
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={listId}
+          onClick={() => setExpanded((open) => !open)}
+          className="mt-2 rounded-sm text-sm font-semibold text-muted-foreground underline underline-offset-2 outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {expanded
+            ? dict.wishlist.showFewerFacets
+            : dict.wishlist.showAllFacets(options.length)}
+        </button>
+      )}
+    </>
+  );
+}
+
+/**
+ * WishlistFilters — the `/wishlist` rail, «каталог №2» (TASK-1300): the same
+ * cards as the catalogue's panel, all client-side over the saved items.
+ *
+ *  - «Обирай швидко»: «Зі знижкою» / «В наявності», from each item's
+ *    compareAtPrice / maxQty;
+ *  - «Категорія» and «Виробник»: checkboxes with counts, from the product cards
+ *    the view fetched for these ids (the wishlist summary carries neither); a
+ *    section with no values is not rendered at all;
+ *  - «Ціна, ₴»: the catalogue's inputs + two-thumb slider (`PriceRangeFilter`)
+ *    over the list's own price domain.
+ *
+ * «Сумісний пристрій» from the mockup is left out on purpose: no data source
+ * carries compatibility for these items (see `useWishlistFacets`), and a
+ * control that filters nothing is worse than none.
  */
 export function WishlistFilters({
   items,
+  categoryOptions,
+  brandOptions,
+  priceDomain,
   value,
   onChange,
   idPrefix = "wl",
@@ -80,27 +137,6 @@ export function WishlistFilters({
 }: WishlistFiltersProps) {
   const saleCount = items.filter(isOnSale).length;
   const stockCount = items.filter(isInStock).length;
-
-  const domain = priceDomain(items);
-  const min = value.minPrice ? Number(value.minPrice) : 0;
-  const max = value.maxPrice ? Number(value.maxPrice) : domain;
-  const trackLeft = clampPct((min / domain) * 100);
-  const trackRight = clampPct(((domain - max) / domain) * 100);
-
-  const quick = [
-    {
-      key: "saleOnly" as const,
-      label: dict.wishlist.quickSale,
-      on: value.saleOnly,
-      count: saleCount,
-    },
-    {
-      key: "inStockOnly" as const,
-      label: dict.wishlist.quickInStock,
-      on: value.inStockOnly,
-      count: stockCount,
-    },
-  ];
 
   /**
    * Render one filter section's chrome. In `collapsible` mode it is a native
@@ -143,88 +179,81 @@ export function WishlistFilters({
 
   return (
     <div className="flex flex-col gap-3.5">
-      {/* Quick filters */}
       {renderSection(
         dict.wishlist.quickTitle,
-        <>
-          {quick.map((q) => (
-            <label
-              key={q.key}
-              className="flex cursor-pointer items-center gap-3 py-2 text-sm text-foreground"
-            >
-              <input
-                type="checkbox"
-                className="peer sr-only"
-                checked={q.on}
-                onChange={() => onChange({ ...value, [q.key]: !q.on })}
-              />
-              <span
-                aria-hidden="true"
-                className={`flex size-5 shrink-0 items-center justify-center rounded-md border-[1.5px] transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-focus-visible:ring-offset-2 ${
-                  q.on
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-transparent"
-                }`}
-              >
-                {q.on && <Check className="size-3.5" strokeWidth={3} />}
-              </span>
-              <span className={`flex-1 ${q.on ? "font-semibold" : ""}`}>
-                {q.label}
-              </span>
-              <span className="font-mono text-[13px] text-muted-foreground">
-                {q.count}
-              </span>
-            </label>
-          ))}
-        </>,
+        <div className="flex flex-col">
+          <FilterCheckbox
+            id={`${idPrefix}-sale`}
+            label={dict.wishlist.quickSale}
+            count={saleCount}
+            checked={value.saleOnly}
+            onCheckedChange={(checked) =>
+              onChange({ ...value, saleOnly: checked })
+            }
+          />
+          <FilterCheckbox
+            id={`${idPrefix}-stock`}
+            label={dict.wishlist.quickInStock}
+            count={stockCount}
+            checked={value.inStockOnly}
+            onCheckedChange={(checked) =>
+              onChange({ ...value, inStockOnly: checked })
+            }
+          />
+        </div>,
         value.saleOnly || value.inStockOnly,
       )}
 
-      {/* Price */}
+      {categoryOptions.length > 0 &&
+        renderSection(
+          dict.wishlist.categoryTitle,
+          <FacetCheckboxList
+            idPrefix={`${idPrefix}-cat`}
+            options={categoryOptions}
+            selected={value.categoryIds}
+            onToggle={(id, checked) =>
+              onChange({
+                ...value,
+                categoryIds: toggleId(value.categoryIds, id, checked),
+              })
+            }
+          />,
+          value.categoryIds.length > 0,
+        )}
+
+      {brandOptions.length > 0 &&
+        renderSection(
+          dict.filters.brandTitle,
+          <FacetCheckboxList
+            idPrefix={`${idPrefix}-brand`}
+            options={brandOptions}
+            selected={value.brandIds}
+            onToggle={(id, checked) =>
+              onChange({
+                ...value,
+                brandIds: toggleId(value.brandIds, id, checked),
+              })
+            }
+          />,
+          value.brandIds.length > 0,
+        )}
+
       {renderSection(
         dict.filters.priceTitle,
-        <>
-          <div className="flex items-center gap-2.5">
-            <Label htmlFor={`${idPrefix}-min`} className="sr-only">
-              {dict.filters.minPrice}
-            </Label>
-            <Input
-              id={`${idPrefix}-min`}
-              type="number"
-              min="0"
-              inputMode="numeric"
-              placeholder={dict.filters.minPlaceholder}
-              value={value.minPrice}
-              onChange={(e) => onChange({ ...value, minPrice: e.target.value })}
-              className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
-            />
-            <span aria-hidden="true" className="text-muted-foreground">
-              —
-            </span>
-            <Label htmlFor={`${idPrefix}-max`} className="sr-only">
-              {dict.filters.maxPrice}
-            </Label>
-            <Input
-              id={`${idPrefix}-max`}
-              type="number"
-              min="0"
-              inputMode="numeric"
-              placeholder={dict.filters.maxPlaceholder}
-              value={value.maxPrice}
-              onChange={(e) => onChange({ ...value, maxPrice: e.target.value })}
-              className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
-            />
-          </div>
-          {/* Display-only track reflecting the entered bounds (mirrors the design). */}
-          <div aria-hidden="true" className="relative mt-3.5 h-[30px]">
-            <div className="absolute top-[13px] right-0 left-0 h-1 rounded-full bg-muted" />
-            <div
-              className="absolute top-[13px] h-1 rounded-full bg-primary"
-              style={{ left: `${trackLeft}%`, right: `${trackRight}%` }}
-            />
-          </div>
-        </>,
-        Boolean(value.minPrice || value.maxPrice),
+        <PriceRangeFilter
+          idPrefix={idPrefix}
+          committedMin={value.minPrice}
+          committedMax={value.maxPrice}
+          domainMax={priceDomain}
+          onCommit={({ minPrice, maxPrice }) =>
+            onChange({
+              ...value,
+              minPrice: minPrice != null ? Number(minPrice) : undefined,
+              maxPrice: maxPrice != null ? Number(maxPrice) : undefined,
+            })
+          }
+        />,
+        value.minPrice != null || value.maxPrice != null,
       )}
     </div>
   );

@@ -2049,6 +2049,15 @@ export const dict = {
     noMatchHeading: "Немає товарів за фільтрами",
     noMatchBody: "Спробуйте змінити параметри або скинути фільтри.",
     priceChip: (min: string, max: string) => `${min || "0"} – ${max || "∞"} ₴`,
+    // TASK-1300 — /wishlist as «каталог №2»: category rail section, the fold
+    // past five rows, the count line while filters narrow the list, and the
+    // chip labels (already-formatted money in, so the caller owns the locale).
+    categoryTitle: "Категорія",
+    showAllFacets: (n: number) => `Показати всі (${n})`,
+    showFewerFacets: "Згорнути",
+    foundOf: (found: number, total: number) => `Знайдено: ${found} з ${total}`,
+    categoryChip: (name: string) => `Категорія: ${name}`,
+    priceRangeChip: (min: string, max: string) => `Ціна: ${min} — ${max}`,
   },
 
   // TASK-188 — reusable newsletter subscribe form (features/newsletter-subscribe).

@@ -1,23 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { useBrandControllerFindAll } from "@/entities/brand";
 import { useCategoryControllerGetFilterableSpecs } from "@/entities/category";
 import { dict } from "@/shared/config";
-import { formatMoney } from "@/shared/lib";
-import { Button, Input, Label, Slider } from "@/shared/ui";
-import {
-  PRICE_DOMAIN_MAX,
-  PRICE_STEP,
-  clampPrice,
-  normalizePriceRange,
-  parsePriceInput,
-  priceRangeToUrlUpdates,
-  priceToInputText,
-  rangeKey,
-} from "../model/price-range";
+import { Button } from "@/shared/ui";
 import {
   clearFilterUpdates,
   hasActiveFilters as computeHasActiveFilters,
@@ -28,6 +17,7 @@ import { BrandFilter } from "./brand-filter";
 import { DeviceModelFilter } from "./device-model-filter";
 import { SpecFacets } from "./spec-facets";
 import { FilterCheckbox } from "./filter-checkbox";
+import { PriceRangeFilter } from "./price-range-filter";
 
 interface ProductFiltersProps {
   /** Currently-active filter params (derived from the URL). */
@@ -116,71 +106,6 @@ export function ProductFilters({
   lockedOnSale = false,
   hideSpecFacets = false,
 }: ProductFiltersProps) {
-  // Committed price bounds from the URL, clamped into the slider domain.
-  const committedMin = clampPrice(currentParams.minPrice ?? 0);
-  const committedMax = clampPrice(currentParams.maxPrice ?? PRICE_DOMAIN_MAX);
-
-  // Draft price state shared by the slider and the min/max inputs (TASK-208):
-  // `range` drives the thumbs, `minText`/`maxText` drive the (controlled)
-  // inputs. Dragging mirrors into the texts live; typing commits into `range`
-  // on blur — the same moment the URL is written, matching the old behaviour.
-  const [range, setRange] = useState<[number, number]>([
-    committedMin,
-    committedMax,
-  ]);
-  const [minText, setMinText] = useState(priceToInputText(committedMin, 0));
-  const [maxText, setMaxText] = useState(
-    priceToInputText(committedMax, PRICE_DOMAIN_MAX),
-  );
-
-  // The inputs are focus-sensitive (the user types in them), so external URL
-  // changes re-seed local state via a `lastPushedRef`-guarded effect
-  // (docs/conventions/forms.md Rule 1b) — our own URL echo is ignored, and the
-  // inputs are never `key`-remounted.
-  const lastPushedRef = useRef(rangeKey([committedMin, committedMax]));
-
-  useEffect(() => {
-    const next: [number, number] = [committedMin, committedMax];
-    if (rangeKey(next) !== lastPushedRef.current) {
-      lastPushedRef.current = rangeKey(next);
-      setRange(next);
-      setMinText(priceToInputText(committedMin, 0));
-      setMaxText(priceToInputText(committedMax, PRICE_DOMAIN_MAX));
-    }
-  }, [committedMin, committedMax]);
-
-  /** Push a normalized range to the URL unless it matches the last push. */
-  const pushRange = (next: [number, number]) => {
-    if (rangeKey(next) === lastPushedRef.current) return;
-    lastPushedRef.current = rangeKey(next);
-    onFilterChange(priceRangeToUrlUpdates(next));
-  };
-
-  /** Mirror slider movement into the inputs live (while dragging). */
-  const handleSliderChange = (next: number[]) => {
-    const draft: [number, number] = [next[0], next[1]];
-    setRange(draft);
-    setMinText(priceToInputText(draft[0], 0));
-    setMaxText(priceToInputText(draft[1], PRICE_DOMAIN_MAX));
-  };
-
-  /**
-   * Commit a typed bound (on blur): clamp/normalize both bounds — resolving an
-   * inverted pair against the field the user edited — sync the slider and the
-   * canonical input texts, then write the URL.
-   */
-  const handleInputCommit = (changed: "min" | "max") => {
-    const next = normalizePriceRange(
-      parsePriceInput(minText),
-      parsePriceInput(maxText),
-      changed,
-    );
-    setRange(next);
-    setMinText(priceToInputText(next[0], 0));
-    setMaxText(priceToInputText(next[1], PRICE_DOMAIN_MAX));
-    pushRange(next);
-  };
-
   // Every filter this panel owns — search, brand, device, price, spec facets and
   // availability. Sourced from the one shared definition (TASK-414) so the
   // button's VISIBILITY and what it CLEARS can never drift apart again: until
@@ -364,64 +289,14 @@ export function ProductFilters({
       {/* Price range */}
       {renderSection(
         dict.filters.priceTitle,
-        <>
-          <div className="flex items-center gap-2.5">
-            <Label htmlFor={`${idPrefix}-min-price`} className="sr-only">
-              {dict.filters.minPrice}
-            </Label>
-            <Input
-              id={`${idPrefix}-min-price`}
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              placeholder={dict.filters.minPlaceholder}
-              value={minText}
-              onChange={(event) => setMinText(event.target.value)}
-              onBlur={() => handleInputCommit("min")}
-              className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
-            />
-            <span aria-hidden="true" className="text-muted-foreground">
-              —
-            </span>
-            <Label htmlFor={`${idPrefix}-max-price`} className="sr-only">
-              {dict.filters.maxPrice}
-            </Label>
-            <Input
-              id={`${idPrefix}-max-price`}
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              placeholder={dict.filters.maxPlaceholder}
-              value={maxText}
-              onChange={(event) => setMaxText(event.target.value)}
-              onBlur={() => handleInputCommit("max")}
-              className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
-            />
-          </div>
-          {/* Draggable range slider (two thumbs). Mirrors the number inputs live
-            while dragging and writes minPrice/maxPrice to the URL on release. */}
-          <Slider
-            value={range}
-            min={0}
-            max={PRICE_DOMAIN_MAX}
-            step={PRICE_STEP}
-            minStepsBetweenThumbs={1}
-            onValueChange={handleSliderChange}
-            onValueCommit={(next) => pushRange([next[0], next[1]])}
-            thumbLabels={[dict.filters.minPrice, dict.filters.maxPrice]}
-            aria-label={dict.filters.priceSliderAria}
-            className="mt-4"
-          />
-          <div
-            aria-hidden="true"
-            className="mt-2.5 flex justify-between font-mono text-xs text-muted-foreground"
-          >
-            <span>{formatMoney(String(range[0]))}</span>
-            <span>{formatMoney(String(range[1]))}</span>
-          </div>
-        </>,
+        // The inputs + two-thumb slider (TASK-208), shared with the wishlist
+        // rail since TASK-1300. Committed bounds come from the URL.
+        <PriceRangeFilter
+          idPrefix={idPrefix}
+          committedMin={currentParams.minPrice}
+          committedMax={currentParams.maxPrice}
+          onCommit={onFilterChange}
+        />,
         currentParams.minPrice != null || currentParams.maxPrice != null,
       )}
 

@@ -1,9 +1,13 @@
 export { ProductFilters } from "./ui/product-filters";
 export { ActiveFilterChips } from "./ui/active-filter-chips";
+// Presentational pieces shared with the wishlist rail (TASK-1300): the chip row
+// and the inputs + two-thumb price slider, each fed by its caller's own state.
+export { FilterChipList, type FilterChip } from "./ui/filter-chip-list";
+export { PriceRangeFilter } from "./ui/price-range-filter";
 export { DeviceModelFilter } from "./ui/device-model-filter";
 export { SpecFacets } from "./ui/spec-facets";
 export { CategoryChips } from "./ui/category-chips";
-export { SortSelect } from "./ui/sort-select";
+export { SortSelect, type SortOption } from "./ui/sort-select";
 export { ViewToggle, type CatalogView } from "./ui/view-toggle";
 export { FilterCheckbox } from "./ui/filter-checkbox";
 // The one mobile filter drawer (TASK-804) — catalogue, /search and wishlist.

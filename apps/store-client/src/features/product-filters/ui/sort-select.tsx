@@ -15,9 +15,22 @@ interface SortSelectProps {
   currentSort: string;
   /** Apply a sort change (both `sortBy` and `sortOrder` at once). */
   onChange: (updates: Record<string, string | undefined>) => void;
+  /**
+   * The orders on offer, each `${sortBy}:${sortOrder}`. Defaults to the
+   * catalogue's four; the wishlist passes its own client-side set («Нещодавно
+   * додані», ціна, знижка — TASK-1300) so both toolbars share one control.
+   */
+  options?: readonly SortOption[];
+  /** Accessible name of the trigger. Defaults to «Сортування». */
+  ariaLabel?: string;
 }
 
-const SORT_OPTIONS = [
+export interface SortOption {
+  value: string;
+  label: string;
+}
+
+const SORT_OPTIONS: readonly SortOption[] = [
   { value: "createdAt:desc", label: dict.filters.sort.newest },
   { value: "price:asc", label: dict.filters.sort.priceAsc },
   { value: "price:desc", label: dict.filters.sort.priceDesc },
@@ -36,8 +49,13 @@ const SORT_OPTIONS = [
  * prefix appear from `sm`, where there is room. The open list still shows every
  * label in full.
  */
-export function SortSelect({ currentSort, onChange }: SortSelectProps) {
-  const currentLabel = SORT_OPTIONS.find(
+export function SortSelect({
+  currentSort,
+  onChange,
+  options = SORT_OPTIONS,
+  ariaLabel = dict.filters.sortBy,
+}: SortSelectProps) {
+  const currentLabel = options.find(
     (option) => option.value === currentSort,
   )?.label;
 
@@ -50,7 +68,7 @@ export function SortSelect({ currentSort, onChange }: SortSelectProps) {
       }}
     >
       <SelectTrigger
-        aria-label={dict.filters.sortBy}
+        aria-label={ariaLabel}
         className="h-11 min-w-0 gap-2.5 rounded-xl border-[1.5px] border-border bg-card px-3 font-semibold text-foreground shadow-none *:data-[slot=select-value]:text-primary hover:border-primary sm:px-4"
       >
         <ArrowDownWideNarrow className="hidden size-[18px] sm:block" />
@@ -66,7 +84,7 @@ export function SortSelect({ currentSort, onChange }: SortSelectProps) {
         </SelectValue>
       </SelectTrigger>
       <SelectContent align="end" className="rounded-xl">
-        {SORT_OPTIONS.map((option) => (
+        {options.map((option) => (
           <SelectItem key={option.value} value={option.value}>
             {option.label}
           </SelectItem>

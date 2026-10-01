@@ -16,6 +16,62 @@ import { dict } from "@/shared/config";
 import { WishlistView } from "./wishlist-view";
 import { WishlistSkeleton } from "./wishlist-skeleton";
 
+const mockReplace = jest.fn();
+let currentQuery = "";
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  usePathname: () => "/wishlist",
+  useSearchParams: () => new URLSearchParams(currentQuery),
+}));
+
+/** Category / brand per product id, as the cards endpoint returns them. */
+let cardFacets: Record<string, { categoryId: string; brand?: string }> = {};
+
+/**
+ * The two requests the rail adds (TASK-1300): product cards for the saved ids
+ * (category + brand) and the category tree (names). Registered last wins in
+ * MSW, so a test that adds its own `/api/products/:slug` handler calls this
+ * again to keep `/api/products/cards` out of it.
+ */
+function registerRailHandlers() {
+  server.use(
+    http.get("*/api/products/cards", ({ request }) => {
+      const ids =
+        new URL(request.url).searchParams.get("ids")?.split(",") ?? [];
+      return HttpResponse.json({
+        data: ids
+          .filter((id) => cardFacets[id])
+          .map((id) => ({
+            id,
+            categoryId: cardFacets[id].categoryId,
+            brand: cardFacets[id].brand
+              ? {
+                  id: `brand-${cardFacets[id].brand}`,
+                  name: cardFacets[id].brand,
+                  slug: cardFacets[id].brand,
+                }
+              : null,
+          })),
+      });
+    }),
+    http.get("*/api/categories/tree", () =>
+      HttpResponse.json({
+        data: [
+          { id: "cat-cases", name: "Чохли", slug: "chohly", children: [] },
+          { id: "cat-cables", name: "Кабелі", slug: "kabeli", children: [] },
+        ],
+      }),
+    ),
+  );
+}
+
+beforeEach(() => {
+  mockReplace.mockClear();
+  currentQuery = "";
+  cardFacets = {};
+  registerRailHandlers();
+});
+
 function buildItem(
   overrides: Partial<WishlistItemEntity> = {},
 ): WishlistItemEntity {
@@ -257,6 +313,7 @@ describe("WishlistView quick-view triggers (TASK-290)", () => {
         });
       }),
     );
+    registerRailHandlers();
 
     const user = userEvent.setup();
     renderWithProviders(<WishlistView />, {
@@ -356,5 +413,152 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     // The 268px filters column is what makes the content area narrower than the
     // viewport; if only one side declares it, the cards resize on hydration.
     expect(skeletonShell?.className).toBe(realShell?.className);
+  });
+});
+
+// ── TASK-1300: /wishlist as «каталог №2» ─────────────────────────────────────
+describe("WishlistView catalogue toolbar (TASK-1300)", () => {
+  function twoBrands() {
+    cardFacets = {
+      a1: { categoryId: "cat-cases", brand: "Apple" },
+      s1: { categoryId: "cat-cables", brand: "Spigen" },
+    };
+    return [
+      buildItem({
+        id: "a1",
+        productId: "a1",
+        productName: "Apple Case",
+        productSlug: "apple-case",
+      }),
+      buildItem({
+        id: "s1",
+        productId: "s1",
+        productName: "Spigen Cable",
+        productSlug: "spigen-cable",
+      }),
+    ];
+  }
+
+  function savedItems(count: number) {
+    return Array.from({ length: count }, (_, i) =>
+      buildItem({
+        id: `m${i}`,
+        productId: `m${i}`,
+        productName: `Saved ${i}`,
+        productSlug: `saved-${i}`,
+        // Distinct times so the default order is deterministic.
+        createdAt: `2026-06-${String(i + 1).padStart(2, "0")}T00:00:00.000Z`,
+      }),
+    );
+  }
+
+  it("filters by a brand from the rail, chips it and counts «Знайдено: X з Y»", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient(twoBrands()),
+    });
+
+    // The brand section appears once the product cards have landed.
+    await user.click(await screen.findByRole("checkbox", { name: /Apple/ }));
+
+    expect(screen.getByText("Apple Case")).toBeInTheDocument();
+    expect(screen.queryByText("Spigen Cable")).not.toBeInTheDocument();
+    expect(screen.getByText(dict.wishlist.foundOf(1, 2))).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: new RegExp(`${dict.filters.brandTitle}: Apple`),
+      }),
+    );
+    expect(screen.getByText("Spigen Cable")).toBeInTheDocument();
+  });
+
+  it("filters by category, naming it from the category tree", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient(twoBrands()),
+    });
+
+    await user.click(await screen.findByRole("checkbox", { name: /Кабелі/ }));
+
+    expect(screen.queryByText("Apple Case")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: new RegExp(dict.wishlist.categoryChip("Кабелі")),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("sorts with the wishlist's own options in the shared SortSelect", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([
+        buildItem({
+          id: "c",
+          productId: "c",
+          productName: "Cheap",
+          productSlug: "cheap",
+          price: "10.00",
+        }),
+        buildItem({
+          id: "d",
+          productId: "d",
+          productName: "Dear",
+          productSlug: "dear",
+          price: "90.00",
+        }),
+      ]),
+    });
+
+    const trigger = screen.getByRole("combobox", {
+      name: dict.wishlist.sortAria,
+    });
+    expect(trigger).toHaveTextContent(dict.wishlist.sort.recent);
+
+    await user.click(trigger);
+    await user.click(
+      screen.getByRole("option", { name: dict.wishlist.sort.priceDesc }),
+    );
+
+    const names = screen
+      .getAllByRole("article")
+      .map((card) => within(card).getAllByRole("link")[0].textContent);
+    expect(names).toEqual(["Dear", "Cheap"]);
+  });
+
+  it("pages the list: «Показати ще» appends, numbered pages link through ?page=", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient(savedItems(13)),
+    });
+
+    expect(screen.getAllByRole("article")).toHaveLength(12);
+    expect(screen.getByRole("link", { name: "2" })).toHaveAttribute(
+      "href",
+      "/wishlist?page=2",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: dict.catalog.loadMore(1) }),
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(13);
+    expect(
+      screen.queryByRole("button", { name: dict.catalog.loadMore(1) }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("returns to the first page when a filter changes on a later page", async () => {
+    const user = userEvent.setup();
+    currentQuery = "page=2";
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient(savedItems(13)),
+    });
+
+    // Page 2 of 13 items holds the single remaining card.
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+
+    await user.click(screen.getByRole("checkbox", { name: /В наявності/ }));
+
+    expect(mockReplace).toHaveBeenCalledWith("/wishlist", { scroll: false });
   });
 });

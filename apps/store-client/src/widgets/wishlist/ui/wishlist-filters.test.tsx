@@ -1,11 +1,12 @@
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import type { WishlistItemEntity } from "@/entities/wishlist";
+import { WishlistFilters } from "./wishlist-filters";
 import {
-  WishlistFilters,
   EMPTY_WISHLIST_FILTERS,
+  type FacetOption,
   type WishlistFilterState,
-} from "./wishlist-filters";
+} from "../model/wishlist-catalog";
 
 function buildItem(
   overrides: Partial<WishlistItemEntity> = {},
@@ -27,15 +28,38 @@ function buildItem(
 
 const items = [buildItem()];
 
+const SEVEN_CATEGORIES: FacetOption[] = [
+  "Чохли",
+  "Кабелі",
+  "Зарядні пристрої",
+  "Навушники",
+  "Скло",
+  "Тримачі",
+  "Павербанки",
+].map((label, index) => ({ id: `c${index}`, label, count: 7 - index }));
+
+const BRANDS: FacetOption[] = [
+  { id: "b-apple", label: "Apple", count: 3 },
+  { id: "b-anker", label: "Anker", count: 1 },
+];
+
 function renderFilters(
   value: WishlistFilterState,
-  { collapsible = false } = {},
+  {
+    collapsible = false,
+    categoryOptions = [] as FacetOption[],
+    brandOptions = [] as FacetOption[],
+    onChange = jest.fn(),
+  } = {},
 ) {
   return renderWithProviders(
     <WishlistFilters
       items={items}
+      categoryOptions={categoryOptions}
+      brandOptions={brandOptions}
+      priceDomain={18000}
       value={value}
-      onChange={() => {}}
+      onChange={onChange}
       collapsible={collapsible}
     />,
   );
@@ -61,7 +85,7 @@ describe("WishlistFilters collapsible sections (TASK-290)", () => {
     });
 
     const sections = container.querySelectorAll("details");
-    // Order: [0] quick filters, [1] price.
+    // Order: [0] quick filters, [1] price (no category/brand values here).
     expect(sections).toHaveLength(2);
     expect(sections[0]).not.toHaveAttribute("open");
     expect(sections[1]).not.toHaveAttribute("open");
@@ -80,7 +104,7 @@ describe("WishlistFilters collapsible sections (TASK-290)", () => {
 
   it("opens the price section (and not quick filters) when a price bound is active", () => {
     const { container } = renderFilters(
-      { ...EMPTY_WISHLIST_FILTERS, minPrice: "100" },
+      { ...EMPTY_WISHLIST_FILTERS, minPrice: 100 },
       { collapsible: true },
     );
 
@@ -108,5 +132,97 @@ describe("WishlistFilters collapsible sections (TASK-290)", () => {
     expect(quickToggle.closest("details")).toContainElement(
       screen.getByText(dict.wishlist.quickSale),
     );
+  });
+});
+
+// ── TASK-1300: the rail as on /products ─────────────────────────────────────
+describe("WishlistFilters catalogue rail (TASK-1300)", () => {
+  it("renders category and brand sections only when the list has values for them", () => {
+    const { unmount } = renderFilters(EMPTY_WISHLIST_FILTERS);
+    expect(
+      screen.queryByRole("heading", { name: dict.wishlist.categoryTitle }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { name: dict.filters.brandTitle }),
+    ).not.toBeInTheDocument();
+    unmount();
+
+    renderFilters(EMPTY_WISHLIST_FILTERS, {
+      categoryOptions: SEVEN_CATEGORIES,
+      brandOptions: BRANDS,
+    });
+    expect(
+      screen.getByRole("heading", { name: dict.wishlist.categoryTitle }),
+    ).toBeInTheDocument();
+    // The count joins the checkbox's accessible name («Apple, 3 товари»).
+    expect(
+      screen.getByRole("checkbox", {
+        name: `Apple ${dict.filters.facetCountAria(3)}`,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("folds categories past five behind a «Показати всі (N)» disclosure", async () => {
+    const user = userEvent.setup();
+    renderFilters(EMPTY_WISHLIST_FILTERS, {
+      categoryOptions: SEVEN_CATEGORIES,
+    });
+
+    expect(
+      screen.queryByRole("checkbox", { name: /Тримачі/ }),
+    ).not.toBeInTheDocument();
+    const toggle = screen.getByRole("button", {
+      name: dict.wishlist.showAllFacets(7),
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(toggle);
+
+    expect(screen.getByRole("checkbox", { name: /Тримачі/ })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: dict.wishlist.showFewerFacets }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("never folds away a ticked category", () => {
+    renderFilters(
+      { ...EMPTY_WISHLIST_FILTERS, categoryIds: ["c6"] },
+      { categoryOptions: SEVEN_CATEGORIES },
+    );
+
+    // «Павербанки» is the 7th row, but it is ticked — so it stays in view.
+    expect(screen.getByRole("checkbox", { name: /Павербанки/ })).toBeChecked();
+    expect(
+      screen.queryByRole("checkbox", { name: /Тримачі/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("adds a brand to the selection when its box is ticked", async () => {
+    const user = userEvent.setup();
+    const onChange = jest.fn();
+    renderFilters(EMPTY_WISHLIST_FILTERS, { brandOptions: BRANDS, onChange });
+
+    await user.click(screen.getByRole("checkbox", { name: /Anker/ }));
+
+    expect(onChange).toHaveBeenCalledWith({
+      ...EMPTY_WISHLIST_FILTERS,
+      brandIds: ["b-anker"],
+    });
+  });
+
+  it("offers a working two-thumb price slider over the list's own domain", () => {
+    renderFilters({ ...EMPTY_WISHLIST_FILTERS, minPrice: 500 });
+
+    const minThumb = screen.getByRole("slider", {
+      name: dict.filters.minPrice,
+    });
+    const maxThumb = screen.getByRole("slider", {
+      name: dict.filters.maxPrice,
+    });
+    expect(minThumb).toHaveAttribute("aria-valuenow", "500");
+    // No upper bound set → the thumb sits on the domain edge (18 000 ₴), not
+    // on the catalogue's 100 000 ₴.
+    expect(maxThumb).toHaveAttribute("aria-valuemax", "18000");
+    expect(maxThumb).toHaveAttribute("aria-valuenow", "18000");
   });
 });

@@ -49,11 +49,6 @@
       "count": 1
     }
   },
-  "src/app/wishlist/page.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/features/add-to-cart/ui/add-to-cart-button.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1
@@ -89,11 +84,6 @@
       "count": 1
     }
   },
-  "src/features/product-filters/ui/active-filter-chips.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 5
-    }
-  },
   "src/features/product-filters/ui/brand-filter.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2
@@ -102,11 +92,6 @@
   "src/features/product-filters/ui/device-model-filter.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2
-    }
-  },
-  "src/features/product-filters/ui/product-filters.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 4
     }
   },
   "src/features/product-filters/ui/sort-select.tsx": {
@@ -464,11 +449,6 @@
       "count": 4
     }
   },
-  "src/widgets/wishlist/ui/wishlist-filters.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 9
-    }
-  },
   "src/widgets/wishlist/ui/wishlist-list-item.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 4
@@ -476,7 +456,7 @@
   },
   "src/widgets/wishlist/ui/wishlist-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 13
+      "count": 3
     }
   }
 }

@@ -10,22 +10,6 @@ import { formatMoney, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 /**
- * Wishlist grid: 1 / 2 / 4 columns (TASK-415) inside the `PAGE_CONTAINER`
- * page, minus the 268px sidebar + 28px gap on `lg`. The widest a column gets is
- * ~308px (three 18px-gapped columns in the 960px content area), so cap the
- * srcset hint at 320px instead of the generic viewport-based default
- * (TASK-210).
- *
- * The first breakpoint tracks the GRID, not a Tailwind breakpoint — the same
- * reason `ProductCardImage.GRID_SIZES` uses 389px. It said 639px while the grid
- * went two-up at 390px, so 390–639px downloaded a full-viewport candidate for a
- * half-width slot: roughly twice the bytes, on the widths that can least afford
- * them.
- */
-const WISHLIST_GRID_SIZES =
-  "(max-width: 389px) calc(100vw - 2rem), (max-width: 1023px) calc(50vw - 2rem), 320px";
-
-/**
  * WishlistItemCard — a single saved product on the `/wishlist` grid.
  *
  * The wishlist API returns a trimmed product summary (name, slug, image, price,
@@ -34,6 +18,12 @@ const WISHLIST_GRID_SIZES =
  * It reuses the shared `ProductCardImage`, the heart toggle (which removes the
  * product here), and the compact AddToCartButton. The product position id is
  * directly buyable, so it doubles as the cart target.
+ *
+ * The image takes `ProductCardImage`'s default `sizes` (TASK-530): the wishlist
+ * grid is the catalogue's 1 / 2 / 4 ladder beside the same 268px rail, so the
+ * slots are the same width — full viewport under 390px, half up to `lg`, at
+ * most ~240px from there (four columns of the 1320px container minus the rail).
+ * Its own copy described a three-column, 18px-gapped grid with a 320px cap.
  */
 export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
   const onSale =
@@ -53,7 +43,6 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
           src={item.imageUrl ?? undefined}
           alt={item.productName}
           initial={(item.productName?.[0] ?? "?").toUpperCase()}
-          sizes={WISHLIST_GRID_SIZES}
         />
 
         {/* Heart removes the product from the wishlist (it is already saved). */}

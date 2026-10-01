@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function WishlistPage() {
   return (
-    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
+    <div className={`${PAGE_CONTAINER} pt-5.5 pb-16`}>
       <Suspense fallback={<WishlistSkeleton />}>
         <WishlistView />
       </Suspense>
