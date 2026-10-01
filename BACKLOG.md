@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-1088**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-1095**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -838,7 +838,7 @@
 > **тільки Telegram**, без дубляжу поштою; пошта лишається типовим і резервним каналом клієнта і
 > месенджером не заміняється. Порт багатоканальний **із самого початку**, бо другий канал має
 > ім'я і причину: Telegram у частини аудиторії відсутній, і Viber — єдиний шлях доставки.
-> TASK-672 блокує решту; TASK-678 чекає на TASK-650 (план 184); TASK-682/683 — рішення про гроші,
+> TASK-672 блокує решту; TASK-678 зроблено 2026-10-01 (TASK-650 уже в develop); сусідні знахідки частини A — TASK-1088…1094; TASK-682/683 — рішення про гроші,
 > не технічне. Деталі — [187](docs/plans/187-notifications.md).
 
 | Task ID | Description | Status | Plan |
@@ -855,6 +855,13 @@
 | TASK-681 | Доки й ручні перевірки: сторінка в `docs/deploy/` (як завести бота в `@BotFather`, куди покласти токен, як прив'язати чат з адмінки) — без неї крок прив'язки не зробить ніхто, і канал мовчатиме, звітуючи, що все гаразд; `AD-*` (стан каналу, тестове, відключення) і `SF-*` (підключення гостем) у `docs/qa-recheck.md` + їхні ids під цією задачею в Appendix А | ⬜ | [187](docs/plans/187-notifications.md) |
 | TASK-682 | [відкладено до рішення про гроші] Адаптер Viber через українського агрегатора зі **спільним** іменем відправника (TurboSMS або рівнозначний): без абонплати, ~0.76 грн/повідомлення, адресація за номером телефону — прив'язки не потребує. Viber Bot API (€100/міс) і Business Messages (€175/міс) відкинуті в плані 178; «писати в особисті з зареєстрованого номера» як продукт не існує. Ціна спільного відправника — клієнт бачить ім'я агрегатора; власне ім'я = 10 000 грн/міс мін. пакета | ⬜ | [187](docs/plans/187-notifications.md) |
 | TASK-683 | [відкладено разом із TASK-682] SMS-fallback прапорцем у тому самому адаптері агрегатора: SMS дошлеться лише тому, кому не доставився Viber, і оплачується за фактом. **Не окремий канал і не другий провайдер** — саме тому після TASK-682, а не поруч | ⬜ | [187](docs/plans/187-notifications.md) |
+| TASK-1088 | [🟡 знайдено в TASK-678] Замовлення по телефону (`adminCreateOrder`) з оплатою `ONLINE`/`INSTALLMENTS`, оплачене клієнтом через LiqPay, дає магазину пінг «Нове замовлення», хоча рішення власника 2026-10-01 — замовлення, створені персоналом, не пінгують. Причина: у `Order` немає ознаки походження; єдиний сигнал — `changedBy` у народжувальному рядку історії (оператор vs null). Вирішити: колонка походження (`STOREFRONT`/`ADMIN`) або перевірка народжувального рядка в `shopPingOnPaid` | ⬜ | [187](docs/plans/187-notifications.md) |
+| TASK-1089 | [знайдено в TASK-678] Гілка `PAID_AFTER_CANCEL` (гроші прийшли за вже скасоване замовлення) нікого не сповіщає: гроші треба повернути або замовлення відновити, а дізнатись про це можна лише випадково. Кандидат у четверту подію магазину — рішення власника (у B-7 «платіж» відкинуто як дубль для живих замовлень, цей випадок не розглядався); посилання в коментарі `OrderService.shopPingOnPaid` | ⬜ | [187](docs/plans/187-notifications.md) |
+| TASK-1090 | [знайдено в TASK-673] Метрика дашборда `failedMails` («потребує уваги») рахує FAILED-рядки `notification_outbox` усіх каналів, тож упалі Telegram-пінги видно як «листи». Розвести за каналом або перейменувати — разом з екраном TASK-676 | ⬜ | [187](docs/plans/187-notifications.md) |
+| TASK-1091 | [знайдено в TASK-675, для TASK-679] Гостьовий чат, прив'язаний до замовлення A, після «Старт» із замовлення B лишає стару прив'язку (правило «наявна активна прив'язка зберігається», `orderId` не оновлюється) — сповіщення про B туди не прийдуть. Визначити семантику в TASK-679 | ⬜ | [187](docs/plans/187-notifications.md) |
+| TASK-1092 | [знайдено в TASK-672] `dashboard.repository.int-spec.ts` чистить `orders`, але не `payments`: один залишковий рядок із Playwright-сіву (`e2e/fixtures/seed-e2e.ts`, платіж `e2e37121-…`) у `store_test` робив 19 int-тестів червоними локально (FK `payments_order_id_fkey`); прибрано вручну 2026-10-01. Виправити прибирання спеки (спершу `payment_events`/`payments`) | ⬜ | [187](docs/plans/187-notifications.md) |
+| TASK-1093 | [знайдено в TASK-672] `schema.prisma` у develop не відформатований `prisma format` (вирівнювання `OrderStatusHistory.rejectedPaymentStatus`, блок `User`), тож будь-який `prisma format` дає шум у непов'язаних моделях і конфлікти між хвилями. Один окремий коміт форматування | ⬜ | [187](docs/plans/187-notifications.md) |
+| TASK-1094 | [знайдено в TASK-675] Додаток прав у `docs/qa-manual-full.md` відстав від каталогу: пише «39 ключів / 36 грантабельних» і не має рядків `payments:correct`, `categories:delete`, `analytics:revenue`; з `settings:notifications` у каталозі 43 ключі. Звести підсумки й додати рядки | ⬜ | [187](docs/plans/187-notifications.md) |
 
 ### План 188 — Детальна статистика в адмінці: п'ять звітів, період, чистий виторг (B-8 / TASK-450)
 
@@ -1620,6 +1627,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-1088**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-1095**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.

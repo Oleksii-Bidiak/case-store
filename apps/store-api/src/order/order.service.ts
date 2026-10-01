@@ -721,7 +721,7 @@ export class OrderService {
    *   A success on a CANCELLED order (`PAID_AFTER_CANCEL`) is not a new order:
    *   the money has to go back or the order be revived, and nobody is told about
    *   it yet — that event was not among the three the owner agreed (B-7 №6) and
-   *   is filed as its own gap in plan 187 / BACKLOG, not folded in here;
+   *   is filed as its own gap (TASK-1089), not folded in here;
    * - only a method that pings on payment ({@link shopPingOnPaymentConfirmed}).
    *   An ON_DELIVERY order the customer later paid online was announced when it
    *   was placed, and must not be announced twice.
