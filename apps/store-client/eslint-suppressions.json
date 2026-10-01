@@ -426,7 +426,7 @@
   },
   "src/widgets/promo/ui/promo-countdown.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 3
+      "count": 1
     }
   },
   "src/widgets/promo/ui/promo-coupons.tsx": {
