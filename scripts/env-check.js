@@ -181,6 +181,7 @@ const GROUPS = [
   ["publishing", "Публікація контенту та ISR-ревалідація"],
   ["oauth", "Вхід через Google"],
   ["mail", "Пошта (SMTP)"],
+  ["notify", "Сповіщення власника (Telegram)"],
   ["delivery", "Доставка (Нова Пошта)"],
   ["payments", "Онлайн-оплата (LiqPay)"],
   ["sentry", "Sentry (помилки)"],
@@ -610,6 +611,23 @@ const VARS = [
       "Не задається окремо: compose бере значення з `NEXT_PUBLIC_APP_URL`. Дві незалежні змінні для одного й того самого origin гарантовано розійшлися б.",
   },
   {
+    name: "STORE_ADMIN_URL",
+    group: "api",
+    need: "required",
+    compose: "none",
+    services: ["store-api"],
+    buildArgs: [],
+    example: false,
+    validated: "conditional",
+    // Reader: apps/store-api/src/notification/notification-links.ts (TASK-674);
+    // first links built with it — the owner's Telegram pings, TASK-677.
+    code: "used",
+    effect:
+      "Origin адмінки, куди ведуть посилання зі сповіщень: пінг власнику в Telegram «нове замовлення №…» відкриває це замовлення в адмінці. Без нього посилання вели б у нікуди, а перевірки при старті цього не бачили б — тому API не стартує в проді без нього (як і без STORE_CLIENT_URL).",
+    howTo:
+      "Не задається окремо: compose бере значення з `NEXT_PUBLIC_ADMIN_URL` — того самого origin, під який зібрано адмінку.",
+  },
+  {
     name: "IMAGE_HOSTS",
     group: "api",
     need: "optional",
@@ -837,6 +855,24 @@ const VARS = [
       "Адреса відправника. Домен має збігатися з тим, для якого налаштовані SPF/DKIM, інакше листи підуть у спам.",
     howTo:
       "`Магазин <no-reply@mail.<DOMAIN>>` — див. docs/deploy/02-domain-dns.md.",
+  },
+
+  // ─── Сповіщення власника ──────────────────────────────────────────────────
+  {
+    name: "TELEGRAM_BOT_TOKEN",
+    group: "notify",
+    need: "optional",
+    compose: "default",
+    services: ["store-api"],
+    buildArgs: [],
+    example: true,
+    validated: "optional",
+    // Reader landed with TASK-674: notification/telegram/telegram.client.ts.
+    code: "used",
+    effect:
+      "Порожній → Telegram-канал «не налаштований»: сповіщень власнику в Telegram немає. Застосунок стартує, але кричить про це — у лозі старту рядок `telegram.notConfigured` рівня error, і те саме видно в адмінці. Хибний токен → `telegram.getMe.failed`, застосунок теж стартує. Секрет: входить у кожен URL Bot API, тому ніколи не логується і не потрапляє у фронт.",
+    howTo:
+      "Створити бота в @BotFather (`/newbot`) і вставити виданий токен `123456789:AA…`. Без нього канал лишається «не налаштований». Після старту в лозі має з'явитися `telegram.getMe.ok` з іменем бота.",
   },
 
   // ─── Доставка ─────────────────────────────────────────────────────────────
@@ -1402,7 +1438,8 @@ const VARS = [
     example: true,
     validated: "absent",
     code: "unused",
-    effect: "Збірка адмінки не почнеться.",
+    effect:
+      "Збірка адмінки не почнеться. Той самий origin compose передає в API як STORE_ADMIN_URL — від нього залежать посилання зі сповіщень власнику в адмінку.",
     howTo: "`https://admin.<DOMAIN>`.",
   },
   {

@@ -14718,6 +14718,39 @@
         ]
       }
     },
+    "/api/admin/notifications/telegram": {
+      "get": {
+        "operationId": "getTelegramNotificationChannel",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Channel state: unconfigured / failed (with reason) / ok (with bot username)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramChannelStatusResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — admin access required"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Read the state of the Telegram owner-notification channel (admin)",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
     "/api/csrf-token": {
       "get": {
         "operationId": "CsrfController_getToken",
@@ -29531,6 +29564,59 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/FunnelReportEntity"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "TelegramChannelStateValue": {
+        "type": "string",
+        "enum": [
+          "unconfigured",
+          "failed",
+          "ok"
+        ],
+        "description": "`unconfigured` — TELEGRAM_BOT_TOKEN is not set; `failed` — a token is set but the last getMe did not succeed (see `reason`); `ok` — the bot answered (see `botUsername`)"
+      },
+      "TelegramChannelStatusDto": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "description": "`unconfigured` — TELEGRAM_BOT_TOKEN is not set; `failed` — a token is set but the last getMe did not succeed (see `reason`); `ok` — the bot answered (see `botUsername`)",
+            "example": "ok",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TelegramChannelStateValue"
+              }
+            ]
+          },
+          "botUsername": {
+            "type": "string",
+            "description": "Bot username without the @, present when `state` is `ok`",
+            "example": "casestore_bot"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Telegram's own failure description, present when `state` is `failed`",
+            "example": "Telegram getMe failed (401): Unauthorized"
+          },
+          "checkedAt": {
+            "type": "string",
+            "description": "When the state was last established by a getMe call (absent for `unconfigured`)",
+            "example": "2026-10-01T12:00:00.000Z",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "TelegramChannelStatusResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TelegramChannelStatusDto"
           }
         },
         "required": [

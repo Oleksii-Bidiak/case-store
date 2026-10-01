@@ -141,6 +141,27 @@ export class EnvironmentVariables {
   })
   STORE_CLIENT_URL?: string;
 
+  // ─── Admin-panel origin (TASK-674) ────────────────────────────────────────
+  // Where a notification links INTO the admin panel — the owner's Telegram ping
+  // "нове замовлення №…" opens that order (TASK-677). Same contract as
+  // STORE_CLIENT_URL above and for the same reason: required in production, an
+  // exact origin, no default — a missing or mistyped origin would otherwise
+  // produce links to nowhere while every health check stays green.
+  //
+  // Compose sets it from NEXT_PUBLIC_ADMIN_URL, the origin the admin bundle is
+  // built for, rather than as a variable of its own.
+  @ValidateIf(
+    (env: EnvironmentVariables) =>
+      env.NODE_ENV === Environment.Production || env.STORE_ADMIN_URL !== undefined,
+  )
+  @IsString({ message: 'STORE_ADMIN_URL is required in production' })
+  @Matches(ORIGIN, {
+    message:
+      'STORE_ADMIN_URL must be an exact origin — scheme + host + optional port, ' +
+      'no path and no trailing slash. e.g. "https://admin.example.com"',
+  })
+  STORE_ADMIN_URL?: string;
+
   // ─── ISR revalidation (TASK-187, hardened in TASK-383) ────────────────────
   // The shared secret and the storefront endpoint RevalidationNotifier POSTs to
   // after published content changes. Outside production both stay optional —
@@ -439,6 +460,20 @@ export class EnvironmentVariables {
   @IsOptional()
   @IsString()
   NP_ALLOW_KEYLESS?: string;
+
+  // ─── Owner notifications — Telegram (TASK-674) ──────────────────────────────
+  // Optional: dev and CI boot without it. With no token the Telegram channel is
+  // "unconfigured" — and says so at start-up with an error-level
+  // `telegram.notConfigured` log line and on the admin «Сповіщення» screen,
+  // because a notification channel that is silently off is indistinguishable
+  // from a shop where nothing happens. A token that Telegram rejects is logged
+  // as `telegram.getMe.failed`; the app still boots.
+  //
+  // TELEGRAM_BOT_TOKEN: from @BotFather. A secret — it is part of every Bot API
+  // URL, so it is never logged and never sent to a frontend.
+  @IsOptional()
+  @IsString()
+  TELEGRAM_BOT_TOKEN?: string;
 
   // ─── Online payments — LiqPay (TASK-330) ────────────────────────────────────
   // All optional: with no keys the app boots and online payment is simply

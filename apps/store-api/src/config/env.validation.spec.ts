@@ -12,6 +12,9 @@ const PROD_REVALIDATION = {
   STOREFRONT_REVALIDATE_URL: 'http://store-client:3000/api/revalidate',
 };
 
+/** Same idea for the admin-panel origin, required in production since TASK-674. */
+const PROD_ADMIN_ORIGIN = { STORE_ADMIN_URL: 'https://admin.example.com' };
+
 /**
  * Guards TASK-048 acceptance: the Sentry env vars are ALL optional, so the API
  * must boot (validation must pass) with no SENTRY_* configured, and must accept
@@ -115,6 +118,7 @@ describe('validateEnv — CSRF_SECRET is required in production', () => {
       validateEnv({
         ...base,
         ...PROD_REVALIDATION,
+        ...PROD_ADMIN_ORIGIN,
         NODE_ENV: 'production',
         CSRF_SECRET: 'c'.repeat(32),
         CORS_ORIGINS: 'https://shop.example.com',
@@ -138,6 +142,7 @@ describe('validateEnv — CORS_ORIGINS must be a well-formed origin list', () =>
     CSRF_SECRET: 'c'.repeat(32),
     STORE_CLIENT_URL: 'https://shop.example.com',
     ...PROD_REVALIDATION,
+    ...PROD_ADMIN_ORIGIN,
     NODE_ENV: 'production',
   };
 
@@ -207,6 +212,7 @@ describe('validateEnv — STORE_CLIENT_URL is required in production', () => {
     CSRF_SECRET: 'c'.repeat(32),
     CORS_ORIGINS: 'https://shop.example.com',
     ...PROD_REVALIDATION,
+    ...PROD_ADMIN_ORIGIN,
   };
 
   it('boots in development without STORE_CLIENT_URL', () => {
@@ -259,6 +265,79 @@ describe('validateEnv — STORE_CLIENT_URL is required in production', () => {
 });
 
 /**
+ * STORE_ADMIN_URL is the admin-panel origin a notification links into (TASK-674,
+ * first reader TASK-677). Same contract as STORE_CLIENT_URL, for the same reason:
+ * a link built from a missing or mistyped origin points nowhere and nothing at
+ * start-up would notice.
+ */
+describe('validateEnv — STORE_ADMIN_URL is required in production', () => {
+  const base = {
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+    CSRF_SECRET: 'c'.repeat(32),
+    CORS_ORIGINS: 'https://shop.example.com',
+    STORE_CLIENT_URL: 'https://shop.example.com',
+    ...PROD_REVALIDATION,
+  };
+
+  it('boots in development without STORE_ADMIN_URL', () => {
+    expect(() => validateEnv({ ...base, NODE_ENV: 'development' })).not.toThrow();
+  });
+
+  it('fails fast in production when STORE_ADMIN_URL is missing', () => {
+    expect(() => validateEnv({ ...base, NODE_ENV: 'production' })).toThrow(/STORE_ADMIN_URL/i);
+  });
+
+  it('accepts an exact origin in production', () => {
+    const result = validateEnv({
+      ...base,
+      NODE_ENV: 'production',
+      STORE_ADMIN_URL: 'https://admin.example.com',
+    });
+    expect(result.STORE_ADMIN_URL).toBe('https://admin.example.com');
+  });
+
+  it.each([
+    ['a trailing slash', 'https://admin.example.com/'],
+    ['a path', 'https://example.com/admin'],
+    ['a missing scheme', 'admin.example.com'],
+  ])('rejects %s', (_label, value) => {
+    expect(() => validateEnv({ ...base, NODE_ENV: 'production', STORE_ADMIN_URL: value })).toThrow(
+      /STORE_ADMIN_URL/i,
+    );
+  });
+
+  it('rejects a malformed value outside production too', () => {
+    expect(() =>
+      validateEnv({ ...base, NODE_ENV: 'development', STORE_ADMIN_URL: 'http://localhost:3002/' }),
+    ).toThrow(/STORE_ADMIN_URL/i);
+  });
+});
+
+describe('validateEnv — TELEGRAM_BOT_TOKEN is optional', () => {
+  const base = {
+    NODE_ENV: 'development',
+    DATABASE_URL: 'postgresql://user:pass@localhost:5432/db',
+    JWT_SECRET: 'a'.repeat(32),
+    JWT_REFRESH_SECRET: 'b'.repeat(32),
+  };
+
+  it('boots without it — the channel then reports itself unconfigured', () => {
+    expect(() => validateEnv({ ...base })).not.toThrow();
+  });
+
+  it('accepts the empty string compose produces for an unset `${TELEGRAM_BOT_TOKEN:-}`', () => {
+    expect(() => validateEnv({ ...base, TELEGRAM_BOT_TOKEN: '' })).not.toThrow();
+  });
+
+  it('accepts a token', () => {
+    const result = validateEnv({ ...base, TELEGRAM_BOT_TOKEN: '123456:ABC-test' });
+    expect(result.TELEGRAM_BOT_TOKEN).toBe('123456:ABC-test');
+  });
+});
+
+/**
  * REVALIDATE_SECRET / STOREFRONT_REVALIDATE_URL are how an admin edit reaches the
  * storefront's ISR cache. Missing them does not break anything visibly: the stack
  * boots, every container is healthy, and content just surfaces 0–60 minutes late
@@ -278,6 +357,7 @@ describe('validateEnv — ISR revalidation is required in production', () => {
     CSRF_SECRET: 'c'.repeat(32),
     CORS_ORIGINS: 'https://shop.example.com',
     STORE_CLIENT_URL: 'https://shop.example.com',
+    ...PROD_ADMIN_ORIGIN,
   };
 
   it('boots in development with neither variable set', () => {
@@ -365,6 +445,7 @@ describe('validateEnv — TOTP_ENCRYPTION_KEY treats empty as unset', () => {
     CORS_ORIGINS: 'https://shop.example.com',
     STORE_CLIENT_URL: 'https://shop.example.com',
     ...PROD_REVALIDATION,
+    ...PROD_ADMIN_ORIGIN,
   };
 
   it('is a valid production config to begin with', () => {

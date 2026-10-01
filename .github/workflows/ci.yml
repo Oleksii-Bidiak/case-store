@@ -572,6 +572,8 @@ jobs:
       #     (required since 1fdeecd / TASK-324)
       #   - REVALIDATE_SECRET (min 32) and STOREFRONT_REVALIDATE_URL, required
       #     since 866834e / TASK-383
+      #   - STORE_ADMIN_URL, an exact origin like STORE_CLIENT_URL (TASK-674) —
+      #     added to all three blocks in the same commit that made it required
       # The last three were never added here, so this job — and the two export
       # steps below — have been dying before reaching any Swagger metadata with
       #   "Invalid environment configuration: STORE_CLIENT_URL is required in
@@ -591,6 +593,7 @@ jobs:
           CSRF_SECRET: ci-dummy-csrf-secret-min-32-chars-0000
           CORS_ORIGINS: http://localhost:3000
           STORE_CLIENT_URL: http://localhost:3000
+          STORE_ADMIN_URL: http://localhost:3002
           REVALIDATE_SECRET: ci-dummy-revalidate-secret-min-32-0000
           STOREFRONT_REVALIDATE_URL: http://localhost:3000/api/revalidate
       - name: Committed spec must match the re-export
@@ -743,6 +746,7 @@ jobs:
           CSRF_SECRET: ci-dummy-csrf-secret-min-32-chars-0000
           CORS_ORIGINS: http://localhost:3000
           STORE_CLIENT_URL: http://localhost:3000
+          STORE_ADMIN_URL: http://localhost:3002
           REVALIDATE_SECRET: ci-dummy-revalidate-secret-min-32-0000
           STOREFRONT_REVALIDATE_URL: http://localhost:3000/api/revalidate
 
@@ -1138,6 +1142,7 @@ jobs:
           CSRF_SECRET: ci-dummy-csrf-secret-min-32-chars-0000
           CORS_ORIGINS: http://localhost:3000
           STORE_CLIENT_URL: http://localhost:3000
+          STORE_ADMIN_URL: http://localhost:3002
           REVALIDATE_SECRET: ci-dummy-revalidate-secret-min-32-0000
           STOREFRONT_REVALIDATE_URL: http://localhost:3000/api/revalidate
 

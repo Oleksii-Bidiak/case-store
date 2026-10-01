@@ -8,6 +8,8 @@ import {
   NOTIFICATION_CHANNEL_ADAPTERS,
   type NotificationChannelAdapter,
 } from './channels/notification-channel-adapter';
+import { NotificationModule } from '../notification/notification.module';
+import { TelegramAdapter } from '../notification/telegram/telegram.adapter';
 
 /**
  * NotificationOutboxModule — transactional-outbox infrastructure (TASK-103,
@@ -22,12 +24,16 @@ import {
  * (rendering/SMTP, wrapped by {@link EmailAdapter}) and `PrismaModule`.
  *
  * Channels: {@link NOTIFICATION_CHANNEL_ADAPTERS} is the list the dispatcher
- * routes `row.channel` through. To add a channel, provide its adapter class here
- * and append it to the factory's `inject` and returned array (TASK-674 adds
- * `TelegramAdapter` this way).
+ * routes `row.channel` through. To add a channel, make its adapter injectable
+ * here and append it to the factory's `inject` and returned array. EMAIL's
+ * adapter is provided by this module; TELEGRAM's (TASK-674) lives with the rest
+ * of the Telegram code in {@link NotificationModule}, imported explicitly below
+ * so the dependency is visible here even though that module is also global. The
+ * arrow points one way only — NotificationModule imports nothing from here.
  */
 @Global()
 @Module({
+  imports: [NotificationModule],
   providers: [
     NotificationOutboxRepository,
     NotificationOutboxService,
@@ -35,8 +41,11 @@ import {
     EmailAdapter,
     {
       provide: NOTIFICATION_CHANNEL_ADAPTERS,
-      useFactory: (email: EmailAdapter): NotificationChannelAdapter[] => [email],
-      inject: [EmailAdapter],
+      useFactory: (
+        email: EmailAdapter,
+        telegram: TelegramAdapter,
+      ): NotificationChannelAdapter[] => [email, telegram],
+      inject: [EmailAdapter, TelegramAdapter],
     },
     { provide: NOTIFICATION_OUTBOX_CLOCK, useValue: systemClock },
   ],

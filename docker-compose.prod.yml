@@ -199,6 +199,11 @@ services:
       # journeys silently used the code default `http://localhost:3000` — dead
       # links in production that no health check can see.
       STORE_CLIENT_URL: ${NEXT_PUBLIC_APP_URL:?NEXT_PUBLIC_APP_URL must be set}
+      # Public origin of the ADMIN panel — where a notification links into it
+      # (the owner's Telegram ping opens the order, TASK-674/677). Same reasoning
+      # as STORE_CLIENT_URL: fed from the origin the admin bundle is built for,
+      # never a variable of its own; the API refuses to boot in production without it.
+      STORE_ADMIN_URL: ${NEXT_PUBLIC_ADMIN_URL:?NEXT_PUBLIC_ADMIN_URL must be set}
       # Extra hosts an `<img>` in rich text (pages, blog, product descriptions)
       # may load from; the sanitizer drops every other host on save (TASK-758).
       # Same reasoning as STORE_CLIENT_URL: it is the storefront's own list —
@@ -282,6 +287,12 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
       GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-}
+      # ─── Owner notifications — Telegram (TASK-674) ────────────────────────
+      # SOFT (`:-`): without it the API boots and the channel reports itself
+      # "not configured" — at error level in the start-up log
+      # (`telegram.notConfigured`) and on the admin «Сповіщення» screen. A token
+      # Telegram rejects is logged as `telegram.getMe.failed`.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
     volumes:
       # Uploaded product images (TASK-093 image pipeline) — must survive redeploys.
       - uploads_data:/app/apps/store-api/uploads
