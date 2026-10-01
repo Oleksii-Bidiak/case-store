@@ -34,7 +34,7 @@ const CALLBACK_WAIT_MS = 3 * 60 * 1000;
 const CALLBACK_POLL_MS = 4000;
 
 const primaryCta =
-  "inline-block rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-block rounded-cta bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * OrderConfirmationView — client orchestrator for `/orders/[id]/confirmation`.
@@ -226,7 +226,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
           />
 
           {notes && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-6">
+            <div className="flex flex-col gap-2 rounded-card border border-border bg-card p-6">
               <h2 className="text-lg font-semibold text-foreground">
                 {dict.order.notesTitle}
               </h2>

@@ -27,7 +27,7 @@ export function OrderLookupResult({ order }: { order: PublicOrderEntity }) {
   const hasAddons = parseFloat(order.addonsTotal) > 0;
 
   return (
-    <article className="flex flex-col gap-5 rounded-2xl border border-border bg-card p-6 shadow-card sm:p-8">
+    <article className="flex flex-col gap-5 rounded-card border border-border bg-card p-6 shadow-card sm:p-8">
       <header className="flex flex-col gap-3">
         <dl className="flex flex-col gap-1 text-sm">
           <div className="flex gap-2">

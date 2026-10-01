@@ -95,7 +95,7 @@ export function OrderHistoryView() {
           {dict.orderHistory.loadError}
         </p>
       ) : orders.length === 0 ? (
-        <div className="flex flex-col items-start gap-4 rounded-xl border border-border p-8">
+        <div className="flex flex-col items-start gap-4 rounded-card border border-border p-8">
           <p className="text-muted-foreground">{dict.orderHistory.empty}</p>
           <Button asChild>
             <Link href="/products">{dict.orderHistory.emptyCta}</Link>
@@ -107,7 +107,7 @@ export function OrderHistoryView() {
             <li key={order.id} className="flex flex-wrap items-center gap-3">
               <Link
                 href={`/orders/${order.id}/confirmation`}
-                className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-xl border border-border p-4 shadow-card transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-card border border-border p-4 shadow-card transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="flex flex-col">
                   <span className="font-medium text-foreground">

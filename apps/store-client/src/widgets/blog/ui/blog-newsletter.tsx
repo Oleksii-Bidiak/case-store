@@ -33,7 +33,7 @@ export function BlogNewsletter() {
   const { heading, subtitle, socials, socialSoon } = dict.blog.newsletter;
 
   return (
-    <section className="mt-11 flex flex-wrap items-center justify-between gap-9 rounded-[20px] border border-border bg-card px-10 py-[34px] shadow-card">
+    <section className="mt-11 flex flex-wrap items-center justify-between gap-9 rounded-card border border-border bg-card px-10 py-[34px] shadow-card">
       <div className="max-w-[520px]">
         <h2 className="mb-2 font-display text-2xl font-bold tracking-tight text-foreground">
           {heading}

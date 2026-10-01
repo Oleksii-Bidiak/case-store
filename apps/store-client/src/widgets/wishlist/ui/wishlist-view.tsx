@@ -123,7 +123,7 @@ export function WishlistView() {
   // Nothing saved at all — the heart empty state.
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-4 rounded-[18px] border border-border bg-card px-6 py-20 text-center">
+      <div className="flex flex-col items-center gap-4 rounded-card border border-border bg-card px-6 py-20 text-center">
         <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-[color-mix(in_oklab,var(--color-sale)_12%,var(--color-card))] text-sale">
           <Heart className="size-9" aria-hidden="true" />
         </span>
@@ -313,7 +313,7 @@ export function WishlistView() {
 
         <section className="min-w-0">
           {visible.length === 0 ? (
-            <div className="flex flex-col items-center justify-center rounded-[18px] border border-border bg-card px-5 py-14 text-center shadow-card">
+            <div className="flex flex-col items-center justify-center rounded-card border border-border bg-card px-5 py-14 text-center shadow-card">
               <b className="font-display text-xl font-bold text-foreground">
                 {dict.wishlist.noMatchHeading}
               </b>

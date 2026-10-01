@@ -81,7 +81,7 @@ const SUCCESS_TINT = {
     "color-mix(in oklab, var(--color-success) 12%, var(--color-card))",
 };
 
-const CARD = "rounded-[18px] border border-border bg-card p-[30px] shadow-card";
+const CARD = "rounded-card border border-border bg-card p-[30px] shadow-card";
 const SECTION_HEADING =
   "mb-1.5 font-display text-2xl font-bold text-foreground";
 const SECTION_INTRO =
@@ -214,7 +214,7 @@ export function InfoView({
                   type="button"
                   onClick={() => go(key)}
                   aria-current={active ? "true" : undefined}
-                  className={`mb-0.5 flex w-full items-center gap-3 rounded-[11px] px-3.5 py-3 text-left text-[14.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-3 text-left text-[14.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     active
                       ? "bg-primary text-primary-foreground"
                       : "text-foreground hover:bg-muted"
@@ -245,7 +245,7 @@ export function InfoView({
                           className="rounded-[14px] border border-border bg-background p-[18px]"
                         >
                           <span
-                            className="mb-3 inline-flex size-[42px] items-center justify-center rounded-[11px] text-primary"
+                            className="mb-3 inline-flex size-[42px] items-center justify-center rounded-menu text-primary"
                             style={PRIMARY_TINT}
                           >
                             <Icon className="size-5" aria-hidden="true" />
@@ -276,7 +276,7 @@ export function InfoView({
                       return (
                         <div
                           key={opt.title}
-                          className="flex items-start gap-3.5 rounded-[13px] border border-border bg-background p-4"
+                          className="flex items-start gap-3.5 rounded-cta border border-border bg-background p-4"
                         >
                           <span
                             className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-success"
@@ -341,10 +341,10 @@ export function InfoView({
                     {services.map((svc) => (
                       <li
                         key={svc.id}
-                        className="flex items-center gap-4 rounded-[13px] border border-border bg-background px-[18px] py-[15px]"
+                        className="flex items-center gap-4 rounded-cta border border-border bg-background px-[18px] py-[15px]"
                       >
                         <span
-                          className="inline-flex size-[42px] shrink-0 items-center justify-center rounded-[11px] text-primary"
+                          className="inline-flex size-[42px] shrink-0 items-center justify-center rounded-menu text-primary"
                           style={PRIMARY_TINT}
                         >
                           <ShieldCheck className="size-5" aria-hidden="true" />
@@ -373,7 +373,7 @@ export function InfoView({
           )}
 
           {section === "faq" && (
-            <div className="rounded-[18px] border border-border bg-card px-[30px] py-3.5 shadow-card">
+            <div className="rounded-card border border-border bg-card px-[30px] py-3.5 shadow-card">
               {faqs.map((faq, i) => {
                 const open = !!openFaq[i];
                 return (
@@ -411,7 +411,7 @@ export function InfoView({
           {section === "about" && (
             <div className="flex flex-col gap-[22px]">
               <div
-                className="rounded-[18px] p-10 text-white"
+                className="rounded-card p-10 text-white"
                 style={{
                   background:
                     "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300)))",
@@ -549,7 +549,7 @@ export function InfoView({
                             href={contact?.[m.key] as string}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex h-[42px] items-center gap-2 rounded-[11px] border border-border bg-background px-4 text-[13.5px] font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="inline-flex h-[42px] items-center gap-2 rounded-menu border border-border bg-background px-4 text-[13.5px] font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                           >
                             <Icon className="size-[18px]" aria-hidden="true" />
                             {m.label}

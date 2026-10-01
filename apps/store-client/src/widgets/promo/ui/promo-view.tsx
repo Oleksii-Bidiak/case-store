@@ -32,7 +32,7 @@ export function PromoView() {
 
       {/* Hero. */}
       <div
-        className="relative overflow-hidden rounded-[22px] px-8 py-12 text-white shadow-elevated sm:px-14"
+        className="relative overflow-hidden rounded-2xl px-8 py-12 text-white shadow-elevated sm:px-14"
         style={{
           background:
             "linear-gradient(120deg, oklch(0.42 0.15 350) 0%, var(--color-sale) 55%, oklch(0.58 0.16 45) 100%)",
@@ -49,7 +49,7 @@ export function PromoView() {
           <div className="flex flex-wrap items-center gap-3.5">
             <a
               href="#deals"
-              className="inline-flex h-[52px] items-center gap-2.5 rounded-[13px] bg-white px-6 text-base font-bold text-sale transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+              className="inline-flex h-[52px] items-center gap-2.5 rounded-cta bg-white px-6 text-base font-bold text-sale transition-transform hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
             >
               {d.hero.cta}
               <ArrowRight className="size-[18px]" aria-hidden="true" />

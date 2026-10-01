@@ -285,7 +285,7 @@
 /* ─────────────────────────────────────────────
    Tailwind v4 Theme — maps CSS vars to utilities
    e.g. --color-primary → bg-primary, text-primary
-        --radius        → rounded-[var(--radius)]
+        --radius-card   → rounded-card
    ───────────────────────────────────────────── */
 @theme inline {
   /* Colors */
@@ -331,6 +331,11 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
   --radius-2xl: calc(var(--radius) + 8px);
+  /* Role radii (owner decision 7.9, design-system.md §5, TASK-862) —
+     what the storefront renders, named by role instead of by px. */
+  --radius-card: 18px; /* card: product, info, cart/checkout/order panels */
+  --radius-cta: 13px; /* large primary call-to-action */
+  --radius-menu: 11px; /* menu / navigation item */
 
   /* Layout — the one page-container width (owner decision 7.1, TASK-860).
      `--container-*` is Tailwind's max-width namespace → `max-w-page`. Use it

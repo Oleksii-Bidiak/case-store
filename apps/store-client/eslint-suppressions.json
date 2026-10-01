@@ -171,27 +171,27 @@
   },
   "src/widgets/account/ui/account-bonuses-section.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 5
+      "count": 4
     }
   },
   "src/widgets/account/ui/account-placeholder-section.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 5
+      "count": 3
     }
   },
   "src/widgets/account/ui/account-profile-section.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 7
+      "count": 5
     }
   },
   "src/widgets/account/ui/account-settings-section.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 14
+      "count": 12
     }
   },
   "src/widgets/account/ui/account-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 13
+      "count": 11
     }
   },
   "src/widgets/blog/ui/blog-article-body.tsx": {
@@ -211,12 +211,12 @@
   },
   "src/widgets/blog/ui/blog-article-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 23
+      "count": 22
     }
   },
   "src/widgets/blog/ui/blog-empty-state.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 3
+      "count": 2
     }
   },
   "src/widgets/blog/ui/blog-featured-card.tsx": {
@@ -226,17 +226,17 @@
   },
   "src/widgets/blog/ui/blog-newsletter.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 4
+      "count": 3
     }
   },
   "src/widgets/blog/ui/blog-post-card.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 15
+      "count": 14
     }
   },
   "src/widgets/blog/ui/blog-related-card.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 9
+      "count": 8
     }
   },
   "src/widgets/blog/ui/blog-view.tsx": {
@@ -246,7 +246,7 @@
   },
   "src/widgets/cart/ui/cart-item-row.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 18
+      "count": 15
     }
   },
   "src/widgets/cart/ui/cart-sheet.tsx": {
@@ -256,27 +256,27 @@
   },
   "src/widgets/cart/ui/cart-summary.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 7
+      "count": 5
     }
   },
   "src/widgets/cart/ui/cart-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 4
+      "count": 3
     }
   },
   "src/widgets/categories/ui/categories-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 22
+      "count": 18
     }
   },
   "src/widgets/checkout/ui/checkout-order-summary.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 14
+      "count": 12
     }
   },
   "src/widgets/checkout/ui/checkout-payment.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 6
+      "count": 5
     }
   },
   "src/widgets/checkout/ui/checkout-step-indicator.tsx": {
@@ -284,19 +284,14 @@
       "count": 2
     }
   },
-  "src/widgets/checkout/ui/checkout-view.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
-    }
-  },
   "src/widgets/contact/ui/contact-form.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 20
+      "count": 18
     }
   },
   "src/widgets/contact/ui/contact-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 50
+      "count": 42
     }
   },
   "src/widgets/footer/ui/footer.tsx": {
@@ -346,17 +341,17 @@
   },
   "src/widgets/info-support/ui/info-contact-form.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 7
+      "count": 6
     }
   },
   "src/widgets/info-support/ui/info-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 61
+      "count": 53
     }
   },
   "src/widgets/legal-doc/ui/legal-doc-actions.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 5
+      "count": 4
     }
   },
   "src/widgets/legal-doc/ui/legal-doc-toc.tsx": {
@@ -366,17 +361,17 @@
   },
   "src/widgets/legal-doc/ui/legal-doc-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 22
+      "count": 20
     }
   },
   "src/widgets/legal-doc/ui/legal-hub-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 26
+      "count": 25
     }
   },
   "src/widgets/not-found/ui/not-found-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 16
+      "count": 15
     }
   },
   "src/widgets/product-card-actions/ui/product-card-actions.tsx": {
@@ -386,12 +381,12 @@
   },
   "src/widgets/product-detail/ui/product-detail-skeleton.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 6
+      "count": 5
     }
   },
   "src/widgets/product-detail/ui/product-detail-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 8
+      "count": 6
     }
   },
   "src/widgets/product-detail/ui/product-highlights.tsx": {
@@ -441,17 +436,17 @@
   },
   "src/widgets/product-list/ui/product-list.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 8
+      "count": 7
     }
   },
   "src/widgets/promo/ui/promo-countdown.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 4
+      "count": 3
     }
   },
   "src/widgets/promo/ui/promo-coupons.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 15
+      "count": 14
     }
   },
   "src/widgets/promo/ui/promo-deals.tsx": {
@@ -461,12 +456,12 @@
   },
   "src/widgets/promo/ui/promo-newsletter.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 5
+      "count": 4
     }
   },
   "src/widgets/promo/ui/promo-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 15
+      "count": 13
     }
   },
   "src/widgets/recently-viewed/ui/recently-viewed.tsx": {
@@ -486,7 +481,7 @@
   },
   "src/widgets/wishlist/ui/wishlist-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 20
+      "count": 18
     }
   }
 }

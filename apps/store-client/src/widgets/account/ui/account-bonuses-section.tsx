@@ -12,7 +12,7 @@ export function AccountBonusesSection() {
     <div className="max-w-[760px]">
       <h1 className={`mb-6 ${H1_CLASS} text-foreground`}>{d.bonusesHeading}</h1>
 
-      <div className="flex flex-wrap items-center justify-between gap-6 rounded-[18px] bg-foreground px-8 py-[30px] text-background">
+      <div className="flex flex-wrap items-center justify-between gap-6 rounded-card bg-foreground px-8 py-[30px] text-background">
         <div>
           <span className="text-sm opacity-80">{d.bonusesAvailable}</span>
           <div className="mt-1 flex items-baseline gap-2.5">

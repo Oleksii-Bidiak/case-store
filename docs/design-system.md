@@ -188,19 +188,22 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 
 Radii follow what the storefront actually renders (owner decision 7.9):
 
-| Role                          | Radius           | Today in code    |
-| ----------------------------- | ---------------- | ---------------- |
-| Card (product, info, order)   | 18px             | `rounded-[18px]` |
-| Large CTA                     | 13px             | `rounded-[13px]` |
-| Menu item                     | 11px             | `rounded-[11px]` |
-| Chip / pill                   | full             | `rounded-full`   |
-| Inputs, buttons (`shared/ui`) | `radius − 2px`   | `rounded-md`     |
-| Badges, small chips           | `radius − 4px`   | `rounded-sm`     |
-| Dialogs, images               | `0.75rem` (base) | `rounded-lg`     |
+| Role                          | Radius           | Today in code  |
+| ----------------------------- | ---------------- | -------------- |
+| Card (product, info, order)   | 18px             | `rounded-card` |
+| Large CTA                     | 13px             | `rounded-cta`  |
+| Menu item                     | 11px             | `rounded-menu` |
+| Hero banner                   | `radius + 8px`   | `rounded-2xl`  |
+| Chip / pill                   | full             | `rounded-full` |
+| Inputs, buttons (`shared/ui`) | `radius − 2px`   | `rounded-md`   |
+| Badges, small chips           | `radius − 4px`   | `rounded-sm`   |
+| Dialogs, images               | `0.75rem` (base) | `rounded-lg`   |
 
-The 18 / 13 / 11 values become named radius tokens via TASK-862, and the arbitrary
-`rounded-[..px]` classes are replaced with them. New code picks the role from this table and
-does not invent a new radius.
+The 18 / 13 / 11 values are the named tokens `--radius-card`, `--radius-cta` and
+`--radius-menu` in `@theme inline` (`globals.css`, TASK-862). The card radius covers the whole
+funnel: cart, checkout, order confirmation, `/orders`, `/orders/status` and the guest order
+view all use `rounded-card`. New code picks the role from this table and does not invent a
+new radius: no `rounded-[..px]`.
 
 | Shadow            | Use                                                           |
 | ----------------- | ------------------------------------------------------------- |

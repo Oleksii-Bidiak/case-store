@@ -132,7 +132,7 @@ export function CartView() {
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
         {/* Line items */}
-        <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-card">
+        <div className="overflow-hidden rounded-card border border-border bg-card shadow-card">
           <ul>
             {items.map((item) => (
               <CartItemRow key={item.id} item={item} showAddons />

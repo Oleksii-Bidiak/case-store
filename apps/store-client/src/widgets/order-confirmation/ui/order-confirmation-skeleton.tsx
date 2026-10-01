@@ -37,7 +37,7 @@ export function OrderConfirmationSkeleton() {
         </div>
 
         {/* Totals */}
-        <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-6 lg:col-span-1 lg:self-start">
+        <div className="flex flex-col gap-4 rounded-card border border-border bg-card p-6 lg:col-span-1 lg:self-start">
           <Skeleton className="h-6 w-32" />
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-4 w-3/4" />

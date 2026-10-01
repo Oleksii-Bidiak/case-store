@@ -143,7 +143,7 @@ export function OrderLookupForm() {
   return (
     <>
       {announcer}
-      <div className="rounded-2xl border border-border bg-card p-8 shadow-card">
+      <div className="rounded-card border border-border bg-card p-8 shadow-card">
         <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
           {d.intro}
         </p>
@@ -245,7 +245,7 @@ export function OrderLookupForm() {
           <button
             type="submit"
             disabled={lookup.isPending}
-            className="h-12 rounded-xl bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-12 rounded-cta bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
           >
             {lookup.isPending ? d.submitting : d.submit}
           </button>

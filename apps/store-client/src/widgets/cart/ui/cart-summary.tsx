@@ -44,7 +44,7 @@ export function CartSummary({
   const payableText = formatMoney((payableCents / 100).toFixed(2));
 
   return (
-    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
+    <div className="rounded-card border border-border bg-card p-[22px] shadow-card">
       <h2 className="mb-4 font-display text-lg font-bold text-foreground">
         {dict.cart.summaryHeading}
       </h2>
@@ -113,7 +113,7 @@ export function CartSummary({
           <Link
             href="/checkout"
             aria-label={dict.cart.checkoutAria}
-            className="flex h-[52px] items-center justify-center rounded-[13px] bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="flex h-[52px] items-center justify-center rounded-cta bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
             {dict.cart.checkout}
           </Link>

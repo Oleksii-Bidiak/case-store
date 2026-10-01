@@ -51,8 +51,7 @@ export function CheckoutGuestSuccess({
           right up to the moment the order existed (TASK-407). */}
       <CheckoutStepIndicator current={3} />
 
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- matches the grandfathered checkout card radius this panel replaces on screen */}
-      <section className="flex flex-col gap-3 rounded-[18px] border border-border bg-card p-6 shadow-card">
+      <section className="flex flex-col gap-3 rounded-card border border-border bg-card p-6 shadow-card">
         <div className="flex items-center gap-3">
           <CheckCircle2 className="size-7 shrink-0 text-primary" aria-hidden />
           <h1 className={`${H1_CLASS} text-foreground`}>
@@ -92,8 +91,7 @@ export function CheckoutGuestSuccess({
         )}
       </section>
 
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- matches the grandfathered checkout card radius this panel replaces on screen */}
-      <section className="flex flex-col gap-3 rounded-[18px] border border-border bg-card p-6 shadow-card">
+      <section className="flex flex-col gap-3 rounded-card border border-border bg-card p-6 shadow-card">
         <div className="flex items-center gap-3">
           <UserPlus className="size-5 shrink-0 text-primary" aria-hidden />
           <h2 className="font-display text-lg font-bold text-foreground">

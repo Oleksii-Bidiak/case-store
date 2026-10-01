@@ -84,7 +84,7 @@ export function ContactForm() {
 
   if (submit.isSuccess) {
     return (
-      <div className="rounded-[18px] border border-border bg-card p-8 shadow-card">
+      <div className="rounded-card border border-border bg-card p-8 shadow-card">
         <div className="flex flex-col items-center py-10 text-center">
           <span className="mb-[18px] inline-flex size-16 items-center justify-center rounded-full bg-[color-mix(in_oklab,var(--color-success)_16%,var(--color-card))] text-success">
             <Check className="size-8" strokeWidth={2.4} aria-hidden="true" />
@@ -124,7 +124,7 @@ export function ContactForm() {
     : null;
 
   return (
-    <div className="rounded-[18px] border border-border bg-card p-8 shadow-card">
+    <div className="rounded-card border border-border bg-card p-8 shadow-card">
       <h2 className="mb-1.5 font-display text-2xl font-bold text-foreground">
         {d.formHeading}
       </h2>

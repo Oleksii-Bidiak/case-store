@@ -67,7 +67,7 @@ export function PromoCountdown() {
       {cells.map((cell) => (
         <div
           key={cell.label}
-          className="flex h-[62px] min-w-[62px] flex-col items-center justify-center rounded-[13px] bg-black/25 backdrop-blur-sm"
+          className="flex h-[62px] min-w-[62px] flex-col items-center justify-center rounded-cta bg-black/25 backdrop-blur-sm"
         >
           <span className="font-mono text-2xl leading-none font-bold">
             {pad(cell.val)}

@@ -264,13 +264,12 @@ export function CheckoutView() {
           {step === 1 && (
             <>
               {isGuest && (
-                // eslint-disable-next-line tailwindcss/no-arbitrary-value -- matches the grandfathered checkout card radius used by every sibling section below
-                <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
+                <section className="rounded-card border border-border bg-card p-6 shadow-card">
                   <CheckoutContactFields register={register} errors={errors} />
                 </section>
               )}
 
-              <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
+              <section className="rounded-card border border-border bg-card p-6 shadow-card">
                 <CheckoutAddressForm
                   legend={dict.checkout.shippingAddress}
                   register={register}
@@ -329,7 +328,7 @@ export function CheckoutView() {
 
           {step === 2 && (
             <>
-              <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
+              <section className="rounded-card border border-border bg-card p-6 shadow-card">
                 <CheckoutReviewStep ref={reviewHeadingRef} control={control} />
               </section>
 

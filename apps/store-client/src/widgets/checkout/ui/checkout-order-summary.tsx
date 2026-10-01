@@ -41,7 +41,7 @@ export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
 
   if (isLoading) {
     return (
-      <div className="flex flex-col gap-3 rounded-[18px] border border-border bg-card p-[22px]">
+      <div className="flex flex-col gap-3 rounded-card border border-border bg-card p-[22px]">
         <Skeleton className="h-6 w-1/2" />
         <Skeleton className="h-12 w-full" />
         <Skeleton className="h-12 w-full" />
@@ -73,7 +73,7 @@ export function CheckoutOrderSummary({ npCityRef }: CheckoutOrderSummaryProps) {
   const totalText = formatMoney((totalCents / 100).toFixed(2));
 
   return (
-    <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
+    <div className="rounded-card border border-border bg-card p-[22px] shadow-card">
       <h2 className="mb-4 font-display text-lg font-bold text-foreground">
         {dict.checkout.summaryHeading}
       </h2>

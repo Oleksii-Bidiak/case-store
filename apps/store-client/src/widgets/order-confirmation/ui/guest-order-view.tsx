@@ -15,7 +15,7 @@ interface GuestOrderViewProps {
 }
 
 const primaryCta =
-  "inline-block rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-block rounded-cta bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * GuestOrderView — a shopper without an account looking at their own order
@@ -115,7 +115,7 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
           />
 
           {notes && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-6">
+            <div className="flex flex-col gap-2 rounded-card border border-border bg-card p-6">
               <h2 className="text-lg font-semibold text-foreground">
                 {dict.order.notesTitle}
               </h2>
@@ -124,7 +124,7 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
           )}
 
           {/* The offer, again after the fact and never as a condition. */}
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-6">
+          <div className="flex flex-col gap-2 rounded-card border border-border bg-card p-6">
             <h2 className="text-lg font-semibold text-foreground">
               {dict.order.guest.accountOfferHeading}
             </h2>

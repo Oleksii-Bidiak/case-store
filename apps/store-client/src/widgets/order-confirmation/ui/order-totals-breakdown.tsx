@@ -27,7 +27,7 @@ export function OrderTotalsBreakdown({
   total,
 }: OrderTotalsBreakdownProps) {
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-6 text-card-foreground">
+    <div className="flex flex-col gap-3 rounded-card border border-border bg-card p-6 text-card-foreground">
       <h2 className="text-lg font-semibold text-foreground">
         {dict.order.totalsTitle}
       </h2>

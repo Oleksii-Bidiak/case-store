@@ -393,7 +393,7 @@ export function CartItemRow({
         href={productHref}
         onClick={onNavigate}
         aria-label={dict.cart.viewProductAria(item.productName)}
-        className="shrink-0 rounded-[13px] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="shrink-0 rounded-cta focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         {item.imageUrl && !imgFailed ? (
           <Image
@@ -402,12 +402,12 @@ export function CartItemRow({
             width={96}
             height={96}
             onError={() => setImgFailed(true)}
-            className="size-24 rounded-[13px] object-cover"
+            className="size-24 rounded-cta object-cover"
           />
         ) : (
           <ProductThumb
             name={item.productName}
-            className="size-24 rounded-[13px]"
+            className="size-24 rounded-cta"
             initialClassName="text-3xl"
           />
         )}

@@ -42,7 +42,7 @@ export function NotFoundView() {
           action="/search"
           method="get"
           role="search"
-          className="mx-auto mb-6 flex h-[52px] max-w-[420px] items-center overflow-hidden rounded-[13px] border-[1.5px] border-border bg-card"
+          className="mx-auto mb-6 flex h-[52px] max-w-[420px] items-center overflow-hidden rounded-cta border-[1.5px] border-border bg-card"
         >
           <input
             name="q"

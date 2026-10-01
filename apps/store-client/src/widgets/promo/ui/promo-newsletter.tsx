@@ -10,7 +10,7 @@ export function PromoNewsletter() {
   const d = dict.promo.newsletter;
 
   return (
-    <section className="mt-11 flex flex-wrap items-center justify-between gap-7 rounded-[18px] border border-border bg-card p-6 shadow-card sm:p-9 md:p-11">
+    <section className="mt-11 flex flex-wrap items-center justify-between gap-7 rounded-card border border-border bg-card p-6 shadow-card sm:p-9 md:p-11">
       <div className="max-w-[480px] min-w-0">
         <h2 className="mb-2 font-display text-2xl font-bold tracking-tight text-foreground">
           {d.heading}
@@ -27,8 +27,8 @@ export function PromoNewsletter() {
       <NewsletterSubscribeForm
         source="promo"
         className="max-w-[460px] flex-1 sm:min-w-[300px]"
-        inputClassName="h-[52px] rounded-[13px] border-[1.5px] px-[18px] text-[15px]"
-        buttonClassName="h-[52px] rounded-[13px] px-6 text-[15px]"
+        inputClassName="h-[52px] rounded-cta border-[1.5px] px-[18px] text-[15px]"
+        buttonClassName="h-[52px] rounded-cta px-6 text-[15px]"
       />
     </section>
   );

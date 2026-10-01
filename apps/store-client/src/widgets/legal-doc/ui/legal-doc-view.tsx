@@ -96,7 +96,7 @@ export function LegalDocView({
       >
         {hasToc && <LegalDocToc sections={sections} />}
 
-        <article className="min-w-0 rounded-[18px] border border-border bg-card px-11 py-9 shadow-card">
+        <article className="min-w-0 rounded-card border border-border bg-card px-11 py-9 shadow-card">
           <div
             className="legal-doc-body"
             dangerouslySetInnerHTML={{ __html: html }}
@@ -119,7 +119,7 @@ export function LegalDocView({
             </div>
             <Link
               href={dict.legal.contactHref}
-              className="inline-flex h-[42px] items-center rounded-[11px] bg-primary px-5 text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90"
+              className="inline-flex h-[42px] items-center rounded-menu bg-primary px-5 text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90"
             >
               {dict.legal.contactCta}
             </Link>

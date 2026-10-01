@@ -124,7 +124,7 @@ export function AccountView() {
       <div className="grid items-start gap-7 lg:grid-cols-[264px_1fr]">
         {/* Sidebar */}
         <aside
-          className={`rounded-[18px] border border-border bg-card p-2 shadow-card lg:sticky ${STICKY_ASIDE_TOP}`}
+          className={`rounded-card border border-border bg-card p-2 shadow-card lg:sticky ${STICKY_ASIDE_TOP}`}
         >
           <div className="flex items-center gap-3 px-3 pt-3.5 pb-4">
             <span
@@ -153,7 +153,7 @@ export function AccountView() {
             {NAV.map((entry) => {
               const label = d.nav[entry.key as keyof typeof d.nav];
               const active = !entry.href && section === entry.key;
-              const className = `relative mb-0.5 flex w-full items-center gap-3 rounded-[11px] px-3.5 py-[11px] text-left text-[14.5px] no-underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+              const className = `relative mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-[14.5px] no-underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                 active
                   ? "font-semibold text-primary"
                   : "font-medium text-foreground hover:bg-muted"
@@ -208,7 +208,7 @@ export function AccountView() {
             type="button"
             onClick={handleLogout}
             disabled={logout.isPending}
-            className="flex w-full items-center gap-3 rounded-[11px] px-3.5 py-[11px] text-left text-[14.5px] font-medium text-destructive transition-colors hover:bg-destructive/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+            className="flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-[14.5px] font-medium text-destructive transition-colors hover:bg-destructive/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
           >
             <AccountLogoutIcon width={20} height={20} />
             {d.logout}

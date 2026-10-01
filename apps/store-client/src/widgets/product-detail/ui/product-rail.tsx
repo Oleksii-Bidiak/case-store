@@ -24,7 +24,7 @@ interface ProductRailProps {
 }
 
 const ARROW_CLASS =
-  "grid size-10 shrink-0 place-items-center rounded-[11px] border-[1.5px] border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "grid size-10 shrink-0 place-items-center rounded-menu border-[1.5px] border-border bg-card text-foreground transition-colors hover:border-primary hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * ProductRail — a horizontal snap-scroll rail of up to eight other products,

@@ -32,7 +32,7 @@ export function CategoriesView() {
     return (
       // eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent
       <div className="grid gap-7 lg:grid-cols-[264px_1fr] lg:items-start">
-        <Skeleton className="hidden h-80 rounded-[18px] lg:block" />
+        <Skeleton className="hidden h-80 rounded-card lg:block" />
         <div>
           <Skeleton className="mb-6 h-10 w-64" />
           <div className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(196px,1fr))]">
@@ -69,7 +69,7 @@ export function CategoriesView() {
     <div className="grid gap-7 lg:grid-cols-[264px_1fr] lg:items-start">
       {/* Rail — root categories */}
       <aside
-        className={`rounded-[18px] border border-border bg-card p-2 shadow-card lg:sticky ${STICKY_ASIDE_TOP}`}
+        className={`rounded-card border border-border bg-card p-2 shadow-card lg:sticky ${STICKY_ASIDE_TOP}`}
       >
         <nav aria-label={dict.categories.navAria} className="flex flex-col">
           {roots.map((root) => {
@@ -81,7 +81,7 @@ export function CategoriesView() {
                 type="button"
                 onClick={() => setGroupId(root.id)}
                 aria-current={active ? "true" : undefined}
-                className={`relative mb-0.5 flex w-full items-center gap-3 rounded-[11px] px-3.5 py-[11px] text-left text-[14.5px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                className={`relative mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-[14.5px] transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   active
                     ? "font-semibold text-primary"
                     : "font-medium text-foreground hover:bg-muted"
@@ -148,7 +148,7 @@ export function CategoriesView() {
                   href={`/categories/${child.slug}`}
                   className="flex flex-col rounded-2xl border border-border bg-card p-[18px] no-underline shadow-card transition-[transform,box-shadow] hover:-translate-y-[3px] hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
-                  <div className="relative mb-3.5 aspect-square overflow-hidden rounded-[13px]">
+                  <div className="relative mb-3.5 aspect-square overflow-hidden rounded-cta">
                     <CategoryTileImage
                       src={child.image}
                       alt=""

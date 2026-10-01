@@ -115,7 +115,7 @@ export function OrderPaymentPanel({
   ) => (
     <section
       className={[
-        "flex flex-col gap-3 rounded-lg border p-6",
+        "flex flex-col gap-3 rounded-card border p-6",
         tone === "negative"
           ? "border-destructive/40 bg-destructive/5"
           : "border-border bg-card",

@@ -167,7 +167,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
             altFallback={product.name}
           />
           {onSale && (
-            <span className="absolute top-4 left-4 rounded-[9px] bg-sale px-3 py-1.5 text-sm font-bold text-sale-foreground">
+            <span className="absolute top-4 left-4 rounded-sm bg-sale px-3 py-1.5 text-sm font-bold text-sale-foreground">
               −{discountPercent}%
             </span>
           )}
@@ -227,7 +227,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
             (STICKY_HEADER_OFFSET); `STICKY_ASIDE_TOP` itself is `lg:`-prefixed,
             so it cannot express the `md:` breakpoint this column needs. */}
         <div className="md:sticky md:top-24 md:col-start-2 md:row-span-2 md:row-start-1 lg:col-start-3 lg:row-span-1">
-          <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
+          <div className="rounded-card border border-border bg-card p-[22px] shadow-card">
             <div className="mb-1 flex flex-wrap items-end gap-3">
               <span
                 className={`font-display text-[32px] font-bold tracking-tight ${

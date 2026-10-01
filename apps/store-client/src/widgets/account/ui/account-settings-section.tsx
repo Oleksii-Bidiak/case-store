@@ -34,7 +34,7 @@ export function AccountSettingsSection() {
         {d.settingsHeading}
       </h1>
 
-      <div className="rounded-[18px] border border-border bg-card p-[26px] shadow-card">
+      <div className="rounded-card border border-border bg-card p-[26px] shadow-card">
         <h2 className="mb-1.5 text-lg font-semibold text-foreground">
           {d.appearanceHeading}
         </h2>
@@ -49,7 +49,7 @@ export function AccountSettingsSection() {
         <ThemeToggle variant="full" hideLabel className="mt-4 max-w-xs" />
       </div>
 
-      <div className="mt-[18px] rounded-[18px] border border-border bg-card p-[26px] shadow-card">
+      <div className="mt-[18px] rounded-card border border-border bg-card p-[26px] shadow-card">
         <h2 className="mb-2 text-lg font-semibold text-foreground">
           {d.notificationsHeading}
         </h2>

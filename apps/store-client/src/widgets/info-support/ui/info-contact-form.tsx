@@ -59,7 +59,7 @@ export function InfoContactForm() {
   };
 
   return (
-    <div className="rounded-[18px] border border-border bg-card p-[30px] shadow-card">
+    <div className="rounded-card border border-border bg-card p-[30px] shadow-card">
       <h2 className="mb-1.5 font-display text-2xl font-bold text-foreground">
         {d.formHeading}
       </h2>

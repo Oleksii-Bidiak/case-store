@@ -53,7 +53,7 @@ const ICONS: Record<
  */
 export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
   return (
-    <section className="rounded-[18px] border border-border bg-card p-6 shadow-card">
+    <section className="rounded-card border border-border bg-card p-6 shadow-card">
       <h2 className="mb-4 font-display text-lg font-bold text-foreground">
         {dict.checkout.paymentHeading}
       </h2>

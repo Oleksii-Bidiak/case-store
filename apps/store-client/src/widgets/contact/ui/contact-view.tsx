@@ -77,7 +77,7 @@ export function ContactView({
 
       {/* Hero */}
       <div
-        className="mb-6 flex flex-wrap items-end justify-between gap-8 rounded-[20px] p-11 text-white"
+        className="mb-6 flex flex-wrap items-end justify-between gap-8 rounded-2xl p-11 text-white"
         style={{
           background:
             "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300)))",
@@ -165,7 +165,7 @@ export function ContactView({
 
         <div className="flex flex-col gap-6">
           {/* Departments */}
-          <div className="rounded-[18px] border border-border bg-card p-[30px] shadow-card">
+          <div className="rounded-card border border-border bg-card p-[30px] shadow-card">
             <h2 className="mb-4 font-display text-xl font-bold text-foreground">
               {d.departmentsHeading}
             </h2>
@@ -175,9 +175,9 @@ export function ContactView({
                 return (
                   <div
                     key={dep.key}
-                    className="flex items-center gap-3.5 rounded-[13px] border border-border bg-background p-3.5"
+                    className="flex items-center gap-3.5 rounded-cta border border-border bg-background p-3.5"
                   >
-                    <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-[11px] bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
+                    <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-menu bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
                       <Icon className="size-[19px]" aria-hidden="true" />
                     </span>
                     <div className="min-w-0 flex-1">
@@ -203,7 +203,7 @@ export function ContactView({
           {/* Messengers */}
           <div
             id="messengers"
-            className="scroll-mt-24 rounded-[18px] border border-border bg-card p-[30px] shadow-card"
+            className="scroll-mt-24 rounded-card border border-border bg-card p-[30px] shadow-card"
           >
             <h2 className="mb-1.5 font-display text-xl font-bold text-foreground">
               {d.messengersHeading}
@@ -237,7 +237,7 @@ export function ContactView({
           </div>
 
           {/* Office / showroom */}
-          <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-card">
+          <div className="overflow-hidden rounded-card border border-border bg-card shadow-card">
             <div
               role="img"
               aria-label={d.officeMapAria}
@@ -294,9 +294,9 @@ export function ContactView({
       </div>
 
       {/* FAQ help strip */}
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-6 rounded-[18px] border border-border bg-card p-[26px] shadow-card">
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-6 rounded-card border border-border bg-card p-[26px] shadow-card">
         <div className="flex items-center gap-4">
-          <span className="inline-flex size-12 items-center justify-center rounded-[13px] bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
+          <span className="inline-flex size-12 items-center justify-center rounded-cta bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
             <HelpCircle className="size-[22px]" aria-hidden="true" />
           </span>
           <div>

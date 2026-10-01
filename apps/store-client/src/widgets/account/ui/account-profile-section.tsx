@@ -34,14 +34,14 @@ export function AccountProfileSection({ user }: { user: UserEntity }) {
 
       <AccountEmailVerification user={user} />
 
-      <div className="rounded-[18px] border border-border bg-card p-[26px] shadow-card">
+      <div className="rounded-card border border-border bg-card p-[26px] shadow-card">
         <h2 className="mb-4 text-lg font-semibold text-foreground">
           {d.contactHeading}
         </h2>
         <ProfileForm user={user} />
       </div>
 
-      <div className="mt-[18px] rounded-[18px] border border-border bg-card p-[26px] shadow-card">
+      <div className="mt-[18px] rounded-card border border-border bg-card p-[26px] shadow-card">
         <h2 className="mb-1.5 text-lg font-semibold text-foreground">
           {d.securityHeading}
         </h2>

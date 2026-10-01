@@ -91,7 +91,7 @@ export function BlogArticleView({
 
       {/* Cover */}
       <div
-        className="relative mx-auto mt-[26px] h-[380px] max-w-[960px] overflow-hidden rounded-[20px] shadow-elevated"
+        className="relative mx-auto mt-[26px] h-[380px] max-w-[960px] overflow-hidden rounded-2xl shadow-elevated"
         style={{ background: blogGradient(post.hue) }}
       >
         {/* A cover the CSP blocks or that fails to load leaves the gradient,

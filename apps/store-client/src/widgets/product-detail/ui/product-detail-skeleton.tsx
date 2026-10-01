@@ -50,7 +50,7 @@ export function ProductDetailSkeleton() {
         </div>
 
         {/* Buy box: real card chrome with skeleton rows inside. */}
-        <div className="rounded-[18px] border border-border bg-card p-[22px] md:col-start-2 md:row-span-2 md:row-start-1 lg:col-start-3 lg:row-span-1">
+        <div className="rounded-card border border-border bg-card p-[22px] md:col-start-2 md:row-span-2 md:row-start-1 lg:col-start-3 lg:row-span-1">
           <div className="mb-1 flex flex-wrap items-end gap-3">
             <Skeleton className="h-10 w-36" />
             <Skeleton className="h-5 w-24" />

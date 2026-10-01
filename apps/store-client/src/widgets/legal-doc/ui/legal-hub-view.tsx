@@ -148,7 +148,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
         </div>
         <Link
           href={dict.legal.contactHref}
-          className="inline-flex h-11 items-center rounded-[11px] bg-primary px-[22px] text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90"
+          className="inline-flex h-11 items-center rounded-menu bg-primary px-[22px] text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90"
         >
           {dict.legal.hub.supportCta}
         </Link>
