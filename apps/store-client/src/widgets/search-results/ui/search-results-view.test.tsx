@@ -581,6 +581,165 @@ describe("SearchResultsView", () => {
       });
     });
 
+    /**
+     * TASK-876 — the catalogue's toolbar on /search: the shared «Фільтри»
+     * button, the catalogue's sort pill (one `sort` param here) and the row of
+     * removable chips for the active filters.
+     */
+    describe("catalogue toolbar (TASK-876)", () => {
+      function installApple() {
+        server.use(
+          http.get("*/api/brands", () =>
+            HttpResponse.json({
+              data: [{ id: "brand-apple", name: "Apple", slug: "apple" }],
+            }),
+          ),
+        );
+      }
+
+      it("shows a removable chip per active filter, but none for the query", async () => {
+        currentQuery = "q=case&brand=apple&inStock=true&minPrice=100";
+        installSearch();
+        installApple();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        expect(
+          await screen.findByRole("button", {
+            name: new RegExp(`${dict.filters.brandTitle}: Apple`),
+          }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", {
+            name: new RegExp(dict.filters.inStockChip),
+          }),
+        ).toBeInTheDocument();
+        // The keyword is the subject of the page (it is in the h1), not a
+        // filter — a chip for it would drop the shopper onto the blank prompt.
+        expect(
+          screen.queryByRole("button", { name: /«case»/ }),
+        ).not.toBeInTheDocument();
+      });
+
+      it("removes one filter from its chip and keeps the query", async () => {
+        currentQuery = "q=case&brand=apple&inStock=true";
+        installSearch();
+        installApple();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+        mockReplace.mockClear();
+
+        await userEvent.click(
+          screen.getByRole("button", {
+            name: new RegExp(dict.filters.inStockChip),
+          }),
+        );
+
+        await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.get("q")).toBe("case");
+        expect(target.searchParams.get("brand")).toBe("apple");
+        expect(target.searchParams.has("inStock")).toBe(false);
+      });
+
+      it("clears every filter with «Очистити все» but keeps the query", async () => {
+        currentQuery = "q=case&category=cases&inStock=true&maxPrice=500";
+        installSearch();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+        mockReplace.mockClear();
+
+        await userEvent.click(
+          screen.getByRole("button", { name: dict.filters.clearAll }),
+        );
+
+        await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.get("q")).toBe("case");
+        expect(target.searchParams.has("category")).toBe(false);
+        expect(target.searchParams.has("inStock")).toBe(false);
+        expect(target.searchParams.has("maxPrice")).toBe(false);
+      });
+
+      it("renders no chips row when nothing is filtered", async () => {
+        currentQuery = "q=case";
+        installSearch();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        expect(
+          screen.queryByRole("button", { name: dict.filters.clearAll }),
+        ).not.toBeInTheDocument();
+      });
+
+      it("uses the catalogue's sort pill and writes one `sort` param", async () => {
+        currentQuery = "q=case";
+        installSearch();
+        const user = userEvent.setup();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        const trigger = screen.getByRole("combobox", {
+          name: dict.catalog.searchPage.sortAria,
+        });
+        // The catalogue pill: it shrinks and truncates on a 320px phone.
+        expect(trigger).toHaveClass("min-w-0");
+        expect(trigger).toHaveTextContent(
+          dict.catalog.searchPage.sortRelevance,
+        );
+
+        await user.click(trigger);
+        await user.click(
+          screen.getByRole("option", { name: dict.filters.sort.priceAsc }),
+        );
+
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.get("sort")).toBe("price_asc");
+        expect(target.searchParams.has("sortBy")).toBe(false);
+        expect(target.searchParams.get("q")).toBe("case");
+      });
+
+      it("leaves relevance, the default order, off the URL", async () => {
+        currentQuery = "q=case&sort=newest";
+        installSearch();
+        const user = userEvent.setup();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        await user.click(
+          screen.getByRole("combobox", {
+            name: dict.catalog.searchPage.sortAria,
+          }),
+        );
+        await user.click(
+          screen.getByRole("option", {
+            name: dict.catalog.searchPage.sortRelevance,
+          }),
+        );
+
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.has("sort")).toBe(false);
+      });
+    });
+
     // TASK-742: GET /api/search takes no `onSale`, so the panel must not offer
     // a box that would be ticked with no effect on the results.
     it("does not offer «Зі знижкою» — the search endpoint has no such param", async () => {

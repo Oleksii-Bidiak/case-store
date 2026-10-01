@@ -12,6 +12,8 @@ export { ViewToggle, type CatalogView } from "./ui/view-toggle";
 export { FilterCheckbox } from "./ui/filter-checkbox";
 // The one mobile filter drawer (TASK-804) — catalogue, /search and wishlist.
 export { FiltersDrawer } from "./ui/filters-drawer";
+// …and the toolbar button that opens it (TASK-876).
+export { FiltersButton } from "./ui/filters-button";
 // The one empty state of a product listing (TASK-870, design-system §6).
 export {
   ListingEmptyState,

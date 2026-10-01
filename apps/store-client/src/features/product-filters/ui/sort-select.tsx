@@ -23,6 +23,19 @@ interface SortSelectProps {
   options?: readonly SortOption[];
   /** Accessible name of the trigger. Defaults to «Сортування». */
   ariaLabel?: string;
+  /**
+   * Turn the picked option's value into the URL updates `onChange` receives.
+   * Defaults to the catalogue's `sortBy:sortOrder` split. `/search` passes its
+   * own: the search endpoint takes one `sort` param whose default is ranked
+   * relevance, not a column (TASK-876) — so both toolbars share one control.
+   */
+  toUpdates?: (value: string) => Record<string, string | undefined>;
+}
+
+/** The catalogue's `${sortBy}:${sortOrder}` value → both URL fields at once. */
+function splitColumnSort(value: string): Record<string, string | undefined> {
+  const [sortBy, sortOrder] = value.split(":");
+  return { sortBy, sortOrder };
 }
 
 export interface SortOption {
@@ -54,6 +67,7 @@ export function SortSelect({
   onChange,
   options = SORT_OPTIONS,
   ariaLabel = dict.filters.sortBy,
+  toUpdates = splitColumnSort,
 }: SortSelectProps) {
   const currentLabel = options.find(
     (option) => option.value === currentSort,
@@ -62,10 +76,7 @@ export function SortSelect({
   return (
     <Select
       value={currentSort}
-      onValueChange={(value) => {
-        const [sortBy, sortOrder] = value.split(":");
-        onChange({ sortBy, sortOrder });
-      }}
+      onValueChange={(value) => onChange(toUpdates(value))}
     >
       <SelectTrigger
         aria-label={ariaLabel}

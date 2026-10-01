@@ -3,7 +3,6 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { keepPreviousData } from "@tanstack/react-query";
-import { SlidersHorizontal } from "lucide-react";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
 import { useBrandControllerFindAll } from "@/entities/brand";
 import {
@@ -17,6 +16,7 @@ import {
   SortSelect,
   ViewToggle,
   FiltersDrawer,
+  FiltersButton,
   clearFilterUpdates,
   countActiveFilters,
   hasActiveFilters,
@@ -285,19 +285,10 @@ export function ProductListView({
 
       {/* Toolbar: mobile filters button (left) + view toggle + sort (right) */}
       <div className="mb-5 flex items-center gap-3">
-        <button
-          type="button"
+        <FiltersButton
+          activeCount={activeFilterCount}
           onClick={() => setFiltersOpen(true)}
-          className="inline-flex h-11 shrink-0 items-center gap-2 rounded-xl border-[1.5px] border-border bg-card px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
-        >
-          <SlidersHorizontal className="size-[18px]" />
-          {dict.filters.filtersButton}
-          {activeFilterCount > 0 && (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
+        />
 
         {/* `min-w-0` lets the sort trigger shrink on a 320px phone (it
             truncates its label) instead of widening the page; the filters

@@ -2,12 +2,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Search, SearchX, SlidersHorizontal } from "lucide-react";
+import { Loader2, Search, SearchX } from "lucide-react";
 import { useSearch } from "@/entities/search";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
+import { useBrandControllerFindAll } from "@/entities/brand";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
+  ActiveFilterChips,
   CategoryChips,
+  FiltersButton,
   FiltersDrawer,
   ListingEmptyState,
   ProductFilters,
@@ -133,6 +136,18 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
     ? findCategoryIdBySlug(categories, facets.category)
     : undefined;
 
+  // The brand chip's label (slug → name), as on the catalogue (TASK-876). Same
+  // category scope — and so the same React Query key — as the rail's own
+  // «Виробник» list, so the label costs no request of its own. Not asked for
+  // before there is a query: the blank page has no panel and no chips.
+  const { data: brandsData } = useBrandControllerFindAll(
+    activeCategoryId ? { categoryId: activeCategoryId } : undefined,
+    { query: { enabled } },
+  );
+  const activeBrandName = facets.brand
+    ? brandsData?.data.find((brand) => brand.slug === facets.brand)?.name
+    : undefined;
+
   // Badge on the mobile «Фільтри» button. Counted through the shared definition
   // (TASK-414) and without the keyword, which is the query rather than a filter.
   // The category is excluded as on the catalogue: its control is the chips row.
@@ -255,8 +270,9 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
         )}
         {/* Same 1 / 2 / 4 grid as the catalog (TASK-415) — search results are
             the same cards, so they must not jump to a different column count
-            than /products. Keep in sync with `SearchResultsSkeleton`. */}
-        <div className="grid grid-cols-1 items-stretch gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
+            than /products — and the same card rhythm, `gap-4 md:gap-6`
+            (TASK-876). Keep in sync with `SearchResultsSkeleton`. */}
+        <div className="grid grid-cols-1 items-stretch gap-4 md:gap-6 min-[390px]:grid-cols-2 lg:grid-cols-4">
           {products.map((product, index) => (
             <ProductCard
               key={product.id}
@@ -290,26 +306,33 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
         onSelect={(category) => applyFilters({ category })}
       />
 
-      {/* Toolbar: mobile filters button (left) + sort (right) */}
+      {/* Toolbar: mobile filters button (left) + sort (right) — the
+          catalogue's controls (TASK-876). `min-w-0` lets the sort pill shrink
+          and truncate on a 320px phone instead of widening the page. No
+          grid/list toggle yet: the list row lives in the catalogue widget,
+          and a widget does not import a widget (TASK-1621). */}
       <div className="mb-5 flex items-center gap-3">
-        <button
-          type="button"
+        <FiltersButton
+          activeCount={activeFilterCount}
           onClick={() => setFiltersOpen(true)}
-          className="inline-flex h-11 items-center gap-2 rounded-xl border-2 border-border bg-card px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
-        >
-          <SlidersHorizontal className="size-5" />
-          {dict.filters.filtersButton}
-          {activeFilterCount > 0 && (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-xs font-bold text-primary-foreground">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
+        />
 
-        <div className="ml-auto">
+        <div className="ml-auto flex min-w-0 items-center gap-3">
           <SearchSortSelect value={facets.sort} onChange={applyFilters} />
         </div>
       </div>
+
+      {/* Removable chips for the active filters, as on the catalogue
+          (TASK-876). Without the keyword: it is the subject of the page and
+          already in the h1, and its × would land on the blank «Почніть пошук»
+          prompt. «Очистити все» is a full reset, which keeps `?q=` (see
+          `applyFilters`). No spec facets on /search, so no category id is
+          needed for their labels. */}
+      <ActiveFilterChips
+        currentParams={{ ...panelParams, search: undefined }}
+        brandName={activeBrandName}
+        onFilterChange={applyFilters}
+      />
 
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">

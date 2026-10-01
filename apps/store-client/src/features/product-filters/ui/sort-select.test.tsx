@@ -47,4 +47,32 @@ describe("SortSelect", () => {
 
     expect(onChange).toHaveBeenCalledWith({ sortBy: "name", sortOrder: "asc" });
   });
+
+  // TASK-876: /search reuses this pill with its own vocabulary — one `sort`
+  // param instead of the column pair.
+  it("hands the picked value through a caller's own mapping", async () => {
+    const onChange = jest.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <SortSelect
+        currentSort="relevance"
+        options={[
+          { value: "relevance", label: "За релевантністю" },
+          { value: "price_asc", label: dict.filters.sort.priceAsc },
+        ]}
+        ariaLabel="Сортування результатів"
+        toUpdates={(value) => ({ sort: value })}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("combobox", { name: "Сортування результатів" }),
+    );
+    await user.click(
+      screen.getByRole("option", { name: dict.filters.sort.priceAsc }),
+    );
+
+    expect(onChange).toHaveBeenCalledWith({ sort: "price_asc" });
+  });
 });

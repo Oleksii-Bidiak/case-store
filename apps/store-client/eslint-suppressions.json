@@ -404,11 +404,6 @@
       "count": 1
     }
   },
-  "src/widgets/product-list/ui/product-list-view.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
-    }
-  },
   "src/widgets/product-list/ui/product-list.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1
