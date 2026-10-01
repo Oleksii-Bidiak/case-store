@@ -41,6 +41,7 @@ import { staleOrderError } from './order.errors';
 import { centsToString, sumLineCents, toCents } from '../addon-service/money.util';
 import { kyivDayRange } from '../common/time/kyiv-day';
 import { PRE_SHIPMENT_STATUSES } from './order.constants';
+import { confirmsPaymentOfLiveOrder } from './shop-order-ping';
 // TASK-771: a revive that cannot re-claim its promo slot fails with the same
 // stable codes the checkout uses, so the admin sees the reason it already knows.
 import { DiscountErrorCode, conflictDiscount } from '../discount/discount.errors';
@@ -1598,6 +1599,10 @@ export class OrderRepository {
             reservationExpiresAt: true,
             // TASK-627: whether a success must re-take a released hold.
             restockedAt: true,
+            // TASK-678: whether a success announces the order to the shop, and
+            // whose name the announcement prints.
+            paymentMethod: true,
+            userId: true,
           },
         },
       },
@@ -1617,8 +1622,23 @@ export class OrderRepository {
    * and one history row per status kind that actually moved. `changedBy` is null
    * on every history row: a callback has no acting user, and inventing one would
    * put a lie in the audit trail.
+   *
+   * TASK-678: `onPaid` is the in-transaction seam for the shop's «нове
+   * замовлення» ping on an online order. It runs with this transaction's `tx`
+   * and the re-read order, after every write above has landed, and ONLY when the
+   * plan makes a live order paid ({@link confirmsPaymentOfLiveOrder} — not a
+   * failure, a refund, a refusal or a success on a cancelled order). That is a
+   * fact about the plan, and the conditional write is what makes it a fact
+   * about the row: had the order moved, the write would have thrown first.
+   * Whether the ORDER wants a ping at all is the caller's call — the hook is
+   * passed only for the methods that ping on payment. A hook that throws rolls
+   * the whole application back, payment included; the provider's retry (or the
+   * reconcile worker) then applies it again, ping and all.
    */
-  async applyPaymentOutcome(plan: PaymentApplyPlan): Promise<OrderWithItems> {
+  async applyPaymentOutcome(
+    plan: PaymentApplyPlan,
+    onPaid?: (tx: Prisma.TransactionClient, order: OrderWithItems) => Promise<void>,
+  ): Promise<OrderWithItems> {
     let stockMoved = false;
     const applied = (await this.prisma.$transaction(async (tx) => {
       await tx.payment.update({
@@ -1728,10 +1748,14 @@ export class OrderRepository {
         });
       }
 
-      return tx.order.findUniqueOrThrow({
+      const order = (await tx.order.findUniqueOrThrow({
         where: { id: plan.orderId },
         include: ORDERS_INCLUDE,
-      });
+      })) as OrderWithItems;
+
+      if (onPaid && confirmsPaymentOfLiveOrder(plan)) await onPaid(tx, order);
+
+      return order;
     })) as OrderWithItems;
 
     // A re-reserve changed position stock — evict the same caches as createFromCart.

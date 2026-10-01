@@ -2477,6 +2477,49 @@ describe('OrderController (e2e)', () => {
       expect(txStub.notificationBinding.findMany).toHaveBeenCalledTimes(1);
       expect(txStub.notificationOutbox.create).not.toHaveBeenCalled();
     });
+
+    // TASK-678 (owner decision B-7 №7): an online order is announced when its
+    // payment is confirmed (payment-shop-ping.e2e-spec.ts), never at checkout.
+    it.each(['ONLINE', 'INSTALLMENTS'])(
+      'queues NO shop row at checkout for a %s order — the confirmation letter still goes',
+      async (paymentMethod) => {
+        const txStub = makeTxStub([{ externalId: SHOP_CHAT_ID }]);
+        armCheckout(txStub);
+
+        await request(app.getHttpServer())
+          .post('/api/orders')
+          .set('Authorization', `Bearer ${generateAccessToken(userA.id, userA.role)}`)
+          // NP-routed: a free-text (OTHER) order cannot be paid online at all.
+          .send({
+            shippingAddress: { ...validAddress, npCityRef: 'city-ref-online' },
+            paymentMethod,
+          })
+          .expect(201);
+
+        expect(txStub.notificationBinding.findMany).not.toHaveBeenCalled();
+        expect(txStub.notificationOutbox.create).not.toHaveBeenCalled();
+        expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledWith(
+          expect.anything(),
+          txStub,
+        );
+      },
+    );
+
+    it('queues the shop row at checkout for an explicit ON_DELIVERY order', async () => {
+      const txStub = makeTxStub([{ externalId: SHOP_CHAT_ID }]);
+      armCheckout(txStub);
+
+      await request(app.getHttpServer())
+        .post('/api/orders')
+        .set('Authorization', `Bearer ${generateAccessToken(userA.id, userA.role)}`)
+        .send({ shippingAddress: validAddress, paymentMethod: 'ON_DELIVERY' })
+        .expect(201);
+
+      expect(txStub.notificationOutbox.create).toHaveBeenCalledTimes(1);
+      expect(txStub.notificationOutbox.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ type: 'shop-new-order', channel: 'TELEGRAM' }),
+      });
+    });
   });
 
   describe('POST /api/admin/orders', () => {
