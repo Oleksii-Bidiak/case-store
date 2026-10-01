@@ -37,13 +37,15 @@ describe("LegalHubView", () => {
     expect(terms).toHaveAttribute("href", "/legal/terms");
   });
 
-  it("renders the support CTA linking to the contacts destination", () => {
+  it("renders the support CTA linking to the /contact form (TASK-866)", () => {
     renderWithProviders(<LegalHubView docs={docs} />);
 
     expect(screen.getByText(dict.legal.hub.supportHeading)).toBeInTheDocument();
+    // /contact is the single contact form (owner decision 7.8) — not the
+    // /info Contacts tab it used to point at.
     expect(
       screen.getByRole("link", { name: dict.legal.hub.supportCta }),
-    ).toHaveAttribute("href", dict.legal.contactHref);
+    ).toHaveAttribute("href", "/contact");
   });
 
   it("shows the empty state when there are no documents", () => {

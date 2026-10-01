@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowRight,
   BadgeCheck,
   Camera,
   Check,
@@ -33,6 +34,7 @@ import {
   H2_CLASS,
 } from "@/shared/config";
 import { formatMoney } from "@/shared/lib/format";
+import { Button } from "@/shared/ui";
 import {
   ABOUT_STATS,
   ABOUT_VALUES,
@@ -50,7 +52,6 @@ import {
   type InfoSectionSource,
   type InfoService,
 } from "../model/info-content";
-import { InfoContactForm } from "./info-contact-form";
 
 const NAV_ICONS: Record<InfoSectionKey, LucideIcon> = {
   delivery: Truck,
@@ -119,11 +120,22 @@ const MESSENGERS: {
   { key: "instagramLink", icon: Camera, label: "Instagram" },
 ];
 
+/** DOM id of a section panel — the side-nav buttons point at it (aria-controls). */
+const panelId = (key: InfoSectionKey) => `info-panel-${key}`;
+
 /**
  * InfoView — the "Інформація та підтримка" hub (/info). A sticky side nav
  * switches between support sections (delivery / warranty / faq / about), plus a
- * Contacts section driven by the real SiteContactSettings (TASK-154) with a demo
- * "write to us" form. Section is deep-linkable via the URL hash.
+ * Contacts section driven by the real SiteContactSettings (TASK-154). Section is
+ * deep-linkable via the URL hash.
+ *
+ * TASK-866 — every section is in the server HTML; switching only toggles the
+ * `hidden` attribute of the inactive panels. The page used to mount the active
+ * section alone, so the FAQ — what searchers look for — never reached the HTML
+ * (only the JSON-LD carried it). The FAQ answers are in the DOM too, collapsed
+ * the same way. The Contacts section no longer carries a form of its own:
+ * /contact is the store's single contact form (owner decision 7.8), so the
+ * section links there instead of duplicating it.
  *
  * Three of the five sections now read real, admin-managed data (contacts, FAQ,
  * and "Про нас" via TASK-435's `about` page). Every one of them falls back to
@@ -213,6 +225,7 @@ export function InfoView({
                   type="button"
                   onClick={() => go(key)}
                   aria-current={active ? "true" : undefined}
+                  aria-controls={panelId(key)}
                   className={`mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-3 text-left text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                     active
                       ? "bg-primary text-primary-foreground"
@@ -229,152 +242,160 @@ export function InfoView({
 
         {/* Content */}
         <section className="min-w-0">
-          {section === "delivery" && (
-            <div className="flex flex-col gap-[22px]">
-              {sectionBlock(sections.delivery, () => (
-                <div className={CARD}>
-                  <h2 className={SECTION_HEADING}>{d.deliveryHeading}</h2>
-                  <p className={SECTION_INTRO}>{d.deliveryIntro}</p>
-                  <div className="grid gap-3.5 sm:grid-cols-3">
-                    {DELIVERY_OPTIONS.map((opt) => {
-                      const Icon = CONTENT_ICONS[opt.icon];
-                      return (
-                        <div
-                          key={opt.title}
-                          className="rounded-[14px] border border-border bg-background p-[18px]"
+          {/* TASK-866 — all five panels render; only the active one is shown.
+              Tailwind's preflight makes `[hidden]` display:none !important, so
+              the panels' own flex/grid classes cannot override it. */}
+          <div
+            id={panelId("delivery")}
+            hidden={section !== "delivery"}
+            className="flex flex-col gap-[22px]"
+          >
+            {sectionBlock(sections.delivery, () => (
+              <div className={CARD}>
+                <h2 className={SECTION_HEADING}>{d.deliveryHeading}</h2>
+                <p className={SECTION_INTRO}>{d.deliveryIntro}</p>
+                <div className="grid gap-3.5 sm:grid-cols-3">
+                  {DELIVERY_OPTIONS.map((opt) => {
+                    const Icon = CONTENT_ICONS[opt.icon];
+                    return (
+                      <div
+                        key={opt.title}
+                        className="rounded-[14px] border border-border bg-background p-[18px]"
+                      >
+                        <span
+                          className="mb-3 inline-flex size-[42px] items-center justify-center rounded-menu text-primary"
+                          style={PRIMARY_TINT}
                         >
-                          <span
-                            className="mb-3 inline-flex size-[42px] items-center justify-center rounded-menu text-primary"
-                            style={PRIMARY_TINT}
-                          >
-                            <Icon className="size-5" aria-hidden="true" />
-                          </span>
-                          <b className="mb-1.5 block text-[15px] text-foreground">
+                          <Icon className="size-5" aria-hidden="true" />
+                        </span>
+                        <b className="mb-1.5 block text-[15px] text-foreground">
+                          {opt.title}
+                        </b>
+                        <p className="mb-2.5 text-[13px] leading-[1.5] text-muted-foreground">
+                          {opt.desc}
+                        </p>
+                        <span className="font-mono text-sm font-bold text-foreground">
+                          {opt.price}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+
+            {sectionBlock(sections.payment, () => (
+              <div className={CARD}>
+                <h2 className={SECTION_HEADING}>{d.paymentHeading}</h2>
+                <p className={SECTION_INTRO}>{d.paymentIntro}</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {PAYMENT_OPTIONS.map((opt) => {
+                    const Icon = CONTENT_ICONS[opt.icon];
+                    return (
+                      <div
+                        key={opt.title}
+                        className="flex items-start gap-3.5 rounded-cta border border-border bg-background p-4"
+                      >
+                        <span
+                          className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-success"
+                          style={SUCCESS_TINT}
+                        >
+                          <Icon className="size-5" aria-hidden="true" />
+                        </span>
+                        <div>
+                          <b className="mb-0.5 block text-sm text-foreground">
                             {opt.title}
                           </b>
-                          <p className="mb-2.5 text-[13px] leading-[1.5] text-muted-foreground">
+                          <span className="text-xs leading-[1.5] text-muted-foreground">
                             {opt.desc}
-                          </p>
-                          <span className="font-mono text-sm font-bold text-foreground">
-                            {opt.price}
                           </span>
                         </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-
-              {sectionBlock(sections.payment, () => (
-                <div className={CARD}>
-                  <h2 className={SECTION_HEADING}>{d.paymentHeading}</h2>
-                  <p className={SECTION_INTRO}>{d.paymentIntro}</p>
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    {PAYMENT_OPTIONS.map((opt) => {
-                      const Icon = CONTENT_ICONS[opt.icon];
-                      return (
-                        <div
-                          key={opt.title}
-                          className="flex items-start gap-3.5 rounded-cta border border-border bg-background p-4"
-                        >
-                          <span
-                            className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-success"
-                            style={SUCCESS_TINT}
-                          >
-                            <Icon className="size-5" aria-hidden="true" />
-                          </span>
-                          <div>
-                            <b className="mb-0.5 block text-sm text-foreground">
-                              {opt.title}
-                            </b>
-                            <span className="text-xs leading-[1.5] text-muted-foreground">
-                              {opt.desc}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {section === "warranty" && (
-            <div className="flex flex-col gap-[22px]">
-              {sectionBlock(sections.warranty, () => (
-                <div className={CARD}>
-                  <h2 className={SECTION_HEADING}>{d.warrantyHeading}</h2>
-                  <p className={SECTION_INTRO}>{d.warrantyIntro}</p>
-                  <div className="grid gap-3.5 sm:grid-cols-3">
-                    {WARRANTY_CARDS.map((card) => (
-                      <div
-                        key={card.title}
-                        className="rounded-[14px] border border-border bg-background p-5"
-                      >
-                        <span className="mb-2 block font-display text-[30px] font-bold text-primary">
-                          {card.big}
-                        </span>
-                        <b className="mb-1.5 block text-sm text-foreground">
-                          {card.title}
-                        </b>
-                        <p className="text-[13px] leading-[1.5] text-muted-foreground">
-                          {card.desc}
-                        </p>
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })}
                 </div>
-              ))}
+              </div>
+            ))}
+          </div>
 
-              {/* TASK-561 — the store's real active add-ons at their catalog
+          <div
+            id={panelId("warranty")}
+            hidden={section !== "warranty"}
+            className="flex flex-col gap-[22px]"
+          >
+            {sectionBlock(sections.warranty, () => (
+              <div className={CARD}>
+                <h2 className={SECTION_HEADING}>{d.warrantyHeading}</h2>
+                <p className={SECTION_INTRO}>{d.warrantyIntro}</p>
+                <div className="grid gap-3.5 sm:grid-cols-3">
+                  {WARRANTY_CARDS.map((card) => (
+                    <div
+                      key={card.title}
+                      className="rounded-[14px] border border-border bg-background p-5"
+                    >
+                      <span className="mb-2 block font-display text-[30px] font-bold text-primary">
+                        {card.big}
+                      </span>
+                      <b className="mb-1.5 block text-sm text-foreground">
+                        {card.title}
+                      </b>
+                      <p className="text-[13px] leading-[1.5] text-muted-foreground">
+                        {card.desc}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+
+            {/* TASK-561 — the store's real active add-ons at their catalog
                   prices. No fallback list: when the API is down or nothing is
                   offered, the card is simply absent — the old one advertised
                   three services at prices nobody had entered anywhere. */}
-              {services.length > 0 && (
-                <div className={CARD}>
-                  <h3 className="mb-4 font-display text-lg font-bold text-foreground">
-                    {d.servicesHeading}
-                  </h3>
-                  <ul className="flex flex-col gap-3">
-                    {services.map((svc) => (
-                      <li
-                        key={svc.id}
-                        className="flex items-center gap-4 rounded-cta border border-border bg-background px-[18px] py-[15px]"
+            {services.length > 0 && (
+              <div className={CARD}>
+                <h3 className="mb-4 font-display text-lg font-bold text-foreground">
+                  {d.servicesHeading}
+                </h3>
+                <ul className="flex flex-col gap-3">
+                  {services.map((svc) => (
+                    <li
+                      key={svc.id}
+                      className="flex items-center gap-4 rounded-cta border border-border bg-background px-[18px] py-[15px]"
+                    >
+                      <span
+                        className="inline-flex size-[42px] shrink-0 items-center justify-center rounded-menu text-primary"
+                        style={PRIMARY_TINT}
                       >
-                        <span
-                          className="inline-flex size-[42px] shrink-0 items-center justify-center rounded-menu text-primary"
-                          style={PRIMARY_TINT}
-                        >
-                          <ShieldCheck className="size-5" aria-hidden="true" />
-                        </span>
-                        <div className="flex-1">
-                          <b className="mb-0.5 block text-sm text-foreground">
-                            {svc.name}
-                          </b>
-                          {svc.description && (
-                            <span className="text-xs leading-[1.5] text-muted-foreground">
-                              {svc.description}
-                            </span>
-                          )}
-                        </div>
-                        {/* A product may override the catalog price, so it
+                        <ShieldCheck className="size-5" aria-hidden="true" />
+                      </span>
+                      <div className="flex-1">
+                        <b className="mb-0.5 block text-sm text-foreground">
+                          {svc.name}
+                        </b>
+                        {svc.description && (
+                          <span className="text-xs leading-[1.5] text-muted-foreground">
+                            {svc.description}
+                          </span>
+                        )}
+                      </div>
+                      {/* A product may override the catalog price, so it
                             is a starting price, never "the" price. */}
-                        <span className="font-mono text-sm font-bold whitespace-nowrap text-foreground">
-                          {d.servicePriceFrom(formatMoney(svc.price))}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-          )}
+                      <span className="font-mono text-sm font-bold whitespace-nowrap text-foreground">
+                        {d.servicePriceFrom(formatMoney(svc.price))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
 
-          {section === "faq" && (
+          <div id={panelId("faq")} hidden={section !== "faq"}>
             <div className="rounded-card border border-border bg-card px-[30px] py-3.5 shadow-card">
               {faqs.map((faq, i) => {
                 const open = !!openFaq[i];
+                const answerId = `info-faq-answer-${i}`;
                 return (
                   <div
                     key={faq.q}
@@ -386,6 +407,7 @@ export function InfoView({
                         setOpenFaq((prev) => ({ ...prev, [i]: !prev[i] }))
                       }
                       aria-expanded={open}
+                      aria-controls={answerId}
                       className="flex w-full items-center gap-3.5 py-5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
                       <span className="flex-1 text-[15.5px] font-semibold text-foreground">
@@ -396,173 +418,204 @@ export function InfoView({
                         aria-hidden="true"
                       />
                     </button>
-                    {open && (
-                      <p className="max-w-[680px] pb-5 text-sm leading-[1.65] text-muted-foreground">
-                        {faq.a}
-                      </p>
-                    )}
+                    {/* In the HTML even when collapsed (TASK-866): the answer
+                        is the part a searcher came for. */}
+                    <p
+                      id={answerId}
+                      hidden={!open}
+                      className="max-w-[680px] pb-5 text-sm leading-[1.65] text-muted-foreground"
+                    >
+                      {faq.a}
+                    </p>
                   </div>
                 );
               })}
             </div>
-          )}
+          </div>
 
-          {section === "about" && (
-            <div className="flex flex-col gap-[22px]">
-              <div
-                className="rounded-card p-10 text-white"
-                style={{
-                  background:
-                    "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300)))",
-                }}
-              >
-                <h2 className={`mb-3 ${H2_CLASS}`}>
-                  {about?.heading ?? d.aboutHeading}
-                </h2>
-                <p className="max-w-[620px] text-base leading-[1.6] opacity-95">
-                  {about?.intro ?? d.aboutIntro}
-                </p>
-              </div>
-              {/* The page body from the CMS. Rendered through the same
+          <div
+            id={panelId("about")}
+            hidden={section !== "about"}
+            className="flex flex-col gap-[22px]"
+          >
+            <div
+              className="rounded-card p-10 text-white"
+              style={{
+                background:
+                  "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300)))",
+              }}
+            >
+              <h2 className={`mb-3 ${H2_CLASS}`}>
+                {about?.heading ?? d.aboutHeading}
+              </h2>
+              <p className="max-w-[620px] text-base leading-[1.6] opacity-95">
+                {about?.intro ?? d.aboutIntro}
+              </p>
+            </div>
+            {/* The page body from the CMS. Rendered through the same
                   `legal-doc-body` typography as /legal/<slug> and /info/<slug>,
                   so a document written once looks the same wherever it appears.
                   The HTML was sanitized server-side by the route that loaded it
                   (see /info/page.tsx) — this component never sanitizes, and must
                   never be handed raw admin input. */}
-              {about && (
-                <div className={CARD}>
-                  <div
-                    className="legal-doc-body"
-                    dangerouslySetInnerHTML={{ __html: about.html }}
-                  />
-                  {/* Keeps /info/<slug> reachable by navigation, not only from
+            {about && (
+              <div className={CARD}>
+                <div
+                  className="legal-doc-body"
+                  dangerouslySetInnerHTML={{ __html: about.html }}
+                />
+                {/* Keeps /info/<slug> reachable by navigation, not only from
                       the sitemap: without a link in from somewhere, every help
                       page the owner writes is an orphan. */}
-                  <Link
-                    href={about.href}
-                    className="mt-5 inline-block text-sm font-semibold text-primary hover:underline"
-                  >
-                    {d.aboutOpenPage}
-                  </Link>
-                </div>
-              )}
+                <Link
+                  href={about.href}
+                  className="mt-5 inline-block text-sm font-semibold text-primary hover:underline"
+                >
+                  {d.aboutOpenPage}
+                </Link>
+              </div>
+            )}
 
-              {/* TASK-560 — «у цифрах» and «Чому обирають нас» come from the
+            {/* TASK-560 — «у цифрах» and «Чому обирають нас» come from the
                   `info-about-stats` page; the stat tiles and value list below
                   are only the outage fallback. */}
-              {sectionBlock(
-                sections.aboutStats,
-                () => (
-                  <>
-                    <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
-                      {ABOUT_STATS.map((stat) => (
+            {sectionBlock(
+              sections.aboutStats,
+              () => (
+                <>
+                  <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+                    {ABOUT_STATS.map((stat) => (
+                      <div
+                        key={stat.label}
+                        className="rounded-[14px] border border-border bg-card p-[22px] text-center shadow-card"
+                      >
+                        <span className="block font-display text-[30px] font-bold text-primary">
+                          {stat.num}
+                        </span>
+                        <span className="text-[13px] text-muted-foreground">
+                          {stat.label}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className={CARD}>
+                    <h3 className={SUB_HEADING}>{d.valuesHeading}</h3>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {ABOUT_VALUES.map((value) => (
                         <div
-                          key={stat.label}
-                          className="rounded-[14px] border border-border bg-card p-[22px] text-center shadow-card"
+                          key={value.title}
+                          className="flex items-start gap-3.5"
                         >
-                          <span className="block font-display text-[30px] font-bold text-primary">
-                            {stat.num}
+                          <span
+                            className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-success"
+                            style={SUCCESS_TINT}
+                          >
+                            <Check className="size-[19px]" aria-hidden="true" />
                           </span>
-                          <span className="text-[13px] text-muted-foreground">
-                            {stat.label}
-                          </span>
+                          <div>
+                            <b className="mb-0.5 block text-sm text-foreground">
+                              {value.title}
+                            </b>
+                            <span className="text-[13px] leading-[1.5] text-muted-foreground">
+                              {value.desc}
+                            </span>
+                          </div>
                         </div>
                       ))}
                     </div>
-
-                    <div className={CARD}>
-                      <h3 className={SUB_HEADING}>{d.valuesHeading}</h3>
-                      <div className="grid gap-4 sm:grid-cols-2">
-                        {ABOUT_VALUES.map((value) => (
-                          <div
-                            key={value.title}
-                            className="flex items-start gap-3.5"
-                          >
-                            <span
-                              className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-success"
-                              style={SUCCESS_TINT}
-                            >
-                              <Check
-                                className="size-[19px]"
-                                aria-hidden="true"
-                              />
-                            </span>
-                            <div>
-                              <b className="mb-0.5 block text-sm text-foreground">
-                                {value.title}
-                              </b>
-                              <span className="text-[13px] leading-[1.5] text-muted-foreground">
-                                {value.desc}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </>
-                ),
-                "h3",
-              )}
-            </div>
-          )}
-
-          {section === "contacts" && (
-            <div className="grid items-start gap-4 lg:grid-cols-2">
-              <div className={CARD}>
-                <h2 className="mb-5 font-display text-2xl font-bold text-foreground">
-                  {d.contactsHeading}
-                </h2>
-                <div className="flex flex-col gap-4 md:gap-6">
-                  <ContactRow icon={Phone} label={d.contactPhoneLabel}>
-                    <a
-                      href={`tel:${phone.replace(/\s+/g, "")}`}
-                      className="font-mono text-[17px] font-bold text-foreground no-underline hover:text-primary"
-                    >
-                      {phone}
-                    </a>
-                  </ContactRow>
-                  <ContactRow icon={Mail} label={d.contactEmailLabel}>
-                    <a
-                      href={`mailto:${email}`}
-                      className="text-base font-semibold text-foreground no-underline hover:text-primary"
-                    >
-                      {email}
-                    </a>
-                  </ContactRow>
-                  <ContactRow icon={Clock} label={d.contactHoursLabel}>
-                    <b className="text-[15px] text-foreground">{hours}</b>
-                  </ContactRow>
-                </div>
-
-                {messengers.length > 0 && (
-                  <div className="mt-6 border-t border-border pt-[22px]">
-                    <span className="mb-2.5 block text-[13px] text-muted-foreground">
-                      {d.messengersLabel}
-                    </span>
-                    <div className="flex flex-wrap gap-2.5">
-                      {messengers.map((m) => {
-                        const Icon = m.icon;
-                        return (
-                          <a
-                            key={m.label}
-                            href={contact?.[m.key] as string}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex h-[42px] items-center gap-2 rounded-menu border border-border bg-background px-4 text-sm font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                          >
-                            <Icon className="size-[18px]" aria-hidden="true" />
-                            {m.label}
-                          </a>
-                        );
-                      })}
-                    </div>
                   </div>
-                )}
+                </>
+              ),
+              "h3",
+            )}
+          </div>
+
+          <div
+            id={panelId("contacts")}
+            hidden={section !== "contacts"}
+            className="grid items-stretch gap-4 lg:grid-cols-2"
+          >
+            <div className={CARD}>
+              <h2 className="mb-5 font-display text-2xl font-bold text-foreground">
+                {d.contactsHeading}
+              </h2>
+              <div className="flex flex-col gap-4 md:gap-6">
+                <ContactRow icon={Phone} label={d.contactPhoneLabel}>
+                  <a
+                    href={`tel:${phone.replace(/\s+/g, "")}`}
+                    className="font-mono text-[17px] font-bold text-foreground no-underline hover:text-primary"
+                  >
+                    {phone}
+                  </a>
+                </ContactRow>
+                <ContactRow icon={Mail} label={d.contactEmailLabel}>
+                  <a
+                    href={`mailto:${email}`}
+                    className="text-base font-semibold text-foreground no-underline hover:text-primary"
+                  >
+                    {email}
+                  </a>
+                </ContactRow>
+                <ContactRow icon={Clock} label={d.contactHoursLabel}>
+                  <b className="text-[15px] text-foreground">{hours}</b>
+                </ContactRow>
               </div>
 
-              <InfoContactForm />
+              {messengers.length > 0 && (
+                <div className="mt-6 border-t border-border pt-[22px]">
+                  <span className="mb-2.5 block text-[13px] text-muted-foreground">
+                    {d.messengersLabel}
+                  </span>
+                  <div className="flex flex-wrap gap-2.5">
+                    {messengers.map((m) => {
+                      const Icon = m.icon;
+                      return (
+                        <a
+                          key={m.label}
+                          href={contact?.[m.key] as string}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-[42px] items-center gap-2 rounded-menu border border-border bg-background px-4 text-sm font-semibold text-foreground no-underline transition-colors hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          <Icon className="size-[18px]" aria-hidden="true" />
+                          {m.label}
+                        </a>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-          )}
+
+            {/* TASK-866 — /contact is the single contact form (owner
+                  decision 7.8). This card used to hold a second, shorter
+                  copy of it; now it sends the shopper to the real one, which
+                  also takes a topic and an order number. */}
+            <div className={`${CARD} flex flex-col`}>
+              <span
+                className="mb-4 inline-flex size-12 items-center justify-center rounded-cta text-primary"
+                style={PRIMARY_TINT}
+              >
+                <MessageCircle className="size-6" aria-hidden="true" />
+              </span>
+              <h2 className={SECTION_HEADING}>{d.formHeading}</h2>
+              {/* flex-1: on lg the card stretches to the details card's
+                    height and the CTA sits on its bottom edge. */}
+              <p className="mb-6 flex-1 text-sm leading-relaxed text-muted-foreground">
+                {d.contactsFormCardBody}
+              </p>
+              <Button
+                asChild
+                className="h-11 self-start rounded-cta px-5 font-bold"
+              >
+                <Link href={d.contactsFormCardHref}>
+                  {d.contactsFormCardCta}
+                  <ArrowRight aria-hidden="true" />
+                </Link>
+              </Button>
+            </div>
+          </div>
 
           {/* TASK-560 — every other published help page. Without a link in
               from somewhere a page the owner writes under «Довідкова» is an

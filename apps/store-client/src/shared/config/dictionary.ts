@@ -437,8 +437,10 @@ export const dict = {
     contactHeading: "Залишились питання?",
     contactSubtitle: "Напишіть нам — відповімо протягом робочого дня",
     contactCta: "Звʼязатися",
-    // Contacts destination — the "Інформація та підтримка" page's Contacts tab.
-    contactHref: "/info#contacts",
+    // Contacts destination — /contact, the store's single contact form (owner
+    // decision 7.8, TASK-866). It used to be the /info Contacts tab, which
+    // carried a second copy of the form.
+    contactHref: "/contact",
     otherHeading: "Інші правові документи",
     // Legal hub index (/info, LegalHub.dc.html import).
     hub: {
@@ -593,6 +595,12 @@ export const dict = {
     servicePriceFrom: (price: string) => `від ${price}`,
     // TASK-560 — the published help pages /info does not render inline.
     pagesHeading: "Довідкові сторінки",
+    // TASK-866 — the Contacts section's link card to /contact, the store's
+    // single contact form (owner decision 7.8); its heading is `formHeading`.
+    contactsFormCardBody:
+      "Форма звернення — на сторінці «Звʼязатися з нами». Оберіть тему, за потреби додайте номер замовлення, і менеджер відповість протягом 1 робочого дня.",
+    contactsFormCardCta: "Перейти до форми",
+    contactsFormCardHref: "/contact",
   },
 
   // TASK-167-Q — dedicated contact page (/contact, Contact.dc.html). Contact
@@ -709,6 +717,10 @@ export const dict = {
     faqHeading: "Можливо, відповідь уже є",
     faqBody: "Перегляньте часті питання про доставку, оплату та гарантію",
     faqCta: "До поширених питань",
+    // TASK-866 — the consent links to the privacy policy itself (the seeded
+    // LEGAL page), not to the /legal hub. A renamed slug still lands: the
+    // document route 308-redirects old slugs (TASK-435).
+    consentHref: "/legal/privacy-policy",
   },
 
   notFound: {

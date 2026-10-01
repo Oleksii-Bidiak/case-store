@@ -281,7 +281,9 @@ export function ContactForm() {
           />
           <span>
             {d.consentBefore}
-            <Link href="/legal" className="text-primary hover:underline">
+            {/* TASK-866 — the privacy policy itself, not the /legal hub:
+                the shopper consents to one document, so they open that one. */}
+            <Link href={d.consentHref} className="text-primary hover:underline">
               {d.consentLink}
             </Link>
           </span>
