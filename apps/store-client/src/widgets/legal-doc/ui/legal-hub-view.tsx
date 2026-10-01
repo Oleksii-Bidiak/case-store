@@ -1,6 +1,7 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link";
 import { dict, H1_CLASS } from "@/shared/config";
+import { Button } from "@/shared/ui";
 import { formatLegalDateShort } from "../model/extract-sections";
 import {
   LegalArrowRightIcon,
@@ -146,12 +147,14 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
             </span>
           </div>
         </div>
-        <Link
-          href={dict.legal.contactHref}
-          className="inline-flex h-11 items-center rounded-menu bg-primary px-[22px] text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90"
+        {/* The hub's one primary action, as in LegalHub.dc.html (TASK-865);
+            on Button so it gets the focus ring it lacked. */}
+        <Button
+          asChild
+          className="h-11 rounded-menu px-6 font-semibold no-underline"
         >
-          {dict.legal.hub.supportCta}
-        </Link>
+          <Link href={dict.legal.contactHref}>{dict.legal.hub.supportCta}</Link>
+        </Button>
       </div>
     </>
   );

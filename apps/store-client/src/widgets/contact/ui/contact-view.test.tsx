@@ -44,6 +44,22 @@ describe("ContactView", () => {
     );
   });
 
+  it("keeps one filled primary — the submit; FAQ outline, topic chip tinted (TASK-865)", () => {
+    const { container } = renderWithProviders(
+      <ContactView contact={contact} />,
+    );
+
+    const filled = container.querySelectorAll(".bg-primary");
+    expect(filled).toHaveLength(1);
+    expect(filled[0]).toBe(screen.getByRole("button", { name: d.submit }));
+    expect(screen.getByRole("link", { name: d.faqCta })).toHaveAttribute(
+      "data-variant",
+      "outline",
+    );
+    const selected = screen.getByRole("button", { pressed: true });
+    expect(selected).toHaveClass("bg-primary/10", "text-foreground");
+  });
+
   it("shows no bracketed placeholder and no office without an address (TASK-873)", () => {
     const { container } = renderWithProviders(
       <ContactView contact={contact} />,

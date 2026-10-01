@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 import { dict, H1_CLASS } from "@/shared/config";
+import { Button } from "@/shared/ui";
 import { ContactForm } from "./contact-form";
 
 // Configured messenger links on SiteContactSettings (TASK-154) → real chat links.
@@ -257,12 +258,16 @@ export function ContactView({
             <span className="text-sm text-muted-foreground">{d.faqBody}</span>
           </div>
         </div>
-        <Link
-          href="/info#faq"
-          className="inline-flex h-11 items-center rounded-xl bg-primary px-[22px] text-sm font-bold text-primary-foreground no-underline transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        {/* Outline (TASK-865): a detour to the FAQ — the form's submit is
+            the page's one primary action (design-system §1). */}
+        <Button
+          asChild
+          variant="outline"
+          size="lg"
+          className="h-11 rounded-cta font-semibold no-underline"
         >
-          {d.faqCta}
-        </Link>
+          <Link href="/info#faq">{d.faqCta}</Link>
+        </Button>
       </div>
     </div>
   );

@@ -46,7 +46,14 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
           )}
         </div>
         {ctaLabel && ctaHref && (
-          <Button size="lg" asChild className="shadow-lift hover:bg-primary/90">
+          // Outline on the dark gradient (TASK-865): the hero slide CTA is the
+          // homepage's one primary action (design-system §1).
+          <Button
+            size="lg"
+            variant="outline"
+            asChild
+            className="h-11 rounded-cta border-white/40 bg-white/10 font-semibold text-white shadow-none hover:bg-white/20 hover:text-white dark:border-white/40 dark:bg-white/10 dark:hover:bg-white/20"
+          >
             <Link href={ctaHref}>
               {ctaLabel}
               <ArrowRight className="size-4" />

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { PageEntity } from "@/shared/api/generated/models";
 import { sanitizeHtml } from "@/shared/lib/sanitize-html";
 import { dict, H1_CLASS, H2_CLASS } from "@/shared/config";
+import { Button } from "@/shared/ui";
 import { extractDocSections, formatLegalDate } from "../model/extract-sections";
 import { LEGAL_DOC_HUB, type DocHub } from "../model/doc-hub";
 import { LegalDocActions } from "./legal-doc-actions";
@@ -117,12 +118,14 @@ export function LegalDocView({
                 </span>
               </div>
             </div>
-            <Link
-              href={dict.legal.contactHref}
-              className="inline-flex h-[42px] items-center rounded-menu bg-primary px-5 text-sm font-semibold text-primary-foreground no-underline transition-colors hover:bg-primary/90"
+            {/* The document's one primary action, as in Legal.dc.html
+                (TASK-865); on Button so it gets the focus ring it lacked. */}
+            <Button
+              asChild
+              className="h-11 rounded-menu px-5 font-semibold no-underline"
             >
-              {dict.legal.contactCta}
-            </Link>
+              <Link href={dict.legal.contactHref}>{dict.legal.contactCta}</Link>
+            </Button>
           </div>
         </article>
       </div>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Home, Search } from "lucide-react";
 import { dict, H1_CLASS } from "@/shared/config";
+import { Button } from "@/shared/ui";
 
 /** A root category the 404 offers as a shortcut (TASK-873). */
 export interface NotFoundCategoryLink {
@@ -19,7 +20,7 @@ const PILL_BASE =
  *
  * Rendered inside the root layout (so the shared Header/Footer wrap it), it
  * offers three ways back into the store: a native GET search box that submits
- * to the real `/search` results page, primary/secondary CTAs (home + catalog),
+ * to the real `/search` results page, primary/outline CTAs (home + catalog),
  * and a row of popular-section shortcuts. Everything here is static navigation,
  * so this stays a server component with no client JS.
  *
@@ -69,29 +70,36 @@ export function NotFoundView({
             placeholder={d.searchPlaceholder}
             className="h-full min-w-0 flex-1 border-0 bg-transparent px-[18px] text-[15px] text-foreground outline-none placeholder:text-muted-foreground"
           />
+          {/* Neutral icon button, not filled (TASK-865): «На головну» below is
+              the page's one primary action (design-system §1). */}
           <button
             type="submit"
             aria-label={d.searchSubmitAria}
-            className="flex h-full w-14 shrink-0 items-center justify-center bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className="flex h-full w-14 shrink-0 items-center justify-center border-l border-border text-muted-foreground transition-colors hover:bg-muted hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           >
             <Search className="size-5" aria-hidden="true" />
           </button>
         </form>
 
         <div className="flex flex-wrap justify-center gap-3">
-          <Link
-            href="/"
-            className="inline-flex h-12 items-center gap-2 rounded-xl bg-primary px-6 text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          <Button
+            asChild
+            size="lg"
+            className="h-12 rounded-cta px-6 text-base font-bold"
           >
-            <Home className="size-[18px]" aria-hidden="true" />
-            {d.home}
-          </Link>
-          <Link
-            href="/products"
-            className="inline-flex h-12 items-center gap-2 rounded-xl border-[1.5px] border-border px-6 text-[15px] font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            <Link href="/">
+              <Home aria-hidden="true" />
+              {d.home}
+            </Link>
+          </Button>
+          <Button
+            asChild
+            variant="outline"
+            size="lg"
+            className="h-12 rounded-cta px-6 text-base font-semibold"
           >
-            {d.catalog}
-          </Link>
+            <Link href="/products">{d.catalog}</Link>
+          </Button>
         </div>
 
         <div className="mt-10 border-t border-border pt-7">

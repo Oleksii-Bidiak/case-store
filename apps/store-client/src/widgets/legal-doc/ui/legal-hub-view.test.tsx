@@ -48,6 +48,17 @@ describe("LegalHubView", () => {
     ).toHaveAttribute("href", "/contact");
   });
 
+  it("keeps the support CTA the hub's one primary, with a focus ring (TASK-865)", () => {
+    const { container } = renderWithProviders(<LegalHubView docs={docs} />);
+
+    const filled = container.querySelectorAll(".bg-primary");
+    expect(filled).toHaveLength(1);
+    expect(filled[0]).toBe(
+      screen.getByRole("link", { name: dict.legal.hub.supportCta }),
+    );
+    expect(filled[0].className).toMatch(/focus-visible:ring/);
+  });
+
   it("shows the empty state when there are no documents", () => {
     renderWithProviders(<LegalHubView docs={[]} />);
     expect(screen.getByText(dict.legal.hub.empty)).toBeInTheDocument();

@@ -17,6 +17,7 @@ import { dict } from "@/shared/config";
 // a second set of base classes into a panel that does not use them. What must be
 // shared is the rule and the mask — both live in `shared/lib/phone` (TASK-407).
 import { formatUAPhone } from "@/shared/lib/phone";
+import { Button } from "@/shared/ui";
 import { contactSchema, type ContactFormValues } from "../model/contact-schema";
 
 const FIELD =
@@ -151,8 +152,12 @@ export function ContactForm() {
                     setValue("topic", t.key, { shouldDirty: true })
                   }
                   className={`h-[38px] rounded-md border px-3.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    // Tint, not filled (TASK-865): a selected option, not an
+                    // action — the submit below is the page's one primary.
+                    // text-foreground, because text-primary on the tint
+                    // falls under 4.5:1 in the dark theme.
                     active
-                      ? "border-primary bg-primary text-primary-foreground"
+                      ? "border-primary bg-primary/10 text-foreground"
                       : "border-border bg-background text-foreground hover:border-primary"
                   }`}
                 >
@@ -303,13 +308,15 @@ export function ContactForm() {
           </p>
         )}
 
-        <button
+        {/* The page's one primary action (TASK-865, design-system §1). */}
+        <Button
           type="submit"
+          size="lg"
           disabled={submit.isPending}
-          className="h-[50px] rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-12 rounded-cta text-base font-bold"
         >
           {submit.isPending ? d.submitting : d.submit}
-        </button>
+        </Button>
       </form>
     </div>
   );

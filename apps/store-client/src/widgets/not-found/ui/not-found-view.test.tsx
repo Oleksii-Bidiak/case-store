@@ -24,6 +24,21 @@ describe("NotFoundView", () => {
     expect(form).toHaveAttribute("method", "get");
   });
 
+  it("fills only «На головну» — catalogue outline, search submit neutral (TASK-865)", () => {
+    const { container } = renderWithProviders(<NotFoundView />);
+
+    const filled = container.querySelectorAll(".bg-primary");
+    expect(filled).toHaveLength(1);
+    expect(filled[0]).toBe(screen.getByRole("link", { name: d.home }));
+    expect(screen.getByRole("link", { name: d.catalog })).toHaveAttribute(
+      "data-variant",
+      "outline",
+    );
+    expect(
+      screen.getByRole("button", { name: d.searchSubmitAria }),
+    ).not.toHaveClass("bg-primary");
+  });
+
   it("links home and to the catalog", () => {
     renderWithProviders(<NotFoundView />);
 

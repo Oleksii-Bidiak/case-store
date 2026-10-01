@@ -23,6 +23,10 @@ const SOCIAL_CHANNELS = [
 const SOCIAL_ITEM_CLASS =
   "inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
+// Neutral outline, merged over the form's filled default through `cn()`.
+const NEWSLETTER_SUBMIT_CLASS =
+  "border border-border bg-background text-foreground hover:bg-muted hover:text-primary";
+
 interface NewsletterProps {
   /**
    * The shop's contact settings, fetched by the home page. A channel without a
@@ -53,7 +57,13 @@ export function Newsletter({ contact }: NewsletterProps = {}) {
         <div className="max-w-xl">
           <h2 className={`${H2_CLASS} text-foreground`}>{heading}</h2>
           <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
-          <NewsletterSubscribeForm source="home" className="mt-5 max-w-md" />
+          {/* Outline submit (TASK-865): the hero slide CTA is the homepage's
+              one primary action (design-system §1). */}
+          <NewsletterSubscribeForm
+            source="home"
+            className="mt-5 max-w-md"
+            buttonClassName={NEWSLETTER_SUBMIT_CLASS}
+          />
         </div>
         {channels.length > 0 && (
           <ul className="flex flex-wrap items-center gap-2.5">

@@ -71,6 +71,14 @@ describe("PromoBanner", () => {
     expect(container.querySelector("img")).toBeNull();
   });
 
+  it("draws the CTA as an outline — the hero slide owns the primary (TASK-865)", () => {
+    renderWithProviders(<PromoBanner />);
+
+    const cta = screen.getByRole("link", { name: dict.home.widePromo.cta });
+    expect(cta).toHaveAttribute("data-variant", "outline");
+    expect(cta).not.toHaveClass("bg-primary");
+  });
+
   it("omits the CTA button when the banner has no label/href", () => {
     renderWithProviders(
       <PromoBanner banner={makeBanner({ ctaLabel: null, ctaHref: null })} />,

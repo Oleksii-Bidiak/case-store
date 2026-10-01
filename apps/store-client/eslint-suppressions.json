@@ -241,12 +241,12 @@
   },
   "src/widgets/contact/ui/contact-form.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 15
+      "count": 13
     }
   },
   "src/widgets/contact/ui/contact-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 20
+      "count": 19
     }
   },
   "src/widgets/footer/ui/footer.tsx": {
@@ -316,17 +316,17 @@
   },
   "src/widgets/legal-doc/ui/legal-doc-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 15
+      "count": 14
     }
   },
   "src/widgets/legal-doc/ui/legal-hub-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 20
+      "count": 19
     }
   },
   "src/widgets/not-found/ui/not-found-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 15
+      "count": 11
     }
   },
   "src/widgets/product-card-actions/ui/product-card-actions.tsx": {
