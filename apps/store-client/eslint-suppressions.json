@@ -421,7 +421,7 @@
   },
   "src/widgets/product-list/ui/product-list.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 6
+      "count": 1
     }
   },
   "src/widgets/promo/ui/promo-countdown.tsx": {

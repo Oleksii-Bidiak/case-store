@@ -8,7 +8,11 @@ import {
   getProductControllerFindAllQueryOptions,
   type ProductControllerFindAllParams,
 } from "@/entities/product";
-import type { CatalogView } from "@/features/product-filters";
+import {
+  ListingEmptyState,
+  type CatalogView,
+  type ListingEmptyStateAction,
+} from "@/features/product-filters";
 import { Button, ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
@@ -30,8 +34,16 @@ interface ProductListProps {
   buildPageHref: (page: number) => string;
   /** Grid (cards) or list (rows) results layout. */
   view: CatalogView;
-  /** Clear every active filter (used by the empty state). */
-  onClearFilters: () => void;
+  /**
+   * What the empty state says and offers (TASK-870). The view decides: a
+   * filter reset when something narrows the list, a link out when nothing does
+   * — only it knows which filters the route has locked.
+   */
+  empty: {
+    heading: string;
+    body?: string;
+    action: ListingEmptyStateAction;
+  };
 }
 
 /**
@@ -51,7 +63,7 @@ export function ProductList({
   params,
   buildPageHref,
   view,
-  onClearFilters,
+  empty,
 }: ProductListProps) {
   const { data, isPending, isFetching, isError } =
     useProductControllerFindAll(params);
@@ -112,28 +124,12 @@ export function ProductList({
 
   if (products.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center rounded-card border border-border bg-card px-5 py-14 text-center shadow-card">
-        <span
-          aria-hidden="true"
-          className="mb-[18px] inline-flex size-[72px] items-center justify-center rounded-full bg-muted text-muted-foreground"
-        >
-          <SearchX className="size-8" strokeWidth={1.6} />
-        </span>
-        <p className="max-w-[460px] font-display text-[22px] font-bold text-foreground">
-          {dict.catalog.emptyHeading}
-        </p>
-        <p className="mt-2.5 max-w-[440px] text-sm text-muted-foreground">
-          {dict.catalog.emptyBody}
-        </p>
-        <Button
-          type="button"
-          variant="outline"
-          className="mt-5"
-          onClick={onClearFilters}
-        >
-          {dict.catalog.clearAllFilters}
-        </Button>
-      </div>
+      <ListingEmptyState
+        icon={SearchX}
+        heading={empty.heading}
+        body={empty.body}
+        action={empty.action}
+      />
     );
   }
 

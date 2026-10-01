@@ -629,3 +629,62 @@ describe("ProductListView — adopts the server's prefetch (TASK-563)", () => {
     expect(productRequests).toHaveLength(0);
   });
 });
+
+// design-system §6 (TASK-870): icon + one line + ONE primary action, and the
+// action is a reset only when a reset would change something.
+describe("ProductListView — empty state (TASK-870)", () => {
+  it("makes the filter reset the primary action when filters emptied the list", async () => {
+    installCatalogHandlers({ empty: true });
+    currentQuery = "minPrice=9999";
+
+    renderWithProviders(<ProductListView />);
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    expect(
+      screen.getByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).toHaveAttribute("data-variant", "default");
+  });
+
+  it("leads home from an empty, unfiltered /products instead of a no-op reset", async () => {
+    installCatalogHandlers({ empty: true });
+
+    renderWithProviders(<ProductListView />);
+    await screen.findByText(dict.catalog.emptyUnfilteredBody);
+
+    expect(
+      screen.queryByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.common.goHome }),
+    ).toHaveAttribute("href", "/");
+  });
+
+  it("leads to the catalogue from an empty category landing page", async () => {
+    installCatalogHandlers({ empty: true });
+    currentPathname = "/categories/cases";
+
+    renderWithProviders(
+      <ProductListView lockedCategory={{ id: "cat-locked", slug: "cases" }} />,
+    );
+    await screen.findByText(dict.catalog.emptyHeading);
+
+    expect(
+      screen.getByRole("link", { name: dict.catalog.emptyBrowseAll }),
+    ).toHaveAttribute("href", "/products");
+  });
+
+  it("says nothing is on sale on an unfiltered /promo and leads to the catalogue", async () => {
+    installCatalogHandlers({ empty: true });
+    currentPathname = "/promo";
+
+    renderWithProviders(<ProductListView lockedOnSale />);
+    await screen.findByText(dict.promo.dealsEmptyHeading);
+
+    expect(
+      screen.queryByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).not.toBeInTheDocument();
+    const cta = screen.getByRole("link", { name: dict.promo.dealsEmptyCta });
+    expect(cta).toHaveAttribute("href", "/products");
+    expect(cta).toHaveAttribute("data-variant", "default");
+  });
+});

@@ -86,7 +86,10 @@ function installProducts(
 const baseProps = {
   buildPageHref: (page: number) => `/products?page=${page}`,
   view: "grid" as const,
-  onClearFilters: jest.fn(),
+  empty: {
+    heading: "Товари не знайдено",
+    action: { label: "Скинути всі фільтри", onClick: jest.fn() },
+  },
 };
 
 const CAT_1_PAGES: Record<number, Product[]> = {

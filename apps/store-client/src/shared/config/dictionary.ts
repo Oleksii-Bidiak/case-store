@@ -134,6 +134,11 @@ export const dict = {
      */
     openPanel: "Відкрити пошук",
     showAllResults: (q: string) => `Показати всі результати для «${q}»`,
+    /**
+     * Primary action of the no-query state on /search (TASK-870) — design-system
+     * §6 asks every empty state for one; the field itself is in the header.
+     */
+    promptCta: "До каталогу",
   },
 
   footer: {
@@ -528,6 +533,11 @@ export const dict = {
     // control is the chips row). Two behaviours, so two names: a screen reader
     // must not meet two identically named buttons that do different things.
     clearAllFilters: "Скинути всі фільтри",
+    // TASK-870 — the empty state when there is NO filter to drop (an empty
+    // category landing page, an empty compat page): a reset button there would
+    // be a no-op, so the primary action leads out to the whole catalogue.
+    emptyUnfilteredBody: "Тут поки немає товарів. Загляньте трохи згодом.",
+    emptyBrowseAll: "Переглянути всі товари",
   },
 
   // Info & support hub (/info, Info.dc.html import). Content is static (stub)
@@ -786,6 +796,11 @@ export const dict = {
       stubNote:
         "Форма демонстраційна — підписка поки не надсилається на сервер.",
     },
+    // TASK-870 — the deals listing with nothing on sale and no filter to drop.
+    dealsEmptyHeading: "Зараз немає товарів зі знижкою",
+    dealsEmptyBody:
+      "Нові знижки з’являться найближчим часом — а поки перегляньте весь каталог.",
+    dealsEmptyCta: "До каталогу",
   },
 
   // Categories hub page (/categories, Categories.dc.html import).

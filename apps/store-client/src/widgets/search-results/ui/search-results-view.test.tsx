@@ -155,6 +155,10 @@ describe("SearchResultsView", () => {
   it("shows the search prompt (no request) when the query is blank", () => {
     renderWithProviders(<SearchResultsView query="" page={1} />);
     expect(screen.getByText(dict.search.promptHeading)).toBeInTheDocument();
+    // design-system §6 (TASK-870): the prompt ends in ONE primary action.
+    const cta = screen.getByRole("link", { name: dict.search.promptCta });
+    expect(cta).toHaveAttribute("href", "/products");
+    expect(cta).toHaveAttribute("data-variant", "default");
   });
 
   it("renders matching products for a query", async () => {
@@ -180,9 +184,41 @@ describe("SearchResultsView", () => {
     expect(
       await screen.findByText(dict.search.emptyHeading("zzz")),
     ).toBeInTheDocument();
+    // No filter narrowed it — the query itself found nothing, so the primary
+    // action leads to the whole catalogue (TASK-870).
+    const cta = screen.getByRole("link", { name: dict.search.browseAll });
+    expect(cta).toHaveAttribute("href", "/products");
+    expect(cta).toHaveAttribute("data-variant", "default");
     expect(
-      screen.getByRole("link", { name: dict.search.browseAll }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers a primary filter reset that keeps the query when filters emptied the results", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/api/search", () => HttpResponse.json(resultsEnvelope([], 0))),
+    );
+    currentQuery = "q=zzz&brand=apple&minPrice=9999";
+
+    renderWithProviders(<SearchResultsView query="zzz" page={1} />);
+
+    const reset = await screen.findByRole("button", {
+      name: dict.catalog.clearAllFilters,
+    });
+    expect(reset).toHaveAttribute("data-variant", "default");
+    expect(
+      screen.queryByRole("link", { name: dict.search.browseAll }),
+    ).not.toBeInTheDocument();
+
+    await user.click(reset);
+
+    const params = new URLSearchParams(
+      (mockReplace.mock.calls.at(-1)![0] as string).split("?")[1],
+    );
+    expect(params.get("q")).toBe("zzz");
+    expect(params.has("brand")).toBe(false);
+    expect(params.has("minPrice")).toBe(false);
   });
 
   it("shows the error state when the request fails", async () => {

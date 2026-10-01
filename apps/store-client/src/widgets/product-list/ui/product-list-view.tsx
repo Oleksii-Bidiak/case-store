@@ -19,6 +19,7 @@ import {
   FiltersDrawer,
   clearFilterUpdates,
   countActiveFilters,
+  hasActiveFilters,
   type CatalogView,
 } from "@/features/product-filters";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
@@ -185,6 +186,38 @@ export function ProductListView({
     );
   }, [applyFilters, lockedCategory, lockedDevice, lockedOnSale]);
 
+  // The empty state's one primary action (TASK-870, design-system §6). A reset
+  // only when it would change something — the same «what is clearable» rule
+  // `clearFilters` applies, route locks excluded. With nothing to drop (an
+  // empty landing page, nothing on sale) a reset button is a no-op, so the
+  // action leads out to the whole catalogue instead — or home, on the
+  // catalogue itself, where a link to /products would point at this page.
+  const canClearFilters = hasActiveFilters(params, {
+    includeCategory: !lockedCategory,
+    includeDevice: !lockedDevice,
+    includeOnSale: !lockedOnSale,
+  });
+  const emptyState = canClearFilters
+    ? {
+        heading: dict.catalog.emptyHeading,
+        body: dict.catalog.emptyBody,
+        action: { label: dict.catalog.clearAllFilters, onClick: clearFilters },
+      }
+    : lockedOnSale
+      ? {
+          heading: dict.promo.dealsEmptyHeading,
+          body: dict.promo.dealsEmptyBody,
+          action: { label: dict.promo.dealsEmptyCta, href: "/products" },
+        }
+      : {
+          heading: dict.catalog.emptyHeading,
+          body: dict.catalog.emptyUnfilteredBody,
+          action:
+            pathname === "/products"
+              ? { label: dict.common.goHome, href: "/" }
+              : { label: dict.catalog.emptyBrowseAll, href: "/products" },
+        };
+
   const buildPageHref = useCallback(
     (targetPage: number) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -310,7 +343,7 @@ export function ProductListView({
             params={params}
             buildPageHref={buildPageHref}
             view={view}
-            onClearFilters={clearFilters}
+            empty={emptyState}
           />
         </section>
       </div>

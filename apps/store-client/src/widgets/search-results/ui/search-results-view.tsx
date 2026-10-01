@@ -1,18 +1,19 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Loader2, SlidersHorizontal } from "lucide-react";
+import { Loader2, Search, SearchX, SlidersHorizontal } from "lucide-react";
 import { useSearch } from "@/entities/search";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
   CategoryChips,
   FiltersDrawer,
+  ListingEmptyState,
   ProductFilters,
   clearFilterUpdates,
   countActiveFilters,
+  hasActiveFilters,
 } from "@/features/product-filters";
 import { ProductCard } from "@/shared/ui";
 import { Pagination } from "@/shared/ui/pagination";
@@ -194,16 +195,16 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
 
   // No query yet — invite the shopper to search (no request, and no filter
   // panel: there is nothing yet to narrow).
+  // The search field lives in the header, so the one primary action here
+  // (design-system §6, TASK-870) is the way into the catalogue.
   if (!enabled) {
     return (
-      <div className="rounded-lg border border-border bg-card p-8 text-center">
-        <p className="text-base font-medium text-card-foreground">
-          {dict.search.promptHeading}
-        </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {dict.search.promptBody}
-        </p>
-      </div>
+      <ListingEmptyState
+        icon={Search}
+        heading={dict.search.promptHeading}
+        body={dict.search.promptBody}
+        action={{ label: dict.search.promptCta, href: "/products" }}
+      />
     );
   }
 
@@ -223,20 +224,20 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
       {dict.search.error}
     </p>
   ) : products.length === 0 ? (
-    <div className="rounded-lg border border-border bg-card p-8 text-center">
-      <p className="text-base font-medium text-card-foreground">
-        {dict.search.emptyHeading(trimmed)}
-      </p>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {dict.search.emptyBody}
-      </p>
-      <Link
-        href="/products"
-        className="mt-3 inline-block text-sm font-medium text-primary hover:underline"
-      >
-        {dict.search.browseAll}
-      </Link>
-    </div>
+    // One primary action (design-system §6, TASK-870): drop the filters when
+    // they are what emptied the list — the same full reset the drawer offers,
+    // which keeps `?q=` — otherwise the query itself found nothing, and the
+    // way on is the whole catalogue.
+    <ListingEmptyState
+      icon={SearchX}
+      heading={dict.search.emptyHeading(trimmed)}
+      body={dict.search.emptyBody}
+      action={
+        hasActiveFilters({ ...panelParams, search: undefined })
+          ? { label: dict.catalog.clearAllFilters, onClick: resetFilters }
+          : { label: dict.search.browseAll, href: "/products" }
+      }
+    />
   ) : (
     <div className="flex flex-col gap-6">
       <p aria-live="polite" className="text-sm text-muted-foreground">
