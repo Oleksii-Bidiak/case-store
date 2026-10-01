@@ -29,6 +29,16 @@ export function PromoCoupons() {
 
   const coupons = (data?.data ?? []).map(mapDiscountToCoupon);
 
+  // TASK-869 — `app/promo/layout.tsx` prefetches this feed on the server, so on
+  // the normal path the first render already has the tickets and the
+  // placeholder below is never painted. It is the FALLBACK for a failed
+  // prefetch (the client then fetches behind it). For that path the ticket card
+  // carries `min-h-32` and the placeholder is `h-32` (both 128px): a one-line
+  // ticket (~126.5px of content) lands at exactly the placeholder's height. A
+  // ticket whose title / condition wraps (narrow columns: 320–389px, 640–767px,
+  // 1024–1179px) is taller and still grows — that residual is why the layout
+  // prefetches instead of relying on a fixed height.
+
   // Hide the section entirely when there are no active codes and nothing is
   // pending/errored — a lone heading over an empty grid reads as broken.
   if (!isPending && !isError && coupons.length === 0) {
@@ -44,7 +54,11 @@ export function PromoCoupons() {
       {isPending ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-[116px] w-full rounded-2xl" />
+            <Skeleton
+              key={i}
+              data-testid="promo-coupon-skeleton"
+              className="h-32 w-full rounded-2xl"
+            />
           ))}
         </div>
       ) : isError ? (
@@ -56,7 +70,8 @@ export function PromoCoupons() {
           {coupons.map((coupon) => (
             <div
               key={coupon.code}
-              className="relative flex items-center gap-4 md:gap-6 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card"
+              data-testid="promo-coupon"
+              className="relative flex min-h-32 items-center gap-4 md:gap-6 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card"
             >
               {/* Ticket notches. */}
               <span className="absolute top-1/2 -left-[9px] size-[18px] -translate-y-1/2 rounded-full bg-background" />

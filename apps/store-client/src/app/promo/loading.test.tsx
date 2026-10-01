@@ -5,6 +5,22 @@ import { dict } from "@/shared/config";
 import Loading from "./loading";
 import PromoLayout from "./layout";
 
+/** The layout is an async server component (it prefetches the coupons). */
+const renderFrame = async () =>
+  renderWithProviders(await PromoLayout({ children: <Loading /> }));
+
+const ONE_COUPON = {
+  data: [
+    {
+      code: "SUMMER10",
+      type: "PERCENT",
+      value: "10",
+      minSpend: "500.00",
+      expiresAt: null,
+    },
+  ],
+};
+
 /**
  * TASK-869 — `/promo` had no loading boundary, so entering it from another page
  * froze the old page until the server prefetch returned. The static frame is
@@ -19,12 +35,8 @@ describe("/promo loading boundary (TASK-869)", () => {
     );
   });
 
-  it("paints the real frame around the loading listing", () => {
-    renderWithProviders(
-      <PromoLayout>
-        <Loading />
-      </PromoLayout>,
-    );
+  it("paints the real frame around the loading listing", async () => {
+    await renderFrame();
 
     // The hero heading is real, not a placeholder — one h1 on the page.
     expect(
@@ -52,13 +64,42 @@ describe("/promo loading boundary (TASK-869)", () => {
     expect(sections).not.toContain("specs");
   });
 
-  it("keeps the page container on the layout, so loading and page share it", () => {
-    const { container } = renderWithProviders(
-      <PromoLayout>
-        <Loading />
-      </PromoLayout>,
-    );
+  it("keeps the page container on the layout, so loading and page share it", async () => {
+    const { container } = await renderFrame();
 
     expect(container.firstElementChild).toHaveClass("max-w-page", "pt-5.5");
+  });
+
+  // Fix round — a ticket's height depends on where its text wraps (126.5 /
+  // 146.5 / 163px across widths), so no fixed placeholder matches it. The
+  // layout prefetches the feed: the FIRST render already holds the tickets and
+  // nothing below them moves when the client takes over.
+  it("renders the coupons with the frame — no placeholder to swap", async () => {
+    server.use(
+      http.get("*/api/discounts/active", () => HttpResponse.json(ONE_COUPON)),
+    );
+
+    await renderFrame();
+
+    // Synchronous query: present in the first render, not after a fetch.
+    expect(screen.getByText("SUMMER10")).toBeInTheDocument();
+    expect(screen.queryAllByTestId("promo-coupon-skeleton")).toHaveLength(0);
+    // Floored at the placeholder's height for the fallback path below.
+    expect(screen.getByTestId("promo-coupon")).toHaveClass("min-h-32");
+  });
+
+  it("falls back to the client fetch behind a ticket-height placeholder", async () => {
+    server.use(
+      http.get("*/api/discounts/active", () =>
+        HttpResponse.json({ message: "down" }, { status: 503 }),
+      ),
+    );
+
+    await renderFrame();
+
+    const placeholders = screen.getAllByTestId("promo-coupon-skeleton");
+    expect(placeholders).toHaveLength(3);
+    // The same 128px the ticket card is floored at (`min-h-32`).
+    placeholders.forEach((p) => expect(p).toHaveClass("h-32"));
   });
 });

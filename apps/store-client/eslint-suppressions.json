@@ -421,7 +421,7 @@
   },
   "src/widgets/promo/ui/promo-coupons.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 11
+      "count": 10
     }
   },
   "src/widgets/promo/ui/promo-newsletter.tsx": {
