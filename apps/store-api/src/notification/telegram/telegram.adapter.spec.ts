@@ -5,6 +5,8 @@ import { TelegramApiError, type TelegramClient } from './telegram.client';
 import type { TelegramChannelSnapshot, TelegramChannelState } from './telegram-channel.state';
 import { TelegramRendererRegistry } from './telegram-renderers';
 import { escapeHtml } from './telegram-html';
+import type { NotificationBindingService } from '../notification-binding.service';
+import type { PinoLogger } from 'nestjs-pino';
 
 const makeRow = (overrides: Partial<NotificationOutbox> = {}): NotificationOutbox => ({
   id: 'row-1',
@@ -30,6 +32,11 @@ describe('TelegramAdapter', () => {
     ensureFresh: jest.fn(() => Promise.resolve(snapshot)),
     markFailed: jest.fn(),
   };
+  const bindings = {
+    hasActiveRecipient: jest.fn(),
+    revokeByExternalId: jest.fn(),
+  };
+  const logger = { setContext: jest.fn(), error: jest.fn(), warn: jest.fn(), info: jest.fn() };
   let renderers: TelegramRendererRegistry;
   let adapter: TelegramAdapter;
 
@@ -37,6 +44,8 @@ describe('TelegramAdapter', () => {
     jest.clearAllMocks();
     snapshot = { state: 'ok', botUsername: 'shop_bot', checkedAt: new Date() };
     client.sendMessage.mockResolvedValue({ message_id: 1 });
+    bindings.hasActiveRecipient.mockResolvedValue(true);
+    bindings.revokeByExternalId.mockResolvedValue(1);
     renderers = new TelegramRendererRegistry();
     renderers.register('test-ping', (row) => {
       const { name } = row.payload as { name: string };
@@ -46,6 +55,8 @@ describe('TelegramAdapter', () => {
       client as unknown as TelegramClient,
       state as unknown as TelegramChannelState,
       renderers,
+      bindings as unknown as NotificationBindingService,
+      logger as unknown as PinoLogger,
     );
   });
 
@@ -72,11 +83,27 @@ describe('TelegramAdapter', () => {
       expect(client.sendMessage).not.toHaveBeenCalled();
     });
 
+    it('a chat whose binding was revoked is FAILED without contacting Telegram (TASK-675)', async () => {
+      bindings.hasActiveRecipient.mockResolvedValue(false);
+
+      const sent = adapter.send(makeRow());
+
+      await expect(sent).rejects.toBeInstanceOf(PermanentDeliveryError);
+      await expect(sent).rejects.toThrow('binding revoked');
+      expect(bindings.hasActiveRecipient).toHaveBeenCalledWith(
+        NotificationChannel.TELEGRAM,
+        '-1001234567890',
+      );
+      expect(client.sendMessage).not.toHaveBeenCalled();
+    });
+
     it.each([
       [400, 'Bad Request: chat not found'],
       [403, 'Forbidden: bot was blocked by the user'],
+      [403, 'Forbidden: bot was kicked from the group chat'],
+      [400, 'Bad Request: group chat was upgraded to a supergroup chat'],
     ])(
-      'a permanent %i becomes PermanentDeliveryError, so the row is not retried',
+      'a chat that is gone (%i %s) is revoked and the row fails permanently (TASK-675)',
       async (code, desc) => {
         const message = `Telegram sendMessage failed (${code}): ${desc}`;
         client.sendMessage.mockRejectedValue(
@@ -87,9 +114,45 @@ describe('TelegramAdapter', () => {
 
         await expect(sent).rejects.toBeInstanceOf(PermanentDeliveryError);
         await expect(sent).rejects.toThrow(message);
+        expect(bindings.revokeByExternalId).toHaveBeenCalledWith(
+          NotificationChannel.TELEGRAM,
+          '-1001234567890',
+        );
+        expect(logger.error).toHaveBeenCalledWith(
+          expect.objectContaining({ event: 'telegram.binding.revoked', chatId: '-1001234567890' }),
+          expect.any(String),
+        );
         expect(state.markFailed).not.toHaveBeenCalled();
       },
     );
+
+    it('a 400 about the MESSAGE fails the row but keeps the chat bound', async () => {
+      const message = 'Telegram sendMessage failed (400): Bad Request: message is too long';
+      client.sendMessage.mockRejectedValue(
+        new TelegramApiError(message, 'permanent', 'sendMessage', 400),
+      );
+
+      await expect(adapter.send(makeRow())).rejects.toBeInstanceOf(PermanentDeliveryError);
+      expect(bindings.revokeByExternalId).not.toHaveBeenCalled();
+    });
+
+    it('a failed revoke still fails the row permanently, and says so in the log', async () => {
+      bindings.revokeByExternalId.mockRejectedValue(new Error('db down'));
+      client.sendMessage.mockRejectedValue(
+        new TelegramApiError(
+          'Telegram sendMessage failed (403): Forbidden',
+          'permanent',
+          'sendMessage',
+          403,
+        ),
+      );
+
+      await expect(adapter.send(makeRow())).rejects.toBeInstanceOf(PermanentDeliveryError);
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.objectContaining({ event: 'telegram.binding.revokeFailed' }),
+        expect.any(String),
+      );
+    });
 
     it.each([401, 404])(
       'a rejected TOKEN (%i) fails the channel, not the row: transient Error + markFailed',
@@ -104,6 +167,7 @@ describe('TelegramAdapter', () => {
         await expect(sent).rejects.toThrow(message);
         await expect(sent).rejects.not.toBeInstanceOf(PermanentDeliveryError);
         expect(state.markFailed).toHaveBeenCalledWith(message);
+        expect(bindings.revokeByExternalId).not.toHaveBeenCalled();
       },
     );
 

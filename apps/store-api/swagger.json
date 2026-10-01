@@ -14724,7 +14724,7 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Channel state: unconfigured / failed (with reason) / ok (with bot username)",
+            "description": "Channel state: unconfigured / failed (with reason) / ok (with bot username), plus the active shop chats",
             "content": {
               "application/json": {
                 "schema": {
@@ -14737,7 +14737,7 @@
             "description": "Unauthorized — authentication required"
           },
           "403": {
-            "description": "Forbidden — admin access required"
+            "description": "Forbidden — settings:notifications required"
           }
         },
         "security": [
@@ -14745,7 +14745,125 @@
             "access-token": []
           }
         ],
-        "summary": "Read the state of the Telegram owner-notification channel (admin)",
+        "summary": "Read the Telegram notification channel and the connected shop chats (admin)",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/admin/notifications/telegram/link": {
+      "post": {
+        "description": "The token in the link is valid for 15 minutes and works once. The chat in which «Старт» is pressed becomes the recipient — a private chat via `deepLink`, a group via `groupDeepLink`. The caller is recorded as the one who connected it.",
+        "operationId": "createTelegramConnectLink",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Link created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramConnectLinkResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — settings:notifications required"
+          },
+          "409": {
+            "description": "The bot is not configured or not answering — a link would lead nowhere"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Create a one-time link that connects a Telegram chat to shop notifications (admin)",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/admin/notifications/telegram/test": {
+      "post": {
+        "description": "Sent directly, not through the notification queue, so the answer is what Telegram said just now — one result per chat. A chat Telegram reports as gone (bot blocked or removed) is disconnected (`revoked: true`).",
+        "operationId": "sendTelegramTestMessage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "One result per connected chat",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramTestResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — settings:notifications required"
+          },
+          "409": {
+            "description": "The bot is not configured or not answering, or no chat is connected yet"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Send the test message to every connected shop chat, now (admin)",
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/api/admin/notifications/telegram/bindings/{id}": {
+      "delete": {
+        "description": "The chat stops receiving notifications at once; rows already queued for it are failed without being sent. The record is kept (revoked), and the chat can be connected again with a new link.",
+        "operationId": "revokeTelegramBinding",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Binding id",
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Disconnected"
+          },
+          "400": {
+            "description": "Invalid UUID"
+          },
+          "401": {
+            "description": "Unauthorized — authentication required"
+          },
+          "403": {
+            "description": "Forbidden — settings:notifications required"
+          },
+          "404": {
+            "description": "No active shop chat with this id"
+          }
+        },
+        "security": [
+          {
+            "access-token": []
+          }
+        ],
+        "summary": "Disconnect one shop chat from Telegram notifications (admin)",
         "tags": [
           "Notifications"
         ]
@@ -29579,6 +29697,66 @@
         ],
         "description": "`unconfigured` — TELEGRAM_BOT_TOKEN is not set; `failed` — a token is set but the last getMe did not succeed (see `reason`); `ok` — the bot answered (see `botUsername`)"
       },
+      "NotificationBindingUserDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "email": {
+            "type": "string",
+            "example": "owner@example.com"
+          },
+          "firstName": {
+            "type": "string",
+            "nullable": true,
+            "example": "Олена"
+          },
+          "lastName": {
+            "type": "string",
+            "nullable": true,
+            "example": "Коваль"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "firstName",
+          "lastName"
+        ]
+      },
+      "TelegramShopBindingDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "label": {
+            "type": "string",
+            "description": "Chat title, or @username / first name for a private chat, as it was when connected",
+            "example": "Магазин — замовлення"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-01T12:00:00.000Z"
+          },
+          "connectedBy": {
+            "description": "Who connected the chat (audit only); absent when that account no longer exists",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NotificationBindingUserDto"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "createdAt"
+        ]
+      },
       "TelegramChannelStatusDto": {
         "type": "object",
         "properties": {
@@ -29606,10 +29784,18 @@
             "description": "When the state was last established by a getMe call (absent for `unconfigured`)",
             "example": "2026-10-01T12:00:00.000Z",
             "format": "date-time"
+          },
+          "bindings": {
+            "description": "Active shop chats, oldest first. Every one of them receives every shop notification. Listed whatever the channel state — a chat stays connected while the bot is down.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TelegramShopBindingDto"
+            }
           }
         },
         "required": [
-          "state"
+          "state",
+          "bindings"
         ]
       },
       "TelegramChannelStatusResponse": {
@@ -29617,6 +29803,95 @@
         "properties": {
           "data": {
             "$ref": "#/components/schemas/TelegramChannelStatusDto"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "TelegramConnectLinkDto": {
+        "type": "object",
+        "properties": {
+          "deepLink": {
+            "type": "string",
+            "description": "Open on the phone and press «Старт»: the PRIVATE chat with the bot is connected. One-time; expires at `expiresAt`.",
+            "example": "https://t.me/casestore_bot?start=Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eHF1dXg"
+          },
+          "groupDeepLink": {
+            "type": "string",
+            "description": "Same token, but Telegram asks which GROUP to add the bot to, and that group is connected instead. Use one link or the other — the token works once.",
+            "example": "https://t.me/casestore_bot?startgroup=Zm9vYmFyYmF6cXV4cXV1eHF1dXhxdXV4cXV1eHF1dXg"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-10-01T12:15:00.000Z"
+          }
+        },
+        "required": [
+          "deepLink",
+          "groupDeepLink",
+          "expiresAt"
+        ]
+      },
+      "TelegramConnectLinkResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TelegramConnectLinkDto"
+          }
+        },
+        "required": [
+          "data"
+        ]
+      },
+      "TelegramTestResultDto": {
+        "type": "object",
+        "properties": {
+          "bindingId": {
+            "type": "string",
+            "example": "550e8400-e29b-41d4-a716-446655440000"
+          },
+          "ok": {
+            "type": "boolean",
+            "description": "Telegram accepted the message",
+            "example": true
+          },
+          "error": {
+            "type": "string",
+            "description": "Telegram's own description of the failure, when `ok` is false",
+            "example": "Telegram sendMessage failed (403): Forbidden: bot was blocked by the user"
+          },
+          "revoked": {
+            "type": "boolean",
+            "description": "True when Telegram said the chat is gone for good (bot blocked or removed, chat deleted) and the chat was disconnected",
+            "example": false
+          }
+        },
+        "required": [
+          "bindingId",
+          "ok"
+        ]
+      },
+      "TelegramTestResultsDto": {
+        "type": "object",
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TelegramTestResultDto"
+            }
+          }
+        },
+        "required": [
+          "results"
+        ]
+      },
+      "TelegramTestResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/TelegramTestResultsDto"
           }
         },
         "required": [

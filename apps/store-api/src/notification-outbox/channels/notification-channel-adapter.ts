@@ -19,8 +19,9 @@ export interface ChannelHealth {
  * The outbox row answers two independent questions: `type` — "what happened"
  * (order confirmed, password reset requested…) and `channel` — "where to say
  * it". An adapter owns one channel and renders the pair `(type, channel)`: the
- * email adapter keeps using the mail templates where they live today; a future
- * Telegram adapter renders its own short text for the same `type`.
+ * email adapter keeps using the mail templates where they live today; the
+ * Telegram adapter (`notification/telegram/telegram.adapter.ts`, TASK-674)
+ * renders its own short text for the same `type`.
  *
  * {@link NotificationOutboxService.dispatchDue} picks the adapter by
  * `row.channel` and owns the retry/backoff state machine — an adapter only
@@ -53,10 +54,11 @@ export interface NotificationChannelAdapter {
  * DI token for the list of registered {@link NotificationChannelAdapter}s.
  *
  * Bound in {@link NotificationOutboxModule} through a `useFactory` that collects
- * the adapters into one array. **Extension point:** a new channel (TASK-674:
- * `TelegramAdapter`) is added by providing its class in the module and appending
- * it to that factory's `inject` list and returned array — the dispatcher needs no
- * change.
+ * the adapters into one array. **Extension point:** a new channel is added by
+ * making its adapter injectable in that module — provided there, like
+ * `EmailAdapter`, or exported by an imported module, like `TelegramAdapter`
+ * from `NotificationModule` — and appending it to the factory's `inject` list
+ * and returned array. The dispatcher needs no change.
  */
 export const NOTIFICATION_CHANNEL_ADAPTERS = Symbol('NOTIFICATION_CHANNEL_ADAPTERS');
 

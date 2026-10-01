@@ -2,6 +2,16 @@
 export { NotificationModule } from './notification.module';
 export { adminUrl } from './notification-links';
 export {
+  NotificationBindingService,
+  BINDING_TOKEN_TTL_MS,
+  type IssueTokenParams,
+  type IssuedToken,
+} from './notification-binding.service';
+export type {
+  NotificationBindingEntity,
+  ConsumeTokenResult,
+} from './entities/notification-binding.entity';
+export {
   TelegramClient,
   TelegramApiError,
   TELEGRAM_API_URL,
