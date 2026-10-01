@@ -133,10 +133,18 @@ enum DiscountType {
   FIXED
 }
 
-enum MailOutboxStatus {
+enum NotificationOutboxStatus {
   PENDING
   SENT
   FAILED
+}
+
+/// Delivery channel of a NotificationOutbox row (TASK-672): answers "where",
+/// while the row's free-string `type` answers "what happened". The two stay
+/// separate on purpose — the channel is never encoded into `type`.
+enum NotificationChannel {
+  EMAIL
+  TELEGRAM
 }
 
 /// Discriminator for an OrderStatusHistory row (TASK-251): whether the row
@@ -1293,26 +1301,35 @@ model WishlistItem {
   @@map("wishlist_items")
 }
 
-/// Transactional mail outbox (TASK-103). Order creation enqueues a row in the
-/// same transaction as the order; a cron worker dispatches PENDING rows that are
-/// due (`nextAttemptAt <= now`) via the SMTP transport, retrying with backoff up
-/// to `maxAttempts` before marking the row FAILED. Generic `type` + JSON
-/// `payload` so new mail kinds reuse the table without a migration.
-model MailOutbox {
-  id            String           @id @default(uuid())
-  type          String
-  recipient     String
-  payload       Json
-  status        MailOutboxStatus @default(PENDING)
-  attempts      Int              @default(0)
-  maxAttempts   Int              @default(5) @map("max_attempts")
-  lastError     String?          @map("last_error")
-  nextAttemptAt DateTime         @default(now()) @map("next_attempt_at")
-  createdAt     DateTime         @default(now()) @map("created_at")
-  sentAt        DateTime?        @map("sent_at")
+/// Transactional notification outbox (TASK-103; multi-channel since TASK-672,
+/// formerly `mail_outbox`). A business event enqueues a row in the same
+/// transaction as the event itself; a cron worker dispatches PENDING rows that
+/// are due (`nextAttemptAt <= now`) through the row's `channel`, retrying with
+/// backoff up to `maxAttempts` before marking the row FAILED. Generic `type` +
+/// JSON `payload` so new notification kinds reuse the table without a migration.
+/// `type` is "what happened" (e.g. `order-confirmation`), `channel` is "where it
+/// goes" — two independent questions, never merged into one value.
+model NotificationOutbox {
+  id               String                   @id @default(uuid())
+  /// What happened — the renderer discriminator. Never carries the channel.
+  type             String
+  /// Where the row is delivered. Rows that predate TASK-672 were backfilled to EMAIL.
+  channel          NotificationChannel      @default(EMAIL)
+  /// The address in its own channel's space: an email address for EMAIL, a
+  /// Telegram `chat_id` for TELEGRAM, a phone number for a phone channel.
+  recipientAddress String                   @map("recipient_address")
+  payload          Json
+  status           NotificationOutboxStatus @default(PENDING)
+  attempts         Int                      @default(0)
+  maxAttempts      Int                      @default(5) @map("max_attempts")
+  lastError        String?                  @map("last_error")
+  nextAttemptAt    DateTime                 @default(now()) @map("next_attempt_at")
+  createdAt        DateTime                 @default(now()) @map("created_at")
+  sentAt           DateTime?                @map("sent_at")
 
   @@index([status, nextAttemptAt])
-  @@map("mail_outbox")
+  @@index([channel, status])
+  @@map("notification_outbox")
 }
 
 /// Blog category — a lightweight taxonomy for BlogPost (TASK-170). Slugs match

@@ -36,7 +36,7 @@ describe('DashboardRepository — the rating-abuse signal (TASK-589)', () => {
   const prismaMock = {
     order: { count: jest.fn().mockResolvedValue(0) },
     review: { count: jest.fn().mockResolvedValue(0), groupBy: reviewGroupBy },
-    mailOutbox: { count: jest.fn().mockResolvedValue(0) },
+    notificationOutbox: { count: jest.fn().mockResolvedValue(0) },
   };
 
   /** The args of the groupBy issued for a given `by` field. */
@@ -196,7 +196,7 @@ describe('DashboardRepository — the «Недоступні позиції» ti
   const prismaMock = {
     order: { count: orderCount },
     review: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
-    mailOutbox: { count: jest.fn().mockResolvedValue(0) },
+    notificationOutbox: { count: jest.fn().mockResolvedValue(0) },
   };
 
   /** The `where` of the count issued for the unavailable-items tile. */
@@ -277,7 +277,7 @@ describe('DashboardRepository — the «Оплачено після скасув
   const prismaMock = {
     order: { count: orderCount },
     review: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
-    mailOutbox: { count: jest.fn().mockResolvedValue(0) },
+    notificationOutbox: { count: jest.fn().mockResolvedValue(0) },
   };
 
   const paidAfterCancelWhere = () =>
@@ -349,7 +349,7 @@ describe('DashboardRepository — what counts as money still owed (review of pla
   const prismaMock = {
     order: { count: orderCount, aggregate: orderAggregate },
     review: { count: jest.fn().mockResolvedValue(0), groupBy: jest.fn().mockResolvedValue([]) },
-    mailOutbox: { count: jest.fn().mockResolvedValue(0) },
+    notificationOutbox: { count: jest.fn().mockResolvedValue(0) },
   };
 
   /**

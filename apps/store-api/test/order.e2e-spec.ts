@@ -620,7 +620,7 @@ describe('OrderController (e2e)', () => {
       // Drive the in-transaction afterCreate hook so the outbox enqueue runs,
       // mirroring the real repository (TASK-103-F).
       const createdOrder = makeOrder();
-      const txStub = { mailOutbox: { create: jest.fn() } };
+      const txStub = { notificationOutbox: { create: jest.fn() } };
       orderRepositoryMock.createFromCart.mockImplementation(
         async (
           _params: unknown,
@@ -855,7 +855,7 @@ describe('OrderController (e2e)', () => {
       const token = generateAccessToken(userA.id, userA.role);
       cartRepositoryMock.findByUserId.mockResolvedValue(makeCart(userA.id));
       const createdOrder = makeOrder();
-      const txStub = { mailOutbox: { create: jest.fn() } };
+      const txStub = { notificationOutbox: { create: jest.fn() } };
       orderRepositoryMock.createFromCart.mockImplementation(
         async (
           _params: unknown,

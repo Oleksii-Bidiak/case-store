@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
-import { Prisma, MailOutbox } from '@prisma/client';
+import { Prisma, NotificationOutbox } from '@prisma/client';
 import { MailOutboxRepository } from './mail-outbox.repository';
 import { MailService, type SendOrderConfirmationParams } from '../mail/mail.service';
 import type { OrderConfirmationMailPayload } from '../mail/templates/order-confirmation.template';
@@ -86,7 +86,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ORDER_CONFIRMATION_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -106,7 +106,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: PASSWORD_RESET_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -125,7 +125,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ACCOUNT_LOCKED_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -148,7 +148,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: EMAIL_VERIFICATION_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -167,7 +167,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -184,7 +184,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: EMAIL_CHANGE_NOTICE_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -205,7 +205,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ORDER_SHIPPED_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -224,7 +224,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -298,7 +298,11 @@ export class MailOutboxService {
   }
 
   /** Attempt to deliver a single row and apply the resulting state transition. */
-  private async dispatchRow(row: MailOutbox, now: Date, result: DispatchResult): Promise<void> {
+  private async dispatchRow(
+    row: NotificationOutbox,
+    now: Date,
+    result: DispatchResult,
+  ): Promise<void> {
     try {
       await this.deliver(row);
       await this.repository.markSent(row.id, now);
@@ -338,7 +342,7 @@ export class MailOutboxService {
    * {@link dispatchRow} and treated as a transient failure so the row is
    * rescheduled (visible via `lastError`) rather than silently lost.
    */
-  private async deliver(row: MailOutbox): Promise<void> {
+  private async deliver(row: NotificationOutbox): Promise<void> {
     switch (row.type) {
       case ORDER_CONFIRMATION_MAIL_TYPE:
         await this.mailService.sendOrderConfirmationPayload(

@@ -122,7 +122,7 @@ describe('AuthController (e2e)', () => {
       updateMany: jest.fn(),
     },
     // The real MailOutboxService (enqueuePasswordReset) writes through this.
-    mailOutbox: {
+    notificationOutbox: {
       create: jest.fn().mockResolvedValue({ id: 'outbox-e2e-1' }),
       // hasRecentAccountLockedNotice (TASK-287 rate limit) reads through this;
       // null → "not notified recently" → the locked-account notice enqueues.
@@ -802,9 +802,9 @@ describe('AuthController (e2e)', () => {
 
       // The one party who may learn about the lock is the account owner, by
       // email (TASK-287 notice through the mail outbox).
-      expect(prismaServiceMock.mailOutbox.create).toHaveBeenCalledWith(
+      expect(prismaServiceMock.notificationOutbox.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          data: expect.objectContaining({ recipient: googleUser.email }),
+          data: expect.objectContaining({ recipientAddress: googleUser.email }),
         }),
       );
     });

@@ -240,7 +240,7 @@ const mailOutboxServiceMock = {
 };
 
 /** Fake transaction client handed to the createFromCart afterCreate hook. */
-const txMock = { mailOutbox: { create: jest.fn() } };
+const txMock = { notificationOutbox: { create: jest.fn() } };
 
 /**
  * Default createFromCart behaviour: resolve to a created order AND drive the

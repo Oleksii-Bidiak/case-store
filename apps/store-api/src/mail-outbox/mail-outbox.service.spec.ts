@@ -1,6 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 import type { PinoLogger } from 'nestjs-pino';
-import { MailOutbox, MailOutboxStatus } from '@prisma/client';
+import { NotificationOutbox, NotificationOutboxStatus } from '@prisma/client';
 import { MailOutboxService } from './mail-outbox.service';
 import { MailOutboxRepository } from './mail-outbox.repository';
 import { MailService } from '../mail/mail.service';
@@ -36,13 +36,13 @@ const samplePayload: OrderConfirmationMailPayload = {
   },
 };
 
-const makeRow = (overrides: Partial<MailOutbox> = {}): MailOutbox =>
+const makeRow = (overrides: Partial<NotificationOutbox> = {}): NotificationOutbox =>
   ({
     id: 'outbox-1',
     type: ORDER_CONFIRMATION_MAIL_TYPE,
-    recipient: 'buyer@example.com',
-    payload: samplePayload as unknown as MailOutbox['payload'],
-    status: MailOutboxStatus.PENDING,
+    recipientAddress: 'buyer@example.com',
+    payload: samplePayload as unknown as NotificationOutbox['payload'],
+    status: NotificationOutboxStatus.PENDING,
     attempts: 0,
     maxAttempts: 5,
     lastError: null,
@@ -50,7 +50,7 @@ const makeRow = (overrides: Partial<MailOutbox> = {}): MailOutbox =>
     createdAt: NOW,
     sentAt: null,
     ...overrides,
-  }) as MailOutbox;
+  }) as NotificationOutbox;
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -125,7 +125,7 @@ describe('MailOutboxService', () => {
 
   describe('enqueueOrderConfirmation', () => {
     it('serializes the params into an order-confirmation row and forwards the tx', async () => {
-      const tx = { mailOutbox: {} } as never;
+      const tx = { notificationOutbox: {} } as never;
       const order = {
         id: 'order-uuid-1234',
         createdAt: new Date('2026-06-30T11:00:00.000Z'),
@@ -146,7 +146,7 @@ describe('MailOutboxService', () => {
       expect(repositoryMock.enqueue).toHaveBeenCalledTimes(1);
       const [params, passedTx] = repositoryMock.enqueue.mock.calls[0];
       expect(params.type).toBe(ORDER_CONFIRMATION_MAIL_TYPE);
-      expect(params.recipient).toBe('buyer@example.com');
+      expect(params.recipientAddress).toBe('buyer@example.com');
       expect(params.payload).toMatchObject({ to: 'buyer@example.com', customerName: 'Olena' });
       // createdAt is serialized to an ISO string in the stored payload.
       expect(params.payload.order.createdAt).toBe('2026-06-30T11:00:00.000Z');
@@ -169,7 +169,7 @@ describe('MailOutboxService', () => {
       expect(repositoryMock.enqueue).toHaveBeenCalledTimes(1);
       const [params] = repositoryMock.enqueue.mock.calls[0];
       expect(params.type).toBe(PASSWORD_RESET_MAIL_TYPE);
-      expect(params.recipient).toBe('user@example.com');
+      expect(params.recipientAddress).toBe('user@example.com');
       expect(params.payload).toMatchObject(payload);
     });
   });
@@ -188,7 +188,7 @@ describe('MailOutboxService', () => {
       expect(repositoryMock.enqueue).toHaveBeenCalledTimes(1);
       const [params] = repositoryMock.enqueue.mock.calls[0];
       expect(params.type).toBe(ACCOUNT_LOCKED_MAIL_TYPE);
-      expect(params.recipient).toBe('banned@example.com');
+      expect(params.recipientAddress).toBe('banned@example.com');
       expect(params.payload).toMatchObject(payload);
     });
   });
@@ -220,7 +220,7 @@ describe('MailOutboxService', () => {
         makeRow({
           id: 'al-1',
           type: ACCOUNT_LOCKED_MAIL_TYPE,
-          payload: payload as unknown as MailOutbox['payload'],
+          payload: payload as unknown as NotificationOutbox['payload'],
         }),
       ]);
       mailServiceMock.sendAccountLockedPayload.mockResolvedValue(undefined);
@@ -251,12 +251,18 @@ describe('MailOutboxService', () => {
 
       expect(repositoryMock.enqueue).toHaveBeenNthCalledWith(
         1,
-        expect.objectContaining({ type: 'email-change-confirm', recipient: 'new@example.com' }),
+        expect.objectContaining({
+          type: 'email-change-confirm',
+          recipientAddress: 'new@example.com',
+        }),
         undefined,
       );
       expect(repositoryMock.enqueue).toHaveBeenNthCalledWith(
         2,
-        expect.objectContaining({ type: 'email-change-notice', recipient: 'old@example.com' }),
+        expect.objectContaining({
+          type: 'email-change-notice',
+          recipientAddress: 'old@example.com',
+        }),
         undefined,
       );
     });
@@ -267,7 +273,7 @@ describe('MailOutboxService', () => {
     ] as const)('routes a %s row to %s', async (type, sender) => {
       const payload = { to: 'x@example.com' };
       repositoryMock.claimDue.mockResolvedValue([
-        makeRow({ id: 'ec-1', type, payload: payload as unknown as MailOutbox['payload'] }),
+        makeRow({ id: 'ec-1', type, payload: payload as unknown as NotificationOutbox['payload'] }),
       ]);
       mailServiceMock[sender].mockResolvedValue(undefined);
 
@@ -293,7 +299,7 @@ describe('MailOutboxService', () => {
       expect(repositoryMock.enqueue).toHaveBeenCalledWith(
         expect.objectContaining({
           type: 'order-payment-expired',
-          recipient: 'buyer@example.com',
+          recipientAddress: 'buyer@example.com',
           payload,
         }),
         undefined,
@@ -305,7 +311,7 @@ describe('MailOutboxService', () => {
         makeRow({
           id: 'pe-1',
           type: 'order-payment-expired',
-          payload: payload as unknown as MailOutbox['payload'],
+          payload: payload as unknown as NotificationOutbox['payload'],
         }),
       ]);
       mailServiceMock.sendOrderPaymentExpiredPayload.mockResolvedValue(undefined);
@@ -330,7 +336,7 @@ describe('MailOutboxService', () => {
         makeRow({
           id: 'pr-1',
           type: PASSWORD_RESET_MAIL_TYPE,
-          payload: payload as unknown as MailOutbox['payload'],
+          payload: payload as unknown as NotificationOutbox['payload'],
         }),
       ]);
       mailServiceMock.sendPasswordResetPayload.mockResolvedValue(undefined);
