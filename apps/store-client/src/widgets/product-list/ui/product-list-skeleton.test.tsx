@@ -71,6 +71,18 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     expect(chips(locked)).toHaveLength(0);
   });
 
+  // TASK-869 — the count line sits in the results column in every variant,
+  // the rail-less one (`ProductList`'s own pending state) and the list view.
+  it.each([
+    ["the sidebar shell", { withSidebar: true }],
+    ["the bare results", {}],
+    ["the list view", { view: "list" as const }],
+  ])("reserves the result-count line in %s", (_label, props) => {
+    render(<ProductListSkeleton {...props} />);
+
+    expect(screen.getByTestId("result-count-skeleton")).toHaveClass("h-5");
+  });
+
   it("renders no rail at all without the sidebar", () => {
     render(<ProductListSkeleton />);
 

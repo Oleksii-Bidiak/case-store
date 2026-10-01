@@ -414,6 +414,34 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     // viewport; if only one side declares it, the cards resize on hydration.
     expect(skeletonShell?.className).toBe(realShell?.className);
   });
+
+  // TASK-869 — the header above the split: breadcrumb, then the title + toolbar
+  // row. The skeleton used to draw one 32px bar instead, so the rail and the
+  // grid started 68px (desktop) / 184px (phone) too high and jumped on load.
+  it("repeats the header of the real page — breadcrumb row, then the title + toolbar row", () => {
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+    const crumbs = screen.getByRole("navigation", {
+      name: dict.product.breadcrumbAria,
+    });
+    const realRow = screen.getByRole("heading", { level: 1 }).parentElement
+      ?.parentElement;
+
+    const { container } = renderWithProviders(<WishlistSkeleton />);
+    const header = container.firstElementChild?.firstElementChild;
+    const [crumbSlot, row] = Array.from(header?.children ?? []);
+
+    expect(header).toHaveAttribute("aria-hidden", "true");
+    // Same bottom margin and line box as the breadcrumb (text-sm = 20px).
+    expect(crumbSlot).toHaveClass("mb-4.5", "h-5");
+    expect(crumbs).toHaveClass("mb-4.5", "text-sm");
+    // The title + toolbar row wraps by the same rules.
+    expect(row?.className).toBe(realRow?.className);
+    // Title slot on the H1_CLASS line box (36px, 40px from md) + the count line.
+    expect(row?.firstElementChild?.children[0]).toHaveClass("h-9", "md:h-10");
+    expect(row?.firstElementChild?.children[1]).toHaveClass("h-5");
+  });
 });
 
 // ── TASK-1300: /wishlist as «каталог №2» ─────────────────────────────────────

@@ -38,7 +38,7 @@ export function PromoView({ deals }: PromoViewProps) {
     <div>
       <nav
         aria-label={d.breadcrumb}
-        className="mb-[18px] flex items-center gap-2.5 text-sm text-muted-foreground"
+        className="mb-4.5 flex items-center gap-2.5 text-sm text-muted-foreground"
       >
         <Link href="/" className="hover:text-foreground">
           {d.breadcrumbHome}

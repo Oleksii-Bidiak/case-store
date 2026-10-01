@@ -4,6 +4,7 @@
 jest.mock("@/widgets/promo", () => ({
   PromoView: () => null,
   PROMO_DEALS_ANCHOR: "deals",
+  PROMO_LISTING_LOCKS: { onSale: true },
 }));
 jest.mock("@/widgets/product-list", () => {
   const listing = jest.requireActual(
@@ -98,10 +99,15 @@ describe("/promo — the deals are the catalogue with a discount lock (TASK-1301
   it("renders the listing with the discount lock", async () => {
     const tree = await render();
 
-    // Handed to PromoView through its `deals` slot, under the deals heading.
-    const deals = findPropValues(tree, "deals");
-    expect(findPropValues(deals, "lockedOnSale")).toEqual([true]);
-    expect(findPropValues(deals, "anchorId")).toEqual(["deals"]);
+    // The page IS the deals slot since TASK-869 — the segment layout wraps it
+    // in PromoView — so the listing and its fallback sit at the top of the tree.
+    expect(findPropValues(tree, "lockedOnSale")).toEqual([true]);
+    expect(findPropValues(tree, "anchorId")).toEqual(["deals"]);
+    expect(findPropValues(tree, "deals")).toEqual([]);
+    // The in-page fallback draws the same locked rail.
+    const [fallback] = findPropValues(tree, "fallback");
+    expect(findPropValues(fallback, "lockedOnSale")).toEqual([true]);
+    expect(findPropValues(fallback, "withSidebar")).toEqual([true]);
   });
 
   it("describes the prefetched deals as an ItemList", async () => {

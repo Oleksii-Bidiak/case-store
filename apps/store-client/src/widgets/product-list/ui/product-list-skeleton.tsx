@@ -68,7 +68,7 @@ export function ProductListSkeleton({
   lockedDevice = false,
   lockedOnSale = false,
 }: ProductListSkeletonProps) {
-  const results =
+  const items =
     view === "list" ? (
       <div className="flex flex-col gap-3.5" aria-hidden="true">
         {Array.from({ length: 8 }).map((_, i) => (
@@ -103,6 +103,17 @@ export function ProductListSkeleton({
         ))}
       </div>
     );
+
+  // The results column of `ProductList`: the «Знайдено товарів: N» line (one
+  // text-sm line, 20px) and the cards under it, `gap-6` apart. Without the line
+  // the cards sat 44px above where the real ones land, on every catalogue
+  // route (TASK-869).
+  const results = (
+    <div className="flex flex-col gap-6" aria-hidden="true">
+      <Skeleton className="h-5 w-40" data-testid="result-count-skeleton" />
+      {items}
+    </div>
+  );
 
   if (!withSidebar) {
     return results;

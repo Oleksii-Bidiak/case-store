@@ -262,6 +262,29 @@ describe("ProductList load-more append (TASK-216)", () => {
     expect(skeletonGrid?.className).toBe(realGrid?.className);
   });
 
+  // TASK-869 — the results column is the «Знайдено товарів: N» line and the
+  // cards, `gap-6` apart. The skeleton used to draw the cards alone, so every
+  // catalogue placeholder sat 44px above where the real cards land.
+  it("reserves the result-count line above the cards, in the same column (TASK-869)", async () => {
+    installProducts({ "": CAT_1_PAGES }, { limit: 2 });
+
+    renderWithProviders(
+      <ProductList {...baseProps} params={{ page: 1, limit: 2 }} />,
+    );
+    const count = await screen.findByText(/Знайдено товарів/);
+    const realColumn = count.parentElement;
+
+    const { getByTestId } = renderWithProviders(<ProductListSkeleton />);
+    const placeholder = getByTestId("result-count-skeleton");
+    const skeletonColumn = placeholder.parentElement;
+
+    expect(skeletonColumn?.className).toBe(realColumn?.className);
+    // The count comes first in both, then the cards.
+    expect(skeletonColumn?.firstElementChild).toBe(placeholder);
+    expect(realColumn?.firstElementChild).toBe(count);
+    expect(skeletonColumn?.querySelector(".grid")).not.toBeNull();
+  });
+
   it("resets the accumulated pages when the base ?page= changes (back/forward, pagination links)", async () => {
     const user = userEvent.setup();
     installProducts({ "": CAT_1_PAGES }, { limit: 2 });

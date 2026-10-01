@@ -39,16 +39,6 @@
       "count": 1
     }
   },
-  "src/app/products/page.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/app/promo/page.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/features/add-to-cart/ui/add-to-cart-button.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1
@@ -441,7 +431,7 @@
   },
   "src/widgets/promo/ui/promo-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 11
+      "count": 10
     }
   },
   "src/widgets/recently-viewed/ui/recently-viewed.tsx": {

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
-import { PROMO_DEALS_ANCHOR, PromoView } from "@/widgets/promo";
+import { PROMO_DEALS_ANCHOR, PROMO_LISTING_LOCKS } from "@/widgets/promo";
 import {
   ProductListSkeleton,
   ProductListView,
@@ -25,7 +25,7 @@ import {
   type ListingFilterParams,
 } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
-import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
+import { SITE_URL, dict } from "@/shared/config";
 
 type PromoSearchParams = Promise<{
   [key: string]: string | string[] | undefined;
@@ -35,13 +35,6 @@ type PromoSearchParams = Promise<{
 function first(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
-
-/**
- * The discount lock of the «Товари зі знижкою» listing (TASK-1301). One
- * constant for the server prefetch and the client view, so both build the same
- * params — and therefore the same React Query key (TASK-563).
- */
-const PROMO_LISTING_LOCKS = { onSale: true } as const;
 
 /** The robots of a narrowed view — the same value the listing policy returns. */
 const NOINDEX_FOLLOW = { index: false, follow: true } as const;
@@ -94,7 +87,8 @@ export async function generateMetadata({
 
 /**
  * `/promo` — the Акції (promotions) landing page: hero, coupons, the on-sale
- * catalogue and the subscribe block.
+ * catalogue and the subscribe block. The page renders the catalogue; the rest
+ * is the segment layout around it (TASK-869).
  *
  * The deals are the catalogue listing with a discount lock (TASK-1301): the
  * page reads the URL through `buildCatalogListingParams`, the builder the
@@ -127,8 +121,11 @@ export default async function PromoPage({
     SITE_URL,
   );
 
+  // The container, hero, coupons, deals heading and subscribe block are the
+  // segment's `layout.tsx` (TASK-869); this page is what streams into the
+  // deals slot, and `loading.tsx` stands in for exactly that.
   return (
-    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
+    <>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.promo.breadcrumbHome, item: SITE_URL },
@@ -137,29 +134,25 @@ export default async function PromoPage({
       />
       {itemList && <JsonLd schema={itemList} />}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
-        <PromoView
-          deals={
-            // The fallback stands in for the whole listing — chips row,
-            // toolbar and the filter rail — like on /products (TASK-416). Its
-            // rail has no «Знижки» (the route fixes it) and reserves
-            // «Характеристики» under a `?category=` (TASK-515).
-            <Suspense
-              fallback={
-                <ProductListSkeleton
-                  withSidebar
-                  lockedOnSale={PROMO_LISTING_LOCKS.onSale}
-                  hasCategory={Boolean(listingParams.category)}
-                />
-              }
-            >
-              <ProductListView
-                lockedOnSale={PROMO_LISTING_LOCKS.onSale}
-                anchorId={PROMO_DEALS_ANCHOR}
-              />
-            </Suspense>
+        {/* The fallback stands in for the whole listing — chips row, toolbar
+            and the filter rail — like on /products (TASK-416). Its rail has no
+            «Знижки» (the route fixes it) and reserves «Характеристики» under a
+            `?category=` (TASK-515). */}
+        <Suspense
+          fallback={
+            <ProductListSkeleton
+              withSidebar
+              lockedOnSale={PROMO_LISTING_LOCKS.onSale}
+              hasCategory={Boolean(listingParams.category)}
+            />
           }
-        />
+        >
+          <ProductListView
+            lockedOnSale={PROMO_LISTING_LOCKS.onSale}
+            anchorId={PROMO_DEALS_ANCHOR}
+          />
+        </Suspense>
       </PrefetchBoundary>
-    </div>
+    </>
   );
 }

@@ -405,8 +405,7 @@ export default async function CompatLandingPage({
         })}
       </nav>
 
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products title block spacing */}
-      <div className="mb-[18px]">
+      <div className="mb-4.5">
         <h1 className={`${H1_CLASS} text-foreground`}>{heading}</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           {subtitle}
