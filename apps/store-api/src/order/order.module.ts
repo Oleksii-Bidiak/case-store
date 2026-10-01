@@ -29,8 +29,8 @@ import {
   // UserModule provides UserRepository (recipient lookup for confirmation
   // email). DeliveryModule provides DeliveryService (NP shipping estimate at
   // order creation). DiscountModule provides DiscountService (promo-code
-  // recompute + redeem at order creation, TASK-079). MailOutboxService
-  // (order-confirmation enqueue, TASK-103) comes from the global MailOutboxModule.
+  // recompute + redeem at order creation, TASK-079). NotificationOutboxService
+  // (order-confirmation enqueue, TASK-103) comes from the global NotificationOutboxModule.
   // AddonServiceModule provides AddonApplicabilityResolver — the order re-resolves
   // each line's add-ons fresh at creation time before freezing them into
   // OrderItemAddon snapshots (TASK-174).

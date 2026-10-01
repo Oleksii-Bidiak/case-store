@@ -76,7 +76,7 @@ export interface MailTemplate {
 }
 
 /**
- * Fully-serialized order-confirmation payload as stored in a `MailOutbox` row
+ * Fully-serialized order-confirmation payload as stored in a `NotificationOutbox` row
  * (TASK-103). It is the same data {@link buildOrderConfirmationEmail} needs, but
  * JSON-safe: `createdAt` is an ISO string (not a `Date`) because the row is
  * persisted as a `Json` column and rendered later by the retry worker. The

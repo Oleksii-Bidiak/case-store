@@ -22,7 +22,7 @@ import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 import { OrderLookupRepository } from './order-lookup.repository';
 import { CartRepository, type CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
-import { MailOutboxService } from '../mail-outbox';
+import { NotificationOutboxService } from '../notification-outbox';
 import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
@@ -259,7 +259,7 @@ export class OrderService {
     private readonly orderLookupRepository: OrderLookupRepository,
     private readonly cartRepository: CartRepository,
     private readonly userRepository: UserRepository,
-    private readonly mailOutbox: MailOutboxService,
+    private readonly mailOutbox: NotificationOutboxService,
     private readonly deliveryService: DeliveryService,
     private readonly discountService: DiscountService,
     private readonly addonResolver: AddonApplicabilityResolver,
@@ -457,7 +457,7 @@ export class OrderService {
       // ── TASK-103-F: transactional outbox ──────────────────────────────────
       // Enqueue the order-confirmation email INSIDE the order's transaction so
       // the outbox row and the order commit atomically. The background
-      // MailOutboxWorker renders + sends it later, so the HTTP response no
+      // NotificationOutboxWorker renders + sends it later, so the HTTP response no
       // longer blocks on SMTP and a transient mail failure can never be lost.
       // Runs alongside the TASK-079 discount redeem (same transaction).
       //

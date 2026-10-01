@@ -8,7 +8,7 @@
 import type { MailTemplate } from './order-confirmation.template';
 
 /**
- * JSON-safe payload for a verification email, as stored in a `MailOutbox` row.
+ * JSON-safe payload for a verification email, as stored in a `NotificationOutbox` row.
  *
  * `to` is the address BEING VERIFIED, which is not necessarily the account's
  * current address by the time the mail is opened — see

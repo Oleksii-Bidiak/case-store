@@ -1,13 +1,26 @@
 import { Injectable } from '@nestjs/common';
-import { Prisma, NotificationOutbox, NotificationOutboxStatus } from '@prisma/client';
+import {
+  Prisma,
+  NotificationChannel,
+  NotificationOutbox,
+  NotificationOutboxStatus,
+} from '@prisma/client';
 import { PrismaService } from '../prisma';
 
 /** Data required to enqueue a new outbox row. */
-export interface EnqueueMailParams {
+export interface EnqueueNotificationParams {
   /** Discriminator selecting the renderer (e.g. `order-confirmation`). */
   type: string;
-  /** Destination address (denormalized from the payload for quick inspection). */
+  /**
+   * Destination address in the channel's own address space — an email, a
+   * Telegram `chat_id`… (denormalized from the payload for quick inspection).
+   */
   recipientAddress: string;
+  /**
+   * Delivery channel (TASK-673). Omitted → the column default, EMAIL — which is
+   * what every existing `enqueue*` relies on.
+   */
+  channel?: NotificationChannel;
   /** JSON-serializable payload rendered at send time. */
   payload: Prisma.InputJsonValue;
   /** Override the schema default (5) retry ceiling for this row. */
@@ -15,7 +28,7 @@ export interface EnqueueMailParams {
 }
 
 /**
- * MailOutboxRepository — the only place that touches the `notification_outbox` table.
+ * NotificationOutboxRepository — the only place that touches the `notification_outbox` table.
  *
  * Encapsulates all Prisma access for the transactional-outbox pattern
  * (TASK-103): {@link enqueue} is **tx-aware** so an order-confirmation row can
@@ -24,7 +37,7 @@ export interface EnqueueMailParams {
  * from the background retry worker.
  */
 @Injectable()
-export class MailOutboxRepository {
+export class NotificationOutboxRepository {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -32,13 +45,17 @@ export class MailOutboxRepository {
    * row is written through it, so it commits (or rolls back) atomically with the
    * caller's other writes; otherwise it goes to the base Prisma client.
    */
-  enqueue(params: EnqueueMailParams, tx?: Prisma.TransactionClient): Promise<NotificationOutbox> {
+  enqueue(
+    params: EnqueueNotificationParams,
+    tx?: Prisma.TransactionClient,
+  ): Promise<NotificationOutbox> {
     const client = tx ?? this.prisma;
     return client.notificationOutbox.create({
       data: {
         type: params.type,
         recipientAddress: params.recipientAddress,
         payload: params.payload,
+        ...(params.channel !== undefined ? { channel: params.channel } : {}),
         ...(params.maxAttempts !== undefined ? { maxAttempts: params.maxAttempts } : {}),
       },
     });

@@ -15,7 +15,7 @@ import { RegisterDto } from './dto';
 import { REGISTER_HONEYPOT_FIELD } from './dto/register.dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
-import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
 import { hashPassword, verifyPassword } from '../common/security';
 import {
   normalizeEmailAddress,
@@ -110,7 +110,7 @@ export class AuthService {
     private readonly authRepository: AuthRepository,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
-    private readonly mailOutboxService: MailOutboxService,
+    private readonly mailOutboxService: NotificationOutboxService,
     private readonly logger: PinoLogger,
   ) {
     this.logger.setContext(AuthService.name);
@@ -839,12 +839,12 @@ export class AuthService {
    * owner of a deactivated/soft-deleted account (TASK-287), rate-limited to one
    * mail per {@link accountLockedNoticeWindowHours} per address.
    *
-   * The rate limit is enforced against the mail-outbox rows themselves (a row of
+   * The rate limit is enforced against the notification-outbox rows themselves (a row of
    * this type for this recipient inside the window ⇒ skip), so repeated logins —
    * whether by the owner retrying or by an attacker holding the password — cannot
    * be amplified into a mail bomb, and no extra table is needed to remember it.
    *
-   * Failures are swallowed: a mail-outbox hiccup must not convert the caller's
+   * Failures are swallowed: a notification-outbox hiccup must not convert the caller's
    * 401 into a 500, since that difference would itself signal account state.
    * Nothing identifying is logged beyond the userId already used elsewhere — no
    * email, no password, no lock reason.

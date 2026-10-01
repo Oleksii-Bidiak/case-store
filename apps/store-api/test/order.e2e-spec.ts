@@ -24,7 +24,7 @@ import { OrderLookupRepository } from '../src/order/order-lookup.repository';
 import { ORDER_EXPORT_MAX_ROWS } from '../src/order/order.service';
 import { DiscountRepository } from '../src/discount';
 import { MailService } from '../src/mail/mail.service';
-import { MailOutboxService } from '../src/mail-outbox';
+import { NotificationOutboxService } from '../src/notification-outbox';
 import { NovaPoshtaClient } from '../src/delivery';
 import type { OrderWithItems } from '../src/order/order.types';
 import { PrismaService } from '../src/prisma';
@@ -305,7 +305,7 @@ describe('OrderController (e2e)', () => {
       .useValue(discountRepositoryMock)
       .overrideProvider(MailService)
       .useValue(mailServiceMock)
-      .overrideProvider(MailOutboxService)
+      .overrideProvider(NotificationOutboxService)
       .useValue(mailOutboxServiceMock)
       .overrideProvider(NovaPoshtaClient)
       .useValue(novaPoshtaClientMock)

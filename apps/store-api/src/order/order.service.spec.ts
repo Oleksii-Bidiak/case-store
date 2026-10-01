@@ -23,7 +23,7 @@ import { CartRepository, CartWithItems } from '../cart/cart.repository';
 import { createCartRepositoryMock } from '../../test/cart-repository.mock';
 import { CartEntity } from '../cart/entities/cart.entity';
 import { UserRepository } from '../user/user.repository';
-import { MailOutboxService } from '../mail-outbox';
+import { NotificationOutboxService } from '../notification-outbox';
 import {
   DeliveryService,
   DeliveryNotConfiguredException,
@@ -327,7 +327,7 @@ describe('OrderService', () => {
         { provide: OrderLookupRepository, useValue: orderLookupRepositoryMock },
         { provide: CartRepository, useValue: cartRepositoryMock },
         { provide: UserRepository, useValue: userRepositoryMock },
-        { provide: MailOutboxService, useValue: mailOutboxServiceMock },
+        { provide: NotificationOutboxService, useValue: mailOutboxServiceMock },
         { provide: AddonApplicabilityResolver, useValue: addonResolverMock },
         { provide: DeliveryService, useValue: deliveryServiceMock },
         { provide: DiscountService, useValue: discountServiceMock },

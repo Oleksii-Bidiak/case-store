@@ -11,7 +11,7 @@ import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
-import { MailOutboxRepository } from '../src/mail-outbox/mail-outbox.repository';
+import { NotificationOutboxRepository } from '../src/notification-outbox/notification-outbox.repository';
 import { AuditRepository } from '../src/audit/audit.repository';
 import { createPermissionRepositoryMock } from './permission-repository.mock';
 
@@ -23,7 +23,7 @@ import { createPermissionRepositoryMock } from './permission-repository.mock';
  * click, the OLD session no longer refreshes — and a stateless mock can only
  * assert that some method was called, not that the session it minted a minute
  * ago is dead now. The fake keeps users, links and refresh tokens in maps, and
- * the raw link tokens are read out of the outbox rows the real MailOutboxService
+ * the raw link tokens are read out of the outbox rows the real NotificationOutboxService
  * writes, exactly as they would reach an inbox.
  */
 
@@ -266,7 +266,7 @@ describe('Email change (e2e, TASK-396)', () => {
       .useValue(authRepositoryFake)
       .overrideProvider(UserRepository)
       .useValue(userRepositoryMock)
-      .overrideProvider(MailOutboxRepository)
+      .overrideProvider(NotificationOutboxRepository)
       .useValue(mailOutboxRepositoryMock)
       .overrideProvider(AuditRepository)
       .useValue(auditRepositoryMock)

@@ -28695,7 +28695,7 @@
           },
           "failedMails": {
             "type": "number",
-            "description": "Outbound emails permanently failed (MailOutbox status = FAILED)",
+            "description": "Outbound emails permanently failed (NotificationOutbox status = FAILED)",
             "example": 1
           },
           "pendingOver48h": {

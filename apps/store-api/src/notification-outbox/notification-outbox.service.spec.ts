@@ -1,15 +1,16 @@
 import { ConfigService } from '@nestjs/config';
 import type { PinoLogger } from 'nestjs-pino';
 import { NotificationOutbox, NotificationOutboxStatus } from '@prisma/client';
-import { MailOutboxService } from './mail-outbox.service';
-import { MailOutboxRepository } from './mail-outbox.repository';
+import { NotificationOutboxService } from './notification-outbox.service';
+import { NotificationOutboxRepository } from './notification-outbox.repository';
 import { MailService } from '../mail/mail.service';
-import type { Clock } from './mail-outbox.clock';
+import { EmailAdapter } from './channels/email.adapter';
+import type { Clock } from './notification-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
   ORDER_CONFIRMATION_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
-} from './mail-outbox.types';
+} from './notification-outbox.types';
 import type { OrderConfirmationMailPayload } from '../mail/templates/order-confirmation.template';
 import type { PasswordResetMailPayload } from '../mail/templates/password-reset.template';
 import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
@@ -98,18 +99,18 @@ function makeConfig(nodeEnv = 'test'): ConfigService {
   } as unknown as ConfigService;
 }
 
-function buildService(nodeEnv = 'test'): MailOutboxService {
-  return new MailOutboxService(
-    repositoryMock as unknown as MailOutboxRepository,
-    mailServiceMock as unknown as MailService,
+function buildService(nodeEnv = 'test'): NotificationOutboxService {
+  return new NotificationOutboxService(
+    repositoryMock as unknown as NotificationOutboxRepository,
+    [new EmailAdapter(mailServiceMock as unknown as MailService)],
     makeConfig(nodeEnv),
     loggerMock as unknown as PinoLogger,
     clock,
   );
 }
 
-describe('MailOutboxService', () => {
-  let service: MailOutboxService;
+describe('NotificationOutboxService', () => {
+  let service: NotificationOutboxService;
 
   beforeEach(() => {
     jest.clearAllMocks();

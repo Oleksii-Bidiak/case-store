@@ -121,7 +121,7 @@ describe('AuthController (e2e)', () => {
       update: jest.fn(),
       updateMany: jest.fn(),
     },
-    // The real MailOutboxService (enqueuePasswordReset) writes through this.
+    // The real NotificationOutboxService (enqueuePasswordReset) writes through this.
     notificationOutbox: {
       create: jest.fn().mockResolvedValue({ id: 'outbox-e2e-1' }),
       // hasRecentAccountLockedNotice (TASK-287 rate limit) reads through this;

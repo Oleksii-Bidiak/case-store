@@ -1,5 +1,5 @@
 import { NotificationOutboxStatus } from '@prisma/client';
-import { MailOutboxRepository } from './mail-outbox.repository';
+import { NotificationOutboxRepository } from './notification-outbox.repository';
 import { PrismaService } from '../prisma';
 
 // ─── Prisma mock ──────────────────────────────────────────────────────────────
@@ -16,12 +16,12 @@ const prismaMock = { notificationOutbox: makeDelegate() };
 // A transaction client exposes the same `notificationOutbox` delegate.
 const txMock = { notificationOutbox: makeDelegate() };
 
-describe('MailOutboxRepository', () => {
-  let repository: MailOutboxRepository;
+describe('NotificationOutboxRepository', () => {
+  let repository: NotificationOutboxRepository;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    repository = new MailOutboxRepository(prismaMock as unknown as PrismaService);
+    repository = new NotificationOutboxRepository(prismaMock as unknown as PrismaService);
   });
 
   // ─── enqueue (tx-aware) ──────────────────────────────────────────────────────

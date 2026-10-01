@@ -5,14 +5,15 @@ import type { PinoLogger } from 'nestjs-pino';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Client } from 'pg';
-import { MailOutboxRepository } from '../src/mail-outbox/mail-outbox.repository';
-import { MailOutboxService } from '../src/mail-outbox/mail-outbox.service';
-import type { Clock } from '../src/mail-outbox/mail-outbox.clock';
+import { NotificationOutboxRepository } from '../src/notification-outbox/notification-outbox.repository';
+import { NotificationOutboxService } from '../src/notification-outbox/notification-outbox.service';
+import type { Clock } from '../src/notification-outbox/notification-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
-} from '../src/mail-outbox/mail-outbox.types';
+} from '../src/notification-outbox/notification-outbox.types';
 import type { MailService } from '../src/mail/mail.service';
+import { EmailAdapter } from '../src/notification-outbox/channels/email.adapter';
 import type { PrismaService } from '../src/prisma';
 
 /**
@@ -288,9 +289,9 @@ describe('mail_outbox → notification_outbox migration (integration, TASK-672)'
     const logger = { setContext: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() };
     const clock: Clock = { now: () => NOW };
 
-    const service = new MailOutboxService(
-      new MailOutboxRepository(prisma as unknown as PrismaService),
-      mailService as unknown as MailService,
+    const service = new NotificationOutboxService(
+      new NotificationOutboxRepository(prisma as unknown as PrismaService),
+      [new EmailAdapter(mailService as unknown as MailService)],
       config as unknown as ConfigService,
       logger as unknown as PinoLogger,
       clock,

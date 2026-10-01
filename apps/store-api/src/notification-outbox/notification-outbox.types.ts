@@ -7,24 +7,24 @@
  * implemented.
  */
 
-/** `MailOutbox.type` value for an order-confirmation email. */
+/** `NotificationOutbox.type` value for an order-confirmation email. */
 export const ORDER_CONFIRMATION_MAIL_TYPE = 'order-confirmation';
 
-/** `MailOutbox.type` value for a password-reset email (TASK-169). */
+/** `NotificationOutbox.type` value for a password-reset email (TASK-169). */
 export const PASSWORD_RESET_MAIL_TYPE = 'password-reset';
 
 /**
- * `MailOutbox.type` value for the account-locked owner notice (TASK-287) — sent
+ * `NotificationOutbox.type` value for the account-locked owner notice (TASK-287) — sent
  * when a correct password is presented for a deactivated/soft-deleted account.
  * The persisted rows double as the rate-limit ledger: "was one of these already
  * written for this recipient inside the window?" (see
- * {@link MailOutboxRepository.hasRecentByTypeAndRecipient}), which is why no
+ * {@link NotificationOutboxRepository.hasRecentByTypeAndRecipient}), which is why no
  * separate table is needed.
  */
 export const ACCOUNT_LOCKED_MAIL_TYPE = 'account-locked';
 
 /**
- * `MailOutbox.type` value for an email-verification link (TASK-342).
+ * `NotificationOutbox.type` value for an email-verification link (TASK-342).
  *
  * The recipient stored on the row is the address BEING VERIFIED, which the user
  * may have already changed again by the time the worker sends. That is why the
@@ -33,19 +33,19 @@ export const ACCOUNT_LOCKED_MAIL_TYPE = 'account-locked';
 export const EMAIL_VERIFICATION_MAIL_TYPE = 'email-verification';
 
 /**
- * `MailOutbox.type` for the letter that proves a NEW address before it becomes
+ * `NotificationOutbox.type` for the letter that proves a NEW address before it becomes
  * the login (TASK-396). Recipient = the new address, carried in the payload.
  */
 export const EMAIL_CHANGE_CONFIRM_MAIL_TYPE = 'email-change-confirm';
 
 /**
- * `MailOutbox.type` for the warning, with a revert link, sent to the OLD address
+ * `NotificationOutbox.type` for the warning, with a revert link, sent to the OLD address
  * when a change is requested (TASK-396).
  */
 export const EMAIL_CHANGE_NOTICE_MAIL_TYPE = 'email-change-notice';
 
 /**
- * `MailOutbox.type` value for the "your order has shipped" notice (TASK-335).
+ * `NotificationOutbox.type` value for the "your order has shipped" notice (TASK-335).
  *
  * Until it existed, a parcel left the warehouse and the customer found out by
  * refreshing the site — if they thought to.
@@ -53,14 +53,14 @@ export const EMAIL_CHANGE_NOTICE_MAIL_TYPE = 'email-change-notice';
 export const ORDER_SHIPPED_MAIL_TYPE = 'order-shipped';
 
 /**
- * `MailOutbox.type` value for «оплату не отримано» (TASK-352 (b), decision B-11
+ * `NotificationOutbox.type` value for «оплату не отримано» (TASK-352 (b), decision B-11
  * №2): the ONE letter sent after the reconcile worker cancels an online order
  * whose reservation lapsed unpaid. Enqueued only once the cancellation has
  * really happened.
  */
 export const ORDER_PAYMENT_EXPIRED_MAIL_TYPE = 'order-payment-expired';
 
-/** Aggregate outcome of a single {@link MailOutboxService.dispatchDue} run. */
+/** Aggregate outcome of a single {@link NotificationOutboxService.dispatchDue} run. */
 export interface DispatchResult {
   /** Rows delivered (or drained as a no-op when mail is disabled). */
   sent: number;
