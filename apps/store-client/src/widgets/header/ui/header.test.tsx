@@ -1,6 +1,11 @@
 import { http, HttpResponse } from "msw";
 import { ThemeProvider } from "next-themes";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  within,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { Header } from "./header";
@@ -71,19 +76,21 @@ describe("Header — responsive class contract (TASK-539)", () => {
     );
   });
 
-  it("keeps the slide-out menu trigger until lg, at a full touch target", () => {
+  it("keeps the slide-out menu trigger until xl, at a full touch target", () => {
     renderHeader();
 
     const trigger = screen.getByRole("button", { name: dict.header.openMenu });
-    // `lg`, not `md` (TASK-413/504): the 768–1023 band reaches the section
-    // links, «Акції», the theme switch and the account through this menu.
+    // `xl` (TASK-511/512, after TASK-413/504's `lg`): below 1280 the menu
+    // carries Товари/Блог and the theme switch, so the row can give its width
+    // to the search input — ≈317px at 1024 instead of ~79.
     expect(classesOf(trigger)).toEqual(
-      expect.arrayContaining(["lg:hidden", "size-11", "shrink-0"]),
+      expect.arrayContaining(["xl:hidden", "size-11", "shrink-0"]),
     );
     expect(classesOf(trigger)).not.toContain("md:hidden");
+    expect(classesOf(trigger)).not.toContain("lg:hidden");
   });
 
-  it("shows the header theme switch from exactly lg", () => {
+  it("shows the header theme switch from exactly xl", () => {
     renderHeader();
 
     // With the menu closed, the header's own switch is the only radiogroup.
@@ -91,11 +98,67 @@ describe("Header — responsive class contract (TASK-539)", () => {
       name: dict.header.themeAria,
     });
     const host = group.parentElement;
-    // The same `lg` the menu trigger disappears at — together they cover every
+    // The same `xl` the menu trigger disappears at — together they cover every
     // width with no gap (TASK-504 caught the old `min-[1100px]` gap).
     expect(classesOf(host)).toEqual(
-      expect.arrayContaining(["hidden", "lg:flex"]),
+      expect.arrayContaining(["hidden", "xl:flex"]),
     );
+    expect(classesOf(host)).not.toContain("lg:flex");
+  });
+
+  it("shows the Товари / Блог row from exactly xl (TASK-512)", () => {
+    renderHeader();
+
+    const nav = screen.getByRole("navigation", { name: dict.nav.primaryAria });
+    expect(classesOf(nav)).toEqual(
+      expect.arrayContaining(["hidden", "xl:flex"]),
+    );
+    expect(classesOf(nav)).not.toContain("lg:flex");
+  });
+
+  it("renders Акції / Обране / Кабінет as named 44×44 icons, captions from xl (TASK-511)", async () => {
+    renderHeader();
+
+    const actions = [
+      screen.getByRole("link", { name: dict.header.promoLabel }),
+      screen.getByRole("link", { name: dict.wishlist.headerAria }),
+      // The guest trigger replaces the skeleton once the session settles.
+      await screen.findByRole("button", { name: dict.header.accountOpenAria }),
+    ];
+    for (const action of actions) {
+      // The caption is display:none below `xl`, so the accessible name must
+      // come from aria-label — never from the hidden text.
+      expect(action).toHaveAttribute("aria-label");
+      expect(classesOf(action)).toEqual(
+        expect.arrayContaining(["min-h-11", "min-w-11"]),
+      );
+      const caption = action.querySelector("span");
+      expect(classesOf(caption)).toEqual(
+        expect.arrayContaining(["hidden", "xl:inline"]),
+      );
+      expect(classesOf(caption)).not.toContain("sm:inline");
+    }
+  });
+
+  it("carries everything the row hides below xl in the slide-out menu", async () => {
+    const user = userEvent.setup();
+    renderHeader();
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.openMenu }),
+    );
+    const menu = await screen.findByRole("dialog");
+
+    // Товари / Блог and the theme switch are not in the row until `xl`.
+    expect(
+      within(menu).getByRole("link", { name: dict.nav.products }),
+    ).toHaveAttribute("href", "/products");
+    expect(
+      within(menu).getByRole("link", { name: dict.nav.blog }),
+    ).toHaveAttribute("href", "/blog");
+    expect(
+      within(menu).getByRole("radiogroup", { name: dict.header.themeAria }),
+    ).toBeInTheDocument();
   });
 
   it("lets the brand cluster, not the commerce actions, yield on a narrow row", () => {

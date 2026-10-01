@@ -35,7 +35,9 @@ export function HeaderAuth() {
   };
 
   if (isInitializing) {
-    return <Skeleton className="h-9 w-9 sm:w-14" />;
+    // Reserves the box the action settles into: 44×44 icon-only below `xl`,
+    // icon + caption from `xl` (TASK-511) — no shift when the session resolves.
+    return <Skeleton className="size-11 xl:h-13 xl:w-14" />;
   }
 
   if (!isAuthenticated) {
@@ -45,10 +47,10 @@ export function HeaderAuth() {
           type="button"
           onClick={() => setAuthOpen(true)}
           aria-label={dict.header.accountOpenAria}
-          className="flex flex-col items-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-accent hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-foreground transition-colors hover:bg-accent hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <User className="size-[22px]" aria-hidden="true" />
-          <span className="hidden sm:inline">{dict.header.accountLabel}</span>
+          <span className="hidden xl:inline">{dict.header.accountLabel}</span>
         </button>
         <AuthSheet open={authOpen} onOpenChange={setAuthOpen} />
       </>

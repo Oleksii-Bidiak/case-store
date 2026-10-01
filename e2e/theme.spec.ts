@@ -75,8 +75,8 @@ test.describe("manual theme switch", () => {
     await recordThemeAtFirstContent(page);
     await page.goto("/");
 
-    // The header switch starts at `lg` (TASK-504 replaced the earlier
-    // `min-[1100px]`); the default project viewport is 1280 wide, so it is on
+    // The header switch starts at `xl` (TASK-511/512; below it lives in the
+    // slide-out menu); the default project viewport is 1280 wide, so it is on
     // screen here.
     const dark = themeOption(page, "Темна");
     await expect(dark).toBeVisible();
