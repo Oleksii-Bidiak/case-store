@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { PromoCountdown } from "./promo-countdown";
 import { PromoCoupons } from "./promo-coupons";
 import { PromoDeals } from "./promo-deals";
@@ -42,9 +42,7 @@ export function PromoView() {
           <span className="inline-block rounded-full bg-white/[0.18] px-3.5 py-1.5 text-[12.5px] font-bold tracking-[0.08em] uppercase">
             {d.hero.badge}
           </span>
-          <h1 className="mt-4 mb-3 font-display text-[34px] leading-[1.05] font-bold tracking-tight sm:text-[46px]">
-            {d.hero.heading}
-          </h1>
+          <h1 className={`mt-4 mb-3 ${H1_CLASS}`}>{d.hero.heading}</h1>
           <p className="mb-7 max-w-[440px] text-[17px] leading-normal opacity-95">
             {d.hero.subtitle}
           </p>

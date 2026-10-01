@@ -14,7 +14,7 @@ import {
 import { Button, ProductCard, Skeleton } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { dict } from "@/shared/config";
+import { dict, H2_CLASS } from "@/shared/config";
 import {
   canLoadMoreDeals,
   mergeDealPages,
@@ -88,7 +88,7 @@ export function PromoDeals() {
   return (
     <section id="deals" className="mt-10 scroll-mt-24">
       <div className="mb-[18px] flex flex-wrap items-center justify-between gap-4">
-        <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">
+        <h2 className={`${H2_CLASS} text-foreground`}>
           {dict.promo.dealsHeading}
         </h2>
         <div

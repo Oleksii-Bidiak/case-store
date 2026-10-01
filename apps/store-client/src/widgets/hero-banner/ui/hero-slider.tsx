@@ -10,7 +10,7 @@ import {
   Play,
 } from "lucide-react";
 import { BannerBackdrop, Button } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, HERO_CLASS } from "@/shared/config";
 import { useReducedMotion } from "@/shared/lib/use-reduced-motion";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
@@ -180,9 +180,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
               {slide.eyebrow}
             </span>
           )}
-          <h1 className="mt-4 font-display text-3xl leading-[1.07] font-bold tracking-tight text-balance sm:text-[2.5rem]">
-            {slide.title}
-          </h1>
+          <h1 className={`mt-4 ${HERO_CLASS} text-balance`}>{slide.title}</h1>
           {slide.subtitle && (
             <p className="mt-3 max-w-md text-base opacity-90 sm:text-[17px]">
               {slide.subtitle}
@@ -202,11 +200,11 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         </div>
 
         {/* Decorative frosted "product" panel — visual only, hidden on smaller
-            viewports where the text needs the full width. */}
+            viewports where the hero title (HERO_CLASS) needs the full width. */}
         {theme.panel && (
           <div
             aria-hidden="true"
-            className="absolute top-1/2 right-10 hidden size-[280px] -translate-y-1/2 rounded-3xl border border-white/25 lg:block"
+            className="absolute top-1/2 right-10 hidden size-[280px] -translate-y-1/2 rounded-3xl border border-white/25 xl:block"
             style={{
               background:
                 "repeating-linear-gradient(135deg, rgb(255 255 255 / 0.10) 0 14px, rgb(255 255 255 / 0.04) 14px 28px)",

@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui";
-import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, H1_CLASS } from "@/shared/config";
 import { WishlistItemCard } from "./wishlist-item-card";
 import { WishlistListItem } from "./wishlist-list-item";
 import {
@@ -127,7 +127,7 @@ export function WishlistView() {
         <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-[color-mix(in_oklab,var(--color-sale)_12%,var(--color-card))] text-sale">
           <Heart className="size-9" aria-hidden="true" />
         </span>
-        <h1 className="font-display text-xl font-bold text-foreground">
+        <h1 className={`${H1_CLASS} text-foreground`}>
           {dict.wishlist.emptyHeading}
         </h1>
         <p className="max-w-sm text-sm text-muted-foreground">
@@ -209,7 +209,7 @@ export function WishlistView() {
       {/* Title + toolbar */}
       <div className="mb-[18px] flex flex-wrap items-end justify-between gap-5">
         <div>
-          <h1 className="font-display text-[32px] font-bold tracking-[-0.02em] text-foreground">
+          <h1 className={`${H1_CLASS} text-foreground`}>
             {dict.wishlist.heading}
           </h1>
           <p className="mt-2 text-sm text-muted-foreground">

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Home, Search } from "lucide-react";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 
 const PILL_BASE =
   "inline-flex h-[38px] items-center rounded-full border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -21,7 +21,7 @@ export function NotFoundView() {
     <section className="flex min-h-[70vh] items-center justify-center px-6 py-16">
       <div className="w-full max-w-[560px] text-center">
         <div
-          className="mb-2 font-display text-[110px] leading-none font-bold tracking-[-0.04em] text-transparent sm:text-[140px]"
+          className="mb-2 font-display text-8xl leading-none font-bold tracking-tighter text-transparent sm:text-9xl"
           style={{
             background:
               "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 50%, oklch(0.4 0.16 300)))",
@@ -32,9 +32,7 @@ export function NotFoundView() {
           {d.code}
         </div>
 
-        <h1 className="mb-3 font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
-          {d.heading}
-        </h1>
+        <h1 className={`mb-3 ${H1_CLASS} text-foreground`}>{d.heading}</h1>
         <p className="mx-auto mb-7 max-w-[460px] text-[15.5px] leading-[1.6] text-muted-foreground">
           {d.body}
         </p>

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useGetGuestOrder } from "@/entities/order";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
@@ -53,7 +53,7 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
   if (isError || !order) {
     return (
       <div role="alert" className="flex flex-col items-start gap-4 py-16">
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className={`${H1_CLASS} text-foreground`}>
           {dict.order.guest.linkInvalidHeading}
         </h1>
         <p className="text-muted-foreground">

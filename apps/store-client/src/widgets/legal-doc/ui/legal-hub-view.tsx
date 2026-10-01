@@ -1,6 +1,6 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { formatLegalDateShort } from "../model/extract-sections";
 import {
   LegalArrowRightIcon,
@@ -71,7 +71,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
         >
           {dict.legal.hub.badge}
         </span>
-        <h1 className="mt-3.5 mb-2.5 font-display text-[34px] font-bold leading-[1.1] tracking-[-0.025em] text-foreground">
+        <h1 className={`mt-3.5 mb-2.5 ${H1_CLASS} text-foreground`}>
           {dict.legal.hub.heading}
         </h1>
         <p className="text-base leading-[1.55] text-muted-foreground">

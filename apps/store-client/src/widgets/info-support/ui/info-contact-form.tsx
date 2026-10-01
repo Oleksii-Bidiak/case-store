@@ -60,7 +60,7 @@ export function InfoContactForm() {
 
   return (
     <div className="rounded-[18px] border border-border bg-card p-[30px] shadow-card">
-      <h2 className="mb-1.5 font-display text-[22px] font-bold text-foreground">
+      <h2 className="mb-1.5 font-display text-2xl font-bold text-foreground">
         {d.formHeading}
       </h2>
       <p className="mb-5 text-[13.5px] text-muted-foreground">{d.formIntro}</p>

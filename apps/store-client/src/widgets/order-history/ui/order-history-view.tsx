@@ -9,7 +9,7 @@ import { CancelOrderButton } from "@/features/cancel-order";
 import { useGetMyReturns, type ReturnEntity } from "@/entities/return";
 import { ReturnRequestButton } from "@/features/return-request";
 import { Badge, Button } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { formatDate, formatMoney } from "@/shared/lib";
 import { OrderHistorySkeleton } from "./order-history-skeleton";
 
@@ -86,7 +86,7 @@ export function OrderHistoryView() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <h1 className="font-display text-2xl font-extrabold tracking-tight text-foreground sm:text-3xl">
+      <h1 className={`${H1_CLASS} text-foreground`}>
         {dict.orderHistory.title}
       </h1>
 

@@ -6,7 +6,7 @@ import { useProductControllerFindAll } from "@/entities/product";
 import { ProductCard, Skeleton } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { dict } from "@/shared/config";
+import { dict, H2_CLASS } from "@/shared/config";
 import {
   buildProductRailParams,
   type ProductRailFilter,
@@ -57,10 +57,7 @@ export function ProductRail({
   if (isPending) {
     return (
       <section aria-labelledby={headingId} className="flex flex-col gap-4">
-        <h2
-          id={headingId}
-          className="font-display text-[22px] font-bold tracking-tight text-foreground"
-        >
+        <h2 id={headingId} className={`${H2_CLASS} text-foreground`}>
           {title}
         </h2>
         <div className="flex gap-[18px] overflow-hidden">
@@ -86,10 +83,7 @@ export function ProductRail({
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-[18px]">
       <div className="flex items-center justify-between gap-3">
-        <h2
-          id={headingId}
-          className="font-display text-[22px] font-bold tracking-tight text-foreground"
-        >
+        <h2 id={headingId} className={`${H2_CLASS} text-foreground`}>
           {title}
         </h2>
         <div className="hidden gap-2.5 sm:flex">

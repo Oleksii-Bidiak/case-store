@@ -6,7 +6,7 @@ import { ChevronLeft, ShoppingBag } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetCartQueryKey, useClearCart, useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
-import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, H1_CLASS, H2_CLASS } from "@/shared/config";
 import {
   Button,
   Dialog,
@@ -89,10 +89,7 @@ export function CartView() {
         <span className="flex size-20 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <ShoppingBag className="size-9" aria-hidden="true" />
         </span>
-        <h2
-          id="empty-cart-heading"
-          className="font-display text-2xl font-bold text-foreground"
-        >
+        <h2 id="empty-cart-heading" className={`${H2_CLASS} text-foreground`}>
           {dict.cart.emptyHeading}
         </h2>
         <p className="text-muted-foreground">{dict.cart.emptySubtitle}</p>
@@ -120,7 +117,7 @@ export function CartView() {
         <span className="text-foreground">{dict.cart.breadcrumb}</span>
       </nav>
 
-      <h1 className="font-display text-[32px] font-bold tracking-tight text-foreground">
+      <h1 className={`${H1_CLASS} text-foreground`}>
         {dict.cart.title} · {dict.cart.countShort(cart?.totals.itemCount ?? 0)}
       </h1>
 

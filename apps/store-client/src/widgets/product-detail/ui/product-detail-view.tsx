@@ -16,7 +16,7 @@ import { CartSheet } from "@/widgets/cart";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney, trackEvent } from "@/shared/lib";
-import { dict, FEATURE_STUBS } from "@/shared/config";
+import { dict, FEATURE_STUBS, H1_CLASS } from "@/shared/config";
 import { Button, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
@@ -192,9 +192,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
                 {product.brand.name}
               </Link>
             )}
-            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-[27px] sm:leading-tight">
-              {product.name}
-            </h1>
+            <h1 className={`${H1_CLASS} text-foreground`}>{product.name}</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">

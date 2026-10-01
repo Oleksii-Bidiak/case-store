@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { ThemeToggle } from "@/features/theme";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 
 /**
  * AccountSettingsSection — the "Налаштування" section.
@@ -30,12 +30,12 @@ export function AccountSettingsSection() {
 
   return (
     <div className="max-w-[680px]">
-      <h1 className="mb-6 font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
+      <h1 className={`mb-6 ${H1_CLASS} text-foreground`}>
         {d.settingsHeading}
       </h1>
 
       <div className="rounded-[18px] border border-border bg-card p-[26px] shadow-card">
-        <h2 className="mb-1.5 text-[17px] font-semibold text-foreground">
+        <h2 className="mb-1.5 text-lg font-semibold text-foreground">
           {d.appearanceHeading}
         </h2>
         <p className="text-[13.5px] text-muted-foreground">
@@ -50,7 +50,7 @@ export function AccountSettingsSection() {
       </div>
 
       <div className="mt-[18px] rounded-[18px] border border-border bg-card p-[26px] shadow-card">
-        <h2 className="mb-2 text-[17px] font-semibold text-foreground">
+        <h2 className="mb-2 text-lg font-semibold text-foreground">
           {d.notificationsHeading}
         </h2>
         {d.notifs.map((n) => {

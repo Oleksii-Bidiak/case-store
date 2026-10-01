@@ -8,7 +8,7 @@ import {
   type CategoryTreeNodeEntity,
 } from "@/entities/category";
 import { useBrandControllerFindAll } from "@/entities/brand";
-import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, H1_CLASS, H2_CLASS } from "@/shared/config";
 import { CategoryTileImage, Skeleton } from "@/shared/ui";
 import { categoryGradient, pickCategoryIcon } from "../model/category-visuals";
 
@@ -133,9 +133,7 @@ export function CategoriesView() {
           <span className="font-medium text-foreground">{activeRoot.name}</span>
         </nav>
 
-        <h1 className="font-display text-[32px] font-bold tracking-[-0.02em] text-foreground">
-          {activeRoot.name}
-        </h1>
+        <h1 className={`${H1_CLASS} text-foreground`}>{activeRoot.name}</h1>
         <p className="mt-1.5 mb-6 max-w-[680px] text-[14.5px] leading-[1.5] text-muted-foreground">
           {activeRoot.description ?? dict.categories.descFallback}
         </p>
@@ -189,7 +187,7 @@ export function CategoriesView() {
             brand-filtered catalog. */}
         {brands.length > 0 && (
           <>
-            <h2 className="mt-[38px] mb-4 font-display text-[20px] font-bold tracking-[-0.01em] text-foreground">
+            <h2 className={`mt-10 mb-4 ${H2_CLASS} text-foreground`}>
               {dict.categories.brandsHeading}
             </h2>
             <div className="flex flex-wrap gap-3">

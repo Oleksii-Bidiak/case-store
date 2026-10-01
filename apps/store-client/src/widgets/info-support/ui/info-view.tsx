@@ -29,6 +29,8 @@ import {
   dict,
   STICKY_ASIDE_TOP,
   type InfoHubSectionKey,
+  H1_CLASS,
+  H2_CLASS,
 } from "@/shared/config";
 import { formatMoney } from "@/shared/lib/format";
 import {
@@ -81,7 +83,7 @@ const SUCCESS_TINT = {
 
 const CARD = "rounded-[18px] border border-border bg-card p-[30px] shadow-card";
 const SECTION_HEADING =
-  "mb-1.5 font-display text-[23px] font-bold text-foreground";
+  "mb-1.5 font-display text-2xl font-bold text-foreground";
 const SECTION_INTRO =
   "mb-[22px] text-[14.5px] leading-[1.6] text-muted-foreground";
 const SUB_HEADING = "mb-3.5 font-display text-lg font-bold text-foreground";
@@ -194,9 +196,7 @@ export function InfoView({
         <span className="font-medium text-foreground">{d.nav[section]}</span>
       </nav>
 
-      <h1 className="mb-6 font-display text-[32px] font-bold tracking-[-0.02em] text-foreground">
-        {d.heading}
-      </h1>
+      <h1 className={`mb-6 ${H1_CLASS} text-foreground`}>{d.heading}</h1>
 
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid items-start gap-8 lg:grid-cols-[248px_1fr]">
@@ -417,7 +417,7 @@ export function InfoView({
                     "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300)))",
                 }}
               >
-                <h2 className="mb-3 font-display text-[28px] font-bold">
+                <h2 className={`mb-3 ${H2_CLASS}`}>
                   {about?.heading ?? d.aboutHeading}
                 </h2>
                 <p className="max-w-[620px] text-base leading-[1.6] opacity-95">
@@ -510,7 +510,7 @@ export function InfoView({
           {section === "contacts" && (
             <div className="grid items-start gap-4 lg:grid-cols-2">
               <div className={CARD}>
-                <h2 className="mb-5 font-display text-[22px] font-bold text-foreground">
+                <h2 className="mb-5 font-display text-2xl font-bold text-foreground">
                   {d.contactsHeading}
                 </h2>
                 <div className="flex flex-col gap-[18px]">

@@ -3,7 +3,7 @@ import {
   type OrderEntityStatus,
   type OrderEntityPaymentStatus,
 } from "@/entities/order";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { formatDate } from "@/shared/lib/format";
 
 interface OrderConfirmationHeaderProps {
@@ -30,9 +30,7 @@ export function OrderConfirmationHeader({
 
   return (
     <header className="flex flex-col gap-3">
-      <h1 className="text-3xl font-bold text-foreground">
-        {dict.order.thankYou}
-      </h1>
+      <h1 className={`${H1_CLASS} text-foreground`}>{dict.order.thankYou}</h1>
 
       <dl className="flex flex-col gap-1 text-sm">
         <div className="flex gap-2">

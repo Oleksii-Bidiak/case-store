@@ -2,6 +2,7 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
+import { H1_CLASS } from "@/shared/config";
 
 /**
  * App Router global error boundary.
@@ -29,7 +30,7 @@ export default function GlobalError({
           role="alert"
           className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-4 px-6 text-center"
         >
-          <h1 className="font-sans text-2xl font-bold">Щось пішло не так</h1>
+          <h1 className={H1_CLASS}>Щось пішло не так</h1>
           <p className="text-muted-foreground">
             Сталася неочікувана помилка. Спробуйте оновити сторінку.
           </p>

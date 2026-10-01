@@ -5,7 +5,7 @@ import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
 
 /** Take the first value when a query param appears more than once. */
 function first(value: string | string[] | undefined): string | undefined {
@@ -62,7 +62,7 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
   return (
     <div className={`${PAGE_CONTAINER} py-8`}>
       <div className="mb-8">
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
+        <h1 className={`${H1_CLASS} text-foreground`}>
           {trimmed
             ? dict.search.resultsTitle(trimmed)
             : dict.search.resultsTitleEmpty}

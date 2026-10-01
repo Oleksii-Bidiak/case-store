@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS, H2_CLASS } from "@/shared/config";
 import { FallbackImg } from "@/shared/ui";
 import {
   authorInitial,
@@ -62,7 +62,7 @@ export function BlogArticleView({
         >
           {post.categoryName}
         </span>
-        <h1 className="mt-4 mb-3.5 font-display text-[36px] font-bold leading-[1.12] tracking-[-0.025em] text-foreground">
+        <h1 className={`mt-4 mb-3.5 ${H1_CLASS} text-foreground`}>
           {post.title}
         </h1>
         <p className="mb-[22px] text-[18px] leading-[1.55] text-muted-foreground">
@@ -116,7 +116,7 @@ export function BlogArticleView({
       {/* Related */}
       {related.length > 0 && (
         <section className="mt-[52px]">
-          <h2 className="mb-5 font-display text-[23px] font-bold tracking-[-0.02em] text-foreground">
+          <h2 className={`mb-5 ${H2_CLASS} text-foreground`}>
             {dict.blog.article.relatedHeading}
           </h2>
           <div className="grid gap-[22px] [grid-template-columns:repeat(auto-fill,minmax(300px,1fr))]">

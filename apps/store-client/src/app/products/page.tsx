@@ -38,7 +38,7 @@ import {
 } from "@/shared/lib/seo";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
 
 /** Take the first value when a query param appears more than once. */
 function first(value: string | string[] | undefined): string | undefined {
@@ -322,9 +322,7 @@ export default async function ProductsPage({
 
       {/* Title */}
       <div className="mb-[18px]">
-        <h1 className="font-display text-[31px] leading-tight font-bold tracking-tight text-foreground">
-          {title}
-        </h1>
+        <h1 className={`${H1_CLASS} text-foreground`}>{title}</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           {subtitle}
         </p>

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 
 /**
  * AccountPlaceholderSection — a "coming soon" stub for dashboard sections with
@@ -19,9 +19,7 @@ export function AccountPlaceholderSection({
 }) {
   return (
     <div className="max-w-[680px]">
-      <h1 className="mb-6 font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
-        {title}
-      </h1>
+      <h1 className={`mb-6 ${H1_CLASS} text-foreground`}>{title}</h1>
       <div className="flex flex-col items-start gap-4 rounded-[18px] border border-border bg-card p-[26px] shadow-card">
         <p className="text-sm text-muted-foreground">
           {dict.account.dashboard.comingSoonTitle}

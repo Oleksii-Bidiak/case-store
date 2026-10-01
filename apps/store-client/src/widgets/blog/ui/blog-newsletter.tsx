@@ -35,7 +35,7 @@ export function BlogNewsletter() {
   return (
     <section className="mt-11 flex flex-wrap items-center justify-between gap-9 rounded-[20px] border border-border bg-card px-10 py-[34px] shadow-card">
       <div className="max-w-[520px]">
-        <h2 className="mb-2 font-display text-[23px] font-bold tracking-[-0.02em] text-foreground">
+        <h2 className="mb-2 font-display text-2xl font-bold tracking-tight text-foreground">
           {heading}
         </h2>
         <p className="text-[15px] text-muted-foreground">{subtitle}</p>

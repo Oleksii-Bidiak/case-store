@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { PageEntity } from "@/shared/api/generated/models";
 import { sanitizeHtml } from "@/shared/lib/sanitize-html";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS, H2_CLASS } from "@/shared/config";
 import { extractDocSections, formatLegalDate } from "../model/extract-sections";
 import { LEGAL_DOC_HUB, type DocHub } from "../model/doc-hub";
 import { LegalDocActions } from "./legal-doc-actions";
@@ -76,7 +76,7 @@ export function LegalDocView({
           >
             {hub.badge}
           </span>
-          <h1 className="mt-3.5 mb-2.5 font-display text-[34px] font-bold leading-[1.12] tracking-[-0.025em] text-foreground">
+          <h1 className={`mt-3.5 mb-2.5 ${H1_CLASS} text-foreground`}>
             {page.title}
           </h1>
           <p className="m-0 inline-flex items-center gap-[7px] text-[13.5px] text-muted-foreground">
@@ -130,7 +130,7 @@ export function LegalDocView({
       {/* Other legal documents */}
       {otherDocs.length > 0 && (
         <section className="mt-11 print:hidden">
-          <h2 className="mb-4 font-display text-[20px] font-bold tracking-[-0.02em] text-foreground">
+          <h2 className={`mb-4 ${H2_CLASS} text-foreground`}>
             {hub.otherHeading}
           </h2>
           <div className="grid gap-3.5 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]">

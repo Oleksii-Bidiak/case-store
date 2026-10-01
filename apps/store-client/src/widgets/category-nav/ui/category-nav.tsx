@@ -16,7 +16,7 @@ import {
   useCategoryControllerGetRootCategories,
   type CategoryEntity,
 } from "@/entities/category";
-import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { dict, H2_CLASS, PAGE_CONTAINER } from "@/shared/config";
 import { CategoryTileImage } from "@/shared/ui";
 import { CategoryNavSkeleton } from "./category-nav-skeleton";
 
@@ -110,10 +110,7 @@ export function CategoryNav() {
   return (
     <section aria-labelledby="categories-heading" className={PAGE_CONTAINER}>
       <div className="mb-6 flex items-baseline justify-between">
-        <h2
-          id="categories-heading"
-          className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
-        >
+        <h2 id="categories-heading" className={`${H2_CLASS} text-foreground`}>
           {dict.home.categories.heading}
         </h2>
         <Link

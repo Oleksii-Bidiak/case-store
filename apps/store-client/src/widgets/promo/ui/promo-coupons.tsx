@@ -4,7 +4,7 @@ import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useListActiveDiscounts } from "@/entities/discount";
 import { Skeleton } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, H2_CLASS } from "@/shared/config";
 import { mapDiscountToCoupon } from "../model/coupons";
 
 /**
@@ -37,7 +37,7 @@ export function PromoCoupons() {
 
   return (
     <section className="mt-9">
-      <h2 className="mb-4 font-display text-2xl font-bold tracking-tight text-foreground">
+      <h2 className={`mb-4 ${H2_CLASS} text-foreground`}>
         {dict.promo.couponsHeading}
       </h2>
 

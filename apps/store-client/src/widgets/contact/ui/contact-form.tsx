@@ -125,7 +125,7 @@ export function ContactForm() {
 
   return (
     <div className="rounded-[18px] border border-border bg-card p-8 shadow-card">
-      <h2 className="mb-1.5 font-display text-[23px] font-bold text-foreground">
+      <h2 className="mb-1.5 font-display text-2xl font-bold text-foreground">
         {d.formHeading}
       </h2>
       <p className="mb-[22px] text-sm leading-relaxed text-muted-foreground">

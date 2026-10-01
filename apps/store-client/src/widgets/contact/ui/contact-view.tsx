@@ -15,7 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { ContactForm } from "./contact-form";
 
 // Configured messenger links on SiteContactSettings (TASK-154) → real chat links.
@@ -84,9 +84,7 @@ export function ContactView({
         }}
       >
         <div className="max-w-[560px]">
-          <h1 className="mb-3 font-display text-[30px] font-bold tracking-[-0.02em] sm:text-4xl">
-            {d.heading}
-          </h1>
+          <h1 className={`mb-3 ${H1_CLASS}`}>{d.heading}</h1>
           <p className="text-base leading-relaxed opacity-95">{d.intro}</p>
         </div>
         <div className="flex gap-7">
@@ -168,7 +166,7 @@ export function ContactView({
         <div className="flex flex-col gap-6">
           {/* Departments */}
           <div className="rounded-[18px] border border-border bg-card p-[30px] shadow-card">
-            <h2 className="mb-[18px] font-display text-[19px] font-bold text-foreground">
+            <h2 className="mb-4 font-display text-xl font-bold text-foreground">
               {d.departmentsHeading}
             </h2>
             <div className="flex flex-col gap-1.5">
@@ -207,7 +205,7 @@ export function ContactView({
             id="messengers"
             className="scroll-mt-24 rounded-[18px] border border-border bg-card p-[30px] shadow-card"
           >
-            <h2 className="mb-1.5 font-display text-[19px] font-bold text-foreground">
+            <h2 className="mb-1.5 font-display text-xl font-bold text-foreground">
               {d.messengersHeading}
             </h2>
             <p className="mb-4 text-[13.5px] text-muted-foreground">
@@ -254,7 +252,7 @@ export function ContactView({
               </span>
             </div>
             <div className="px-[30px] pt-6 pb-7">
-              <h2 className="mb-3.5 font-display text-[19px] font-bold text-foreground">
+              <h2 className="mb-3.5 font-display text-xl font-bold text-foreground">
                 {d.officeHeading}
               </h2>
               <div className="flex flex-col gap-3">

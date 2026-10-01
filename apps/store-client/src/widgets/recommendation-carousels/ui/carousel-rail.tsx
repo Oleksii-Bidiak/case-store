@@ -6,7 +6,7 @@ import type { PublicCarouselEntity } from "@/shared/api/generated/models";
 import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { dict, H2_CLASS, PAGE_CONTAINER } from "@/shared/config";
 
 /** Rail slides are fixed-width (`w-[244px] sm:w-[260px]`), not grid-fluid.
  *  Own copy per rail widget (PopularRail/RecentlyViewed do the same) — copied,
@@ -39,11 +39,7 @@ export function CarouselRail({ carousel }: CarouselRailProps) {
   return (
     <section aria-labelledby={headingId} className={PAGE_CONTAINER}>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4 border-b border-border">
-        <h2
-          id={headingId}
-          // eslint-disable-next-line tailwindcss/no-arbitrary-value -- matches PopularRail's rail-heading size exactly (28px has no token)
-          className="pb-3 font-display text-2xl font-bold tracking-tight text-foreground sm:text-[28px]"
-        >
+        <h2 id={headingId} className={`pb-3 ${H2_CLASS} text-foreground`}>
           {carousel.title}
         </h2>
 

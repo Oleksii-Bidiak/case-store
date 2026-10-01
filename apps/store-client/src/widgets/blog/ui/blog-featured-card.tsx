@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { dict } from "@/shared/config";
+import { dict, H2_CLASS } from "@/shared/config";
 import { authorInitial, blogGradient, type BlogPostView } from "../model/posts";
 
 /**
@@ -25,9 +25,7 @@ export function BlogFeaturedCard({ post }: { post: BlogPostView }) {
         </span>
       </div>
       <div className="flex flex-col justify-center px-10 py-[38px]">
-        <h2 className="mb-3 font-display text-[27px] font-bold leading-[1.18] tracking-[-0.02em] text-foreground">
-          {post.title}
-        </h2>
+        <h2 className={`mb-3 ${H2_CLASS} text-foreground`}>{post.title}</h2>
         <p className="mb-[22px] text-[15px] leading-[1.6] text-muted-foreground">
           {post.excerpt}
         </p>

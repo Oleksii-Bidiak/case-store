@@ -28,7 +28,7 @@ import {
 import { StaleCanonicalGuard } from "@/shared/lib/seo/stale-canonical-guard";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
-import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
 
 /**
  * `/catalog/<категорія>/<модель>` — the compatibility landing pages (TASK-490,
@@ -408,10 +408,7 @@ export default async function CompatLandingPage({
 
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products title block spacing */}
       <div className="mb-[18px]">
-        {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products H1 type size */}
-        <h1 className="font-display text-[31px] leading-tight font-bold tracking-tight text-foreground">
-          {heading}
-        </h1>
+        <h1 className={`${H1_CLASS} text-foreground`}>{heading}</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           {subtitle}
         </p>

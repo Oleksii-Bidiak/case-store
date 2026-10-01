@@ -45,7 +45,7 @@ export function CartSummary({
 
   return (
     <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
-      <h2 className="mb-4 font-display text-[18px] font-bold text-foreground">
+      <h2 className="mb-4 font-display text-lg font-bold text-foreground">
         {dict.cart.summaryHeading}
       </h2>
 

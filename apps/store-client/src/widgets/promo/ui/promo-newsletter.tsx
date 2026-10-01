@@ -12,7 +12,7 @@ export function PromoNewsletter() {
   return (
     <section className="mt-11 flex flex-wrap items-center justify-between gap-7 rounded-[18px] border border-border bg-card p-6 shadow-card sm:p-9 md:p-11">
       <div className="max-w-[480px] min-w-0">
-        <h2 className="mb-2 font-display text-[23px] font-bold tracking-tight text-foreground">
+        <h2 className="mb-2 font-display text-2xl font-bold tracking-tight text-foreground">
           {d.heading}
         </h2>
         <p className="text-[14.5px] leading-relaxed text-muted-foreground">

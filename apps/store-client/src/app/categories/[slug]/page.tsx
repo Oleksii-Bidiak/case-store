@@ -42,7 +42,7 @@ import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
 
 interface CategoryLandingPageProps {
   params: Promise<{ slug: string }>;
@@ -304,10 +304,7 @@ export default async function CategoryLandingPage({
       {/* Title */}
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products title block spacing */}
       <div className="mb-[18px]">
-        {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products H1 type size */}
-        <h1 className="font-display text-[31px] leading-tight font-bold tracking-tight text-foreground">
-          {node.name}
-        </h1>
+        <h1 className={`${H1_CLASS} text-foreground`}>{node.name}</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           {node.description || dict.catalog.categorySubtitle(node.name)}
         </p>

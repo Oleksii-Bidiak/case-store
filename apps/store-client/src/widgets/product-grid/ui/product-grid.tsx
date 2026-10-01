@@ -14,7 +14,7 @@ import type {
 import { ProductCard } from "@/shared/ui";
 import { ProductCardActions } from "@/widgets/product-card-actions";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { dict, H2_CLASS, PAGE_CONTAINER } from "@/shared/config";
 import { isCarouselTab, toTabs } from "../model/popular-tabs";
 import { PopularRailSkeleton } from "./product-grid-skeleton";
 
@@ -57,7 +57,7 @@ export function PopularRail({
         <div className="flex flex-wrap items-end gap-x-7 gap-y-1">
           <h2
             id="popular-heading"
-            className="pb-3 font-display text-2xl font-bold tracking-tight text-foreground sm:text-[28px]"
+            className={`pb-3 ${H2_CLASS} text-foreground`}
           >
             {dict.home.popular.heading}
           </h2>

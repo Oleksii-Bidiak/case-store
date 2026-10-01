@@ -1,4 +1,4 @@
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 
 /**
  * AccountBonusesSection — the "Бонуси" section. STUB: there is no loyalty /
@@ -10,9 +10,7 @@ export function AccountBonusesSection() {
 
   return (
     <div className="max-w-[760px]">
-      <h1 className="mb-6 font-display text-[28px] font-bold tracking-[-0.02em] text-foreground">
-        {d.bonusesHeading}
-      </h1>
+      <h1 className={`mb-6 ${H1_CLASS} text-foreground`}>{d.bonusesHeading}</h1>
 
       <div className="flex flex-wrap items-center justify-between gap-6 rounded-[18px] bg-foreground px-8 py-[30px] text-background">
         <div>

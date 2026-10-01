@@ -8,7 +8,7 @@ import { useGetOrder } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
 import { ReturnRequestButton } from "@/features/return-request";
 import { forgetPaymentAttempt, readPaymentAttempt } from "@/features/checkout";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
@@ -129,7 +129,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
   if (isError && status !== 404) {
     return (
       <div role="alert" className="flex flex-col items-start gap-4 py-16">
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className={`${H1_CLASS} text-foreground`}>
           {dict.order.somethingWrong}
         </h1>
         <p className="text-muted-foreground">{dict.order.loadErrorBody}</p>
@@ -149,7 +149,7 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
   if (!order) {
     return (
       <div role="alert" className="flex flex-col items-start gap-4 py-16">
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className={`${H1_CLASS} text-foreground`}>
           {dict.order.notFoundHeading}
         </h1>
         <p className="text-muted-foreground">{dict.order.notFoundBody}</p>

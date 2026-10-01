@@ -2,7 +2,7 @@
 
 import { Send, Camera, MessageCircle } from "lucide-react";
 import { NewsletterSubscribeForm } from "@/features";
-import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { dict, PAGE_CONTAINER, H2_CLASS } from "@/shared/config";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 
 /** The shop's social channels, as «Контакти магазину» stores them. */
@@ -51,9 +51,7 @@ export function Newsletter({ contact }: NewsletterProps = {}) {
     <section className={PAGE_CONTAINER}>
       <div className="flex flex-wrap items-center justify-between gap-8 rounded-2xl border border-border bg-card p-8 shadow-card sm:p-10">
         <div className="max-w-xl">
-          <h2 className="font-display text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-            {heading}
-          </h2>
+          <h2 className={`${H2_CLASS} text-foreground`}>{heading}</h2>
           <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
           <NewsletterSubscribeForm source="home" className="mt-5 max-w-md" />
         </div>

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { BannerBackdrop, Button } from "@/shared/ui";
-import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { dict, PAGE_CONTAINER, H2_CLASS } from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
 interface PromoBannerProps {
@@ -40,9 +40,7 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
               {eyebrow}
             </span>
           )}
-          <h2 className="mt-4 font-display text-2xl leading-tight font-bold tracking-tight text-balance sm:text-3xl">
-            {title}
-          </h2>
+          <h2 className={`mt-4 ${H2_CLASS} text-balance`}>{title}</h2>
           {subtitle && (
             <p className="mt-2.5 text-base text-white/80">{subtitle}</p>
           )}

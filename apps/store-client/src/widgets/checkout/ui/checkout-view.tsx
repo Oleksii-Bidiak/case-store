@@ -22,7 +22,7 @@ import {
   type CheckoutFormValues,
 } from "@/features/checkout";
 import { Button, CheckoutSkeleton, Textarea } from "@/shared/ui";
-import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, H1_CLASS } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
@@ -248,7 +248,7 @@ export function CheckoutView() {
         <span className="text-foreground">{dict.checkout.breadcrumb}</span>
       </nav>
 
-      <h1 className="mb-6 font-display text-2xl font-bold tracking-tight text-foreground sm:text-[28px]">
+      <h1 className={`mb-6 ${H1_CLASS} text-foreground`}>
         {dict.checkout.title}
       </h1>
 

@@ -102,9 +102,20 @@ Fonts (Next font vars, mapped in `@theme`): `font-sans` = Geist Sans (body/UI),
 Rules:
 
 - The H1 and H2 rows are **mandatory**. Page titles and section headings use exactly these
-  classes and no per-page `text-[..px]` (owner decision 7.5). Pages that still hard-code sizes
-  move over via TASK-861.
-- The Hero row is for the homepage slider only.
+  classes and no per-page `text-[..px]` (owner decision 7.5). Don't type the lists by hand:
+  import `H1_CLASS`, `H2_CLASS` and `HERO_CLASS` from `@/shared/config`
+  (`shared/config/typography.ts`) and add only colour and spacing next to them
+  (``className={`mb-6 ${H1_CLASS} text-foreground`}``). Banners on a gradient leave the colour
+  off and inherit white. `typography.test.ts` fails the build on any `h1` without `H1_CLASS`
+  and on any `h1`/`h2` with an arbitrary `text-[..]` (TASK-861).
+- **Section vs card headings.** H2 is for headings that open a region of the page: rails,
+  grids, «Схожі статті», banners, the homepage sections. A card or panel title (the cart
+  summary, the account panels, the contact cards) is often an `h2` in the outline because it
+  sits directly under the h1. It still keeps the H3 role sizing from the scale (`text-lg` …
+  `text-2xl`, no `md:` bump), so it never outranks the sections around it.
+- The Hero row is for the homepage slider only. The decorative «404» numeral on the
+  not-found page is not a heading: it uses the top of the scale (`text-8xl sm:text-9xl`), and
+  the 404 `h1` follows the H1 row.
 - Max **one** `h1` per page, and never skip heading levels.
 - Line length ≤ ~70ch for prose (`max-w-prose`).
 - **Text sizes come only from the scale** (`text-xs` … `text-6xl`). The half-steps `13.5 / 14.5
