@@ -44,6 +44,11 @@ interface HeaderProps {
    * server layout — the wordmark and the logo's alt (TASK-546).
    */
   siteName: string;
+  /**
+   * Support phone (SiteContactSettings.phone) from the server layout — the
+   * announcement bar hides it when unset (TASK-873).
+   */
+  supportPhone?: string | null;
 }
 
 /**
@@ -53,11 +58,16 @@ interface HeaderProps {
  * categories. Client component because it owns the mobile-menu open state and
  * composes hook-driven sub-widgets.
  *
- * The announcement banner, the store logo and the store name are fetched
- * server-side (ISR) and passed in as plain serializable props so the client
- * header can render them without its own fetch.
+ * The announcement banner, the store logo, the store name and the support phone
+ * are fetched server-side (ISR) and passed in as plain serializable props so
+ * the client header can render them without its own fetch.
  */
-export function Header({ announcement, logoUrl, siteName }: HeaderProps) {
+export function Header({
+  announcement,
+  logoUrl,
+  siteName,
+  supportPhone,
+}: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -79,7 +89,7 @@ export function Header({ announcement, logoUrl, siteName }: HeaderProps) {
 
   return (
     <>
-      <AnnouncementBar banner={announcement} />
+      <AnnouncementBar banner={announcement} phone={supportPhone} />
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
         <div
           className={`${PAGE_CONTAINER} flex h-16 items-center gap-2 sm:gap-3`}

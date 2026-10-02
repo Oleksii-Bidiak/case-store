@@ -64,10 +64,10 @@ export const dict = {
     accountMenuAria: "Меню акаунту",
     searchPlaceholder: "Пошук товарів…",
     searchSubmit: "Шукати",
-    // Top announcement bar (static — message + phone; TASK-167-A).
+    // Top announcement bar (TASK-167-A). The number itself is NOT here: it is
+    // the admin-managed SiteContactSettings.phone, hidden when unset (TASK-873)
+    // — a dictionary number would ring nobody.
     announcement: "Безкоштовна доставка від 1 000 ₴ · Відправка день у день",
-    phone: "0 800 00 00 00",
-    phoneHref: "tel:0800000000",
     phoneAria: "Зателефонувати в підтримку",
     // Catalog mega-menu trigger + labelled action cluster.
     catalogButton: "Каталог",

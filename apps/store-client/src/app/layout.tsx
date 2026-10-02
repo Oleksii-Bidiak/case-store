@@ -16,6 +16,7 @@ import {
 } from "@/shared/config";
 import { fetchPublishedBanners } from "@/shared/api/banners-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import {
   buildOgImages,
   resolveSeo,
@@ -165,10 +166,15 @@ export default async function RootLayout({
   // URL is reused by the homepage, so Next dedupes it to a single request.
   // The SEO singleton carries the admin-uploaded store logo (TASK-299); it is the
   // same tagged URL `generateMetadata` above already read, so this costs no extra
-  // request. The Header is a Client Component, hence the plain serializable prop.
-  const [banners, seo] = await Promise.all([
+  // request. The support phone in the announcement bar (TASK-873) is the
+  // site-contact singleton — the very request the Footer makes, deduped, under
+  // the same `site-contact` tag, so an admin edit reaches header and footer
+  // together. The Header is a Client Component, hence the plain serializable
+  // props.
+  const [banners, seo, contact] = await Promise.all([
     fetchPublishedBanners(),
     fetchSeoSettings(),
+    fetchSiteContactSettings(),
   ]);
   const announcement = banners.ANNOUNCEMENT_BAR[0];
   // TASK-546: the visible wordmark follows the same admin-managed name as the
@@ -200,6 +206,7 @@ export default async function RootLayout({
             announcement={announcement}
             logoUrl={seo?.logoUrl}
             siteName={siteName}
+            supportPhone={contact?.phone}
           />
           <main id="main-content" className="flex-1">
             {children}

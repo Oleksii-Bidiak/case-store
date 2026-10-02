@@ -14,6 +14,10 @@ jest.mock("@/shared/api/banners-server", () => ({
   fetchPublishedBanners: jest.fn().mockResolvedValue({ ANNOUNCEMENT_BAR: [] }),
   BANNERS_COLLECTION_TAG: "banners",
 }));
+jest.mock("@/shared/api/site-contact-server", () => ({
+  fetchSiteContactSettings: jest.fn().mockResolvedValue(null),
+  SITE_CONTACT_TAG: "site-contact",
+}));
 jest.mock("@/widgets/header", () => ({ Header: () => null }));
 jest.mock("@/widgets", () => ({ Footer: () => null }));
 jest.mock("./providers", () => ({ Providers: () => null }));
