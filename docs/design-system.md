@@ -183,10 +183,12 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
   than the edges of the subject.
 - **Sticky asides** (filter rails, summary panels, TOCs, side navs): the site header is
   `sticky top-0 z-50` (64px), so any other sticky panel must clear it with a **96px** top
-  offset — `lg:sticky` + `STICKY_ASIDE_TOP` (`lg:top-24`) from
-  `store-client/src/shared/config/layout.ts`; scroll-spy / `scrollTo` math uses
-  `STICKY_HEADER_OFFSET` (96) from the same module. Never hardcode the offset. Known
-  exception: the PDP aside still sticks at `md:top-24` until TASK-519. An aside that can
+  offset — `STICKY_ASIDE_TOP` (`top-24`) from `store-client/src/shared/config/layout.ts`,
+  paired with the breakpoint-prefixed `sticky` of the layout (`lg:sticky` on two-column
+  pages, `md:sticky` on the PDP buy box). The token carries no breakpoint: below the
+  `sticky` breakpoint the aside is not positioned and `top` is inert, so such an aside
+  must not also be `relative`/`absolute`. Scroll-spy / `scrollTo` math uses
+  `STICKY_HEADER_OFFSET` (96) from the same module. Never hardcode the offset. An aside that can
   be taller than the screen (the catalogue and search filter rails) also takes
   `max-h-sticky-aside overflow-y-auto overscroll-contain`. The `--max-height-sticky-aside`
   token is the viewport minus that 96px offset and a 16px gap, so the aside scrolls inside

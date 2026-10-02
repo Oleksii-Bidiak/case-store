@@ -280,6 +280,8 @@ describe("ProductDetailView — responsive hero grid (TASK-416)", () => {
     expect(buyBox).toHaveClass(
       "md:col-start-2",
       "md:sticky",
+      // TASK-519: the shared 96px offset, not a hand-written `md:top-24`.
+      "top-24",
       "lg:col-start-3",
       "lg:row-span-1",
     );

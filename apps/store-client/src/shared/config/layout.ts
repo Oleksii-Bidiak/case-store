@@ -14,10 +14,13 @@
 export const STICKY_HEADER_OFFSET = 96;
 
 /**
- * Tailwind `top-*` class for sticky asides in `lg:` two-column layouts —
- * always pair with `lg:sticky`. `top-24` = 96px = `STICKY_HEADER_OFFSET`.
+ * Tailwind `top-*` class for sticky asides — `top-24` = 96px =
+ * `STICKY_HEADER_OFFSET`. It carries no breakpoint: pair it with the
+ * breakpoint-prefixed `sticky` of the layout that needs it (`lg:sticky` for
+ * the two-column pages, `md:sticky` for the PDP buy box). Below that
+ * breakpoint the element is not positioned, so `top` has no effect.
  */
-export const STICKY_ASIDE_TOP = "lg:top-24";
+export const STICKY_ASIDE_TOP = "top-24";
 
 /**
  * The one page container (owner decision 7.1, TASK-860): 1320px wide via the

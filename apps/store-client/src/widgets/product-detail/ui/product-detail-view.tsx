@@ -16,7 +16,12 @@ import { CartSheet } from "@/widgets/cart";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney, trackEvent } from "@/shared/lib";
-import { dict, FEATURE_STUBS, H1_CLASS } from "@/shared/config";
+import {
+  dict,
+  FEATURE_STUBS,
+  H1_CLASS,
+  STICKY_ASIDE_TOP,
+} from "@/shared/config";
 import { Button, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
@@ -223,10 +228,10 @@ export function ProductDetailView({ slug }: { slug: string }) {
         </div>
 
         {/* Sticky buy box — its own column from `md`, spanning the gallery and
-            the info rows. `top-24` is the storefront's 96px sticky clearance
-            (STICKY_HEADER_OFFSET); `STICKY_ASIDE_TOP` itself is `lg:`-prefixed,
-            so it cannot express the `md:` breakpoint this column needs. */}
-        <div className="md:sticky md:top-24 md:col-start-2 md:row-span-2 md:row-start-1 lg:col-start-3 lg:row-span-1">
+            the info rows. */}
+        <div
+          className={`md:sticky ${STICKY_ASIDE_TOP} md:col-start-2 md:row-span-2 md:row-start-1 lg:col-start-3 lg:row-span-1`}
+        >
           <div className="rounded-card border border-border bg-card p-[22px] shadow-card">
             <div className="mb-1 flex flex-wrap items-end gap-3">
               <span

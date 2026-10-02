@@ -1,6 +1,10 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { PAGE_CONTAINER } from "./layout";
+import {
+  PAGE_CONTAINER,
+  STICKY_ASIDE_TOP,
+  STICKY_HEADER_OFFSET,
+} from "./layout";
 
 /**
  * TASK-860 / TASK-520 — one page-container width for the whole storefront
@@ -84,6 +88,46 @@ describe("spacing scale (TASK-500, TASK-517)", () => {
   it("caps sticky asides with the token, not a hand-written calc", () => {
     const offenders = files
       .filter((file) => /max-h-\[calc\(100dvh/.test(readFileSync(file, "utf8")))
+      .map((file) => relative(SRC, file));
+    expect(offenders).toEqual([]);
+  });
+});
+
+/**
+ * TASK-519 — the sticky-aside offset carries no breakpoint, so a panel that
+ * sticks from `md` (the PDP buy box) and one that sticks from `lg` (filter
+ * rails, summaries, TOCs) share one token. The breakpoint lives on `sticky`.
+ */
+describe("sticky aside offset (TASK-519)", () => {
+  const files = sourceFiles(SRC);
+
+  it("is the bare 96px top utility, matching STICKY_HEADER_OFFSET", () => {
+    expect(STICKY_ASIDE_TOP).toBe("top-24");
+    expect(STICKY_HEADER_OFFSET).toBe(96);
+  });
+
+  it("pairs every consumer with a breakpoint-prefixed sticky", () => {
+    const consumers = files.filter((file) =>
+      /\$\{STICKY_ASIDE_TOP\}/.test(readFileSync(file, "utf8")),
+    );
+    // Guards the scan itself: ten consumers today.
+    expect(consumers.length).toBeGreaterThan(5);
+    const unpaired = consumers
+      .filter(
+        (file) =>
+          !/\b(?:md|lg):sticky \$\{STICKY_ASIDE_TOP\}/.test(
+            readFileSync(file, "utf8"),
+          ),
+      )
+      .map((file) => relative(SRC, file));
+    expect(unpaired).toEqual([]);
+  });
+
+  it("leaves no hand-written breakpoint top offset for sticky panels", () => {
+    const offenders = files
+      .filter((file) =>
+        /\b(?:sm|md|lg|xl):top-(?:20|24)\b/.test(readFileSync(file, "utf8")),
+      )
       .map((file) => relative(SRC, file));
     expect(offenders).toEqual([]);
   });
