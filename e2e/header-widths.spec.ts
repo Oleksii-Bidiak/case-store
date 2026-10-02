@@ -201,3 +201,220 @@ test.describe("header row by width (TASK-511, TASK-512)", () => {
     expect(input?.width ?? 0).toBeGreaterThanOrEqual(MIN_INPUT_WIDTH);
   });
 });
+
+/**
+ * The header across the whole width range (TASK-504, TASK-505 — plan 197,
+ * «Приймання»).
+ *
+ * TASK-504 began as a measurement: the header cluster outgrew the 768px row,
+ * the wordmark was crushed (26px of its own 36), and the theme switch was
+ * hidden until `min-[1100px]` while the slide-out menu already vanished at
+ * `md` — so 768–1099 had no way to change the theme at all. The slide-out menu
+ * and the row switch now hand over at the same breakpoint (`xl` since
+ * TASK-511/512), and the search pill, not the brand, yields. This block pins
+ * the outcome at the eight widths the plan names, so a new item in the action
+ * cluster cannot quietly bring any of it back:
+ *
+ *   1. the document never scrolls sideways;
+ *   2. the header row fits itself and the wordmark is shown whole — not cut by
+ *      its own `truncate`, not past the edge;
+ *   3. exactly one of the two theme entry points is on screen: the row switch
+ *      from `xl`, the menu trigger (whose drawer carries the switch) below it.
+ *      Never neither — that was the 768–1099 hole.
+ *
+ * Widths: 320/360/390 are the phone band (390 is where Обране and Кабінет come
+ * back — the widest phone cluster); 768 is the row TASK-504 measured; 1024 is
+ * the full search pill; 1280 is `xl`, where the section links, the theme switch
+ * and the captions all arrive at once — the tightest desktop row; 1366 and 1440
+ * are past the `max-w-page` cap.
+ *
+ * Measured on `/`, the landing page — the same header component as on
+ * `/products` above, but the first row a visitor ever sees.
+ */
+
+const WIDTHS = [320, 360, 390, 768, 1024, 1280, 1366, 1440] as const;
+
+/** Tailwind v4 `xl` — where the row switch replaces the menu trigger. */
+const XL = 1280;
+
+interface HeaderReport {
+  scrollWidth: number;
+  innerWidth: number;
+  rowScrollWidth: number;
+  rowClientWidth: number;
+  /** null when an uploaded logo image replaces the typographic wordmark. */
+  wordmark: {
+    text: string;
+    scrollWidth: number;
+    clientWidth: number;
+    right: number;
+  } | null;
+  brand: { left: number; right: number; width: number };
+}
+
+async function openHome(page: Page, width: number): Promise<void> {
+  await page.setViewportSize({ width, height: VIEWPORT_HEIGHT });
+  await page.goto("/");
+  await expect(header(page).locator('a[href="/"]')).toBeVisible();
+  // The wordmark's width depends on the display font; measuring before it
+  // swaps in would test the fallback face.
+  await page.evaluate(async () => {
+    await document.fonts.ready;
+  });
+}
+
+async function measureHeader(page: Page): Promise<HeaderReport> {
+  return page.evaluate<HeaderReport>(() => {
+    const el = document.querySelector("header");
+    if (!el) throw new Error("no <header> on the page");
+    // The header's one child is the PAGE_CONTAINER row holding every cluster.
+    const row = el.firstElementChild as HTMLElement;
+    const brandLink = el.querySelector<HTMLAnchorElement>('a[href="/"]');
+    if (!brandLink) throw new Error('no home link (a[href="/"]) in the header');
+    const wordmarkEl = brandLink.querySelector<HTMLElement>("span.truncate");
+    const brandRect = brandLink.getBoundingClientRect();
+    const wordRect = wordmarkEl?.getBoundingClientRect();
+
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+      rowScrollWidth: row.scrollWidth,
+      rowClientWidth: row.clientWidth,
+      wordmark:
+        wordmarkEl && wordRect
+          ? {
+              text: (wordmarkEl.textContent ?? "").trim(),
+              scrollWidth: wordmarkEl.scrollWidth,
+              clientWidth: wordmarkEl.clientWidth,
+              right: wordRect.right,
+            }
+          : null,
+      brand: {
+        left: brandRect.left,
+        right: brandRect.right,
+        width: brandRect.width,
+      },
+    };
+  });
+}
+
+test.describe("the header fits every width from 320 to 1440 (TASK-504, TASK-505)", () => {
+  for (const width of WIDTHS) {
+    test(`/ at ${width}px — no sideways scroll, the wordmark is whole`, async ({
+      page,
+    }) => {
+      await openHome(page, width);
+      const r = await measureHeader(page);
+
+      expect(
+        r.scrollWidth,
+        `/ @ ${width}px scrolls horizontally (scrollWidth ${r.scrollWidth} > innerWidth ${r.innerWidth})`,
+      ).toBeLessThanOrEqual(r.innerWidth);
+
+      expect(
+        r.rowScrollWidth,
+        `the header row overflows itself at ${width}px (${r.rowScrollWidth} > ${r.rowClientWidth}) — some cluster no longer shrinks`,
+      ).toBeLessThanOrEqual(r.rowClientWidth);
+
+      expect(r.brand.left).toBeGreaterThanOrEqual(0);
+      expect(r.brand.right).toBeLessThanOrEqual(r.innerWidth);
+
+      if (r.wordmark) {
+        // `truncate` turns overflow into an ellipsis, so a clipped wordmark
+        // shows up as scrollWidth > clientWidth on the text box itself.
+        expect(
+          r.wordmark.scrollWidth,
+          `the wordmark «${r.wordmark.text}» is cut at ${width}px (${r.wordmark.scrollWidth} of ${r.wordmark.clientWidth})`,
+        ).toBeLessThanOrEqual(r.wordmark.clientWidth);
+        expect(r.wordmark.clientWidth).toBeGreaterThan(0);
+        expect(r.wordmark.right).toBeLessThanOrEqual(r.innerWidth);
+      } else {
+        // An uploaded logo replaced the wordmark: it still needs a real width
+        // beyond the 36px monogram box.
+        expect(r.brand.width).toBeGreaterThan(36);
+      }
+
+      // Exactly one theme entry point per width — never neither. `exact`:
+      // «Темна» is a substring of «Системна».
+      const rowSwitch = header(page).getByRole("radio", {
+        name: "Темна",
+        exact: true,
+      });
+      const menuTrigger = header(page).getByRole("button", {
+        name: "Відкрити меню",
+        exact: true,
+      });
+      if (width >= XL) {
+        await expect(rowSwitch).toBeVisible();
+        await expect(menuTrigger).toBeHidden();
+      } else {
+        await expect(menuTrigger).toBeVisible();
+        await expect(rowSwitch).toBeHidden();
+      }
+    });
+  }
+
+  // 768 is the band TASK-504 found with no theme control at all; prove the
+  // drawer that serves it really carries the switch, and that it works.
+  test("at 768px the slide-out menu carries a working theme switch", async ({
+    page,
+  }) => {
+    await openHome(page, 768);
+    await header(page)
+      .getByRole("button", { name: "Відкрити меню", exact: true })
+      .click();
+
+    const drawer = page.getByRole("dialog");
+    const dark = drawer.getByRole("radio", { name: "Темна", exact: true });
+    await expect(dark).toBeVisible();
+    await dark.click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  });
+
+  test("the account settings carry the theme switch, not a note about it", async ({
+    page,
+  }) => {
+    // TASK-505: «Налаштування» used to say the theme «автоматично
+    // підлаштовується» under the system — untrue since TASK-412 added a manual
+    // switch. The card now holds the same control the header does.
+    await page.goto("/login");
+    const submitName = { name: /^увійти$/i };
+    const form = page
+      .getByRole("main")
+      .locator("form")
+      .filter({ has: page.getByRole("button", submitName) });
+    await waitForHydration(form);
+    await page.getByLabel(/(пошта|email)/i).fill(E2E_USER_EMAIL);
+    await page.getByLabel(/(пароль|password)/i).fill(E2E_USER_PASSWORD);
+    await form.getByRole("button", submitName).click();
+    await expect(page).not.toHaveURL(/\/login/);
+
+    for (const [width, choice, theme] of [
+      [390, "Темна", "dark"],
+      [1440, "Світла", "light"],
+    ] as const) {
+      await page.setViewportSize({ width, height: VIEWPORT_HEIGHT });
+      await page.goto("/account");
+      const main = page.getByRole("main");
+      await main
+        .getByRole("button", { name: "Налаштування", exact: true })
+        .click();
+      await expect(
+        main.getByRole("heading", { name: "Оформлення" }),
+      ).toBeVisible();
+      await expect(main.getByText(/автоматично/i)).toHaveCount(0);
+
+      const group = main.getByRole("radiogroup");
+      await expect(group).toBeVisible();
+      await expect(group.getByRole("radio")).toHaveCount(3);
+
+      await group.getByRole("radio", { name: choice, exact: true }).click();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+
+      const scrollWidth = await page.evaluate(
+        () => document.documentElement.scrollWidth,
+      );
+      expect(scrollWidth).toBeLessThanOrEqual(width);
+    }
+  });
+});
