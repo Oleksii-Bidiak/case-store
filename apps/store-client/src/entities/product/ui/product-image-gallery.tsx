@@ -8,6 +8,8 @@ import { ChevronLeft, ChevronRight, Expand, Loader2, X } from "lucide-react";
 // generated models the barrel itself re-exports.
 import type { ProductImageEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
+import { pickProductGradient } from "@/shared/lib";
+import { cn } from "@/shared/lib/utils";
 import {
   BLUR_PLACEHOLDER,
   Dialog,
@@ -64,6 +66,11 @@ export function altText(image: ProductImageEntity, fallback: string): string {
  * it — keeping the `<img>` out of any `<button>` leaves the main photo
  * addressable on its own and avoids a control whose accessible name would be
  * the whole alt text.
+ *
+ * TASK-518: the main frame and the thumbnails follow the ProductCard rule
+ * (design-system.md §4) — a fixed square box over the card gradient with the
+ * photo `object-contain` inside, so mixed aspect ratios are letterboxed, never
+ * cropped.
  */
 export function ProductImageGallery({
   images,
@@ -149,9 +156,23 @@ export function ProductImageGallery({
   const lightboxImage = images[activeIndex] ?? images[0];
   const lightboxFailed = !lightboxImage || failed[lightboxImage.id];
 
+  // The same deterministic backdrop as the gradient placeholder (both seeded by
+  // the product name), so a letterboxed photo and a missing one sit on one
+  // colour and the frame reads like the ProductCard image box (TASK-518).
+  const gradient = pickProductGradient(altFallback);
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-border bg-muted">
+      {/* Fixed square box, gradient behind it: the photo is letterboxed with
+          `object-contain` (design-system.md §4, as in ProductCard) — accessory
+          photos come in mixed aspect ratios and must never be cropped. */}
+      <div
+        data-testid="gallery-main-frame"
+        className={cn(
+          "relative aspect-square w-full overflow-hidden rounded-xl border border-border bg-gradient-to-br",
+          gradient,
+        )}
+      >
         {showPlaceholder ? (
           <ProductThumb
             name={altFallback}
@@ -177,7 +198,7 @@ export function ProductImageGallery({
             preload
             onLoad={() => markLoaded(activeImage.id)}
             onError={() => markFailed(activeImage.id)}
-            className="size-full object-cover"
+            className="size-full object-contain"
           />
         )}
 
@@ -228,9 +249,11 @@ export function ProductImageGallery({
                   aria-pressed={isActive}
                   aria-label={dict.product.showImageAria(index + 1)}
                   onClick={() => setActiveIndex(index)}
-                  className={`size-16 shrink-0 overflow-hidden rounded-lg border-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
-                    isActive ? "border-primary" : "border-border"
-                  }`}
+                  className={cn(
+                    "size-16 shrink-0 overflow-hidden rounded-lg border-2 bg-gradient-to-br focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                    gradient,
+                    isActive ? "border-primary" : "border-border",
+                  )}
                 >
                   {failed[image.id] ? (
                     <ProductThumb
@@ -250,7 +273,8 @@ export function ProductImageGallery({
                       width={64}
                       height={64}
                       onError={() => markFailed(image.id)}
-                      className="size-full object-cover"
+                      // Same rule as the main frame: letterbox, never crop.
+                      className="size-full object-contain"
                     />
                   )}
                 </button>

@@ -364,3 +364,54 @@ describe("ProductImageGallery — lightbox (TASK-416)", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+/**
+ * TASK-518: the PDP photo follows the ProductCard rule (design-system.md §4) —
+ * a fixed square box with the card gradient behind it and `object-contain`
+ * inside, so photos in other aspect ratios are letterboxed, never cropped.
+ */
+describe("ProductImageGallery — letterboxed photos (TASK-518)", () => {
+  const renderGallery = () =>
+    renderWithProviders(
+      <ProductImageGallery
+        images={[image("a", 0), image("b", 1)]}
+        altFallback="Product"
+      />,
+    );
+
+  it("letterboxes the main photo over the card gradient inside a square box", () => {
+    renderGallery();
+
+    const frame = screen.getByTestId("gallery-main-frame");
+    expect(frame).toHaveClass("aspect-square", "bg-gradient-to-br");
+    expect(frame).not.toHaveClass("bg-muted");
+
+    const main = within(frame).getByRole("img", { name: "Image a" });
+    expect(main).toHaveClass("object-contain");
+    expect(main).not.toHaveClass("object-cover");
+  });
+
+  it("letterboxes every thumbnail over the same gradient", () => {
+    renderGallery();
+
+    for (const button of thumbnails()) {
+      expect(button).toHaveClass("size-16", "bg-gradient-to-br");
+      const thumb = within(button).getByRole("img");
+      expect(thumb).toHaveClass("object-contain");
+      expect(thumb).not.toHaveClass("object-cover");
+    }
+  });
+
+  it("keeps the selection ring on the active thumbnail only", async () => {
+    const user = userEvent.setup();
+    renderGallery();
+
+    await user.click(thumbnails()[1]);
+
+    const [first, second] = thumbnails();
+    expect(second).toHaveClass("border-primary");
+    expect(second).toHaveAttribute("aria-pressed", "true");
+    expect(first).toHaveClass("border-border");
+    expect(first).not.toHaveClass("border-primary");
+  });
+});

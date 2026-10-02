@@ -179,8 +179,11 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
   columns reflows the page the moment real cards replace it.
 - **Product card image:** a fixed `aspect-square` box with `object-contain` over the card
   gradient — accessory photos arrive in mixed aspect ratios and must never be cropped
-  (TASK-415). Banners and category tiles keep `object-cover`: there the frame matters more
-  than the edges of the subject.
+  (TASK-415). The PDP gallery follows the same rule — the main frame and every 64px thumbnail
+  are square boxes over the product gradient (`pickProductGradient`, seeded like its
+  placeholder) with the photo `object-contain` inside; the lightbox is `object-contain` too
+  (TASK-518, TASK-416). Banners and category tiles keep `object-cover`: there the frame
+  matters more than the edges of the subject.
 - **Sticky asides** (filter rails, summary panels, TOCs, side navs): the site header is
   `sticky top-0 z-50` (64px), so any other sticky panel must clear it with a **96px** top
   offset — `STICKY_ASIDE_TOP` (`top-24`) from `store-client/src/shared/config/layout.ts`,
