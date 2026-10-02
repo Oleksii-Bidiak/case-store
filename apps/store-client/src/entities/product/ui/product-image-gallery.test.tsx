@@ -647,6 +647,84 @@ describe("ProductImageGallery — lightbox zoom (TASK-521)", () => {
     expect(valueOf(reopened)).toHaveTextContent("100%");
   });
 
+  /** A zoomed photo must come back at 100 % — no old scale, pan or minimap. */
+  const expectUnzoomed = (dialog: HTMLElement) => {
+    expect(valueOf(dialog)).toHaveTextContent("100%");
+    expect(within(dialog).queryByTestId("lightbox-minimap")).toBeNull();
+    expect(within(dialog).getByTestId("lightbox-zoom-layer")).toHaveStyle({
+      transform: "translate3d(0px, 0px, 0) scale(1)",
+    });
+  };
+
+  it("shows a photo at 100 % again after A zoomed → thumbnail B → thumbnail A", async () => {
+    const { user, dialog, value } = await openLightbox();
+    await user.click(within(dialog).getByRole("img", { name: "Image a" }));
+    expect(value()).toHaveTextContent("250%");
+    const thumbs = within(
+      within(dialog).getByRole("list", {
+        name: dict.product.lightboxThumbnails,
+      }),
+    ).getAllByRole("button");
+
+    await user.click(thumbs[1]);
+    expectUnzoomed(dialog);
+    await user.click(thumbs[0]);
+
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(1, 3)),
+    ).toBeInTheDocument();
+    expectUnzoomed(dialog);
+  });
+
+  it("shows a photo at 100 % again after the arrows wrap back to it", async () => {
+    const { user, dialog, value } = await openLightbox([
+      image("a", 0),
+      image("b", 1),
+    ]);
+    await user.click(within(dialog).getByRole("img", { name: "Image a" }));
+    expect(value()).toHaveTextContent("250%");
+    // Zoomed, the arrows are hidden — leave by thumbnail, then let the arrow
+    // wrap round to the photo that was zoomed.
+    const thumbs = within(
+      within(dialog).getByRole("list", {
+        name: dict.product.lightboxThumbnails,
+      }),
+    ).getAllByRole("button");
+    await user.click(thumbs[1]);
+    await user.click(
+      within(dialog).getByRole("button", { name: dict.product.lightboxNext }),
+    );
+
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(1, 2)),
+    ).toBeInTheDocument();
+    expectUnzoomed(dialog);
+  });
+
+  it("shows a photo at 100 % again after swiping away and back", async () => {
+    const { user, dialog, value } = await openLightbox([
+      image("a", 0),
+      image("b", 1),
+    ]);
+    await user.click(within(dialog).getByRole("img", { name: "Image a" }));
+    expect(value()).toHaveTextContent("250%");
+    // Thumbnail away from the zoomed photo, then swipe back to it.
+    const thumbs = within(
+      within(dialog).getByRole("list", {
+        name: dict.product.lightboxThumbnails,
+      }),
+    ).getAllByRole("button");
+    await user.click(thumbs[1]);
+    const photo = within(dialog).getByRole("img", { name: "Image b" });
+    fireTouch(photo, "touchstart", 300);
+    fireTouch(photo, "touchend", 300 + SWIPE_THRESHOLD_PX + 40);
+
+    expect(
+      within(dialog).getByText(dict.product.lightboxCounter(1, 2)),
+    ).toBeInTheDocument();
+    expectUnzoomed(dialog);
+  });
+
   it("keeps the zoom toolbar for a single photo but no strip", async () => {
     const { dialog, value } = await openLightbox([image("a", 0)]);
 

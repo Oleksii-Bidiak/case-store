@@ -132,8 +132,10 @@ export interface ProductLightboxProps {
  * Zoomed, a drag or one finger pans, the arrows hide, ← / → pan instead of
  * stepping, a minimap shows the visible part, and Escape resets the zoom
  * before a second Escape closes the dialog. Switching the photo (thumbnail,
- * arrow, swipe) always resets the zoom: the zoom is stored together with the
- * image id it belongs to, so a different photo simply reads as 100 %.
+ * arrow, key, swipe) always resets the zoom: every in-lightbox selection goes
+ * through `selectAt` / `stepBy`, which clear it, so coming back to a photo
+ * shows it at 100 % again. The zoom also carries the image id it belongs to,
+ * so a photo changed from outside never inherits another photo's view.
  *
  * Layout follows the «ЦІЛЬ · TASK-521» mockup: counter top-left, the zoom
  * toolbar and «Закрити» top-right from `sm`; on phones the toolbar sits in the
@@ -251,6 +253,20 @@ export function ProductLightbox({
 
   const resetZoom = () => setZoom(null);
 
+  /**
+   * Switch the photo — always from 100 %. Clearing here (not only reading the
+   * zoom per image id) is what stops A zoomed → B → A from restoring A's old
+   * zoom and pan, including a wrap-around step back to the same photo.
+   */
+  const selectAt = (index: number) => {
+    resetZoom();
+    onSelect(index);
+  };
+  const stepBy = (delta: number) => {
+    resetZoom();
+    onStep(delta);
+  };
+
   const zoomIn = () => zoomTo(nextZoomStep(currentView().scale));
   const zoomOut = () => {
     if (!isZoomed(currentView())) return;
@@ -281,7 +297,7 @@ export function ProductLightbox({
     });
     if (!action) return;
     event.preventDefault();
-    if (action.type === "step") onStep(action.delta);
+    if (action.type === "step") stepBy(action.delta);
     else if (action.type === "pan") pan(action.delta);
     else if (action.type === "zoomIn") zoomIn();
     else if (action.type === "zoomOut") zoomOut();
@@ -477,7 +493,7 @@ export function ProductLightbox({
         isSwipe(delta.x) &&
         Math.abs(delta.x) > Math.abs(delta.y)
       ) {
-        onStep(delta.x < 0 ? 1 : -1);
+        stepBy(delta.x < 0 ? 1 : -1);
       }
       lastTapRef.current = null;
       return;
@@ -713,7 +729,7 @@ export function ProductLightbox({
               <>
                 <button
                   type="button"
-                  onClick={() => onStep(-1)}
+                  onClick={() => stepBy(-1)}
                   aria-label={dict.product.lightboxPrev}
                   className={cn(
                     ROUND_CONTROL,
@@ -724,7 +740,7 @@ export function ProductLightbox({
                 </button>
                 <button
                   type="button"
-                  onClick={() => onStep(1)}
+                  onClick={() => stepBy(1)}
                   aria-label={dict.product.lightboxNext}
                   className={cn(
                     ROUND_CONTROL,
@@ -784,7 +800,7 @@ export function ProductLightbox({
                     <li key={thumb.id} className="shrink-0">
                       <button
                         type="button"
-                        onClick={() => onSelect(index)}
+                        onClick={() => selectAt(index)}
                         aria-label={dict.product.showImageAria(index + 1)}
                         aria-current={isActive ? "true" : undefined}
                         className={cn(
