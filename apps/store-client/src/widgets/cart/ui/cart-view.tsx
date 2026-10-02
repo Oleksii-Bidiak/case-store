@@ -6,7 +6,7 @@ import { ChevronLeft, ShoppingBag } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetCartQueryKey, useClearCart, useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
-import { dict, STICKY_ASIDE_TOP, H1_CLASS, H2_CLASS } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, H1_CLASS } from "@/shared/config";
 import {
   Button,
   Dialog,
@@ -89,9 +89,11 @@ export function CartView() {
         <span className="flex size-20 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <ShoppingBag className="size-9" aria-hidden="true" />
         </span>
-        <h2 id="empty-cart-heading" className={`${H2_CLASS} text-foreground`}>
+        {/* The empty cart is still the /cart page, so its title is the page h1
+            (TASK-751) — same role and scale as the wishlist's empty state. */}
+        <h1 id="empty-cart-heading" className={`${H1_CLASS} text-foreground`}>
           {dict.cart.emptyHeading}
-        </h2>
+        </h1>
         <p className="text-muted-foreground">{dict.cart.emptySubtitle}</p>
         <Link
           href="/products"
