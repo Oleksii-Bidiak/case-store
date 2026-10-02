@@ -39,6 +39,31 @@ describe("AccountDropdown", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 
+  it("gives the trigger a 44×44 minimum touch target", () => {
+    setup();
+    const trigger = screen.getByRole("button", { name: triggerName });
+    expect(trigger).toHaveClass("min-h-11", "min-w-11");
+    expect(trigger).not.toHaveClass("h-9", "w-9");
+  });
+
+  it("merges triggerClassName over the trigger defaults", () => {
+    render(
+      <AccountDropdown
+        triggerContent={<span>icon</span>}
+        triggerAria={triggerName}
+        menuAria="Меню акаунту"
+        triggerClassName="flex rounded-lg"
+      >
+        <AccountDropdownItem href="/account">Мій акаунт</AccountDropdownItem>
+      </AccountDropdown>,
+    );
+    const trigger = screen.getByRole("button", { name: triggerName });
+    expect(trigger).toHaveClass("flex", "rounded-lg", "min-h-11");
+    // cn() resolves the conflicts instead of emitting both.
+    expect(trigger).not.toHaveClass("inline-flex");
+    expect(trigger).not.toHaveClass("rounded-md");
+  });
+
   it("opens on trigger click and focuses the first item", async () => {
     const user = userEvent.setup();
     setup();

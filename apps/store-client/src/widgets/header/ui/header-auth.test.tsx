@@ -63,6 +63,35 @@ describe("HeaderAuth", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("gives the signed-in trigger the same 44×44 / xl-caption box as the guest button", () => {
+    // TASK-511/512 re-check: the signed-in trigger was AccountDropdown's own
+    // 36px (h-9 w-9) icon, under the 44×44 floor and without the «Кабінет»
+    // caption the guest button shows from `xl`. Both states now share a box.
+    const { unmount } = renderWithProviders(<HeaderAuth />, {
+      auth: { isAuthenticated: false, isInitializing: false },
+    });
+    const guest = screen.getByRole("button", {
+      name: dict.header.accountOpenAria,
+    });
+    const guestClasses = guest.className.split(/\s+/).sort();
+    unmount();
+
+    renderWithProviders(<HeaderAuth />, {
+      auth: { isAuthenticated: true, isInitializing: false, userId: "user-1" },
+    });
+    const trigger = screen.getByRole("button", {
+      name: dict.header.accountTriggerAria,
+    });
+
+    expect(trigger).toHaveClass("min-h-11", "min-w-11");
+    expect(trigger).not.toHaveClass("h-9", "w-9");
+    expect(trigger.className.split(/\s+/).sort()).toEqual(guestClasses);
+    // Caption: in the DOM, display:none below `xl` (the aria-label names it).
+    const caption = screen.getByText(dict.header.accountLabel);
+    expect(trigger).toContainElement(caption);
+    expect(caption).toHaveClass("hidden", "xl:inline");
+  });
+
   it("exposes account and orders links inside the open dropdown", async () => {
     const user = userEvent.setup();
     renderWithProviders(<HeaderAuth />, {

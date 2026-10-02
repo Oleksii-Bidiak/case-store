@@ -261,7 +261,7 @@
   },
   "src/widgets/header/ui/header-auth.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 2
+      "count": 1
     }
   },
   "src/widgets/header/ui/header-cart-badge.tsx": {

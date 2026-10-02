@@ -1,4 +1,6 @@
 import { test, expect, type Page } from "./fixtures/test";
+import { E2E_USER_EMAIL, E2E_USER_PASSWORD } from "./fixtures/seed-e2e";
+import { waitForHydration } from "./fixtures/hydration";
 
 /**
  * The storefront header at the three tablet/desktop bands (TASK-511, TASK-512).
@@ -149,5 +151,48 @@ test.describe("header row by width (TASK-511, TASK-512)", () => {
 
     const box = await searchInput(page).boundingBox();
     expect(box?.width ?? 0).toBeGreaterThanOrEqual(MIN_INPUT_WIDTH);
+  });
+
+  test("signed in: the account menu trigger is a 44×44 target at every band", async ({
+    page,
+  }) => {
+    // Every check above runs as a guest. Signed in, «Кабінет» is a different
+    // control — AccountDropdown's menu button — and it stayed a 36px h-9 w-9
+    // box after the guest button became 44×44. It now shares the guest box,
+    // so it also gets the «Кабінет» caption from `xl`.
+    await page.goto("/login");
+    const submit = page
+      .getByRole("main")
+      .getByRole("button", { name: /^увійти$/i });
+    await waitForHydration(page.locator("form").filter({ has: submit }));
+    await page.getByLabel(/(пошта|email)/i).fill(E2E_USER_EMAIL);
+    await page.getByLabel(/(пароль|password)/i).fill(E2E_USER_PASSWORD);
+    await submit.click();
+    await expect(page).not.toHaveURL(/\/login/);
+
+    for (const width of [390, 768, 1024, 1280]) {
+      await openAt(page, width);
+      const trigger = header(page).getByRole("button", {
+        name: "Відкрити меню акаунту",
+      });
+      await expect(trigger).toBeVisible();
+      const box = await trigger.boundingBox();
+      expect(
+        box?.width ?? 0,
+        `trigger width at ${width}`,
+      ).toBeGreaterThanOrEqual(44);
+      expect(
+        box?.height ?? 0,
+        `trigger height at ${width}`,
+      ).toBeGreaterThanOrEqual(44);
+      expect((await trigger.innerText()).trim()).toBe(
+        width >= 1280 ? "Кабінет" : "",
+      );
+    }
+
+    // The taller trigger leaves the 1024 input above the floor too.
+    await openAt(page, 1024);
+    const input = await searchInput(page).boundingBox();
+    expect(input?.width ?? 0).toBeGreaterThanOrEqual(MIN_INPUT_WIDTH);
   });
 });

@@ -26,6 +26,11 @@ export interface AccountDropdownProps {
   id?: string;
   /** Extra classes for the positioning wrapper. */
   className?: string;
+  /**
+   * Extra classes for the trigger `<button>`, merged over the defaults via
+   * `cn()` — e.g. to lay out an icon + caption the way sibling actions are.
+   */
+  triggerClassName?: string;
 }
 
 /**
@@ -49,6 +54,7 @@ export function AccountDropdown({
   children,
   id,
   className,
+  triggerClassName,
 }: AccountDropdownProps) {
   const [open, setOpen] = React.useState(false);
 
@@ -180,7 +186,13 @@ export function AccountDropdown({
         aria-label={triggerAria}
         onClick={() => (open ? closeMenu(false) : openMenu("first"))}
         onKeyDown={handleTriggerKeyDown}
-        className="inline-flex h-9 w-9 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        // min-h-11 min-w-11: a 44×44 touch target at minimum (it was a 36px
+        // h-9 w-9 box), while a caption passed in `triggerContent` can still
+        // grow it.
+        className={cn(
+          "inline-flex min-h-11 min-w-11 items-center justify-center rounded-md text-foreground transition-colors hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          triggerClassName,
+        )}
       >
         {triggerContent}
       </button>
