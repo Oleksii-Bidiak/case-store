@@ -292,7 +292,8 @@ icons (e.g. the select chevron) may keep an opacity since they carry no text.
   - **Navigation & structure:** `Tabs` (+ parts), `Pagination`, `Separator`, `AccountDropdown`
     / `AccountDropdownItem`.
   - **Commerce:** `ProductCard`, `ProductCardImage`, `ProductThumb`, `CategoryTileImage`,
-    `ColorDots`, `RatingStars`, `ReviewRatingStars`, `Badge`, `Logo`.
+    `ColorDots`, `RatingStars`, `ReviewRatingStars`, `Badge`, `Logo` (takes a required
+    `siteName` — the server-resolved `resolveSiteName(seo)`, never the `SITE_NAME` constant).
   - **Content & feedback:** `RichText`, `Skeleton`, `CheckoutSkeleton`, and the Sonner `Toaster`.
 - **RadioGroup and Checkbox are not `shared/ui` components.** They are native `<input
 type="radio|checkbox">` elements styled with tokens where they are used (checkout payment,
