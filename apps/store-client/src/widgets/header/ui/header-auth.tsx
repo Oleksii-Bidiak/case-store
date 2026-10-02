@@ -54,7 +54,9 @@ export function HeaderAuth() {
   if (isInitializing) {
     // Reserves the box the action settles into: 44×44 icon-only below `xl`,
     // icon + caption from `xl` (TASK-511) — no shift when the session resolves.
-    return <Skeleton className="size-11 xl:h-13 xl:w-14" />;
+    // `rounded-lg` is the action's own radius (SiteHeader `.sh-ico`), so the
+    // placeholder has the same shape too, not Skeleton's `rounded-md` (TASK-499).
+    return <Skeleton className="size-11 rounded-lg xl:h-13 xl:w-14" />;
   }
 
   if (!isAuthenticated) {

@@ -332,6 +332,10 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
 - [ ] Contrast ≥ 4.5:1 text / 3:1 large text & UI borders (check sale-on-white, muted text).
 - [ ] Images have meaningful `alt` (empty `alt=""` for decorative).
 - [ ] Icon-only buttons have `aria-label` (wishlist heart, cart, close).
+- [ ] Touch targets are at least 44×44 (`min-h-11 min-w-11`, or `size-11` for a fixed icon
+      button), icon-only header actions included. A control that changes with state keeps one
+      box: the header «Кабінет» is the same 44×44 target (caption from `xl`) for a guest, for
+      a signed-in customer and as its loading skeleton (TASK-499/511).
 - [ ] Forms: `<Label htmlFor>`, errors linked via `aria-describedby`.
 - [ ] Required consent (registration, checkout confirm — TASK-871/882): never a silently
       disabled submit. The button stays enabled; pressing it unticked shows the reason as a
