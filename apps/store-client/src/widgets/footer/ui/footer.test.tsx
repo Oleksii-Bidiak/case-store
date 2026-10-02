@@ -190,6 +190,39 @@ describe("Footer — help pages and the two hubs (TASK-834)", () => {
   });
 });
 
+describe("Footer — the /contact form link (TASK-866)", () => {
+  it("links the single contact form from the «Контакти» column even with nothing configured", async () => {
+    // No contact settings, no pages — the bare-store case.
+    mockFooterData([]);
+
+    render(await Footer());
+
+    const link = screen.getByRole("link", {
+      name: dict.footer.contactFormLink,
+    });
+    expect(link).toHaveAttribute("href", "/contact");
+    // It sits under the «Контакти» heading, next to the phone and email rows.
+    const column = screen
+      .getByRole("heading", { name: dict.footer.contactTitle })
+      .closest("div");
+    expect(column).toContainElement(link);
+    // The icon is decoration; the name is the visible text alone.
+    expect(link.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("is the only footer link to /contact", async () => {
+    mockFooterData([makePage()]);
+
+    render(await Footer());
+
+    expect(
+      screen
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("href") === "/contact"),
+    ).toHaveLength(1);
+  });
+});
+
 describe("Footer — store logo (TASK-299)", () => {
   it("renders the typographic wordmark when no logo is uploaded", async () => {
     mockFooterData([], { logoUrl: null });

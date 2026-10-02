@@ -6,8 +6,10 @@ import {
   Mail,
   Phone,
   MessageCircle,
+  MessageSquareText,
   Send,
   Camera,
+  type LucideIcon,
 } from "lucide-react";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchPublishedPages } from "@/shared/api/pages-server";
@@ -208,6 +210,11 @@ export async function Footer() {
             <Mail className="size-4" aria-hidden="true" />
             {email}
           </a>
+          {/* TASK-866 — /contact is the single contact form (owner decision
+              7.8). Unconditional: the form works with no settings filled in. */}
+          <FooterLink href="/contact" icon={MessageSquareText}>
+            {dict.footer.contactFormLink}
+          </FooterLink>
         </div>
       </div>
 
@@ -240,16 +247,20 @@ export async function Footer() {
 
 function FooterLink({
   href,
+  icon: Icon,
   children,
 }: {
   href: string;
+  /** Leading icon, sized and spaced like the phone / email rows. */
+  icon?: LucideIcon;
   children: React.ReactNode;
 }) {
   return (
     <Link
       href={href}
-      className="text-sm text-footer-foreground/70 transition-colors hover:text-footer-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
+      className="flex items-center gap-2 text-sm text-footer-foreground/70 transition-colors hover:text-footer-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-footer-foreground"
     >
+      {Icon && <Icon className="size-4 shrink-0" aria-hidden="true" />}
       {children}
     </Link>
   );

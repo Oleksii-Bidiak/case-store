@@ -175,6 +175,9 @@ export const dict = {
     // TASK-834 — the two hubs, so every published page has a way in.
     infoLegalHub: "Усі правові документи",
     infoHelpHub: "Довідка та підтримка",
+    // TASK-866 — /contact is the one contact form (owner decision 7.8); the
+    // footer is the site-wide way in, no header link exists.
+    contactFormLink: "Звʼязатися з нами",
   },
 
   trust: {
