@@ -391,6 +391,20 @@
   button:not(:disabled) {
     cursor: pointer;
   }
+
+  /* Room for a fixed bottom bar (TASK-864). A bar that pins a page's primary
+     action to the bottom edge below `md` marks itself `data-mobile-bar`; while
+     one is mounted, <body> gets bottom padding AFTER the footer, so at the very
+     end of the scroll the bar sits over this empty band instead of the footer's
+     last row (payment chips, copyright). A padding on the page view could not
+     do this — the footer renders after it. `:has()` re-evaluates live, so the
+     reserve exists exactly while a bar does (an empty cart, a finished order
+     have none), and from `md` up — where the bar dissolves — there is none. */
+  body:has([data-mobile-bar]) {
+    @variant max-md {
+      padding-bottom: --spacing(24);
+    }
+  }
 }
 
 /* ─────────────────────────────────────────────

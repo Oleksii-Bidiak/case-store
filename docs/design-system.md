@@ -198,8 +198,11 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
   itself instead of running off a short laptop screen.
 - **Mobile sticky bar** (below `md`): the primary action of a long page is pinned to the bottom
   edge. This covers the PDP `MobileAtcBar` (price + add to cart), plus the cart and checkout
-  («До сплати» + CTA, owner decision 7.6, TASK-864). The page content reserves room for it with
-  `pb-24 md:pb-0` so the last block is never hidden under the bar. Cart and checkout wrap their
+  («До сплати» + CTA, owner decision 7.6, TASK-864). The PDP still reserves room with
+  `pb-24 md:pb-0` on its content; the cart and checkout bar marks itself `data-mobile-bar`, and
+  `globals.css` pads `<body>` (`body:has([data-mobile-bar])`, below `md`) — the band sits AFTER
+  the footer, so at the end of the scroll the bar covers neither the last block nor the footer's
+  payment chips. New bars should take the marker, not a page padding. Cart and checkout wrap their
   own CTA in `MobilePayBar` (`shared/ui`): below `md` it is the fixed bar, from `md` up it
   dissolves (`md:contents`) and the CTA renders in place, so a page never shows two primaries
   and never ships a duplicate control. A bar never contradicts the

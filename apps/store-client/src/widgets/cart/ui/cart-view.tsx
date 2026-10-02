@@ -107,9 +107,9 @@ export function CartView() {
   }
 
   return (
-    // `pb-24 md:pb-0` keeps the last block clear of the fixed mobile «До
-    // сплати» bar the summary renders below md (TASK-864).
-    <div className="flex flex-col gap-6 pb-24 md:pb-0">
+    // No bottom padding here: the room for the fixed mobile «До сплати» bar is
+    // reserved by <body> below the footer (globals.css, TASK-864).
+    <div className="flex flex-col gap-6">
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}

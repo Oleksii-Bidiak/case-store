@@ -11,6 +11,9 @@ describe("MobilePayBar (TASK-864)", () => {
 
     const bar = screen.getByTestId("mobile-pay-bar");
     expect(bar).toHaveClass("fixed", "inset-x-0", "bottom-0", "md:contents");
+    // The marker globals.css keys the <body> bottom reserve on — without it the
+    // bar covers the footer's last row at the end of the scroll.
+    expect(bar).toHaveAttribute("data-mobile-bar");
     expect(bar).toHaveTextContent("До сплати");
     expect(bar).toHaveTextContent("1 199 ₴");
     expect(bar).toContainElement(

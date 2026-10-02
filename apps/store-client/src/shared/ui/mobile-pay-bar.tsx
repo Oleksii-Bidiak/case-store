@@ -14,8 +14,9 @@ interface MobilePayBarProps {
 /**
  * MobilePayBar — the cart / checkout counterpart of the PDP `MobileAtcBar`
  * (owner decision 7.6, TASK-864). Below `md` it pins «До сплати» + the page's
- * primary action to the bottom edge; the page reserves `pb-24 md:pb-0` so the
- * last block is never covered.
+ * primary action to the bottom edge. It marks itself `data-mobile-bar`, and
+ * globals.css pads <body> below the footer while such a bar is mounted, so at
+ * the end of the scroll nothing — not even the footer's last row — stays under it.
  *
  * From `md` up the bar dissolves (`md:contents`): its wrappers generate no box,
  * the amount hides, and the action renders exactly where it sits in the markup —
@@ -35,6 +36,7 @@ export function MobilePayBar({
   return (
     <div
       data-testid="mobile-pay-bar"
+      data-mobile-bar=""
       className={cn(
         "fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 p-3 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80 md:contents",
         className,

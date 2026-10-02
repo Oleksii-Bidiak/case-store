@@ -245,9 +245,9 @@ export function CheckoutView() {
   }
 
   return (
-    // `pb-24 md:pb-0` keeps the last block clear of the fixed mobile «До
-    // сплати» bar (TASK-864).
-    <div className="pb-24 md:pb-0">
+    // No bottom padding here: the room for the fixed mobile «До сплати» bar is
+    // reserved by <body> below the footer (globals.css, TASK-864).
+    <div>
       {/* Breadcrumbs — the checkout was the one step of the funnel with no way
           back to the cart except the browser button (TASK-407). Same markup as
           the cart's own trail so the two read as one path; `text-sm` rather than
