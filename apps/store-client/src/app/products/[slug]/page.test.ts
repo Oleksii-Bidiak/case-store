@@ -38,6 +38,10 @@ jest.mock("next/navigation", () => ({
   permanentRedirect: jest.fn((url: string) => {
     throw new Error(`NEXT_REDIRECT:${url}`);
   }),
+  // notFound() throws Next's not-found signal the same way (TASK-874).
+  notFound: jest.fn(() => {
+    throw new Error("NEXT_NOT_FOUND");
+  }),
 }));
 // Slug-redirect lookup (TASK-285) — mocked per-case below.
 jest.mock("@/shared/lib/slug-redirect", () => ({
@@ -65,7 +69,7 @@ jest.mock("react", () => {
 });
 
 import ProductDetailPage, { generateMetadata } from "./page";
-import { permanentRedirect } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import {
   productControllerFindAll,
   productControllerFindBySlug,
@@ -108,18 +112,37 @@ describe("products/[slug] slug-redirect (TASK-285)", () => {
 
     expect(resolveRedirect).toHaveBeenCalledWith("PRODUCT", "staryi-slug");
     expect(permanentRedirect).toHaveBeenCalledWith("/products/novyi-slug");
+    expect(notFound).not.toHaveBeenCalled();
   });
 
-  it("falls through to the client-side not-found for a dead slug with no redirect row (regression)", async () => {
+  // TASK-874 — a dead slug used to render the page anyway and leave the
+  // «не вдалося завантажити» block to the client: a soft 404.
+  it("serves the route's notFound() for a dead slug with no redirect row", async () => {
     findBySlug.mockRejectedValue(
       Object.assign(new Error("404"), { response: { status: 404 } }),
     );
     resolveRedirect.mockResolvedValue(null);
 
-    // No throw — the page renders and ProductDetailView owns the 404 UI.
-    await expect(runPage("never-existed")).resolves.toBeDefined();
+    await expect(runPage("never-existed")).rejects.toThrow("NEXT_NOT_FOUND");
 
+    // The ledger is still consulted first — a rename must win over a 404.
+    expect(resolveRedirect).toHaveBeenCalledWith("PRODUCT", "never-existed");
     expect(permanentRedirect).not.toHaveBeenCalled();
+  });
+
+  it("does not call an outage a missing product — a 502 or a timeout renders the page", async () => {
+    resolveRedirect.mockResolvedValue(null);
+
+    for (const failure of [
+      Object.assign(new Error("502"), { response: { status: 502 } }),
+      new Error("timeout of 8000ms exceeded"),
+    ]) {
+      findBySlug.mockRejectedValueOnce(failure);
+      await expect(runPage(`outage-${failure.message}`)).resolves.toBeDefined();
+    }
+
+    // ProductDetailView retries on the client and shows its load error.
+    expect(notFound).not.toHaveBeenCalled();
   });
 
   it("never consults the redirect ledger when the product resolves", async () => {

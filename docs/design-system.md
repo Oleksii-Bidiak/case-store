@@ -199,7 +199,10 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 - **Mobile sticky bar** (below `md`): the primary action of a long page is pinned to the bottom
   edge. This covers the PDP `MobileAtcBar` (price + add to cart), plus the cart and checkout
   («До сплати» + CTA, owner decision 7.6, TASK-864). The page content reserves room for it with
-  `pb-24 md:pb-0` so the last block is never hidden under the bar.
+  `pb-24 md:pb-0` so the last block is never hidden under the bar. A bar never contradicts the
+  page's main CTA: the PDP bar renders the buy box's own in-cart control (`ProductInCartButton`
+  — «В кошику» / «Товар закінчився», opens the mini-cart) once the cart holds the position
+  (TASK-874).
 
 ---
 

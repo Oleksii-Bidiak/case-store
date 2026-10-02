@@ -4,6 +4,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { makeCart, makeCartItem } from "@/shared/test/msw-handlers";
@@ -194,14 +195,16 @@ describe("ProductDetailView — buy box in-cart state (TASK-409)", () => {
     expect(screen.queryByText(dict.addToCart.inCart)).toBeNull();
   });
 
+  // The buy box and the mobile bar (TASK-874) both carry the in-cart control,
+  // so these assertions count two of them; the bar has its own block below.
   it("shows «В кошику» when the cart already holds this position", async () => {
     arrange({}, [makeCartItem({ productId: "product-1" })]);
 
     expect(
-      await screen.findByRole("button", {
+      await screen.findAllByRole("button", {
         name: dict.addToCart.inCartAria("Tempered Glass — Blue Single"),
       }),
-    ).toBeInTheDocument();
+    ).toHaveLength(2);
     // The add button is gone — the shopper manages the line in the cart now.
     expect(
       screen.queryByRole("button", { name: dict.addToCart.idle }),
@@ -211,10 +214,13 @@ describe("ProductDetailView — buy box in-cart state (TASK-409)", () => {
   it("warns «Товар закінчився» when the position is in the cart but sold out", async () => {
     arrange({ inStock: false }, [makeCartItem({ productId: "product-1" })]);
 
-    const button = await screen.findByRole("button", {
+    const buttons = await screen.findAllByRole("button", {
       name: dict.addToCart.soldOutAria("Tempered Glass — Blue Single"),
     });
-    expect(button).toHaveTextContent(dict.addToCart.soldOut);
+    expect(buttons).toHaveLength(2);
+    for (const button of buttons) {
+      expect(button).toHaveTextContent(dict.addToCart.soldOut);
+    }
   });
 
   it("never leaves the add button stuck on «Додано ✓» after a successful add", async () => {
@@ -234,6 +240,104 @@ describe("ProductDetailView — buy box in-cart state (TASK-409)", () => {
     expect(
       screen.getByRole("button", { name: dict.addToCart.idle }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-874 — the sticky mobile bar reads the same cart answer as the buy box.
+ * It used to offer «Купити» for a position already in the cart, so the two
+ * CTAs on one phone screen contradicted each other.
+ */
+describe("ProductDetailView — mobile bar cart state and sale badge (TASK-874)", () => {
+  const arrange = (
+    product: Partial<typeof baseProduct>,
+    items: ReturnType<typeof makeCartItem>[],
+  ) => {
+    server.use(
+      http.get("*/api/products/:slug", () =>
+        HttpResponse.json({
+          ...detailEnvelope(),
+          data: { ...baseProduct, ...product },
+        }),
+      ),
+      http.get("*/api/products", () =>
+        HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 5, totalPages: 0 },
+        }),
+      ),
+      http.get("*/api/cart", () => HttpResponse.json(makeCart(items))),
+    );
+    renderWithProviders(<ProductDetailView slug="glass-blue-single" />);
+  };
+
+  it("offers «Купити» in the bar while the position is not in the cart", async () => {
+    arrange({}, []);
+    await screen.findByRole("heading", { level: 1 });
+
+    const bar = screen.getByTestId("mobile-atc-bar");
+    expect(
+      within(bar).getByRole("button", { name: dict.addToCart.buy }),
+    ).toBeEnabled();
+    expect(within(bar).queryByText(dict.addToCart.inCart)).toBeNull();
+  });
+
+  it("swaps the bar's «Купити» for «В кошику» once the cart holds the position", async () => {
+    arrange({}, [makeCartItem({ productId: "product-1" })]);
+
+    const bar = await screen.findByTestId("mobile-atc-bar");
+    const inCart = await within(bar).findByRole("button", {
+      name: dict.addToCart.inCartAria("Tempered Glass — Blue Single"),
+    });
+    expect(inCart).toHaveTextContent(dict.addToCart.inCart);
+    expect(
+      within(bar).queryByRole("button", { name: dict.addToCart.buy }),
+    ).toBeNull();
+  });
+
+  it("opens the mini-cart from the bar's «В кошику», like the buy box", async () => {
+    const user = userEvent.setup();
+    arrange({}, [makeCartItem({ productId: "product-1" })]);
+
+    const bar = await screen.findByTestId("mobile-atc-bar");
+    await user.click(
+      await within(bar).findByRole("button", {
+        name: dict.addToCart.inCartAria("Tempered Glass — Blue Single"),
+      }),
+    );
+
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("warns «Товар закінчився» in the bar for a sold-out position in the cart", async () => {
+    arrange({ inStock: false }, [makeCartItem({ productId: "product-1" })]);
+
+    const bar = await screen.findByTestId("mobile-atc-bar");
+    expect(
+      await within(bar).findByRole("button", {
+        name: dict.addToCart.soldOutAria("Tempered Glass — Blue Single"),
+      }),
+    ).toHaveTextContent(dict.addToCart.soldOut);
+  });
+
+  it("renders the discount as the shared sale Badge", async () => {
+    // 12.99 against 19.99 → −35%.
+    arrange({}, []);
+    await screen.findByRole("heading", { level: 1 });
+
+    const badge = screen.getByText("−35%");
+    expect(badge).toHaveAttribute("data-slot", "badge");
+    expect(badge).toHaveAttribute("data-variant", "sale");
+    // The PDP chip keeps the badge radius, not the Badge's default pill.
+    expect(badge).toHaveClass("rounded-sm");
+    expect(badge).not.toHaveClass("rounded-full");
+  });
+
+  it("shows no discount badge when there is no old price", async () => {
+    arrange({ compareAtPrice: null as unknown as string }, []);
+    await screen.findByRole("heading", { level: 1 });
+
+    expect(screen.queryByText(/^−\d+%$/)).toBeNull();
   });
 });
 

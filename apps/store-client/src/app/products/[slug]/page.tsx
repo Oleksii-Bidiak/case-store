@@ -1,6 +1,6 @@
 import { Suspense, cache } from "react";
 import type { Metadata } from "next";
-import { permanentRedirect } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import type { QueryClient } from "@tanstack/react-query";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import { ProductDetailView, ProductDetailSkeleton } from "@/widgets";
@@ -9,6 +9,7 @@ import {
   type ProductRailFilter,
 } from "@/widgets/product-detail";
 import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
+import { apiErrorStatus } from "@/shared/lib/api-error";
 import {
   getProductControllerFindAllQueryOptions,
   getProductControllerFindBySlugQueryKey,
@@ -119,17 +120,33 @@ export default async function ProductDetailPage({
   // Fetch server-side for structured data AND for the first HTML (TASK-563):
   // the same response is seeded into the query ProductDetailView reads, so the
   // server renders the whole product — name, price, breadcrumb links — instead
-  // of a skeleton. On any failure JSON-LD is simply omitted and nothing is
-  // seeded — ProductDetailView still fetches and handles the 404/UI itself.
-  // Schema objects are built here (plain data); the JSX is constructed outside
-  // the try/catch.
-  const detail = await fetchProductBySlug(slug).catch(() => null);
+  // of a skeleton. Schema objects are built here (plain data); the JSX is
+  // constructed outside the try/catch.
+  //
+  // Only the API's own 404 means "no such product" (TASK-874). Any other
+  // failure — a 502, a timeout — is an outage, not an absence: nothing is
+  // seeded and ProductDetailView retries on the client and shows its load
+  // error, so an API hiccup never tells a shopper (or a crawler) that a live
+  // product does not exist (the TASK-793 rule the blog and categories follow).
+  const { detail, missing } = await fetchProductBySlug(slug).then(
+    (envelope) => ({ detail: envelope, missing: false }),
+    (error: unknown) => ({
+      detail: null,
+      missing: apiErrorStatus(error) === 404,
+    }),
+  );
 
   // TASK-285: a failed product fetch (detail === null) is the 404 candidate
   // path — check the slug-redirect ledger and serve a permanent (308) redirect
   // when the admin renamed the slug. A genuinely dead slug (no redirect row)
-  // falls through unchanged: ProductDetailView still renders its own
-  // client-side not-found state.
+  // ends in the route's `notFound()` (TASK-874): the store's not-found page,
+  // rendered by the server with `noindex`, replaces the client-side
+  // «не вдалося завантажити» block the shopper used to get for a dead link.
+  // Its HTTP status is 200, not 404: `[slug]/loading.tsx` streams the skeleton
+  // shell before this await settles, and Next cannot change a status once the
+  // body streams (measured: without that file the same URL answers 404). The
+  // `noindex` Next injects keeps it out of the index; the wire-level 404 is an
+  // owner decision against the skeleton — TASK-1653.
   //
   // This note used to claim the route deliberately has NO route-level
   // loading.tsx, so that no loading boundary could stream a 200 shell before
@@ -152,6 +169,9 @@ export default async function ProductDetailPage({
     const newSlug = await resolveSlugRedirect("PRODUCT", slug);
     if (newSlug) {
       permanentRedirect(`/products/${newSlug}`);
+    }
+    if (missing) {
+      notFound();
     }
   }
 

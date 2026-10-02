@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { AlertTriangle, BarChart3, Check } from "lucide-react";
+import { BarChart3 } from "lucide-react";
 import {
   ProductImageGallery,
   ProductStockIndicator,
@@ -22,7 +22,7 @@ import {
   H1_CLASS,
   STICKY_ASIDE_TOP,
 } from "@/shared/config";
-import { Button, RatingStars } from "@/shared/ui";
+import { Badge, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
 import { ProductTrustBadges } from "./product-trust-badges";
@@ -30,6 +30,7 @@ import { ProductSpecsTabs } from "./product-specs-tabs";
 import { ProductHighlights } from "./product-highlights";
 import { ProductRail } from "./product-rail";
 import { MobileAtcBar } from "./mobile-atc-bar";
+import { ProductInCartButton } from "./product-in-cart-button";
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
@@ -96,6 +97,8 @@ export function ProductDetailView({ slug }: { slug: string }) {
     return <ProductDetailSkeleton />;
   }
 
+  // An outage, not an absence: a dead slug never reaches this view — the
+  // server page answers it with the store's not-found (TASK-874).
   if (isError || !data) {
     return (
       <div className="flex flex-col items-start gap-4">
@@ -171,10 +174,17 @@ export function ProductDetailView({ slug }: { slug: string }) {
             images={sortedImages}
             altFallback={product.name}
           />
+          {/* The catalogue's sale badge (shared/ui Badge, `sale` variant —
+              TASK-874), at the PDP's size: the larger photo takes the mockup's
+              `.pd-sale` chip (badge radius `rounded-sm`), not the card's
+              compact pill. */}
           {onSale && (
-            <span className="absolute top-4 left-4 rounded-sm bg-sale px-3 py-1.5 text-sm font-bold text-sale-foreground">
+            <Badge
+              variant="sale"
+              className="absolute top-4 left-4 rounded-sm px-3 py-1.5 text-sm font-bold"
+            >
               −{discountPercent}%
-            </span>
+            </Badge>
           )}
           {/* «В обране» sits ABOVE the gallery's full-frame zoom trigger
               (`z-20`, inset-0): without its own `z-30` the transparent zoom
@@ -263,35 +273,14 @@ export function ProductDetailView({ slug }: { slug: string }) {
             <div className="mb-2.5 flex items-stretch gap-2.5">
               <div className="flex-1">
                 {inCart ? (
-                  // Already in the cart. Two readings of that fact: the position
-                  // is waiting (success), or it sold out while it waited
-                  // (destructive — the shopper learns it here, not at checkout).
-                  // Either way the button opens the mini-cart, the one place the
-                  // line can be changed or dropped.
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={openCartSheet}
-                    aria-label={
-                      product.inStock
-                        ? dict.addToCart.inCartAria(product.name)
-                        : dict.addToCart.soldOutAria(product.name)
-                    }
-                    className={`h-12 w-full font-semibold transition-colors ${
-                      product.inStock
-                        ? "border-success/40 text-success hover:bg-success/10 hover:text-success"
-                        : "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    }`}
-                  >
-                    {product.inStock ? (
-                      <Check aria-hidden="true" className="size-4" />
-                    ) : (
-                      <AlertTriangle aria-hidden="true" className="size-4" />
-                    )}
-                    {product.inStock
-                      ? dict.addToCart.inCart
-                      : dict.addToCart.soldOut}
-                  </Button>
+                  // Already in the cart — the same control as the mobile bar's
+                  // (in stock: «В кошику»; sold out while it waited: «Товар
+                  // закінчився»). Either way it opens the mini-cart.
+                  <ProductInCartButton
+                    productName={product.name}
+                    inStock={product.inStock}
+                    onOpenCart={openCartSheet}
+                  />
                 ) : (
                   <AddToCartButton
                     productId={product.id}
@@ -356,8 +345,11 @@ export function ProductDetailView({ slug }: { slug: string }) {
 
       <MobileAtcBar
         productId={product.id}
+        productName={product.name}
         price={product.price}
-        disabled={!product.inStock}
+        inStock={product.inStock}
+        inCart={inCart}
+        onOpenCart={openCartSheet}
       />
 
       {sheetMounted && (
