@@ -1007,8 +1007,6 @@ export const dict = {
     // Full-screen gallery lightbox (TASK-416).
     zoomAria: "Відкрити фото на весь екран",
     lightboxTitle: (name: string) => `Фото товару «${name}»`,
-    lightboxHint:
-      "Гортайте стрілками ← та → або свайпом. Натисніть Esc, щоб закрити.",
     lightboxPrev: "Попереднє фото",
     lightboxNext: "Наступне фото",
     lightboxCounter: (current: number, total: number) =>
@@ -1022,6 +1020,26 @@ export const dict = {
     // of `zoomAria` so the visible label stays inside the accessible name
     // (WCAG 2.5.3 «Label in Name»).
     zoomChip: "На весь екран",
+    // Lightbox zoom, thumbnail strip and the visible gesture hint (TASK-521).
+    // The hint doubles as the dialog's description, so it names what works in
+    // the current state: a pointer or a touch screen, unzoomed or zoomed.
+    lightboxZoomToolbar: "Масштаб фото",
+    lightboxZoomOut: "Зменшити",
+    lightboxZoomIn: "Збільшити",
+    lightboxZoomReset: "Скинути масштаб",
+    lightboxZoomValue: (percent: number) => `${percent}%`,
+    lightboxThumbnails: "Мініатюри",
+    lightboxHintPointer: (canStep: boolean) =>
+      canStep
+        ? "Клік по фото — наблизити · ← → — гортати · Esc — закрити"
+        : "Клік по фото — наблизити · Esc — закрити",
+    lightboxHintPointerZoomed:
+      "Перетягніть, щоб роздивитися · подвійний клік або «Скинути» — назад до 100%",
+    lightboxHintTouch: (canStep: boolean) =>
+      canStep
+        ? "Свайп — гортати · подвійний тап або щипок — наблизити"
+        : "Подвійний тап або щипок — наблизити",
+    lightboxHintTouchZoomed: "Щипок — масштаб · один палець — панорама",
   },
 
   reviews: {

@@ -182,7 +182,13 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
   (TASK-415). The PDP gallery follows the same rule — the main frame and every 64px thumbnail
   are square boxes over the product gradient (`pickProductGradient`, seeded like its
   placeholder) with the photo `object-contain` inside; the lightbox is `object-contain` too
-  (TASK-518, TASK-416). Banners and category tiles keep `object-cover`: there the frame
+  (TASK-518, TASK-416) at every zoom level. The lightbox (`entities/product/ui/product-lightbox.tsx`,
+  TASK-521) zooms 100 → 150 → 250 → 400 % from a `role="toolbar"` of 44px frosted buttons
+  (top-right from `sm`, in the footer above 56px thumbnails on phones, where there are no arrows),
+  by click / double tap into the pointer and by pinch; zoomed, it pans by drag, one finger or the
+  arrow keys, hides the arrows, shows an `aria-hidden` minimap, and Escape resets before it
+  closes. The zoom/pan math is pure (`entities/product/lib/lightbox-zoom.ts`) and the eased
+  transform is off while a gesture drives it and under `prefers-reduced-motion`. Banners and category tiles keep `object-cover`: there the frame
   matters more than the edges of the subject.
 - **Sticky asides** (filter rails, summary panels, TOCs, side navs): the site header is
   `sticky top-0 z-50` (64px), so any other sticky panel must clear it with a **96px** top

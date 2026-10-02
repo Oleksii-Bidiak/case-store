@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { ChevronLeft, ChevronRight, Expand, Loader2, X } from "lucide-react";
+import { Expand, Loader2 } from "lucide-react";
 // Own slice — importing the `@/entities/product` barrel from inside it would be
 // a module cycle (barrel → ui → barrel), so the type comes straight from the
 // generated models the barrel itself re-exports.
@@ -10,16 +10,8 @@ import type { ProductImageEntity } from "@/shared/api/generated/models";
 import { dict } from "@/shared/config";
 import { pickProductGradient } from "@/shared/lib";
 import { cn } from "@/shared/lib/utils";
-import {
-  BLUR_PLACEHOLDER,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  ProductThumb,
-} from "@/shared/ui";
+import { BLUR_PLACEHOLDER, ProductThumb } from "@/shared/ui";
+import { ProductLightbox } from "./product-lightbox";
 
 /**
  * Delay before the image-switch loading overlay becomes visible. Instant cache
@@ -28,11 +20,9 @@ import {
  */
 export const IMAGE_LOADING_INDICATOR_DELAY_MS = 120;
 
-/**
- * Horizontal travel (px) a touch must cover before the lightbox treats it as a
- * swipe rather than a tap or a vertical scroll (TASK-416).
- */
-export const SWIPE_THRESHOLD_PX = 48;
+// The lightbox gesture constants live with the rest of its pure math
+// (TASK-521); re-exported so existing imports keep resolving.
+export { SWIPE_THRESHOLD_PX } from "../lib/lightbox-zoom";
 
 interface ProductImageGalleryProps {
   images: ProductImageEntity[];
@@ -67,6 +57,11 @@ export function altText(image: ProductImageEntity, fallback: string): string {
  * addressable on its own and avoids a control whose accessible name would be
  * the whole alt text.
  *
+ * TASK-521 moves the dialog into {@link ProductLightbox}: zoom toolbar, click /
+ * double-tap / pinch zoom into the pointer, drag-to-pan, a minimap and its own
+ * thumbnail strip. The gallery still owns the selection, so the lightbox and
+ * the strip under the main photo always show the same picture.
+ *
  * TASK-518: the main frame and the thumbnails follow the ProductCard rule
  * (design-system.md §4) — a fixed square box over the card gradient with the
  * photo `object-contain` inside, so mixed aspect ratios are letterboxed, never
@@ -89,7 +84,6 @@ export function ProductImageGallery({
   // The zoom trigger — focus returns here when the lightbox closes, so keyboard
   // users land back where they left off instead of at the top of the document.
   const zoomButtonRef = useRef<HTMLButtonElement>(null);
-  const touchStartX = useRef<number | null>(null);
 
   const markFailed = (id: string) =>
     setFailed((prev) => (prev[id] ? prev : { ...prev, [id]: true }));
@@ -128,33 +122,6 @@ export function ProductImageGallery({
       ),
     [images.length],
   );
-
-  const handleLightboxKeyDown = (event: React.KeyboardEvent) => {
-    if (images.length < 2) return;
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      step(-1);
-    } else if (event.key === "ArrowRight") {
-      event.preventDefault();
-      step(1);
-    }
-  };
-
-  const handleTouchStart = (event: React.TouchEvent) => {
-    touchStartX.current = event.changedTouches[0]?.clientX ?? null;
-  };
-
-  const handleTouchEnd = (event: React.TouchEvent) => {
-    const start = touchStartX.current;
-    touchStartX.current = null;
-    if (start == null || images.length < 2) return;
-    const delta = (event.changedTouches[0]?.clientX ?? start) - start;
-    if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return;
-    step(delta < 0 ? 1 : -1);
-  };
-
-  const lightboxImage = images[activeIndex] ?? images[0];
-  const lightboxFailed = !lightboxImage || failed[lightboxImage.id];
 
   // The same deterministic backdrop as the gradient placeholder (both seeded by
   // the product name), so a letterboxed photo and a missing one sit on one
@@ -293,88 +260,21 @@ export function ProductImageGallery({
         </ul>
       )}
 
-      {/* Lightbox. Full-viewport at every breakpoint: a photo is the content, so
-          it gets the whole screen rather than a centred card. Radix supplies the
-          focus trap, the Esc handler and the scroll lock; `onCloseAutoFocus`
-          overrides only WHERE focus lands so it is always the zoom trigger. */}
-      <Dialog open={lightboxOpen} onOpenChange={setLightboxOpen}>
-        <DialogContent
-          onKeyDown={handleLightboxKeyDown}
-          onCloseAutoFocus={(event) => {
-            event.preventDefault();
-            zoomButtonRef.current?.focus();
-          }}
-          // The primitive's built-in close is a bare 16px icon — fine inside a
-          // padded card, far below the 44px touch target on a full-bleed photo.
-          // Composed here instead, matching the prev/next controls.
-          showCloseButton={false}
-          className="inset-0 top-0 left-0 h-dvh w-screen max-w-none translate-x-0 translate-y-0 gap-0 rounded-none border-0 bg-background p-0 sm:max-w-none"
-        >
-          <DialogHeader className="sr-only">
-            <DialogTitle>{dict.product.lightboxTitle(altFallback)}</DialogTitle>
-            <DialogDescription>{dict.product.lightboxHint}</DialogDescription>
-          </DialogHeader>
-
-          <DialogClose className="absolute top-3 right-3 z-10 grid size-12 place-items-center rounded-full border border-border bg-background/80 text-foreground shadow-elevated transition-colors duration-200 ease-out hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:top-4 sm:right-4">
-            <X aria-hidden="true" className="size-5" />
-            <span className="sr-only">{dict.common.close}</span>
-          </DialogClose>
-
-          <div
-            className="relative flex h-dvh flex-col"
-            onTouchStart={handleTouchStart}
-            onTouchEnd={handleTouchEnd}
-          >
-            <div className="relative min-h-0 flex-1">
-              {lightboxFailed ? (
-                <ProductThumb
-                  name={altFallback}
-                  className="size-full"
-                  initialClassName="text-7xl"
-                />
-              ) : (
-                <Image
-                  src={lightboxImage.url}
-                  alt={altText(lightboxImage, altFallback)}
-                  fill
-                  sizes="100vw"
-                  onError={() => markFailed(lightboxImage.id)}
-                  // Never crop in the lightbox: this is the one place a shopper
-                  // expects to see the whole product, edges included.
-                  className="size-full object-contain p-4 sm:p-12"
-                />
-              )}
-            </div>
-
-            {images.length > 1 && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => step(-1)}
-                  aria-label={dict.product.lightboxPrev}
-                  className="absolute top-1/2 left-2 grid size-12 -translate-y-1/2 place-items-center rounded-full border border-border bg-background/80 text-foreground shadow-elevated transition-colors duration-200 ease-out hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:left-4"
-                >
-                  <ChevronLeft aria-hidden="true" className="size-6" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => step(1)}
-                  aria-label={dict.product.lightboxNext}
-                  className="absolute top-1/2 right-2 grid size-12 -translate-y-1/2 place-items-center rounded-full border border-border bg-background/80 text-foreground shadow-elevated transition-colors duration-200 ease-out hover:bg-background focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:right-4"
-                >
-                  <ChevronRight aria-hidden="true" className="size-6" />
-                </button>
-                <p
-                  role="status"
-                  className="pb-6 text-center text-sm tabular-nums text-muted-foreground"
-                >
-                  {dict.product.lightboxCounter(activeIndex + 1, images.length)}
-                </p>
-              </>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      {/* Full-screen viewer with zoom, pan and its own thumbnail strip
+          (TASK-416, TASK-521). Focus returns to the zoom trigger on close. */}
+      <ProductLightbox
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        images={images}
+        activeIndex={activeIndex}
+        onStep={step}
+        onSelect={setActiveIndex}
+        altFallback={altFallback}
+        failed={failed}
+        onImageError={markFailed}
+        gradient={gradient}
+        returnFocusRef={zoomButtonRef}
+      />
     </div>
   );
 }
