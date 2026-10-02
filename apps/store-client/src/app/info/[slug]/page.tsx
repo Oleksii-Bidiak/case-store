@@ -106,6 +106,7 @@ export async function generateMetadata({
         entityOgImage: page.ogImage,
         defaultOgImage: resolved.ogImage,
         alt: title.absolute,
+        siteName,
       }),
     },
   };

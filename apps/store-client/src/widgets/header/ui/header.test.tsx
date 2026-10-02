@@ -10,6 +10,9 @@ import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { Header } from "./header";
 
+/** Not the `SITE_NAME` fallback — proves the wordmark comes from the prop (TASK-546). */
+const STORE_NAME = "Аксесуарня";
+
 // next/navigation is unavailable under jsdom — the header's logout and the
 // search autocomplete both reach for the router.
 jest.mock("next/navigation", () => ({
@@ -38,7 +41,7 @@ function renderHeader() {
   );
   return renderWithProviders(
     <ThemeProvider attribute="data-theme" defaultTheme="system" enableSystem>
-      <Header />
+      <Header siteName={STORE_NAME} />
     </ThemeProvider>,
   );
 }
@@ -138,6 +141,26 @@ describe("Header — responsive class contract (TASK-539)", () => {
       );
       expect(classesOf(caption)).not.toContain("sm:inline");
     }
+  });
+
+  it("names the home link and the slide-out menu with the store name it is given (TASK-546)", async () => {
+    const user = userEvent.setup();
+    renderHeader();
+
+    // The wordmark is the link's accessible name — the admin-managed name, not
+    // the code constant.
+    expect(screen.getByRole("link", { name: STORE_NAME })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    expect(screen.queryByText("CaseStore")).not.toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", { name: dict.header.openMenu }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: STORE_NAME }),
+    ).toBeInTheDocument();
   });
 
   it("carries everything the row hides below xl in the slide-out menu", async () => {

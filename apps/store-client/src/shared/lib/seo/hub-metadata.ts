@@ -114,6 +114,7 @@ export async function buildHubMetadata({
         entityOgImage: page?.ogImage,
         defaultOgImage: resolved.ogImage,
         alt: title.absolute,
+        siteName,
       }),
     },
   };

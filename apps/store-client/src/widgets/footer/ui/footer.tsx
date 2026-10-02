@@ -12,6 +12,7 @@ import {
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { fetchPublishedPages } from "@/shared/api/pages-server";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
+import { resolveSiteName } from "@/shared/lib/seo";
 import { Logo } from "@/shared/ui";
 import { dict, isInfoSlugInlinedOnHub, PAGE_CONTAINER } from "@/shared/config";
 
@@ -61,6 +62,9 @@ export async function Footer() {
     (page) => !isInfoSlugInlinedOnHub(page.slug),
   );
 
+  // TASK-546: the wordmark and the © line carry the admin-managed store name
+  // (SeoSettings.siteName), the same one the <title> template uses.
+  const siteName = resolveSiteName(seo);
   const email = contact?.email ?? dict.footer.contactEmail;
   const phone = contact?.phone ?? dict.footer.contactPhone;
   const hours = contact?.workingHours ?? dict.footer.contactHours;
@@ -94,7 +98,11 @@ export async function Footer() {
         {/* Brand + socials */}
         <div className="flex flex-col gap-4">
           <Link href="/">
-            <Logo logoUrl={seo?.logoUrl} className="gap-2.5" />
+            <Logo
+              siteName={siteName}
+              logoUrl={seo?.logoUrl}
+              className="gap-2.5"
+            />
           </Link>
           <p className="max-w-xs text-sm leading-relaxed text-footer-foreground/70">
             {dict.footer.tagline}
@@ -209,7 +217,7 @@ export async function Footer() {
           className={`${PAGE_CONTAINER} flex flex-col items-center justify-between gap-4 py-5 sm:flex-row`}
         >
           <p className="text-xs text-footer-foreground/60">
-            {dict.footer.rights(year)}
+            {dict.footer.rights(year, siteName)}
           </p>
           <ul
             className="flex flex-wrap items-center gap-2"

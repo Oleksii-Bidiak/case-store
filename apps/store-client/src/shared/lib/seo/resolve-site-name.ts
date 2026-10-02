@@ -21,10 +21,11 @@ export interface ResolveSiteNameSettings {
  * render a nameless title. A blank or whitespace-only value falls back too — an
  * owner who clears the field wants the default back, not an empty `og:site_name`.
  *
- * NOT used by `shared/ui/logo.tsx`: the header/footer logo is a client component
- * with no access to the server fetch, so the lettering inside it still comes from
- * the constant. Moving it over is a separate task (see `docs/admin-guide.md`
- * «Де міняти назву магазину»), and the form hint in the admin says so out loud.
+ * The visible logo follows it too since TASK-546: `shared/ui/logo.tsx` is a
+ * client component with no access to the server fetch, so the root layout (for
+ * the header and the mobile menu) and the footer call this function and pass the
+ * name down as a prop — the footer's © line and the brand card's
+ * `og:image:alt` included. Nothing outside this file reads `SITE_NAME`.
  */
 export function resolveSiteName(
   settings?: ResolveSiteNameSettings | null,

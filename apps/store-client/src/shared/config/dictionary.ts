@@ -136,7 +136,10 @@ export const dict = {
   },
 
   footer: {
-    rights: (year: number) => `© ${year} CaseStore. Усі права захищено.`,
+    // The name is SeoSettings.siteName via resolveSiteName (TASK-546), never a
+    // literal — the owner renames the store in /settings/seo.
+    rights: (year: number, siteName: string) =>
+      `© ${year} ${siteName}. Усі права захищено.`,
     tagline:
       "Інтернет-магазин аксесуарів та ґаджетів. Оригінальна продукція з офіційною гарантією та доставкою по Україні.",
     shopTitle: "Магазин",
@@ -2051,6 +2054,10 @@ export const dict = {
     contactTitle: "Звʼязатися з нами",
     contactDescription:
       "Гаряча лінія, пошта, месенджери та адреса шоуруму — оберіть зручний спосіб звʼязку з CaseStore.",
+    // TASK-546 — `og:image:alt` of the committed brand card and the alt floor
+    // of `buildOgImages`: the resolved store name, not a literal.
+    brandCardAlt: (siteName: string) =>
+      `${siteName} — магазин аксесуарів для телефонів`,
   },
 
   // TASK-077 — variant dots + quick-add overlay on the product card.

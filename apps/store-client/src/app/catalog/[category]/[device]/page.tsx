@@ -269,6 +269,7 @@ export async function generateMetadata({
         categoryImage: categoryNode?.image,
         defaultOgImage: seoMeta.ogImage,
         alt: title.absolute,
+        siteName,
       }),
     },
   };

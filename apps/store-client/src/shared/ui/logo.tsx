@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { SITE_NAME } from "@/shared/config";
 import { cn } from "@/shared/lib/utils";
 import { isOptimizableImageSrc } from "./category-tile-image";
 
@@ -24,6 +23,14 @@ function isSvgUrl(src: string): boolean {
 
 interface LogoProps {
   /**
+   * The store's display name — `SeoSettings.siteName`, resolved on the server by
+   * `resolveSiteName` (TASK-546) and handed down as a plain prop. It is the
+   * wordmark, the monogram's letter and the uploaded logo's alt text. Required
+   * on purpose: a call site that forgets it must fail typecheck rather than
+   * quietly print a name the owner has already changed in the admin.
+   */
+  siteName: string;
+  /**
    * `SeoSettings.logoUrl` — an absolute URL under the store-api `/uploads/branding/`
    * path (or null/undefined when the operator has not uploaded a logo yet).
    */
@@ -41,7 +48,13 @@ interface LogoProps {
  * monogram + wordmark, unchanged — so a store that never uploads anything looks
  * exactly as it did before. An uploaded logo REPLACES the wordmark (logos
  * normally carry the brand name themselves), which is why the image alt is the
- * site name: the accessible name of the link stays "CaseStore" either way.
+ * site name: the accessible name of the link is the store's name either way.
+ *
+ * The name is NOT read here (TASK-546). Before that task the wordmark came from
+ * the `SITE_NAME` constant, so renaming the store in /settings/seo changed every
+ * title and feed but left the old name in the header and footer. This is a
+ * client component (it tracks a failed image load) and cannot run the server
+ * fetch, so the root layout and the footer resolve the name and pass it in.
  *
  * Rendering path per file type:
  *   • SVG → a plain `<img>`. `next/image` refuses to optimize SVG unless
@@ -57,7 +70,12 @@ interface LogoProps {
  * A load failure (deleted file, API down) falls back to the monogram rather than
  * leaving a broken-image icon in the header of every page.
  */
-export function Logo({ logoUrl, className, markClassName }: LogoProps) {
+export function Logo({
+  siteName,
+  logoUrl,
+  className,
+  markClassName,
+}: LogoProps) {
   // Track the URL that failed to load, not a bare boolean: the header and footer
   // live in the root layout and persist across client navigations, so a stale
   // `failed=true` would keep showing the monogram even after the operator
@@ -84,10 +102,10 @@ export function Logo({ logoUrl, className, markClassName }: LogoProps) {
             markClassName,
           )}
         >
-          {SITE_NAME.charAt(0)}
+          {siteName.charAt(0)}
         </span>
         <span className="truncate font-display text-xl font-bold tracking-tight">
-          {SITE_NAME}
+          {siteName}
         </span>
       </span>
     );
@@ -104,7 +122,7 @@ export function Logo({ logoUrl, className, markClassName }: LogoProps) {
         // eslint-disable-next-line @next/next/no-img-element -- see the rendering-path note above: SVG must bypass the optimizer, and a non-allow-listed host would make next/image throw
         <img
           src={src}
-          alt={SITE_NAME}
+          alt={siteName}
           width={LOGO_MAX_WIDTH}
           height={LOGO_HEIGHT}
           className={imageClass}
@@ -113,7 +131,7 @@ export function Logo({ logoUrl, className, markClassName }: LogoProps) {
       ) : (
         <Image
           src={src}
-          alt={SITE_NAME}
+          alt={siteName}
           width={LOGO_MAX_WIDTH}
           height={LOGO_HEIGHT}
           sizes={`${LOGO_MAX_WIDTH}px`}

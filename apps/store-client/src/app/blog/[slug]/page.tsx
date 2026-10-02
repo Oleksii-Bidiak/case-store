@@ -93,6 +93,7 @@ export async function generateMetadata({
         pageImage: post.coverImageUrl,
         defaultOgImage: resolved.ogImage,
         alt: title.absolute,
+        siteName,
       }),
     },
   };

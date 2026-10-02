@@ -119,7 +119,11 @@ export async function generateMetadata(): Promise<Metadata> {
       // is why they call the same `buildOgImages` helper — TASK-432).
       images: buildOgImages({
         defaultOgImage: resolved.ogImage,
-        alt: resolved.title || dict.meta.rootTitle,
+        // No admin title → the helper's floor, the brand-card alt built from
+        // the resolved store name (TASK-546), not the constant-bearing
+        // `dict.meta.rootTitle`.
+        alt: resolved.title,
+        siteName,
       }),
     },
     // Search-console ownership verification (TASK-280, plan 146 Decision 2).
@@ -167,6 +171,10 @@ export default async function RootLayout({
     fetchSeoSettings(),
   ]);
   const announcement = banners.ANNOUNCEMENT_BAR[0];
+  // TASK-546: the visible wordmark follows the same admin-managed name as the
+  // <title> template above — resolved here, passed to the client Header as a
+  // string. The Footer resolves it itself from the same deduped request.
+  const siteName = resolveSiteName(seo);
 
   return (
     <html
@@ -188,7 +196,11 @@ export default async function RootLayout({
           >
             {dict.nav.skipToContent}
           </a>
-          <Header announcement={announcement} logoUrl={seo?.logoUrl} />
+          <Header
+            announcement={announcement}
+            logoUrl={seo?.logoUrl}
+            siteName={siteName}
+          />
           <main id="main-content" className="flex-1">
             {children}
           </main>

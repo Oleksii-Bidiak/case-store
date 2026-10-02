@@ -194,6 +194,7 @@ export async function generateMetadata({
         categoryImage: node.image,
         defaultOgImage: seoMeta.ogImage,
         alt: title.absolute,
+        siteName,
       }),
     },
   };

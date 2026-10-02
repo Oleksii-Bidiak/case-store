@@ -28,10 +28,9 @@ export const CURRENCY = process.env.NEXT_PUBLIC_CURRENCY ?? "UAH";
 // Do not add new direct readers of this constant — call `resolveSiteName()` so
 // the admin value keeps winning.
 //
-// The one deliberate exception is `shared/ui/logo.tsx`: it is a client component
-// with no access to the server-side settings fetch, so the lettering inside the
-// header/footer logo still comes from here. Wiring that up is a separate task
-// (the admin form says so in plain UA, and docs/admin-guide.md §27 repeats it).
+// There are no exceptions left: until TASK-546 `shared/ui/logo.tsx` read this
+// directly, so the header/footer wordmark ignored the admin name. It now takes
+// the resolved name as a prop, and `resolveSiteName` is the only reader here.
 export const SITE_NAME = "CaseStore";
 
 // ─── Brand OG-image fallback (TASK-279, plan 145) ────────────────────────────

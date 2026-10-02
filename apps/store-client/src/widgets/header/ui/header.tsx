@@ -39,6 +39,11 @@ interface HeaderProps {
   announcement?: BannerEntity;
   /** Admin-uploaded store logo (SeoSettings.logoUrl) from the server layout. */
   logoUrl?: string | null;
+  /**
+   * Store display name (SeoSettings.siteName via `resolveSiteName`) from the
+   * server layout — the wordmark and the logo's alt (TASK-546).
+   */
+  siteName: string;
 }
 
 /**
@@ -48,11 +53,11 @@ interface HeaderProps {
  * categories. Client component because it owns the mobile-menu open state and
  * composes hook-driven sub-widgets.
  *
- * The announcement banner and the store logo are fetched server-side (ISR) and
- * passed in as plain serializable props so the client header can render them
- * without its own fetch.
+ * The announcement banner, the store logo and the store name are fetched
+ * server-side (ISR) and passed in as plain serializable props so the client
+ * header can render them without its own fetch.
  */
-export function Header({ announcement, logoUrl }: HeaderProps = {}) {
+export function Header({ announcement, logoUrl, siteName }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -121,7 +126,7 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                   {/* The Sheet's accessible name — the wordmark (or the logo's
                       alt text) is the store name either way. */}
                   <SheetTitle>
-                    <Logo logoUrl={logoUrl} />
+                    <Logo siteName={siteName} logoUrl={logoUrl} />
                   </SheetTitle>
                 </SheetHeader>
                 {/* Mobile search — full width at the top of the slide-out menu. */}
@@ -242,7 +247,11 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
               // actually give way and let its wordmark truncate.
               className="flex min-w-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Logo logoUrl={logoUrl} markClassName="shadow-elevated" />
+              <Logo
+                siteName={siteName}
+                logoUrl={logoUrl}
+                markClassName="shadow-elevated"
+              />
             </Link>
           </div>
 

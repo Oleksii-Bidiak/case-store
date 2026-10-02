@@ -31,7 +31,7 @@ function makePage(overrides: Partial<PageEntity> = {}): PageEntity {
 /** Stub the three endpoints Footer() reads. Pages default to an empty list. */
 function mockFooterData(
   pages: PageEntity[] = [],
-  seo: { logoUrl?: string | null } | null = null,
+  seo: { logoUrl?: string | null; siteName?: string | null } | null = null,
 ) {
   server.use(
     http.get("*/api/site-contact", () => HttpResponse.json({ data: null })),
@@ -217,5 +217,47 @@ describe("Footer — store logo (TASK-299)", () => {
       "href",
       "/",
     );
+  });
+});
+
+describe("Footer — store name (TASK-546)", () => {
+  it("prints the admin-managed name in the wordmark and the © line", async () => {
+    mockFooterData([], { logoUrl: null, siteName: "  Аксесуарня " });
+
+    render(await Footer());
+
+    expect(screen.getByRole("link", { name: "Аксесуарня" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    const year = new Date().getFullYear();
+    expect(
+      screen.getByText(dict.footer.rights(year, "Аксесуарня")),
+    ).toBeInTheDocument();
+    // Nothing of the code default is left on a renamed store.
+    expect(screen.queryByText(/CaseStore/)).not.toBeInTheDocument();
+  });
+
+  it("names an uploaded logo with the admin-managed name too", async () => {
+    const logoUrl = "http://localhost:3001/uploads/branding/logo.svg";
+    mockFooterData([], { logoUrl, siteName: "Аксесуарня" });
+
+    render(await Footer());
+
+    expect(screen.getByRole("img", { name: "Аксесуарня" })).toHaveAttribute(
+      "src",
+      logoUrl,
+    );
+  });
+
+  it("falls back to the default name in the © line when none is set", async () => {
+    mockFooterData([], { logoUrl: null, siteName: null });
+
+    render(await Footer());
+
+    const year = new Date().getFullYear();
+    expect(
+      screen.getByText(dict.footer.rights(year, "CaseStore")),
+    ).toBeInTheDocument();
   });
 });
