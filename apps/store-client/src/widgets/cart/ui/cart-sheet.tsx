@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { CheckCircle2, ShoppingBag } from "lucide-react";
+import { ShoppingBag, Truck } from "lucide-react";
 import { useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
 import { Skeleton, Toaster } from "@/shared/ui";
@@ -141,9 +141,11 @@ export function CartSheet({ open, onOpenChange }: CartSheetProps) {
                   {formatMoney(cart?.totals.subtotal ?? "0")}
                 </span>
               </div>
-              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-success">
-                <CheckCircle2 className="size-4" aria-hidden="true" />
-                {dict.cart.sheetShipping}
+              {/* Not a promise of free delivery (TASK-881): the price depends
+                  on the method and the city, both chosen at checkout. */}
+              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Truck className="size-4 shrink-0" aria-hidden="true" />
+                {dict.cart.sheetDeliveryNote}
               </p>
               {hasUnavailableItems ? (
                 // A real disabled <button>, not a styled link: a link with

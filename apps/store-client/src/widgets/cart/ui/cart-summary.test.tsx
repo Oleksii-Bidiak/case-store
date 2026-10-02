@@ -71,6 +71,26 @@ describe("CartSummary", () => {
   });
 });
 
+describe("CartSummary — delivery line (TASK-881)", () => {
+  it("defers the delivery price to checkout instead of promising it free", () => {
+    renderWithProviders(<CartSummary totals={totals} />);
+
+    // The checkout prices Nova Poshta per city (and pickup / courier their own
+    // way); the cart knows neither, so it must not claim «Безкоштовно».
+    const row = screen.getByText(dict.cart.deliveryLine).parentElement!;
+    expect(row).toHaveTextContent(dict.cart.deliveryAtCheckout);
+    expect(screen.queryByText(/безкоштовн/i)).not.toBeInTheDocument();
+    // The delivery price joins «До сплати» on the checkout summary, once the
+    // method and the city are known — here every payable equals the subtotal.
+    const stripped = formatMoney("998.00").replace(/\s/g, "");
+    for (const label of screen.getAllByText(dict.cart.payable)) {
+      expect(label.parentElement!.textContent?.replace(/\s/g, "")).toContain(
+        stripped,
+      );
+    }
+  });
+});
+
 describe("CartSummary — mobile «До сплати» bar (TASK-864)", () => {
   it("renders ONE checkout link, inside the bar, next to the payable amount", () => {
     renderWithProviders(

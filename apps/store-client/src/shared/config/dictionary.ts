@@ -973,7 +973,9 @@ export const dict = {
     buyBoxInfo: {
       delivery: {
         title: "Доставка Новою Поштою",
-        text: "Безкоштовно від 1 000 ₴ · 1–2 дні",
+        // Nova Poshta is never free (B-6 #2): its tariff is priced at
+        // checkout for the chosen city (TASK-881).
+        text: "За тарифом перевізника · 1–2 дні",
       },
       warranty: {
         title: "Офіційна гарантія 12 міс.",
@@ -1128,12 +1130,10 @@ export const dict = {
     clearConfirmAction: "Так, очистити",
     clearError: "Не вдалося очистити кошик. Спробуйте ще раз.",
     secureCheckout: "Безпечне оформлення",
-    shippingNotice: "Безкоштовна доставка від 1 000 ₴",
     continueShopping: "Продовжити покупки",
     // Mini-cart slide-out (TASK-167-A).
     openAria: "Відкрити кошик",
     viewCartFull: "Перейти в кошик",
-    sheetShipping: "Безкоштовна доставка Новою Поштою",
     // line item
     remove: "Видалити",
     removeItemAria: "Видалити товар",
@@ -1165,7 +1165,6 @@ export const dict = {
     summaryHeading: "Разом",
     itemsLine: "Товари",
     deliveryLine: "Доставка",
-    shippingFree: "Безкоштовно",
     addonServicesLine: "Додаткові послуги",
     payable: "До сплати",
     termsNote: "Натискаючи, ви погоджуєтесь з умовами магазину",
@@ -1184,6 +1183,12 @@ export const dict = {
     removedToast: (name: string) => `«${name}» прибрано з кошика`,
     undoRemove: "Повернути",
     undoError: "Не вдалося повернути товар. Спробуйте ще раз.",
+    // Delivery in the cart (TASK-881). The price depends on the method (Nova
+    // Poshta's own tariff, a free pickup point, the courier's flat fee) and on
+    // the city — both chosen at checkout, so the cart says when the price
+    // appears rather than promising «Безкоштовно» the checkout then contradicts.
+    deliveryAtCheckout: "Розрахуємо на наступному кроці",
+    sheetDeliveryNote: "Вартість доставки розрахуємо під час оформлення",
   },
 
   // Promo code / discount (TASK-079)
