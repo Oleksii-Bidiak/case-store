@@ -282,7 +282,11 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
 - **Loading** = skeletons that match the final layout. Never a bare spinner for full-page loads.
   A `loading.tsx` skeleton and a Suspense fallback must render the **same** container,
   breadcrumbs and grid as the page they stand in for. A skeleton with a different width or column
-  count reflows the page when the content lands (parity fixes: TASK-869).
+  count reflows the page when the content lands (parity fixes: TASK-869). A skeleton draws only
+  the controls a shopper gets by default — nothing for flag-gated stubs. And a `loading.tsx`
+  must never be an **ancestor** of a different page: Next prefetches a dynamic route "layout to
+  first loading boundary", so a parent's skeleton becomes the shell of every child link. Scope a
+  listing's boundary with a route group (`app/products/(catalog)/loading.tsx`, TASK-832).
 - **Empty states** get an icon + one-line explanation + a primary action.
 - **Errors** surface via Sonner toast or inline field message — never `alert()`/`confirm()`
   (use `Dialog`).
