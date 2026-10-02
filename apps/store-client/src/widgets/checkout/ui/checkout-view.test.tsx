@@ -295,6 +295,47 @@ describe("CheckoutView", () => {
 
   // ── TASK-146: multi-step flow ──────────────────────────────────────────────
 
+  it("puts the step's one primary in the mobile «До сплати» bar with the summary's total, and the trust strip under the summary (TASK-864)", async () => {
+    setupBlankProfile();
+    const user = userEvent.setup();
+    renderWithProviders(<CheckoutView />, authed);
+    await screen.findByRole("heading", { name: dict.checkout.title });
+
+    // Step 1: exactly one «Далі», and it rides in the bar — the bar
+    // dissolves from md up (`md:contents`), so there is never a second copy.
+    const next = screen.getAllByRole("button", {
+      name: dict.checkout.nextStep,
+    });
+    expect(next).toHaveLength(1);
+    const bar = screen.getByTestId("mobile-pay-bar");
+    expect(bar).toContainElement(next[0]);
+    expect(bar).toHaveClass("fixed", "bottom-0", "md:contents");
+    // The bar's amount is the summary's «До сплати», not a second sum.
+    await waitFor(() => {
+      const amounts = screen
+        .getAllByText(dict.checkout.totalLine)
+        .map((label) => label.parentElement?.textContent?.replace(/\s/g, ""));
+      expect(amounts).toHaveLength(2);
+      expect(new Set(amounts).size).toBe(1);
+    });
+
+    expect(
+      screen.getByRole("list", { name: dict.trust.orderAria }),
+    ).toBeInTheDocument();
+
+    // Step 2: the confirm moves into the bar; «Назад» stays in the flow.
+    await fillDelivery(user);
+    await user.click(next[0]);
+    await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+    const reviewBar = screen.getByTestId("mobile-pay-bar");
+    expect(reviewBar).toContainElement(
+      screen.getByRole("button", { name: dict.checkout.placeOrder }),
+    );
+    expect(reviewBar).not.toContainElement(
+      screen.getByRole("button", { name: dict.checkout.prevStep }),
+    );
+  });
+
   it("shows 'Далі' on step 1 and 'Підтвердити замовлення' only on step 2", async () => {
     setupBlankProfile();
     const user = userEvent.setup();

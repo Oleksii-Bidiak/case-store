@@ -5,6 +5,7 @@ import { type CartTotals } from "@/entities/cart";
 import { ApplyDiscount, useAppliedDiscount } from "@/features/apply-discount";
 import { formatMoney } from "@/shared/lib";
 import { dict } from "@/shared/config";
+import { MobilePayBar } from "@/shared/ui";
 
 interface CartSummaryProps {
   totals: CartTotals;
@@ -88,19 +89,24 @@ export function CartSummary({
         </span>
       </div>
 
+      {/* Below md the CTA rides in the fixed «До сплати» bar (TASK-864); from
+          md up the bar dissolves and the CTA renders here, in the card — one
+          primary at every width. */}
       {hasUnavailableItems ? (
         // A real disabled <button>, not a styled link: a link with
         // `aria-disabled` still navigates on Enter, and /checkout would then
         // fail on an order the API refuses to create.
         <>
-          <button
-            type="button"
-            disabled
-            aria-describedby="cart-checkout-blocked"
-            className="flex h-13 w-full cursor-not-allowed items-center justify-center rounded-xl bg-muted text-base font-bold text-muted-foreground"
-          >
-            {dict.cart.checkout}
-          </button>
+          <MobilePayBar label={dict.cart.payable} amount={payableText}>
+            <button
+              type="button"
+              disabled
+              aria-describedby="cart-checkout-blocked"
+              className="flex h-11 w-full cursor-not-allowed items-center justify-center rounded-cta bg-muted text-sm font-bold text-muted-foreground md:h-13 md:text-base"
+            >
+              {dict.cart.checkout}
+            </button>
+          </MobilePayBar>
           <p
             id="cart-checkout-blocked"
             className="mt-3 text-center text-xs font-medium text-destructive"
@@ -110,13 +116,15 @@ export function CartSummary({
         </>
       ) : (
         <>
-          <Link
-            href="/checkout"
-            aria-label={dict.cart.checkoutAria}
-            className="flex h-[52px] items-center justify-center rounded-cta bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            {dict.cart.checkout}
-          </Link>
+          <MobilePayBar label={dict.cart.payable} amount={payableText}>
+            <Link
+              href="/checkout"
+              aria-label={dict.cart.checkoutAria}
+              className="flex h-11 w-full items-center justify-center rounded-cta bg-primary px-4 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:h-13 md:text-base"
+            >
+              {dict.cart.checkout}
+            </Link>
+          </MobilePayBar>
           <p className="mt-3 text-center text-xs text-muted-foreground">
             {dict.cart.termsNote}
           </p>

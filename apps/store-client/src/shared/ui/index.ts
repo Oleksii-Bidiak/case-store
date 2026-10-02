@@ -69,3 +69,7 @@ export { CategoryTileImage } from "./category-tile-image";
 export { BannerBackdrop } from "./banner-backdrop";
 // Plain <img> for admin URLs with a load-failure fallback (TASK-759).
 export { FallbackImg } from "./fallback-img";
+// Cart / checkout: the mobile «До сплати + CTA» bar and the trust strip under
+// the summary (TASK-864).
+export { MobilePayBar } from "./mobile-pay-bar";
+export { OrderTrustStrip } from "./order-trust-strip";

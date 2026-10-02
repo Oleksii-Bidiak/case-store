@@ -21,13 +21,28 @@ import {
   CHECKOUT_DEFAULT_VALUES,
   type CheckoutFormValues,
 } from "@/features/checkout";
-import { Button, CheckoutSkeleton, Textarea } from "@/shared/ui";
+import {
+  Button,
+  CheckoutSkeleton,
+  MobilePayBar,
+  OrderTrustStrip,
+  Textarea,
+} from "@/shared/ui";
 import { dict, STICKY_ASIDE_TOP, H1_CLASS } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
+import { useCheckoutTotal } from "../model/use-checkout-total";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { CheckoutStepIndicator } from "./checkout-step-indicator";
 import { CheckoutPayment } from "./checkout-payment";
 import { CheckoutGuestSuccess } from "./checkout-guest-success";
+
+/**
+ * The step's primary button: a full-width 44px thumb target with the CTA radius
+ * in the mobile bar, the regular `size="lg"` button from md up (TASK-864).
+ * Resolved through `cn()` inside `Button`, which knows the role radii.
+ */
+const MOBILE_BAR_CTA =
+  "h-11 w-full rounded-cta font-bold md:h-10 md:w-auto md:self-start md:rounded-md md:font-medium";
 
 /**
  * CheckoutView — client orchestrator for the `/checkout` route.
@@ -184,6 +199,9 @@ export function CheckoutView() {
   const onStepSubmit = (event?: BaseSyntheticEvent) =>
     handleSubmit(step === 1 ? goToReview : submitOrder, focusFirstError)(event);
 
+  // The same «До сплати» the order summary prints (TASK-864), for the bar.
+  const { totalText } = useCheckoutTotal(npCityRef);
+
   const items = data?.data?.items ?? [];
   const cartIsEmpty = !isInitializing && !isCartLoading && items.length === 0;
 
@@ -227,7 +245,9 @@ export function CheckoutView() {
   }
 
   return (
-    <div>
+    // `pb-24 md:pb-0` keeps the last block clear of the fixed mobile «До
+    // сплати» bar (TASK-864).
+    <div className="pb-24 md:pb-0">
       {/* Breadcrumbs — the checkout was the one step of the funnel with no way
           back to the cart except the browser button (TASK-407). Same markup as
           the cart's own trail so the two read as one path; `text-sm` rather than
@@ -315,14 +335,19 @@ export function CheckoutView() {
 
               <CheckoutPayment control={control} options={paymentOptions} />
 
-              <Button
-                type="submit"
-                size="lg"
-                disabled={isSubmitting}
-                className="self-start"
-              >
-                {dict.checkout.nextStep}
-              </Button>
+              {/* Below md the step's primary rides in the fixed «До сплати»
+                  bar (TASK-864); from md up the bar dissolves and the button
+                  sits here, under the form, as before. */}
+              <MobilePayBar label={dict.checkout.totalLine} amount={totalText}>
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={isSubmitting}
+                  className={MOBILE_BAR_CTA}
+                >
+                  {dict.checkout.nextStep}
+                </Button>
+              </MobilePayBar>
             </>
           )}
 
@@ -355,11 +380,23 @@ export function CheckoutView() {
                 >
                   {dict.checkout.prevStep}
                 </Button>
-                <Button type="submit" size="lg" disabled={isPending}>
-                  {isPending
-                    ? dict.checkout.placingOrder
-                    : dict.checkout.placeOrder}
-                </Button>
+                {/* «Назад» stays in the flow; the confirm rides in the bar
+                    below md (TASK-864) and rejoins this row from md up. */}
+                <MobilePayBar
+                  label={dict.checkout.totalLine}
+                  amount={totalText}
+                >
+                  <Button
+                    type="submit"
+                    size="lg"
+                    disabled={isPending}
+                    className={MOBILE_BAR_CTA}
+                  >
+                    {isPending
+                      ? dict.checkout.placingOrder
+                      : dict.checkout.placeOrder}
+                  </Button>
+                </MobilePayBar>
               </div>
             </>
           )}
@@ -367,8 +404,10 @@ export function CheckoutView() {
 
         {/* STICKY_ASIDE_TOP clears the z-50 site header so the stuck summary
             never sits under it (TASK-206 / TASK-234). */}
-        <aside className={`lg:sticky ${STICKY_ASIDE_TOP}`}>
+        <aside className={`flex flex-col gap-4 lg:sticky ${STICKY_ASIDE_TOP}`}>
           <CheckoutOrderSummary npCityRef={npCityRef} />
+          {/* Trust strip under the summary at every width (TASK-864). */}
+          <OrderTrustStrip />
         </aside>
       </div>
     </div>

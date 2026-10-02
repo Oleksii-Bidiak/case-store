@@ -188,6 +188,11 @@ export const dict = {
     returns: "Повернення протягом 14 днів",
     secure: "Безпечна оплата",
     support: "Підтримка 24/7",
+    // TASK-864 — the trust strip under the cart / checkout summary. Delivery
+    // never promises «безкоштовно» there (TASK-881: Nova Poshta charges its own
+    // tariff, priced on the checkout), so it says how, not for how much.
+    orderDelivery: "Доставка Новою Поштою по всій Україні",
+    orderAria: "Наші гарантії",
   },
 
   hero: {

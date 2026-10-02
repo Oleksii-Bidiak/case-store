@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  OrderTrustStrip,
 } from "@/shared/ui";
 import { CartItemRow } from "./cart-item-row";
 import { CartSummary } from "./cart-summary";
@@ -106,7 +107,9 @@ export function CartView() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    // `pb-24 md:pb-0` keeps the last block clear of the fixed mobile «До
+    // сплати» bar the summary renders below md (TASK-864).
+    <div className="flex flex-col gap-6 pb-24 md:pb-0">
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
@@ -169,6 +172,8 @@ export function CartView() {
               totals={cart.totals}
               hasUnavailableItems={hasUnavailableItems}
             />
+            {/* Trust strip under the summary at every width (TASK-864). */}
+            <OrderTrustStrip />
           </div>
         )}
       </div>

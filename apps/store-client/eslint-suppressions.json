@@ -211,7 +211,7 @@
   },
   "src/widgets/cart/ui/cart-summary.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 5
+      "count": 4
     }
   },
   "src/widgets/cart/ui/cart-view.tsx": {
