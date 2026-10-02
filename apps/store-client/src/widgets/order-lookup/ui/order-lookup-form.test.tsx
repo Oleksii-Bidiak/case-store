@@ -256,6 +256,58 @@ describe("OrderLookupForm (TASK-483)", () => {
     });
   });
 
+  describe("on primitives (TASK-872)", () => {
+    it("says «not found» on a 200 with an empty list, in the 404's exact words", async () => {
+      respondWith([]);
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      await fillAndSubmit(user);
+
+      const alert = await screen.findByText(d.errors.notFound);
+      expect(alert).toHaveAttribute("role", "alert");
+      // The form stays, focus stays on the button (TASK-626), no result region.
+      expect(screen.getByRole("button", { name: d.submit })).toHaveFocus();
+      expect(
+        screen.queryByRole("region", { name: d.resultsRegionAria }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    });
+
+    it("draws the fields with the shared Input and its focus-visible ring", () => {
+      renderWithProviders(<OrderLookupForm />);
+
+      for (const name of [d.fieldNumber, d.fieldPhone]) {
+        const field = screen.getByRole("textbox", { name });
+        expect(field).toHaveAttribute("data-slot", "input");
+        expect(field).toHaveClass("h-11", "focus-visible:ring-ring/50");
+      }
+      expect(screen.getByRole("button", { name: d.submit })).toHaveAttribute(
+        "data-slot",
+        "button",
+      );
+    });
+
+    it("masks the phone through PhoneInput and keeps its error out of the name", async () => {
+      const user = userEvent.setup();
+
+      renderWithProviders(<OrderLookupForm />);
+      const phone = screen.getByRole("textbox", { name: d.fieldPhone });
+      expect(phone).toHaveAttribute("type", "tel");
+      expect(phone).toHaveAttribute("inputmode", "numeric");
+
+      await user.type(phone, "501");
+      expect(phone).toHaveValue("+380 50 1");
+
+      await user.click(screen.getByRole("button", { name: d.submit }));
+      await screen.findByText(d.errors.phoneRequired);
+      // Still reachable by its bare label: the error is described-by, not named.
+      const invalid = screen.getByRole("textbox", { name: d.fieldPhone });
+      expect(invalid).toHaveAttribute("aria-invalid", "true");
+      expect(invalid).toHaveAccessibleDescription(d.errors.phoneRequired);
+    });
+  });
+
   it("refuses a number shorter than 8 characters before any request is made", async () => {
     let called = false;
     server.use(
