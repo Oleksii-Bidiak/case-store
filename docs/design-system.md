@@ -289,8 +289,9 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   filters, cart rows, forms). Keep them native: the browser gives keyboard and form semantics for
   free.
 - **Loading** = skeletons that match the final layout. Never a bare spinner for full-page loads.
-  A `loading.tsx` skeleton and a Suspense fallback must render the **same** container,
-  breadcrumbs and grid as the page they stand in for. A skeleton with a different width or column
+  A `loading.tsx` skeleton and a Suspense fallback must render the **same** container
+  and vertical padding, breadcrumbs, heading slot (`h-9 md:h-10` per H1_CLASS line; the checkout
+  stepper too) and grid as the page they stand in for. A skeleton with a different width or column
   count reflows the page when the content lands (parity fixes: TASK-869). A skeleton draws only
   the controls a shopper gets by default — nothing for flag-gated stubs. And a `loading.tsx`
   must never be an **ancestor** of a different page: Next prefetches a dynamic route "layout to
