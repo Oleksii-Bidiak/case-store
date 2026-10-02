@@ -300,3 +300,102 @@ describe("ProductDetailView — responsive hero grid (TASK-416)", () => {
     expect(skeleton.querySelector(".grid")?.className).toBe(hero?.className);
   });
 });
+
+/**
+ * TASK-832 — the gallery's zoom trigger is a transparent `z-20` button over the
+ * whole frame. «В обране» must paint above it (the mockup's note: heart `z-30`)
+ * or a tap on the heart opens the lightbox. jsdom has no hit-testing, so the
+ * stacking contract is pinned by class.
+ */
+describe("ProductDetailView — gallery overlays (TASK-832)", () => {
+  beforeEach(() => {
+    const envelope = detailEnvelope();
+    server.use(
+      http.get("*/api/products/:slug", () =>
+        HttpResponse.json({
+          ...envelope,
+          images: [
+            {
+              id: "img-1",
+              productId: "product-1",
+              url: "https://example.com/a.jpg",
+              alt: "Photo a",
+              sortOrder: 0,
+            },
+          ],
+        }),
+      ),
+      http.get("*/api/products", () =>
+        HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 5, totalPages: 0 },
+        }),
+      ),
+      http.get("*/api/cart", () => HttpResponse.json(makeCart([]))),
+    );
+  });
+
+  it("stacks the wishlist heart above the full-frame zoom trigger", async () => {
+    renderWithProviders(<ProductDetailView slug="glass-blue-single" />);
+    await screen.findByRole("heading", { level: 1 });
+
+    const zoom = screen.getByRole("button", { name: dict.product.zoomAria });
+    expect(zoom).toHaveClass("absolute", "inset-0", "z-20");
+
+    const heart = screen.getByRole("button", {
+      name: dict.productCard.wishlistAddAria(baseProduct.name),
+    });
+    expect(heart.parentElement).toHaveClass("absolute", "z-30");
+    // The overlay variant's 44px hit-area, not the old `size-10` override.
+    expect(heart).toHaveClass("size-11");
+    expect(heart).not.toHaveClass("size-10");
+  });
+});
+
+/**
+ * TASK-832 — the skeleton draws the buy box a shopper actually gets: the
+ * compare square and the «Купити в 1 клік» bar are parked stubs behind
+ * `FEATURE_STUBS` (off), so the skeleton must not promise them.
+ */
+describe("ProductDetailSkeleton — buy box (TASK-832)", () => {
+  it("draws one full-width CTA and no placeholders for the parked stubs", () => {
+    renderWithProviders(<ProductDetailSkeleton />);
+
+    const buyBox = screen.getByTestId("product-detail-skeleton-buy-box");
+    // One full-width 48px bar — the old skeleton drew a second one for the
+    // «Купити в 1 клік» stub (the price figure is an h-12 too, but w-36).
+    expect(buyBox.querySelectorAll(".h-12.w-full")).toHaveLength(1);
+    expect(buyBox.querySelector(".size-12")).toBeNull();
+    expect(screen.getByTestId("product-detail-skeleton-cta")).toHaveClass(
+      "w-full",
+    );
+  });
+
+  it("uses the view's sticky rail and card chrome for the buy box", async () => {
+    server.use(
+      http.get("*/api/products/:slug", () =>
+        HttpResponse.json(detailEnvelope()),
+      ),
+      http.get("*/api/products", () =>
+        HttpResponse.json({
+          data: [],
+          meta: { total: 0, page: 1, limit: 5, totalPages: 0 },
+        }),
+      ),
+      http.get("*/api/cart", () => HttpResponse.json(makeCart([]))),
+    );
+    const { container } = renderWithProviders(
+      <ProductDetailView slug="glass-blue-single" />,
+    );
+    await screen.findByRole("heading", { level: 1 });
+    const viewRail = container.querySelector(".md\\:row-span-2");
+
+    const { getByTestId } = renderWithProviders(<ProductDetailSkeleton />);
+    const skeletonRail = getByTestId("product-detail-skeleton-buy-box");
+
+    expect(skeletonRail.className).toBe(viewRail?.className);
+    expect(skeletonRail.firstElementChild?.className).toBe(
+      viewRail?.firstElementChild?.className,
+    );
+  });
+});

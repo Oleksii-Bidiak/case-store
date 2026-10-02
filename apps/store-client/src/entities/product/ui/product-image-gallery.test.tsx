@@ -415,3 +415,25 @@ describe("ProductImageGallery — letterboxed photos (TASK-518)", () => {
     expect(first).not.toHaveClass("border-primary");
   });
 });
+
+/**
+ * TASK-832 — the mockup's layering note: the visible «На весь екран» chip sits
+ * in the frame's bottom-right corner at 44px, clear of the consumer's top-right
+ * wishlist heart, and its label stays inside the trigger's accessible name.
+ */
+describe("ProductImageGallery — zoom chip (TASK-832)", () => {
+  it("labels the chip «На весь екран» inside the trigger's accessible name", () => {
+    renderWithProviders(
+      <ProductImageGallery images={[image("a", 0)]} altFallback="Product" />,
+    );
+
+    const trigger = screen.getByRole("button", { name: dict.product.zoomAria });
+    const chip = within(trigger).getByTestId("gallery-zoom-chip");
+    expect(chip).toHaveTextContent(dict.product.zoomChip);
+    expect(chip).toHaveClass("right-3", "bottom-3", "h-11");
+    // WCAG 2.5.3 — the visible words are part of the spoken name.
+    expect(dict.product.zoomAria.toLowerCase()).toContain(
+      dict.product.zoomChip.toLowerCase(),
+    );
+  });
+});

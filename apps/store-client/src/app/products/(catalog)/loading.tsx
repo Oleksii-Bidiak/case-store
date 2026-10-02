@@ -9,6 +9,12 @@ import { PAGE_CONTAINER } from "@/shared/config";
  * `PAGE_CONTAINER` (same max width, same gutter) and the skeleton is the
  * `withSidebar` variant, so the placeholder does not sit 40px narrower than the
  * page and then jump left by a whole filter column (TASK-416).
+ *
+ * It lives in the `(catalog)` route group — URL unchanged — so it wraps the
+ * listing ONLY (TASK-832). At `app/products/loading.tsx` it was an ancestor of
+ * `/products/[slug]` too, and Next prefetches a dynamic route "layout to first
+ * loading boundary": the shell cached for every product link was this
+ * catalogue grid, which is what flashed before a PDP. Do not move it back up.
  */
 export default function Loading() {
   return (

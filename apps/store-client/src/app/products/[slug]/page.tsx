@@ -133,12 +133,15 @@ export default async function ProductDetailPage({
   //
   // This note used to claim the route deliberately has NO route-level
   // loading.tsx, so that no loading boundary could stream a 200 shell before
-  // permanentRedirect() sets the status. That never held HERE:
-  // `app/products/loading.tsx` sits one segment above and wraps this page too —
-  // which is exactly why the live run saw the CATALOGUE grid skeleton on a
-  // product page (SF-PDP-03/05). TASK-409 therefore added `[slug]/loading.tsx`
-  // with the right skeleton: it changes which fallback renders, not whether one
-  // exists. The /categories/[slug] twin has no such ancestor and keeps the
+  // permanentRedirect() sets the status. That never held HERE: the catalogue's
+  // loading.tsx sat one segment above and wrapped this page too — which is
+  // exactly why the live run saw the CATALOGUE grid skeleton on a product page
+  // (SF-PDP-03/05). TASK-409 added `[slug]/loading.tsx` with the right skeleton,
+  // and TASK-832 moved the catalogue's boundary into the `(catalog)` route group
+  // so it no longer wraps this route (prefetch stops at the FIRST boundary on
+  // the path, so the ancestor kept winning now and then). `[slug]/loading.tsx`
+  // changes which fallback renders, not whether one exists. The
+  // /categories/[slug] twin has no such boundary at all and keeps the
   // precaution. Whether this route's redirect reaches the wire as a 308 status
   // or as a client-router redirect wants a live check on the demo stand — the
   // shopper lands on the new slug either way.

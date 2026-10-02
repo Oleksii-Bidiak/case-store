@@ -1011,6 +1011,10 @@ export const dict = {
     // and a screen reader must hear four different names.
     railPrev: (title: string) => `${title}: гортати назад`,
     railNext: (title: string) => `${title}: гортати вперед`,
+    // Visible chip on the gallery's zoom trigger (TASK-832). Kept a substring
+    // of `zoomAria` so the visible label stays inside the accessible name
+    // (WCAG 2.5.3 «Label in Name»).
+    zoomChip: "На весь екран",
   },
 
   reviews: {

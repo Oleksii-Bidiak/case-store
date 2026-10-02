@@ -176,12 +176,17 @@ export function ProductDetailView({ slug }: { slug: string }) {
               −{discountPercent}%
             </span>
           )}
-          <div className="absolute top-4 right-4">
+          {/* «В обране» sits ABOVE the gallery's full-frame zoom trigger
+              (`z-20`, inset-0): without its own `z-30` the transparent zoom
+              button painted over the heart and a tap on it opened the lightbox
+              instead of saving the product (TASK-832). The overlay variant's
+              own 44px hit-area is kept — a `size-10` override used to shrink
+              it below the touch-target minimum. */}
+          <div className="absolute top-4 right-4 z-30">
             <WishlistToggleButton
               productId={product.id}
               productName={product.name}
               variant="overlay"
-              className="size-10"
             />
           </div>
         </div>

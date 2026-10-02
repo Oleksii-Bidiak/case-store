@@ -6,7 +6,7 @@ import CartLoading from "./cart/loading";
 import CheckoutLoading from "./checkout/loading";
 import OrdersLoading from "./orders/loading";
 import ConfirmationLoading from "./orders/[id]/confirmation/loading";
-import ProductsLoading from "./products/loading";
+import ProductsLoading from "./products/(catalog)/loading";
 import ProductLoading from "./products/[slug]/loading";
 
 /**

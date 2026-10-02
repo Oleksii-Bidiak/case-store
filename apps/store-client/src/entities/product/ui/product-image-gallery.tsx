@@ -219,7 +219,14 @@ export function ProductImageGallery({
         )}
 
         {/* Full-frame zoom trigger (TASK-416). Offered only when there is a real
-            photo — the gradient placeholder has nothing to enlarge. */}
+            photo — the gradient placeholder has nothing to enlarge.
+
+            Layering (TASK-832, the mockup's note): this transparent button is
+            `z-20` over the WHOLE frame, so anything a consumer overlays on the
+            frame and wants clickable must sit above it — the PDP puts «В
+            обране» at `z-30` in the top-right corner. The visible chip sits in
+            the bottom-right corner, 44px tall, so the two never meet. Its
+            label «На весь екран» is part of the accessible name. */}
         {!showPlaceholder && (
           <button
             ref={zoomButtonRef}
@@ -230,9 +237,11 @@ export function ProductImageGallery({
           >
             <span
               aria-hidden="true"
-              className="absolute right-3 bottom-3 grid size-10 place-items-center rounded-full border border-border bg-background/80 text-foreground shadow-card transition-colors duration-200 ease-out group-hover:bg-background"
+              data-testid="gallery-zoom-chip"
+              className="absolute right-3 bottom-3 inline-flex h-11 items-center gap-2 rounded-full border border-border bg-background/80 px-3.5 text-sm font-semibold text-foreground shadow-card backdrop-blur-sm transition-colors duration-200 ease-out group-hover:bg-background"
             >
-              <Expand className="size-5" />
+              <Expand className="size-4" />
+              {dict.product.zoomChip}
             </span>
           </button>
         )}
