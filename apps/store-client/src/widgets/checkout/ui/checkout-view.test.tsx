@@ -81,6 +81,13 @@ async function fillDelivery(
   );
 }
 
+/** Tick the offer + privacy consent the confirm step requires (TASK-882). */
+async function acceptConsent(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    screen.getByRole("checkbox", { name: dict.checkout.consent.prefix }),
+  );
+}
+
 /** A visitor with no session — the shopper TASK-338 exists to serve. */
 const guest = {
   auth: { isAuthenticated: false, isInitializing: false },
@@ -167,6 +174,7 @@ describe("CheckoutView", () => {
       screen.getByRole("button", { name: dict.checkout.nextStep }),
     );
     await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+    await acceptConsent(user);
     await user.click(
       screen.getByRole("button", { name: dict.checkout.placeOrder }),
     );
@@ -467,6 +475,142 @@ describe("CheckoutView", () => {
     expect(review).toHaveTextContent("Відділення №5");
   });
 
+  // ── TASK-882: complete read-back + the offer consent ──────────────────────
+  describe("review step and consent (TASK-882)", () => {
+    async function toReview(user: ReturnType<typeof userEvent.setup>) {
+      await user.click(
+        screen.getByRole("button", { name: dict.checkout.nextStep }),
+      );
+      return (
+        await screen.findByRole("heading", {
+          name: dict.checkout.reviewHeading,
+        })
+      ).closest("section") as HTMLElement;
+    }
+
+    it("reads back a guest's email, one delivery row and the chosen payment method", async () => {
+      server.use(http.get("*/api/cart", () => HttpResponse.json(makeCart())));
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, guest);
+
+      await screen.findByRole("heading", { name: dict.checkout.title });
+      await user.type(
+        screen.getByLabelText(dict.checkout.guest.emailLabel),
+        "olena@example.com",
+      );
+      await fillDelivery(user, { city: "Київ", address: "Відділення №1" });
+      const review = await toReview(user);
+
+      expect(review).toHaveTextContent(dict.checkout.review.email);
+      expect(review).toHaveTextContent("olena@example.com");
+      expect(review).toHaveTextContent(
+        `${dict.checkout.review.delivery}Київ, Відділення №1`,
+      );
+      expect(review).toHaveTextContent(
+        `${dict.checkout.review.payment}${dict.checkout.payment.onDeliveryTitle}`,
+      );
+    });
+
+    it("names the online method a signed-in shopper picked, and shows them no email row", async () => {
+      process.env.NEXT_PUBLIC_PAYMENT_METHODS = "ONLINE";
+      setupBlankProfile();
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, authed);
+
+      await screen.findByRole("heading", { name: dict.checkout.title });
+      await fillDelivery(user);
+      await user.click(
+        await screen.findByRole("radio", {
+          name: new RegExp(dict.checkout.payment.onlineTitle),
+        }),
+      );
+      const review = await toReview(user);
+
+      expect(review).toHaveTextContent(
+        `${dict.checkout.review.payment}${dict.checkout.payment.onlineTitle}`,
+      );
+      expect(review).not.toHaveTextContent(dict.checkout.review.email);
+    });
+
+    it("links the offer and the privacy policy in a new tab", async () => {
+      setupBlankProfile();
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, authed);
+
+      await screen.findByRole("heading", { name: dict.checkout.title });
+      await fillDelivery(user);
+      await toReview(user);
+
+      const offer = screen.getByRole("link", {
+        name: new RegExp(dict.checkout.consent.offerLink),
+      });
+      const privacy = screen.getByRole("link", {
+        name: new RegExp(dict.checkout.consent.privacyLink),
+      });
+      expect(offer).toHaveAttribute("href", "/legal/offer");
+      expect(privacy).toHaveAttribute("href", "/legal/privacy-policy");
+      for (const link of [offer, privacy]) {
+        expect(link).toHaveAttribute("target", "_blank");
+        expect(link).toHaveAttribute("rel", "noopener noreferrer");
+      }
+      const box = screen.getByRole("checkbox", {
+        name: dict.checkout.consent.prefix,
+      });
+      expect(box).not.toBeChecked();
+      expect(box).toHaveAccessibleDescription(
+        new RegExp(dict.checkout.consent.offerLink),
+      );
+    });
+
+    it("blocks the confirm with a visible message — not a disabled button — until the consent is ticked", async () => {
+      setupBlankProfile();
+      let orderCalls = 0;
+      server.use(
+        http.post("*/api/orders", () => {
+          orderCalls += 1;
+          return HttpResponse.json(makeOrder(), { status: 201 });
+        }),
+      );
+      const user = userEvent.setup();
+      renderWithProviders(<CheckoutView />, authed);
+
+      await screen.findByRole("heading", { name: dict.checkout.title });
+      await fillDelivery(user);
+      await toReview(user);
+
+      const confirm = screen.getByRole("button", {
+        name: dict.checkout.placeOrder,
+      });
+      expect(confirm).toBeEnabled();
+      expect(
+        screen.queryByText(dict.checkout.consent.required),
+      ).not.toBeInTheDocument();
+
+      await user.click(confirm);
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent(dict.checkout.consent.required);
+      const box = screen.getByRole("checkbox", {
+        name: dict.checkout.consent.prefix,
+      });
+      expect(box).toHaveAttribute("aria-invalid", "true");
+      expect(box).toHaveAccessibleDescription(
+        new RegExp(dict.checkout.consent.required),
+      );
+      expect(box).toHaveFocus();
+      expect(orderCalls).toBe(0);
+
+      // Ticking clears the message; the next press places the order.
+      await user.click(box);
+      expect(
+        screen.queryByText(dict.checkout.consent.required),
+      ).not.toBeInTheDocument();
+      expect(box).not.toHaveAttribute("aria-invalid");
+      await user.click(confirm);
+      await waitFor(() => expect(orderCalls).toBe(1));
+    });
+  });
+
   // ── TASK-407: validation timing, phone rule, breadcrumbs ───────────────────
   describe("validation timing", () => {
     it("says nothing before the first «Далі» — errors are not the greeting", async () => {
@@ -683,6 +827,7 @@ describe("CheckoutView", () => {
         screen.getByRole("button", { name: dict.checkout.nextStep }),
       );
       await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+      await acceptConsent(user);
       await user.click(
         screen.getByRole("button", { name: dict.checkout.placeOrder }),
       );
@@ -731,6 +876,7 @@ describe("CheckoutView", () => {
         screen.getByRole("button", { name: dict.checkout.nextStep }),
       );
       await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
+      await acceptConsent(user);
       await user.click(
         screen.getByRole("button", { name: dict.checkout.placeOrder }),
       );
@@ -957,6 +1103,7 @@ describe("CheckoutView — the session expires mid-checkout (TASK-773, TASK-794)
     );
     await screen.findByRole("heading", { name: dict.checkout.reviewHeading });
 
+    await acceptConsent(user);
     await user.click(
       screen.getByRole("button", { name: dict.checkout.placeOrder }),
     );

@@ -1378,6 +1378,27 @@ export const dict = {
     },
     // Loyalty bonuses — stub (no loyalty backend — TASK-175).
     bonusesStub: "Списати бонуси (програма лояльності — незабаром)",
+    // Review step (TASK-882): the guest email and the chosen payment method are
+    // read back before the order is placed; city and branch share one row.
+    review: {
+      email: "Email",
+      delivery: "Доставка",
+      payment: "Оплата",
+    },
+    // Consent on the confirm step (TASK-882, docs/legal-checklist.md §1). The
+    // order IS the acceptance of the offer, so the box sits right above
+    // «Підтвердити замовлення». The links open a new tab: leaving /checkout
+    // would drop the filled form. `and` carries its own spaces, like the
+    // registration consent's.
+    consent: {
+      prefix: "Я приймаю умови",
+      offerLink: "публічної оферти",
+      and: " та ",
+      privacyLink: "політики конфіденційності",
+      newTab: "(відкривається в новій вкладці)",
+      required:
+        "Щоб підтвердити замовлення, прийміть умови публічної оферти та політики конфіденційності.",
+    },
   },
 
   order: {

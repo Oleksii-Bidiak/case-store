@@ -326,6 +326,10 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
 - [ ] Images have meaningful `alt` (empty `alt=""` for decorative).
 - [ ] Icon-only buttons have `aria-label` (wishlist heart, cart, close).
 - [ ] Forms: `<Label htmlFor>`, errors linked via `aria-describedby`.
+- [ ] Required consent (registration, checkout confirm — TASK-871/882): never a silently
+      disabled submit. The button stays enabled; pressing it unticked shows the reason as a
+      `role="alert"` message tied to the checkbox (`aria-invalid` + `aria-describedby`) and
+      moves focus onto the box. Document links sit outside the `<label>` and open a new tab.
 - [ ] One `h1`/page, logical heading order, landmarks (`header`/`nav`/`main`/`footer`).
 - [ ] Skip-to-content link present (already added; keep it working).
 - [ ] Respects `prefers-reduced-motion` and `prefers-color-scheme`.

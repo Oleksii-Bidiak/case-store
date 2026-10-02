@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type BaseSyntheticEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type BaseSyntheticEvent,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm, useWatch, type FieldErrors } from "react-hook-form";
@@ -9,6 +15,7 @@ import { useAuth } from "@/entities/session";
 import { useGetCart } from "@/entities/cart";
 import {
   CheckoutAddressForm,
+  CheckoutConsent,
   CheckoutContactFields,
   CheckoutReviewStep,
   useCheckout,
@@ -126,6 +133,14 @@ export function CheckoutView() {
   // `focusFirstError`. Consumed by the step-transition effect below.
   const pendingErrorFocus = useRef<keyof CheckoutFormValues | null>(null);
 
+  // Offer + privacy consent on the confirm step (TASK-882). Plain state, not a
+  // form field: the zod schema also runs on the step-1 «Далі», where an
+  // unticked box must not block. A blocked confirm sets `consentError` — the
+  // message is shown, never a silently disabled button.
+  const [consentAccepted, setConsentAccepted] = useState(false);
+  const [consentError, setConsentError] = useState(false);
+  const consentRef = useRef<HTMLInputElement>(null);
+
   // Move focus on step transitions (not on initial mount): to the review heading
   // when advancing, back to the first field when returning (WCAG 2.4.3) — or to
   // the invalid field when the return was forced by a blocked submit.
@@ -196,8 +211,26 @@ export function CheckoutView() {
   // Built per submit rather than once per render: `focusFirstError` writes a ref,
   // and handing it to `handleSubmit` during render is what the React Compiler's
   // refs rule forbids.
-  const onStepSubmit = (event?: BaseSyntheticEvent) =>
-    handleSubmit(step === 1 ? goToReview : submitOrder, focusFirstError)(event);
+  //
+  // The step-2 submit is gated on the offer consent first (TASK-882): the box is
+  // on screen, so its message is the one the shopper can act on right away.
+  const onStepSubmit = (event?: BaseSyntheticEvent) => {
+    if (step === 2 && !consentAccepted) {
+      event?.preventDefault();
+      setConsentError(true);
+      consentRef.current?.focus();
+      return;
+    }
+    return handleSubmit(
+      step === 1 ? goToReview : submitOrder,
+      focusFirstError,
+    )(event);
+  };
+
+  const onConsentChange = (checked: boolean) => {
+    setConsentAccepted(checked);
+    if (checked) setConsentError(false);
+  };
 
   // The same «До сплати» the order summary prints (TASK-864), for the bar.
   const { totalText } = useCheckoutTotal(npCityRef);
@@ -352,10 +385,22 @@ export function CheckoutView() {
           )}
 
           {step === 2 && (
-            <>
-              <section className="rounded-card border border-border bg-card p-6 shadow-card">
-                <CheckoutReviewStep ref={reviewHeadingRef} control={control} />
-              </section>
+            // One card holds the read-back, the consent and the step's actions
+            // (Checkout.dc.html «ЦІЛЬ · TASK-882»), so the box sits right above
+            // the button it unlocks.
+            <section className="flex flex-col gap-4 rounded-card border border-border bg-card p-6 shadow-card">
+              <CheckoutReviewStep
+                ref={reviewHeadingRef}
+                control={control}
+                showEmail={isGuest}
+              />
+
+              <CheckoutConsent
+                ref={consentRef}
+                checked={consentAccepted}
+                onCheckedChange={onConsentChange}
+                showError={consentError}
+              />
 
               {isError && errorMessage && (
                 <p role="alert" className="text-sm text-destructive">
@@ -398,7 +443,7 @@ export function CheckoutView() {
                   </Button>
                 </MobilePayBar>
               </div>
-            </>
+            </section>
           )}
         </form>
 

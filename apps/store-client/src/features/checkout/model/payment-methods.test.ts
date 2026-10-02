@@ -1,6 +1,7 @@
 import {
   coercePaymentMethod,
   parseConfiguredMethods,
+  paymentMethodTitle,
   requiresPaymentHandoff,
   resolvePaymentMethods,
   toOrderPaymentMethod,
@@ -138,5 +139,18 @@ describe("toOrderPaymentMethod", () => {
     ["INSTALLMENTS", "INSTALLMENTS"],
   ] as const)("maps %s to the API's %s", (method, expected) => {
     expect(toOrderPaymentMethod(method)).toBe(expected);
+  });
+});
+
+// TASK-882: the review step names the method exactly as the radio did.
+describe("paymentMethodTitle", () => {
+  it("reads back the same title the option is offered under", () => {
+    const offered = resolvePaymentMethods({
+      configured: ["ON_DELIVERY", "ONLINE", "INSTALLMENTS"],
+      isAuthenticated: true,
+    });
+    for (const option of offered) {
+      expect(paymentMethodTitle(option.method)).toBe(option.title);
+    }
   });
 });
