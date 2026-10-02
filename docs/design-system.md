@@ -290,6 +290,11 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   must never be an **ancestor** of a different page: Next prefetches a dynamic route "layout to
   first loading boundary", so a parent's skeleton becomes the shell of every child link. Scope a
   listing's boundary with a route group (`app/products/(catalog)/loading.tsx`, TASK-832).
+  A boundary also flushes its shell with a 200, so a page under it cannot answer 404 / 308 by
+  itself: decide a dead or renamed slug in the segment's `layout.tsx`, which sits **above** its
+  own `loading.tsx`, and skip that check for the router's own `fetch` requests
+  (`Sec-Fetch-Dest: empty`) so card prefetches cost no API read (`app/products/[slug]/layout.tsx`,
+  TASK-874).
 - **Empty states** get an icon + one-line explanation + a primary action.
 - **Errors** surface via Sonner toast or inline field message — never `alert()`/`confirm()`
   (use `Dialog`).

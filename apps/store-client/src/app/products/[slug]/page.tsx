@@ -1,6 +1,5 @@
-import { Suspense, cache } from "react";
+import { Suspense } from "react";
 import type { Metadata } from "next";
-import { notFound, permanentRedirect } from "next/navigation";
 import type { QueryClient } from "@tanstack/react-query";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import { ProductDetailView, ProductDetailSkeleton } from "@/widgets";
@@ -8,12 +7,9 @@ import {
   buildProductRailParams,
   type ProductRailFilter,
 } from "@/widgets/product-detail";
-import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
-import { apiErrorStatus } from "@/shared/lib/api-error";
 import {
   getProductControllerFindAllQueryOptions,
   getProductControllerFindBySlugQueryKey,
-  productControllerFindBySlug,
 } from "@/shared/api/generated/products/products";
 import type { ProductDetailResponseEnvelope } from "@/shared/api/generated/models";
 import {
@@ -32,22 +28,11 @@ import {
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
 import { SITE_URL, CURRENCY, dict, PAGE_CONTAINER } from "@/shared/config";
+import { fetchProductBySlug, resolveProductRoute } from "./product-route";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
 }
-
-/**
- * The product read of one request, shared by `generateMetadata`, the JSON-LD
- * and the React Query prefetch (TASK-563). It is axios, which Next's `fetch`
- * dedup does not see, so without React `cache()` every PDP render downloaded the
- * product twice — and would now do it three times. The deadline keeps a silent
- * API from holding the response open (see `serverRequestOptions`).
- */
-const fetchProductBySlug = cache(
-  (slug: string): Promise<ProductDetailResponseEnvelope> =>
-    productControllerFindBySlug(slug, serverRequestOptions()),
-);
 
 export async function generateMetadata({
   params,
@@ -123,57 +108,23 @@ export default async function ProductDetailPage({
   // of a skeleton. Schema objects are built here (plain data); the JSX is
   // constructed outside the try/catch.
   //
-  // Only the API's own 404 means "no such product" (TASK-874). Any other
-  // failure — a 502, a timeout — is an outage, not an absence: nothing is
-  // seeded and ProductDetailView retries on the client and shows its load
-  // error, so an API hiccup never tells a shopper (or a crawler) that a live
-  // product does not exist (the TASK-793 rule the blog and categories follow).
-  const { detail, missing } = await fetchProductBySlug(slug).then(
-    (envelope) => ({ detail: envelope, missing: false }),
-    (error: unknown) => ({
-      detail: null,
-      missing: apiErrorStatus(error) === 404,
-    }),
-  );
-
-  // TASK-285: a failed product fetch (detail === null) is the 404 candidate
-  // path — check the slug-redirect ledger and serve a permanent (308) redirect
-  // when the admin renamed the slug. A genuinely dead slug (no redirect row)
-  // ends in the route's `notFound()` (TASK-874): the store's not-found page,
-  // rendered by the server with `noindex`, replaces the client-side
-  // «не вдалося завантажити» block the shopper used to get for a dead link.
-  // Its HTTP status is 200, not 404: `[slug]/loading.tsx` streams the skeleton
-  // shell before this await settles, and Next cannot change a status once the
-  // body streams (measured: without that file the same URL answers 404). The
-  // `noindex` Next injects keeps it out of the index; the wire-level 404 is an
-  // owner decision against the skeleton — TASK-1653.
+  // `resolveProductRoute` settles a slug that did not load (TASK-285/874): a
+  // 308 to the renamed slug, the route's `notFound()` for a product the API
+  // says does not exist (the store's not-found page with `noindex` instead of
+  // the «не вдалося завантажити» block a dead link used to get), `null` for an
+  // outage — nothing is seeded and ProductDetailView shows its load error after
+  // a client retry. On a document load `[slug]/layout.tsx` has already run the
+  // same cached call ABOVE `loading.tsx`, which is what puts the 404 / 308 on
+  // the wire (the skeleton shell would otherwise be flushed with a 200 first);
+  // here it is a cache hit. It decides here for the client router's own
+  // requests, which the layout skips (see its note): the not-found UI still
+  // replaces the skeleton on a soft navigation to a dead link.
   //
-  // This note used to claim the route deliberately has NO route-level
-  // loading.tsx, so that no loading boundary could stream a 200 shell before
-  // permanentRedirect() sets the status. That never held HERE: the catalogue's
-  // loading.tsx sat one segment above and wrapped this page too — which is
-  // exactly why the live run saw the CATALOGUE grid skeleton on a product page
-  // (SF-PDP-03/05). TASK-409 added `[slug]/loading.tsx` with the right skeleton,
-  // and TASK-832 moved the catalogue's boundary into the `(catalog)` route group
-  // so it no longer wraps this route (prefetch stops at the FIRST boundary on
-  // the path, so the ancestor kept winning now and then). `[slug]/loading.tsx`
-  // changes which fallback renders, not whether one exists. The
-  // /categories/[slug] twin has no such boundary at all and keeps the
-  // precaution. Whether this route's redirect reaches the wire as a 308 status
-  // or as a client-router redirect wants a live check on the demo stand — the
-  // shopper lands on the new slug either way.
-  //
-  // The in-page <Suspense> fallback below keeps the skeleton UX while
-  // ProductDetailView hydrates.
-  if (!detail) {
-    const newSlug = await resolveSlugRedirect("PRODUCT", slug);
-    if (newSlug) {
-      permanentRedirect(`/products/${newSlug}`);
-    }
-    if (missing) {
-      notFound();
-    }
-  }
+  // `[slug]/loading.tsx` is this route's only loading boundary (TASK-409/832 —
+  // the catalogue's moved into the `(catalog)` route group, so its grid
+  // skeleton no longer wraps a product page). The in-page <Suspense> fallback
+  // below keeps the skeleton UX while ProductDetailView hydrates.
+  const detail = await resolveProductRoute(slug);
 
   const schemas = detail ? await buildProductPageSchemas(detail) : null;
   const queryClient = createServerQueryClient();

@@ -16,8 +16,10 @@ import { PAGE_CONTAINER } from "@/shared/config";
  * now lives in the `app/products/(catalog)` route group, which wraps `/products`
  * alone. `loading.test.tsx` pins that no ancestor boundary comes back.
  *
- * On the slug-redirect path (TASK-285): a loading boundary streams a 200 shell
- * before `permanentRedirect()` sets the status. See the note in `page.tsx`.
+ * A boundary streams its shell with a 200 before the page below it settles, so
+ * the page alone could never answer a dead slug with 404 or a renamed one with
+ * 308 (TASK-285/874). `[slug]/layout.tsx` sits ABOVE this boundary and decides
+ * both before the shell is flushed — see its note.
  */
 export default function Loading() {
   return (
