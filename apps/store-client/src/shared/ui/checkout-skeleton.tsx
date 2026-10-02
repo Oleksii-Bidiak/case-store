@@ -1,3 +1,4 @@
+import { cn } from "@/shared/lib/utils";
 import { Skeleton } from "./skeleton";
 
 /**
@@ -7,25 +8,61 @@ import { Skeleton } from "./skeleton";
 const STEP_LABEL_WIDTHS = ["w-16", "w-18", "w-28"] as const;
 
 /**
- * A form field: the `text-sm` label line, a 36px input and, when the real field
- * has one, its `text-xs` hint line.
+ * One line box of muted copy: 20px for `text-sm`, 16px for `text-xs`, with a
+ * bar inside. Copy that wraps on a phone is drawn as several of these, the
+ * extra lines hidden from the breakpoint where the real text fits on one — a
+ * single bar for a two-line hint is what made the form jump when it landed.
+ */
+function TextLine({
+  size,
+  width,
+  className,
+}: {
+  size: "sm" | "xs";
+  width: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex items-center",
+        size === "sm" ? "h-5" : "h-4",
+        className,
+      )}
+    >
+      <Skeleton
+        className={cn("max-w-full", size === "sm" ? "h-3.5" : "h-3", width)}
+      />
+    </div>
+  );
+}
+
+/**
+ * A form field: the 14px label line (`Label` is `text-sm leading-none`), a 36px
+ * input and, when the real field has one, its `text-xs` hint — `hintWraps` for
+ * a hint that takes two lines below `sm`.
  */
 function FieldSkeleton({
   label = "w-20",
   hint,
+  hintWraps = false,
 }: {
   label?: string;
   hint?: string;
+  hintWraps?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex h-5 items-center">
-        <Skeleton className={`h-4 ${label}`} />
+      <div className="flex h-3.5 items-center">
+        <Skeleton className={`h-3 ${label}`} />
       </div>
       <Skeleton className="h-9 w-full" />
       {hint && (
-        <div className="flex h-4 items-center">
-          <Skeleton className={`h-3 max-w-full ${hint}`} />
+        <div className="flex flex-col">
+          <TextLine size="xs" width={hint} />
+          {hintWraps && (
+            <TextLine size="xs" width="w-1/3" className="sm:hidden" />
+          )}
         </div>
       )}
     </div>
@@ -122,44 +159,69 @@ export function CheckoutSkeleton() {
       >
         {/* Form: contact, address, payment */}
         <div className="flex min-w-0 flex-col gap-4">
-          <div className={CARD}>
+          <div data-testid="checkout-skeleton-contact" className={CARD}>
             <CardTitleSkeleton width="w-36" legend />
             <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-1.5">
-                <FieldSkeleton label="w-12" />
-                <Skeleton className="h-4 w-4/5" />
+                <div className="flex h-3.5 items-center">
+                  <Skeleton className="h-3 w-12" />
+                </div>
+                <Skeleton className="h-9 w-full" />
+                {/* «Надішлемо підтвердження… Реєстрація не потрібна.» (text-sm):
+                    two lines on a phone and in the narrow lg column, one at md
+                    and from xl. */}
+                <div className="flex flex-col">
+                  <TextLine
+                    size="sm"
+                    width="w-full md:w-4/5 lg:w-full xl:w-4/5"
+                  />
+                  <TextLine
+                    size="sm"
+                    width="w-2/5"
+                    className="md:hidden lg:flex xl:hidden"
+                  />
+                </div>
               </div>
-              <Skeleton className="h-3 w-3/5" />
+              {/* «Для звʼязку використаємо…» (text-xs): two lines below sm. */}
+              <div className="flex flex-col">
+                <TextLine size="xs" width="w-full sm:w-3/5" />
+                <TextLine size="xs" width="w-1/3" className="sm:hidden" />
+              </div>
             </div>
           </div>
 
           <div className={CARD}>
             <CardTitleSkeleton width="w-40" legend />
-            <div className="flex flex-col gap-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <FieldSkeleton label="w-10" />
-                <FieldSkeleton label="w-20" />
-                <FieldSkeleton label="w-16" hint="w-48" />
-                <FieldSkeleton label="w-14" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <FieldSkeleton label="w-10" />
+              <FieldSkeleton label="w-20" />
+              <FieldSkeleton label="w-16" hint="w-48" />
+              <FieldSkeleton label="w-14" />
+              <div className="sm:col-span-2">
+                <FieldSkeleton label="w-56" hint="w-full sm:w-80" hintWraps />
               </div>
-              <FieldSkeleton label="w-56" hint="w-80" />
-              <div className="flex flex-col gap-1.5">
-                <div className="flex h-5 items-center">
-                  <Skeleton className="h-4 w-64" />
-                </div>
-                <Skeleton className="h-16 w-full" />
-                {/* «0/500» counter */}
-                <div className="flex h-4 items-center justify-end">
-                  <Skeleton className="h-3 w-10" />
-                </div>
+            </div>
+            {/* Comment: `text-sm` label, textarea, «0/500» counter */}
+            <div className="mt-4 flex flex-col gap-1">
+              <div className="flex h-5 items-center">
+                <Skeleton className="h-3.5 w-64 max-w-full" />
+              </div>
+              <Skeleton className="h-16 w-full" />
+              <div className="flex h-4 items-center justify-end">
+                <Skeleton className="h-3 w-10" />
               </div>
             </div>
           </div>
 
-          <div className={CARD}>
+          <div data-testid="checkout-skeleton-payment" className={CARD}>
             <CardTitleSkeleton width="w-24" />
-            <Skeleton className="h-19 w-full rounded-cta" />
-            <Skeleton className="mt-3.5 h-3 w-3/4" />
+            {/* One method tile: its note takes three lines on a phone. */}
+            <Skeleton className="h-25.5 w-full rounded-cta sm:h-19.5" />
+            {/* Manager note (text-xs): two lines below sm. */}
+            <div className="mt-3.5 flex flex-col">
+              <TextLine size="xs" width="w-full sm:w-3/4" />
+              <TextLine size="xs" width="w-1/2" className="sm:hidden" />
+            </div>
           </div>
 
           <Skeleton className="hidden h-10 w-20 md:block" />
