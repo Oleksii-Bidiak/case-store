@@ -89,16 +89,16 @@ describe("ThemeColorSync", () => {
     const user = userEvent.setup();
     renderSync();
 
-    await user.click(radio(dict.account.dashboard.themeLight));
+    await user.click(radio(dict.theme.light));
     expect(overrides()).toHaveLength(1);
     expect(effectiveThemeColor()).toBe(THEME_COLOR.light);
 
-    await user.click(radio(dict.account.dashboard.themeDark));
+    await user.click(radio(dict.theme.dark));
     // Replaced, not stacked.
     expect(overrides()).toHaveLength(1);
     expect(effectiveThemeColor()).toBe(THEME_COLOR.dark);
 
-    await user.click(radio(dict.account.dashboard.themeSystem));
+    await user.click(radio(dict.theme.system));
     expect(overrides()).toHaveLength(0);
     // The static pair itself is never touched.
     expect(

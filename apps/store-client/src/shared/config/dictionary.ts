@@ -83,12 +83,6 @@ export const dict = {
     catalogSubcategoriesAria: "Підкатегорії",
     toggleSubcategoriesAria: (name: string) =>
       `Підкатегорії категорії «${name}»`,
-    // TASK-412 — the light/system/dark switch. The three option labels are NOT
-    // repeated here: they live once in `account.dashboard.theme*` below, so the
-    // header and the account settings can never drift apart. Only the group's
-    // accessible name is new — "Оформлення" alone would read as "checkout" next
-    // to a cart icon.
-    themeAria: "Тема оформлення",
     // TASK-413 — the mega-menu footer's second exit. «Усі категорії» lands on
     // the category index; a shopper who wants the goods themselves, not a
     // taxonomy, needs the flat catalogue too.
@@ -1637,9 +1631,6 @@ export const dict = {
       // describes the behaviour: it introduces the control right below it.
       appearanceNote:
         "Оберіть тему інтерфейсу. «Системна» слідує за налаштуваннями пристрою, а ваш вибір зберігається в цьому браузері.",
-      themeDark: "Темна",
-      themeLight: "Світла",
-      themeSystem: "Системна",
       notificationsHeading: "Сповіщення",
       notifs: [
         {
@@ -2173,6 +2164,20 @@ export const dict = {
     retry: "Спробувати ще раз",
     viewFullDetails: "Переглянути повну сторінку товару",
     variantsNote: "Кольори та інші варіанти доступні на сторінці товару.",
+  },
+
+  // TASK-532 — the light / system / dark switch (`features/theme`). It renders
+  // in three hosts — the header row, the slide-out menu and the account card
+  // «Оформлення» — so its copy lives here under its own name rather than in
+  // `header` or `account`: editing a "header" string must not silently change
+  // the account page, and vice versa.
+  theme: {
+    /** The radiogroup's accessible name (a visible caption in the menu).
+     *  "Оформлення" alone would read as "checkout" next to a cart icon. */
+    groupAria: "Тема оформлення",
+    light: "Світла",
+    system: "Системна",
+    dark: "Темна",
   },
 
   // --- Admin-managed recommendation carousels (TASK-139) ---------------------

@@ -95,7 +95,7 @@ describe("Header — responsive class contract (TASK-539)", () => {
 
     // With the menu closed, the header's own switch is the only radiogroup.
     const group = screen.getByRole("radiogroup", {
-      name: dict.header.themeAria,
+      name: dict.theme.groupAria,
     });
     const host = group.parentElement;
     // The same `xl` the menu trigger disappears at — together they cover every
@@ -157,7 +157,7 @@ describe("Header — responsive class contract (TASK-539)", () => {
       within(menu).getByRole("link", { name: dict.nav.blog }),
     ).toHaveAttribute("href", "/blog");
     expect(
-      within(menu).getByRole("radiogroup", { name: dict.header.themeAria }),
+      within(menu).getByRole("radiogroup", { name: dict.theme.groupAria }),
     ).toBeInTheDocument();
   });
 
