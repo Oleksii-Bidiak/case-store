@@ -24,6 +24,28 @@ describe("CartSkeleton (TASK-869)", () => {
     expect(grid.children[0]).toHaveClass("rounded-card", "shadow-card");
   });
 
+  it("wraps the stepper and the line total like CartItemRow, so they stack in the mobile column", () => {
+    render(<CartSkeleton />);
+    for (const actions of screen.getAllByTestId("cart-skeleton-row-actions")) {
+      expect(actions).toHaveClass("flex", "flex-wrap", "justify-between");
+      // The stepper placeholder is the real stepper's 118×38 box.
+      expect(actions.children[0]).toHaveClass("h-9.5", "w-29.5");
+    }
+  });
+
+  it("reserves three title lines below md and one from md", () => {
+    render(<CartSkeleton />);
+    for (const title of screen.getAllByTestId("cart-skeleton-row-title")) {
+      const lines = Array.from(title.children).filter((el) =>
+        el.classList.contains("h-5.5"),
+      );
+      expect(lines).toHaveLength(3);
+      expect(lines[0]).not.toHaveClass("md:hidden");
+      expect(lines[1]).toHaveClass("md:hidden");
+      expect(lines[2]).toHaveClass("md:hidden");
+    }
+  });
+
   it("reserves the h1 slot at H1_CLASS line heights", () => {
     render(<CartSkeleton />);
     expect(screen.getByTestId("cart-skeleton-title")).toHaveClass(

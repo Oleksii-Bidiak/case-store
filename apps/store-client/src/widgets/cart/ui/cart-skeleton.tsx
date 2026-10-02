@@ -58,15 +58,39 @@ export function CartSkeleton() {
               <Skeleton className="size-24 shrink-0 rounded-cta" />
               <div className="flex min-w-0 flex-1 flex-col">
                 <div className="flex justify-between gap-3.5">
-                  <div className="flex min-w-0 flex-1 flex-col gap-2 pt-1">
-                    <Skeleton className="h-4 w-3/4" />
-                    <Skeleton className="h-3 w-20" />
+                  <div
+                    data-testid="cart-skeleton-row-title"
+                    className="flex min-w-0 flex-1 flex-col"
+                  >
+                    {/* Product name: 22px line boxes (the row's 15px title at
+                        line-height 1.5). In the ~130px title column below md a
+                        real name wraps to three lines; from md it is one. */}
+                    <div className="flex h-5.5 items-center">
+                      <Skeleton className="h-4 w-full md:w-3/4" />
+                    </div>
+                    <div className="flex h-5.5 items-center md:hidden">
+                      <Skeleton className="h-4 w-full" />
+                    </div>
+                    <div className="flex h-5.5 items-center md:hidden">
+                      <Skeleton className="h-4 w-2/3" />
+                    </div>
+                    {/* «В наявності» — mb-1 + a 16px text-xs line */}
+                    <div className="mt-1 flex h-4 items-center">
+                      <Skeleton className="h-3 w-20" />
+                    </div>
                   </div>
                   <Skeleton className="size-11 shrink-0 rounded-lg" />
                 </div>
-                <div className="mt-auto flex items-end justify-between gap-3.5 pt-3">
-                  <Skeleton className="h-9 w-28" />
-                  <Skeleton className="h-6 w-20" />
+                {/* Stepper (118×38: two 36px buttons, the 44px field and the
+                    border) + line total (28px). `flex-wrap` like the row: in
+                    the narrow mobile column they stack, from md they share
+                    a line. */}
+                <div
+                  data-testid="cart-skeleton-row-actions"
+                  className="mt-auto flex flex-wrap items-end justify-between gap-3.5 pt-3"
+                >
+                  <Skeleton className="h-9.5 w-29.5 rounded-md" />
+                  <Skeleton className="h-7 w-20" />
                 </div>
               </div>
             </div>
