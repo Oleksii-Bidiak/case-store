@@ -295,6 +295,15 @@ icons (e.g. the select chevron) may keep an opacity since they carry no text.
     `ColorDots`, `RatingStars`, `ReviewRatingStars`, `Badge`, `Logo` (takes a required
     `siteName` — the server-resolved `resolveSiteName(seo)`, never the `SITE_NAME` constant).
   - **Content & feedback:** `RichText`, `Skeleton`, `CheckoutSkeleton`, and the Sonner `Toaster`.
+- **Anchored popups are Radix, portalled, collision-aware.** `SelectContent` uses popper
+  positioning (TASK-459). The `Combobox` list is a Radix `Popover` anchored to its input
+  (TASK-502): portalled to `<body>`, so no `overflow` ancestor clips it; `side="bottom"`,
+  `sideOffset={4}`, `collisionPadding={8}`, as wide as the input; height `max-h-listbox`. The
+  `--max-height-listbox` token is the 15rem list, shrunk to the room on the opened side, with a
+  7.5rem floor. The floor is what lets the list flip above the input near the bottom of a phone
+  screen: a cap equal to that sliver would clamp the async results to it, the list would never
+  overflow, and collision detection would never move it. DOM focus stays on the input
+  (`aria-activedescendant`). Never hand-roll an `absolute` dropdown for a new picker.
 - **RadioGroup and Checkbox are not `shared/ui` components.** They are native `<input
 type="radio|checkbox">` elements styled with tokens where they are used (checkout payment,
   filters, cart rows, forms). Keep them native: the browser gives keyboard and form semantics for

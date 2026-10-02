@@ -347,6 +347,21 @@
      off a short screen. `--max-height-*` is Tailwind's max-height namespace →
      `max-h-sticky-aside`. Pair with `overflow-y-auto overscroll-contain`. */
   --max-height-sticky-aside: calc(100dvh - 7rem);
+  /* Height cap of a popover-anchored listbox (Combobox, TASK-502): the 15rem
+     list it always had (`max-h-60`), shrunk to the room Radix measured on the
+     side it opened towards — but never below 7.5rem (about three rows). The
+     floor is what makes the list FLIP: an async list first opens as a one-line
+     «Пошук…» that fits any sliver below the input, and a cap equal to that
+     sliver would then clamp the arriving results to it, so the list would never
+     overflow and collision detection would never move it. With the floor, a
+     cramped side overflows and Radix flips the list above the input. The
+     fallback keeps the plain 15rem if the variable is ever missing (an
+     undefined var would make the whole value invalid → no cap at all).
+     → `max-h-listbox`. */
+  --max-height-listbox: min(
+    15rem,
+    max(var(--radix-popover-content-available-height, 15rem), 7.5rem)
+  );
 
   /* Fonts */
   --font-sans: var(--font-geist-sans);
