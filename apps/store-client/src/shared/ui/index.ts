@@ -9,6 +9,7 @@ export { Combobox, type ComboboxOption, type ComboboxProps } from "./combobox";
 export {
   AccountDropdown,
   AccountDropdownItem,
+  AccountDropdownSeparator,
   type AccountDropdownProps,
   type AccountDropdownItemProps,
 } from "./account-dropdown";

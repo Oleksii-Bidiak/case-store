@@ -6,7 +6,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { User } from "lucide-react";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
 import { AuthSheet } from "@/features/auth";
-import { AccountDropdown, AccountDropdownItem, Skeleton } from "@/shared/ui";
+import {
+  AccountDropdown,
+  AccountDropdownItem,
+  AccountDropdownSeparator,
+  Skeleton,
+} from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 /**
@@ -88,11 +93,7 @@ export function HeaderAuth() {
       <AccountDropdownItem href="/orders">
         {dict.account.ordersLink}
       </AccountDropdownItem>
-      <li
-        role="separator"
-        aria-hidden="true"
-        className="my-1 border-t border-border"
-      />
+      <AccountDropdownSeparator />
       <AccountDropdownItem onClick={handleLogout} disabled={logout.isPending}>
         {logout.isPending
           ? dict.auth.logout.signingOut

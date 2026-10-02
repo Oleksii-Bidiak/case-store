@@ -285,12 +285,13 @@ New disabled styling anywhere on the storefront uses these tokens, not opacity; 
 icons (e.g. the select chevron) may keep an opacity since they carry no text.
 
 - Use the existing `shared/ui` primitives. `apps/store-client/src/shared/ui/index.ts` exports
-  **56 components**, the same set the Claude Design system syncs. Most of them are compound parts:
+  **57 components** — the 56 the Claude Design system last synced plus `AccountDropdownSeparator`
+  (TASK-503), which joins on the next `/design-sync`. Most of them are compound parts:
   - **Controls:** `Button` (CVA variants), `Input`, `Textarea`, `Label`, `Select` (+ parts),
     `Combobox`, `PhoneInput`, `Slider`.
   - **Overlays:** `Dialog` (+ parts) and `Sheet` (+ parts).
   - **Navigation & structure:** `Tabs` (+ parts), `Pagination`, `Separator`, `AccountDropdown`
-    / `AccountDropdownItem`.
+    / `AccountDropdownItem` / `AccountDropdownSeparator`.
   - **Commerce:** `ProductCard`, `ProductCardImage`, `ProductThumb`, `CategoryTileImage`,
     `ColorDots`, `RatingStars`, `ReviewRatingStars`, `Badge`, `Logo` (takes a required
     `siteName` — the server-resolved `resolveSiteName(seo)`, never the `SITE_NAME` constant).
@@ -303,7 +304,12 @@ icons (e.g. the select chevron) may keep an opacity since they carry no text.
   7.5rem floor. The floor is what lets the list flip above the input near the bottom of a phone
   screen: a cap equal to that sliver would clamp the async results to it, the list would never
   overflow, and collision detection would never move it. DOM focus stays on the input
-  (`aria-activedescendant`). Never hand-roll an `absolute` dropdown for a new picker.
+  (`aria-activedescendant`). The header `AccountDropdown` is a Radix `DropdownMenu` (TASK-503):
+  portalled, `align="end"`, `sideOffset={4}`, `collisionPadding={8}`, height capped at
+  `--radix-dropdown-menu-content-available-height` with its own scroll, `modal={false}` (no
+  scroll lock, an outside click reaches its target). Keyboard per the APG menu button; Tab closes
+  it and moves on to the trigger's Tab neighbour. Items render only inside it. Never hand-roll an
+  `absolute` dropdown for a new picker or menu.
 - **RadioGroup and Checkbox are not `shared/ui` components.** They are native `<input
 type="radio|checkbox">` elements styled with tokens where they are used (checkout payment,
   filters, cart rows, forms). Keep them native: the browser gives keyboard and form semantics for
