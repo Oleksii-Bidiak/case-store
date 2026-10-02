@@ -161,10 +161,15 @@ test.describe("header row by width (TASK-511, TASK-512)", () => {
     // box after the guest button became 44×44. It now shares the guest box,
     // so it also gets the «Кабінет» caption from `xl`.
     await page.goto("/login");
-    const submit = page
+    // A `has` locator resolves INSIDE the outer element, so it must not carry
+    // its own `main` root — scope the form to `main`, then find the button in it.
+    const submitName = { name: /^увійти$/i };
+    const form = page
       .getByRole("main")
-      .getByRole("button", { name: /^увійти$/i });
-    await waitForHydration(page.locator("form").filter({ has: submit }));
+      .locator("form")
+      .filter({ has: page.getByRole("button", submitName) });
+    const submit = form.getByRole("button", submitName);
+    await waitForHydration(form);
     await page.getByLabel(/(пошта|email)/i).fill(E2E_USER_EMAIL);
     await page.getByLabel(/(пароль|password)/i).fill(E2E_USER_PASSWORD);
     await submit.click();
