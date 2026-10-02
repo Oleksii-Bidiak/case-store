@@ -42,6 +42,10 @@ dark. Light sets `data-theme="light"` and dark sets `data-theme="dark"` (`:root[
 In "system" there is no `data-theme`, and only then does `@media (prefers-color-scheme: dark)`
 decide (`:root:not([data-theme='light'])`). Tailwind's `dark:` variant follows the same
 attribute. The two dark blocks in `globals.css` must stay in sync.
+The browser chrome follows the same rule: `viewport.themeColor` is a static
+`prefers-color-scheme` pair (first paint, "system"), and on an explicit light / dark choice
+`features/theme` `ThemeColorSync` puts its own media-less `theme-color` meta first in `<head>`
+(values from `THEME_COLOR` in `shared/config/theme.ts`).
 
 | Token                                    | Role                          | Light                             | Dark                              |
 | ---------------------------------------- | ----------------------------- | --------------------------------- | --------------------------------- |

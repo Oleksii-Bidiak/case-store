@@ -4,6 +4,7 @@ import Script from "next/script";
 import { Providers } from "./providers";
 import { Header } from "@/widgets/header";
 import { Footer } from "@/widgets";
+import { ThemeColorSync } from "@/features/theme";
 import {
   PRIMARY_COLOR,
   PRIMARY_COLOR_DARK,
@@ -56,6 +57,9 @@ const sora = Sora({
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Static pair for first paint and «Системна»: the browser follows the OS on
+  // its own. An EXPLICIT light/dark pick is layered on top on the client by
+  // <ThemeColorSync /> (TASK-506), which outranks this pair by tree order.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: PRIMARY_COLOR },
     { media: "(prefers-color-scheme: dark)", color: PRIMARY_COLOR_DARK },
@@ -177,6 +181,7 @@ export default async function RootLayout({
     >
       <body className="min-h-full flex flex-col bg-background text-foreground">
         <Providers>
+          <ThemeColorSync />
           <a
             href="#main-content"
             className="sr-only z-[100] rounded-md bg-primary px-4 py-2 text-primary-foreground focus:not-sr-only focus:absolute focus:left-4 focus:top-4"
