@@ -125,6 +125,58 @@ describe("BlogView", () => {
     );
 
     expect(screen.getByText(dict.blog.emptyHeading)).toBeInTheDocument();
+    expect(screen.getByText(dict.blog.emptyBody)).toBeInTheDocument();
+    // TASK-870 — one primary action: a filtered/searched empty hub offers the
+    // whole journal back (the URL contract drops ?category= and ?q=).
+    const reset = screen.getByRole("link", { name: dict.blog.emptyResetCta });
+    expect(reset).toHaveAttribute("href", "/blog");
+    expect(reset).toHaveAttribute("data-variant", "default");
+    expect(reset).toHaveClass("h-11");
+  });
+
+  it("sends a page past the end back to page 1 (TASK-870)", () => {
+    renderWithProviders(
+      <BlogView
+        posts={[]}
+        categories={categories}
+        featured={null}
+        activeCategory="all"
+        query=""
+        page={7}
+        totalPages={2}
+      />,
+    );
+
+    expect(screen.getByText(dict.blog.emptyPageHeading)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.blog.emptyPageCta }),
+    ).toHaveAttribute("href", "/blog");
+  });
+
+  it("points an empty journal at the catalogue, with nothing to reset (TASK-870)", () => {
+    const { container } = renderWithProviders(
+      <BlogView
+        posts={[]}
+        categories={categories}
+        featured={null}
+        activeCategory="all"
+        query=""
+        page={1}
+        totalPages={1}
+      />,
+    );
+
+    expect(screen.getByText(dict.blog.emptyNoneHeading)).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.blog.emptyNoneCta }),
+    ).toHaveAttribute("href", "/products");
+    expect(
+      screen.queryByRole("link", { name: dict.blog.emptyResetCta }),
+    ).not.toBeInTheDocument();
+    // The glyph is decoration: its disc is hidden from assistive tech.
+    expect(
+      container.querySelector(".size-18")?.getAttribute("aria-hidden"),
+    ).toBe("true");
   });
 
   it("offers the next-page shortcut only while a next page exists", () => {

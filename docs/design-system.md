@@ -341,7 +341,15 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   own `loading.tsx`, and skip that check for the router's own `fetch` requests
   (`Sec-Fetch-Dest: empty`) so card prefetches cost no API read (`app/products/[slug]/layout.tsx`,
   TASK-874).
-- **Empty states** get an icon + one-line explanation + a primary action.
+- **Empty states** get an icon + one-line explanation + a primary action. One card everywhere
+  (TASK-870): `rounded-card` + `shadow-card`, a `size-18` `bg-muted` disc with the glyph
+  (`aria-hidden`), a `text-xl` display line, one muted helper line, a 44 px primary
+  (`features/product-filters` `ListingEmptyState` for product listings; the content hubs
+  `/blog`, `/legal`, `/categories` and `/orders` draw the same card locally). The action is the
+  way on from _this_ emptiness: a reset only when a filter or a query narrowed the list,
+  otherwise a link out (the catalogue, page 1, support). The page keeps its crumbs and H1 above
+  the card. If the page already has a primary with the same job (the `/legal` support card),
+  the empty card takes it over and the other block is not rendered: never two primaries.
 - **Errors** surface via Sonner toast or inline field message — never `alert()`/`confirm()`
   (use `Dialog`).
 - **A page that fails to render** lands in `app/error.tsx`, inside the layout's `<main>` so the

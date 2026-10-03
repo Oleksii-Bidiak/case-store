@@ -1,5 +1,6 @@
 import type { ComponentType, SVGProps } from "react";
 import Link from "next/link";
+import { FileText } from "lucide-react";
 import { dict, H1_CLASS } from "@/shared/config";
 import { Button } from "@/shared/ui";
 import { formatLegalDateShort } from "../model/extract-sections";
@@ -123,39 +124,66 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
           })}
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">{dict.legal.hub.empty}</p>
+        // TASK-870 — design-system §6: icon + one line + a primary action, the
+        // same card as the catalogue's `ListingEmptyState`. With nothing to
+        // read, asking support IS the way on, so the card carries the hub's
+        // one primary and the support card below is not rendered: two
+        // «Звʼязатися з нами» buttons a few pixels apart would be two primaries.
+        <div className="flex flex-col items-center justify-center rounded-card border border-border bg-card px-5 py-14 text-center shadow-card">
+          <span
+            aria-hidden="true"
+            className="mb-4 inline-flex size-18 items-center justify-center rounded-full bg-muted text-muted-foreground"
+          >
+            <FileText className="size-8" strokeWidth={1.6} />
+          </span>
+          <p className="max-w-md font-display text-xl font-bold text-foreground">
+            {dict.legal.hub.empty}
+          </p>
+          <p className="mt-2.5 max-w-md text-sm text-muted-foreground">
+            {dict.legal.hub.emptyBody}
+          </p>
+          <Button asChild size="lg" className="mt-5 h-11">
+            <Link href={dict.legal.contactHref}>
+              {dict.legal.hub.supportCta}
+            </Link>
+          </Button>
+        </div>
       )}
 
-      {/* Support CTA */}
-      <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card px-[26px] py-[22px] shadow-card">
-        <div className="flex items-center gap-3.5">
-          <span
-            className="inline-flex size-[46px] items-center justify-center rounded-xl text-primary"
-            style={{
-              background:
-                "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-            }}
-          >
-            <LegalChatIcon width={23} height={23} />
-          </span>
-          <div>
-            <b className="block font-display text-base text-foreground">
-              {dict.legal.hub.supportHeading}
-            </b>
-            <span className="text-sm text-muted-foreground">
-              {dict.legal.hub.supportSubtitle}
+      {/* Support CTA — the empty card above already carries this action */}
+      {docs.length > 0 && (
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card px-[26px] py-[22px] shadow-card">
+          <div className="flex items-center gap-3.5">
+            <span
+              className="inline-flex size-[46px] items-center justify-center rounded-xl text-primary"
+              style={{
+                background:
+                  "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
+              }}
+            >
+              <LegalChatIcon width={23} height={23} />
             </span>
+            <div>
+              <b className="block font-display text-base text-foreground">
+                {dict.legal.hub.supportHeading}
+              </b>
+              <span className="text-sm text-muted-foreground">
+                {dict.legal.hub.supportSubtitle}
+              </span>
+            </div>
           </div>
-        </div>
-        {/* The hub's one primary action, as in LegalHub.dc.html (TASK-865);
+          {/* The hub's one primary action, as in LegalHub.dc.html (TASK-865);
             on Button so it gets the focus ring it lacked. */}
-        <Button
-          asChild
-          className="h-11 rounded-menu px-6 font-semibold no-underline"
-        >
-          <Link href={dict.legal.contactHref}>{dict.legal.hub.supportCta}</Link>
-        </Button>
-      </div>
+          <Button
+            asChild
+            className="h-11 rounded-menu px-6 font-semibold no-underline"
+          >
+            <Link href={dict.legal.contactHref}>
+              {dict.legal.hub.supportCta}
+            </Link>
+          </Button>
+        </div>
+      )}
     </>
   );
 }

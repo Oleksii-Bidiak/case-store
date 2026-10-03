@@ -421,6 +421,19 @@ export const dict = {
     nextPageLink: "Наступні статті",
     paginationAria: "Навігація сторінками статей",
     badgeNamed: (name: string) => `Журнал ${name}`,
+    // TASK-870 — the empty hub, design-system §6: one line + one primary action.
+    // A filter or a search that found nothing offers the whole journal back; a
+    // page past the end sends the reader to page 1; a journal with no articles
+    // at all has nothing to reset, so the way on is the catalogue.
+    emptyResetCta: "Показати всі статті",
+    emptyPageHeading: "На цій сторінці статей немає",
+    emptyPageBody:
+      "Схоже, посилання застаріло — свіжі статті на першій сторінці.",
+    emptyPageCta: "До першої сторінки",
+    emptyNoneHeading: "Статей поки немає",
+    emptyNoneBody:
+      "Ми готуємо перші огляди й гайди. А поки — загляньте в каталог.",
+    emptyNoneCta: "До каталогу",
   },
 
   // Admin-authored static/legal pages (/legal + /legal/[slug], Legal.dc.html
@@ -450,11 +463,14 @@ export const dict = {
         "Усі офіційні документи CaseStore в одному місці — політики, умови та гарантії. Оберіть потрібний документ, щоб прочитати повну редакцію.",
       // "{updatedPrefix} {date}" → "Оновлено 12 черв. 2026".
       updatedPrefix: "Оновлено",
-      empty: "Документів поки немає.",
+      empty: "Документів поки немає",
       supportHeading: "Не знайшли потрібне?",
       supportSubtitle:
         "Наша підтримка допоможе розібратись із будь-яким документом",
       supportCta: "Звʼязатися з нами",
+      // TASK-870 — helper line of the empty hub; its action is `supportCta`.
+      emptyBody:
+        "Ми готуємо офіційні документи магазину. Поки що підтримка відповість на будь-яке питання про умови, доставку чи гарантію.",
     },
     // TASK-878 — below lg the TOC collapses into one disclosure row.
     // Ukrainian pluralization: 1 розділ, 2–4 розділи, 5+ розділів.
@@ -837,6 +853,11 @@ export const dict = {
     viewAllInCategory: "Переглянути всі товари",
     // Popular brands strip — wired to the real Brand model (TASK-189).
     brandsHeading: "Популярні бренди",
+    // TASK-870 — the hub with no active category: crumbs + h1 + empty card.
+    heading: "Категорії",
+    emptyBody:
+      "Розділи каталогу саме оновлюються. Усі товари вже доступні — їх можна переглянути в каталозі.",
+    emptyCta: "До каталогу",
   },
 
   filters: {

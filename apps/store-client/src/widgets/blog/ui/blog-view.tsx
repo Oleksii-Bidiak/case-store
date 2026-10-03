@@ -3,12 +3,13 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Newspaper, SearchX } from "lucide-react";
 import { dict, H1_CLASS } from "@/shared/config";
 import { Pagination } from "@/shared/ui/pagination";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 import type { BlogPostView } from "../model/posts";
 import { BlogArrowDownIcon, BlogSearchIcon } from "./blog-icons";
-import { BlogEmptyState } from "./blog-empty-state";
+import { BlogEmptyState, type BlogEmptyStateProps } from "./blog-empty-state";
 import { BlogFeaturedCard } from "./blog-featured-card";
 import { BlogNewsletter, type BlogNewsletterContact } from "./blog-newsletter";
 import { BlogPostCard } from "./blog-post-card";
@@ -117,6 +118,32 @@ export function BlogView({
   const hasPosts = posts.length > 0;
   const isEmpty = !featured && !hasPosts;
   const hasMore = page < totalPages;
+  const isFiltered = activeCategory !== "all" || query.trim() !== "";
+
+  // TASK-870 — the empty state's one primary action is the way on from THIS
+  // emptiness: a filter or a search found nothing → the whole journal; a page
+  // past the end → page 1; no articles at all → there is nothing to reset, so
+  // the catalogue.
+  const empty: BlogEmptyStateProps = isFiltered
+    ? {
+        icon: SearchX,
+        heading: dict.blog.emptyHeading,
+        body: dict.blog.emptyBody,
+        action: { label: dict.blog.emptyResetCta, href: "/blog" },
+      }
+    : page > 1
+      ? {
+          icon: Newspaper,
+          heading: dict.blog.emptyPageHeading,
+          body: dict.blog.emptyPageBody,
+          action: { label: dict.blog.emptyPageCta, href: "/blog" },
+        }
+      : {
+          icon: Newspaper,
+          heading: dict.blog.emptyNoneHeading,
+          body: dict.blog.emptyNoneBody,
+          action: { label: dict.blog.emptyNoneCta, href: "/products" },
+        };
 
   return (
     <>
@@ -194,7 +221,7 @@ export function BlogView({
       )}
 
       {/* Empty state */}
-      {isEmpty && <BlogEmptyState />}
+      {isEmpty && <BlogEmptyState {...empty} />}
 
       {/* Next page shortcut — the reading order most people want, one click */}
       {hasMore && (

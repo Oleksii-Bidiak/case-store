@@ -231,3 +231,56 @@ describe("CategoriesView breadcrumbs and root chips (TASK-877)", () => {
     ).toHaveClass("py-1");
   });
 });
+
+// TASK-870 — design-system §6: no active category → crumbs + h1 + empty card.
+describe("CategoriesView empty state (TASK-870)", () => {
+  it("keeps the page heading and offers the catalogue as its one primary", async () => {
+    server.use(
+      http.get("*/api/categories/tree", () =>
+        HttpResponse.json({
+          // An inactive root is not shown — the hub is empty all the same.
+          data: [{ ...tree.data[0], isActive: false }],
+        }),
+      ),
+      http.get("*/api/brands", () => HttpResponse.json(brands)),
+    );
+    const { container } = renderWithProviders(<CategoriesView />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: dict.categories.heading,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(dict.categories.emptyHeading)).toBeInTheDocument();
+    expect(screen.getByText(dict.categories.emptyBody)).toBeInTheDocument();
+
+    const cta = screen.getByRole("link", { name: dict.categories.emptyCta });
+    expect(cta).toHaveAttribute("href", "/products");
+    expect(cta).toHaveAttribute("data-variant", "default");
+    expect(cta).toHaveClass("h-11");
+
+    // The JSON-LD matches the visible trail.
+    const trail = screen.getByRole("navigation", {
+      name: dict.product.breadcrumbAria,
+    });
+    expect(trail.querySelector('[aria-current="page"]')).toHaveTextContent(
+      dict.categories.heading,
+    );
+    const script = container.querySelector(
+      'script[type="application/ld+json"]',
+    );
+    const schema = JSON.parse(script?.textContent ?? "{}") as {
+      itemListElement?: { name: string }[];
+    };
+    expect((schema.itemListElement ?? []).map((e) => e.name)).toEqual([
+      dict.categories.breadcrumbHome,
+      dict.categories.heading,
+    ]);
+
+    // No root chips to render.
+    expect(
+      screen.queryByRole("navigation", { name: dict.categories.navAria }),
+    ).not.toBeInTheDocument();
+  });
+});

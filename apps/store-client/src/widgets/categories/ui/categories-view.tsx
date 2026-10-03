@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, LayoutGrid } from "lucide-react";
 import {
   useCategoryControllerGetCategoryTree,
   type CategoryTreeNodeEntity,
@@ -17,7 +17,7 @@ import {
 } from "@/shared/config";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { cn } from "@/shared/lib/utils";
-import { CategoryTileImage, JsonLd, Skeleton } from "@/shared/ui";
+import { Button, CategoryTileImage, JsonLd, Skeleton } from "@/shared/ui";
 import { categoryGradient, pickCategoryIcon } from "../model/category-visuals";
 
 const activeOnly = (nodes: CategoryTreeNodeEntity[]) =>
@@ -92,8 +92,56 @@ export function CategoriesView() {
   const roots = activeOnly(data?.data ?? []);
 
   if (roots.length === 0) {
+    // TASK-870 — design-system §6: the page keeps its crumbs and h1 (the bare
+    // line it used to be left the hub without a heading), then the card the
+    // catalogue's `ListingEmptyState` draws: icon + one line + a primary. With
+    // no category to open, the way on is the whole catalogue.
     return (
-      <p className="text-muted-foreground">{dict.categories.emptyHeading}</p>
+      <section>
+        <JsonLd
+          schema={buildBreadcrumbSchema([
+            { name: dict.categories.breadcrumbHome, item: SITE_URL },
+            {
+              name: dict.categories.heading,
+              item: `${SITE_URL}/categories`,
+            },
+          ])}
+        />
+        <nav
+          aria-label={dict.product.breadcrumbAria}
+          className="mb-3.5 flex flex-wrap items-center gap-2 text-sm text-muted-foreground"
+        >
+          <Link href="/" className="transition-colors hover:text-foreground">
+            {dict.categories.breadcrumbHome}
+          </Link>
+          <span aria-hidden="true" className="opacity-50">
+            ›
+          </span>
+          <span aria-current="page" className="font-medium text-foreground">
+            {dict.categories.heading}
+          </span>
+        </nav>
+        <h1 className={`mb-4 md:mb-6 ${H1_CLASS} text-foreground`}>
+          {dict.categories.heading}
+        </h1>
+        <div className="flex flex-col items-center justify-center rounded-card border border-border bg-card px-5 py-14 text-center shadow-card">
+          <span
+            aria-hidden="true"
+            className="mb-4 inline-flex size-18 items-center justify-center rounded-full bg-muted text-muted-foreground"
+          >
+            <LayoutGrid className="size-8" strokeWidth={1.6} />
+          </span>
+          <p className="max-w-md font-display text-xl font-bold text-foreground">
+            {dict.categories.emptyHeading}
+          </p>
+          <p className="mt-2.5 max-w-md text-sm text-muted-foreground">
+            {dict.categories.emptyBody}
+          </p>
+          <Button asChild size="lg" className="mt-5 h-11">
+            <Link href="/products">{dict.categories.emptyCta}</Link>
+          </Button>
+        </div>
+      </section>
     );
   }
 

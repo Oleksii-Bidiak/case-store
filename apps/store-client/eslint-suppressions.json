@@ -169,11 +169,6 @@
       "count": 17
     }
   },
-  "src/widgets/blog/ui/blog-empty-state.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 2
-    }
-  },
   "src/widgets/blog/ui/blog-featured-card.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 15
