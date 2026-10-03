@@ -2132,10 +2132,11 @@ export const dict = {
 
   // TASK-076 — wishlist / favorites (guest via cookie, merges on login).
   wishlist: {
-    /** Header icon accessible label. */
-    headerAria: "Список бажань",
+    /** Header icon accessible label — the same word as its visible caption
+     *  `header.wishlistLabel`, so the spoken name contains the shown one. */
+    headerAria: "Обране",
     /** Mobile-menu link + nav label. */
-    navLabel: "Список бажань",
+    navLabel: "Обране",
     /** Page heading and breadcrumb leaf — «Обране» everywhere (owner 7.11,
      *  TASK-875), the same word as the header caption and the footer link. */
     heading: "Обране",
