@@ -48,18 +48,52 @@ function stubSave(
   return bodies;
 }
 
-const row = (n: number) => screen.getByLabelText(s.termsLabel(n));
+// TASK-1053 (Н3): groups are chips in a grid; a group is edited through its
+// «⋯» → «Змінити», which turns its card into the comma-separated input.
+const groupList = () => screen.getByRole("list", { name: s.heading });
+const row = (n: number) =>
+  screen.getByRole("textbox", { name: s.termsLabel(n) });
+const groupMenu = async (n: number, item: string) => {
+  await userEvent.click(
+    screen.getByRole("button", { name: s.groupActionsAria(n) }),
+  );
+  await userEvent.click(screen.getByRole("menuitem", { name: item }));
+};
+const editRow = async (n: number) => {
+  await groupMenu(n, s.editGroup);
+  return row(n);
+};
+const removeRow = (n: number) => groupMenu(n, s.removeGroup);
+const restoreDefaults = async () => {
+  await userEvent.click(
+    screen.getByRole("button", { name: s.sectionMenuAria }),
+  );
+  await userEvent.click(
+    screen.getByRole("menuitem", { name: s.restoreDefaults }),
+  );
+};
+/** What each group card holds: its input's value while edited, else its chips. */
+const groupValues = () =>
+  within(groupList())
+    .getAllByRole("listitem")
+    .map((item) => {
+      const input = item.querySelector("input");
+      if (input) return input.value;
+      return Array.from(item.querySelectorAll("[data-slot='synonym-chip']"))
+        .map((chip) => chip.textContent)
+        .join(", ");
+    });
+
 const submit = () =>
   userEvent.click(screen.getByRole("button", { name: s.submit }));
 
 describe("SearchSynonymsForm (TASK-559)", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("seeds one comma-separated row per group", () => {
+  it("seeds one group per saved group, its words as chips", () => {
     renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
 
-    expect(row(1)).toHaveValue("чохол, case");
-    expect(row(2)).toHaveValue("айфон, iphone");
+    expect(groupValues()).toEqual(["чохол, case", "айфон, iphone"]);
   });
 
   describe("state sync with the query (forms.md Rule 2)", () => {
@@ -79,29 +113,29 @@ describe("SearchSynonymsForm (TASK-559)", () => {
 
       rerender(<SearchSynonymsForm settings={REFETCHED} />);
 
-      await waitFor(() => expect(row(1)).toHaveValue("чохол, case, кейс"));
-      expect(row(2)).toHaveValue("айфон, iphone, ifone");
-      expect(row(3)).toHaveValue("скло, glass");
+      await waitFor(() =>
+        expect(groupValues()).toEqual([
+          "чохол, case, кейс",
+          "айфон, iphone, ifone",
+          "скло, glass",
+        ]),
+      );
     });
-
-    const rowValues = () =>
-      screen
-        .getAllByRole("textbox")
-        .map((input) => (input as HTMLInputElement).value);
 
     it("keeps the operator's edit when the list is refetched, and saves their list", async () => {
       const bodies = stubSave();
       const { rerender } = renderWithProviders(
         <SearchSynonymsForm settings={SAVED} />,
       );
-      await userEvent.clear(row(1));
-      await userEvent.type(row(1), "чохол, бампер");
+      const first = await editRow(1);
+      await userEvent.clear(first);
+      await userEvent.type(first, "чохол, бампер");
 
       rerender(<SearchSynonymsForm settings={REFETCHED} />);
 
       // The WHOLE list stays as the operator left it — not a per-row merge,
       // which would refresh row 2 and silently drop the refetch's third group.
-      expect(rowValues()).toEqual(["чохол, бампер", "айфон, iphone"]);
+      expect(groupValues()).toEqual(["чохол, бампер", "айфон, iphone"]);
 
       await submit();
       await waitFor(() => expect(bodies).toHaveLength(1));
@@ -117,13 +151,11 @@ describe("SearchSynonymsForm (TASK-559)", () => {
       const { rerender } = renderWithProviders(
         <SearchSynonymsForm settings={SAVED} />,
       );
-      await userEvent.click(
-        screen.getByRole("button", { name: s.removeGroupAria(1) }),
-      );
+      await removeRow(1);
 
       rerender(<SearchSynonymsForm settings={REFETCHED} />);
 
-      expect(rowValues()).toEqual(["айфон, iphone"]);
+      expect(groupValues()).toEqual(["айфон, iphone"]);
     });
 
     it("keeps an added row when the list is refetched", async () => {
@@ -135,7 +167,7 @@ describe("SearchSynonymsForm (TASK-559)", () => {
 
       rerender(<SearchSynonymsForm settings={REFETCHED} />);
 
-      expect(rowValues()).toEqual([
+      expect(groupValues()).toEqual([
         "чохол, case",
         "айфон, iphone",
         "гаджет, gadget",
@@ -148,6 +180,8 @@ describe("SearchSynonymsForm (TASK-559)", () => {
     renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
 
     await userEvent.click(screen.getByRole("button", { name: s.addGroup }));
+    // The new group opens as an input, ready to type into.
+    expect(row(3)).toHaveFocus();
     await userEvent.type(row(3), " Гаджет ,GADGET, гаджет");
     await submit();
 
@@ -161,16 +195,14 @@ describe("SearchSynonymsForm (TASK-559)", () => {
     });
     expect(toast.success).toHaveBeenCalledWith(s.toastSaved);
     // Re-seeded from the server's answer: the typed line comes back normalised.
-    await waitFor(() => expect(row(3)).toHaveValue("гаджет, gadget"));
+    await waitFor(() => expect(groupValues()[2]).toBe("гаджет, gadget"));
   });
 
   it("removes a group", async () => {
     const bodies = stubSave();
     renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: s.removeGroupAria(1) }),
-    );
+    await removeRow(1);
     await submit();
 
     await waitFor(() => expect(bodies).toHaveLength(1));
@@ -181,8 +213,9 @@ describe("SearchSynonymsForm (TASK-559)", () => {
     const bodies = stubSave();
     renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
 
-    await userEvent.clear(row(2));
-    await userEvent.type(row(2), "type-c, typec");
+    const second = await editRow(2);
+    await userEvent.clear(second);
+    await userEvent.type(second, "type-c, typec");
     await submit();
 
     expect(
@@ -196,9 +229,7 @@ describe("SearchSynonymsForm (TASK-559)", () => {
     const bodies = stubSave();
     renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: s.restoreDefaults }),
-    );
+    await restoreDefaults();
     const dialog = await screen.findByRole("alertdialog");
     expect(within(dialog).getByText(s.restoreDescription)).toBeInTheDocument();
     await userEvent.click(
@@ -213,9 +244,7 @@ describe("SearchSynonymsForm (TASK-559)", () => {
     const bodies = stubSave();
     renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: s.restoreDefaults }),
-    );
+    await restoreDefaults();
     const dialog = await screen.findByRole("alertdialog");
     await userEvent.click(
       within(dialog).getByRole("button", { name: dict.common.cancel }),
@@ -227,16 +256,23 @@ describe("SearchSynonymsForm (TASK-559)", () => {
     expect(bodies).toHaveLength(0);
   });
 
+  it("has nothing to restore while the built-in list is in force", () => {
+    renderWithProviders(
+      <SearchSynonymsForm settings={{ ...SAVED, isDefault: true }} />,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: s.sectionMenuAria }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(s.defaultNote)).toBeInTheDocument();
+  });
+
   it("saving with every group removed asks first — it restores the built-in list", async () => {
     const bodies = stubSave();
     renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: s.removeGroupAria(2) }),
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: s.removeGroupAria(1) }),
-    );
+    await removeRow(2);
+    await removeRow(1);
     expect(screen.getByText(s.empty)).toBeInTheDocument();
     await submit();
 
@@ -258,8 +294,8 @@ describe("SearchSynonymsForm (TASK-559)", () => {
     const bodies = stubSave();
     renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
 
-    await userEvent.clear(row(1));
-    await userEvent.clear(row(2));
+    await userEvent.clear(await editRow(1));
+    await userEvent.clear(await editRow(2));
     await submit();
 
     const dialog = await screen.findByRole("alertdialog");
@@ -307,5 +343,103 @@ describe("SearchSynonymsForm (TASK-559)", () => {
         "Each synonym must be a single word",
       ),
     );
+  });
+});
+
+describe("SearchSynonymsForm — chip grid by mockup Н3 (TASK-1053)", () => {
+  const MANY: SearchSynonymsEntity = {
+    isDefault: false,
+    groups: Array.from({ length: 15 }, (_, i) => ({
+      terms: [`слово${i + 1}`, `word${i + 1}`],
+    })),
+  };
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("counts the groups in the header", () => {
+    renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
+
+    expect(screen.getByText(s.countHint(2))).toBeInTheDocument();
+  });
+
+  it("shows the first twelve groups and the rest on «показати всі»", async () => {
+    renderWithProviders(<SearchSynonymsForm settings={MANY} />);
+
+    expect(within(groupList()).getAllByRole("listitem")).toHaveLength(12);
+    expect(screen.getByText(s.shownOf(12, 15))).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: s.showAll }));
+
+    expect(within(groupList()).getAllByRole("listitem")).toHaveLength(15);
+    expect(
+      screen.queryByRole("button", { name: s.showAll }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("finds the groups holding a word", async () => {
+    renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
+
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: s.searchAria }),
+      "айф",
+    );
+
+    expect(groupValues()).toEqual(["айфон, iphone"]);
+    expect(screen.getByText(s.shownOf(1, 2))).toBeInTheDocument();
+  });
+
+  it("says so when no group holds the word", async () => {
+    renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
+
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: s.searchAria }),
+      "xyz",
+    );
+
+    expect(screen.getByText(s.noMatches("xyz"))).toBeInTheDocument();
+  });
+
+  it("does not submit the form on Enter in the word search", async () => {
+    const bodies = stubSave();
+    renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
+
+    await userEvent.type(
+      screen.getByRole("searchbox", { name: s.searchAria }),
+      "чох{Enter}",
+    );
+
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("lists the unsaved groups in the sticky bar and discards them", async () => {
+    renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
+
+    await removeRow(1);
+    await userEvent.click(screen.getByRole("button", { name: s.addGroup }));
+    await userEvent.type(row(2), "скло, glass");
+
+    expect(
+      screen.getByText(dict.canon.unsavedChanges(s.dirtyLabel(1))),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.discardChanges }),
+    );
+
+    expect(groupValues()).toEqual(["чохол, case", "айфон, iphone"]);
+    expect(screen.queryByText(/Незбережені зміни/)).not.toBeInTheDocument();
+  });
+
+  it("«Готово» folds an edited group back to chips", async () => {
+    renderWithProviders(<SearchSynonymsForm settings={SAVED} />);
+
+    const first = await editRow(1);
+    await userEvent.type(first, ", кейс");
+    await userEvent.click(screen.getByRole("button", { name: s.doneEditing }));
+
+    expect(
+      screen.queryByRole("textbox", { name: s.termsLabel(1) }),
+    ).not.toBeInTheDocument();
+    expect(groupValues()[0]).toBe("чохол, case, кейс");
   });
 });

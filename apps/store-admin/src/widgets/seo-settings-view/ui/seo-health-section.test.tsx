@@ -1,10 +1,10 @@
 import { http, HttpResponse, delay } from "msw";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, within } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { STOREFRONT_URL } from "@/shared/config";
 import type { SeoSettingsEntity } from "@/entities/seo-settings";
-import { SeoHealthSection } from "./seo-health-section";
+import { SEO_HEALTH_SECTION_ID, SeoHealthSection } from "./seo-health-section";
 
 const h = dict.seoHealth;
 
@@ -51,11 +51,11 @@ describe("SeoHealthSection — auto-title counts (TASK-269)", () => {
     stubHealth();
     renderWithProviders(<SeoHealthSection settings={makeSettings()} />);
 
-    expect(await screen.findByText(h.autoHint(12, 40))).toBeInTheDocument();
-    expect(screen.getByText(h.autoHint(3, 8))).toBeInTheDocument();
-    expect(screen.getByText(h.autoHint(1, 5))).toBeInTheDocument();
+    expect(await screen.findByText(h.gapHint(12, 40))).toBeInTheDocument();
+    expect(screen.getByText(h.gapHint(3, 8))).toBeInTheDocument();
+    expect(screen.getByText(h.gapHint(1, 5))).toBeInTheDocument();
     // Informational, never an error — no destructive styling on these rows.
-    expect(screen.getByText(h.autoHint(12, 40))).not.toHaveClass(
+    expect(screen.getByText(h.gapHint(12, 40))).not.toHaveClass(
       "text-destructive",
     );
   });
@@ -200,5 +200,82 @@ describe("SeoHealthSection — outbound links (TASK-269)", () => {
     expect(llms).toHaveAttribute("href", `${STOREFRONT_URL}/llms.txt`);
     expect(robots).toHaveAttribute("target", "_blank");
     expect(robots).toHaveAttribute("rel", "noopener noreferrer");
+  });
+});
+
+/**
+ * TASK-1053 (Н2): «Стан SEO» is a card of rows — a status dot, the label, the
+ * number — with the visibility badge in its header. The section lists still
+ * open from the labels (unfiltered: none of them can filter by an SEO gap yet,
+ * so there is no «Показати →» promising one).
+ */
+describe("SeoHealthSection — by mockup Н2 (TASK-1053)", () => {
+  it("is a section titled «Стан SEO» with the visibility badge", async () => {
+    stubHealth();
+    renderWithProviders(<SeoHealthSection settings={makeSettings()} />);
+
+    const section = screen.getByRole("region", { name: h.heading });
+    expect(section).toHaveAttribute("id", SEO_HEALTH_SECTION_ID);
+    expect(
+      await within(section).findByText(h.noindexOkLabel),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps every row's link to its list", async () => {
+    stubHealth();
+    renderWithProviders(<SeoHealthSection settings={makeSettings()} />);
+
+    expect(
+      await screen.findByRole("link", { name: h.productsAutoLabel }),
+    ).toHaveAttribute("href", "/products");
+    expect(
+      screen.getByRole("link", { name: h.categoriesAutoLabel }),
+    ).toHaveAttribute("href", "/categories");
+    expect(
+      screen.getByRole("link", { name: h.pagesAutoLabel }),
+    ).toHaveAttribute("href", "/pages");
+    expect(screen.queryByText(/Показати/)).not.toBeInTheDocument();
+  });
+
+  it("tones a non-zero gap amber and offers «Заповнити» to the empty defaults", async () => {
+    stubHealth();
+    renderWithProviders(<SeoHealthSection settings={makeSettings()} />);
+
+    expect(await screen.findByText(h.gapHint(2, 5))).toHaveClass(
+      "text-warning",
+    );
+    expect(screen.getByRole("link", { name: h.fillDefaults })).toHaveAttribute(
+      "href",
+      "#seo-default-title",
+    );
+  });
+
+  it("has no «Заповнити» once the defaults are filled", async () => {
+    stubHealth();
+    renderWithProviders(
+      <SeoHealthSection
+        settings={makeSettings({
+          defaultMetaTitle: "CaseStore",
+          defaultMetaDescription: "Магазин аксесуарів",
+        })}
+      />,
+    );
+
+    await screen.findByText(h.defaultsFilledYes);
+    expect(
+      screen.queryByRole("link", { name: h.fillDefaults }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows the defaults row even while the counts fail", async () => {
+    server.use(
+      http.get("*/api/admin/seo-settings/health", () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+    renderWithProviders(<SeoHealthSection settings={makeSettings()} />);
+
+    expect(await screen.findByText(h.loadError)).toBeInTheDocument();
+    expect(screen.getByText(h.defaultsFilledNo)).toBeInTheDocument();
   });
 });

@@ -1,4 +1,5 @@
 import {
+  copyMondayToWeekdays,
   DEFAULT_WORKING_HOURS_MODEL,
   getDayIssue,
   isAllClosed,
@@ -182,5 +183,61 @@ describe("working-hours validation helpers (TASK-221)", () => {
   it("isAllClosed only matches a fully closed week", () => {
     expect(isAllClosed(ALL_CLOSED)).toBe(true);
     expect(isAllClosed(WEEKDAYS_9_18)).toBe(false);
+  });
+});
+
+/**
+ * TASK-1053 (Н1): «Як у понеділок — на всі будні» — the one-click way to make
+ * the working week uniform. Weekends are the owner's own business.
+ */
+describe("copyMondayToWeekdays (TASK-1053)", () => {
+  it("copies Monday's hours to Tuesday–Friday and leaves the weekend alone", () => {
+    const model: WorkingHoursModel = [
+      hours("10:00", "19:00"),
+      hours("09:00", "18:00"),
+      null,
+      hours("08:00", "17:00"),
+      hours("09:00", "16:00"),
+      hours("10:00", "16:00"),
+      null,
+    ];
+
+    expect(copyMondayToWeekdays(model)).toEqual([
+      hours("10:00", "19:00"),
+      hours("10:00", "19:00"),
+      hours("10:00", "19:00"),
+      hours("10:00", "19:00"),
+      hours("10:00", "19:00"),
+      hours("10:00", "16:00"),
+      null,
+    ]);
+  });
+
+  it("copies a closed Monday as closed weekdays", () => {
+    const model: WorkingHoursModel = [null, ...WEEKDAYS_9_18.slice(1)];
+
+    expect(copyMondayToWeekdays(model).slice(0, 5)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("gives every day its own copy, not a shared object", () => {
+    const copied = copyMondayToWeekdays(WEEKDAYS_9_18);
+
+    expect(copied[1]).not.toBe(copied[0]);
+  });
+
+  it("does not mutate the model it was given", () => {
+    const model: WorkingHoursModel = [
+      hours("10:00", "19:00"),
+      ...WEEKDAYS_9_18.slice(1),
+    ];
+    copyMondayToWeekdays(model);
+
+    expect(model[1]).toEqual(hours("09:00", "18:00"));
   });
 });

@@ -1,4 +1,4 @@
-export { SeoSettingsForm } from "./ui/seo-settings-form";
+export { SeoSettingsForm, SEO_SECTION_IDS } from "./ui/seo-settings-form";
 export {
   seoSettingsSchema,
   seoSettingsFormValuesToDto,
