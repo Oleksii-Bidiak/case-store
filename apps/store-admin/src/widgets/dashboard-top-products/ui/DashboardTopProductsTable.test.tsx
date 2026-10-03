@@ -122,4 +122,24 @@ describe("DashboardTopProductsTable (TASK-152)", () => {
     // No data rows beyond the header.
     expect(screen.queryByText("USB-C Cable 2m")).not.toBeInTheDocument();
   });
+
+  /**
+   * TASK-1037 drew «Усі товари за виручкою →» / «за продажами →». The product
+   * list cannot sort by revenue at all, and its `bestselling` sort counts PAID
+   * units gross while this list counts the sales report's net base — a link
+   * would open a list that disagrees with the five rows above it. So no link
+   * until the API grows that sort (API tail of TASK-1037).
+   */
+  it("offers no «Усі товари…» link — the product list cannot sort the same way", () => {
+    renderWithProviders(
+      <DashboardTopProductsTable products={makeProducts()} showsRevenue />,
+    );
+
+    const links = screen.getAllByRole("link");
+    // Only the per-row card links (TASK-430).
+    expect(links).toHaveLength(3);
+    for (const link of links) {
+      expect(link.getAttribute("href")).toMatch(/^\/products\/p-\d$/);
+    }
+  });
 });

@@ -10,15 +10,18 @@ const e = dict.siteContactForm.errors;
 /**
  * Validation schema for the singleton site-contact settings form.
  *
- * Every field is optional and bound to a text `<Input>`. Blank-to-clear
- * semantics: an empty string is valid (the field is simply not sent), while a
- * non-empty value must satisfy the email / URL format. The `.or(z.literal(""))`
+ * Every field is bound to a text `<Input>`. Email and phone are required
+ * (TASK-1053); the rest are optional — an empty string is valid (the field is
+ * simply not sent), while a non-empty value must satisfy the email / URL format. The `.or(z.literal(""))`
  * pattern keeps the inputs controlled-string-only for react-hook-form.
  */
 export const siteContactSchema = z.object({
-  email: z.string().trim().email(e.emailInvalid).optional().or(z.literal("")),
+  // TASK-1053 (Н1): the support email and the phone are required — they are
+  // how a buyer reaches the shop. (Blank never cleared them anyway: a blank is
+  // "not sent", and the API leaves a field it was not sent as it is.)
+  email: z.string().trim().min(1, e.emailRequired).email(e.emailInvalid),
 
-  phone: z.string().trim().max(50).optional().or(z.literal("")),
+  phone: z.string().trim().min(1, e.phoneRequired).max(50),
 
   workingHours: z.string().trim().max(255).optional().or(z.literal("")),
 

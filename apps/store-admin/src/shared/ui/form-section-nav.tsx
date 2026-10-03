@@ -56,10 +56,14 @@ export function FormSectionNav({
                 )}
               >
                 {section.status ? (
-                  <StatusDot
-                    tone={section.status}
-                    label={section.statusLabel ?? ""}
-                  />
+                  <>
+                    <StatusDot
+                      tone={section.status}
+                      label={section.statusLabel ?? ""}
+                    />
+                    {/* Keeps the spoken status and the label two words
+                        («варто перевірити За замовчуванням»), not one. */}{" "}
+                  </>
                 ) : null}
                 {section.label}
               </a>

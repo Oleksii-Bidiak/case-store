@@ -1,14 +1,14 @@
 "use client";
 
 import { useRef } from "react";
-import { Checkbox, Input, Label } from "@/shared/ui";
+import { Input, Switch } from "@/shared/ui";
+import { cn } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import {
   DAY_LABELS_FULL,
+  DAY_LABELS_SHORT,
   getDayIssue,
   isAllClosed,
-  isModelValid,
-  serializeWorkingHours,
   type DayHours,
   type DaySchedule,
   type WorkingHoursModel,
@@ -29,10 +29,15 @@ const ISSUE_MESSAGES = {
 /**
  * Presentational per-day working-hours editor. Fully controlled: the model
  * lives in the parent form; every change is reported via `onDayChange`.
- * Row-level validation issues and the live preview are pure derivations of
- * the model, so the component holds no synchronized state (forms.md Rule 1
- * does not apply). The only ref is a UX nicety: it remembers the hours of a
- * day toggled to «вихідний» so unchecking restores them.
+ * Row-level validation issues are pure derivations of the model, so the
+ * component holds no synchronized state (forms.md Rule 1 does not apply). The
+ * only ref is a UX nicety: it remembers the hours of a day switched to
+ * «Вихідний» so switching it back restores them.
+ *
+ * TASK-1053 (Н1): a day is a switch «Працюємо / Вихідний» — ON is a working
+ * day, which is how the owner thinks about it — and a day off has no time
+ * fields at all instead of two greyed-out ones. The live preview moved out to
+ * the form's «Так побачать на сайті» aside.
  */
 export function WorkingHoursEditor({
   model,
@@ -43,11 +48,9 @@ export function WorkingHoursEditor({
     new Array<DayHours | null>(7).fill(null),
   );
 
-  const valid = isModelValid(model);
-
-  const toggleClosed = (index: number, closed: boolean) => {
+  const setOpen = (index: number, open: boolean) => {
     const current = model[index];
-    if (closed) {
+    if (!open) {
       previousHoursRef.current[index] = current;
       onDayChange(index, null);
     } else {
@@ -62,63 +65,68 @@ export function WorkingHoursEditor({
   };
 
   return (
-    <div className="flex flex-col gap-3 rounded-md border border-input p-4">
+    <div className="flex flex-col gap-2">
       {model.map((day, index) => {
         const dayLabel = DAY_LABELS_FULL[index];
-        const closed = day === null;
+        const open = day !== null;
         const issue = getDayIssue(day);
-        const closedId = `wh-closed-${index}`;
+        const switchId = `wh-open-${index}`;
         const errorId = issue ? `wh-error-${index}` : undefined;
 
         return (
           <div key={dayLabel} className="flex flex-col gap-1">
-            <div className="flex flex-wrap items-center gap-3">
-              <span className="w-24 shrink-0 text-sm font-medium text-foreground">
-                {dayLabel}
+            <div className="flex min-h-9 flex-wrap items-center gap-x-3 gap-y-2">
+              <span
+                aria-hidden="true"
+                className="w-8 shrink-0 text-sm font-semibold text-foreground"
+              >
+                {DAY_LABELS_SHORT[index]}
               </span>
 
-              <span className="flex items-center gap-2">
-                <Checkbox
-                  id={closedId}
-                  checked={closed}
-                  aria-label={t.workingHoursClosedAria(dayLabel)}
-                  onCheckedChange={(checked) =>
-                    toggleClosed(index, checked === true)
-                  }
+              <span className="flex w-36 shrink-0 items-center gap-2">
+                <Switch
+                  id={switchId}
+                  checked={open}
+                  aria-label={t.workingHoursOpenDayAria(dayLabel)}
+                  onCheckedChange={(checked) => setOpen(index, checked)}
                 />
-                <Label
-                  htmlFor={closedId}
-                  className="text-sm font-normal text-muted-foreground"
+                <label
+                  htmlFor={switchId}
+                  aria-hidden="true"
+                  className={cn(
+                    "text-sm",
+                    open ? "text-foreground" : "text-muted-foreground",
+                  )}
                 >
-                  {t.workingHoursClosed}
-                </Label>
+                  {open ? t.workingHoursOpen : t.workingHoursClosed}
+                </label>
               </span>
 
-              <span className="flex items-center gap-2">
-                <Input
-                  type="time"
-                  className="w-28"
-                  value={day?.open ?? ""}
-                  disabled={closed}
-                  aria-label={t.workingHoursOpenAria(dayLabel)}
-                  aria-invalid={issue ? true : undefined}
-                  aria-describedby={errorId}
-                  onChange={(e) => changeTime(index, "open", e.target.value)}
-                />
-                <span aria-hidden className="text-muted-foreground">
-                  –
+              {day !== null ? (
+                <span className="flex items-center gap-2">
+                  <Input
+                    type="time"
+                    className="w-28"
+                    value={day.open}
+                    aria-label={t.workingHoursOpenAria(dayLabel)}
+                    aria-invalid={issue ? true : undefined}
+                    aria-describedby={errorId}
+                    onChange={(e) => changeTime(index, "open", e.target.value)}
+                  />
+                  <span aria-hidden className="text-muted-foreground">
+                    —
+                  </span>
+                  <Input
+                    type="time"
+                    className="w-28"
+                    value={day.close}
+                    aria-label={t.workingHoursCloseAria(dayLabel)}
+                    aria-invalid={issue ? true : undefined}
+                    aria-describedby={errorId}
+                    onChange={(e) => changeTime(index, "close", e.target.value)}
+                  />
                 </span>
-                <Input
-                  type="time"
-                  className="w-28"
-                  value={day?.close ?? ""}
-                  disabled={closed}
-                  aria-label={t.workingHoursCloseAria(dayLabel)}
-                  aria-invalid={issue ? true : undefined}
-                  aria-describedby={errorId}
-                  onChange={(e) => changeTime(index, "close", e.target.value)}
-                />
-              </span>
+              ) : null}
             </div>
 
             {issue && (
@@ -129,17 +137,6 @@ export function WorkingHoursEditor({
           </div>
         );
       })}
-
-      <p className="border-t border-input pt-3 text-sm text-muted-foreground">
-        {t.workingHoursPreview}{" "}
-        {valid ? (
-          <span className="font-medium text-foreground">
-            {serializeWorkingHours(model)}
-          </span>
-        ) : (
-          <span className="italic">{t.workingHoursPreviewInvalid}</span>
-        )}
-      </p>
 
       {isAllClosed(model) && (
         <p role="status" className="text-sm text-muted-foreground">

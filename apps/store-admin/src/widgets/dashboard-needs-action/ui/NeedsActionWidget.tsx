@@ -10,6 +10,7 @@ import {
 import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
 import { cn } from "@/shared/lib";
+import { ErrorState } from "@/shared/ui";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import { ratingAbuseHref } from "../model/rating-abuse-href";
 import { NeedsActionWidgetSkeleton } from "./NeedsActionWidgetSkeleton";
@@ -95,7 +96,7 @@ function NeedsActionCard({
  * Without the right the request is never made and the tile does not exist.
  */
 export function NeedsActionWidget() {
-  const { data, isLoading, isError } =
+  const { data, isLoading, isError, isFetching, refetch } =
     useAdminDashboardControllerGetNeedsAction();
   const { can } = useAuth();
   const canReadReturns = can(PERM.returnsRead);
@@ -112,14 +113,18 @@ export function NeedsActionWidget() {
   const newReturns = returnsData?.meta?.total;
 
   if (isLoading) {
-    return <NeedsActionWidgetSkeleton />;
+    return <NeedsActionWidgetSkeleton withReturns={canReadReturns} />;
   }
 
+  // TASK-1037 (П4): a way out of the failure — «Повторити» re-asks this list
+  // only; the rest of the dashboard fetches on its own.
   if (isError || !data) {
     return (
-      <p role="alert" className="text-sm text-muted-foreground">
-        {dict.dashboard.needsActionLoadError}
-      </p>
+      <ErrorState
+        message={dict.dashboard.needsActionLoadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+      />
     );
   }
 

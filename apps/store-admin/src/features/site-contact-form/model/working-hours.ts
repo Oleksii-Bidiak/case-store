@@ -87,6 +87,28 @@ export function isAllClosed(model: WorkingHoursModel): boolean {
   return model.every((day) => day === null);
 }
 
+/** Index of Friday — the last of the working days «на всі будні» covers. */
+const FRIDAY = 4;
+
+/**
+ * «Як у понеділок — на всі будні» (TASK-1053, Н1): Monday's schedule — hours or
+ * вихідний — copied to Tuesday…Friday; the weekend is left as it is. Returns a
+ * new model with a fresh object per day, so editing one day afterwards never
+ * moves another.
+ */
+export function copyMondayToWeekdays(
+  model: WorkingHoursModel,
+): WorkingHoursModel {
+  const monday = model[0];
+  return model.map((day, index) =>
+    index > 0 && index <= FRIDAY
+      ? monday === null
+        ? null
+        : { open: monday.open, close: monday.close }
+      : day,
+  );
+}
+
 /** `"09:05"` → `"9:05"` for the human-facing canonical string. */
 function displayTime(time: string): string {
   return time.replace(/^0(\d)/, "$1");

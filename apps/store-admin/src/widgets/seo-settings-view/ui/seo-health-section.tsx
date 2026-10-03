@@ -7,9 +7,17 @@ import {
 } from "@/entities/seo-settings";
 import { dict } from "@/shared/config";
 import { STOREFRONT_URL } from "@/shared/config";
-import { Skeleton } from "@/shared/ui";
+import { cn } from "@/shared/lib";
+import { Badge, Skeleton, StatusDot } from "@/shared/ui";
+import { FormSectionCard } from "@/shared/ui/form-section-card";
 
 const h = dict.seoHealth;
+
+/** The «Стан SEO» card's anchor — the first entry of the page's section nav. */
+export const SEO_HEALTH_SECTION_ID = "seo-health";
+
+/** Where «Заповнити ↓» leads: the default title field of the form below. */
+const DEFAULT_TITLE_FIELD_HREF = "#seo-default-title";
 
 interface SeoHealthSectionProps {
   /** The already-fetched settings singleton — source of the client-side
@@ -17,55 +25,80 @@ interface SeoHealthSectionProps {
   settings: SeoSettingsEntity;
 }
 
-/** One informational auto-title row: `label` + `N із M …` in neutral tone. */
-function AutoRow({
+/** True when the default title and description are both set. */
+export function seoDefaultsFilled(settings: SeoSettingsEntity): boolean {
+  return Boolean(
+    settings.defaultMetaTitle?.trim() &&
+    settings.defaultMetaDescription?.trim(),
+  );
+}
+
+/**
+ * One row: a status dot, the label (a link into the section's list), the count.
+ * `attention` turns the dot and the number amber.
+ */
+function HealthRow({
   label,
-  missing,
-  total,
   href,
-  hint = h.autoHint,
+  value,
+  attention,
+  action,
 }: {
   label: string;
-  missing: number;
-  total: number;
-  href: string;
-  /** Count phrasing — auto-title wording by default, `N із M` for gap rows. */
-  hint?: (missing: number, total: number) => string;
+  href?: string;
+  value: string;
+  attention: boolean;
+  action?: React.ReactNode;
 }) {
   return (
-    <li className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2">
-      <Link
-        href={href}
-        className="text-sm font-medium text-foreground underline-offset-4 hover:underline"
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-sm">
+      {/* Decoration: the number beside it already says it in words. */}
+      <StatusDot tone={attention ? "warning" : "success"} label="" />
+      {href ? (
+        <Link
+          href={href}
+          className="min-w-0 flex-1 text-foreground underline-offset-4 hover:underline"
+        >
+          {label}
+        </Link>
+      ) : (
+        <span className="min-w-0 flex-1 text-foreground">{label}</span>
+      )}
+      <span
+        className={cn(
+          "tabular-nums",
+          attention ? "text-warning" : "font-semibold text-foreground",
+        )}
       >
-        {label}
-      </Link>
-      <span className="text-sm text-muted-foreground tabular-nums">
-        {hint(missing, total)}
+        {value}
       </span>
+      {action}
     </li>
   );
 }
 
 /**
- * «SEO-здоров'я» section on /settings/seo (TASK-269).
+ * «Стан SEO» on /settings/seo (TASK-269; by mockup Н2 since TASK-1053).
  *
- * Fetches the six catalog COUNTs (products/categories/pages relying on
- * auto-generated meta titles — informational, never an error), and derives two
- * more checks client-side from the `settings` prop the page already holds: the
- * site-wide defaults (soft amber nudge when empty) and the `noindexSite` kill
- * switch (a prominent RED banner when on — the one genuinely urgent state). Three
- * outbound links let the owner eyeball the live robots/sitemap/llms files. The
- * health query degrades independently: its error state never blocks the edit
- * form rendered beside it.
+ * Fetches the catalog COUNTs (products/categories/pages relying on
+ * auto-generated meta titles — informational, never an error; pages missing a
+ * description or thin on content — amber when non-zero), and derives two more
+ * checks client-side from the `settings` prop the page already holds: the
+ * site-wide defaults (amber «не задано» + «Заповнити ↓» when empty) and the
+ * `noindexSite` kill switch (a prominent RED banner when on — the one genuinely
+ * urgent state; a green badge in the header otherwise). Three outbound links let
+ * the owner eyeball the live robots/sitemap/llms files. The health query
+ * degrades independently: its error state never hides the defaults row or
+ * blocks the edit form below.
+ *
+ * The row labels still open the section lists, unfiltered: none of those lists
+ * can filter by an SEO gap yet, so the mockup's «Показати →» (a promise of a
+ * filtered list) is not drawn — that is an API tail of TASK-1053.
  */
 export function SeoHealthSection({ settings }: SeoHealthSectionProps) {
   const { data, isLoading, isError } = useAdminSeoSettingsControllerGetHealth();
-
-  const defaultsFilled = Boolean(
-    settings.defaultMetaTitle?.trim() &&
-    settings.defaultMetaDescription?.trim(),
-  );
+  const health = data?.data;
+  const defaultsFilled = seoDefaultsFilled(settings);
 
   const links = [
     { name: h.robotsLink, href: `${STOREFRONT_URL}/robots.txt` },
@@ -74,14 +107,15 @@ export function SeoHealthSection({ settings }: SeoHealthSectionProps) {
   ];
 
   return (
-    <section aria-label={h.heading} className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h3 className="font-display text-xl font-semibold tracking-tight text-foreground">
-          {h.heading}
-        </h3>
-        <p className="text-sm text-muted-foreground">{h.subheading}</p>
-      </div>
-
+    <FormSectionCard
+      id={SEO_HEALTH_SECTION_ID}
+      title={h.heading}
+      actions={
+        settings.noindexSite ? null : (
+          <Badge variant="success">{h.noindexOkLabel}</Badge>
+        )
+      }
+    >
       {/* noindex — the one truly urgent, RED state. */}
       {settings.noindexSite ? (
         <div
@@ -95,91 +129,103 @@ export function SeoHealthSection({ settings }: SeoHealthSectionProps) {
             {h.noindexWarningBody}
           </p>
         </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">{h.noindexOkLabel}</p>
-      )}
+      ) : null}
 
-      {/* Auto-title counts — informational, never destructive. */}
       {isLoading ? (
         <div className="flex flex-col gap-2">
           <Skeleton className="h-8 w-full" />
           <Skeleton className="h-8 w-full" />
           <Skeleton className="h-8 w-full" />
         </div>
-      ) : isError || !data?.data ? (
+      ) : isError || !health ? (
         <p role="alert" className="text-sm text-muted-foreground">
           {h.loadError}
         </p>
-      ) : (
-        <ul className="divide-y divide-border rounded-md border border-border bg-card px-4">
-          <AutoRow
-            label={h.productsAutoLabel}
-            missing={data.data.productsMissingMetaTitle}
-            total={data.data.productsTotal}
-            href="/products"
-          />
-          <AutoRow
-            label={h.categoriesAutoLabel}
-            missing={data.data.categoriesMissingMetaTitle}
-            total={data.data.categoriesTotal}
-            href="/categories"
-          />
-          <AutoRow
-            label={h.pagesAutoLabel}
-            missing={data.data.pagesMissingMetaTitle}
-            total={data.data.pagesTotal}
-            href="/pages"
-          />
-          {/* TASK-285: page content-gap counters — same neutral tone. */}
-          <AutoRow
-            label={h.pagesMissingDescriptionLabel}
-            missing={data.data.pagesMissingMetaDescription}
-            total={data.data.pagesTotal}
-            href="/pages"
-            hint={h.gapHint}
-          />
-          <AutoRow
-            label={h.pagesThinContentLabel}
-            missing={data.data.pagesThinContent}
-            total={data.data.pagesTotal}
-            href="/pages"
-            hint={h.gapHint}
-          />
-        </ul>
-      )}
+      ) : null}
 
-      {/* Defaults-filled — soft amber nudge when empty, neutral when filled. */}
-      <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-foreground">
-          {h.defaultsFilledLabel}
-        </p>
-        <p
-          className={`text-sm ${
-            defaultsFilled ? "text-muted-foreground" : "text-warning"
-          }`}
-        >
-          {defaultsFilled ? h.defaultsFilledYes : h.defaultsFilledNo}
-        </p>
-      </div>
+      <ul className="divide-y divide-border rounded-md border border-border">
+        {health ? (
+          <>
+            <HealthRow
+              label={h.productsAutoLabel}
+              href="/products"
+              value={h.gapHint(
+                health.productsMissingMetaTitle,
+                health.productsTotal,
+              )}
+              attention={false}
+            />
+            <HealthRow
+              label={h.categoriesAutoLabel}
+              href="/categories"
+              value={h.gapHint(
+                health.categoriesMissingMetaTitle,
+                health.categoriesTotal,
+              )}
+              attention={false}
+            />
+            <HealthRow
+              label={h.pagesAutoLabel}
+              href="/pages"
+              value={h.gapHint(health.pagesMissingMetaTitle, health.pagesTotal)}
+              attention={false}
+            />
+            {/* TASK-285: page content-gap counters — amber while non-zero. */}
+            <HealthRow
+              label={h.pagesMissingDescriptionLabel}
+              href="/pages"
+              value={h.gapHint(
+                health.pagesMissingMetaDescription,
+                health.pagesTotal,
+              )}
+              attention={health.pagesMissingMetaDescription > 0}
+            />
+            <HealthRow
+              label={h.pagesThinContentLabel}
+              href="/pages"
+              value={h.gapHint(health.pagesThinContent, health.pagesTotal)}
+              attention={health.pagesThinContent > 0}
+            />
+          </>
+        ) : null}
+        {/* Defaults-filled — client-side, so it stands even when the counts fail. */}
+        <HealthRow
+          label={h.defaultsFilledLabel}
+          value={defaultsFilled ? h.defaultsFilledYes : h.defaultsFilledNo}
+          attention={!defaultsFilled}
+          action={
+            defaultsFilled ? null : (
+              <a
+                href={DEFAULT_TITLE_FIELD_HREF}
+                className="rounded-sm text-sm font-medium text-primary outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {h.fillDefaults}
+                <span aria-hidden="true"> ↓</span>
+              </a>
+            )
+          }
+        />
+      </ul>
+
+      <p className="text-xs text-muted-foreground">{h.subheading}</p>
 
       {/* Outbound eyeball links to the live service files. */}
-      <div className="flex flex-col gap-2">
-        <p className="text-sm font-medium text-foreground">{h.linksHeading}</p>
-        <div className="flex flex-wrap gap-3">
-          {links.map((link) => (
-            <a
-              key={link.name}
-              href={link.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={h.openLinkAria(link.name)}
-              className="text-sm text-primary underline underline-offset-4"
-            >
-              {link.name}
-            </a>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+        <span className="text-muted-foreground">{h.linksHeading}</span>
+        {links.map((link) => (
+          <a
+            key={link.name}
+            href={link.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={h.openLinkAria(link.name)}
+            className="rounded-sm text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {link.name}
+            <span aria-hidden="true"> ↗</span>
+          </a>
+        ))}
       </div>
-    </section>
+    </FormSectionCard>
   );
 }

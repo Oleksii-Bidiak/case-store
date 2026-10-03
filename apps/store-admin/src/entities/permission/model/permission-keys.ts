@@ -109,6 +109,11 @@ export const PERM = {
   settingsSearch: "settings:search",
 
   analyticsRead: "analytics:read",
+  // TASK-684: the money on the dashboard and in the reports. The API cuts the
+  // sums for a caller without it and the UI follows the data; the key is named
+  // here only so the dashboard's loading skeleton (TASK-1037) can draw the same
+  // number of cards the page will.
+  analyticsRevenue: "analytics:revenue",
 
   // TASK-475 — the staff register and the action log. Real, enforced keys that
   // are NEVER OFFERED on any granting screen (`grantable: false` in the backend

@@ -1,14 +1,4 @@
 {
-  "src/app/(dashboard)/dashboard-view.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/app/(dashboard)/loading.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/shared/ui/badge.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2

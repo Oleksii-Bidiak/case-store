@@ -1,8 +1,15 @@
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, within } from "@/shared/test/render";
+import {
+  render,
+  renderWithProviders,
+  screen,
+  userEvent,
+  within,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { NeedsActionWidget } from "./NeedsActionWidget";
+import { NeedsActionWidgetSkeleton } from "./NeedsActionWidgetSkeleton";
 
 interface NeedsActionCounts {
   newOrders: number;
@@ -571,5 +578,72 @@ describe("NeedsActionWidget (TASK-248)", () => {
       expect(await cardLink()).toBeNull();
       expect(container.innerHTML).not.toContain("10.0.0.7");
     });
+  });
+});
+
+/**
+ * TASK-1037 (П4): a failed list is a bar with «Повторити» — the click asks
+ * again, and the cards appear once it answers.
+ */
+describe("NeedsActionWidget — load failure (TASK-1037)", () => {
+  it("shows «Не вдалося завантажити список дій.» with «Повторити», which refetches", async () => {
+    let calls = 0;
+    server.use(
+      http.get("*/api/admin/dashboard/needs-action", () => {
+        calls += 1;
+        return HttpResponse.json(
+          { error: "Internal Server Error", message: "boom", statusCode: 500 },
+          { status: 500 },
+        );
+      }),
+    );
+
+    renderWithProviders(<NeedsActionWidget />, {
+      auth: { permissions: ["analytics:read"] },
+    });
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(dict.dashboard.needsActionLoadError);
+    expect(calls).toBe(1);
+
+    mockNeedsAction({
+      newOrders: 1,
+      pendingReviews: 0,
+      unpaidInTransit: 0,
+      failedMails: 0,
+      pendingOver48h: 0,
+    });
+    await userEvent.click(
+      within(alert).getByRole("button", { name: dict.canon.retry }),
+    );
+    expect(
+      await screen.findByText(dict.dashboard.needsActionNewOrders),
+    ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-1037 (П3): the skeleton has the loaded widget's shape — nine cards in
+ * three columns with the returns tile, eight in four without it.
+ */
+describe("NeedsActionWidgetSkeleton (TASK-1037)", () => {
+  it("draws nine cards in three columns with the returns tile", () => {
+    const { container } = render(<NeedsActionWidgetSkeleton withReturns />);
+
+    const cards = container.querySelectorAll(
+      "[data-slot='needs-action-skeleton']",
+    );
+    expect(cards).toHaveLength(9);
+    expect(cards[0].parentElement).toHaveClass("lg:grid-cols-3");
+  });
+
+  it("draws eight cards in four columns without it", () => {
+    const { container } = render(<NeedsActionWidgetSkeleton />);
+
+    const cards = container.querySelectorAll(
+      "[data-slot='needs-action-skeleton']",
+    );
+    expect(cards).toHaveLength(8);
+    expect(cards[0].parentElement).toHaveClass("lg:grid-cols-4");
   });
 });

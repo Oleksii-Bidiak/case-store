@@ -73,8 +73,10 @@ export function StoreLogoUpload({ logoUrl }: StoreLogoUploadProps) {
   };
 
   return (
+    // A sub-block of «Магазин і логотип» on /settings/seo since TASK-1053, so
+    // its heading is one level below that card's.
     <section className="flex flex-col gap-3">
-      <h3 className="text-sm font-semibold">{dict.storeLogo.heading}</h3>
+      <h4 className="text-sm font-medium">{dict.storeLogo.heading}</h4>
 
       <SingleImageUpload
         imageUrl={logoUrl}

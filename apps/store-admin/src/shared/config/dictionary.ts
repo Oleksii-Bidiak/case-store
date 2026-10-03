@@ -154,7 +154,8 @@ export const dict = {
     metaTitle: "Панель — Адмін",
     heading: "Огляд",
     updatedAt: (time: string) => `Оновлено ${time}`,
-    loadError: "Не вдалося завантажити показники. Спробуйте ще раз.",
+    // TASK-1037: «Спробуйте ще раз» is the «Повторити» button beside it now.
+    loadError: "Не вдалося завантажити показники.",
     quickActions: "Швидкі дії",
     addProduct: "Додати товар",
     viewOrders: "Переглянути замовлення",
@@ -173,7 +174,6 @@ export const dict = {
     revenueTrend: "Динаміка виручки",
     ordersByStatus: "Замовлення за статусом",
     revenueTooltip: "Виручка",
-    ordersTooltip: "Замовлення",
     date: "Дата",
     lowStock: "Низький запас",
     product: "Товар",
@@ -287,6 +287,11 @@ export const dict = {
     // «no new returns» — the placeholder says the number is missing instead.
     needsActionCountPending: "Кількість завантажується",
     needsActionCountFailed: "Не вдалося отримати кількість",
+    // Хвиля 198 (TASK-1037, П1–П4). The «→» of the card links is drawn in an
+    // aria-hidden span, so the link is read as its words only.
+    lastOrdersLoadError: "Не вдалося завантажити замовлення.",
+    allOrdersLink: "Усі замовлення",
+    allLowStockLink: "Усі з низьким залишком",
   },
 
   common: {
@@ -2024,25 +2029,24 @@ export const dict = {
   // --- Site contact settings (TASK-154) ---------------------------------------
   siteContact: {
     metaTitle: "Контакти — Адмін",
-    heading: "Налаштування контактів",
-    subheading: "Ці дані відображаються у футері та на сторінці контактів.",
+    heading: "Контакти",
+    subheading:
+      "Показуються у футері, на сторінці «Контакти» і в листах покупцям.",
     loadError: "Не вдалося завантажити контакти. Спробуйте ще раз.",
     toastUpdated: "Контакти оновлено",
     toastUpdateFailed: "Не вдалося оновити контакти",
   },
 
   siteContactForm: {
-    email: "Електронна пошта підтримки",
+    email: "Пошта підтримки",
     emailPlaceholder: "support@example.ua",
     phone: "Телефон",
     phonePlaceholder: "+380 44 000 0000",
     workingHours: "Години роботи",
     workingHoursPlaceholder: "Пн–Нд: 9:00 – 20:00",
     workingHoursClosed: "Вихідний",
-    workingHoursClosedAria: (day: string) => `${day} — вихідний`,
     workingHoursOpenAria: (day: string) => `${day} — час відкриття`,
     workingHoursCloseAria: (day: string) => `${day} — час закриття`,
-    workingHoursPreview: "Так це побачать відвідувачі:",
     workingHoursPreviewInvalid:
       "виправте помилки в розкладі, щоб побачити результат",
     workingHoursAllClosedWarning:
@@ -2056,14 +2060,32 @@ export const dict = {
     telegramLinkPlaceholder: "https://t.me/…",
     instagramLink: "Instagram",
     instagramLinkPlaceholder: "https://instagram.com/…",
-    submit: "Зберегти контакти",
+    submit: "Зберегти",
     errors: {
       emailInvalid: "Вкажіть коректну електронну пошту",
       urlInvalid: "Вкажіть коректний URL (https://…)",
       workingHoursTimesRequired: "Вкажіть час відкриття та закриття",
       workingHoursCloseAfterOpen:
         "Час закриття має бути пізніше часу відкриття",
+      // TASK-1053: the two ways a buyer reaches the shop are required (Н1 «*»).
+      emailRequired: "Вкажіть пошту підтримки",
+      phoneRequired: "Вкажіть телефон",
     },
+    // Хвиля 198 (TASK-1053, Н1).
+    sectionContact: "Як з вами зв'язатися",
+    sectionMessengers: "Месенджери й соцмережі",
+    phoneHint: "Формат +380 XX XXX XX XX — так він і з'явиться на сайті",
+    workingHoursOpen: "Працюємо",
+    // The switch is ON for a working day; its name says what ON means.
+    workingHoursOpenDayAria: (day: string) => `${day} — працюємо`,
+    copyMonday: "Як у понеділок — на всі будні",
+    previewHeading: "Так побачать на сайті",
+    previewTitle: "Контакти",
+    previewEmptyMessengers: "Порожні месенджери на сайті не показуються.",
+    // «Незбережені зміни: …» in the sticky bar.
+    dirtyContact: "пошта й телефон",
+    dirtyHours: "години роботи",
+    dirtyMessengers: "месенджери",
   },
 
   // Search-index maintenance (TASK-377). Written for a non-technical operator:
@@ -2071,9 +2093,9 @@ export const dict = {
   // when it is stale.
   searchIndex: {
     metaTitle: "Пошук — Адмін",
-    heading: "Пошук по магазину",
+    heading: "Пошук на сайті",
     subheading:
-      "Пошук на сайті працює через окремий швидкий покажчик товарів і статей блогу. Зазвичай він оновлюється сам, але інколи його треба перебудувати вручну.",
+      "Швидкий покажчик товарів і статей блогу. Зазвичай оновлюється сам.",
     whenHeading: "Коли це потрібно",
     whenReasons: [
       "Покупці не знаходять товар, який точно є в каталозі.",
@@ -2090,20 +2112,27 @@ export const dict = {
     toastDone: (products: number, posts: number) =>
       `Покажчик оновлено: товарів — ${products}, статей — ${posts}`,
     toastFailed: "Не вдалося перебудувати покажчик. Спробуйте ще раз.",
+    // TASK-1053 (Н3): the card that holds the rebuild. The mockup's counts and
+    // «оновлено …» need an index-status endpoint the API does not have yet.
+    indexHeading: "Покажчик",
   },
 
   seoSettings: {
     metaTitle: "SEO — Адмін",
-    heading: "SEO-налаштування",
-    subheading:
-      "Глобальні параметри для пошукових систем: назва магазину, заголовки, описи й зображення для соцмереж.",
+    heading: "SEO",
+    subheading: "Як магазин виглядає в Google, соцмережах і для AI-асистентів.",
     loadError: "Не вдалося завантажити SEO-налаштування. Спробуйте ще раз.",
     toastUpdated: "SEO-налаштування оновлено",
     toastUpdateFailed: "Не вдалося оновити SEO-налаштування",
+    // Хвиля 198 (TASK-1053, Н2): the section nav and what its dots mean.
+    navAria: "Розділи SEO",
+    navOk: "заповнено",
+    navNeedsAttention: "варто перевірити",
   },
 
   seoSettingsForm: {
-    defaultMetaTitle: "Заголовок сайту за замовчуванням",
+    // Read under the section «За замовчуванням» (TASK-1053), hence the short name.
+    defaultMetaTitle: "Заголовок сайту",
     // Placeholders are neutral examples on purpose (TASK-433): they used to
     // spell out one particular shop's name and domain, which read like a
     // pre-filled value rather than a hint — and the shop in question was not
@@ -2113,7 +2142,7 @@ export const dict = {
     defaultMetaTitlePlaceholder: "Ваш магазин — аксесуари для смартфонів",
     defaultMetaTitleHint:
       "Заголовок у вкладці браузера та в результатах пошуку для сторінок, у яких немає ні власного SEO-заголовка, ні назви (наприклад, головна). Сторінка з назвою завжди бере заголовок з назви за шаблоном нижче.",
-    defaultMetaDescription: "Опис сайту за замовчуванням",
+    defaultMetaDescription: "Опис сайту",
     defaultMetaDescriptionPlaceholder:
       "Мультибрендовий магазин аксесуарів та Apple-техніки. Доставка по Україні.",
     defaultMetaDescriptionHint:
@@ -2127,7 +2156,6 @@ export const dict = {
     defaultOgImagePlaceholder: (host: string) => `https://${host}/og-image.jpg`,
     defaultOgImageHint:
       "Картинка для попереднього перегляду, коли посилання на магазин поширюють у соцмережах чи месенджерах (Facebook, Telegram, Viber). Вкажіть повне посилання на зображення (https://…).",
-    siteVerificationGroup: "Верифікація власності сайта",
     googleSiteVerification: "Код підтвердження Google Search Console",
     googleSiteVerificationPlaceholder: "AbCdEfGhIjKlMnOpQrStUvWxYz1234567890",
     googleSiteVerificationHint:
@@ -2146,7 +2174,7 @@ export const dict = {
       "https://facebook.com/ваша-сторінка\nhttps://youtube.com/@ваш-канал",
     additionalSameAsLinksHint:
       "Посилання на офіційні сторінки магазину в інших мережах (Facebook, YouTube, LinkedIn тощо) — по одному в рядку. Це показує пошуковим системам, що це офіційні профілі вашого бренду.",
-    submit: "Зберегти SEO-налаштування",
+    submit: "Зберегти",
     errors: {
       urlInvalid: "Вкажіть коректний URL (https://…)",
       metaTitleTooLong: "Заголовок задовгий (максимум 255 символів)",
@@ -2177,12 +2205,37 @@ export const dict = {
     siteNameLogoNote:
       "Напис у самому логотипі поки змінюється в коді — якщо ви завантажили логотип-картинку, він теж лишиться без змін. Напишіть розробнику, якщо треба оновити і його.",
     // TASK-552: two SERP samples in the real tier order (own → name → default).
-    previewNamedHeading: "Сторінка з назвою (товар, категорія, стаття)",
+    // TASK-1053: they are the two positions of the preview's switch now.
+    previewNamedHeading: "Сторінка з назвою",
     previewNamedNote: (name: string) =>
       `Приклад — товар «${name}» без власних SEO-полів: заголовок і опис беруться з самої сторінки, заголовок — за шаблоном. Значення за замовчуванням тут не з'являються: зміст сторінки завжди важливіший.`,
-    previewUnnamedHeading: "Сторінка без власного змісту",
+    previewUnnamedHeading: "Сторінка без змісту",
     previewUnnamedNote:
       "Приклад — сторінка без SEO-полів і без назви чи опису (наприклад, головна або загальний список). Лише тут показуються заголовок і опис за замовчуванням.",
+    // Хвиля 198 (TASK-1053, Н2/Н5).
+    sectionStore: "Магазин і логотип",
+    sectionDefaults: "За замовчуванням",
+    sectionSocial: "Соцмережі",
+    sectionVerification: "Верифікація",
+    sectionAi: "AI-асистенти",
+    previewHeading: "Так виглядатиме в Google",
+    previewSampleAria: "Приклад сторінки",
+    // TASK-1175 (UI part): an empty default title is a recommendation, not a
+    // validation error — saving stays allowed.
+    emptyTitleWarning:
+      "Заголовок сайту за замовчуванням порожній — сторінки без власного заголовка (наприклад, головна) у Google матимуть лише назву магазину.",
+    emptyTitleRecommendation: "Рекомендуємо заповнити: 30–60 символів.",
+    // One-line summaries of the folded sections. «задано», not «підтверджено»:
+    // the panel stores the code, it cannot know whether Google accepted it.
+    summaryOgSet: "OG-картинка задана",
+    summaryOgUnset: "OG-картинка не задана",
+    summarySameAs: (n: number) => `профілів бренду: ${n}`,
+    summaryGoogleSet: "Google Search Console — код задано",
+    summaryGoogleUnset: "Google Search Console не задано",
+    summaryBingSet: "Bing — код задано",
+    summaryBingUnset: "Bing не задано",
+    summaryLlmsCustom: "опис для llms.txt — свій",
+    summaryLlmsDefault: "опис для llms.txt — стандартний",
   },
 
   // --- Store logo upload (TASK-299) -------------------------------------------
@@ -4440,25 +4493,22 @@ export const dict = {
   // filled (soft amber nudge when empty), and — most importantly — a prominent
   // RED warning when the whole site is hidden from search (noindexSite).
   seoHealth: {
-    heading: "SEO-здоров'я",
+    heading: "Стан SEO",
     subheading:
-      "Швидкий огляд стану SEO вашого магазину. Це не помилки — просто підказки, що можна покращити.",
+      "Автоматичні заголовки — це не помилка: вони беруться з назви товару за шаблоном. Власні варто писати для найважливіших сторінок.",
     loadError: "Не вдалося завантажити стан SEO. Спробуйте ще раз.",
-    // Auto-title rows — neutral/informational tone. `N із M`.
-    autoHint: (missing: number, total: number) =>
-      `${missing} із ${total} використовують автоматичний заголовок`,
-    productsAutoLabel: "Товари без власного SEO-заголовка",
-    categoriesAutoLabel: "Категорії без власного SEO-заголовка",
-    pagesAutoLabel: "Сторінки без власного SEO-заголовка",
+    // Auto-title rows — neutral/informational tone, counted `N із M`.
+    productsAutoLabel: "Товари з автоматичним SEO-заголовком",
+    categoriesAutoLabel: "Категорії з автоматичним SEO-заголовком",
+    pagesAutoLabel: "Сторінки з автоматичним SEO-заголовком",
     // TASK-285: page content-gap rows (description missing / thin body). `N із M`.
     gapHint: (count: number, total: number) => `${count} із ${total}`,
     pagesMissingDescriptionLabel: "Сторінки без SEO-опису",
-    pagesThinContentLabel: "Сторінки з неповним вмістом (< 300 символів)",
+    pagesThinContentLabel: "Сторінки з коротким вмістом (< 300 символів)",
     // Defaults-filled row — soft amber nudge when empty, neutral when filled.
-    defaultsFilledLabel: "SEO-налаштування за замовчуванням",
-    defaultsFilledYes: "Заголовок і опис за замовчуванням заповнені.",
-    defaultsFilledNo:
-      "Рекомендуємо заповнити заголовок і опис сайту за замовчуванням нижче.",
+    defaultsFilledLabel: "Заголовок і опис за замовчуванням",
+    defaultsFilledYes: "заповнено",
+    defaultsFilledNo: "не задано",
     // noindex — the one genuinely urgent, RED state.
     noindexWarningTitle: "Сайт прихований від пошукових систем!",
     // TASK-718: the toggle this used to point at was removed (TASK-307) — the flag
@@ -4466,13 +4516,15 @@ export const dict = {
     // developer", not an action the operator cannot perform here.
     noindexWarningBody:
       "Зараз увесь магазин не показується в Google та інших пошукових системах. Це аварійний перемикач, який вмикають у базі даних, а не в адмінці, — тут його не зняти. Якщо це робочий магазин, негайно зверніться до розробника, інакше клієнти не знайдуть вас у пошуку.",
-    noindexOkLabel: "Сайт видимий для пошукових систем.",
+    noindexOkLabel: "Сайт видимий для пошукових систем",
     // Outbound eyeball links to what the storefront actually serves.
-    linksHeading: "Перевірити службові файли сайту",
+    linksHeading: "Службові файли:",
     robotsLink: "robots.txt",
     sitemapLink: "sitemap.xml",
     llmsLink: "llms.txt",
     openLinkAria: (name: string) => `Відкрити ${name} у новій вкладці`,
+    // TASK-1053 (Н2): «Заповнити ↓» — down to the default title field.
+    fillDefaults: "Заповнити",
   },
 
   // --- Recommendation carousels — list / CRUD (TASK-139) ----------------------
@@ -4848,9 +4900,7 @@ export const dict = {
   // «синонім» пояснено прикладом, а обмеження рушія (одне слово, без дефісів)
   // сказано до того, як форма його відхилить.
   searchSynonyms: {
-    heading: "Синоніми пошуку",
-    subheading:
-      "Слова в одній групі пошук вважає однаковими: хто шукає «чохол», побачить і товари, де написано «case». Корисно для назв латиницею й кирилицею, множини та розмовних слів.",
+    heading: "Синоніми",
     defaultNote:
       "Зараз діє стандартний список магазину. Змініть його й збережіть — і пошук працюватиме за вашим.",
     termsLabel: (n: number) => `Група ${n}`,
@@ -4858,10 +4908,9 @@ export const dict = {
     termsHint:
       "Через кому. Кожне слово — одне слово без пробілів, дефісів і апострофів; великі літери не мають значення.",
     addGroup: "Додати групу",
-    removeGroupAria: (n: number) => `Видалити групу ${n}`,
     empty:
-      "Жодної групи. Порожній список не зберігається: «Зберегти синоніми» поверне стандартний список магазину. Додайте групу, щоб пошук працював за вашим.",
-    submit: "Зберегти синоніми",
+      "Жодної групи. Порожній список не зберігається: «Зберегти» поверне стандартний список магазину. Додайте групу, щоб пошук працював за вашим.",
+    submit: "Зберегти",
     saving: "Збереження…",
     restoreDefaults: "Повернути стандартний список",
     restoreTitle: "Повернути стандартний список?",
@@ -4889,6 +4938,26 @@ export const dict = {
     // so it goes through the same confirmation with its own explanation.
     emptySaveDescription:
       "У списку не лишилося жодної групи. Порожній список магазин не зберігає — пошук знову працюватиме за вбудованим словником, і його групи з'являться тут.",
+    // Хвиля 198 (TASK-1053, Н3): groups as a chip grid.
+    countHint: (n: number) =>
+      `${countLabel(n, ["група", "групи", "груп"])} · слова в одній групі пошук вважає однаковими`,
+    groupActionsAria: (n: number) => `Дії з групою ${n}`,
+    editGroup: "Змінити",
+    removeGroup: "Видалити",
+    doneEditing: "Готово",
+    searchPlaceholder: "Знайти слово серед синонімів…",
+    searchAria: "Знайти слово серед синонімів",
+    noMatches: (query: string) => `Немає груп зі словом «${query}».`,
+    shownOf: (shown: number, total: number) => `Показано ${shown} з ${total}`,
+    showAll: "показати всі",
+    restoreHint:
+      "Стандартний список магазину можна повернути в меню «⋯» розділу.",
+    sectionMenuAria: "Інші дії з синонімами",
+    // «Незбережені зміни: синоніми (2 групи)».
+    dirtyLabel: (changed: number) =>
+      changed > 0
+        ? `синоніми (${countLabel(changed, ["група", "групи", "груп"])})`
+        : "синоніми",
   },
 
   // --- Канон примітивів (хвиля 198) -------------------------------------------
