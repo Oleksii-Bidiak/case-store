@@ -42,6 +42,13 @@ export const dict = {
     genericError: "Щось пішло не так. Спробуйте ще раз.",
     // Accessible name for overlay close buttons (Dialog / Sheet) — TASK-259-F.
     close: "Закрити",
+    // TASK-880 — the segment error boundary (app/error.tsx, inside the layout)
+    // and the bare global-error fallback (outside it) share these strings.
+    errorTitle: "Щось пішло не так",
+    errorBody:
+      "Сторінку не вдалося показати. Спробуйте ще раз або поверніться на головну.",
+    // The digest Next attaches to a server error — what support matches in logs.
+    errorCode: (digest: string) => `Код помилки: ${digest}`,
   },
 
   nav: {

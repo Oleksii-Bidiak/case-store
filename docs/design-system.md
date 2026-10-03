@@ -332,6 +332,12 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
 - **Empty states** get an icon + one-line explanation + a primary action.
 - **Errors** surface via Sonner toast or inline field message — never `alert()`/`confirm()`
   (use `Dialog`).
+- **A page that fails to render** lands in `app/error.tsx`, inside the layout's `<main>` so the
+  header and footer stay: the empty-state shape (muted icon circle, `H1_CLASS`, one muted line),
+  one primary «Спробувати ще раз» calling `retry()` (re-fetches server data, unlike `reset()`), an
+  outline «На головну», and the Next digest as «Код помилки» for support. `global-error.tsx` is
+  only for a broken root layout — no providers, plain elements, same `dict.common` strings
+  (TASK-880).
 
 ---
 
