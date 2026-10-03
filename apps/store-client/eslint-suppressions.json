@@ -221,7 +221,7 @@
   },
   "src/widgets/categories/ui/categories-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 15
+      "count": 12
     }
   },
   "src/widgets/checkout/ui/checkout-order-summary.tsx": {

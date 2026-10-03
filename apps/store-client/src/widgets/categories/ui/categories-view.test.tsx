@@ -134,3 +134,82 @@ describe("CategoriesView", () => {
     expect(img?.getAttribute("src")).toContain(encodeURIComponent(image));
   });
 });
+
+// TASK-877 — the BreadcrumbList is built from the same trail the page shows.
+describe("CategoriesView breadcrumbs and root chips (TASK-877)", () => {
+  beforeEach(() => {
+    server.use(
+      http.get("*/api/categories/tree", () => HttpResponse.json(tree)),
+      http.get("*/api/brands", () => HttpResponse.json(brands)),
+    );
+  });
+
+  function readBreadcrumbSchema(container: HTMLElement) {
+    const script = container.querySelector(
+      'script[type="application/ld+json"]',
+    );
+    const schema = JSON.parse(script?.textContent ?? "{}") as {
+      itemListElement?: { name: string }[];
+    };
+    return (schema.itemListElement ?? []).map((entry) => entry.name);
+  }
+
+  function readVisibleCrumbs() {
+    const trail = screen.getByRole("navigation", {
+      name: dict.product.breadcrumbAria,
+    });
+    return Array.from(
+      trail.querySelectorAll("a, span:not([aria-hidden])"),
+      (node) => node.textContent,
+    );
+  }
+
+  it("emits the visible trail — home and the selected root — as JSON-LD", async () => {
+    const { container } = renderWithProviders(<CategoriesView />);
+    await screen.findByRole("heading", { level: 1, name: "Смартфони" });
+
+    expect(readVisibleCrumbs()).toEqual([
+      dict.categories.breadcrumbHome,
+      "Смартфони",
+    ]);
+    expect(readBreadcrumbSchema(container)).toEqual(readVisibleCrumbs());
+    const trail = screen.getByRole("navigation", {
+      name: dict.product.breadcrumbAria,
+    });
+    expect(trail.querySelector('[aria-current="page"]')).toHaveTextContent(
+      "Смартфони",
+    );
+  });
+
+  it("keeps the JSON-LD in step when another root is picked", async () => {
+    const user = userEvent.setup();
+    const { container } = renderWithProviders(<CategoriesView />);
+
+    await user.click(await screen.findByRole("button", { name: /Аудіо/ }));
+
+    expect(readBreadcrumbSchema(container)).toEqual([
+      dict.categories.breadcrumbHome,
+      "Аудіо",
+    ]);
+    expect(readBreadcrumbSchema(container)).toEqual(readVisibleCrumbs());
+  });
+
+  it("marks only the selected root as current, in one set of buttons", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<CategoriesView />);
+
+    const phones = await screen.findByRole("button", { name: /Смартфони/ });
+    const audio = screen.getByRole("button", { name: /Аудіо/ });
+    expect(phones).toHaveAttribute("aria-current", "true");
+    expect(phones).toHaveClass("bg-primary", "text-primary-foreground");
+    expect(audio).not.toHaveAttribute("aria-current");
+
+    await user.click(audio);
+
+    expect(audio).toHaveAttribute("aria-current", "true");
+    expect(audio).toHaveClass("bg-primary");
+    expect(phones).not.toHaveAttribute("aria-current");
+    // Chips (below lg) and the rail (lg+) are the same buttons, not two copies.
+    expect(screen.getAllByRole("button", { name: /Аудіо/ })).toHaveLength(1);
+  });
+});

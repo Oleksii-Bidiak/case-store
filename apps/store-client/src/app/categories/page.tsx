@@ -9,8 +9,6 @@ import {
   prefetchQueries,
   serverRequestOptions,
 } from "@/shared/api/query-prefetch-server";
-import { JsonLd } from "@/shared/ui";
-import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
 import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
@@ -51,12 +49,9 @@ export default async function CategoriesPage() {
 
   return (
     <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
-      <JsonLd
-        schema={buildBreadcrumbSchema([
-          { name: dict.categories.breadcrumbHome, item: SITE_URL },
-          { name: dict.meta.categoriesTitle, item: `${SITE_URL}/categories` },
-        ])}
-      />
+      {/* The BreadcrumbList is rendered by CategoriesView from the same crumbs
+          it shows (TASK-877): a schema here said «Категорії» while the page
+          showed the selected root category. */}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
         <CategoriesView />
       </PrefetchBoundary>
