@@ -79,6 +79,21 @@ describe("PromoBanner", () => {
     expect(cta).not.toHaveClass("bg-primary");
   });
 
+  it("shows keyboard focus as a white offset outline on the dark gradient (TASK-865)", () => {
+    renderWithProviders(<PromoBanner />);
+
+    const cta = screen.getByRole("link", { name: dict.home.widePromo.cta });
+    expect(cta).toHaveClass(
+      "focus-visible:border-white",
+      "focus-visible:ring-0",
+      "focus-visible:outline-solid",
+      "focus-visible:outline-offset-2",
+      "focus-visible:outline-white",
+    );
+    // The indigo border would be indigo on indigo here.
+    expect(cta).not.toHaveClass("focus-visible:border-ring");
+  });
+
   it("omits the CTA button when the banner has no label/href", () => {
     renderWithProviders(
       <PromoBanner banner={makeBanner({ ctaLabel: null, ctaHref: null })} />,

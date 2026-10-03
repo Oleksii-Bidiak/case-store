@@ -98,6 +98,19 @@ describe("HeroSlider", () => {
       expect(dot.className).toContain("before:size-11");
     }
   });
+
+  it("draws a white offset focus outline on the slide CTA — the indigo ring vanishes on the slide (TASK-865)", () => {
+    setReducedMotion(false);
+    render(<HeroSlider />);
+
+    const cta = screen.getByRole("link", { name: slides[0].cta });
+    expect(cta).toHaveClass(
+      "focus-visible:ring-0",
+      "focus-visible:outline-solid",
+      "focus-visible:outline-offset-2",
+      "focus-visible:outline-white",
+    );
+  });
 });
 
 describe("HeroSlider — banner pictures (TASK-740)", () => {

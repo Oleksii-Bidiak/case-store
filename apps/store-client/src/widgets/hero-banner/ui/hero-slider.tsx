@@ -10,7 +10,7 @@ import {
   Play,
 } from "lucide-react";
 import { BannerBackdrop, Button } from "@/shared/ui";
-import { dict, HERO_CLASS } from "@/shared/config";
+import { dict, FOCUS_ON_DARK_CLASS, HERO_CLASS } from "@/shared/config";
 import { useReducedMotion } from "@/shared/lib/use-reduced-motion";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
@@ -190,7 +190,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
           {slide.cta && slide.href && (
             <Button
               asChild
-              className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-lift ${theme.cta}`}
+              className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-lift ${theme.cta} ${FOCUS_ON_DARK_CLASS}`}
             >
               <Link href={slide.href}>
                 {slide.cta}

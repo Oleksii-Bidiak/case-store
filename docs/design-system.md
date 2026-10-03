@@ -71,7 +71,10 @@ The browser chrome follows the same rule: `viewport.themeColor` is a static
 - Price on sale: price in `text-sale`, original price `text-muted-foreground line-through`.
 - Discount badge: `bg-sale text-sale-foreground`. "New": `bg-primary text-primary-foreground`.
 - Stock: in-stock `text-success`, low-stock `text-warning`, out `text-muted-foreground`.
-- Focus ring: rely on `ring`/`ring-ring` — never remove focus outlines.
+- Focus ring: rely on `ring`/`ring-ring` — never remove focus outlines. On a dark or
+  brand-coloured banner (hero slides, promo banner) the indigo ring is indigo on indigo: merge
+  `FOCUS_ON_DARK_CLASS` (`shared/config/focus.ts`) instead — a white outline 2px off the control
+  (TASK-865).
 - Footer and announcement bar: `bg-footer text-footer-foreground` — a dark panel in both themes.
 - **Order & payment status colours** — one map, rendered with `Badge` everywhere (`/orders`,
   order confirmation, `/orders/status`, guest order view):

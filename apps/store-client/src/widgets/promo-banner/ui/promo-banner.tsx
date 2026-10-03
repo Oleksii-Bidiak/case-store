@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { BannerBackdrop, Button } from "@/shared/ui";
-import { dict, PAGE_CONTAINER, H2_CLASS } from "@/shared/config";
+import {
+  dict,
+  FOCUS_ON_DARK_CLASS,
+  PAGE_CONTAINER,
+  H2_CLASS,
+} from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
 interface PromoBannerProps {
@@ -52,7 +57,7 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
             size="lg"
             variant="outline"
             asChild
-            className="h-11 rounded-cta border-white/40 bg-white/10 font-semibold text-white shadow-none hover:bg-white/20 hover:text-white dark:border-white/40 dark:bg-white/10 dark:hover:bg-white/20"
+            className={`h-11 rounded-cta border-white/40 bg-white/10 font-semibold text-white shadow-none hover:bg-white/20 hover:text-white dark:border-white/40 dark:bg-white/10 dark:hover:bg-white/20 ${FOCUS_ON_DARK_CLASS}`}
           >
             <Link href={ctaHref}>
               {ctaLabel}

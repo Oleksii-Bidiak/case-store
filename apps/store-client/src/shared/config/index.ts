@@ -5,4 +5,5 @@ export * from "./site";
 export * from "./dictionary";
 export * from "./layout";
 export * from "./typography";
+export * from "./focus";
 export * from "./hub-pages";
