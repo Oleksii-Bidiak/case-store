@@ -1,14 +1,10 @@
 import { AccountSkeleton } from "@/widgets";
-import { PAGE_CONTAINER } from "@/shared/config";
 
 /**
- * Route-level loading UI for `/account`; mirrors the page's `<Suspense>`
- * fallback so there is no visual jump on navigation.
+ * Route-level loading UI for `/account`: the same skeleton as the page's
+ * `<Suspense>` fallback and AccountView's own loading branch. It carries the
+ * dashboard's container itself, so there is no wrapper here (TASK-869).
  */
 export default function Loading() {
-  return (
-    <div className={`${PAGE_CONTAINER} py-8`}>
-      <AccountSkeleton />
-    </div>
-  );
+  return <AccountSkeleton />;
 }

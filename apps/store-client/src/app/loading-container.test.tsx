@@ -34,14 +34,17 @@ describe("loading.tsx page container (TASK-860)", () => {
 });
 
 /**
- * TASK-869 — the cart and checkout loaders also take their page's vertical
- * padding (`/cart` pt-8, `/checkout` pt-7), so the skeleton does not start
- * 4px off the real breadcrumb line.
+ * TASK-869 — the cart, checkout and account loaders also take their page's
+ * vertical padding (`/cart` pt-8, `/checkout` pt-7, `/account` pt-5.5), so the
+ * skeleton does not start off the real breadcrumb / back-link line.
  */
 describe("loading.tsx page padding (TASK-869)", () => {
   it.each<[string, ComponentType, string[]]>([
     ["/cart", CartLoading, ["pt-8", "pb-16"]],
     ["/checkout", CheckoutLoading, ["pt-7", "pb-16"]],
+    // AccountView's `pt-[22px]` on the spacing scale; the loader is the
+    // AccountSkeleton itself, with no `py-8` wrapper of its own.
+    ["/account", AccountLoading, ["pt-5.5", "pb-16"]],
   ])("%s matches its page's padding", (_route, Loading, padding) => {
     const { container } = render(<Loading />);
     const root = container.firstElementChild as HTMLElement;

@@ -346,7 +346,10 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   A `loading.tsx` skeleton and a Suspense fallback must render the **same** container
   and vertical padding, breadcrumbs, heading slot (`h-9 md:h-10` per H1_CLASS line; the checkout
   stepper too) and grid as the page they stand in for. A skeleton with a different width or column
-  count reflows the page when the content lands (parity fixes: TASK-869). A skeleton draws only
+  count reflows the page when the content lands (parity fixes: TASK-869). A client view's own
+  loading branch is the third path to the same screen: it renders the **same skeleton component**,
+  and when the view owns its container the skeleton carries it too, so `loading.tsx` and the
+  fallback add no wrapper (`AccountSkeleton`: one component for all three). A skeleton draws only
   the controls a shopper gets by default — nothing for flag-gated stubs. And a `loading.tsx`
   must never be an **ancestor** of a different page: Next prefetches a dynamic route "layout to
   first loading boundary", so a parent's skeleton becomes the shell of every child link. Scope a

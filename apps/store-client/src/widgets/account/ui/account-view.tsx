@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth, useAuthControllerLogout } from "@/entities/session";
 import { useUserControllerGetProfile, type UserEntity } from "@/entities/user";
-import { Skeleton } from "@/shared/ui";
 import {
   dict,
   FEATURE_STUBS,
@@ -17,8 +16,9 @@ import {
   AccountIcon,
   AccountBackIcon,
   AccountLogoutIcon,
-  type AccountIconName,
 } from "./account-icons";
+import { ACCOUNT_NAV } from "./account-nav";
+import { AccountSkeleton } from "./account-skeleton";
 import { AccountProfileSection } from "./account-profile-section";
 import { AccountBonusesSection } from "./account-bonuses-section";
 import { AccountSettingsSection } from "./account-settings-section";
@@ -27,30 +27,6 @@ import { AccountPlaceholderSection } from "./account-placeholder-section";
 /** Inline dashboard sections (link items — orders/favorites — route away). */
 type SectionKey =
   "profile" | "purchases" | "history" | "bonuses" | "compare" | "settings";
-
-interface NavEntry {
-  key: string;
-  icon: AccountIconName;
-  /** When set the item navigates to an existing page instead of switching. */
-  href?: string;
-}
-
-const ALL_NAV: NavEntry[] = [
-  { key: "profile", icon: "profile" },
-  { key: "orders", icon: "orders", href: "/orders" },
-  { key: "favorites", icon: "favorites", href: "/wishlist" },
-  { key: "purchases", icon: "purchases" },
-  { key: "history", icon: "history" },
-  { key: "bonuses", icon: "bonuses" },
-  { key: "compare", icon: "compare" },
-  { key: "settings", icon: "settings" },
-];
-
-// «Порівняння» only ever opens a placeholder for a feature that does not exist
-// (TASK-085), so the entry is hidden unless the deployment opts into stubs
-// (TASK-419). The entry itself stays in ALL_NAV — this filter is the one line
-// TASK-085 deletes.
-const NAV = ALL_NAV.filter((entry) => FEATURE_STUBS || entry.key !== "compare");
 
 /**
  * AccountView — the `/account` dashboard (Account.dc.html redesign). Auth-gated
@@ -78,14 +54,10 @@ export function AccountView() {
   }, [isInitializing, isAuthenticated, router]);
 
   if (isInitializing || !isAuthenticated || isLoading) {
-    // Same container as `app/account/loading.tsx` and the page Suspense
-    // fallback — this branch used to run edge to edge with no gutter (TASK-860).
-    return (
-      <div className={`${PAGE_CONTAINER} flex flex-col gap-4 py-8`}>
-        <Skeleton className="h-9 w-48" />
-        <Skeleton className="h-40 w-full" />
-      </div>
-    );
+    // The one account skeleton (TASK-869): the same component as
+    // `app/account/loading.tsx` and the page's Suspense fallback. It owns this
+    // view's container, so none of the three loading states jumps.
+    return <AccountSkeleton />;
   }
 
   const user = data?.data;
@@ -146,7 +118,7 @@ export function AccountView() {
           <div className="mx-1 mb-1.5 h-px bg-border" />
 
           <nav aria-label={d.navAria} className="flex flex-col">
-            {NAV.map((entry) => {
+            {ACCOUNT_NAV.map((entry) => {
               const label = d.nav[entry.key as keyof typeof d.nav];
               const active = !entry.href && section === entry.key;
               const className = `relative mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-sm no-underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${

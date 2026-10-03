@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { AccountView, AccountSkeleton } from "@/widgets";
-import { dict, PAGE_CONTAINER } from "@/shared/config";
+import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
   title: dict.meta.accountTitle,
@@ -10,14 +10,9 @@ export const metadata: Metadata = {
 
 export default function AccountPage() {
   return (
-    <Suspense
-      fallback={
-        // Same container as `loading.tsx`; AccountView owns its own once loaded.
-        <div className={`${PAGE_CONTAINER} py-8`}>
-          <AccountSkeleton />
-        </div>
-      }
-    >
+    // AccountSkeleton carries the dashboard's own container, the same one
+    // `loading.tsx` and AccountView's loading branch render (TASK-869).
+    <Suspense fallback={<AccountSkeleton />}>
       <AccountView />
     </Suspense>
   );
