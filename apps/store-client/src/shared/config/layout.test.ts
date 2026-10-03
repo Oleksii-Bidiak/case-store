@@ -124,9 +124,17 @@ describe("sticky aside offset (TASK-519)", () => {
   });
 
   it("leaves no hand-written breakpoint top offset for sticky panels", () => {
+    // Only lines that make something sticky: an `absolute` overlay may legitimately sit at
+    // `sm:top-20` (the lightbox photo frame does), that is positioning, not a header offset.
     const offenders = files
       .filter((file) =>
-        /\b(?:sm|md|lg|xl):top-(?:20|24)\b/.test(readFileSync(file, "utf8")),
+        readFileSync(file, "utf8")
+          .split("\n")
+          .some(
+            (line) =>
+              /\bsticky\b/.test(line) &&
+              /\b(?:sm|md|lg|xl):top-(?:20|24)\b/.test(line),
+          ),
       )
       .map((file) => relative(SRC, file));
     expect(offenders).toEqual([]);
