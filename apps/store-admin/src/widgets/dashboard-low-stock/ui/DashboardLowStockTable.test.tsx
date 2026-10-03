@@ -57,3 +57,31 @@ describe("DashboardLowStockTable (TASK-253)", () => {
     ).toBeInTheDocument();
   });
 });
+
+/**
+ * TASK-1037: «Усі з низьким залишком →». The product list has no low-stock
+ * FILTER, but it sorts by the same `stock` the widget reads and filters to
+ * active products — the widget's own predicate is `isActive && stock <= 5`
+ * ordered by stock — so the link opens a list whose first rows ARE these rows,
+ * followed by the rest. Only for somebody who may open the product list.
+ */
+describe("DashboardLowStockTable — «Усі з низьким залишком» (TASK-1037)", () => {
+  it("links to the active products sorted by stock, lowest first", () => {
+    render(<DashboardLowStockTable products={products} showAllLink />);
+
+    expect(
+      screen.getByRole("link", { name: dict.dashboard.allLowStockLink }),
+    ).toHaveAttribute(
+      "href",
+      "/products?status=active&sortBy=stock&sortOrder=asc",
+    );
+  });
+
+  it("has no link for somebody who cannot open the product list", () => {
+    render(<DashboardLowStockTable products={products} />);
+
+    expect(
+      screen.queryByRole("link", { name: dict.dashboard.allLowStockLink }),
+    ).not.toBeInTheDocument();
+  });
+});

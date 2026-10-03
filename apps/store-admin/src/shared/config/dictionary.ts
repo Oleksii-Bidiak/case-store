@@ -124,7 +124,8 @@ export const dict = {
     metaTitle: "Панель — Адмін",
     heading: "Огляд",
     updatedAt: (time: string) => `Оновлено ${time}`,
-    loadError: "Не вдалося завантажити показники. Спробуйте ще раз.",
+    // TASK-1037: «Спробуйте ще раз» is the «Повторити» button beside it now.
+    loadError: "Не вдалося завантажити показники.",
     quickActions: "Швидкі дії",
     addProduct: "Додати товар",
     viewOrders: "Переглянути замовлення",
@@ -143,7 +144,6 @@ export const dict = {
     revenueTrend: "Динаміка виручки",
     ordersByStatus: "Замовлення за статусом",
     revenueTooltip: "Виручка",
-    ordersTooltip: "Замовлення",
     date: "Дата",
     lowStock: "Низький запас",
     product: "Товар",
@@ -257,6 +257,11 @@ export const dict = {
     // «no new returns» — the placeholder says the number is missing instead.
     needsActionCountPending: "Кількість завантажується",
     needsActionCountFailed: "Не вдалося отримати кількість",
+    // Хвиля 198 (TASK-1037, П1–П4). The «→» of the card links is drawn in an
+    // aria-hidden span, so the link is read as its words only.
+    lastOrdersLoadError: "Не вдалося завантажити замовлення.",
+    allOrdersLink: "Усі замовлення",
+    allLowStockLink: "Усі з низьким залишком",
   },
 
   common: {

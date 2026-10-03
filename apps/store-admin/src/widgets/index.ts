@@ -90,6 +90,7 @@ export { AuditLogView, AuditLogSkeleton } from "./audit-log";
 export { AdminProfileView } from "./admin-profile";
 export {
   AdminDashboardStats,
+  AdminDashboardStatsError,
   AdminDashboardStatsSkeleton,
   DashboardSectionSkeleton,
 } from "./dashboard-stats";
@@ -99,13 +100,17 @@ export {
 } from "./dashboard-needs-action";
 export {
   DashboardCharts,
+  DashboardChartsSkeleton,
   RevenueTrendChart,
   OrdersByStatusChart,
 } from "./dashboard-charts";
 export { DashboardLowStockTable } from "./dashboard-low-stock";
 export { ContentMapView } from "./content-map";
 export { DashboardTopProductsTable } from "./dashboard-top-products";
-export { DashboardLastOrdersTable } from "./dashboard-last-orders";
+export {
+  DashboardLastOrdersTable,
+  DashboardLastOrdersTableSkeleton,
+} from "./dashboard-last-orders";
 export { DashboardTrafficCard } from "./dashboard-traffic";
 export {
   AdminCarouselTable,
