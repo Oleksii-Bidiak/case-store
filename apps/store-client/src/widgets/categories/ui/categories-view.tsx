@@ -37,7 +37,7 @@ const TILE_GRID = `grid grid-cols-2 gap-4 md:gap-6 md:[grid-template-columns:rep
  * put every root in the DOM twice for assistive tech and tests.
  */
 const ROOT_ITEM =
-  "relative inline-flex h-11 shrink-0 items-center gap-3 whitespace-nowrap rounded-full border-[1.5px] px-4 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:mb-0.5 lg:h-auto lg:w-full lg:whitespace-normal lg:rounded-menu lg:border-0 lg:px-3.5 lg:py-[11px] lg:text-left";
+  "relative inline-flex h-11 shrink-0 items-center gap-3 whitespace-nowrap rounded-full border-[1.5px] px-4 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background lg:mb-0.5 lg:focus-visible:ring-offset-card lg:h-auto lg:w-full lg:whitespace-normal lg:rounded-menu lg:border-0 lg:px-3.5 lg:py-[11px] lg:text-left";
 const ROOT_ITEM_ACTIVE =
   "border-primary bg-primary text-primary-foreground lg:bg-primary/10 lg:text-primary";
 const ROOT_ITEM_IDLE =
@@ -127,7 +127,7 @@ export function CategoriesView() {
       >
         <nav
           aria-label={dict.categories.navAria}
-          className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:-mx-6 sm:px-6 lg:mx-0 lg:flex-col lg:gap-0 lg:overflow-visible lg:px-0 lg:pb-0"
+          className="-mx-4 -mt-1 flex gap-2 overflow-x-auto px-4 py-1 sm:-mx-6 sm:px-6 lg:mx-0 lg:mt-0 lg:flex-col lg:gap-0 lg:overflow-visible lg:p-0"
         >
           {roots.map((root) => {
             const Icon = pickCategoryIcon(root.name, root.slug);

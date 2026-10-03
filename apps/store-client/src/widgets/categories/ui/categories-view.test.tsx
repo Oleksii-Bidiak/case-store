@@ -212,4 +212,22 @@ describe("CategoriesView breadcrumbs and root chips (TASK-877)", () => {
     // Chips (below lg) and the rail (lg+) are the same buttons, not two copies.
     expect(screen.getAllByRole("button", { name: /Аудіо/ })).toHaveLength(1);
   });
+
+  it("offsets the focus ring so it shows on the solid-primary active chip", async () => {
+    renderWithProviders(<CategoriesView />);
+
+    const phones = await screen.findByRole("button", { name: /Смартфони/ });
+    // An indigo ring flush on an indigo chip is invisible (design-system §2/§6).
+    expect(phones).toHaveClass(
+      "focus-visible:ring-2",
+      "focus-visible:ring-ring",
+      "focus-visible:ring-offset-2",
+      "focus-visible:ring-offset-background",
+    );
+    // The scrolling chip row clips overflow on both axes; it needs vertical
+    // room for the 2 px ring + 2 px offset.
+    expect(
+      screen.getByRole("navigation", { name: dict.categories.navAria }),
+    ).toHaveClass("py-1");
+  });
 });
