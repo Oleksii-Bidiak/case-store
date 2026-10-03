@@ -1,7 +1,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { sanitizeRedirectTarget } from "./sanitize-redirect-target";
+import {
+  loginRedirectTarget,
+  sanitizeRedirectTarget,
+} from "./sanitize-redirect-target";
 
 /**
  * TASK-527: the case table below is copied VERBATIM from the storefront's
@@ -113,5 +116,43 @@ describe("sanitizeRedirectTarget — parity with the storefront and API copies",
     expect(body("store-api/src/auth/oauth/sanitize-redirect-target.ts")).toBe(
       admin,
     );
+  });
+});
+
+/**
+ * TASK-974 (admin only, not part of the storefront parity): `proxy.ts` and the
+ * «Сесія закінчилась» dialog send `?next=`, which nothing read.
+ */
+describe("loginRedirectTarget", () => {
+  const params = (entries: Record<string, string>) =>
+    new URLSearchParams(entries);
+
+  it("honours ?next=", () => {
+    expect(loginRedirectTarget(params({ next: "/orders?status=NEW" }))).toBe(
+      "/orders?status=NEW",
+    );
+  });
+
+  it("still honours the older ?redirect=", () => {
+    expect(loginRedirectTarget(params({ redirect: "/products" }))).toBe(
+      "/products",
+    );
+  });
+
+  it("prefers ?next= when both are present", () => {
+    expect(
+      loginRedirectTarget(params({ next: "/returns", redirect: "/products" })),
+    ).toBe("/returns");
+  });
+
+  it.each(["//evil.com", "/\t/evil.com", "https://evil.com"])(
+    "sanitizes ?next=%j like any other target",
+    (next) => {
+      expect(loginRedirectTarget(params({ next }))).toBe("/");
+    },
+  );
+
+  it("falls back to the dashboard with neither", () => {
+    expect(loginRedirectTarget(params({ reason: "session" }))).toBe("/");
   });
 });

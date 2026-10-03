@@ -6,6 +6,7 @@ import {
   waitFor,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { api } from "@/shared/api";
 import { AuthProvider } from "./auth.context";
 import { useAuth } from "./use-auth";
 
@@ -28,9 +29,21 @@ function Probe() {
     role,
     permissions,
     can,
+    permissionsFailed,
+    retryPermissions,
+    isSessionExpired,
+    expiredSessionEmail,
   } = useAuth();
   return (
     <>
+      <span data-testid="permissions-failed">
+        {permissionsFailed ? "yes" : "no"}
+      </span>
+      <button type="button" onClick={retryPermissions}>
+        retry-permissions
+      </button>
+      <span data-testid="expired">{isSessionExpired ? "yes" : "no"}</span>
+      <span data-testid="expired-email">{expiredSessionEmail ?? "none"}</span>
       <span data-testid="probe">
         {isInitializing
           ? "init"
@@ -517,5 +530,121 @@ describe("AuthProvider — header identity profile fetch (TASK-255)", () => {
     );
     expect(screen.getByTestId("email")).toHaveTextContent("no-email");
     expect(profileCalls).toBe(0);
+  });
+});
+
+/**
+ * Wave 198 (TASK-1014): a failed permissions fetch is a STATE the shell can
+ * explain, not a silently empty panel.
+ */
+describe("AuthProvider — permissions failure state (TASK-1014)", () => {
+  it("reports the failure and clears it once «Повторити» succeeds", async () => {
+    let fail = true;
+    server.use(
+      http.post("*/api/auth/refresh", () =>
+        HttpResponse.json({ data: { accessToken: makeToken("ADMIN") } }),
+      ),
+      http.get("*/api/auth/me/permissions", () =>
+        fail
+          ? HttpResponse.json({ message: "boom" }, { status: 500 })
+          : HttpResponse.json({
+              data: {
+                role: "ADMIN",
+                isOwner: true,
+                isAdmin: true,
+                permissions: [],
+                entries: [],
+              },
+            }),
+      ),
+    );
+    const user = userEvent.setup();
+
+    renderProvider();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("permissions-failed")).toHaveTextContent("yes"),
+    );
+    // The owner too: nothing tells the panel they own the shop.
+    expect(screen.getByTestId("can-orders")).toHaveTextContent("no");
+
+    fail = false;
+    await user.click(screen.getByRole("button", { name: "retry-permissions" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("permissions-failed")).toHaveTextContent("no"),
+    );
+    expect(screen.getByTestId("can-orders")).toHaveTextContent("yes");
+  });
+
+  it("does not call a 401 a failure — that is the session ending", async () => {
+    server.use(
+      http.post("*/api/auth/refresh", () =>
+        HttpResponse.json({ data: { accessToken: makeToken("ADMIN") } }),
+      ),
+      http.get("*/api/auth/me/permissions", () =>
+        HttpResponse.json({ message: "unauthorized" }, { status: 401 }),
+      ),
+    );
+
+    renderProvider();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("staff"),
+    );
+    // Give the permissions request time to settle.
+    await waitFor(() =>
+      expect(screen.getByTestId("can-orders")).toHaveTextContent("no"),
+    );
+    expect(screen.getByTestId("permissions-failed")).toHaveTextContent("no");
+  });
+});
+
+/**
+ * Wave 198 (TASK-528 + TASK-974): a session that ends WHILE the person works is
+ * reported, with the email it belonged to, instead of failing in place.
+ */
+describe("AuthProvider — session expiry (TASK-528 + TASK-974)", () => {
+  it("flags the expiry when a request 401s and so does its refresh", async () => {
+    let refreshCalls = 0;
+    server.use(
+      http.post("*/api/auth/refresh", () => {
+        refreshCalls += 1;
+        return refreshCalls === 1
+          ? HttpResponse.json({ data: { accessToken: makeToken("ADMIN") } })
+          : HttpResponse.json({ message: "expired" }, { status: 401 });
+      }),
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({ message: "unauthorized" }, { status: 401 }),
+      ),
+    );
+
+    renderProvider();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("email")).toHaveTextContent(
+        "admin@example.com",
+      ),
+    );
+    expect(screen.getByTestId("expired")).toHaveTextContent("no");
+
+    await expect(api.get("/api/admin/orders")).rejects.toBeTruthy();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("expired")).toHaveTextContent("yes"),
+    );
+    expect(screen.getByTestId("expired-email")).toHaveTextContent(
+      "admin@example.com",
+    );
+  });
+
+  it("does not call a failed bootstrap an expiry — that browser was never signed in", async () => {
+    renderProvider();
+
+    // Default refresh handler 401s → signed out.
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
+    );
+    expect(screen.getByTestId("expired")).toHaveTextContent("no");
   });
 });

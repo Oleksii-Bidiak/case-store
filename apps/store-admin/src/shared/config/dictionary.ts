@@ -94,6 +94,32 @@ export const dict = {
     profile: "Мій профіль",
     roleOwner: "Власник",
     roleManager: "Менеджер",
+    // Wave 198 (TASK-1034): a deputy admin's role line in the account menu and
+    // badge — they used to get no label at all.
+    roleAdmin: "Адміністратор",
+    // «Довідка розділу» (TASK-1034/1035) — the header button and its sheet.
+    sectionHelp: "Довідка розділу",
+    sectionHelpTitle: (section: string) => `Довідка · ${section}`,
+    sectionHelpWhat: "Що тут робиться",
+    sectionHelpRights: "Ваші права тут",
+    sectionHelpAllRights: "Ви маєте всі права в цьому розділі.",
+    sectionHelpNoRightNeeded: "Окремого права тут не потрібно.",
+    sectionHelpCan: (rights: string) => `Ви можете ${rights}.`,
+    sectionHelpCannot: (rights: string, staffSection: string) =>
+      `${rights.charAt(0).toUpperCase()}${rights.slice(1)} не можете — попросіть власника додати право в розділі «${staffSection}».`,
+    // TASK-1014 — /auth/me/permissions failed: an empty panel with a reason.
+    permissionsErrorTitle: "Не вдалося завантажити ваші права",
+    permissionsErrorBody:
+      "Без них панель не знає, які розділи й кнопки вам показати, тому меню тимчасово порожнє. Ваш доступ не змінився — перевірте з'єднання й спробуйте ще раз.",
+    // TASK-528 + TASK-974 — the refresh cookie is gone while you were working.
+    sessionExpiredTitle: "Сесія закінчилась",
+    sessionExpiredBody:
+      "З міркувань безпеки ми вийшли з вашого акаунта. Увійдіть знову — після входу ви повернетесь на цю саму сторінку. Незбережені зміни в формі можуть загубитися.",
+    sessionExpiredAction: "Увійти знову",
+    // The «Повернення» nav counter: requests still REQUESTED. Here and not in
+    // `nav`, whose values are all labels (content-map test reads them as such).
+    newReturnsBadgeAria: (n: number) =>
+      `${countLabel(n, ["нова заявка", "нові заявки", "нових заявок"])} на повернення`,
   },
 
   login: {
@@ -110,6 +136,9 @@ export const dict = {
     errorNotAdmin: "Цей акаунт не має прав адміністратора.",
     errorInvalid: "Невірний email або пароль.",
     errorGeneric: "Щось пішло не так. Спробуйте ще раз.",
+    // Wave 198 (TASK-1036 + TASK-974) — arrived from «Сесія закінчилась».
+    sessionExpired:
+      "Сесія закінчилась. Увійдіть знову — і ви повернетесь на сторінку, де працювали.",
   },
 
   // Support escape hatch on the login form (TASK-287). The API answers every
@@ -3937,11 +3966,12 @@ export const dict = {
     heading: "Мій профіль",
     accountSection: "Акаунт",
     fieldEmail: "Електронна пошта",
-    fieldRole: "Роль",
+    // Wave 198: the access LEVEL (owner / admin / manager), as on «Персонал».
+    fieldRole: "Рівень",
     fieldUserId: "ID",
     permissionsSection: "Ваші права",
     permissionsOwner:
-      "Ви власник магазину: усі права, включно з керуванням користувачами та журналом дій.",
+      "Ви власник магазину: усі права, зокрема керування персоналом і журнал дій.",
     permissionsEmpty:
       "Вам поки не видано жодного права. Зверніться до власника магазину.",
     permissionsLoading: "Завантаження прав…",
@@ -3959,6 +3989,18 @@ export const dict = {
     passwordWeak:
       "Пароль має містити щонайменше 8 символів, велику й малу літери та цифру",
     passwordRequired: "Вкажіть пароль",
+    // Wave 198 (TASK-1055, ProfileProposal П1–П4).
+    fieldName: "Ім'я",
+    // The owner's level here is the shop's owner, not «Адміністратор» (which
+    // the old role line said, out of step with the header's «Власник»).
+    levelOwner: "Власник магазину",
+    copyId: "Скопіювати",
+    copyIdDone: "Скопійовано",
+    copyIdFailed: "Не вдалося скопіювати — виділіть ID вручну",
+    copyIdAria: "Скопіювати ID",
+    permissionsOtherZone: "Інше",
+    permissionsMoreHint:
+      "Потрібно більше? Попросіть власника додати право в розділі «Співробітники» — на вашій картці.",
   },
 
   // --- Newsletter subscribers (TASK-188) --------------------------------------

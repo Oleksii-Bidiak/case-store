@@ -19,6 +19,7 @@ import {
   clearSessionMarker,
   getAccessToken,
   markSessionActive,
+  onSessionExpired,
   refreshSession,
   setAccessToken,
   shouldAttemptSessionRefresh,
@@ -208,5 +209,65 @@ describe("401 interceptor", () => {
     expect(response.data).toEqual({ data: { ok: true } });
     expect(seen.at(-1)).toBe("Bearer fresh-token");
     expect(getAccessToken()).toBe("fresh-token");
+  });
+
+  // Wave 198 (TASK-528 + TASK-974): the UI learns that the session ENDED, so
+  // it can say «Сесія закінчилась» instead of failing quietly in place.
+  describe("session expiry signal", () => {
+    it("fires when the refresh answers 401", async () => {
+      setAccessToken("stale-token");
+      failRefreshWith(401);
+      const listener = jest.fn();
+      const unsubscribe = onSessionExpired(listener);
+
+      await expect(
+        api.get("/api/users/me", { adapter: unauthorized }),
+      ).rejects.toBeInstanceOf(AxiosError);
+
+      expect(listener).toHaveBeenCalledTimes(1);
+      unsubscribe();
+    });
+
+    it.each([429, 500])(
+      "stays quiet when the refresh fails with a transient %i",
+      async (status) => {
+        setAccessToken("stale-token");
+        failRefreshWith(status);
+        const listener = jest.fn();
+        const unsubscribe = onSessionExpired(listener);
+
+        await expect(
+          api.get("/api/users/me", { adapter: unauthorized }),
+        ).rejects.toBeInstanceOf(AxiosError);
+
+        expect(listener).not.toHaveBeenCalled();
+        unsubscribe();
+      },
+    );
+
+    it("stays quiet for a direct refresh — the bootstrap is not an expiry", async () => {
+      markSessionActive();
+      failRefreshWith(401);
+      const listener = jest.fn();
+      const unsubscribe = onSessionExpired(listener);
+
+      await refreshSession();
+
+      expect(listener).not.toHaveBeenCalled();
+      unsubscribe();
+    });
+
+    it("stops calling a listener after it unsubscribes", async () => {
+      setAccessToken("stale-token");
+      failRefreshWith(401);
+      const listener = jest.fn();
+      onSessionExpired(listener)();
+
+      await expect(
+        api.get("/api/users/me", { adapter: unauthorized }),
+      ).rejects.toBeInstanceOf(AxiosError);
+
+      expect(listener).not.toHaveBeenCalled();
+    });
   });
 });

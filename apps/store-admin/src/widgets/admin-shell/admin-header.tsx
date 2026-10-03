@@ -1,9 +1,11 @@
 "use client";
 
-import { Menu, UserCircle } from "lucide-react";
+import { useState } from "react";
+import { BookOpen, LogOut, Menu, UserCircle } from "lucide-react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/entities/session";
-import { LogoutButton } from "@/features/admin-auth";
+import { LogoutButton, useLogout } from "@/features/admin-auth";
 import {
   Badge,
   Button,
@@ -14,7 +16,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/shared/ui";
+import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
+import { sessionRoleLabel } from "./model/session-role-label";
+import { SectionHelpSheet } from "./section-help-sheet";
 
 interface AdminHeaderProps {
   /** Reflected on the burger's `aria-expanded` for assistive tech. */
@@ -25,7 +30,7 @@ interface AdminHeaderProps {
 
 /**
  * Admin header bar — a `<lg` burger that opens the mobile nav drawer, the panel
- * title, and the signed-in user's identity + account menu.
+ * title, «Довідка розділу», the role badge, the account menu and sign-out.
  *
  * The JWT carries only `{ sub, role }`, so the identity comes from the
  * AuthProvider's light `/api/users/me` profile fetch (TASK-255): the email when
@@ -39,20 +44,25 @@ interface AdminHeaderProps {
  * a glance that they are looking at a deliberately narrower panel, not a broken
  * one.
  *
- * Global admin search is deferred to TASK-075 (Meilisearch, Tier-4);
- * the placeholder input from plan 025 has been removed.
+ * Wave 198 (TASK-1034, AdminShell П1–П3, П8): the menu carries the role line
+ * (visible on a phone, where the badge is not) and «Вийти»; the trigger lights
+ * up on /profile, which is not a nav item and so had nothing lit at all. The
+ * standalone sign-out button stays — the menu is a second door, not a move.
+ * «Довідка розділу» opens a sheet for the current section; on a phone, where
+ * the header has no room for the book icon, it lives in the account menu.
  */
 export function AdminHeader({
   mobileNavOpen,
   onOpenMobileNav,
 }: AdminHeaderProps) {
-  const { userId, email, isOwner, role } = useAuth();
+  const { userId, email, isOwner, isAdmin, role } = useAuth();
+  const { logout, isPending: isSigningOut } = useLogout();
+  const pathname = usePathname();
+  const [helpOpen, setHelpOpen] = useState(false);
 
-  const roleLabel = isOwner
-    ? dict.header.roleOwner
-    : role === "MANAGER"
-      ? dict.header.roleManager
-      : null;
+  const roleLabel = sessionRoleLabel({ isOwner, isAdmin, role });
+  const onProfile = pathname === "/profile";
+  const identity = email ?? dict.header.adminLabel;
 
   return (
     <header className="flex h-16 items-center justify-between border-b border-border bg-card px-4 shadow-card lg:px-6">
@@ -74,6 +84,19 @@ export function AdminHeader({
       </div>
 
       <div className="flex shrink-0 items-center gap-2">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="hidden sm:inline-flex"
+          aria-label={dict.header.sectionHelp}
+          title={dict.header.sectionHelp}
+          aria-haspopup="dialog"
+          onClick={() => setHelpOpen(true)}
+        >
+          <BookOpen className="size-5" />
+        </Button>
+
         {roleLabel && (
           <Badge
             variant={isOwner ? "default" : "secondary"}
@@ -91,27 +114,57 @@ export function AdminHeader({
               size="sm"
               aria-label={dict.header.accountMenu}
               title={email ?? userId ?? undefined}
-              className="gap-2"
+              data-active={onProfile ? "true" : undefined}
+              className={cn(
+                "gap-2 data-[state=open]:bg-accent data-[state=open]:text-accent-foreground",
+                onProfile && "bg-accent text-accent-foreground",
+              )}
             >
               <UserCircle className="size-5 text-muted-foreground" />
               <span className="hidden max-w-64 truncate sm:inline">
-                {email ?? dict.header.adminLabel}
+                {identity}
               </span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel className="truncate">
-              {email ?? dict.header.adminLabel}
+            <DropdownMenuLabel className="flex flex-col gap-0.5">
+              <span className="truncate">{identity}</span>
+              {roleLabel && (
+                <span className="text-xs font-normal text-muted-foreground">
+                  {roleLabel}
+                </span>
+              )}
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/profile">{dict.header.profile}</Link>
+              <Link
+                href="/profile"
+                aria-current={onProfile ? "page" : undefined}
+                className={cn(onProfile && "bg-accent text-accent-foreground")}
+              >
+                <UserCircle aria-hidden="true" />
+                {dict.header.profile}
+              </Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="sm:hidden"
+              onSelect={() => setHelpOpen(true)}
+            >
+              <BookOpen aria-hidden="true" />
+              {dict.header.sectionHelp}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem disabled={isSigningOut} onSelect={logout}>
+              <LogOut aria-hidden="true" />
+              {dict.common.signOut}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
         <LogoutButton />
       </div>
+
+      <SectionHelpSheet open={helpOpen} onOpenChange={setHelpOpen} />
     </header>
   );
 }

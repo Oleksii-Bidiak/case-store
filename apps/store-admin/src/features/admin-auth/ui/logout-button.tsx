@@ -1,30 +1,16 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
-import { useAuth, useAuthControllerLogout } from "@/entities/session";
 import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { useLogout } from "../model/use-logout";
 
 /**
- * LogoutButton — signs the admin out: revokes the refresh token server-side,
- * clears the in-memory session, and returns to the login page. The local
- * session is cleared even if the network call fails, so the UI never stays in a
- * stale "signed-in" state.
+ * LogoutButton — the header's icon-only sign-out. The behaviour lives in
+ * {@link useLogout}, shared with «Вийти» in the account menu (wave 198).
  */
 export function LogoutButton() {
-  const router = useRouter();
-  const { clearTokens } = useAuth();
-  const logout = useAuthControllerLogout();
-
-  const onClick = () => {
-    logout.mutate(undefined, {
-      onSettled: () => {
-        clearTokens();
-        router.replace("/login");
-      },
-    });
-  };
+  const { logout, isPending } = useLogout();
 
   return (
     <Button
@@ -32,8 +18,9 @@ export function LogoutButton() {
       variant="ghost"
       size="icon"
       aria-label={dict.common.signOut}
-      disabled={logout.isPending}
-      onClick={onClick}
+      title={dict.common.signOut}
+      disabled={isPending}
+      onClick={logout}
     >
       <LogOut className="size-4" />
     </Button>

@@ -9,6 +9,8 @@ export {
   markSessionActive,
   clearSessionMarker,
   shouldAttemptSessionRefresh,
+  // Wave 198 (TASK-528/974) — "the session could not be refreshed" for the UI.
+  onSessionExpired,
 } from "./instance";
 export type { ErrorType, BodyType, RefreshOutcome } from "./instance";
 

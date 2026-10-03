@@ -1,4 +1,23 @@
 /**
+ * Where the login form sends a signed-in staff member (TASK-974).
+ *
+ * `next` is what `proxy.ts` and «Сесія закінчилась» put on the URL; it was read
+ * by nobody, so every return trip ended on the dashboard. `redirect` is the
+ * older spelling, kept for links that already carry it. Both go through
+ * {@link sanitizeRedirectTarget} — `next` arrives from the URL like any other
+ * user-controlled value.
+ *
+ * Declared ABOVE the sanitizer on purpose: the parity test compares everything
+ * from the sanitizer's declaration to the end of this file with the storefront
+ * and API copies, so nothing admin-only may follow it.
+ */
+export function loginRedirectTarget(params: {
+  get(key: string): string | null;
+}): string {
+  return sanitizeRedirectTarget(params.get("next") ?? params.get("redirect"));
+}
+
+/**
  * Sanitize the admin login's `?redirect=` target.
  *
  * TASK-527: a COPY — deliberately not a shared import, the two apps share no
