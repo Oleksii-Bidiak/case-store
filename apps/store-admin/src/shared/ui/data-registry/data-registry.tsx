@@ -30,7 +30,15 @@ export interface DataRegistryProps<T> {
   registry: DataRegistryController<T>;
 
   /* header */
+  /** The screen's name — the header's title and the table's accessible name. */
   title: string;
+  /**
+   * `false` when the PAGE draws the header itself — e.g. because it must stay
+   * on screen above a permission refusal, or a standing strip sits between the
+   * header and the toolbar (Staff С1). `title` still names the table. Default
+   * `true`.
+   */
+  showHeader?: boolean;
   description?: React.ReactNode;
   /** Export menu + the primary CTA. The caller gates the CTA by permission. */
   headerActions?: React.ReactNode;
@@ -120,6 +128,7 @@ export interface DataRegistryProps<T> {
 export function DataRegistry<T>({
   registry,
   title,
+  showHeader = true,
   description,
   headerActions,
   quickViews,
@@ -177,11 +186,13 @@ export function DataRegistry<T>({
       data-slot="data-registry"
       className={cn("flex flex-col gap-4", className)}
     >
-      <RegistryHeader
-        title={title}
-        description={description}
-        actions={headerActions}
-      />
+      {showHeader ? (
+        <RegistryHeader
+          title={title}
+          description={description}
+          actions={headerActions}
+        />
+      ) : null}
       {quickViews ? <QuickViews {...quickViews} /> : null}
 
       <div className="flex flex-col gap-3">

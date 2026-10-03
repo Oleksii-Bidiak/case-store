@@ -10,7 +10,7 @@ import AuditLogPage from "../audit-log/page";
 // the page's decision whether to mount them at all.
 jest.mock("@/widgets", () => ({
   FullAccessPanel: () => <p>Панель повного доступу</p>,
-  StaffTable: () => <p>Таблиця персоналу</p>,
+  StaffTable: () => <p>Реєстр співробітників</p>,
   StaffTableSkeleton: () => null,
   StaffDetailView: () => <p>Картка співробітника</p>,
   StaffDetailSkeleton: () => null,
@@ -20,7 +20,7 @@ jest.mock("@/widgets", () => ({
   AuditLogSkeleton: () => null,
 }));
 jest.mock("@/features/staff-create", () => ({
-  CreateStaffButton: () => <button type="button">Новий співробітник</button>,
+  CreateStaffButton: () => <button type="button">Додати співробітника</button>,
 }));
 
 /** A manager: signed in, holding the everyday rights but not the staff ones. */
@@ -47,23 +47,43 @@ describe("staff and audit-log pages — one clean refusal (TASK-639)", () => {
     expect(
       screen.getByRole("heading", { name: dict.staff.heading }),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Таблиця персоналу")).not.toBeInTheDocument();
+    expect(screen.queryByText("Реєстр співробітників")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: dict.staff.templatesNav }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Новий співробітник" }),
+      screen.queryByRole("button", { name: "Додати співробітника" }),
     ).not.toBeInTheDocument();
   });
 
   it("/staff renders the register for a deputy admin", () => {
     renderWithProviders(<StaffPage />, { auth: DEPUTY });
 
-    expect(screen.getByText("Таблиця персоналу")).toBeInTheDocument();
+    expect(screen.getByText("Реєстр співробітників")).toBeInTheDocument();
+    expect(screen.getByText("Панель повного доступу")).toBeInTheDocument();
     expect(
       screen.getByRole("link", { name: dict.staff.templatesNav }),
+    ).toHaveAttribute("href", "/staff/templates");
+    expect(
+      screen.getByRole("button", { name: "Додати співробітника" }),
     ).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  /**
+   * TASK-1059 (owner's decision 2026-09-30): the section is «Співробітники» —
+   * menu, heading, the back link and the tab title all say the same word.
+   */
+  it("calls the section «Співробітники» everywhere it is named", () => {
+    renderWithProviders(<StaffPage />, { auth: DEPUTY });
+
+    expect(
+      screen.getByRole("heading", { name: "Співробітники" }),
+    ).toBeInTheDocument();
+    expect(dict.nav.staff).toBe("Співробітники");
+    expect(dict.staff.back).toBe("← Співробітники");
+    expect(dict.staff.metaTitle).toBe("Співробітники — Адмін");
+    expect(screen.getByText(dict.staff.intro)).toBeInTheDocument();
   });
 
   it("/staff/templates refuses a manager once", () => {

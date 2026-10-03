@@ -19,12 +19,12 @@ import { getGetMyPermissionsQueryKey } from "@/entities/session";
 import {
   Badge,
   Button,
+  FormActionsBar,
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-  Separator,
 } from "@/shared/ui";
 import { apiErrorMessage } from "@/shared/lib";
 import { dict } from "@/shared/config";
@@ -228,23 +228,52 @@ export function StaffPermissionsForm({
 
   const isPending = updatePermissions.isPending || applyTemplate.isPending;
 
+  // «Змінено 2 права: + Бачити платежі, − Блокувати…» — named, in catalogue
+  // order, grants first. A revocation is one untick away from being saved, so
+  // the bar says it in words rather than «є незбережені зміни».
+  const labelOf = new Map(
+    (entity.catalogue ?? []).map((entry) => [entry.key, entry.label]),
+  );
+  const order = (entity.catalogue ?? []).map((entry) => entry.key);
+  const added = order.filter(
+    (key) => granted.has(key) && !serverPermissions.includes(key),
+  );
+  const removed = order.filter(
+    (key) => !granted.has(key) && serverPermissions.includes(key),
+  );
+  const changeSummary = isDirty
+    ? d.permissionsChanged(
+        added.length + removed.length,
+        [
+          ...added.map((key) => `+ ${labelOf.get(key) ?? key}`),
+          ...removed.map((key) => `− ${labelOf.get(key) ?? key}`),
+        ].join(", "),
+      )
+    : undefined;
+
+  const formId = `staff-permissions-${userId}`;
+
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
+    <form
+      id={formId}
+      className="flex flex-col gap-4"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (canWrite && isDirty && !isPending) handleSave();
+      }}
+    >
+      <div className="flex flex-wrap items-center gap-2">
         <h3 className="text-sm font-semibold text-foreground">
           {d.permissionsHeading}
         </h3>
-        <p className="text-sm text-muted-foreground">{d.permissionsIntro}</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="secondary">
-            {d.permissionsCount(serverPermissions.length)}
+        <Badge variant="secondary">
+          {d.permissionsCount(serverPermissions.length)}
+        </Badge>
+        {appliedTemplate && (
+          <Badge variant="outline">
+            {d.templateMatch(appliedTemplate.name)}
           </Badge>
-          {appliedTemplate && (
-            <Badge variant="outline">
-              {d.templateMatch(appliedTemplate.name)}
-            </Badge>
-          )}
-        </div>
+        )}
       </div>
 
       {!canWrite && (
@@ -253,12 +282,20 @@ export function StaffPermissionsForm({
         </p>
       )}
 
+      {/* The artboard's «Шаблон … · змінено» banner with «Повернути до
+          шаблону» needs the API to say WHICH template was applied — it stores
+          no link (TASK-445). Until it does, the honest control stays: apply a
+          template, which replaces the set (and is audited by name). */}
       {canWrite && templates.length > 0 && (
-        <section className="flex flex-col gap-2 rounded-md border border-border p-3">
-          <span className="text-sm font-medium text-foreground">
-            {d.templateApplyLabel}
-          </span>
-          <p className="text-xs text-muted-foreground">{d.templateApplyHint}</p>
+        <section className="flex flex-wrap items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 px-4 py-3">
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-sm font-semibold text-foreground">
+              {d.templateApplyLabel}
+            </span>
+            <p className="text-xs text-muted-foreground">
+              {d.templateApplyHint}
+            </p>
+          </div>
           <div className="flex flex-wrap items-center gap-2">
             <Select
               value={templateId}
@@ -271,7 +308,7 @@ export function StaffPermissionsForm({
               <SelectTrigger
                 id="staff-template-apply"
                 aria-label={d.templateApplyAria}
-                className="w-full sm:w-72"
+                className="w-full bg-background sm:w-64"
               >
                 <SelectValue placeholder={d.templateApplyAria} />
               </SelectTrigger>
@@ -285,8 +322,8 @@ export function StaffPermissionsForm({
             </Select>
             <Button
               type="button"
-              size="sm"
               variant="outline"
+              className="bg-background"
               onClick={handleApplyTemplate}
               disabled={templateId === NO_TEMPLATE || isPending}
             >
@@ -296,7 +333,7 @@ export function StaffPermissionsForm({
         </section>
       )}
 
-      <Separator />
+      <p className="text-sm text-muted-foreground">{d.permissionsIntro}</p>
 
       <PermissionZoneGrid
         groups={groups}
@@ -307,34 +344,23 @@ export function StaffPermissionsForm({
         disabled={!canWrite || isPending}
       />
 
+      {/* One save for the whole grid, pinned to the bottom (Д-ж2 С3), saying
+          exactly which rights are about to be granted and revoked. */}
       {canWrite && (
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            type="button"
-            onClick={handleSave}
-            disabled={!isDirty || isPending}
-          >
-            {updatePermissions.isPending
+        <FormActionsBar
+          variant="sticky"
+          summary={changeSummary}
+          onDiscard={() => setGranted(new Set(serverPermissions))}
+          saveLabel={
+            updatePermissions.isPending
               ? d.permissionsSaving
-              : d.permissionsSave}
-          </Button>
-          {isDirty && (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setGranted(new Set(serverPermissions))}
-                disabled={isPending}
-              >
-                {d.permissionsReset}
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                {d.permissionsDirtyHint}
-              </span>
-            </>
-          )}
-        </div>
+              : d.permissionsSave
+          }
+          formId={formId}
+          isSaving={isPending}
+          saveDisabled={!isDirty}
+        />
       )}
-    </div>
+    </form>
   );
 }

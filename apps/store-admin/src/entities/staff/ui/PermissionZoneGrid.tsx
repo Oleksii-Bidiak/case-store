@@ -67,8 +67,21 @@ export function PermissionZoneGrid({
   disabled = false,
   permissionsWithoutRoutes = PERMISSIONS_WITHOUT_ROUTES,
 }: PermissionZoneGridProps) {
+  // Zones that hold a right open on arrival (Д-ж2, StaffProposal С3): a card
+  // whose every zone was folded showed the headers and none of the rights.
+  // Decided ONCE, on mount — after that it is the operator's view state, so
+  // unticking the last box of a zone does not snap it shut under the pointer.
+  // Every caller mounts the grid only once its `granted` is known (the card
+  // after the query, the wizard on its step, the template dialog on open).
   const [expandedZones, setExpandedZones] = useState<ReadonlySet<string>>(
-    () => new Set<string>(),
+    () =>
+      new Set(
+        groups
+          .filter((group) =>
+            group.permissions.some((permission) => granted.has(permission.key)),
+          )
+          .map((group) => group.zone),
+      ),
   );
 
   const toggleExpanded = (zone: string) => {
@@ -96,9 +109,9 @@ export function PermissionZoneGrid({
         return (
           <li
             key={group.zone}
-            className="rounded-md border border-border p-3 shadow-card"
+            className="rounded-lg border border-border bg-card shadow-card"
           >
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 px-3 py-2">
               <Checkbox
                 checked={
                   allGranted
@@ -151,11 +164,11 @@ export function PermissionZoneGrid({
 
             {expanded && (
               <>
-                <Separator className="my-3" />
+                <Separator />
                 <ul
                   id={`${idPrefix}-zone-${group.zone}`}
                   aria-label={group.label}
-                  className="flex flex-col gap-2 pl-7"
+                  className="flex flex-col gap-2 py-3 pr-3 pl-10"
                 >
                   {group.permissions.map((permission) => (
                     <li
@@ -174,7 +187,7 @@ export function PermissionZoneGrid({
                       >
                         {permission.label}
                       </label>
-                      <code className="text-xs text-muted-foreground">
+                      <code className="ml-auto font-mono text-xs text-muted-foreground">
                         {permission.key}
                       </code>
                       {permissionsWithoutRoutes.has(permission.key) && (
