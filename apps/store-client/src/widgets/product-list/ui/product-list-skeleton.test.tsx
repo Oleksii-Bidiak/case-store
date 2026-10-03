@@ -1,5 +1,6 @@
 import { render, screen } from "@/shared/test/render";
 import { filterRailSections } from "@/features/product-filters";
+import { dict } from "@/shared/config";
 import { ProductListSkeleton } from "./product-list-skeleton";
 
 /**
@@ -93,6 +94,47 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     render(<ProductListSkeleton {...props} />);
 
     expect(screen.getByTestId("result-count-skeleton")).toHaveClass("h-5");
+  });
+
+  // TASK-869 — a grid cell is shaped like the ProductCard + actions pair, not a
+  // bare image and two bars (164px short at 1440, so the skeleton's second row
+  // sat where the real first row's price and «Купити» land).
+  it("draws every grid cell as a card frame with the card's blocks", () => {
+    render(<ProductListSkeleton withSidebar />);
+
+    const cells = screen.getAllByTestId("stock-line-skeleton");
+    expect(cells).toHaveLength(12);
+
+    const card = cells[0].closest(".border")!;
+    expect(card).toHaveClass(
+      "flex",
+      "flex-col",
+      "overflow-hidden",
+      "rounded-xl",
+      "border-border",
+      "bg-card",
+    );
+    // Edge-to-edge square image, as in ProductCard.
+    expect(card.firstElementChild).toHaveClass(
+      "aspect-square",
+      "w-full",
+      "rounded-none",
+    );
+    // The Buy + heart row: two 40px controls, the heart 42px wide.
+    const actions = card.querySelectorAll(".h-10");
+    expect(actions).toHaveLength(2);
+    expect(actions[1]).toHaveClass("w-10.5", "shrink-0");
+  });
+
+  it("sets the stock line in the real copy, so it wraps where the card's does", () => {
+    render(<ProductListSkeleton />);
+
+    const line = screen.getAllByTestId("stock-line-skeleton")[0];
+    // The same text-xs flex row as ProductCardActions' stock line.
+    expect(line).toHaveClass("flex", "items-center", "gap-1.5", "text-xs");
+    expect(line).toHaveTextContent(dict.productCard.inStockLine);
+    const bar = line.querySelector(".animate-pulse")!;
+    expect(bar).toHaveClass("text-transparent", "bg-muted");
   });
 
   it("renders no rail at all without the sidebar", () => {

@@ -353,7 +353,12 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   depends on data the skeleton cannot have, reserve one state **on purpose** and name the cost:
   `AccountSkeleton` reserves the «Адресу не підтверджено» card (new registrations and the seeded
   customer start there), so for a verified address the contact and security cards rise by 138px
-  (158px at 390) when the profile lands. A skeleton draws only
+  (158px at 390) when the profile lands. A grid cell is drawn as the **card it stands in for**,
+  block for block (frame, image, title lines, price, action row), not an image and two bars — the
+  catalogue's `ProductCardSkeleton` (TASK-869). Where a line's wrap depends on width but its copy
+  is static (the card's stock line), set the real `dict` string in `text-transparent` on the
+  pulsing `bg-muted` (inner inline span, `box-decoration-clone`): it wraps exactly where the real
+  line does, which no breakpoint pair can promise. A skeleton draws only
   the controls a shopper gets by default — nothing for flag-gated stubs. And a `loading.tsx`
   must never be an **ancestor** of a different page: Next prefetches a dynamic route "layout to
   first loading boundary", so a parent's skeleton becomes the shell of every child link. Scope a

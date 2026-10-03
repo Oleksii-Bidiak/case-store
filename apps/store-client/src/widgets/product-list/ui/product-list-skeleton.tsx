@@ -1,4 +1,5 @@
 import { Skeleton } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import {
   CategoryChipsSkeleton,
   FilterCardSkeleton,
@@ -38,6 +39,63 @@ interface ProductListSkeletonProps {
   lockedOnSale?: boolean;
 }
 
+/**
+ * One grid cell, shaped like the `ProductCard` + `ProductCardActions` pair the
+ * catalogue renders — block for block, so the real card fills the box instead
+ * of growing out of it (TASK-869). The old cell was a bare image and two bars,
+ * 164px shorter than the card at 1440: the skeleton's second row sat where the
+ * real first row's price and «Купити» land, and the whole grid redrew taller.
+ *
+ * Heights, top to bottom: the bordered frame; the edge-to-edge square image;
+ * the `p-4 gap-2` body with the two-line title (`line-clamp-2`, 2 × 20px), the
+ * rating row (16px) and the price (`text-lg`, 28px, pushed down by `mt-auto`);
+ * then the `px-4 pb-4` action block — the stock line and the 40px Buy +
+ * heart row. The stock line («В наявності · доставка 1–2 дні») wraps onto a
+ * second line wherever the card is narrower than ~216px — two columns up to
+ * ~455px and four columns from `lg` to ~1296px — which no breakpoint pair
+ * follows, so the placeholder sets the same dictionary copy in the same
+ * `text-xs` flex row, transparent on a pulsing background: it wraps exactly
+ * where the real line does, at every width.
+ *
+ * What the skeleton cannot know: colour dots (variants only) and a one-line
+ * title — a row of cards with neither ends up shorter, never taller, than
+ * this box.
+ */
+function ProductCardSkeleton() {
+  return (
+    <div className="flex flex-col overflow-hidden rounded-xl border border-border bg-card">
+      <Skeleton className="aspect-square w-full rounded-none" />
+      <div className="flex flex-1 flex-col gap-2 p-4">
+        <div className="flex flex-col gap-2">
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+        <Skeleton className="h-4 w-24" />
+        <Skeleton className="mt-auto h-7 w-20" />
+      </div>
+      <div className="flex flex-col gap-2 px-4 pb-4">
+        <p
+          className="flex items-center gap-1.5 text-xs select-none"
+          data-testid="stock-line-skeleton"
+        >
+          <span className="w-1.5 shrink-0" />
+          {/* The flex item is blockified; the inner span stays inline, so
+              the pulse paints one bar per wrapped line, not one slab. */}
+          <span className="min-w-0">
+            <span className="animate-pulse rounded-md bg-muted text-transparent box-decoration-clone">
+              {dict.productCard.inStockLine}
+            </span>
+          </span>
+        </p>
+        <div className="flex gap-2">
+          <Skeleton className="h-10 flex-1" />
+          <Skeleton className="h-10 w-10.5 shrink-0 rounded-lg" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Loading fallback for the product results — grid cards or list rows. */
 export function ProductListSkeleton({
   view = "grid",
@@ -75,11 +133,7 @@ export function ProductListSkeleton({
         aria-hidden="true"
       >
         {Array.from({ length: 12 }).map((_, i) => (
-          <div key={i} className="flex flex-col gap-2">
-            <Skeleton className="aspect-square w-full rounded-xl" />
-            <Skeleton className="h-4 w-3/4" />
-            <Skeleton className="h-4 w-1/3" />
-          </div>
+          <ProductCardSkeleton key={i} />
         ))}
       </div>
     );
