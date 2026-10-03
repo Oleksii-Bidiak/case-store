@@ -145,7 +145,7 @@ export function ProductSpecsTabs({
                 key={option.title}
                 className="flex items-center gap-4 rounded-[14px] border border-border bg-card p-[18px]"
               >
-                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
+                <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-primary/12 text-primary">
                   <Icon className="size-[22px]" aria-hidden="true" />
                 </span>
                 <div className="flex-1">

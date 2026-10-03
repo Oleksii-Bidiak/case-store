@@ -73,15 +73,6 @@ const CONTENT_ICONS: Record<InfoIconKey, LucideIcon> = {
   warranty: BadgeCheck,
 };
 
-const PRIMARY_TINT = {
-  background:
-    "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-};
-const SUCCESS_TINT = {
-  background:
-    "color-mix(in oklab, var(--color-success) 12%, var(--color-card))",
-};
-
 const CARD = "rounded-card border border-border bg-card p-[30px] shadow-card";
 const SECTION_HEADING =
   "mb-1.5 font-display text-2xl font-bold text-foreground";
@@ -262,10 +253,7 @@ export function InfoView({
                         key={opt.title}
                         className="rounded-[14px] border border-border bg-background p-[18px]"
                       >
-                        <span
-                          className="mb-3 inline-flex size-[42px] items-center justify-center rounded-menu text-primary"
-                          style={PRIMARY_TINT}
-                        >
+                        <span className="mb-3 inline-flex size-[42px] items-center justify-center rounded-menu text-primary bg-primary/12">
                           <Icon className="size-5" aria-hidden="true" />
                         </span>
                         <b className="mb-1.5 block text-[15px] text-foreground">
@@ -296,10 +284,7 @@ export function InfoView({
                         key={opt.title}
                         className="flex items-start gap-3.5 rounded-cta border border-border bg-background p-4"
                       >
-                        <span
-                          className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-success"
-                          style={SUCCESS_TINT}
-                        >
+                        <span className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-success bg-success/12">
                           <Icon className="size-5" aria-hidden="true" />
                         </span>
                         <div>
@@ -363,10 +348,7 @@ export function InfoView({
                       key={svc.id}
                       className="flex items-center gap-4 rounded-cta border border-border bg-background px-[18px] py-[15px]"
                     >
-                      <span
-                        className="inline-flex size-[42px] shrink-0 items-center justify-center rounded-menu text-primary"
-                        style={PRIMARY_TINT}
-                      >
+                      <span className="inline-flex size-[42px] shrink-0 items-center justify-center rounded-menu text-primary bg-primary/12">
                         <ShieldCheck className="size-5" aria-hidden="true" />
                       </span>
                       <div className="flex-1">
@@ -438,13 +420,7 @@ export function InfoView({
             hidden={section !== "about"}
             className="flex flex-col gap-[22px]"
           >
-            <div
-              className="rounded-card p-10 text-white"
-              style={{
-                background:
-                  "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300)))",
-              }}
-            >
+            <div className="rounded-card bg-brand-gradient p-10 text-white">
               <h2 className={`mb-3 ${H2_CLASS}`}>
                 {about?.heading ?? d.aboutHeading}
               </h2>
@@ -510,10 +486,7 @@ export function InfoView({
                           key={value.title}
                           className="flex items-start gap-3.5"
                         >
-                          <span
-                            className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-success"
-                            style={SUCCESS_TINT}
-                          >
+                          <span className="inline-flex size-9 shrink-0 items-center justify-center rounded-md text-success bg-success/12">
                             <Check className="size-[19px]" aria-hidden="true" />
                           </span>
                           <div>
@@ -596,10 +569,7 @@ export function InfoView({
                   copy of it; now it sends the shopper to the real one, which
                   also takes a topic and an order number. */}
             <div className={`${CARD} flex flex-col`}>
-              <span
-                className="mb-4 inline-flex size-12 items-center justify-center rounded-cta text-primary"
-                style={PRIMARY_TINT}
-              >
+              <span className="mb-4 inline-flex size-12 items-center justify-center rounded-cta text-primary bg-primary/12">
                 <MessageCircle className="size-6" aria-hidden="true" />
               </span>
               <h2 className={SECTION_HEADING}>{d.formHeading}</h2>
@@ -688,13 +658,7 @@ function ContactRow({
 }) {
   return (
     <div className="flex items-center gap-3.5">
-      <span
-        className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-primary"
-        style={{
-          background:
-            "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-        }}
-      >
+      <span className="inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-primary bg-primary/12">
         <Icon className="size-5" aria-hidden="true" />
       </span>
       <div>

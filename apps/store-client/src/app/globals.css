@@ -78,6 +78,17 @@
   --color-footer: #0f172a;
   --color-footer-foreground: #ffffff;
 
+  /* Brand gradient (TASK-879) — the primary hue deepening towards violet, for
+     the decorative panels that carry white copy (/contact hero, /info «Про
+     нас») and the 404 numeral. Declared once, not per theme: it is built from
+     `--color-primary`, so it follows whichever primary the theme resolves.
+     One definition instead of an inline `style` per widget → `bg-brand-gradient`. */
+  --gradient-brand: linear-gradient(
+    135deg,
+    var(--color-primary),
+    color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300))
+  );
+
   /* Radius — softened for a modern retail feel (was 0.375rem) */
   --radius: 0.75rem;
 
@@ -367,6 +378,13 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
   --font-display: var(--font-sora), var(--font-geist-sans);
+}
+
+/* Tailwind v4 has no background-image theme namespace, so the brand gradient
+   token becomes a utility here (TASK-879). Pair with `bg-clip-text
+   text-transparent` for gradient text. */
+@utility bg-brand-gradient {
+  background-image: var(--gradient-brand);
 }
 
 /* ─────────────────────────────────────────────

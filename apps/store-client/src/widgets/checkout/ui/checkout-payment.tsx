@@ -80,9 +80,7 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                   className={[
                     "flex items-center gap-3.5 rounded-xl border-[1.5px] p-4 transition-colors",
                     "focus-within:outline-none focus-within:ring-2 focus-within:ring-ring",
-                    checked
-                      ? "border-primary [background:color-mix(in_oklab,var(--color-primary)_6%,var(--color-card))]"
-                      : "border-border",
+                    checked ? "border-primary bg-primary/6" : "border-border",
                     option.enabled
                       ? "cursor-pointer hover:border-primary/60"
                       : "cursor-not-allowed opacity-60",
@@ -102,13 +100,7 @@ export function CheckoutPayment({ control, options }: CheckoutPaymentProps) {
                     onChange={() => field.onChange(option.method)}
                   />
 
-                  <span
-                    className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-primary"
-                    style={{
-                      background:
-                        "color-mix(in oklab, var(--color-primary) 10%, var(--color-card))",
-                    }}
-                  >
+                  <span className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-primary bg-primary/10">
                     <Icon className="size-5" />
                   </span>
 

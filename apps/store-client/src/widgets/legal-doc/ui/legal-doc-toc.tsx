@@ -107,7 +107,7 @@ export function LegalDocToc({ sections }: { sections: DocSection[] }) {
                 aria-current={on ? "true" : undefined}
                 className={`-ml-px flex w-full items-center gap-2.5 rounded-r-lg border-l-2 px-3.5 py-2.5 text-left text-sm leading-snug transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                   on
-                    ? "border-primary font-semibold text-primary [background:color-mix(in_oklab,var(--color-primary)_7%,transparent)]"
+                    ? "border-primary font-semibold text-primary bg-primary/7"
                     : "border-transparent font-medium text-muted-foreground hover:text-foreground"
                 }`}
               >

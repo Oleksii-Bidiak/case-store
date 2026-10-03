@@ -68,13 +68,7 @@ export function LegalDocView({
       {/* Document head */}
       <div className="mb-7 flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
-          <span
-            className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary"
-            style={{
-              background:
-                "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-            }}
-          >
+          <span className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary bg-primary/12">
             {hub.badge}
           </span>
           <h1 className={`mt-3.5 mb-2.5 ${H1_CLASS} text-foreground`}>
@@ -147,13 +141,7 @@ export function LegalDocView({
                 href={`${hub.href}/${doc.slug}`}
                 className="flex items-center gap-3 rounded-[14px] border border-border bg-card px-[18px] py-4 no-underline shadow-card transition-[border-color,transform] hover:-translate-y-0.5 hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                <span
-                  className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-primary"
-                  style={{
-                    background:
-                      "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-                  }}
-                >
+                <span className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-md text-primary bg-primary/12">
                   <LegalFileIcon width={19} height={19} />
                 </span>
                 <span className="text-sm leading-[1.3] font-semibold text-foreground">

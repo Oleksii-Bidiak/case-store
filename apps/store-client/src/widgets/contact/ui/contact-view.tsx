@@ -37,7 +37,7 @@ const DEPARTMENT_ICONS: Record<string, LucideIcon> = {
 const CARD =
   "block rounded-2xl border border-border bg-card p-[22px] no-underline shadow-card transition-[border-color,box-shadow] hover:border-primary hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 const CHANNEL_ICON =
-  "mb-3.5 inline-flex size-[46px] items-center justify-center rounded-xl bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary";
+  "mb-3.5 inline-flex size-[46px] items-center justify-center rounded-xl bg-primary/12 text-primary";
 
 /**
  * ContactView — the `/contact` page (Contact.dc.html redesign). A gradient hero,
@@ -75,13 +75,7 @@ export function ContactView({
 
       {/* Hero — padding steps up with the viewport; a flat p-11 left ~270px of
           copy at 390 (TASK-878). */}
-      <div
-        className="mb-6 flex flex-wrap items-end justify-between gap-6 rounded-2xl p-6 text-white sm:gap-8 sm:p-8 lg:p-11"
-        style={{
-          background:
-            "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300)))",
-        }}
-      >
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-6 rounded-2xl bg-brand-gradient p-6 text-white sm:gap-8 sm:p-8 lg:p-11">
         <div className="max-w-[560px]">
           <h1 className={`mb-3 ${H1_CLASS}`}>{d.heading}</h1>
           <p className="text-base leading-relaxed opacity-95">{d.intro}</p>
@@ -176,7 +170,7 @@ export function ContactView({
                     key={dep.key}
                     className="flex items-center gap-3.5 rounded-cta border border-border bg-background p-3.5"
                   >
-                    <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-menu bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
+                    <span className="inline-flex size-10 shrink-0 items-center justify-center rounded-menu bg-primary/12 text-primary">
                       <Icon className="size-[19px]" aria-hidden="true" />
                     </span>
                     <div className="min-w-0 flex-1">
@@ -249,7 +243,7 @@ export function ContactView({
       {/* FAQ help strip */}
       <div className="mt-6 flex flex-wrap items-center justify-between gap-6 rounded-card border border-border bg-card p-[26px] shadow-card">
         <div className="flex items-center gap-4">
-          <span className="inline-flex size-12 items-center justify-center rounded-cta bg-[color-mix(in_oklab,var(--color-primary)_12%,var(--color-card))] text-primary">
+          <span className="inline-flex size-12 items-center justify-center rounded-cta bg-primary/12 text-primary">
             <HelpCircle className="size-[22px]" aria-hidden="true" />
           </span>
           <div>

@@ -53,13 +53,7 @@ export function BlogArticleView({
 
       {/* Article head */}
       <div className="mx-auto max-w-[760px]">
-        <span
-          className="inline-flex items-center gap-[7px] rounded-full px-[13px] py-[5px] text-xs font-bold tracking-[0.04em] text-primary"
-          style={{
-            background:
-              "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-          }}
-        >
+        <span className="inline-flex items-center gap-[7px] rounded-full px-[13px] py-[5px] text-xs font-bold tracking-[0.04em] text-primary bg-primary/12">
           {post.categoryName}
         </span>
         <h1 className={`mt-4 mb-3.5 ${H1_CLASS} text-foreground`}>

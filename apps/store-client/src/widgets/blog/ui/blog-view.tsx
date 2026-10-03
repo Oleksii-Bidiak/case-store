@@ -150,13 +150,7 @@ export function BlogView({
       {/* Hero: badge + title + subtitle (left), search field (right) */}
       <div className="mb-[26px] flex flex-wrap items-end justify-between gap-6">
         <div className="max-w-[640px]">
-          <span
-            className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary uppercase"
-            style={{
-              background:
-                "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-            }}
-          >
+          <span className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary uppercase bg-primary/12">
             {siteName ? dict.blog.badgeNamed(siteName) : dict.blog.badge}
           </span>
           <h1 className={`mt-3.5 mb-2.5 ${H1_CLASS} text-foreground`}>

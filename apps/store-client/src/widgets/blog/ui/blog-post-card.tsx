@@ -36,13 +36,7 @@ export function BlogPostCard({ post }: { post: BlogPostView }) {
           {post.excerpt}
         </p>
         <div className="mt-auto flex items-center gap-2.5 border-t border-border pt-3.5">
-          <span
-            className="inline-flex size-[30px] items-center justify-center rounded-full font-display text-xs font-bold text-primary"
-            style={{
-              background:
-                "color-mix(in oklab, var(--color-primary) 14%, var(--color-card))",
-            }}
-          >
+          <span className="inline-flex size-[30px] items-center justify-center rounded-full font-display text-xs font-bold text-primary bg-primary/14">
             {authorInitial(post.author)}
           </span>
           <span className="text-xs text-muted-foreground">

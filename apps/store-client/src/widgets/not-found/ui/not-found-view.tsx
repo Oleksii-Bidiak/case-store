@@ -39,15 +39,7 @@ export function NotFoundView({
   return (
     <section className="flex min-h-[70vh] items-center justify-center px-6 py-16">
       <div className="w-full max-w-[560px] text-center">
-        <div
-          className="mb-2 font-display text-8xl leading-none font-bold tracking-tighter text-transparent sm:text-9xl"
-          style={{
-            background:
-              "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 50%, oklch(0.4 0.16 300)))",
-            WebkitBackgroundClip: "text",
-            backgroundClip: "text",
-          }}
-        >
+        <div className="mb-2 bg-brand-gradient bg-clip-text font-display text-8xl leading-none font-bold tracking-tighter text-transparent sm:text-9xl">
           {d.code}
         </div>
 

@@ -161,7 +161,7 @@ export function WishlistView() {
   if (items.length === 0) {
     return (
       <div className="flex flex-col items-center gap-4 rounded-card border border-border bg-card px-6 py-20 text-center">
-        <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-[color-mix(in_oklab,var(--color-sale)_12%,var(--color-card))] text-sale">
+        <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-sale/12 text-sale">
           <Heart className="size-9" aria-hidden="true" />
         </span>
         <h1 className={`${H1_CLASS} text-foreground`}>

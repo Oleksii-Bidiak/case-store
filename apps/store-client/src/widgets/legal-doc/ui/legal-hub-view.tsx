@@ -64,13 +64,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
 
       {/* Hero */}
       <div className="mb-[30px] max-w-[640px]">
-        <span
-          className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary"
-          style={{
-            background:
-              "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-          }}
-        >
+        <span className="inline-flex items-center gap-[7px] rounded-full px-3 py-[5px] text-xs font-bold tracking-[0.04em] text-primary bg-primary/12">
           {dict.legal.hub.badge}
         </span>
         <h1 className={`mt-3.5 mb-2.5 ${H1_CLASS} text-foreground`}>
@@ -93,13 +87,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
                 className="flex flex-col rounded-2xl border border-border bg-card p-[22px] no-underline shadow-card transition-[border-color,transform,box-shadow] hover:-translate-y-[3px] hover:border-primary hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="mb-3.5 flex items-center justify-between">
-                  <span
-                    className="inline-flex size-11 items-center justify-center rounded-xl text-primary"
-                    style={{
-                      background:
-                        "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-                    }}
-                  >
+                  <span className="inline-flex size-11 items-center justify-center rounded-xl text-primary bg-primary/12">
                     <Icon width={22} height={22} />
                   </span>
                   <span className="inline-flex size-[30px] items-center justify-center rounded-full text-muted-foreground">
@@ -154,13 +142,7 @@ export function LegalHubView({ docs }: { docs: LegalHubDoc[] }) {
       {docs.length > 0 && (
         <div className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border bg-card px-[26px] py-[22px] shadow-card">
           <div className="flex items-center gap-3.5">
-            <span
-              className="inline-flex size-[46px] items-center justify-center rounded-xl text-primary"
-              style={{
-                background:
-                  "color-mix(in oklab, var(--color-primary) 12%, var(--color-card))",
-              }}
-            >
+            <span className="inline-flex size-[46px] items-center justify-center rounded-xl text-primary bg-primary/12">
               <LegalChatIcon width={23} height={23} />
             </span>
             <div>

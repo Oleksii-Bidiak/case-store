@@ -87,7 +87,7 @@ export function ContactForm() {
     return (
       <div className="rounded-card border border-border bg-card p-8 shadow-card">
         <div className="flex flex-col items-center py-10 text-center">
-          <span className="mb-[18px] inline-flex size-16 items-center justify-center rounded-full bg-[color-mix(in_oklab,var(--color-success)_16%,var(--color-card))] text-success">
+          <span className="mb-[18px] inline-flex size-16 items-center justify-center rounded-full bg-success/16 text-success">
             <Check className="size-8" strokeWidth={2.4} aria-hidden="true" />
           </span>
           <b className="mb-2 font-display text-xl font-bold text-foreground">

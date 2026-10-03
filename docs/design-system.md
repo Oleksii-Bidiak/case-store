@@ -83,8 +83,14 @@ The browser chrome follows the same rule: `viewport.themeColor` is a static
 var(--color-card))`. Decoration with no meaning (the hero category-rail dots, an icon tile for
   a topic) takes the brand tint, never a semantic colour picked for variety. A switch thumb is
   `bg-primary-foreground`. The veil over an admin banner picture is `bg-overlay/75` (black at
-  60 % in both themes). `shared/config/color-tokens.test.ts` fails on any palette utility outside
-  the files it tracks by backlog row.
+  60 % in both themes). The same holds for arbitrary values (`bg-[color-mix(…)]`,
+  `[background:color-mix(…)]`) and for raw `oklch(…)` in a widget: an icon tile is
+  `bg-primary/12`, a success disc `bg-success/16`, an active TOC row `bg-primary/7`. A gradient
+  that several screens share is a token in `globals.css` — the brand gradient (primary deepening
+  to violet: the `/contact` hero, the `/info` «Про нас» panel, the 404 numeral with
+  `bg-clip-text text-transparent`) is `bg-brand-gradient`. `shared/config/color-tokens.test.ts`
+  fails on any palette utility, `color-mix(` or `oklch(` in `src` outside the files it tracks by
+  backlog row.
 - **Order & payment status colours** — one map, rendered with `Badge` everywhere (`/orders`,
   order confirmation, `/orders/status`, guest order view):
 
