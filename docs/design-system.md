@@ -62,7 +62,7 @@ The browser chrome follows the same rule: `viewport.themeColor` is a static
 | `warning` / `warning-foreground`         | Low stock                     | `#d97706` / `#fff`                | `#f59e0b` / `#271100`             |
 | `destructive` / `destructive-foreground` | Errors, delete                | `#ef4444` / `#fff`                | `#dc2626` / `#fff`                |
 | `border` / `input` / `ring`              | Borders / inputs / focus ring | `#e2e8f0` / `#e2e8f0` / `#4f46e5` | `#334155` / `#334155` / `#6366f1` |
-| `overlay`                                | Modal scrim                   | `rgba(0,0,0,.8)`                  | `rgba(0,0,0,.8)`                  |
+| `overlay`                                | Modal scrim, banner veil      | `rgba(0,0,0,.8)`                  | `rgba(0,0,0,.8)`                  |
 | `footer` / `footer-foreground`           | Footer & announcement bar     | `#0f172a` / `#ffffff`             | same (theme-invariant, F-06)      |
 
 **Usage rules**
@@ -76,6 +76,15 @@ The browser chrome follows the same rule: `viewport.themeColor` is a static
   `FOCUS_ON_DARK_CLASS` (`shared/config/focus.ts`) instead — a white outline 2px off the control
   (TASK-865).
 - Footer and announcement bar: `bg-footer text-footer-foreground` — a dark panel in both themes.
+- **No Tailwind palette colours** (`text-violet-500`, `bg-slate-900/60`, …) and no inline
+  `color-mix()` styles for a tint (TASK-879). A tint is the token plus an opacity modifier over
+  its surface: `bg-primary/10` for an active menu item, `bg-primary/15` for an avatar disc. Over
+  `bg-card` that gives the same pixels as `color-mix(in oklab, var(--color-primary) N%,
+var(--color-card))`. Decoration with no meaning (the hero category-rail dots, an icon tile for
+  a topic) takes the brand tint, never a semantic colour picked for variety. A switch thumb is
+  `bg-primary-foreground`. The veil over an admin banner picture is `bg-overlay/75` (black at
+  60 % in both themes). `shared/config/color-tokens.test.ts` fails on any palette utility outside
+  the files it tracks by backlog row.
 - **Order & payment status colours** — one map, rendered with `Badge` everywhere (`/orders`,
   order confirmation, `/orders/status`, guest order view):
 

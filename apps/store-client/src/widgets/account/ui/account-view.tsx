@@ -127,13 +127,9 @@ export function AccountView() {
           className={`rounded-card border border-border bg-card p-2 shadow-card lg:sticky ${STICKY_ASIDE_TOP}`}
         >
           <div className="flex items-center gap-3 px-3 pt-3.5 pb-4">
-            <span
-              className="inline-flex size-[46px] shrink-0 items-center justify-center rounded-full font-display text-[17px] font-bold text-primary"
-              style={{
-                background:
-                  "color-mix(in oklab, var(--color-primary) 14%, var(--color-card))",
-              }}
-            >
+            {/* Brand tint as a token utility over the card (TASK-879): the
+                same pixels as the old inline color-mix with --color-card. */}
+            <span className="inline-flex size-[46px] shrink-0 items-center justify-center rounded-full bg-primary/15 font-display text-[17px] font-bold text-primary">
               {initials}
             </span>
             <span className="flex min-w-0 flex-col">
@@ -154,16 +150,12 @@ export function AccountView() {
               const label = d.nav[entry.key as keyof typeof d.nav];
               const active = !entry.href && section === entry.key;
               const className = `relative mb-0.5 flex w-full items-center gap-3 rounded-menu px-3.5 py-[11px] text-left text-sm no-underline transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                // Active tint is a token utility over the card (TASK-879), not
+                // an inline color-mix style.
                 active
-                  ? "font-semibold text-primary"
+                  ? "bg-primary/10 font-semibold text-primary"
                   : "font-medium text-foreground hover:bg-muted"
               }`;
-              const style = active
-                ? {
-                    background:
-                      "color-mix(in oklab, var(--color-primary) 10%, var(--color-card))",
-                  }
-                : undefined;
               const inner = (
                 <>
                   {active && (
@@ -195,7 +187,6 @@ export function AccountView() {
                   onClick={() => setSection(entry.key as SectionKey)}
                   aria-current={active ? "page" : undefined}
                   className={className}
-                  style={style}
                 >
                   {inner}
                 </button>

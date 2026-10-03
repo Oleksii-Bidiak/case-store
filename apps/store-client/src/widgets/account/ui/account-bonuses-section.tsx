@@ -20,7 +20,10 @@ export function AccountBonusesSection() {
             <span className="text-base opacity-85">₴ {d.bonusesHint}</span>
           </div>
         </div>
-        <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-white/15 text-warning">
+        {/* Brand coin (TASK-879): amber is the low-stock warning colour (§2),
+            and bonuses are not a warning. White on primary is ≥ 4.4:1 in both
+            themes; the disc itself is decorative. */}
+        <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-primary text-primary-foreground">
           <svg
             width="38"
             height="38"

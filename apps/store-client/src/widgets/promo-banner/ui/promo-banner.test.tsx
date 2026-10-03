@@ -63,6 +63,20 @@ describe("PromoBanner", () => {
     expect(screen.getByText("Custom promo title")).toBeInTheDocument();
   });
 
+  it("veils the picture with the overlay scrim token, not a palette colour (TASK-879)", () => {
+    const { container } = renderWithProviders(
+      <PromoBanner
+        banner={makeBanner({
+          imageUrl: "http://localhost:3001/uploads/banners/wide.webp",
+        })}
+      />,
+    );
+
+    const veil = container.querySelector("img")?.nextElementSibling;
+    expect(veil).toHaveClass("bg-overlay/75");
+    expect(veil?.className).not.toMatch(/slate-/);
+  });
+
   it("keeps the gradient alone when the banner has no picture", () => {
     const { container } = renderWithProviders(
       <PromoBanner banner={makeBanner({ imageUrl: null })} />,

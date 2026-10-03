@@ -75,7 +75,9 @@ export function AccountSettingsSection() {
                 }`}
               >
                 <span
-                  className={`size-5 rounded-full bg-white shadow transition-transform ${
+                  // Thumb in the on-primary token (TASK-879): white in both
+                  // themes, so it reads on the primary track and the muted one.
+                  className={`size-5 rounded-full bg-primary-foreground shadow transition-transform ${
                     on ? "translate-x-5" : "translate-x-0"
                   }`}
                 />
