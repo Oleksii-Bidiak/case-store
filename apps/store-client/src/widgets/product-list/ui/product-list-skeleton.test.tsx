@@ -71,6 +71,18 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     expect(chips(locked)).toHaveLength(0);
   });
 
+  it("reserves the subcategory chips row only when the page says there is one", () => {
+    const rows = () =>
+      screen.getByTestId("category-chips-skeleton").children.length;
+
+    const { unmount } = render(<ProductListSkeleton withSidebar />);
+    expect(rows()).toBe(1);
+    unmount();
+
+    render(<ProductListSkeleton withSidebar withSubcategoryChips />);
+    expect(rows()).toBe(2);
+  });
+
   // TASK-869 — the count line sits in the results column in every variant,
   // the rail-less one (`ProductList`'s own pending state) and the list view.
   it.each([

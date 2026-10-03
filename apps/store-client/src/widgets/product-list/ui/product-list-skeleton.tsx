@@ -1,13 +1,11 @@
 import { Skeleton } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
 import {
+  CategoryChipsSkeleton,
   filterRailSections,
   type CatalogView,
   type FilterSectionId,
 } from "@/features/product-filters";
-
-/** Uneven chip widths so the placeholder row reads as words, not as a bar. */
-const CHIP_WIDTHS = ["w-24", "w-28", "w-20", "w-32", "w-24", "w-28"] as const;
 
 /**
  * Placeholder height per filter card, measured on the live rail at 1440px
@@ -51,6 +49,12 @@ interface ProductListSkeletonProps {
    * placeholder row would collapse and pull everything up on mount.
    */
   withCategoryChips?: boolean;
+  /**
+   * Reserve the subcategory chips row under it (`subcategoryChipsOf` is
+   * non-empty for the active category). Only a page that has the category tree
+   * can know; a `loading.tsx` gets no searchParams and leaves it out.
+   */
+  withSubcategoryChips?: boolean;
   /** A category is active → the rail ends with «Характеристики» (TASK-515). */
   hasCategory?: boolean;
   /** The route fixes the device → the rail has no «Сумісний пристрій». */
@@ -64,6 +68,7 @@ export function ProductListSkeleton({
   view = "grid",
   withSidebar = false,
   withCategoryChips = true,
+  withSubcategoryChips = false,
   hasCategory = false,
   lockedDevice = false,
   lockedOnSale = false,
@@ -121,18 +126,11 @@ export function ProductListSkeleton({
 
   return (
     <div aria-hidden="true">
-      {/* Category chips row — one scrollable line of h-9 pills. Widths are
-          written out in full (not built from a template literal) because
-          Tailwind only generates classes it can find verbatim in the source. */}
+      {/* Category chips — the feature's own placeholder, the one the view
+          shows until its category tree is there, so the two are the same box
+          row for row (TASK-515). */}
       {withCategoryChips && (
-        <div className="mb-5 flex items-center gap-2 overflow-hidden pb-1">
-          {CHIP_WIDTHS.map((width, i) => (
-            <Skeleton
-              key={i}
-              className={`h-9 shrink-0 rounded-full ${width}`}
-            />
-          ))}
-        </div>
+        <CategoryChipsSkeleton withSubcategories={withSubcategoryChips} />
       )}
 
       {/* Toolbar: mobile filters button (left) + view toggle & sort (right).

@@ -7,6 +7,10 @@ export { PriceRangeFilter } from "./ui/price-range-filter";
 export { DeviceModelFilter } from "./ui/device-model-filter";
 export { SpecFacets } from "./ui/spec-facets";
 export { CategoryChips } from "./ui/category-chips";
+// Its placeholder and its second-row rule (TASK-515): the catalogue skeleton and
+// pages reserve exactly the rows the chips will draw.
+export { CategoryChipsSkeleton } from "./ui/category-chips-skeleton";
+export { subcategoryChipsOf } from "./model/category-chips";
 export { SortSelect, type SortOption } from "./ui/sort-select";
 export { ViewToggle, type CatalogView } from "./ui/view-toggle";
 export { FilterCheckbox } from "./ui/filter-checkbox";

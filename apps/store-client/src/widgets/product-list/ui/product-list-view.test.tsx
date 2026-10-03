@@ -2,9 +2,14 @@ import { http, HttpResponse } from "msw";
 import {
   HydrationBoundary,
   QueryClient,
+  QueryClientProvider,
   dehydrate,
 } from "@tanstack/react-query";
+import { renderToString } from "react-dom/server";
+import { getCategoryControllerGetCategoryTreeQueryKey } from "@/entities/category";
 import { getProductControllerFindAllQueryKey } from "@/entities/product";
+import { AuthContext } from "@/entities/session/model/auth.context";
+import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import {
   renderWithProviders,
   screen,
@@ -627,6 +632,110 @@ describe("ProductListView — adopts the server's prefetch (TASK-563)", () => {
     expect(screen.getByText("Server Case")).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(productRequests).toHaveLength(0);
+  });
+});
+
+/**
+ * TASK-515 — the chips row is 60px of page above the toolbar and the grid. It
+ * used to be absent from the server HTML (no tree there) and mount after
+ * hydration, so the grid first rose out of the skeleton's place and then fell
+ * back. Now the row is in the first HTML when the route prefetched the tree,
+ * and a same-size placeholder stands in whenever there is no tree yet.
+ */
+describe("ProductListView — the category chips row holds its place (TASK-515)", () => {
+  const tree = {
+    data: [
+      treeNode("cat-locked", "cases", "Чохли"),
+      treeNode("cat-other", "chargers", "Зарядні"),
+    ],
+  };
+
+  const serverHtml = (ui: React.ReactElement) =>
+    renderToString(
+      <QueryClientProvider client={new QueryClient()}>
+        <AuthContext.Provider
+          value={{
+            accessToken: null,
+            userId: null,
+            role: null,
+            isAuthenticated: false,
+            isInitializing: false,
+            setTokens: jest.fn(),
+            clearTokens: jest.fn(),
+          }}
+        >
+          {ui}
+        </AuthContext.Provider>
+      </QueryClientProvider>,
+    );
+
+  it("puts the chips into the server HTML when the route prefetched the tree", () => {
+    const prefetched = new QueryClient();
+    prefetched.setQueryData(
+      getCategoryControllerGetCategoryTreeQueryKey(),
+      tree,
+    );
+
+    const html = serverHtml(
+      <PrefetchBoundary state={dehydrate(prefetched)}>
+        <ProductListView categoryTreePrefetched />
+      </PrefetchBoundary>,
+    );
+
+    expect(html).toContain(`aria-label="${dict.filters.categoryChipsAria}"`);
+    expect(html).toContain("Зарядні");
+    expect(html).not.toContain('data-testid="category-chips-skeleton"');
+  });
+
+  it("reserves the row with its placeholder when the server had no tree", () => {
+    const html = serverHtml(<ProductListView />);
+
+    expect(html).toContain('data-testid="category-chips-skeleton"');
+    expect(html).not.toContain(dict.filters.categoryChipsAria);
+  });
+
+  it("keeps the placeholder on the client until the tree arrives", async () => {
+    installCatalogHandlers();
+    server.use(
+      http.get("*/api/categories/tree", () => new Promise<never>(() => {})),
+    );
+
+    renderWithProviders(<ProductListView />);
+
+    await screen.findByText("Alpha Case");
+    expect(screen.getByTestId("category-chips-skeleton")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("swaps the placeholder for the chips once the tree is there", async () => {
+    installCatalogHandlers();
+
+    renderWithProviders(<ProductListView />);
+
+    expect(
+      await screen.findByRole("group", {
+        name: dict.filters.categoryChipsAria,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("category-chips-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("draws no row at all on a category landing page, placeholder included", async () => {
+    installCatalogHandlers();
+    currentPathname = "/categories/cases";
+
+    renderWithProviders(
+      <ProductListView lockedCategory={{ id: "cat-locked", slug: "cases" }} />,
+    );
+
+    await screen.findByText("Alpha Case");
+    expect(
+      screen.queryByTestId("category-chips-skeleton"),
+    ).not.toBeInTheDocument();
   });
 });
 

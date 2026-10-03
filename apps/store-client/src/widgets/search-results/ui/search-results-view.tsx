@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Search, SearchX } from "lucide-react";
 import { useSearch } from "@/entities/search";
@@ -10,6 +10,7 @@ import type { ProductControllerFindAllParams } from "@/entities/product";
 import {
   ActiveFilterChips,
   CategoryChips,
+  CategoryChipsSkeleton,
   FiltersButton,
   FiltersDrawer,
   ListingEmptyState,
@@ -33,6 +34,12 @@ import {
 } from "./search-sort-select";
 
 const PAGE_SIZE = 20;
+
+// Hydration flag (TASK-534, as in `ProductListView`): `false` for the server
+// render and for hydration, `true` for every client render after that.
+const subscribeNever = () => () => {};
+const clientSnapshot = () => true;
+const serverSnapshot = () => false;
 
 interface SearchResultsViewProps {
   /** The search query from the URL (`?q=`). May be blank. */
@@ -130,8 +137,21 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
   // The public tree (roots + children, one payload) feeds the chips row and the
   // slug → id lookup the id-addressed brand list needs — the same query the
   // catalogue already holds, so it is shared through React Query's cache.
-  const { data: categoriesData } = useCategoryControllerGetCategoryTree();
-  const categories = categoriesData?.data ?? [];
+  const { data: categoriesData, isPending: categoriesPending } =
+    useCategoryControllerGetCategoryTree();
+  // Until hydration is done, render what the server had — no tree (TASK-534,
+  // the catalogue's rule): the header's menu can have fetched it first, and
+  // chips the server never drew are a hydration mismatch.
+  const hydrated = useSyncExternalStore(
+    subscribeNever,
+    clientSnapshot,
+    serverSnapshot,
+  );
+  const categories = hydrated ? (categoriesData?.data ?? []) : [];
+  // No tree yet → the chips row's placeholder, not nothing (TASK-515): the row
+  // is 60px of page above the toolbar and the grid, which used to drop by that
+  // much the moment the tree landed.
+  const categoryChipsPending = !hydrated || categoriesPending;
   const activeCategoryId = facets.category
     ? findCategoryIdBySlug(categories, facets.category)
     : undefined;
@@ -300,11 +320,18 @@ export function SearchResultsView({ query, page }: SearchResultsViewProps) {
       {/* Category chips — the catalogue's own row (TASK-523), writing
           ?category=<slug>. No per-category counts yet: those need facet counts
           from the search engine (TASK-1401). */}
-      <CategoryChips
-        categories={categories}
-        activeCategorySlug={facets.category}
-        onSelect={(category) => applyFilters({ category })}
-      />
+      {categoryChipsPending ? (
+        // A selected category opens the subcategory row under it (its own
+        // children, or its siblings) — so reserve that row too. Only a
+        // childless root guesses wrong, and collapses by one row.
+        <CategoryChipsSkeleton withSubcategories={Boolean(facets.category)} />
+      ) : (
+        <CategoryChips
+          categories={categories}
+          activeCategorySlug={facets.category}
+          onSelect={(category) => applyFilters({ category })}
+        />
+      )}
 
       {/* Toolbar: mobile filters button (left) + sort (right) — the
           catalogue's controls (TASK-876). `min-w-0` lets the sort pill shrink

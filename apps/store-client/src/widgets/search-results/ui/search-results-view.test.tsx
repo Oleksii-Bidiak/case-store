@@ -767,3 +767,74 @@ describe("SearchResultsView", () => {
     });
   });
 });
+
+/**
+ * TASK-515 — the results grid dropped twice on every search: by the chips row
+ * (60px) when the category tree landed, and by the «Знайдено N» line (44px)
+ * when the results replaced a skeleton that had no such line.
+ */
+describe("SearchResultsView — the page holds its place while loading (TASK-515)", () => {
+  const installOneResult = () =>
+    server.use(
+      http.get("*/api/search", () =>
+        HttpResponse.json(resultsEnvelope([makeProduct()])),
+      ),
+    );
+  const holdTheTree = () =>
+    server.use(
+      http.get("*/api/categories/tree", () => new Promise<never>(() => {})),
+    );
+
+  it("reserves the result-count line in the skeleton, gap-6 above the cards", () => {
+    renderWithProviders(<SearchResultsSkeleton />);
+
+    const line = screen.getByTestId("result-count-skeleton");
+    expect(line).toHaveClass("h-5");
+    expect(line.parentElement).toHaveClass("flex", "flex-col", "gap-6");
+  });
+
+  it("keeps the chips row's placeholder until the category tree arrives", async () => {
+    currentQuery = "q=case";
+    installOneResult();
+    holdTheTree();
+
+    renderWithProviders(<SearchResultsView query="case" page={1} />);
+
+    await screen.findByText("iPhone 15 Case");
+    expect(screen.getByTestId("category-chips-skeleton").children).toHaveLength(
+      1,
+    );
+    expect(
+      screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reserves the subcategory row too when a category is selected", async () => {
+    currentQuery = "q=case&category=cases";
+    installOneResult();
+    holdTheTree();
+
+    renderWithProviders(<SearchResultsView query="case" page={1} />);
+
+    await screen.findByText("iPhone 15 Case");
+    expect(screen.getByTestId("category-chips-skeleton").children).toHaveLength(
+      2,
+    );
+  });
+
+  it("swaps the placeholder for the chips once the tree is there", async () => {
+    currentQuery = "q=case";
+    installOneResult();
+
+    renderWithProviders(<SearchResultsView query="case" page={1} />);
+
+    expect(
+      await screen.findByRole("group", {
+        name: dict.filters.categoryChipsAria,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("category-chips-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+});

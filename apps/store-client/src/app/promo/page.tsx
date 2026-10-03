@@ -8,6 +8,8 @@ import {
   buildCatalogListingParams,
   readSearchParamsRecord,
 } from "@/widgets/product-list";
+import { subcategoryChipsOf } from "@/features/product-filters";
+import { getCategoryControllerGetCategoryTreeQueryOptions } from "@/shared/api/generated/categories/categories";
 import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
 import {
   createServerQueryClient,
@@ -112,7 +114,17 @@ export default async function PromoPage({
   const listingQuery = getProductControllerFindAllQueryOptions(listingParams, {
     request: serverRequestOptions(),
   });
-  await prefetchQueries(queryClient, [listingQuery]);
+  // The category tree too (TASK-515): the deals listing has the catalogue's
+  // chips row, and without the tree on the server the row appeared only after
+  // hydration and pushed the grid 60px down.
+  const categoryTreeQuery = getCategoryControllerGetCategoryTreeQueryOptions({
+    request: serverRequestOptions(),
+  });
+  await prefetchQueries(queryClient, [listingQuery, categoryTreeQuery]);
+  const categoryTree = queryClient.getQueryData(categoryTreeQuery.queryKey);
+  const withSubcategoryChips =
+    subcategoryChipsOf(categoryTree?.data ?? [], listingParams.category)
+      .length > 0;
 
   // ItemList from the grid's own fetch (TASK-556 tail): the structured data
   // names exactly the deals the page shows.
@@ -142,6 +154,7 @@ export default async function PromoPage({
           fallback={
             <ProductListSkeleton
               withSidebar
+              withSubcategoryChips={withSubcategoryChips}
               lockedOnSale={PROMO_LISTING_LOCKS.onSale}
               hasCategory={Boolean(listingParams.category)}
             />
@@ -150,6 +163,7 @@ export default async function PromoPage({
           <ProductListView
             lockedOnSale={PROMO_LISTING_LOCKS.onSale}
             anchorId={PROMO_DEALS_ANCHOR}
+            categoryTreePrefetched={categoryTree !== undefined}
           />
         </Suspense>
       </PrefetchBoundary>

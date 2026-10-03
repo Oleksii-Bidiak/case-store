@@ -36,6 +36,19 @@ jest.mock("@/shared/api/generated/products/products", () => {
   };
 });
 
+// The chips row's category tree (TASK-515), prefetched beside the listing.
+jest.mock("@/shared/api/generated/categories/categories", () => {
+  const getTree = jest.fn().mockResolvedValue({ data: [] });
+  return {
+    categoryControllerGetCategoryTree: getTree,
+    getCategoryControllerGetCategoryTreeQueryOptions: () => ({
+      queryKey: ["/api/categories/tree"],
+      queryFn: () => getTree(),
+    }),
+  };
+});
+
+import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
 import { productControllerFindAll } from "@/shared/api/generated/products/products";
 import { SITE_URL } from "@/shared/config";
 import {
@@ -51,6 +64,9 @@ import PromoPage, { generateMetadata } from "./page";
 
 const findAll = productControllerFindAll as jest.MockedFunction<
   typeof productControllerFindAll
+>;
+const getTree = categoryControllerGetCategoryTree as jest.MockedFunction<
+  typeof categoryControllerGetCategoryTree
 >;
 
 type Query = { [key: string]: string | string[] | undefined };
@@ -70,6 +86,7 @@ describe("/promo — the deals are the catalogue with a discount lock (TASK-1301
 
     expect(findDehydratedQueryKeys(tree)).toEqual([
       ["/api/products", lockedParams()],
+      ["/api/categories/tree"],
     ]);
     expect(lockedParams()).toMatchObject({
       onSale: true,
@@ -86,6 +103,7 @@ describe("/promo — the deals are the catalogue with a discount lock (TASK-1301
 
     expect(findDehydratedQueryKeys(tree)).toEqual([
       ["/api/products", lockedParams(query)],
+      ["/api/categories/tree"],
     ]);
     expect(findAll).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -144,6 +162,7 @@ describe("/promo — the deals are the catalogue with a discount lock (TASK-1301
 
   it("renders the breadcrumb alone when the deals cannot be read", async () => {
     findAll.mockRejectedValueOnce(new Error("timeout of 5000ms exceeded"));
+    getTree.mockRejectedValueOnce(new Error("timeout of 5000ms exceeded"));
 
     const tree = await render();
 
@@ -151,6 +170,53 @@ describe("/promo — the deals are the catalogue with a discount lock (TASK-1301
       "BreadcrumbList",
     ]);
     expect(findDehydratedQueryKeys(tree)).toEqual([]);
+  });
+
+  /**
+   * TASK-515 — without the tree on the server the chips row mounted only after
+   * hydration and pushed the deals grid 60px down out of the skeleton's place.
+   */
+  describe("the category chips row (TASK-515)", () => {
+    const categoryTree = {
+      data: [
+        {
+          id: "c1",
+          name: "Навушники",
+          slug: "navushnyky",
+          children: [{ id: "c2", name: "TWS", slug: "tws", children: [] }],
+        },
+      ],
+    } as never;
+
+    it("tells the view the server had the tree, so the chips are in the first HTML", async () => {
+      getTree.mockResolvedValueOnce(categoryTree);
+
+      const tree = await render();
+
+      expect(findPropValues(tree, "categoryTreePrefetched")).toEqual([true]);
+      const [fallback] = findPropValues(tree, "fallback");
+      expect(findPropValues(fallback, "withSubcategoryChips")).toEqual([false]);
+    });
+
+    it("reserves the subcategory row in the fallback when the category has one", async () => {
+      getTree.mockResolvedValueOnce(categoryTree);
+
+      const tree = await render({ category: "tws" });
+
+      const [fallback] = findPropValues(tree, "fallback");
+      expect(findPropValues(fallback, "withSubcategoryChips")).toEqual([true]);
+    });
+
+    it("does not claim a tree the server could not read", async () => {
+      getTree.mockRejectedValueOnce(new Error("timeout of 5000ms exceeded"));
+
+      const tree = await render();
+
+      expect(findPropValues(tree, "categoryTreePrefetched")).toEqual([false]);
+      expect(findDehydratedQueryKeys(tree)).toEqual([
+        ["/api/products", lockedParams()],
+      ]);
+    });
   });
 });
 

@@ -13,6 +13,7 @@ import {
   ProductFilters,
   ActiveFilterChips,
   CategoryChips,
+  CategoryChipsSkeleton,
   SortSelect,
   ViewToggle,
   FiltersDrawer,
@@ -83,6 +84,13 @@ interface ProductListViewProps {
    * the navigation lands on the listing's own section instead.
    */
   anchorId?: string;
+  /**
+   * The route put the category tree into its `PrefetchBoundary` (TASK-515), so
+   * the server render has it: the category chips go into the first HTML and
+   * need no hydration gate. Pass it only when the prefetch actually succeeded
+   * — claiming a tree the server did not have brings back TASK-534's mismatch.
+   */
+  categoryTreePrefetched?: boolean;
 }
 
 /**
@@ -97,6 +105,7 @@ export function ProductListView({
   lockedDevice,
   lockedOnSale = false,
   anchorId,
+  categoryTreePrefetched = false,
 }: ProductListViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -230,21 +239,27 @@ export function ProductListView({
   // The public tree carries roots + their children in one payload, so the chips
   // row can offer a second, "narrow to a subcategory" level without a second
   // request (TASK-236). Only active categories are returned.
-  const { data: categoriesData } = useCategoryControllerGetCategoryTree();
-  // TASK-534: the tree is not prefetched on the server, so the server always
-  // renders this widget without it (no chips row). On the client the header's
-  // category menu can have fetched the same tree before this Suspense boundary
-  // hydrates, and rendering the chips then made the first child disagree with
-  // the server's (the toolbar) — «Hydration failed», the whole subtree thrown
-  // away. Until hydration is done, render exactly what the server had: no tree.
-  // If the tree is ever prefetched into a HydrationBoundary (TASK-563), the
-  // server has it too and this gate must go, or it becomes the mismatch.
+  const { data: categoriesData, isPending: categoriesPending } =
+    useCategoryControllerGetCategoryTree();
+  // TASK-534: without a prefetched tree the server renders this widget with no
+  // tree. On the client the header's category menu can have fetched the same
+  // tree before this Suspense boundary hydrates, and rendering the chips then
+  // made the first child disagree with the server's — «Hydration failed», the
+  // whole subtree thrown away. So until hydration is done, render exactly what
+  // the server had. `/products` and `/promo` prefetch the tree (TASK-515) and
+  // say so: then the server HAD it, and the chips are in the first HTML.
   const hydrated = useSyncExternalStore(
     subscribeNever,
     clientSnapshot,
     serverSnapshot,
   );
-  const categories = hydrated ? (categoriesData?.data ?? []) : [];
+  const treeReady = hydrated || categoryTreePrefetched;
+  const categories = treeReady ? (categoriesData?.data ?? []) : [];
+  // No tree yet → the row's placeholder, not nothing (TASK-515). The chips row
+  // is 60px of the page above the toolbar and the grid; rendering nothing until
+  // the tree landed pulled both up out of the skeleton's place and then pushed
+  // them back down. A tree that failed to load leaves the row out.
+  const categoryChipsPending = !treeReady || categoriesPending;
 
   // Slug → id, once, for the id-addressed side endpoints (brands-per-category,
   // filterable specs) that the TASK-420 URL migration did not touch. Resolved
@@ -273,7 +288,13 @@ export function ProductListView({
       {/* Category chips — horizontal, scrollable on mobile; drives ?category=.
           Hidden when the category is locked by the route (/categories/[slug]):
           switching categories there is SubcategoryChips' navigation job. */}
-      {!lockedCategory && (
+      {/* A selected category opens the subcategory row (its children or its
+          siblings), so the placeholder reserves it too; only a childless root
+          guesses wrong, by one row. */}
+      {!lockedCategory && categoryChipsPending && (
+        <CategoryChipsSkeleton withSubcategories={Boolean(params.category)} />
+      )}
+      {!lockedCategory && !categoryChipsPending && (
         <CategoryChips
           categories={categories}
           activeCategorySlug={params.category}

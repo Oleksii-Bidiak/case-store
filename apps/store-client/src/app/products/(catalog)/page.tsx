@@ -14,8 +14,15 @@ import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import type { CategoryTreeNodeEntity } from "@/shared/api/generated/models";
-import { categoryControllerGetCategoryTree } from "@/shared/api/generated/categories/categories";
+import { subcategoryChipsOf } from "@/features/product-filters";
+import type {
+  CategoryTreeNodeEntity,
+  CategoryTreeResponse,
+} from "@/shared/api/generated/models";
+import {
+  categoryControllerGetCategoryTree,
+  getCategoryControllerGetCategoryTreeQueryKey,
+} from "@/shared/api/generated/categories/categories";
 import { getProductControllerFindAllQueryOptions } from "@/shared/api/generated/products/products";
 import {
   createServerQueryClient,
@@ -57,9 +64,25 @@ function first(value: string | string[] | undefined): string | undefined {
  */
 const resolveCategoryNode = cache(
   async (slug: string): Promise<CategoryTreeNodeEntity | null> => {
+    const tree = await fetchCategoryTree();
+    return tree ? findCategoryNodeBySlug(tree.data ?? [], slug) : null;
+  },
+);
+
+/**
+ * The public category tree, once per request (React `cache()`), or null on
+ * any failure. Read for the selected category's name AND handed to the client
+ * under the key `ProductListView`'s chips query uses (TASK-515), so one
+ * download serves both — and the chips row is in the first HTML instead of
+ * appearing after hydration and pushing the whole grid down.
+ */
+const fetchCategoryTree = cache(
+  async (): Promise<CategoryTreeResponse | null> => {
     try {
-      const { data } = await categoryControllerGetCategoryTree();
-      return findCategoryNodeBySlug(data ?? [], slug);
+      return (
+        (await categoryControllerGetCategoryTree(serverRequestOptions())) ??
+        null
+      );
     } catch {
       return null;
     }
@@ -258,10 +281,22 @@ export default async function ProductsPage({
 
   // Category-scoped catalog: resolve the name so the breadcrumb reveals the
   // categories hub + the specific category (and the title matches it).
-  const [categoryName] = await Promise.all([
+  const [categoryName, categoryTree] = await Promise.all([
     categorySlug ? resolveCategoryName(categorySlug) : Promise.resolve(null),
+    fetchCategoryTree(),
     prefetchQueries(queryClient, [listingQuery]),
   ]);
+  // The chips row's data, under the chips query's own key (TASK-515). Absent
+  // when the read failed — the view then shows the row's placeholder and
+  // fetches the tree itself, as it did before.
+  if (categoryTree) {
+    queryClient.setQueryData(
+      getCategoryControllerGetCategoryTreeQueryKey(),
+      categoryTree,
+    );
+  }
+  const withSubcategoryChips =
+    subcategoryChipsOf(categoryTree?.data ?? [], categorySlug).length > 0;
 
   // ItemList from the same fetch as the grid (TASK-556 tail): the structured
   // data lists exactly the cards the page shows.
@@ -338,11 +373,15 @@ export default async function ProductsPage({
           fallback={
             <ProductListSkeleton
               withSidebar
+              withSubcategoryChips={withSubcategoryChips}
               hasCategory={Boolean(categorySlug)}
             />
           }
         >
-          <ProductListView initialParams={initialParams} />
+          <ProductListView
+            initialParams={initialParams}
+            categoryTreePrefetched={categoryTree !== null}
+          />
         </Suspense>
       </PrefetchBoundary>
     </div>

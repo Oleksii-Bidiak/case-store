@@ -7,6 +7,7 @@ jest.mock("@/widgets", () => ({
 }));
 jest.mock("@/shared/api/generated/categories/categories", () => ({
   categoryControllerGetCategoryTree: jest.fn(),
+  getCategoryControllerGetCategoryTreeQueryKey: () => ["/api/categories/tree"],
 }));
 // The grid's server prefetch (TASK-563). The options builder is stubbed with the
 // generated key shape, so the fetch is an assertable mock rather than axios.
@@ -70,6 +71,7 @@ import { SITE_URL, dict } from "@/shared/config";
 import {
   findDehydratedQueryKeys,
   findJsonLdSchemas,
+  findPropValues,
 } from "@/shared/test/element-tree";
 import { buildCatalogListingParams } from "@/widgets/product-list/model/listing-params";
 import ProductsPage, { generateMetadata } from "./page";
@@ -121,11 +123,69 @@ describe("products — one tree read per render (TASK-703)", () => {
     expect(getTree).toHaveBeenCalledTimes(1);
   });
 
-  it("does not read the tree at all on the unfiltered listing", async () => {
-    await generateMetadata(props());
-    await ProductsPage(props());
+  it("reads the tree once on the unfiltered listing — for the chips row, not the metadata", async () => {
+    getTree.mockResolvedValue({ data: makeTree() } as never);
 
+    await generateMetadata(props());
     expect(getTree).not.toHaveBeenCalled();
+
+    await ProductsPage(props());
+    expect(getTree).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * TASK-515 — the category chips row used to be absent from the server HTML and
+ * mount after hydration, pushing the toolbar and the grid 60px down out of the
+ * place the skeleton had held for them.
+ */
+describe("products — the category chips row is in the first HTML (TASK-515)", () => {
+  const withChildren = (): CategoryTreeNodeEntity[] => {
+    const [node] = makeTree();
+    return [
+      {
+        ...node,
+        children: [{ ...node, id: "cat-2", slug: "chohly-iphone" }],
+      } as CategoryTreeNodeEntity,
+    ];
+  };
+
+  it("hands the tree to the view under the chips query's key", async () => {
+    getTree.mockResolvedValue({ data: makeTree() } as never);
+
+    const tree = await ProductsPage(props());
+
+    expect(findDehydratedQueryKeys(tree)).toContainEqual([
+      "/api/categories/tree",
+    ]);
+    expect(findPropValues(tree, "categoryTreePrefetched")).toEqual([true]);
+  });
+
+  it("reserves the subcategory row in the fallback when the category has one", async () => {
+    getTree.mockResolvedValue({ data: withChildren() } as never);
+
+    const filtered = await ProductsPage(props({ category: "chohly-iphone" }));
+    const plain = await ProductsPage(props());
+
+    const [filteredFallback] = findPropValues(filtered, "fallback");
+    expect(findPropValues(filteredFallback, "withSubcategoryChips")).toEqual([
+      true,
+    ]);
+    const [plainFallback] = findPropValues(plain, "fallback");
+    expect(findPropValues(plainFallback, "withSubcategoryChips")).toEqual([
+      false,
+    ]);
+  });
+
+  it("does not claim a tree the server could not read", async () => {
+    getTree.mockRejectedValue(new Error("connect ECONNREFUSED"));
+
+    const tree = await ProductsPage(props());
+
+    expect(findDehydratedQueryKeys(tree)).not.toContainEqual([
+      "/api/categories/tree",
+    ]);
+    expect(findPropValues(tree, "categoryTreePrefetched")).toEqual([false]);
   });
 });
 
