@@ -285,6 +285,27 @@ describe("ProductList load-more append (TASK-216)", () => {
     expect(skeletonColumn?.querySelector(".grid")).not.toBeNull();
   });
 
+  // TASK-869 fix round — the skeleton cell reserves the title's second line,
+  // the rating row and the colour-dots row; the grid's cards must hold the
+  // same rows open for a single-colour, unrated product, or a page without
+  // variants (the first /products page) jumps up 22px per row on swap.
+  it("renders every grid card with its optional rows reserved (TASK-869)", async () => {
+    installProducts({ "": CAT_1_PAGES }, { limit: 2 });
+
+    const { container } = renderWithProviders(
+      <ProductList {...baseProps} params={{ page: 1, limit: 2 }} />,
+    );
+    await screen.findByText("Alpha Case");
+
+    const cards = container.querySelectorAll("article");
+    expect(cards).toHaveLength(2);
+    for (const card of Array.from(cards)) {
+      expect(card.querySelector('[data-row-slot="rating"]')).not.toBeNull();
+      expect(card.querySelector('[data-row-slot="colors"]')).not.toBeNull();
+      expect(card.querySelector("h3")).toHaveClass("min-h-10");
+    }
+  });
+
   it("resets the accumulated pages when the base ?page= changes (back/forward, pagination links)", async () => {
     const user = userEvent.setup();
     installProducts({ "": CAT_1_PAGES }, { limit: 2 });

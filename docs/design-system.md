@@ -355,10 +355,13 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   customer start there), so for a verified address the contact and security cards rise by 138px
   (158px at 390) when the profile lands. A grid cell is drawn as the **card it stands in for**,
   block for block (frame, image, title lines, price, action row), not an image and two bars — the
-  catalogue's `ProductCardSkeleton` (TASK-869). It also reserves the `ColorDots` row on purpose:
-  the grid stretches a row to its tallest card, so one variant product in a row is enough, and
-  that is most rows of the seeded catalogue; a row with no variant card at all (today the first
-  `/products` page) ends 22px shorter than its placeholder when the cards land. Where a line's wrap depends on width but its copy
+  catalogue's `ProductCardSkeleton` (TASK-869). When the card's own rows depend on data (the
+  second title line, `RatingStars`, `ColorDots`), make the **card** data-independent rather than
+  guessing in the skeleton: the catalogue grid renders `ProductCard reserveRows`, which keeps an
+  empty `aria-hidden` box of each row's height (title `min-h-10`, rating `h-4`, colours `h-3.5`)
+  where a product has nothing to show, so every card is one height and the skeleton cell lands to
+  the pixel on any page — with variants or without. Rails, search and the home grid keep the
+  content-sized card. Where a line's wrap depends on width but its copy
   is static (the card's stock line), set the real `dict` string in `text-transparent` on the
   pulsing `bg-muted` (inner inline span, `box-decoration-clone`): it wraps exactly where the real
   line does, which no breakpoint pair can promise. A skeleton draws only

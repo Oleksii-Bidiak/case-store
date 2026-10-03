@@ -58,16 +58,15 @@ interface ProductListSkeletonProps {
  * `text-xs` flex row, transparent on a pulsing background: it wraps exactly
  * where the real line does, at every width.
  *
- * The colour-dots row is reserved on purpose (design-system.md §Loading: pick
- * the common state). `ProductCard` draws it only for a product with variant
- * colours, but the grid stretches every card in a row to the tallest one, so a
- * single variant card in four gives the whole row this height — on the seeded
- * catalogue that is most rows of /promo, /categories/[slug], the device page
- * and every filtered or later /products page. Without the slot each such row
- * came out 22px taller than its placeholder and the drop added up down the
- * page (+22, +44, +66…). The trade-off runs the other way now: a row with
- * no variant card at all (the first /products page today) ends 22px SHORTER
- * than its placeholder, as does a row whose titles all fit on one line (20px).
+ * The second title line, the rating row and the colour-dots row are drawn for
+ * every cell, and `ProductList` renders its cards with `reserveRows`, which
+ * holds the same three rows open when a product has a one-line name, no
+ * reviews or a single colour. So every card in the grid is this box whatever
+ * its data: the first /products page (no variant card) and /promo (variants
+ * in most rows) both land on the placeholder to the pixel. Before, the rows
+ * followed the data — a variant card stretched its row 22px past a
+ * placeholder without the colour row, and a page without one shrank 22px
+ * short of a placeholder with it, the shift adding up down the page.
  */
 function ProductCardSkeleton() {
   return (
@@ -79,9 +78,8 @@ function ProductCardSkeleton() {
           <Skeleton className="h-4 w-2/3" />
         </div>
         <Skeleton className="h-4 w-24" />
-        {/* The `ColorDots` row (14px swatches, `gap-1.5`), reserved on purpose
-            — see the docblock: one variant card is enough to give its whole
-            grid row this height. */}
+        {/* The `ColorDots` row (14px swatches, `gap-1.5`) — the real card
+            keeps it too via `reserveRows`, see the docblock. */}
         <div
           className="flex items-center gap-1.5"
           data-testid="color-dots-skeleton"

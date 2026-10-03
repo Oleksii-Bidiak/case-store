@@ -39,6 +39,7 @@ export function ProductCard({
   wishlist,
   priority = false,
   imageSizes,
+  reserveRows = false,
 }: {
   product: PublicProductEntity;
   /** Optional control rendered below the price (always visible). */
@@ -64,6 +65,17 @@ export function ProductCard({
    * (TASK-210).
    */
   imageSizes?: string;
+  /**
+   * Hold the card's optional rows open even when the product has nothing to
+   * put in them: the title keeps two lines, and the rating and colour-dots
+   * rows keep their 16px / 14px height (TASK-869). Every card then has the
+   * same height whatever its data, so the catalogue grid — the one place that
+   * swaps a skeleton for cards — lands on its placeholder to the pixel, on a
+   * page of single-colour, unrated products as much as on a page of variants.
+   * Only `ProductList` passes it; rails, search and the home grid keep the
+   * content-sized card.
+   */
+  reserveRows?: boolean;
 }) {
   const summary = product.variantSummary;
   const colors = summary?.colors ?? [];
@@ -148,7 +160,9 @@ export function ProductCard({
       </div>
 
       <div className="flex flex-1 flex-col gap-2 p-4">
-        <h3 className="line-clamp-2 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary">
+        <h3
+          className={`line-clamp-2 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary ${reserveRows ? "min-h-10" : ""}`}
+        >
           <Link
             href={`/products/${product.slug}`}
             data-card-link
@@ -158,11 +172,29 @@ export function ProductCard({
             {product.name}
           </Link>
         </h3>
-        <RatingStars
-          average={product.ratingAverage}
-          count={product.ratingCount}
-        />
-        {hasVariants && <ColorDots colors={colors} />}
+        {/* `RatingStars` and `ColorDots` render nothing for an unrated or
+            single-colour product; `reserveRows` keeps an empty box of the
+            row's height in their place (see the prop). */}
+        {product.ratingCount > 0 && product.ratingAverage != null ? (
+          <RatingStars
+            average={product.ratingAverage}
+            count={product.ratingCount}
+          />
+        ) : (
+          reserveRows && (
+            <div aria-hidden="true" className="h-4" data-row-slot="rating" />
+          )
+        )}
+        {hasVariants ? (
+          // Pinned to the 14px swatch height in a reserved grid: the «+N»
+          // overflow chip is a 16px text line and would otherwise make a
+          // many-colour card 2px taller than its neighbours.
+          <ColorDots colors={colors} className={reserveRows ? "h-3.5" : ""} />
+        ) : (
+          reserveRows && (
+            <div aria-hidden="true" className="h-3.5" data-row-slot="colors" />
+          )
+        )}
         <div className="mt-auto flex items-baseline gap-2">
           {showFrom && (
             <span className="text-xs text-muted-foreground">

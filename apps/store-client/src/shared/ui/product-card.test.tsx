@@ -101,3 +101,65 @@ describe("ProductCard — availability (TASK-362)", () => {
     );
   });
 });
+
+describe("ProductCard — reserveRows (TASK-869)", () => {
+  // The catalogue grid swaps a skeleton for cards; the skeleton draws a
+  // two-line title, a rating row and a colour-dots row. Without the reserve a
+  // single-colour, unrated card came out 22–44px shorter than its placeholder
+  // and every row below it jumped up when the cards landed.
+  it("keeps an empty box for the rating and colour rows and two title lines", () => {
+    const { container } = renderWithProviders(
+      <ProductCard product={product()} reserveRows />,
+    );
+
+    const rating = container.querySelector('[data-row-slot="rating"]');
+    const colors = container.querySelector('[data-row-slot="colors"]');
+    expect(rating).toHaveClass("h-4");
+    expect(rating).toHaveAttribute("aria-hidden", "true");
+    expect(colors).toHaveClass("h-3.5");
+    expect(colors).toHaveAttribute("aria-hidden", "true");
+    expect(screen.getByRole("heading", { level: 3 })).toHaveClass("min-h-10");
+  });
+
+  it("draws the real rows instead of the slots when the product has them", () => {
+    const { container } = renderWithProviders(
+      <ProductCard
+        product={product({
+          ratingAverage: 4.5,
+          ratingCount: 3,
+          variantSummary: {
+            groupId: "g1",
+            variantCount: 2,
+            priceFrom: "299.00",
+            defaultVariantId: "p1",
+            defaultVariantSlug: "chohol-armor",
+            defaultInStock: true,
+            colors: [
+              { value: "Чорний", productId: "p1", inStock: true },
+              { value: "Білий", productId: "p2", inStock: true },
+            ],
+          },
+        } as Partial<PublicProductEntity>)}
+        reserveRows
+      />,
+    );
+
+    expect(container.querySelector("[data-row-slot]")).toBeNull();
+    expect(
+      screen.getByLabelText(dict.product.ratingAria(4.5, 3)),
+    ).toBeInTheDocument();
+    // Pinned to the swatch height so a «+N» chip cannot grow the row.
+    expect(screen.getByRole("img", { name: /Чорний/ })).toHaveClass("h-3.5");
+  });
+
+  it("stays content-sized everywhere else (rails, search, home)", () => {
+    const { container } = renderWithProviders(
+      <ProductCard product={product()} />,
+    );
+
+    expect(container.querySelector("[data-row-slot]")).toBeNull();
+    expect(screen.getByRole("heading", { level: 3 })).not.toHaveClass(
+      "min-h-10",
+    );
+  });
+});

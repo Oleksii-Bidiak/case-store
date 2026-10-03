@@ -190,6 +190,9 @@ export function ProductList({
                 product={product}
                 // First row is above the fold — load eagerly for LCP.
                 priority={index < 4}
+                // Same height for every card, whatever its data — the box
+                // `ProductListSkeleton` draws for it (TASK-869).
+                reserveRows
                 action={<ProductCardActions product={product} />}
                 hoverAction={<ProductQuickViewTrigger product={product} />}
               />
