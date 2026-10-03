@@ -136,9 +136,12 @@ describe("HeroSlider — responsive height (TASK-878)", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(container.querySelectorAll("a")).toHaveLength(1);
 
-    // No fixed pixel height: the box grows with the copy above a min height.
+    // Below lg no fixed height: the box grows with the copy above a min
+    // height. From lg it is pinned at 440px so the sidebar row cannot stretch it.
     const root = container.firstElementChild as HTMLElement;
-    expect(root).toHaveClass("grid", "min-h-105", "sm:min-h-110");
+    expect(root).toHaveClass("grid", "min-h-105", "sm:min-h-110", "lg:h-110");
+    expect(root).not.toHaveClass("h-110");
+    expect(root).not.toHaveClass("sm:h-110");
     expect(root.className).not.toMatch(/\bh-\[/);
   });
 

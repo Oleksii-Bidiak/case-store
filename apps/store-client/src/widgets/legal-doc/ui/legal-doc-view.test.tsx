@@ -89,12 +89,12 @@ describe("LegalDocView — collapsed TOC below lg (TASK-878)", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "false");
   });
 
-  it("gives the article phone padding px-5 py-6, the roomy one from sm", () => {
+  it("gives the article phone padding px-4 py-6 (≥320px of text at 390), the roomy one from sm", () => {
     const { container } = renderWithProviders(
       <LegalDocView page={page} otherDocs={otherDocs} />,
     );
     const article = container.querySelector("article") as HTMLElement;
-    expect(article).toHaveClass("px-5", "py-6", "sm:px-11", "sm:py-9");
+    expect(article).toHaveClass("px-4", "py-6", "sm:px-11", "sm:py-9");
     expect(article).not.toHaveClass("px-11");
   });
 });

@@ -165,7 +165,9 @@ function SlideCopy({
  * fixed (TASK-878): every slide's copy is stacked in one grid cell — the
  * inactive ones invisible — so the slider fits its longest copy at any width and
  * never jumps between slides; `min-h-105 sm:min-h-110` keeps the mockup
- * proportions (420 / 440 px in Homepage.dc.html). Below sm the arrows join the
+ * proportions (420 / 440 px in Homepage.dc.html). From lg, where it shares a
+ * grid row with the category sidebar, it is pinned at `lg:h-110` (440 px) so the
+ * row never stretches it to the sidebar's height. Below sm the arrows join the
  * pause button in the bottom row so the copy gets the full width; from sm they
  * sit in the side gutters. A decorative frosted panel fills the right half on
  * themed slides (xl only, so it never crowds the text). Client Component
@@ -221,7 +223,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
 
   return (
     <div
-      className="relative isolate grid min-h-105 overflow-hidden rounded-2xl shadow-elevated sm:min-h-110"
+      className="relative isolate grid min-h-105 overflow-hidden rounded-2xl shadow-elevated sm:min-h-110 lg:h-110"
       style={{ backgroundImage: theme.gradient }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

@@ -100,8 +100,8 @@ export function LegalDocView({
       >
         {hasToc && <LegalDocToc sections={sections} />}
 
-        {/* Phone padding px-5 py-6 leaves ~318px of text at 390 (TASK-878). */}
-        <article className="min-w-0 rounded-card border border-border bg-card px-5 py-6 shadow-card sm:px-11 sm:py-9">
+        {/* Phone padding px-4 py-6 leaves ≥320px of text at 390 (TASK-878). */}
+        <article className="min-w-0 rounded-card border border-border bg-card px-4 py-6 shadow-card sm:px-11 sm:py-9">
           <div
             className="legal-doc-body"
             dangerouslySetInnerHTML={{ __html: html }}
