@@ -40,12 +40,16 @@ export function levelLabel(level: number): string {
   }
 }
 
-/** Badge colour for a level: owner stands out, deputy is strong, manager is soft. */
+/**
+ * Badge for a level (badge canon, Д-ж2): only the owner stands out; a deputy is
+ * a neutral outline — the old `warning` colour read as "something is wrong with
+ * this account" — and a manager is soft.
+ */
 export function levelBadgeVariant(
   level: number,
-): "default" | "warning" | "secondary" {
+): "default" | "outline" | "secondary" {
   if (level >= ACCESS_LEVEL.OWNER) return "default";
-  if (level === ACCESS_LEVEL.ADMIN) return "warning";
+  if (level === ACCESS_LEVEL.ADMIN) return "outline";
   return "secondary";
 }
 

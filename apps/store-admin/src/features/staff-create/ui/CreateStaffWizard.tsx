@@ -9,6 +9,7 @@ import {
   CreateStaffDtoRole,
   getListStaffQueryKey,
   groupByZone,
+  levelLabel,
   PermissionZoneGrid,
   samePermissionSet,
   useApplyPermissionTemplate,
@@ -28,9 +29,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  FieldError,
+  FormAlert,
   Input,
   Label,
-  Separator,
+  PasswordInput,
+  PasswordRequirements,
+  RadioCard,
+  RadioCardGroup,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  Stepper,
+  type StepperStep,
 } from "@/shared/ui";
 import { apiErrorMessage, apiErrorStatus, isStaffPassword } from "@/shared/lib";
 import { dict } from "@/shared/config";
@@ -42,7 +55,25 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 /** No template chosen. A sentinel rather than `""`, which Radix rejects. */
 const NO_TEMPLATE = "__none__";
 
-type Step = "account" | "template" | "permissions" | "confirmAdmin";
+/**
+ * `who` → `access` (→ `confirmAdmin`, a sub-state of «Доступ») → `login`.
+ * The confirmation is not a step of its own: the stepper keeps «Доступ»
+ * current and says «підтвердіть», as on the artboard (StaffProposal С6).
+ */
+type Step = "who" | "access" | "confirmAdmin" | "login";
+
+const IDS = {
+  email: "staff-wizard-email",
+  emailHint: "staff-wizard-email-hint",
+  emailError: "staff-wizard-email-error",
+  firstName: "staff-wizard-first-name",
+  lastName: "staff-wizard-last-name",
+  template: "staff-wizard-template",
+  templateHint: "staff-wizard-template-hint",
+  password: "staff-wizard-password",
+  passwordHint: "staff-wizard-password-hint",
+  passwordError: "staff-wizard-password-error",
+} as const;
 
 interface CreateStaffWizardProps {
   open: boolean;
@@ -50,37 +81,41 @@ interface CreateStaffWizardProps {
 }
 
 /**
- * «Новий співробітник» — hire, pick a template, tick the boxes, in one pass
- * (TASK-480, plan 181 decision 3).
+ * «Додати співробітника» — who, what access, how they sign in, in one pass
+ * (TASK-480, plan 181 decision 3; wave 198 StaffProposal С4–С7).
  *
- * ## The failure this replaces
+ * ## The failure this replaced
  *
  * On the live run of 2026-08-27 the owner concluded that a manager could not be
  * created at all. Nothing was broken: the account was made on `/users`, the
  * rights on `/settings/permissions`, and the rights were granted to a ROLE, so
  * "create a manager who can process orders" was three screens and a concept that
- * did not match the question. The dialog this replaces (`CreateUserDialog`)
- * covered only the first of those three steps and then left the operator with an
- * account that could sign in and do nothing.
+ * did not match the question.
  *
- * ## Why ADMIN skips steps 2 and 3 entirely
+ * ## Three steps, and what the artboard has that the API does not (TASK-1059)
+ *
+ * The artboard's third step is «Запрошення»: a one-time link by email, or a
+ * temporary password the panel forces to change; step one also recognises an
+ * email that already belongs to a customer and promotes that account. None of
+ * that exists in the API yet — there is no invitation model, no forced change,
+ * and `POST /api/admin/staff` answers 409 for a customer's address. So the third
+ * step is honestly «Вхід»: the initial password, handed over in person, exactly
+ * as before. Nothing here promises a letter that will not be sent.
+ *
+ * ## Why ADMIN skips the template and the ticks
  *
  * A deputy admin holds every permission BY LEVEL and owns no `UserPermission`
  * rows (`holdsEverythingByLevel`). Offering them a template and a grid of
- * checkboxes would be offering a decision with no effect — the ticks would be
- * written, ignored by the guard, and would then read on the card as "this is what
- * the administrator may do", which is false. So the ADMIN branch goes from the
- * account form to a confirmation that spells out what the person is about to
- * gain, which is the decision that actually needs making.
+ * checkboxes would be offering a decision with no effect. So the ADMIN branch
+ * of «Доступ» is a confirmation that spells out what the person is about to
+ * gain, with a destructive «Так, призначити адміністратором» — which only
+ * acknowledges; the account is created on the last step, like any other.
  *
  * ## Why the ADMIN option is absent rather than disabled for a deputy
  *
  * `assertMayAssign` is strictly-greater: you may only hand out a level BELOW your
- * own, so a deputy creating an ADMIN is a 403 with no way to act on it. The old
- * dialog offered the option to everybody and let the server explain; the button
- * that opened it was then gated on `isOwner` to compensate, which was narrower
- * than the API and hid hiring from deputies altogether. Hiding the option and
- * widening the button is the pair that matches the server exactly.
+ * own, so a deputy creating an ADMIN is a 403 with no way to act on it. Hiding
+ * the option (and saying why) matches the server exactly.
  *
  * ## Up to three requests, and what happens if a later one fails
  *
@@ -89,12 +124,9 @@ interface CreateStaffWizardProps {
  * `PUT /api/admin/staff/:id/permissions` only if the ticks were changed on top
  * of the template (or no template was chosen and something is ticked). Apply,
  * not a client-side copy + PUT, because the apply route's audit row NAMES the
- * template; a PUT of the same keys reads in the log as `[] → [...]` from
- * nowhere. There is no transactional "create with permissions" endpoint and
- * inventing one for this screen would put the catalogue's validation in two
- * places. If a later call fails the account still exists — so the toast says so
- * and points at the card, rather than reporting a failure that would send the
- * operator back to create a duplicate account.
+ * template. If a later call fails the account still exists — so the toast says
+ * so and points at the card, rather than reporting a failure that would send
+ * the operator back to create a duplicate account.
  */
 export function CreateStaffWizard({
   open,
@@ -108,7 +140,7 @@ export function CreateStaffWizard({
   const setPermissions = useUpdateStaffPermissions();
   const applyTemplate = useApplyPermissionTemplate();
 
-  const [step, setStep] = useState<Step>("account");
+  const [step, setStep] = useState<Step>("who");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -118,7 +150,12 @@ export function CreateStaffWizard({
   const [granted, setGranted] = useState<ReadonlySet<string>>(
     () => new Set<string>(),
   );
-  const [error, setError] = useState<string | null>(null);
+  // Remounts the grid when a template re-seeds the ticks, so the zones that
+  // now hold rights open (the grid decides that once, on mount).
+  const [gridKey, setGridKey] = useState(0);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Both reads are scoped to the open dialog: a hiring form that is not on
   // screen has no business fetching the catalogue on every staff-list render.
@@ -131,15 +168,19 @@ export function CreateStaffWizard({
     query: { enabled: open },
   });
   const templates = templatesData?.data ?? [];
+  const chosenTemplate = templates.find(
+    (template) => template.id === templateId,
+  );
 
   const groups: ZoneGroup[] = groupByZone(catalogue, zones);
   const isPending =
     createStaff.isPending ||
     applyTemplate.isPending ||
     setPermissions.isPending;
+  const isAdmin = role === CreateStaffDtoRole.ADMIN;
 
   const reset = () => {
-    setStep("account");
+    setStep("who");
     setEmail("");
     setPassword("");
     setFirstName("");
@@ -147,7 +188,9 @@ export function CreateStaffWizard({
     setRole(CreateStaffDtoRole.MANAGER);
     setTemplateId(NO_TEMPLATE);
     setGranted(new Set<string>());
-    setError(null);
+    setEmailError(null);
+    setPasswordError(null);
+    setFormError(null);
   };
 
   const close = (next: boolean) => {
@@ -179,30 +222,53 @@ export function CreateStaffWizard({
       return nextSet;
     });
 
-  const goFromAccount = () => {
-    if (!EMAIL.test(email.trim())) {
-      setError(d.emailInvalid);
-      return;
-    }
-    if (!isStaffPassword(password)) {
-      setError(dict.users.passwordWeak);
-      return;
-    }
-    setError(null);
-    setStep(role === CreateStaffDtoRole.ADMIN ? "confirmAdmin" : "template");
+  const pickTemplate = (value: string) => {
+    if (value === "") return; // Radix bubble-input bounce (TASK-201)
+    setTemplateId(value);
+    // The template is COPIED into the ticks, not linked — the same semantic
+    // the API applies, made visible before the save: the boxes below are now
+    // editable and the template is out of the picture.
+    const chosen = templates.find((template) => template.id === value);
+    setGranted(new Set(chosen?.permissions ?? []));
+    setGridKey((key) => key + 1);
   };
 
-  const goFromTemplate = () => {
-    // The template is COPIED into the local tick state, not linked — the same
-    // semantic the API applies, made visible one step before the save: the boxes
-    // on the next step are now editable and the template is out of the picture.
-    const chosen = templates.find((template) => template.id === templateId);
-    setGranted(new Set(chosen?.permissions ?? []));
-    setStep("permissions");
+  const goFromWho = () => {
+    if (!EMAIL.test(email.trim())) {
+      setEmailError(d.emailInvalid);
+      return;
+    }
+    setEmailError(null);
+    setStep("access");
+  };
+
+  const goFromAccess = () => {
+    setStep(isAdmin ? "confirmAdmin" : "login");
+  };
+
+  const back = () => {
+    setFormError(null);
+    if (step === "who") {
+      close(false);
+      return;
+    }
+    // «Назад» from the last step lands where it came from: the ADMIN
+    // confirmation for an administrator, the access step for a manager.
+    const previous: Record<Exclude<Step, "who">, Step> = {
+      access: "who",
+      confirmAdmin: "access",
+      login: isAdmin ? "confirmAdmin" : "access",
+    };
+    setStep(previous[step]);
   };
 
   const submit = () => {
-    setError(null);
+    if (!isStaffPassword(password)) {
+      setPasswordError(dict.users.passwordWeak);
+      return;
+    }
+    setPasswordError(null);
+    setFormError(null);
 
     createStaff.mutate(
       {
@@ -229,10 +295,7 @@ export function CreateStaffWizard({
             router.push(`/staff/${staffId}`);
           };
 
-          if (
-            role === CreateStaffDtoRole.ADMIN ||
-            created.data.level >= ACCESS_LEVEL.ADMIN
-          ) {
+          if (isAdmin || created.data.level >= ACCESS_LEVEL.ADMIN) {
             finish();
             return;
           }
@@ -255,11 +318,7 @@ export function CreateStaffWizard({
             );
           };
 
-          const chosen = templates.find(
-            (template) => template.id === templateId,
-          );
-
-          if (!chosen) {
+          if (!chosenTemplate) {
             if (granted.size === 0) {
               finish();
               return;
@@ -269,16 +328,16 @@ export function CreateStaffWizard({
           }
 
           // A template was chosen: APPLY it (TASK-638) rather than PUT its keys,
-          // so the audit row names the template — «застосовано шаблон
-          // "Оператор"» — instead of an anonymous `[] → [...]`. If the operator
-          // then changed ticks on step 3, those edits follow as an ordinary
-          // permission write, which is its own honest row: the template, then
-          // what was changed on top of it.
+          // so the audit row names the template. If the operator then changed
+          // ticks on top, those edits follow as an ordinary permission write,
+          // which is its own honest row: the template, then what was changed.
           applyTemplate.mutate(
-            { id: chosen.id, data: { userId: staffId } },
+            { id: chosenTemplate.id, data: { userId: staffId } },
             {
               onSuccess: () => {
-                if (samePermissionSet([...granted], chosen.permissions)) {
+                if (
+                  samePermissionSet([...granted], chosenTemplate.permissions)
+                ) {
                   finish();
                   return;
                 }
@@ -289,18 +348,68 @@ export function CreateStaffWizard({
           );
         },
         onError: (mutationError) => {
-          const message =
-            apiErrorStatus(mutationError) === 409
-              ? d.emailTaken
-              : (apiErrorMessage(mutationError) ?? d.createToastFailed);
-          setError(message);
+          // A taken address is a fact about the FIELD on step one: go back to
+          // it and say so under it (form canon 1.5), instead of a red line on
+          // a step where nothing can be done about it.
+          if (apiErrorStatus(mutationError) === 409) {
+            setEmailError(d.emailTaken);
+            setStep("who");
+            toast.error(d.emailTaken);
+            return;
+          }
+          const message = apiErrorMessage(mutationError) ?? d.createToastFailed;
+          setFormError(message);
           toast.error(message);
         },
       },
     );
   };
 
-  const stepNumber = step === "account" ? 1 : step === "template" ? 2 : 3;
+  /* ── stepper ───────────────────────────────────────────────────────── */
+
+  const accessDone = step === "login";
+  const rightsLabel = isAdmin
+    ? d.permissionsFullAccess.toLowerCase()
+    : d.permissionsColumn(granted.size);
+  const accessSummary = d.accessSummary(
+    levelLabel(isAdmin ? ACCESS_LEVEL.ADMIN : ACCESS_LEVEL.MANAGER),
+    rightsLabel,
+    isAdmin ? undefined : chosenTemplate?.name,
+  );
+  const whoSummary = [firstName.trim(), lastName.trim()]
+    .filter(Boolean)
+    .join(" ");
+
+  const steps: StepperStep[] = [
+    {
+      id: "who",
+      title: d.stepWho,
+      description: step === "who" ? d.stepWhoHint : email.trim(),
+      state: step === "who" ? "now" : "done",
+    },
+    {
+      id: "access",
+      title: d.stepAccess,
+      description:
+        step === "confirmAdmin"
+          ? d.stepAccessConfirm
+          : accessDone
+            ? accessSummary
+            : d.stepAccessHint,
+      state:
+        step === "access" || step === "confirmAdmin"
+          ? "now"
+          : accessDone
+            ? "done"
+            : "todo",
+    },
+    {
+      id: "login",
+      title: d.stepLogin,
+      description: d.stepLoginHint,
+      state: step === "login" ? "now" : "todo",
+    },
+  ];
 
   return (
     <Dialog open={open} onOpenChange={close}>
@@ -310,296 +419,275 @@ export function CreateStaffWizard({
           <DialogDescription>{d.createDescription}</DialogDescription>
         </DialogHeader>
 
-        <ol className="flex flex-wrap items-center gap-2 text-sm">
-          <StepChip label={d.stepAccountLabel} active={step === "account"} />
-          <StepChip
-            label={d.stepTemplateLabel}
-            active={step === "template"}
-            muted={role === CreateStaffDtoRole.ADMIN}
-          />
-          <StepChip
-            label={d.stepPermissionsLabel}
-            active={step === "permissions"}
-            muted={role === CreateStaffDtoRole.ADMIN}
-          />
-        </ol>
+        <Stepper steps={steps} aria-label={d.stepperAria} />
 
-        {step === "account" && (
+        {step === "who" && (
           <div className="flex flex-col gap-4">
-            <p className="text-xs text-muted-foreground">
-              {d.stepOf(stepNumber, 3)}
-            </p>
-
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="staff-wizard-email">{d.fieldEmail}</Label>
+              <Label htmlFor={IDS.email} required>
+                {d.fieldEmail}
+              </Label>
               <Input
-                id="staff-wizard-email"
+                id={IDS.email}
                 type="email"
                 autoComplete="off"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                aria-invalid={emailError ? true : undefined}
+                aria-describedby={
+                  emailError
+                    ? `${IDS.emailError} ${IDS.emailHint}`
+                    : IDS.emailHint
+                }
+                onChange={(event) => {
+                  setEmail(event.target.value);
+                  if (emailError) setEmailError(null);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    goFromWho();
+                  }
+                }}
               />
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="staff-wizard-password">{d.fieldPassword}</Label>
-              <Input
-                id="staff-wizard-password"
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                aria-describedby="staff-wizard-password-hint"
-              />
-              <p
-                id="staff-wizard-password-hint"
-                className="text-xs text-muted-foreground"
-              >
-                {dict.users.passwordHint}
+              <FieldError id={IDS.emailError}>{emailError}</FieldError>
+              <p id={IDS.emailHint} className="text-xs text-muted-foreground">
+                {d.fieldEmailHint}
               </p>
             </div>
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="staff-wizard-first-name">
-                  {d.fieldFirstName}
-                </Label>
+                <Label htmlFor={IDS.firstName}>{d.fieldFirstName}</Label>
                 <Input
-                  id="staff-wizard-first-name"
+                  id={IDS.firstName}
                   value={firstName}
                   onChange={(event) => setFirstName(event.target.value)}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="staff-wizard-last-name">
-                  {d.fieldLastName}
-                </Label>
+                <Label htmlFor={IDS.lastName}>{d.fieldLastName}</Label>
                 <Input
-                  id="staff-wizard-last-name"
+                  id={IDS.lastName}
                   value={lastName}
                   onChange={(event) => setLastName(event.target.value)}
                 />
               </div>
             </div>
+          </div>
+        )}
 
-            <fieldset className="flex flex-col gap-2">
-              <legend className="mb-2 text-sm font-medium text-foreground">
+        {step === "access" && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <span
+                id="staff-wizard-level"
+                className="text-sm font-medium text-foreground"
+              >
                 {d.fieldLevel}
-              </legend>
-
-              <label className="flex items-start gap-2 text-sm text-foreground">
-                <input
-                  type="radio"
-                  name="staff-wizard-level"
+                <span aria-hidden="true">{" *"}</span>
+              </span>
+              <RadioCardGroup
+                aria-labelledby="staff-wizard-level"
+                value={role}
+                onValueChange={(value) => {
+                  if (value) setRole(value);
+                }}
+              >
+                <RadioCard
                   value={CreateStaffDtoRole.MANAGER}
-                  checked={role === CreateStaffDtoRole.MANAGER}
-                  onChange={() => setRole(CreateStaffDtoRole.MANAGER)}
-                  className="mt-1"
+                  title={d.levelManagerOption}
                 />
-                <span>{d.levelManagerOption}</span>
-              </label>
-
-              {/* Absent, not disabled, for a deputy: `assertMayAssign` is
-                  strictly-greater, so this option can only ever 403 for them. */}
-              {isOwner ? (
-                <label className="flex items-start gap-2 text-sm text-foreground">
-                  <input
-                    type="radio"
-                    name="staff-wizard-level"
+                {/* Absent, not disabled, for a deputy: `assertMayAssign` is
+                    strictly-greater, so this option can only ever 403. */}
+                {isOwner ? (
+                  <RadioCard
                     value={CreateStaffDtoRole.ADMIN}
-                    checked={role === CreateStaffDtoRole.ADMIN}
-                    onChange={() => setRole(CreateStaffDtoRole.ADMIN)}
-                    className="mt-1"
+                    title={d.levelAdminOption}
                   />
-                  <span>{d.levelAdminOption}</span>
-                </label>
-              ) : (
+                ) : null}
+              </RadioCardGroup>
+              {!isOwner && (
                 <p className="text-xs text-muted-foreground">
                   {d.levelAdminOwnerOnly}
                 </p>
               )}
-            </fieldset>
-          </div>
-        )}
+            </div>
 
-        {step === "template" && (
-          <div className="flex flex-col gap-4">
-            <p className="text-xs text-muted-foreground">
-              {d.stepOf(stepNumber, 3)}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {d.templatesCopyRule}
-            </p>
+            {!isAdmin && (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor={IDS.template}>{d.fieldTemplate}</Label>
+                  <Select value={templateId} onValueChange={pickTemplate}>
+                    <SelectTrigger
+                      id={IDS.template}
+                      aria-label={d.fieldTemplate}
+                      aria-describedby={IDS.templateHint}
+                      className="w-full"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={NO_TEMPLATE}>
+                        {d.templateNoneOption}
+                      </SelectItem>
+                      {templates.map((template) => (
+                        <SelectItem key={template.id} value={template.id}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p
+                    id={IDS.templateHint}
+                    className="text-xs text-muted-foreground"
+                  >
+                    {chosenTemplate?.description
+                      ? `${chosenTemplate.description} ${d.fieldTemplateHint}`
+                      : d.fieldTemplateHint}
+                  </p>
+                </div>
 
-            <fieldset className="flex flex-col gap-2">
-              <legend className="sr-only">{d.templateApplyAria}</legend>
-
-              <label className="flex items-start gap-2 text-sm text-foreground">
-                <input
-                  type="radio"
-                  name="staff-wizard-template"
-                  value={NO_TEMPLATE}
-                  checked={templateId === NO_TEMPLATE}
-                  onChange={() => setTemplateId(NO_TEMPLATE)}
-                  className="mt-1"
-                />
-                <span>{d.templateNoneOption}</span>
-              </label>
-
-              {templates.map((template) => (
-                <label
-                  key={template.id}
-                  className="flex items-start gap-2 text-sm text-foreground"
-                >
-                  <input
-                    type="radio"
-                    name="staff-wizard-template"
-                    value={template.id}
-                    checked={templateId === template.id}
-                    onChange={() => setTemplateId(template.id)}
-                    className="mt-1"
-                  />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="font-medium">{template.name}</span>
-                    {template.description && (
-                      <span className="text-xs text-muted-foreground">
-                        {template.description}
-                      </span>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {d.permissionsCount(template.permissions.length)}
-                    </span>
-                  </span>
-                </label>
-              ))}
-            </fieldset>
-          </div>
-        )}
-
-        {step === "permissions" && (
-          <div className="flex flex-col gap-4">
-            <p className="text-xs text-muted-foreground">
-              {d.stepOf(stepNumber, 3)}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {d.permissionsIntro}
-            </p>
-            <Badge variant="secondary" className="w-fit">
-              {d.permissionsCount(granted.size)}
-            </Badge>
-
-            {catalogueLoading ? (
-              <p className="text-sm text-muted-foreground">
-                {dict.common.loading}
-              </p>
-            ) : groups.length === 0 ? (
-              <p role="alert" className="text-sm text-destructive">
-                {d.permissionsLoadError}
-              </p>
-            ) : (
-              <PermissionZoneGrid
-                groups={groups}
-                granted={granted}
-                onToggle={toggleOne}
-                onToggleZone={toggleZone}
-                idPrefix="staff-wizard-perm"
-                disabled={isPending}
-              />
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-sm text-muted-foreground">
+                      {d.permissionsIntro}
+                    </p>
+                    <Badge variant="secondary">
+                      {d.permissionsCount(granted.size)}
+                    </Badge>
+                  </div>
+                  {catalogueLoading ? (
+                    <p className="text-sm text-muted-foreground">
+                      {dict.common.loading}
+                    </p>
+                  ) : groups.length === 0 ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {d.permissionsLoadError}
+                    </p>
+                  ) : (
+                    <PermissionZoneGrid
+                      key={gridKey}
+                      groups={groups}
+                      granted={granted}
+                      onToggle={toggleOne}
+                      onToggleZone={toggleZone}
+                      idPrefix="staff-wizard-perm"
+                      disabled={isPending}
+                    />
+                  )}
+                </div>
+              </>
             )}
           </div>
         )}
 
         {step === "confirmAdmin" && (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-foreground">
-              {d.promoteWho(email.trim())}
+          <div className="flex flex-col gap-3 text-sm">
+            <p className="text-foreground">
+              {d.adminConfirmLead}{" "}
+              <b className="font-semibold break-all">{email.trim()}</b>.{" "}
+              {d.adminConfirmTail}
             </p>
-            <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-              <li>{d.promoteGain1}</li>
-              <li>{d.promoteGain2}</li>
-              <li>{d.promoteGain3}</li>
-              <li>{d.promoteGain4}</li>
+            <ul className="flex flex-col gap-1 pl-5 text-muted-foreground">
+              <li>{d.adminGain1}</li>
+              <li>{d.adminGain2}</li>
+              <li>{d.adminGain3}</li>
+              <li>{d.adminGain4}</li>
             </ul>
-            <Separator />
-            <p className="text-sm font-medium text-foreground">
-              {d.promoteUndo}
-            </p>
+            <p className="font-medium text-foreground">{d.adminUndo}</p>
           </div>
         )}
 
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
+        {step === "login" && (
+          <div className="flex flex-col gap-4">
+            <dl className="grid grid-cols-1 gap-3 rounded-lg bg-muted/60 px-4 py-3 text-sm sm:grid-cols-2">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <dt className="text-xs text-muted-foreground">{d.stepWho}</dt>
+                <dd className="break-words text-foreground">
+                  {whoSummary ? `${whoSummary} · ` : ""}
+                  {email.trim()}
+                </dd>
+              </div>
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <dt className="text-xs text-muted-foreground">
+                  {d.stepAccess}
+                </dt>
+                <dd className="text-foreground">{accessSummary}</dd>
+              </div>
+            </dl>
+
+            <div className="flex flex-col gap-1.5">
+              <p className="text-sm font-semibold text-foreground">
+                {d.loginHeading}
+              </p>
+              <Label htmlFor={IDS.password} required>
+                {d.fieldPassword}
+              </Label>
+              <PasswordInput
+                id={IDS.password}
+                autoComplete="new-password"
+                value={password}
+                aria-invalid={passwordError ? true : undefined}
+                aria-describedby={
+                  passwordError
+                    ? `${IDS.passwordError} ${IDS.passwordHint}`
+                    : IDS.passwordHint
+                }
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  if (passwordError) setPasswordError(null);
+                }}
+              />
+              <FieldError id={IDS.passwordError}>{passwordError}</FieldError>
+              <PasswordRequirements value={password} />
+              <p
+                id={IDS.passwordHint}
+                className="text-xs text-muted-foreground"
+              >
+                {d.passwordHandOver}
+              </p>
+            </div>
+
+            <FormAlert>{formError}</FormAlert>
+          </div>
         )}
 
         <DialogFooter>
           <Button
             type="button"
             variant="outline"
-            onClick={() => {
-              if (step === "account") {
-                close(false);
-                return;
-              }
-              setError(null);
-              // «Назад» from step 3 lands on the template choice; from step 2
-              // and from the ADMIN confirmation it lands on the account form,
-              // because the ADMIN branch never visited a template.
-              setStep(step === "permissions" ? "template" : "account");
-            }}
+            onClick={back}
             disabled={isPending}
           >
-            {step === "account" ? dict.common.cancel : d.prev}
+            {step === "who" ? dict.common.cancel : d.prev}
           </Button>
 
-          {step === "account" && (
-            <Button type="button" onClick={goFromAccount}>
+          {step === "who" && (
+            <Button type="button" onClick={goFromWho}>
               {d.next}
             </Button>
           )}
-          {step === "template" && (
-            <Button type="button" onClick={goFromTemplate}>
+          {step === "access" && (
+            <Button type="button" onClick={goFromAccess}>
               {d.next}
             </Button>
           )}
-          {(step === "permissions" || step === "confirmAdmin") && (
+          {step === "confirmAdmin" && (
             <Button
               type="button"
-              variant={step === "confirmAdmin" ? "destructive" : "default"}
-              onClick={submit}
-              disabled={isPending}
+              variant="destructive"
+              onClick={() => setStep("login")}
             >
-              {isPending
-                ? dict.common.saving
-                : step === "confirmAdmin"
-                  ? d.promoteConfirm
-                  : d.createSubmit}
+              {d.promoteConfirm}
+            </Button>
+          )}
+          {step === "login" && (
+            <Button type="button" onClick={submit} disabled={isPending}>
+              {isPending ? dict.common.saving : d.createSubmit}
             </Button>
           )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function StepChip({
-  label,
-  active,
-  muted = false,
-}: {
-  label: string;
-  active: boolean;
-  muted?: boolean;
-}) {
-  return (
-    <li>
-      <Badge
-        variant={active ? "default" : muted ? "outline" : "secondary"}
-        aria-current={active ? "step" : undefined}
-      >
-        {label}
-      </Badge>
-    </li>
   );
 }
