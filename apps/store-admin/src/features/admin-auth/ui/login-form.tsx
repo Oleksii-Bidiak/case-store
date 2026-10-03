@@ -6,9 +6,16 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuth, useAuthControllerLogin } from "@/entities/session";
-import { Button, Input, Label } from "@/shared/ui";
+import {
+  Button,
+  Callout,
+  FieldError,
+  FormAlert,
+  Input,
+  Label,
+} from "@/shared/ui";
 import { dict, STOREFRONT_URL } from "@/shared/config";
-import { sanitizeRedirectTarget } from "../lib/sanitize-redirect-target";
+import { loginRedirectTarget } from "../lib/sanitize-redirect-target";
 
 const loginSchema = z.object({
   email: z.string().email(dict.login.emailInvalid),
@@ -16,6 +23,9 @@ const loginSchema = z.object({
 });
 
 type LoginValues = z.infer<typeof loginSchema>;
+
+const EMAIL_ERROR_ID = "login-email-error";
+const PASSWORD_ERROR_ID = "login-password-error";
 
 /** Decode a JWT payload to read the role claim (informational only). */
 function decodeRole(token: string): string | null {
@@ -41,23 +51,43 @@ const STAFF_ROLES: ReadonlySet<string> = new Set(["ADMIN", "MANAGER"]);
  * On success it verifies the account is STAFF (ADMIN or MANAGER) before
  * establishing the session; a valid CUSTOMER login is rejected with a clear
  * message rather than silently failing.
+ *
+ * Wave 198 (Login artboard П1–П4):
+ *  - field canon (TASK-1036): an invalid field carries `aria-invalid` (red
+ *    border + ring from `Input`) and names its reason with `aria-describedby`;
+ *    no asterisks — both fields are required and the form has nothing else;
+ *  - the server's refusal is ONE `FormAlert` block above the button, not a red
+ *    line that reads like a third field error;
+ *  - `?reason=session` (from «Сесія закінчилась») explains the visit, with the
+ *    email of the session that ended already filled in;
+ *  - `?next=` is honoured, sanitized (TASK-974);
+ *  - `method="post"` (TASK-1210): a submit that lands before hydration is a
+ *    native one, and without a method it was a GET that put the password in the
+ *    address bar, the history and every proxy log on the way.
  */
 export function AdminLoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { isStaff, setTokens } = useAuth();
+  const { isStaff, setTokens, expiredSessionEmail } = useAuth();
   const [notAdmin, setNotAdmin] = useState(false);
 
-  // Honour a same-origin `?redirect=` param; default to the dashboard. A bare
-  // leading-slash check let `//evil.com` and `/%09/evil.com` through (TASK-527)
-  // — the sanitizer is the storefront's, copied with its case table.
-  const redirectTarget = sanitizeRedirectTarget(searchParams.get("redirect"));
+  // Honour a same-origin `?next=` (or the older `?redirect=`); default to the
+  // dashboard. A bare leading-slash check let `//evil.com` and `/%09/evil.com`
+  // through (TASK-527) — the sanitizer is the storefront's, copied with its
+  // case table.
+  const redirectTarget = loginRedirectTarget(searchParams);
+  const cameFromExpiredSession = searchParams.get("reason") === "session";
 
   const {
     register,
     handleSubmit,
     formState: { errors },
-  } = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
+  } = useForm<LoginValues>({
+    resolver: zodResolver(loginSchema),
+    // Not async-seeded: the email of the session that just ended is already in
+    // the provider when this form mounts (forms.md rule 1 does not apply).
+    defaultValues: { email: expiredSessionEmail ?? "", password: "" },
+  });
 
   const login = useAuthControllerLogin();
 
@@ -106,23 +136,28 @@ export function AdminLoginForm() {
 
   return (
     <form
+      method="post"
       onSubmit={handleSubmit(onSubmit)}
       className="flex flex-col gap-4"
       noValidate
     >
+      {cameFromExpiredSession && (
+        <Callout variant="muted" role="status">
+          {dict.login.sessionExpired}
+        </Callout>
+      )}
+
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="login-email">{dict.login.email}</Label>
         <Input
           id="login-email"
           type="email"
           autoComplete="email"
+          aria-invalid={errors.email ? true : undefined}
+          aria-describedby={errors.email ? EMAIL_ERROR_ID : undefined}
           {...register("email")}
         />
-        {errors.email && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.email.message}
-          </p>
-        )}
+        <FieldError id={EMAIL_ERROR_ID}>{errors.email?.message}</FieldError>
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -131,20 +166,16 @@ export function AdminLoginForm() {
           id="login-password"
           type="password"
           autoComplete="current-password"
+          aria-invalid={errors.password ? true : undefined}
+          aria-describedby={errors.password ? PASSWORD_ERROR_ID : undefined}
           {...register("password")}
         />
-        {errors.password && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.password.message}
-          </p>
-        )}
+        <FieldError id={PASSWORD_ERROR_ID}>
+          {errors.password?.message}
+        </FieldError>
       </div>
 
-      {errorMessage && (
-        <p role="alert" className="text-sm text-destructive">
-          {errorMessage}
-        </p>
-      )}
+      <FormAlert>{errorMessage}</FormAlert>
 
       <Button type="submit" disabled={login.isPending}>
         {login.isPending ? dict.login.signingIn : dict.login.signIn}

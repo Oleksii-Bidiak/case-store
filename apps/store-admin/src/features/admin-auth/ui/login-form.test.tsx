@@ -19,10 +19,13 @@ const mockReplace = jest.fn();
 // The raw `?redirect=` value as `useSearchParams().get()` hands it over, i.e.
 // already percent-decoded. `null` = no param.
 let mockRedirectParam: string | null = null;
+// Wave 198: `?next=` (TASK-974) and `?reason=session` (TASK-1036) too.
+let mockOtherParams: Record<string, string> = {};
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
   useSearchParams: () => ({
-    get: (key: string) => (key === "redirect" ? mockRedirectParam : null),
+    get: (key: string) =>
+      key === "redirect" ? mockRedirectParam : (mockOtherParams[key] ?? null),
   }),
 }));
 
@@ -84,6 +87,7 @@ describe("AdminLoginForm", () => {
     mockPush.mockClear();
     mockReplace.mockClear();
     mockRedirectParam = null;
+    mockOtherParams = {};
   });
 
   it("shows the invalid-credentials message on a plain 401", async () => {
@@ -181,5 +185,127 @@ describe("AdminLoginForm", () => {
         expect(mockPush).toHaveBeenCalledWith("/orders?status=NEW"),
       );
     });
+
+    // TASK-974: `proxy.ts` and «Сесія закінчилась» send `?next=`.
+    it("returns to ?next= after login", async () => {
+      mockOtherParams = { next: "/returns?status=REQUESTED" };
+      answerLoginWithAdminToken();
+
+      const user = userEvent.setup();
+      renderLoginForm();
+      await submitCredentials(user);
+
+      await waitFor(() =>
+        expect(mockPush).toHaveBeenCalledWith("/returns?status=REQUESTED"),
+      );
+    });
+
+    it("sanitizes ?next= like ?redirect=", async () => {
+      mockOtherParams = { next: "//evil.com" };
+      answerLoginWithAdminToken();
+
+      const user = userEvent.setup();
+      renderLoginForm();
+      await submitCredentials(user);
+
+      await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/"));
+    });
+  });
+
+  /** Wave 198 — the Login artboard П1–П4 (TASK-1036). */
+  describe("form canon (TASK-1036)", () => {
+    it("marks both empty fields invalid with the reason under each", async () => {
+      const user = userEvent.setup();
+      renderLoginForm();
+
+      await user.click(screen.getByRole("button", { name: dict.login.signIn }));
+
+      const email = screen.getByLabelText(dict.login.email);
+      const password = screen.getByLabelText(dict.login.password);
+      await waitFor(() =>
+        expect(email).toHaveAttribute("aria-invalid", "true"),
+      );
+      expect(password).toHaveAttribute("aria-invalid", "true");
+      expect(email).toHaveAccessibleDescription(dict.login.emailInvalid);
+      expect(password).toHaveAccessibleDescription(dict.login.passwordRequired);
+    });
+
+    it("leaves a valid field un-flagged", async () => {
+      const user = userEvent.setup();
+      renderLoginForm();
+
+      await user.type(screen.getByLabelText(dict.login.email), "a@b.ua");
+      await user.click(screen.getByRole("button", { name: dict.login.signIn }));
+
+      await waitFor(() =>
+        expect(screen.getByLabelText(dict.login.password)).toHaveAttribute(
+          "aria-invalid",
+          "true",
+        ),
+      );
+      expect(screen.getByLabelText(dict.login.email)).not.toHaveAttribute(
+        "aria-invalid",
+      );
+    });
+
+    it("puts no asterisks on the labels — both fields are required", () => {
+      renderLoginForm();
+
+      expect(screen.queryByText("*")).not.toBeInTheDocument();
+    });
+
+    it("shows a server refusal as one alert block above the submit button", async () => {
+      server.use(
+        http.post("*/api/auth/login", () =>
+          unauthorized("Invalid credentials"),
+        ),
+      );
+      const user = userEvent.setup();
+      renderLoginForm();
+
+      await submitCredentials(user);
+
+      const alert = await screen.findByText(dict.login.errorInvalid);
+      const block = alert.closest('[data-slot="form-alert"]');
+      expect(block).toHaveAttribute("role", "alert");
+      const submit = screen.getByRole("button", { name: dict.login.signIn });
+      expect(
+        block!.compareDocumentPosition(submit) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it("says why the person is here after «Сесія закінчилась»", () => {
+      mockOtherParams = { reason: "session", next: "/orders" };
+      renderLoginForm({ ...guestAuth, expiredSessionEmail: "op@store.ua" });
+
+      expect(screen.getByRole("status")).toHaveTextContent(
+        dict.login.sessionExpired,
+      );
+      expect(screen.getByLabelText(dict.login.email)).toHaveValue(
+        "op@store.ua",
+      );
+    });
+
+    it("shows no session note on an ordinary visit", () => {
+      renderLoginForm();
+
+      expect(
+        screen.queryByText(dict.login.sessionExpired),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  /**
+   * TASK-1210: a submit before hydration is a NATIVE submit. Without a method
+   * it is a GET, and the password lands in the address bar, the history, the
+   * proxy logs and the Referer. POST keeps it in the body.
+   */
+  it("submits natively by POST, never by GET (TASK-1210)", () => {
+    const { container } = renderLoginForm();
+
+    const form = container.querySelector("form");
+    expect(form).toHaveAttribute("method", "post");
+    expect(form?.method).toBe("post");
   });
 });

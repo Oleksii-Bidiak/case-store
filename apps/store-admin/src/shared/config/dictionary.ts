@@ -135,6 +135,9 @@ export const dict = {
     errorNotAdmin: "Цей акаунт не має прав адміністратора.",
     errorInvalid: "Невірний email або пароль.",
     errorGeneric: "Щось пішло не так. Спробуйте ще раз.",
+    // Wave 198 (TASK-1036 + TASK-974) — arrived from «Сесія закінчилась».
+    sessionExpired:
+      "Сесія закінчилась. Увійдіть знову — і ви повернетесь на сторінку, де працювали.",
   },
 
   // Support escape hatch on the login form (TASK-287). The API answers every
