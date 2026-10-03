@@ -11,7 +11,7 @@ import {
   clearFilterUpdates,
   hasActiveFilters as computeHasActiveFilters,
 } from "../model/active-filters";
-import { toFacetQueryParams } from "../model/facet-query";
+import { keepFacetsOfCategory, toFacetQueryParams } from "../model/facet-query";
 import { filterRailSections } from "../model/filter-sections";
 import { SearchInput } from "./search-input";
 import { BrandFilter } from "./brand-filter";
@@ -166,6 +166,9 @@ export function ProductFilters({
     {
       query: {
         enabled: collapsible && sections.has("specs"),
+        // Same as `SpecFacets` (TASK-515): a tick refetches the counts, and
+        // the disclosure must not vanish while they are in flight.
+        placeholderData: keepFacetsOfCategory(categoryId),
       },
     },
   );

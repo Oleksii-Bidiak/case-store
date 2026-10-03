@@ -10,6 +10,9 @@ export { CategoryChips } from "./ui/category-chips";
 // Its placeholder and its second-row rule (TASK-515): the catalogue skeleton and
 // pages reserve exactly the rows the chips will draw.
 export { CategoryChipsSkeleton } from "./ui/category-chips-skeleton";
+// One filter card's placeholder (TASK-515): the catalogue skeleton's rail and
+// the brand / spec cards' own pending state are the same box.
+export { FilterCardSkeleton } from "./ui/filter-card-skeleton";
 export { subcategoryChipsOf } from "./model/category-chips";
 export { SortSelect, type SortOption } from "./ui/sort-select";
 export { ViewToggle, type CatalogView } from "./ui/view-toggle";

@@ -108,6 +108,10 @@ const props = (searchParams: Record<string, string> = {}) => ({
 
 afterEach(() => {
   jest.clearAllMocks();
+  // `clearAllMocks` keeps a `mockResolvedValue` implementation, and the page
+  // reads the tree on every render now (TASK-515) — a tree set in one describe
+  // would land in the dehydrated state of every later test. Back to "no tree".
+  getTree.mockReset();
   (
     globalThis as { __requestMemos?: Map<string, unknown>[] }
   ).__requestMemos?.forEach((memo) => memo.clear());

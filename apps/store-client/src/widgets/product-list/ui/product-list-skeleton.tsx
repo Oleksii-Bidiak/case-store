@@ -1,35 +1,10 @@
 import { Skeleton } from "@/shared/ui";
-import { cn } from "@/shared/lib/utils";
 import {
   CategoryChipsSkeleton,
+  FilterCardSkeleton,
   filterRailSections,
   type CatalogView,
-  type FilterSectionId,
 } from "@/features/product-filters";
-
-/**
- * Placeholder height per filter card, measured on the live rail at 1440px
- * (2026-10-01, seeded catalogue): keyword 94, availability 109, sale 109,
- * brand 113, device 159, price 165 px — rounded onto the spacing scale, so the
- * default `/products` rail is 818px against the real 817px. «Характеристики»
- * depends on the category's facet list (543–763px on the seed); `h-140` is the
- * typical value and starts below the fold, where a mismatch shifts nothing.
- *
- * Only the HEIGHTS live here. WHICH cards are drawn, and in what order, comes
- * from `filterRailSections` — the same list `ProductFilters` gates its own
- * sections on (TASK-515) — so a new section reaches the skeleton the day it
- * ships, and a missing height fails typecheck instead of silently shortening
- * the rail.
- */
-const FILTER_CARD_HEIGHT: Record<FilterSectionId, string> = {
-  search: "h-24",
-  availability: "h-27",
-  onSale: "h-27",
-  brand: "h-28",
-  device: "h-40",
-  price: "h-41",
-  specs: "h-140",
-};
 
 interface ProductListSkeletonProps {
   view?: CatalogView;
@@ -153,16 +128,18 @@ export function ProductListSkeleton({
           className="hidden flex-col gap-3.5 lg:flex"
           data-testid="filter-rail-skeleton"
         >
+          {/* WHICH cards, in what order, comes from `filterRailSections` — the
+              list `ProductFilters` gates its own sections on — and each card is
+              the feature's own placeholder: the same box «Виробник» and
+              «Характеристики» keep holding until their data lands, so the rail
+              does not lose a card on swap and regain it a second later
+              (TASK-515). A new section without a height fails typecheck. */}
           {filterRailSections({
             hasCategory,
             lockedDevice,
             lockedOnSale,
           }).map((section) => (
-            <Skeleton
-              key={section}
-              data-section={section}
-              className={cn("w-full rounded-2xl", FILTER_CARD_HEIGHT[section])}
-            />
+            <FilterCardSkeleton key={section} section={section} />
           ))}
         </div>
 

@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import type { ProductControllerFindAllParams } from "@/entities/product";
@@ -555,4 +560,64 @@ describe("ProductFilters — hideSpecFacets (TASK-523)", () => {
       expect(facetCalls).toBe(0);
     },
   );
+});
+
+/**
+ * TASK-515 — `GET /brands` is not in the server-rendered page, so «Виробник»
+ * used to render nothing until it answered: right after the skeleton swap the
+ * rail was a card short and the device and price cards jumped up, then back.
+ */
+describe("ProductFilters — «Виробник» holds its place (TASK-515)", () => {
+  const sectionsInRail = (root: HTMLElement) =>
+    [...root.querySelectorAll("[data-section]")].map((node) =>
+      node.getAttribute("data-section"),
+    );
+
+  it("keeps the brand card's box in the sidebar until the brand list is in", async () => {
+    server.use(
+      http.get("*/api/brands", () =>
+        HttpResponse.json({
+          data: [{ id: "b-1", name: "Apple", slug: "apple" }],
+        }),
+      ),
+    );
+
+    const { container } = renderWithProviders(
+      <ProductFilters currentParams={{}} onFilterChange={jest.fn()} />,
+    );
+
+    // Between «Знижки» and «Сумісний пристрій» — where the card will land.
+    expect(sectionsInRail(container)).toEqual(["brand"]);
+    const placeholder = container.querySelector('[data-section="brand"]');
+    expect(placeholder?.previousElementSibling).toHaveTextContent(
+      dict.filters.onSaleOnly,
+    );
+
+    await screen.findByText(dict.filters.brandTitle);
+    expect(sectionsInRail(container)).toEqual([]);
+  });
+
+  it("gives the box up when there turn out to be no brands", async () => {
+    const { container } = renderWithProviders(
+      <ProductFilters currentParams={{}} onFilterChange={jest.fn()} />,
+    );
+
+    expect(sectionsInRail(container)).toEqual(["brand"]);
+    await screen.findByText(dict.filters.deviceTitle);
+    await screen.findByText(dict.filters.priceTitle);
+    await waitFor(() => expect(sectionsInRail(container)).toEqual([]));
+    expect(screen.queryByText(dict.filters.brandTitle)).not.toBeInTheDocument();
+  });
+
+  it("draws no placeholder box in the drawer, whose disclosures gate on data", () => {
+    const { container } = renderWithProviders(
+      <ProductFilters
+        collapsible
+        currentParams={{}}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(sectionsInRail(container)).toEqual([]);
+  });
 });

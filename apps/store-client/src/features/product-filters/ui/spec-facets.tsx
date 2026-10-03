@@ -5,7 +5,7 @@ import { useCategoryControllerGetFilterableSpecs } from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { dict } from "@/shared/config";
 import { COLOR_SPEC_KEY } from "@/shared/lib";
-import { toFacetQueryParams } from "../model/facet-query";
+import { keepFacetsOfCategory, toFacetQueryParams } from "../model/facet-query";
 import {
   canSelectSpecValue,
   formatFacetValue,
@@ -14,6 +14,7 @@ import {
   toggleSpecValue,
 } from "../model/spec-facet";
 import { ColorSwatchFilter } from "./color-swatch-filter";
+import { FilterCardSkeleton } from "./filter-card-skeleton";
 import { FilterCheckbox } from "./filter-checkbox";
 
 /*
@@ -94,7 +95,13 @@ export function SpecFacets({
   const query = useCategoryControllerGetFilterableSpecs(
     categoryId ?? "",
     toFacetQueryParams(currentParams),
-    { query: { enabled: Boolean(categoryId) } },
+    {
+      query: {
+        enabled: Boolean(categoryId),
+        // A tick refetches the counts; the list stays on screen meanwhile.
+        placeholderData: keepFacetsOfCategory(categoryId),
+      },
+    },
   );
   const [showAll, setShowAll] = useState(false);
 
@@ -114,7 +121,20 @@ export function SpecFacets({
     canSelectSpecValue(specs, key, value);
   const limitNoteId = `${idPrefix}-spec-limit`;
 
-  if (!categoryId || facets.length === 0) {
+  if (!categoryId) {
+    return null;
+  }
+
+  // Hold the card's box until the facet list is in (TASK-515). Returning
+  // nothing here left the rail a card short right after the skeleton swap — the
+  // skeleton had reserved «Характеристики» — and the card then grew in from
+  // zero. Only the card layout: the drawer gates this component on its own
+  // copy of the list, so it never mounts it pending.
+  if (query.isPending && cardClassName) {
+    return <FilterCardSkeleton section="specs" />;
+  }
+
+  if (facets.length === 0) {
     return null;
   }
 

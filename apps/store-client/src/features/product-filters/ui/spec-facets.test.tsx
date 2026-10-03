@@ -825,3 +825,102 @@ describe("SpecFacets — the server's ?specs= caps (TASK-540)", () => {
     ).toBeEnabled();
   });
 });
+
+/**
+ * TASK-515 — the catalogue skeleton reserves «Характеристики», so the card has
+ * to keep that box until its list is in, and must not give it up again every
+ * time a tick refetches the counts.
+ */
+describe("SpecFacets — holding its place in the rail (TASK-515)", () => {
+  /** The counts for the next request never arrive. */
+  const hangFacets = () =>
+    server.use(
+      http.get(
+        "*/api/categories/:id/filterable-specs",
+        () => new Promise<never>(() => {}),
+      ),
+    );
+
+  it("draws the card's placeholder box while the facet list is loading", async () => {
+    stubFacets([materialFacet]);
+
+    const { container } = renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{}}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(container.querySelector('[data-section="specs"]')).not.toBeNull();
+    await screen.findByText(dict.filters.specsTitle);
+    expect(container.querySelector('[data-section="specs"]')).toBeNull();
+  });
+
+  it("draws no placeholder in the drawer layout, which gates the card itself", () => {
+    hangFacets();
+
+    const { container } = renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{}}
+        onFilterChange={jest.fn()}
+        cardClassName=""
+      />,
+    );
+
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("keeps the list on screen while a tick refetches the counts", async () => {
+    stubFacets([materialFacet]);
+    const { container, rerender } = renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{}}
+        onFilterChange={jest.fn()}
+      />,
+    );
+    await screen.findByRole("checkbox", { name: control("Шкіра") });
+
+    hangFacets();
+    rerender(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{ specs: "material:Шкіра" }}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("checkbox", { name: control("Шкіра") }),
+    ).toBeInTheDocument();
+    expect(container.querySelector('[data-section="specs"]')).toBeNull();
+  });
+
+  it("does not show one category's facets for another while it loads", async () => {
+    stubFacets([materialFacet]);
+    const { container, rerender } = renderWithProviders(
+      <SpecFacets
+        categoryId={CATEGORY_ID}
+        currentParams={{}}
+        onFilterChange={jest.fn()}
+      />,
+    );
+    await screen.findByRole("checkbox", { name: control("Шкіра") });
+
+    hangFacets();
+    rerender(
+      <SpecFacets
+        categoryId="22222222-2222-4222-8222-222222222222"
+        currentParams={{}}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(
+      screen.queryByRole("checkbox", { name: control("Шкіра") }),
+    ).not.toBeInTheDocument();
+    expect(container.querySelector('[data-section="specs"]')).not.toBeNull();
+  });
+});
