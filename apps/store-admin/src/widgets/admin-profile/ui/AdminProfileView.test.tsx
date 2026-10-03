@@ -114,4 +114,155 @@ describe("AdminProfileView — «Ваші права» (TASK-725)", () => {
 
     expect(screen.getByText(d.permissionsEmpty)).toBeInTheDocument();
   });
+
+  it("tells a manager where more rights come from", async () => {
+    stubMyPermissions(
+      ["orders:read"],
+      [{ key: "orders:read", label: "Переглядати замовлення" }],
+    );
+
+    renderWithProviders(<AdminProfileView />, {
+      auth: { permissions: ["orders:read"] },
+    });
+
+    expect(await screen.findByText(d.permissionsMoreHint)).toBeInTheDocument();
+  });
+
+  it("shows no such hint to the owner", () => {
+    renderWithProviders(<AdminProfileView />, { auth: { isOwner: true } });
+
+    expect(screen.queryByText(d.permissionsMoreHint)).not.toBeInTheDocument();
+  });
+
+  // A deputy admin holds `staff:read`, so the grantable catalogue — the one
+  // source of zones — is theirs to read; the rights are grouped under it.
+  it("groups the rights by zone when the catalogue's zones are available", async () => {
+    stubMyPermissions(
+      ["orders:read", "customers:read", "staff:read"],
+      [
+        { key: "orders:read", label: "Переглядати замовлення" },
+        { key: "customers:read", label: "Картки клієнтів" },
+        { key: "staff:read", label: "Переглядати службові акаунти" },
+      ],
+    );
+    server.use(
+      http.get("*/api/admin/staff/:id/permissions", () =>
+        HttpResponse.json({
+          data: {
+            userId: "admin-1",
+            email: "staff@example.com",
+            role: "ADMIN",
+            level: 2,
+            holdsEverythingByLevel: true,
+            permissions: [],
+            catalogue: [
+              {
+                key: "orders:read",
+                zone: "orders",
+                label: "Переглядати замовлення",
+              },
+              {
+                key: "customers:read",
+                zone: "customers",
+                label: "Картки клієнтів",
+              },
+            ],
+            zones: [
+              { zone: "orders", label: "Замовлення" },
+              { zone: "customers", label: "Клієнти (персональні дані)" },
+            ],
+          },
+        }),
+      ),
+    );
+
+    renderWithProviders(<AdminProfileView />, {
+      auth: {
+        isAdmin: true,
+        permissions: ["orders:read", "customers:read", "staff:read"],
+      },
+    });
+
+    const orders = await screen.findByRole("heading", { name: "Замовлення" });
+    expect(
+      within(orders.closest("div")!).getByText("Переглядати замовлення"),
+    ).toBeInTheDocument();
+    const customers = screen.getByRole("heading", {
+      name: "Клієнти (персональні дані)",
+    });
+    expect(
+      within(customers.closest("div")!).getByText("Картки клієнтів"),
+    ).toBeInTheDocument();
+    // Not in the grantable catalogue → its own trailing group, never dropped.
+    expect(
+      screen.getByText("Переглядати службові акаунти"),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("AdminProfileView — «Акаунт» (TASK-1055)", () => {
+  beforeEach(() => {
+    // A deputy admin reads the grantable catalogue for the zone headings.
+    server.use(
+      http.get("*/api/admin/staff/:id/permissions", () =>
+        HttpResponse.json({
+          data: {
+            userId: "admin-1",
+            email: "staff@example.com",
+            role: "ADMIN",
+            level: 2,
+            holdsEverythingByLevel: true,
+            permissions: [],
+            catalogue: [],
+            zones: [],
+          },
+        }),
+      ),
+    );
+  });
+
+  it("names the owner «Власник магазину», not «Адміністратор»", () => {
+    renderWithProviders(<AdminProfileView />, { auth: { isOwner: true } });
+
+    expect(screen.getByText(d.levelOwner)).toBeInTheDocument();
+    expect(screen.queryByText(dict.staff.levelAdmin)).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["a deputy admin", { isAdmin: true }, dict.staff.levelAdmin],
+    ["a manager", {}, dict.staff.levelManager],
+  ])("names the level of %s", (_who, auth, label) => {
+    renderWithProviders(<AdminProfileView />, { auth });
+
+    expect(screen.getByText(label)).toBeInTheDocument();
+  });
+
+  it("shows the person's name from their profile", async () => {
+    renderWithProviders(<AdminProfileView />, { auth: { isOwner: true } });
+
+    // The shared /users/me stub answers «Admin User».
+    expect(await screen.findByText("Admin User")).toBeInTheDocument();
+    expect(screen.getByText(d.fieldName)).toBeInTheDocument();
+  });
+
+  it("offers to copy the ID, shown in one monospace size", () => {
+    renderWithProviders(<AdminProfileView />, {
+      auth: { isOwner: true, userId: "3f9c2a7e" },
+    });
+
+    const id = screen.getByText("3f9c2a7e");
+    expect(id).toHaveClass("font-mono", "text-pill");
+    expect(id).not.toHaveClass("text-sm");
+    expect(
+      screen.getByRole("button", { name: d.copyIdAria }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the email", () => {
+    renderWithProviders(<AdminProfileView />, {
+      auth: { isOwner: true, email: "owner@store.ua" },
+    });
+
+    expect(screen.getByText("owner@store.ua")).toBeInTheDocument();
+  });
 });

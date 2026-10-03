@@ -3916,11 +3916,12 @@ export const dict = {
     heading: "Мій профіль",
     accountSection: "Акаунт",
     fieldEmail: "Електронна пошта",
-    fieldRole: "Роль",
+    // Wave 198: the access LEVEL (owner / admin / manager), as on «Персонал».
+    fieldRole: "Рівень",
     fieldUserId: "ID",
     permissionsSection: "Ваші права",
     permissionsOwner:
-      "Ви власник магазину: усі права, включно з керуванням користувачами та журналом дій.",
+      "Ви власник магазину: усі права, зокрема керування персоналом і журнал дій.",
     permissionsEmpty:
       "Вам поки не видано жодного права. Зверніться до власника магазину.",
     permissionsLoading: "Завантаження прав…",
@@ -3938,6 +3939,18 @@ export const dict = {
     passwordWeak:
       "Пароль має містити щонайменше 8 символів, велику й малу літери та цифру",
     passwordRequired: "Вкажіть пароль",
+    // Wave 198 (TASK-1055, ProfileProposal П1–П4).
+    fieldName: "Ім'я",
+    // The owner's level here is the shop's owner, not «Адміністратор» (which
+    // the old role line said, out of step with the header's «Власник»).
+    levelOwner: "Власник магазину",
+    copyId: "Скопіювати",
+    copyIdDone: "Скопійовано",
+    copyIdFailed: "Не вдалося скопіювати — виділіть ID вручну",
+    copyIdAria: "Скопіювати ID",
+    permissionsOtherZone: "Інше",
+    permissionsMoreHint:
+      "Потрібно більше? Попросіть власника додати право в розділі «Співробітники» — на вашій картці.",
   },
 
   // --- Newsletter subscribers (TASK-188) --------------------------------------
