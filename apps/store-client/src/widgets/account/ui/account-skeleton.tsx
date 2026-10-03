@@ -40,9 +40,20 @@ const CARD_CLASS =
  *   the menu reserves the avatar header and exactly as many 44px rows as
  *   ACCOUNT_NAV shows, then the «Вихід» row;
  * - the profile section: the h1 slot at H1_CLASS line heights (`h-9 md:h-10`),
- *   the «email confirmed» status line, the contact card (email, name row that
- *   is two columns from `sm`, phone, save button) and the security card, whose
+ *   the email-verification block, the contact card (email, name row that is
+ *   two columns from `sm`, phone, save button) and the security card, whose
  *   note wraps onto two lines below `sm`.
+ *
+ * The verification block is the one part whose height depends on data the
+ * skeleton cannot have: the access token carries only `sub` + `role`, and the
+ * profile request is exactly what this skeleton stands in for. It reserves the
+ * **unverified** card on purpose — every new registration starts there, and so
+ * does the seeded demo customer — so for those accounts nothing below the h1
+ * moves. The honest cost: for an already verified address the card collapses
+ * to the one-line «Адресу підтверджено» status, and the contact and security
+ * cards rise by 138px (158px at 390, where the body wraps). Content moving up
+ * into place, not down under the cursor; documented in design-system.md
+ * §Loading.
  *
  * The dashboard's raw px (`pt-[22px]`, `p-[26px]`, `max-w-[680px]`…) are spelled
  * on the spacing scale here (`pt-5.5`, `p-6.5`, `max-w-170`), and the
@@ -117,10 +128,28 @@ export function AccountSkeleton() {
             <Skeleton className="h-7 w-52 md:h-8 md:w-64" />
           </div>
 
-          {/* «Email підтверджено» status line (text-sm + mb-4) */}
-          <div className="mb-4 flex h-5 items-center gap-2">
-            <Skeleton className="size-4 shrink-0 rounded-full" />
-            <Skeleton className="h-3.5 w-40" />
+          {/* «Адресу не підтверджено» card — the reserved verification state
+              (see the doc comment): AccountEmailVerification's unverified
+              branch, `rounded-2xl p-6 mb-4`, title, body, resend button. */}
+          <div
+            data-testid="account-skeleton-verification"
+            className="mb-4 rounded-2xl border border-border bg-card p-6 shadow-card"
+          >
+            <div className="mb-1.5 flex h-7 items-center">
+              <Skeleton className="h-5 w-56" />
+            </div>
+            <div className="flex h-5 items-center">
+              <Skeleton className="h-3.5 w-full sm:w-120" />
+            </div>
+            <div
+              data-testid="account-skeleton-verification-wrap"
+              className="flex h-5 items-center sm:hidden"
+            >
+              <Skeleton className="h-3.5 w-1/2" />
+            </div>
+            {/* `mt-4` = the body's `mb-4`; the button is `py-2` + a 20px line
+                + a 1px border each side = 38px. */}
+            <Skeleton className="mt-4 h-9.5 w-48" />
           </div>
 
           {/* «Контактна інформація» */}

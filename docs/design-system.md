@@ -349,7 +349,11 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   count reflows the page when the content lands (parity fixes: TASK-869). A client view's own
   loading branch is the third path to the same screen: it renders the **same skeleton component**,
   and when the view owns its container the skeleton carries it too, so `loading.tsx` and the
-  fallback add no wrapper (`AccountSkeleton`: one component for all three). A skeleton draws only
+  fallback add no wrapper (`AccountSkeleton`: one component for all three). When a block's height
+  depends on data the skeleton cannot have, reserve one state **on purpose** and name the cost:
+  `AccountSkeleton` reserves the «Адресу не підтверджено» card (new registrations and the seeded
+  customer start there), so for a verified address the contact and security cards rise by 138px
+  (158px at 390) when the profile lands. A skeleton draws only
   the controls a shopper gets by default — nothing for flag-gated stubs. And a `loading.tsx`
   must never be an **ancestor** of a different page: Next prefetches a dynamic route "layout to
   first loading boundary", so a parent's skeleton becomes the shell of every child link. Scope a

@@ -2,7 +2,9 @@ import { render, renderWithProviders, screen } from "@/shared/test/render";
 import { PAGE_CONTAINER } from "@/shared/config";
 import { AccountSkeleton } from "./account-skeleton";
 import { AccountView } from "./account-view";
+import { makeUser } from "@/shared/test/msw-handlers";
 import { ACCOUNT_NAV } from "./account-nav";
+import { AccountEmailVerification } from "./account-email-verification";
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
@@ -70,6 +72,43 @@ describe("AccountSkeleton (TASK-869)", () => {
     for (const card of cards) {
       expect(card).toHaveClass("rounded-card", "p-6.5", "shadow-card");
     }
+  });
+
+  // Fix round: the seeded customer and every new registration land on the
+  // «Адресу не підтверджено» card, and a one-line status slot let the contact
+  // and security cards drop 138px (158px at 390) when the profile arrived.
+  it("reserves the unverified email card, shaped like AccountEmailVerification's", () => {
+    render(<AccountSkeleton />);
+    const card = screen.getByTestId("account-skeleton-verification");
+    expect(card).toHaveClass(
+      "mb-4",
+      "rounded-2xl",
+      "border",
+      "p-6",
+      "shadow-card",
+    );
+    // The body wraps onto a second line below sm, like the real copy.
+    expect(
+      screen.getByTestId("account-skeleton-verification-wrap"),
+    ).toHaveClass("sm:hidden");
+    // It sits between the h1 slot and the contact card.
+    const [contact] = screen.getAllByTestId("account-skeleton-card");
+    expect(
+      card.compareDocumentPosition(contact) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  it("keeps the reserved card's box in step with the real unverified card", () => {
+    // Drift guard: restyle the real card and this fails, instead of the
+    // skeleton silently going back to jumping.
+    renderWithProviders(
+      <AccountEmailVerification
+        user={{ ...makeUser().data, emailVerifiedAt: null }}
+      />,
+      { auth: { isAuthenticated: true } },
+    );
+    const real = screen.getByRole("heading", { level: 2 }).parentElement;
+    expect(real).toHaveClass("mb-4", "rounded-2xl", "border", "p-6");
   });
 
   it("wraps the security note onto a second line only below sm", () => {
