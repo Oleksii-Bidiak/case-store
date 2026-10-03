@@ -73,9 +73,10 @@ export function ContactView({
         <span className="font-medium text-foreground">{d.breadcrumb}</span>
       </nav>
 
-      {/* Hero */}
+      {/* Hero — padding steps up with the viewport; a flat p-11 left ~270px of
+          copy at 390 (TASK-878). */}
       <div
-        className="mb-6 flex flex-wrap items-end justify-between gap-8 rounded-2xl p-11 text-white"
+        className="mb-6 flex flex-wrap items-end justify-between gap-6 rounded-2xl p-6 text-white sm:gap-8 sm:p-8 lg:p-11"
         style={{
           background:
             "linear-gradient(135deg, var(--color-primary), color-mix(in oklab, var(--color-primary) 55%, oklch(0.4 0.16 300)))",

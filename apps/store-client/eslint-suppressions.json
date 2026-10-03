@@ -166,7 +166,7 @@
   },
   "src/widgets/blog/ui/blog-article-view.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 18
+      "count": 17
     }
   },
   "src/widgets/blog/ui/blog-empty-state.tsx": {
@@ -286,7 +286,7 @@
   },
   "src/widgets/hero-banner/ui/hero-slider.tsx": {
     "tailwindcss/no-arbitrary-value": {
-      "count": 5
+      "count": 3
     }
   },
   "src/widgets/hero-banner/ui/model-picker.tsx": {

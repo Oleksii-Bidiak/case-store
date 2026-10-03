@@ -86,6 +86,21 @@ describe("BlogArticleView", () => {
     }
   });
 
+  it("sizes the cover by aspect ratio, not a fixed 380px (TASK-878)", () => {
+    const { container } = renderWithProviders(
+      <BlogArticleView
+        post={makePost({ coverImageUrl: "https://example.com/cover.jpg" })}
+        related={[]}
+      />,
+    );
+
+    const frame = container.querySelector(
+      'img[src="https://example.com/cover.jpg"]',
+    )?.parentElement as HTMLElement;
+    expect(frame).toHaveClass("aspect-4/3", "sm:aspect-video", "lg:aspect-5/2");
+    expect(frame.className).not.toMatch(/\bh-\[/);
+  });
+
   it("drops a cover that fails to load, leaving the gradient (TASK-759)", () => {
     const { container } = renderWithProviders(
       <BlogArticleView

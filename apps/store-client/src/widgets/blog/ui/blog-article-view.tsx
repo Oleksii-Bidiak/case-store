@@ -89,9 +89,10 @@ export function BlogArticleView({
         </div>
       </div>
 
-      {/* Cover */}
+      {/* Cover — sized by aspect ratio, not a fixed 380px (TASK-878): 4:3 on a
+          phone, 16:9 from sm, 5:2 from lg (≈380px tall at the 960px cap). */}
       <div
-        className="relative mx-auto mt-[26px] h-[380px] max-w-[960px] overflow-hidden rounded-2xl shadow-elevated"
+        className="relative mx-auto mt-[26px] aspect-4/3 max-w-[960px] overflow-hidden rounded-2xl shadow-elevated sm:aspect-video lg:aspect-5/2"
         style={{ background: blogGradient(post.hue) }}
       >
         {/* A cover the CSP blocks or that fails to load leaves the gradient,

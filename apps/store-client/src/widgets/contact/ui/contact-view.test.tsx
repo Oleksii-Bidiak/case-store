@@ -301,6 +301,15 @@ describe("ContactView", () => {
     });
   });
 
+  it("steps the hero padding up with the viewport — no flat p-11 on a phone (TASK-878)", () => {
+    renderWithProviders(<ContactView contact={contact} />);
+
+    const hero = screen.getByRole("heading", { level: 1 }).parentElement
+      ?.parentElement as HTMLElement;
+    expect(hero).toHaveClass("p-6", "sm:p-8", "lg:p-11");
+    expect(hero).not.toHaveClass("p-11");
+  });
+
   it("blocks submit and surfaces validation errors when required fields are empty", async () => {
     const user = userEvent.setup();
     renderWithProviders(<ContactView contact={contact} />);

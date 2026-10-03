@@ -1,4 +1,4 @@
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import type { PageEntity } from "@/shared/api/generated/models";
 import { LegalDocView } from "./legal-doc-view";
@@ -51,5 +51,50 @@ describe("LegalDocView", () => {
 
     const link = screen.getByRole("link", { name: "Умови використання" });
     expect(link).toHaveAttribute("href", "/legal/terms");
+  });
+});
+
+describe("LegalDocView — collapsed TOC below lg (TASK-878)", () => {
+  it("names the disclosure row with the section count, Ukrainian plural", () => {
+    expect(dict.legal.tocToggle(1)).toBe("Зміст документа · 1 розділ");
+    expect(dict.legal.tocToggle(3)).toBe("Зміст документа · 3 розділи");
+    expect(dict.legal.tocToggle(5)).toBe("Зміст документа · 5 розділів");
+    expect(dict.legal.tocToggle(11)).toBe("Зміст документа · 11 розділів");
+    expect(dict.legal.tocToggle(22)).toBe("Зміст документа · 22 розділи");
+  });
+
+  it("toggles the list with aria-expanded and folds it back after a jump", async () => {
+    const scrollTo = jest.fn();
+    window.scrollTo = scrollTo as unknown as typeof window.scrollTo;
+    const user = userEvent.setup();
+    renderWithProviders(<LegalDocView page={page} otherDocs={otherDocs} />);
+
+    const toggle = screen.getByRole("button", {
+      name: dict.legal.tocToggle(2),
+    });
+    const list = screen.getByRole("navigation", { name: dict.legal.tocAria });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveAttribute("aria-controls", list.id);
+    // Collapsed below lg, always shown from lg.
+    expect(list).toHaveClass("hidden", "lg:flex");
+    expect(toggle).toHaveClass("lg:hidden", "min-h-12");
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(list).not.toHaveClass("hidden");
+    expect(list).toHaveClass("flex");
+
+    await user.click(screen.getByRole("button", { name: /Ваші права/ }));
+    expect(scrollTo).toHaveBeenCalled();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+  });
+
+  it("gives the article phone padding px-5 py-6, the roomy one from sm", () => {
+    const { container } = renderWithProviders(
+      <LegalDocView page={page} otherDocs={otherDocs} />,
+    );
+    const article = container.querySelector("article") as HTMLElement;
+    expect(article).toHaveClass("px-5", "py-6", "sm:px-11", "sm:py-9");
+    expect(article).not.toHaveClass("px-11");
   });
 });

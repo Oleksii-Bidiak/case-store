@@ -18,8 +18,8 @@ export interface LegalOtherDoc {
 /**
  * LegalDocView — the Legal.dc.html template for admin-authored `Page` rows.
  * Renders the sanitized `page.content` inside a document card with a numbered
- * heading counter, a sticky scroll-spy TOC built from the content's `<h2>`s, a
- * contact CTA, and links to the sibling documents.
+ * heading counter, a sticky scroll-spy TOC built from the content's `<h2>`s
+ * (collapsed into one disclosure row below `lg`, TASK-878), a contact CTA, and links to the sibling documents.
  *
  * Serves BOTH page surfaces (TASK-435): legal documents at `/legal/[slug]` and
  * help pages at `/info/[slug]`. Everything but the chrome is identical, so the
@@ -88,16 +88,20 @@ export function LegalDocView({
         <LegalDocActions />
       </div>
 
-      {/* TOC + document body */}
+      {/* TOC + document body. Below lg the TOC is one disclosure row above the
+          article, so the rows sit closer (gap-4); from lg it is the side column. */}
       <div
         className={
-          // eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent
-          hasToc ? "grid items-start gap-9 lg:grid-cols-[264px_1fr]" : ""
+          hasToc
+            ? // eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent
+              "grid items-start gap-4 lg:grid-cols-[264px_1fr] lg:gap-9"
+            : ""
         }
       >
         {hasToc && <LegalDocToc sections={sections} />}
 
-        <article className="min-w-0 rounded-card border border-border bg-card px-11 py-9 shadow-card">
+        {/* Phone padding px-5 py-6 leaves ~318px of text at 390 (TASK-878). */}
+        <article className="min-w-0 rounded-card border border-border bg-card px-5 py-6 shadow-card sm:px-11 sm:py-9">
           <div
             className="legal-doc-body"
             dangerouslySetInnerHTML={{ __html: html }}

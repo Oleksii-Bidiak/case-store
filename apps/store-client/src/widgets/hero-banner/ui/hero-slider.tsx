@@ -90,15 +90,86 @@ const THEMES: SlideTheme[] = [
 ];
 
 /**
+ * One grid cell shared by every slide layer: the active slide and the invisible
+ * sizers stack in it, so the slider is as tall as its tallest slide. Below sm the
+ * controls live in the bottom row, so the copy takes the full width (px-6); from
+ * sm it is padded clear of the side arrows (px-24). pb keeps the bottom row
+ * (dots, arrows on a phone, pause) clear of the CTA.
+ */
+const SLIDE_LAYER =
+  "col-start-1 row-start-1 flex items-center px-6 pt-10 pb-20 sm:px-24 sm:pt-12";
+
+/** The white round controls over the banner (prev / next / pause). */
+const CONTROL =
+  "absolute z-10 flex size-11 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lift transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white";
+
+/**
+ * The copy block of one slide. `sizer` renders the same box without semantics
+ * (a `p` instead of the page h1, a `span` instead of the link) for the invisible
+ * height-reserving layers — the page keeps exactly one h1 and no hidden links.
+ */
+function SlideCopy({
+  slide,
+  theme,
+  sizer = false,
+}: {
+  slide: HeroSlide;
+  theme: SlideTheme;
+  sizer?: boolean;
+}) {
+  const Title = sizer ? "p" : "h1";
+  return (
+    <div className="relative z-10 max-w-xl">
+      {slide.eyebrow && (
+        <span
+          className={`inline-block rounded-full px-3.5 py-1.5 text-xs font-semibold tracking-wide uppercase ${theme.eyebrow}`}
+        >
+          {slide.eyebrow}
+        </span>
+      )}
+      <Title className={`mt-4 ${HERO_CLASS} text-balance`}>{slide.title}</Title>
+      {slide.subtitle && (
+        <p className="mt-3 max-w-md text-base opacity-90 sm:text-[17px]">
+          {slide.subtitle}
+        </p>
+      )}
+      {slide.cta && slide.href && (
+        <Button
+          asChild
+          className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-lift ${theme.cta} ${FOCUS_ON_DARK_CLASS}`}
+        >
+          {sizer ? (
+            <span>
+              {slide.cta}
+              <ArrowRight className="size-4" />
+            </span>
+          ) : (
+            <Link href={slide.href}>
+              {slide.cta}
+              <ArrowRight className="size-4" />
+            </Link>
+          )}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
  * HeroSlider — the homepage hero carousel. Three promotional slides, each with
  * its own token-derived colour theme, prev/next controls, dot indicators and
  * gentle autoplay. Copy comes from the dictionary; CTAs link to real routes.
  *
  * The gradient sits on the outer container (updated per slide) so there is no
- * flash between slides, while the slide content cross-fades. Content is padded
- * clear of the side arrows (px) and the bottom dots (pb); a decorative frosted
- * panel fills the right half on themed slides (hidden below lg so it never
- * crowds the text). Client Component (holds the active-slide state).
+ * flash between slides, while the slide content cross-fades. The height is not
+ * fixed (TASK-878): every slide's copy is stacked in one grid cell — the
+ * inactive ones invisible — so the slider fits its longest copy at any width and
+ * never jumps between slides; `min-h-105 sm:min-h-110` keeps the mockup
+ * proportions (420 / 440 px in Homepage.dc.html). Below sm the arrows join the
+ * pause button in the bottom row so the copy gets the full width; from sm they
+ * sit in the side gutters. A decorative frosted panel fills the right half on
+ * themed slides (xl only, so it never crowds the text). Client Component
+ * (holds the active-slide state).
  *
  * `banners` (HERO_SLIDE placement) is the data source when the admin has
  * published any; otherwise the hardcoded fallback slides render unchanged.
@@ -150,7 +221,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
 
   return (
     <div
-      className="relative isolate h-[420px] overflow-hidden rounded-2xl shadow-elevated sm:h-[440px]"
+      className="relative isolate grid min-h-105 overflow-hidden rounded-2xl shadow-elevated sm:min-h-110"
       style={{ backgroundImage: theme.gradient }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
@@ -168,37 +239,28 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         preload={activeIndex === 0}
       />
 
+      {/* Height reservers — every other slide's copy, invisible and inert, in
+          the same grid cell, so the slider never jumps between slides. */}
+      {slides.map((s, i) =>
+        i === activeIndex ? null : (
+          <div
+            key={`sizer-${i}`}
+            aria-hidden="true"
+            inert
+            data-slide-sizer=""
+            className={`invisible ${SLIDE_LAYER}`}
+          >
+            <SlideCopy slide={s} theme={THEMES[i % THEMES.length]} sizer />
+          </div>
+        ),
+      )}
+
       {/* Active slide — re-keyed so the copy fades in on change. */}
       <div
         key={activeIndex}
-        className={`absolute inset-0 flex items-center px-16 pt-12 pb-20 duration-500 animate-in fade-in-0 sm:px-24 ${theme.text}`}
+        className={`relative ${SLIDE_LAYER} duration-500 animate-in fade-in-0 ${theme.text}`}
       >
-        <div className="relative z-10 max-w-xl">
-          {slide.eyebrow && (
-            <span
-              className={`inline-block rounded-full px-3.5 py-1.5 text-xs font-semibold tracking-wide uppercase ${theme.eyebrow}`}
-            >
-              {slide.eyebrow}
-            </span>
-          )}
-          <h1 className={`mt-4 ${HERO_CLASS} text-balance`}>{slide.title}</h1>
-          {slide.subtitle && (
-            <p className="mt-3 max-w-md text-base opacity-90 sm:text-[17px]">
-              {slide.subtitle}
-            </p>
-          )}
-          {slide.cta && slide.href && (
-            <Button
-              asChild
-              className={`mt-6 h-[52px] rounded-xl px-6 text-base font-bold shadow-lift ${theme.cta} ${FOCUS_ON_DARK_CLASS}`}
-            >
-              <Link href={slide.href}>
-                {slide.cta}
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-          )}
-        </div>
+        <SlideCopy slide={slide} theme={theme} />
 
         {/* Decorative frosted "product" panel — visual only, hidden on smaller
             viewports where the hero title (HERO_CLASS) needs the full width. */}
@@ -214,12 +276,14 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         )}
       </div>
 
-      {/* Prev / next controls — sit in the side gutter, clear of the content. */}
+      {/* Prev / next controls — below sm in the bottom row left of the pause
+          button (44px each, 4px apart), so the copy keeps the full width; from
+          sm in the side gutters, vertically centred. */}
       <button
         type="button"
         onClick={() => go(activeIndex - 1)}
         aria-label={dict.home.hero.prevSlide}
-        className="absolute top-1/2 left-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lift transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:left-4 sm:size-11"
+        className={`${CONTROL} right-28 bottom-4 sm:top-1/2 sm:right-auto sm:bottom-auto sm:left-4 sm:-translate-y-1/2`}
       >
         <ChevronLeft className="size-5" />
       </button>
@@ -227,15 +291,16 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
         type="button"
         onClick={() => go(activeIndex + 1)}
         aria-label={dict.home.hero.nextSlide}
-        className="absolute top-1/2 right-3 z-10 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lift transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:right-4 sm:size-11"
+        className={`${CONTROL} right-16 bottom-4 sm:top-1/2 sm:right-4 sm:bottom-auto sm:-translate-y-1/2`}
       >
         <ChevronRight className="size-5" />
       </button>
 
-      {/* Dot indicators — aligned to the content, below it (pb reserves space).
+      {/* Dot indicators — aligned to the content, below it (pb reserves space);
+          below sm centred on the bottom control row.
           Each dot keeps its slim visual footprint but carries a centred 44px
           invisible hit-area (`before:` pseudo) for a comfortable tap target. */}
-      <div className="absolute bottom-6 left-16 z-10 flex items-center gap-2 sm:left-24">
+      <div className="absolute bottom-9 left-6 z-10 flex items-center gap-2 sm:bottom-6 sm:left-24">
         {slides.map((_, i) => (
           <button
             key={i}
@@ -264,7 +329,7 @@ export function HeroSlider({ banners }: HeroSliderProps = {}) {
               ? dict.home.hero.resumeAutoplay
               : dict.home.hero.pauseAutoplay
           }
-          className="absolute right-4 bottom-6 z-10 flex size-10 items-center justify-center rounded-full bg-white/90 text-slate-900 shadow-lift transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white sm:size-11"
+          className={`${CONTROL} right-4 bottom-4 sm:bottom-6`}
         >
           {paused ? <Play className="size-4" /> : <Pause className="size-4" />}
         </button>

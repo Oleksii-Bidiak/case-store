@@ -210,6 +210,14 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
   `max-h-sticky-aside overflow-y-auto overscroll-contain`. The `--max-height-sticky-aside`
   token is the viewport minus that 96px offset and a 16px gap, so the aside scrolls inside
   itself instead of running off a short laptop screen.
+- **Content pages at 390** (TASK-878): a document TOC that is a side column from `lg`
+  collapses below `lg` into one disclosure row «Зміст документа · N розділів»
+  (`aria-expanded`/`aria-controls`, folds back after a jump); a document card is `px-5 py-6`
+  on a phone, the roomy padding only from `sm`. Coloured hero blocks step padding up with the
+  viewport (`p-6 sm:p-8 lg:p-11`), never a flat desktop value. Media frames take an
+  `aspect-*` ratio, not a fixed pixel height; the homepage slider takes its height from its
+  tallest slide (invisible `inert` sizers in one grid cell) above a `min-h-*`, so it never
+  jumps between slides, and on a phone its arrows join the bottom control row.
 - **Mobile sticky bar** (below `md`): the primary action of a long page is pinned to the bottom
   edge. This covers the PDP `MobileAtcBar` (price + add to cart), plus the cart and checkout
   («До сплати» + CTA, owner decision 7.6, TASK-864). The PDP still reserves room with
