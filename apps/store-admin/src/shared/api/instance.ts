@@ -258,8 +258,35 @@ export function refreshSession(): Promise<RefreshOutcome> {
   return refreshPromise;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
-  return (await refreshSession()).accessToken;
+// ─── Session expiry signal (TASK-528 + TASK-974, wave 198) ────────────────────
+// The interceptor below is the only place that learns, mid-work, that a session
+// has ENDED: a request answered 401, the refresh it then tried answered 401 too.
+// It used to drop the token and let the caller's error surface wherever it
+// happened to — a failed table here, an empty panel there — with nothing saying
+// "you are signed out". It now also tells whoever listens (the session provider,
+// which shows «Сесія закінчилась»).
+//
+// Only the definitive case fires: a 429/5xx/network failure of the refresh is
+// transient and the next request will try again. And the bootstrap refresh never
+// fires it — that one runs through `refreshSession()` directly, because "no
+// session on page load" is not an expiry, it is a browser that was never signed
+// in, and it keeps its plain redirect to /login.
+
+type SessionExpiredListener = () => void;
+const sessionExpiredListeners = new Set<SessionExpiredListener>();
+
+/** Subscribe to "the session can no longer be refreshed". Returns the unsubscribe. */
+export function onSessionExpired(listener: SessionExpiredListener): () => void {
+  sessionExpiredListeners.add(listener);
+  return () => {
+    sessionExpiredListeners.delete(listener);
+  };
+}
+
+function notifySessionExpired(): void {
+  for (const listener of [...sessionExpiredListeners]) {
+    listener();
+  }
 }
 
 api.interceptors.response.use(
@@ -279,7 +306,7 @@ api.interceptors.response.use(
     ) {
       originalRequest._retry = true;
 
-      const newToken = await refreshAccessToken();
+      const { accessToken: newToken, status } = await refreshSession();
 
       if (newToken) {
         setAccessToken(newToken);
@@ -292,6 +319,12 @@ api.interceptors.response.use(
 
       // Refresh failed — drop the stale token; caller handles the rejection.
       setAccessToken(null);
+      // A 401 from refresh is the API saying the session is over (expired,
+      // revoked, signed out elsewhere) — say so to the UI. Concurrent 401s that
+      // shared this refresh each notify; listeners must be idempotent.
+      if (status === 401) {
+        notifySessionExpired();
+      }
     }
 
     return Promise.reject(error);

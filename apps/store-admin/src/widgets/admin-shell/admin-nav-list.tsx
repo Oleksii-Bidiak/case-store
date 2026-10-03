@@ -42,6 +42,10 @@ import {
   useAdminReviewControllerList,
 } from "@/entities/review";
 import { PERM } from "@/entities/permission";
+import {
+  ReturnEntityStatus,
+  useAdminReturnControllerFindAll,
+} from "@/entities/return";
 import { useAuth } from "@/entities/session";
 import { Badge } from "@/shared/ui";
 import { Separator } from "@/shared/ui/separator";
@@ -77,6 +81,12 @@ interface NavItem {
    * it to deputies too.
    */
   ownerOnly?: boolean;
+  /**
+   * Route prefix that lights this entry, when it differs from `href` (wave
+   * 198). «Пристрої» links to `/devices/brands` but owns `/devices/models*` too
+   * — matching on `href` left the models tab with nothing lit in the menu.
+   */
+  activePrefix?: string;
 }
 
 const navItems: readonly NavItem[] = [
@@ -122,6 +132,7 @@ const navItems: readonly NavItem[] = [
   {
     label: dict.nav.devices,
     href: "/devices/brands",
+    activePrefix: "/devices",
     icon: Smartphone,
     permission: PERM.devicesWrite,
   },
@@ -280,10 +291,11 @@ const bottomNavItems: readonly NavItem[] = [
  * Determine whether a nav item is the active route.
  * The dashboard ("/") matches exactly; section links match their sub-routes.
  */
-function isNavItemActive(pathname: string, href: string): boolean {
-  if (href === "#") return false;
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname.startsWith(`${href}/`);
+function isNavItemActive(pathname: string, item: NavItem): boolean {
+  const prefix = item.activePrefix ?? item.href;
+  if (prefix === "#") return false;
+  if (prefix === "/") return pathname === "/";
+  return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
 interface AdminNavListProps {
@@ -315,6 +327,7 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
   const canReadMessages = can(PERM.messagesRead);
   const canReadOrders = can(PERM.ordersRead);
   const canModerateReviews = can(PERM.reviewsModerate);
+  const canReadReturns = can(PERM.returnsRead);
 
   // Unread (NEW) contact-message count for the sidebar badge. Refetches on
   // window focus so the badge stays roughly current as messages arrive.
@@ -350,8 +363,16 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
     { status: AdminReviewControllerListStatus.pending, limit: 1 },
     { query: { ...OPERATIONAL_LIST_QUERY, enabled: canModerateReviews } },
   );
+  // Wave 198 (TASK-1034): «Повернення» counts requests still REQUESTED — the
+  // dashboard tile's exact query (TASK-613), so the two share one cache entry
+  // and cannot disagree. Gated on the queue's own read key, like the others.
+  const { data: newReturnsData } = useAdminReturnControllerFindAll(
+    { status: ReturnEntityStatus.REQUESTED, limit: 1 },
+    { query: { ...OPERATIONAL_LIST_QUERY, enabled: canReadReturns } },
+  );
   const newOrders = pendingOrdersData?.meta?.total ?? 0;
   const pendingReviews = pendingReviewsData?.meta?.total ?? 0;
+  const newReturns = newReturnsData?.meta?.total ?? 0;
 
   const isVisible = (item: NavItem): boolean => {
     if (item.ownerOnly) return isOwner;
@@ -369,7 +390,7 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
       {/* Main navigation */}
       <nav className="flex-1 space-y-1 px-3 py-4">
         {visibleNavItems.map((item) => {
-          const active = isNavItemActive(pathname, item.href);
+          const active = isNavItemActive(pathname, item);
           return (
             <Link
               key={item.label}
@@ -403,6 +424,15 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
                   {newOrders}
                 </Badge>
               )}
+              {item.href === "/returns" && newReturns > 0 && (
+                <Badge
+                  variant={active ? "secondary" : "default"}
+                  aria-label={dict.header.newReturnsBadgeAria(newReturns)}
+                  className="ml-auto"
+                >
+                  {newReturns}
+                </Badge>
+              )}
               {item.href === "/reviews" && pendingReviews > 0 && (
                 <Badge
                   variant={active ? "secondary" : "default"}
@@ -426,7 +456,7 @@ export function AdminNavList({ onNavigate }: AdminNavListProps) {
           {/* Bottom navigation */}
           <nav className="space-y-1 px-3 py-4">
             {visibleBottomNavItems.map((item) => {
-              const active = isNavItemActive(pathname, item.href);
+              const active = isNavItemActive(pathname, item);
               return (
                 <Link
                   key={item.label}

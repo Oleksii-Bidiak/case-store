@@ -2,7 +2,11 @@
 
 import { useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/entities/session";
+import { ErrorState } from "@/shared/ui";
+import { dict } from "@/shared/config";
 import { AdminSidebar } from "./admin-sidebar";
+import { SessionExpiredDialog } from "./session-expired-dialog";
 import { MobileNavDrawer } from "./mobile-nav-drawer";
 import { AdminHeader } from "./admin-header";
 
@@ -29,6 +33,8 @@ import { AdminHeader } from "./admin-header";
 export function AdminShell({ children }: { children: ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const pathname = usePathname();
+  const { permissionsFailed, isRetryingPermissions, retryPermissions } =
+    useAuth();
 
   const [syncedPathname, setSyncedPathname] = useState(pathname);
   if (pathname !== syncedPathname) {
@@ -45,8 +51,25 @@ export function AdminShell({ children }: { children: ReactNode }) {
           mobileNavOpen={mobileNavOpen}
           onOpenMobileNav={() => setMobileNavOpen(true)}
         />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+          {permissionsFailed ? (
+            // TASK-1014 (П6). Without permissions every section answers "no"
+            // — the owner's too — so the page itself would render a refusal
+            // or nothing. Say what happened and offer the one way out.
+            <ErrorState
+              variant="card"
+              title={dict.header.permissionsErrorTitle}
+              message={dict.header.permissionsErrorBody}
+              onRetry={retryPermissions}
+              isRetrying={isRetryingPermissions}
+              className="max-w-xl"
+            />
+          ) : (
+            children
+          )}
+        </main>
       </div>
+      <SessionExpiredDialog />
     </div>
   );
 }
