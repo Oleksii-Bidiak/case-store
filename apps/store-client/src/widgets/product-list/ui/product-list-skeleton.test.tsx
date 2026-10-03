@@ -126,6 +126,25 @@ describe("ProductListSkeleton — filter rail (TASK-515)", () => {
     expect(actions[1]).toHaveClass("w-10.5", "shrink-0");
   });
 
+  // TASK-869 fix round — one variant card stretches its whole grid row by the
+  // ColorDots row (14px + the body's 8px gap); on the seeded catalogue that is
+  // most rows, so the placeholder reserves it or every row lands 22px lower.
+  it("reserves the colour-dots row between the rating and the price", () => {
+    render(<ProductListSkeleton />);
+
+    const rows = screen.getAllByTestId("color-dots-skeleton");
+    expect(rows).toHaveLength(12);
+    // The same row ColorDots draws: 14px swatches, gap-1.5.
+    expect(rows[0]).toHaveClass("flex", "items-center", "gap-1.5");
+    const dots = rows[0].children;
+    expect(dots.length).toBeGreaterThan(0);
+    for (const dot of Array.from(dots)) {
+      expect(dot).toHaveClass("size-3.5", "rounded-full");
+    }
+    // It sits in the card body, right before the price pushed down by mt-auto.
+    expect(rows[0].nextElementSibling).toHaveClass("mt-auto", "h-7");
+  });
+
   it("sets the stock line in the real copy, so it wraps where the card's does", () => {
     render(<ProductListSkeleton />);
 

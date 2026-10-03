@@ -48,7 +48,8 @@ interface ProductListSkeletonProps {
  *
  * Heights, top to bottom: the bordered frame; the edge-to-edge square image;
  * the `p-4 gap-2` body with the two-line title (`line-clamp-2`, 2 × 20px), the
- * rating row (16px) and the price (`text-lg`, 28px, pushed down by `mt-auto`);
+ * rating row (16px), the colour-dots row (14px) and the price (`text-lg`,
+ * 28px, pushed down by `mt-auto`);
  * then the `px-4 pb-4` action block — the stock line and the 40px Buy +
  * heart row. The stock line («В наявності · доставка 1–2 дні») wraps onto a
  * second line wherever the card is narrower than ~216px — two columns up to
@@ -57,9 +58,16 @@ interface ProductListSkeletonProps {
  * `text-xs` flex row, transparent on a pulsing background: it wraps exactly
  * where the real line does, at every width.
  *
- * What the skeleton cannot know: colour dots (variants only) and a one-line
- * title — a row of cards with neither ends up shorter, never taller, than
- * this box.
+ * The colour-dots row is reserved on purpose (design-system.md §Loading: pick
+ * the common state). `ProductCard` draws it only for a product with variant
+ * colours, but the grid stretches every card in a row to the tallest one, so a
+ * single variant card in four gives the whole row this height — on the seeded
+ * catalogue that is most rows of /promo, /categories/[slug], the device page
+ * and every filtered or later /products page. Without the slot each such row
+ * came out 22px taller than its placeholder and the drop added up down the
+ * page (+22, +44, +66…). The trade-off runs the other way now: a row with
+ * no variant card at all (the first /products page today) ends 22px SHORTER
+ * than its placeholder, as does a row whose titles all fit on one line (20px).
  */
 function ProductCardSkeleton() {
   return (
@@ -71,6 +79,17 @@ function ProductCardSkeleton() {
           <Skeleton className="h-4 w-2/3" />
         </div>
         <Skeleton className="h-4 w-24" />
+        {/* The `ColorDots` row (14px swatches, `gap-1.5`), reserved on purpose
+            — see the docblock: one variant card is enough to give its whole
+            grid row this height. */}
+        <div
+          className="flex items-center gap-1.5"
+          data-testid="color-dots-skeleton"
+        >
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="size-3.5 rounded-full" />
+          ))}
+        </div>
         <Skeleton className="mt-auto h-7 w-20" />
       </div>
       <div className="flex flex-col gap-2 px-4 pb-4">
