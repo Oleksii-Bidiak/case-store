@@ -56,6 +56,10 @@ export { Honeypot } from "./honeypot";
 export { Skeleton } from "./skeleton";
 export { CheckoutSkeleton } from "./checkout-skeleton";
 export { ProductCard } from "./product-card";
+export {
+  ProductCardBadges,
+  ProductCardSoldOutVeil,
+} from "./product-card-badges";
 export { ColorDots } from "./color-dots";
 export { ProductCardImage } from "./product-card-image";
 export { ProductThumb } from "./product-thumb";

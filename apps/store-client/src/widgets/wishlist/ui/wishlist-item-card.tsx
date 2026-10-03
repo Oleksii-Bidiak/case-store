@@ -5,9 +5,14 @@ import type { WishlistItemEntity } from "@/entities/wishlist";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { ProductQuickViewTrigger } from "@/widgets/product-quick-view";
-import { ProductCardImage } from "@/shared/ui";
-import { formatMoney, pickProductGradient } from "@/shared/lib";
+import {
+  ProductCardBadges,
+  ProductCardImage,
+  ProductCardSoldOutVeil,
+} from "@/shared/ui";
+import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
+import { isInStock } from "../model/wishlist-catalog";
 
 /**
  * WishlistItemCard — a single saved product on the `/wishlist` grid.
@@ -19,23 +24,31 @@ import { dict } from "@/shared/config";
  * product here), and the compact AddToCartButton. The product position id is
  * directly buyable, so it doubles as the cart target.
  *
+ * Status parity with the catalogue card (TASK-875): the same
+ * `ProductCardBadges` stack (sold out, then −N %) and the same
+ * `ProductCardSoldOutVeil` over a sold-out photo, the discount from the shared
+ * `getCardPricing`, and the same whole-card focus ring keyed off the stretched
+ * link. «Новинка» is the one badge it cannot show: the item carries the date it
+ * was SAVED, not the product's creation date the 30-day badge reads.
+ *
  * The image takes `ProductCardImage`'s default `sizes` (TASK-530): the wishlist
  * grid is the catalogue's 1 / 2 / 4 ladder beside the same 268px rail, so the
  * slots are the same width — full viewport under 390px, half up to `lg`, at
  * most ~240px from there (four columns of the 1320px container minus the rail).
- * Its own copy described a three-column, 18px-gapped grid with a 320px cap.
  */
 export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
-  const onSale =
-    item.compareAtPrice != null &&
-    Number(item.compareAtPrice) > Number(item.price);
+  const { onSale, discountPercent } = getCardPricing({
+    price: item.price,
+    compareAtPrice: item.compareAtPrice,
+  });
   // maxQty is the API-side cap (min of the per-item limit and stock, TASK-231);
-  // 0 means out of stock — the raw stock figure never reaches the client.
-  const outOfStock = item.maxQty <= 0 || !item.isActive;
+  // 0 means out of stock — the raw stock figure never reaches the client. A
+  // withdrawn product (`isActive: false`) reads as sold out too.
+  const inStock = isInStock(item);
   const gradient = pickProductGradient(item.productSlug || item.productName);
 
   return (
-    <article className="group relative flex flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift">
+    <article className="group relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card transition-all duration-200 hover:-translate-y-1 hover:border-primary/30 hover:shadow-lift has-[[data-card-link]:focus-visible]:ring-2 has-[[data-card-link]:focus-visible]:ring-ring has-[[data-card-link]:focus-visible]:ring-offset-2 has-[[data-card-link]:focus-visible]:ring-offset-background">
       <div
         className={`relative aspect-square w-full overflow-hidden bg-gradient-to-br ${gradient}`}
       >
@@ -43,6 +56,11 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
           src={item.imageUrl ?? undefined}
           alt={item.productName}
           initial={(item.productName?.[0] ?? "?").toUpperCase()}
+        />
+        {!inStock && <ProductCardSoldOutVeil />}
+        <ProductCardBadges
+          inStock={inStock}
+          discountPercent={onSale ? discountPercent : 0}
         />
 
         {/* Heart removes the product from the wishlist (it is already saved). */}
@@ -69,8 +87,9 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
         <h3 className="line-clamp-2 text-sm font-medium text-card-foreground transition-colors group-hover:text-primary">
           <Link
             href={`/products/${item.productSlug}`}
+            data-card-link
             // eslint-disable-next-line tailwindcss/no-arbitrary-value -- pseudo-element requires an explicit content value; empty string is the only correct one
-            className="after:absolute after:inset-0 after:z-10 after:content-[''] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="after:absolute after:inset-0 after:z-10 after:content-[''] focus:outline-none"
           >
             {item.productName}
           </Link>
@@ -94,7 +113,7 @@ export function WishlistItemCard({ item }: { item: WishlistItemEntity }) {
           <AddToCartButton
             productId={item.productId}
             compact
-            outOfStock={outOfStock}
+            outOfStock={!inStock}
             ariaLabel={dict.productCard.quickAddAria(item.productName)}
           />
         </div>

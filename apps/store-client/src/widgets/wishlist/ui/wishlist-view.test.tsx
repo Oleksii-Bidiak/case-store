@@ -151,6 +151,102 @@ describe("WishlistView (TASK-076)", () => {
     expect(screen.getByText(dict.wishlist.emptyHeading)).toBeInTheDocument();
   });
 
+  // TASK-875 — owner decision 7.11: the page is «Обране» in every state.
+  it("names the page «Обране» in the h1 and the breadcrumb, empty or not", () => {
+    const { unmount } = renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([]),
+    });
+
+    expect(dict.wishlist.heading).toBe("Обране");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Обране" }),
+    ).toBeInTheDocument();
+    // The empty line is a sub-heading under the page title, not a second h1.
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: dict.wishlist.emptyHeading,
+      }),
+    ).toBeInTheDocument();
+    const trail = screen.getByRole("navigation", {
+      name: dict.product.breadcrumbAria,
+    });
+    expect(within(trail).getByText("Обране")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    unmount();
+
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Обране" }),
+    ).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("navigation", { name: dict.product.breadcrumbAria }),
+      ).getByText("Обране"),
+    ).toBeInTheDocument();
+  });
+
+  it("badges a discounted card with −N % like the catalogue card (TASK-875)", () => {
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([
+        buildItem({ price: "75.00", compareAtPrice: "100.00" }),
+      ]),
+    });
+
+    const card = screen.getByRole("article");
+    expect(within(card).getByText("−25%")).toBeInTheDocument();
+    expect(card.querySelector("[data-sold-out-veil]")).toBeNull();
+    expect(
+      within(card).queryByText(dict.product.outOfStock, {
+        selector: "[data-slot=badge] span",
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["sold out", { maxQty: 0 }],
+    ["withdrawn from sale", { isActive: false }],
+  ])(
+    "badges and dims a %s card like the catalogue card (TASK-875)",
+    (_label, overrides) => {
+      renderWithProviders(<WishlistView />, {
+        queryClient: seededClient([buildItem(overrides)]),
+      });
+
+      const card = screen.getByRole("article");
+      expect(
+        within(card).getByText(dict.product.outOfStock, {
+          selector: "[data-slot=badge] span",
+        }),
+      ).toBeInTheDocument();
+      expect(card.querySelector("[data-sold-out-veil]")).not.toBeNull();
+      expect(
+        within(card).getByRole("button", { name: dict.addToCart.outOfStock }),
+      ).toBeDisabled();
+    },
+  );
+
+  it("gives every active-filter chip an sr-only «Прибрати фільтр» (TASK-875)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([
+        buildItem({ price: "75.00", compareAtPrice: "100.00" }),
+      ]),
+    });
+
+    await user.click(screen.getByRole("checkbox", { name: /Зі знижкою/ }));
+
+    expect(
+      screen.getByRole("button", {
+        name: `${dict.wishlist.quickSale} ${dict.filters.removeFilter}`,
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("renders the redesigned toolbar and defaults to the grid view", () => {
     renderWithProviders(<WishlistView />, {
       queryClient: seededClient([buildItem()]),

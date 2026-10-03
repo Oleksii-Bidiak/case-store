@@ -2125,9 +2125,9 @@ export const dict = {
     /** Advertised "from {price}" prefix when a group has cheaper variants. */
     priceFrom: "від",
     /** Aria label for the wishlist heart when the product is NOT saved. */
-    wishlistAddAria: (name: string) => `Додати «${name}» до списку бажань`,
+    wishlistAddAria: (name: string) => `Додати «${name}» в обране`,
     /** Aria label for the wishlist heart when the product IS saved. */
-    wishlistRemoveAria: (name: string) => `Прибрати «${name}» зі списку бажань`,
+    wishlistRemoveAria: (name: string) => `Прибрати «${name}» з обраного`,
   },
 
   // TASK-076 — wishlist / favorites (guest via cookie, merges on login).
@@ -2136,23 +2136,26 @@ export const dict = {
     headerAria: "Список бажань",
     /** Mobile-menu link + nav label. */
     navLabel: "Список бажань",
-    /** Page heading. */
-    heading: "Список бажань",
+    /** Page heading and breadcrumb leaf — «Обране» everywhere (owner 7.11,
+     *  TASK-875), the same word as the header caption and the footer link. */
+    heading: "Обране",
     /** Count line under the heading. */
     count: (n: number) => `${n} ${n === 1 ? "товар" : "товарів"} збережено`,
     /** Empty-state heading + body + CTA. */
-    emptyHeading: "Ваш список бажань порожній",
+    emptyHeading: "В обраному поки порожньо",
     emptyBody:
       "Збережіть товари, натиснувши на сердечко, щоб знайти їх пізніше.",
     emptyCta: "Перейти до товарів",
     /** Remove-from-list control on a saved card. */
-    removeAria: (name: string) => `Прибрати «${name}» зі списку бажань`,
+    removeAria: (name: string) => `Прибрати «${name}» з обраного`,
     remove: "Прибрати",
     /** Error toast when a toggle/remove mutation fails. */
-    error: "Не вдалося оновити список бажань. Спробуйте ще раз.",
-    /** Metadata for the /wishlist route. */
-    metaTitle: "Список бажань | CaseStore",
-    metaDescription: "Збережені товари у вашому списку бажань.",
+    error: "Не вдалося оновити обране. Спробуйте ще раз.",
+    /** Metadata for the /wishlist route. The bare page name: the root
+     *  layout's title template appends the store name (TASK-875 — it used to
+     *  read «Список бажань | CaseStore | CaseStore»). */
+    metaTitle: "Обране",
+    metaDescription: "Товари, які ви зберегли в обране.",
     // TASK-167-P — wishlist redesign (Wishlist.dc.html): a client-side toolbar
     // (view / sort / add-all) + sidebar filters over the fetched saved items.
     breadcrumbHome: "Головна",

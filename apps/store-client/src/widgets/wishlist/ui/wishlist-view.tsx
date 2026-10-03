@@ -157,25 +157,52 @@ export function WishlistView() {
     );
   }
 
-  // Nothing saved at all — the heart empty state.
+  // The trail is the same in every loaded state, so the page never loses its
+  // «Обране» landmark (TASK-875).
+  const breadcrumb = (
+    <nav
+      aria-label={dict.product.breadcrumbAria}
+      className="mb-4.5 flex items-center gap-2.5 text-sm text-muted-foreground"
+    >
+      <Link href="/" className="transition-colors hover:text-foreground">
+        {dict.wishlist.breadcrumbHome}
+      </Link>
+      <span aria-hidden="true" className="opacity-50">
+        ›
+      </span>
+      <span aria-current="page" className="font-medium text-foreground">
+        {dict.wishlist.heading}
+      </span>
+    </nav>
+  );
+
+  // Nothing saved at all — the heart empty state. The page keeps its trail and
+  // its h1 «Обране» (owner 7.11, TASK-875); the card's line is a sub-heading,
+  // so the empty page no longer swaps its title for a sentence.
   if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-4 rounded-card border border-border bg-card px-6 py-20 text-center">
-        <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-sale/12 text-sale">
-          <Heart className="size-9" aria-hidden="true" />
-        </span>
-        <h1 className={`${H1_CLASS} text-foreground`}>
-          {dict.wishlist.emptyHeading}
+      <div>
+        {breadcrumb}
+        <h1 className={`${H1_CLASS} mb-4.5 text-foreground`}>
+          {dict.wishlist.heading}
         </h1>
-        <p className="max-w-sm text-sm text-muted-foreground">
-          {dict.wishlist.emptyBody}
-        </p>
-        <Link
-          href="/products"
-          className="inline-flex items-center rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {dict.wishlist.emptyCta}
-        </Link>
+        <div className="flex flex-col items-center gap-4 rounded-card border border-border bg-card px-6 py-20 text-center">
+          <span className="inline-flex size-[72px] items-center justify-center rounded-full bg-sale/12 text-sale">
+            <Heart className="size-9" aria-hidden="true" />
+          </span>
+          <h2 className="font-display text-xl font-bold text-foreground">
+            {dict.wishlist.emptyHeading}
+          </h2>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            {dict.wishlist.emptyBody}
+          </p>
+          <Link
+            href="/products"
+            className="inline-flex items-center rounded-xl bg-primary px-6 py-2.5 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {dict.wishlist.emptyCta}
+          </Link>
+        </div>
       </div>
     );
   }
@@ -291,20 +318,7 @@ export function WishlistView() {
 
   return (
     <div>
-      <nav
-        aria-label={dict.product.breadcrumbAria}
-        className="mb-4.5 flex items-center gap-2.5 text-sm text-muted-foreground"
-      >
-        <Link href="/" className="transition-colors hover:text-foreground">
-          {dict.wishlist.breadcrumbHome}
-        </Link>
-        <span aria-hidden="true" className="opacity-50">
-          ›
-        </span>
-        <span className="font-medium text-foreground">
-          {dict.wishlist.heading}
-        </span>
-      </nav>
+      {breadcrumb}
 
       {/* Title + toolbar */}
       <div className="mb-4.5 flex flex-wrap items-end justify-between gap-5">

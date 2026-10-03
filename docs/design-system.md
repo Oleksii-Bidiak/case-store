@@ -320,7 +320,9 @@ icons (e.g. the select chevron) may keep an opacity since they carry no text.
   - **Overlays:** `Dialog` (+ parts) and `Sheet` (+ parts).
   - **Navigation & structure:** `Tabs` (+ parts), `Pagination`, `Separator`, `AccountDropdown`
     / `AccountDropdownItem` / `AccountDropdownSeparator`.
-  - **Commerce:** `ProductCard`, `ProductCardImage`, `ProductThumb`, `CategoryTileImage`,
+  - **Commerce:** `ProductCard`, `ProductCardImage`, `ProductCardBadges` / `ProductCardSoldOutVeil`
+    (the status stack + sold-out wash; any card of a product — e.g. the wishlist card — reuses
+    them instead of drawing its own, TASK-875), `ProductThumb`, `CategoryTileImage`,
     `ColorDots`, `RatingStars`, `ReviewRatingStars`, `Badge`, `Logo` (takes a required
     `siteName` — the server-resolved `resolveSiteName(seo)`, never the `SITE_NAME` constant).
   - **Content & feedback:** `RichText`, `Skeleton`, `CheckoutSkeleton`, and the Sonner `Toaster`.
@@ -432,7 +434,8 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
 Reusable patterns the storefront should converge on — pulled from the UA benchmark shops:
 
 - **Product card:** image (square box, `object-contain` over the gradient placeholder — §4),
-  New/Sale chips top-left, wishlist heart top-right, title (2-line clamp), rating stars +
+  Sold-out/Sale/New chips top-left (`ProductCardBadges`, stopping short of the heart),
+  wishlist heart top-right, sold-out photo dimmed, title (2-line clamp), rating stars +
   count, price block (sale price `text-sale` + old price struck), variant color dots,
   delivery hint, Add-to-cart.
 - **Price block:** current `font-semibold text-lg tabular-nums`; if discounted, old price

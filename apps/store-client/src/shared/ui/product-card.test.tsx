@@ -163,3 +163,34 @@ describe("ProductCard — reserveRows (TASK-869)", () => {
     );
   });
 });
+
+// TASK-875 — the badge stack is shared with the wishlist card; on a two-up
+// phone card it used to run under the 44px heart pinned top-right.
+describe("ProductCard — badge stack beside the heart (TASK-875)", () => {
+  it("stops the stack short of the heart and ellipsises the sold-out pill", () => {
+    renderWithProviders(<ProductCard product={product({ inStock: false })} />);
+
+    const label = screen.getByText(dict.product.outOfStock);
+    expect(label).toHaveClass("truncate");
+    const badge = label.closest("[data-slot=badge]");
+    expect(badge).toHaveClass("max-w-full");
+    expect(badge?.parentElement).toHaveClass("right-14");
+  });
+
+  it("dims a sold-out photo with the shared veil and not an available one", () => {
+    const soldOut = renderWithProviders(
+      <ProductCard product={product({ inStock: false })} />,
+    );
+    expect(soldOut.container.querySelector("[data-sold-out-veil]")).not.toBe(
+      null,
+    );
+    soldOut.unmount();
+
+    const available = renderWithProviders(
+      <ProductCard product={product({ inStock: true })} />,
+    );
+    expect(available.container.querySelector("[data-sold-out-veil]")).toBe(
+      null,
+    );
+  });
+});

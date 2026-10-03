@@ -3,7 +3,10 @@ import Link from "next/link";
 import type { PublicProductEntity } from "@/shared/api/generated/models";
 import { formatMoney, getCardPricing, pickProductGradient } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { Badge } from "./badge";
+import {
+  ProductCardBadges,
+  ProductCardSoldOutVeil,
+} from "./product-card-badges";
 import { ProductCardImage } from "./product-card-image";
 import { RatingStars } from "./rating-stars";
 import { ColorDots } from "./color-dots";
@@ -116,30 +119,13 @@ export function ProductCard({
           priority={priority}
           sizes={imageSizes}
         />
-        {!product.inStock && (
-          <span
-            aria-hidden="true"
-            className="absolute inset-0 z-10 bg-card/55"
-          />
-        )}
-
-        <div className="absolute left-2.5 top-2.5 z-20 flex flex-col gap-1">
-          {!product.inStock && (
-            <Badge variant="secondary" className="shadow-sm">
-              {dict.product.outOfStock}
-            </Badge>
-          )}
-          {onSale && (
-            <Badge variant="sale" className="shadow-sm">
-              −{discountPercent}%
-            </Badge>
-          )}
-          {isNew && !onSale && product.inStock && (
-            <Badge variant="success" className="shadow-sm">
-              {dict.product.newBadge}
-            </Badge>
-          )}
-        </div>
+        {/* Badges and veil are shared with the wishlist card (TASK-875). */}
+        {!product.inStock && <ProductCardSoldOutVeil />}
+        <ProductCardBadges
+          inStock={product.inStock}
+          discountPercent={onSale ? discountPercent : 0}
+          isNew={isNew}
+        />
 
         {/* Wishlist heart — pinned top-right, above the stretched link (z-20) so
             it stays independently clickable without nesting a control in the
