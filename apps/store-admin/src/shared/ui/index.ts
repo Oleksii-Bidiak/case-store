@@ -169,6 +169,7 @@ export {
 export {
   DEFAULT_INDENTATION_WIDTH,
   DISABLED_DND_ANNOUNCEMENTS,
+  DropHintPill,
   POINTER_ACTIVATION_CONSTRAINT,
   SortableTree,
   resolveModifiers,
@@ -178,3 +179,39 @@ export {
   type SortableTreeProps,
   type SortableTreeRowRenderProps,
 } from "./sortable-tree";
+
+// ── Wave 198: canon primitives ───────────────────────────────────────────────
+export { Popover, PopoverContent, PopoverTrigger } from "./popover";
+export { FieldError } from "./field-error";
+export { FormAlert } from "./form-alert";
+export { Callout, calloutVariants, type CalloutProps } from "./callout";
+export { ErrorState, type ErrorStateProps } from "./error-state";
+export { PasswordInput } from "./password-input";
+export {
+  PasswordRequirements,
+  type PasswordRequirementsProps,
+} from "./password-requirements";
+export {
+  Stepper,
+  type StepState,
+  type StepperProps,
+  type StepperStep,
+} from "./stepper";
+export { RadioCard, RadioCardGroup, type RadioCardProps } from "./radio-card";
+export {
+  StatusDot,
+  type StatusDotProps,
+  type StatusDotTone,
+} from "./status-dot";
+export {
+  FormSectionNav,
+  type FormSection,
+  type FormSectionNavProps,
+} from "./form-section-nav";
+export {
+  CollapsibleSection,
+  type CollapsibleSectionProps,
+} from "./collapsible-section";
+
+// ── Wave 198: the ONE table registry for every admin list (TASK-1043) ────────
+export * from "./data-registry";

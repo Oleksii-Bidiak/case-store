@@ -1,4 +1,5 @@
 import { toast as sonnerToast, type ExternalToast } from "sonner";
+import { dict } from "@/shared/config";
 
 /**
  * The admin panel's toast entry point (TASK-422).
@@ -23,7 +24,8 @@ import { toast as sonnerToast, type ExternalToast } from "sonner";
  * symbol is how a wrapper quietly stops being the only way in; ESLint bans
  * `sonner` outside this file so there is exactly one.
  *
- * Only the three methods the panel actually uses are re-exported. Adding
+ * Only the methods the panel actually uses are re-exported (`undo` joined in
+ * wave 198). Adding
  * `info`/`warning`/`promise` later is a two-line change — deliberately not done
  * ahead of a caller, so the policy question ("does a warning wait?") gets asked
  * when someone has a real case.
@@ -31,6 +33,9 @@ import { toast as sonnerToast, type ExternalToast } from "sonner";
 
 /** sonner accepts a string or a React node as the message. */
 type ToastMessage = Parameters<typeof sonnerToast.error>[0];
+
+/** How long an undo toast stays — see `toast.undo`. */
+export const UNDO_TOAST_DURATION_MS = 10_000;
 
 export const toast = {
   /** Auto-dismisses after the Toaster's default (6 s). */
@@ -47,6 +52,34 @@ export const toast = {
     sonnerToast.error(message, {
       duration: Number.POSITIVE_INFINITY,
       ...data,
+    }),
+
+  /**
+   * «Done — and you can take it back» (wave 198, owner decision): a success
+   * toast carrying «Скасувати», after a bulk action or a move.
+   *
+   * 10 s rather than the 6 s default: the operator has to read what happened
+   * AND reach the button. Still never the only way back — a toast cannot take
+   * focus and it expires (see `reorder-undo-button.tsx`), so the screen keeps
+   * its persistent «Скасувати останню …» control as the accessible fallback.
+   */
+  undo: (
+    message: ToastMessage,
+    {
+      onUndo,
+      label = dict.canon.undo,
+      duration = UNDO_TOAST_DURATION_MS,
+      ...data
+    }: ExternalToast & {
+      onUndo: () => void;
+      label?: string;
+      duration?: number;
+    },
+  ): string | number =>
+    sonnerToast.success(message, {
+      ...data,
+      duration,
+      action: { label, onClick: () => onUndo() },
     }),
 
   /** Dismiss one toast, or every toast when called with no id. */

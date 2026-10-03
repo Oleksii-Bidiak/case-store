@@ -1,3 +1,5 @@
+import { countLabel } from "../lib/plural";
+
 /**
  * The three Ukrainian forms of «особа», for the one string that needs them
  * (TASK-480).
@@ -317,6 +319,91 @@ export const dict = {
     viewOnly: "Ви можете переглядати, але не змінювати.",
     // TASK-812: heading of the shared AlertDialog confirm (replaces window.confirm).
     confirmTitle: "Підтвердіть дію",
+
+    // Хвиля 198 (TASK-1043): the ONE table registry every admin list is built
+    // on — shared/ui/data-registry. Screen-specific words (what is counted, the
+    // search fields, the default view's name) come from each screen's block; the
+    // chrome around them lives here so it cannot drift between twenty lists.
+    registry: {
+      quickViewsLabel: "Швидкі види",
+      filters: "Фільтри",
+      // Read after the visible «Фільтри» and its badge: «Фільтри, застосовано: 2».
+      filtersApplied: (count: number) => `, застосовано: ${count}`,
+      columns: "Колонки",
+      view: (name: string) => `Вид: ${name}`,
+      clearAll: "Скинути все",
+      removeChipAria: (label: string) => `Прибрати фільтр «${label}»`,
+
+      summarySort: (label: string) => `Сортування: ${label}`,
+      summaryUpdated: (time: string) => `оновлено ${time}`,
+
+      // Filter side sheet. Edits stay a draft until «Показати…» — the caller
+      // supplies that label because only it knows the count.
+      sheetTitle: "Фільтри",
+      sheetReset: "Скинути",
+      rangeFrom: "від",
+      rangeTo: "до",
+      rangeFromAria: (legend: string) => `${legend}: від`,
+      rangeToAria: (legend: string) => `${legend}: до`,
+      dateFrom: "з",
+      dateTo: "до",
+      newTag: "нове",
+
+      // «Колонки»
+      columnsCaption: "Колонки — перетягніть, щоб змінити порядок",
+      columnLocked: (label: string) => `${label} (завжди)`,
+      moveColumnAria: (label: string) =>
+        `Перемістити колонку «${label}»: стрілки вгору або вниз`,
+      columnMoved: (label: string, position: number, total: number) =>
+        `«${label}»: позиція ${position} з ${total}`,
+      density: "Щільність",
+      densityComfortable: "Звичайна",
+      densityCompact: "Компактна",
+      resetWidths: "Скинути ширину колонок",
+      resetDefaults: "Скинути до стандартних",
+      // Says «у цьому браузері», not «у вашому профілі»: until the per-user
+      // settings API exists (TASK-1044) the settings ARE in this browser. Flip
+      // this one string when the server store lands.
+      columnsFootnote:
+        "Ширину змінюйте, перетягуючи межу колонки в шапці. Налаштування зберігаються в цьому браузері.",
+      resizeColumnAria: (label: string) => `Ширина колонки «${label}»`,
+      widthPx: (px: number) => `${px} px`,
+
+      // «Вид»
+      myViews: "Мої види",
+      saveView: "Зберегти поточний вид…",
+      manageViews: "Керувати видами…",
+      viewsFootnote:
+        "Вид — це фільтри, колонки, їхня ширина й сортування разом. Зберігається в цьому браузері.",
+      saveViewTitle: "Зберегти вид",
+      viewNameLabel: "Назва виду",
+      viewNameRequired: "Вкажіть назву виду",
+      manageViewsTitle: "Керувати видами",
+      renameViewAria: (name: string) => `Назва виду «${name}»`,
+      deleteViewAria: (name: string) => `Видалити вид «${name}»`,
+      noSavedViews: "Збережених видів ще немає.",
+
+      // «Експорт» — offers only the formats a screen passes in.
+      exportLabel: "Експорт",
+      exportWhat: "Що вивантажити",
+      exportFound: (countLabel: string) => `Знайдені — ${countLabel}`,
+      exportSelectedOnly: "Лише вибрані",
+      exportCsv: "CSV",
+      exportXlsx: "Excel (XLSX)",
+      exportFootnote: "Лише видимі колонки, у тому самому порядку.",
+
+      // Bulk bar
+      bulkSelected: (countLabel: string) => `Вибрано ${countLabel}`,
+      bulkExportSelected: "Експорт вибраних",
+      bulkKeptHint: "Вибір зберігається, коли гортаєте сторінки",
+      bulkMoreAria: "Інші дії з вибраними",
+
+      // Table
+      selectRowAria: (label: string) => `Вибрати «${label}»`,
+      rowActionsAria: (label: string) => `Дії: ${label}`,
+      totalsOnPage: (countLabel: string) => `Разом на сторінці: ${countLabel}`,
+      noResults: (query: string) => `Нічого не знайдено за запитом «${query}».`,
+    },
   },
 
   // --- Products (TASK-115) ----------------------------------------------------
@@ -4710,6 +4797,42 @@ export const dict = {
     // so it goes through the same confirmation with its own explanation.
     emptySaveDescription:
       "У списку не лишилося жодної групи. Порожній список магазин не зберігає — пошук знову працюватиме за вбудованим словником, і його групи з'являться тут.",
+  },
+
+  // --- Канон примітивів (хвиля 198) -------------------------------------------
+  // Strings owned by the shared/ui primitives themselves — not by any screen.
+  canon: {
+    // toast.undo — the action on a «done, can be undone» toast.
+    undo: "Скасувати",
+    // ErrorState
+    retry: "Повторити",
+    errorTitle: "Не вдалося завантажити дані",
+    // PasswordInput
+    showPassword: "Показати пароль",
+    hidePassword: "Сховати пароль",
+    // PasswordRequirements — mirrors shared/lib/password-policy (STAFF rule).
+    passwordRequirementsLabel: "Вимоги до пароля",
+    passwordMinLength: (min: number) =>
+      `Щонайменше ${countLabel(min, ["символ", "символи", "символів"])}`,
+    passwordUppercase: "Велика літера",
+    passwordLowercase: "Мала літера",
+    passwordDigit: "Цифра",
+    requirementMet: "виконано",
+    requirementUnmet: "ще ні",
+    // Stepper — read after the step title.
+    stepDone: "виконано",
+    stepSkipped: "пропущено",
+    // FormActionsBar (sticky variant)
+    unsavedChanges: (sections: string) => `Незбережені зміни: ${sections}`,
+    discardChanges: "Скасувати зміни",
+    // CollapsibleSection
+    expand: "Розгорнути",
+    collapse: "Згорнути",
+    // SortableTree drop hints: the pill on a «nest» target, and what a screen
+    // reader hears while the pointer decides between nesting and placing.
+    treeNestInto: (name: string) => `Вкласти в «${name}»`,
+    treePlaceBefore: (name: string) => `Поставити перед «${name}»`,
+    treePlaceAfter: (name: string) => `Поставити після «${name}»`,
   },
 } as const;
 

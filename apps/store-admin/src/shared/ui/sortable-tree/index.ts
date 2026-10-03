@@ -1,6 +1,7 @@
 export {
   DEFAULT_INDENTATION_WIDTH,
   DISABLED_DND_ANNOUNCEMENTS,
+  DropHintPill,
   POINTER_ACTIVATION_CONSTRAINT,
   SortableTree,
   dropHintStyle,

@@ -3,6 +3,8 @@ export { cn } from "./utils";
 export * from "./format";
 export { slugify, SLUG_PATTERN } from "./slug";
 export { nullableTextField } from "./nullable-text-field";
+// Wave 198: counted nouns («27 замовлень») — Intl picks the form.
+export { countLabel, pluralUk, type PluralForms } from "./plural";
 export {
   apiErrorMessage,
   apiErrorStatus,
