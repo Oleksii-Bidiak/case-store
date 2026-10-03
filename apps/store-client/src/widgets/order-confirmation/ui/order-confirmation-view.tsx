@@ -10,11 +10,12 @@ import { ReturnRequestButton } from "@/features/return-request";
 import { forgetPaymentAttempt, readPaymentAttempt } from "@/features/checkout";
 import { dict, H1_CLASS } from "@/shared/config";
 import { trackEvent } from "@/shared/lib";
+import { Button } from "@/shared/ui";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
 import { OrderAddressSummary } from "./order-address-summary";
-import { OrderPaymentPanel } from "./order-payment-panel";
+import { OrderPaymentPanel, offersPaymentRetry } from "./order-payment-panel";
 import { OrderTotalsBreakdown } from "./order-totals-breakdown";
 
 interface OrderConfirmationViewProps {
@@ -33,8 +34,12 @@ interface OrderConfirmationViewProps {
 const CALLBACK_WAIT_MS = 3 * 60 * 1000;
 const CALLBACK_POLL_MS = 4000;
 
-const primaryCta =
-  "inline-block rounded-cta bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+/**
+ * The page-level CTA box on the `Button` primitive (focus ring, disabled tokens):
+ * 48px tall, the CTA radius. The variant is the caller's — primary unless the
+ * payment panel already holds the page's one primary action (TASK-865).
+ */
+const PAGE_CTA = "h-12 rounded-cta px-6 text-base font-semibold";
 
 /**
  * OrderConfirmationView — client orchestrator for `/orders/[id]/confirmation`.
@@ -133,13 +138,14 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
           {dict.order.somethingWrong}
         </h1>
         <p className="text-muted-foreground">{dict.order.loadErrorBody}</p>
-        <button
+        <Button
           type="button"
+          size="lg"
           onClick={() => void refetch()}
-          className={primaryCta}
+          className={PAGE_CTA}
         >
           {dict.common.tryAgain}
-        </button>
+        </Button>
       </div>
     );
   }
@@ -153,15 +159,16 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
           {dict.order.notFoundHeading}
         </h1>
         <p className="text-muted-foreground">{dict.order.notFoundBody}</p>
-        <Link href="/" className={primaryCta}>
-          {dict.common.goHome}
-        </Link>
+        <Button asChild size="lg" className={PAGE_CTA}>
+          <Link href="/">{dict.common.goHome}</Link>
+        </Button>
       </div>
     );
   }
 
   // `notes` is generated as a loose nullable object; narrow to a display string.
   const notes = typeof order.notes === "string" ? order.notes : null;
+  const retryIsPrimary = offersPaymentRetry(order.paymentStatus, order.status);
 
   return (
     <div className="flex flex-col gap-8">
@@ -194,10 +201,18 @@ export function OrderConfirmationView({ orderId }: OrderConfirmationViewProps) {
             billingAddress={order.billingAddress}
           />
 
-          <div className="flex flex-wrap gap-4">
-            <Link href="/" className={primaryCta}>
-              {dict.common.continueShopping}
-            </Link>
+          <div className="flex flex-wrap items-center gap-4">
+            {/* With a declined payment the panel's «Спробувати ще раз» is the
+                page's one primary; «Продовжити покупки» steps down to outline
+                so the two do not compete (design-system §1, TASK-865). */}
+            <Button
+              asChild
+              size="lg"
+              variant={retryIsPrimary ? "outline" : "default"}
+              className={PAGE_CTA}
+            >
+              <Link href="/">{dict.common.continueShopping}</Link>
+            </Button>
             {order.status === "PENDING" && (
               <CancelOrderButton orderId={order.id} />
             )}

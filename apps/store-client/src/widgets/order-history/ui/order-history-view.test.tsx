@@ -210,3 +210,27 @@ describe("OrderHistoryView — return request (TASK-373)", () => {
     ).toHaveLength(1);
   });
 });
+
+/**
+ * TASK-870 — design-system §6: an empty list gets an icon, one line and a
+ * primary action. `/orders` had the line and a button but no icon, left-aligned
+ * in a bare bordered box, unlike every other empty list on the storefront.
+ */
+describe("OrderHistoryView — empty state (TASK-870)", () => {
+  it("shows the line, a decorative icon and a primary link to the catalogue", async () => {
+    stubOrders([]);
+
+    renderHistory();
+
+    const line = await screen.findByText(dict.orderHistory.empty);
+    const card = line.parentElement as HTMLElement;
+    // The glyph is decoration — hidden from assistive tech with its disc.
+    const disc = card.querySelector('[aria-hidden="true"]');
+    expect(disc?.querySelector("svg")).not.toBeNull();
+
+    const cta = screen.getByRole("link", { name: dict.orderHistory.emptyCta });
+    expect(cta).toHaveAttribute("href", "/products");
+    expect(cta).toHaveAttribute("data-variant", "default");
+    expect(cta).toHaveClass("h-11");
+  });
+});

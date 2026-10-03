@@ -365,6 +365,67 @@ describe("OrderConfirmationView", () => {
       ).not.toBeInTheDocument();
     });
 
+    describe("one primary action (TASK-865)", () => {
+      const continueLink = () =>
+        screen.getByRole("link", { name: dict.common.continueShopping });
+
+      it("leaves the retry as the only primary on a failed payment", async () => {
+        server.use(
+          http.get("*/api/orders/:id", () =>
+            HttpResponse.json(makeOrder({ paymentStatus: "FAILED" })),
+          ),
+        );
+
+        renderWithProviders(
+          <OrderConfirmationView orderId="order-1" />,
+          authed,
+        );
+
+        const retry = await screen.findByRole("button", {
+          name: dict.order.payment.retry,
+        });
+        expect(retry).toHaveAttribute("data-variant", "default");
+        expect(continueLink()).toHaveAttribute("data-variant", "outline");
+      });
+
+      it("keeps «Продовжити покупки» primary when nothing else is", async () => {
+        server.use(
+          http.get("*/api/orders/:id", () =>
+            HttpResponse.json(makeOrder({ paymentStatus: "PAID" })),
+          ),
+        );
+
+        renderWithProviders(
+          <OrderConfirmationView orderId="order-1" />,
+          authed,
+        );
+        await screen.findByRole("heading", { name: dict.order.thankYou });
+
+        expect(continueLink()).toHaveAttribute("data-variant", "default");
+      });
+
+      it("keeps it primary on a failed payment of a closed order — no retry there", async () => {
+        server.use(
+          http.get("*/api/orders/:id", () =>
+            HttpResponse.json(
+              makeOrder({ paymentStatus: "FAILED", status: "CANCELLED" }),
+            ),
+          ),
+        );
+
+        renderWithProviders(
+          <OrderConfirmationView orderId="order-1" />,
+          authed,
+        );
+        await screen.findByRole("heading", { name: dict.order.thankYou });
+
+        expect(
+          screen.queryByRole("button", { name: dict.order.payment.retry }),
+        ).not.toBeInTheDocument();
+        expect(continueLink()).toHaveAttribute("data-variant", "default");
+      });
+    });
+
     it("says plainly when the callback never arrived", async () => {
       // An attempt older than the wait window: no more spinner, no pretending.
       sessionStorage.setItem(

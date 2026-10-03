@@ -1685,7 +1685,7 @@ export const dict = {
   orderHistory: {
     title: "Мої замовлення",
     empty: "У вас ще немає замовлень.",
-    emptyCta: "Перейти до товарів",
+    emptyCta: "До каталогу",
     orderNumber: "Замовлення",
     placedOn: "Дата",
     total: "Разом",

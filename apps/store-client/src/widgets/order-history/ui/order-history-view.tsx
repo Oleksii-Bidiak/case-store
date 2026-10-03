@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Package } from "lucide-react";
 import { useAuth } from "@/entities/session";
 import { OrderStatusBadge, useGetOrders } from "@/entities/order";
 import { CancelOrderButton } from "@/features/cancel-order";
@@ -95,9 +96,21 @@ export function OrderHistoryView() {
           {dict.orderHistory.loadError}
         </p>
       ) : orders.length === 0 ? (
-        <div className="flex flex-col items-start gap-4 rounded-card border border-border p-8">
-          <p className="text-muted-foreground">{dict.orderHistory.empty}</p>
-          <Button asChild>
+        // Design-system §6: icon + one line + a primary action (TASK-870).
+        // The same card as the catalogue's `ListingEmptyState` — muted disc,
+        // display-type line, 44px primary — so every empty list on the
+        // storefront reads alike.
+        <div className="flex flex-col items-center justify-center rounded-card border border-border bg-card px-5 py-14 text-center shadow-card">
+          <span
+            aria-hidden="true"
+            className="mb-4 inline-flex size-18 items-center justify-center rounded-full bg-muted text-muted-foreground"
+          >
+            <Package className="size-8" strokeWidth={1.6} />
+          </span>
+          <p className="max-w-md font-display text-xl font-bold text-foreground">
+            {dict.orderHistory.empty}
+          </p>
+          <Button asChild size="lg" className="mt-5 h-11">
             <Link href="/products">{dict.orderHistory.emptyCta}</Link>
           </Button>
         </div>
