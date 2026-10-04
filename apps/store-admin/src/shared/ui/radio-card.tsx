@@ -31,11 +31,17 @@ interface RadioCardProps extends Omit<
 > {
   title: React.ReactNode;
   description?: React.ReactNode;
+  /**
+   * A small picture between the radio and the text — e.g. the placement
+   * schema of BannersProposal БН5. Decorative: rendered `aria-hidden`.
+   */
+  media?: React.ReactNode;
 }
 
 function RadioCard({
   title,
   description,
+  media,
   className,
   ...props
 }: RadioCardProps) {
@@ -56,6 +62,11 @@ function RadioCard({
         aria-hidden="true"
         className="mt-0.5 inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-input group-data-[state=checked]/radio-card:border-5 group-data-[state=checked]/radio-card:border-primary"
       />
+      {media ? (
+        <span aria-hidden="true" className="shrink-0">
+          {media}
+        </span>
+      ) : null}
       <span className="flex min-w-0 flex-col gap-0.5">
         <span id={titleId} className="font-semibold text-foreground">
           {title}

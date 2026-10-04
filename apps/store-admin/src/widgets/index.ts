@@ -49,7 +49,11 @@ export {
   EditBlogCategoryView,
 } from "./blog-category-form-view";
 export { AdminBannerTable, AdminBannerTableSkeleton } from "./banner-list";
-export { CreateBannerView, EditBannerView } from "./banner-form-view";
+export {
+  BannerFormSkeleton,
+  CreateBannerView,
+  EditBannerView,
+} from "./banner-form-view";
 export { AdminBrandTable, AdminBrandTableSkeleton } from "./brand-list";
 export {
   AddonServiceTable,

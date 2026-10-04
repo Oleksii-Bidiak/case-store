@@ -1,6 +1,10 @@
 /**
  * `AdminBannerTable` — grouped placement sections (TASK-186 / TASK-264-C) and, since
- * TASK-295, one SORTABLE `role="grid"` per placement.
+ * TASK-295, one SORTABLE `role="grid"` per placement. Wave 198 (TASK-1073,
+ * BannersProposal БН1–БН4) added the display-state views, the «де на сайті» line
+ * and «Додати сюди» per section, the thumbnail / button / window columns, the row
+ * «⋯» (edit, publish toggle, duplicate, move to another placement, delete via an
+ * AlertDialog) and the view-only state without `banners:write`.
  *
  * The reorder cases are KEYBOARD-ONLY by design: jsdom has no layout, so dnd-kit's
  * collision detection cannot run. Pointer correctness rests on the pointer path
@@ -9,7 +13,8 @@
  *
  * The load-bearing invariant is the SERVER CONTRACT: the payload must name EVERY
  * banner in the placement bucket, so the grid reads the UNFILTERED banner list and
- * a search that hides rows LOCKS reordering rather than PATCHing a partial ordering.
+ * a search (or a view) that hides rows LOCKS reordering rather than PATCHing a
+ * partial ordering.
  */
 
 import { http, HttpResponse } from "msw";
@@ -23,6 +28,7 @@ import {
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
+import { formatDate, formatDateTime } from "@/shared/lib";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
 import { AdminBannerTable } from "./admin-banner-table";
 
@@ -39,6 +45,9 @@ beforeEach(() => {
   resetReorderLock();
 });
 
+const d = dict.banners;
+const WRITER = ["banners:write"];
+
 type Placement =
   "HERO_SLIDE" | "PROMO_TILE" | "PROMO_BANNER" | "ANNOUNCEMENT_BAR";
 type Status = "DRAFT" | "SCHEDULED" | "PUBLISHED";
@@ -54,25 +63,40 @@ function makeBannerRow(
     id,
     placement,
     title,
-    subtitle: null,
-    imageUrl: null,
+    subtitle: null as string | null,
+    imageUrl: null as string | null,
     imageBlurDataUrl: null,
-    ctaLabel: null,
-    ctaHref: null,
-    theme: null,
+    ctaLabel: null as string | null,
+    ctaHref: null as string | null,
+    theme: null as string | null,
     sortOrder,
     status,
     publishedAt: status === "PUBLISHED" ? "2026-07-01T00:00:00.000Z" : null,
-    // Widened: the TASK-430 scheduled-badge tests override this with a date.
+    // Widened: the window tests override these with dates.
     scheduledAt: null as string | null,
+    scheduledUntil: null as string | null,
     createdAt: "2026-07-01T00:00:00.000Z",
     updatedAt: "2026-07-01T00:00:00.000Z",
   };
 }
 
-function stubBanners(rows: ReturnType<typeof makeBannerRow>[]) {
+type BannerRow = ReturnType<typeof makeBannerRow>;
+
+function stubBanners(rows: BannerRow[]) {
   server.use(
     http.get("*/api/admin/banners", () => HttpResponse.json({ data: rows })),
+  );
+}
+
+function renderTable(permissions: string[] = WRITER) {
+  return renderWithProviders(<AdminBannerTable />, { auth: { permissions } });
+}
+
+async function openRowMenu(title: string) {
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: dict.common.registry.rowActionsAria(title),
+    }),
   );
 }
 
@@ -83,93 +107,437 @@ describe("AdminBannerTable", () => {
       makeBannerRow("banner-2", "Glass Promo", "PROMO_TILE", "DRAFT"),
     ]);
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
 
     await waitFor(() =>
       expect(screen.getByText("Summer Hero")).toBeInTheDocument(),
     );
     expect(screen.getByText("Glass Promo")).toBeInTheDocument();
     expect(
-      screen.getByText(dict.banners.placements.HERO_SLIDE),
+      screen.getByRole("heading", { name: d.placements.HERO_SLIDE }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(dict.banners.placements.PROMO_TILE),
+      screen.getByRole("heading", { name: d.placements.PROMO_TILE }),
     ).toBeInTheDocument();
   });
 
-  it("shows the published badge for published banners and draft for drafts", async () => {
+  it("says where each placement sits on the site, and offers «Додати сюди» into it", async () => {
+    stubBanners([
+      makeBannerRow("banner-1", "Summer Hero", "HERO_SLIDE", "PUBLISHED"),
+    ]);
+
+    renderTable();
+
+    expect(
+      await screen.findByText(d.placementWhere.HERO_SLIDE),
+    ).toBeInTheDocument();
+    // Every placement is offered, even an empty one — that is where «Додати
+    // сюди» matters most.
+    expect(
+      screen.getByText(d.placementWhere.ANNOUNCEMENT_BAR),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", {
+        name: d.addHereAria(d.placements.HERO_SLIDE),
+      }),
+    ).toHaveAttribute("href", "/banners/new?placement=HERO_SLIDE");
+    expect(
+      screen.getByRole("link", {
+        name: d.addHereAria(d.placements.PROMO_BANNER),
+      }),
+    ).toHaveAttribute("href", "/banners/new?placement=PROMO_BANNER");
+    expect(screen.getAllByText(d.sectionEmpty).length).toBeGreaterThan(0);
+    // The page's primary action lives in the widget header now.
+    expect(screen.getByRole("link", { name: d.add })).toHaveAttribute(
+      "href",
+      "/banners/new",
+    );
+  });
+
+  it("shows the thumbnail, the button and where it leads", async () => {
+    stubBanners([
+      {
+        ...makeBannerRow("banner-1", "Навушники", "HERO_SLIDE", "PUBLISHED"),
+        imageUrl: "http://localhost:3001/uploads/banners/h.webp",
+        ctaLabel: "Обрати",
+        ctaHref: "/categories/headphones",
+      },
+      makeBannerRow("banner-2", "Без фото", "HERO_SLIDE", "PUBLISHED", 1),
+    ]);
+
+    const { container } = renderTable();
+
+    await screen.findByText("Навушники");
+    expect(screen.getByText(d.ctaLine("Обрати"))).toBeInTheDocument();
+    expect(screen.getByText("/categories/headphones")).toBeInTheDocument();
+    const img = container.querySelector(
+      "img[src='http://localhost:3001/uploads/banners/h.webp']",
+    );
+    expect(img).not.toBeNull();
+    expect(screen.getByText(d.thumbEmpty)).toBeInTheDocument();
+  });
+
+  it("names the display state: «Показується» for a live banner, «Чернетка» for a draft", async () => {
     stubBanners([
       makeBannerRow("banner-1", "Summer Hero", "HERO_SLIDE", "PUBLISHED"),
       makeBannerRow("banner-2", "Glass Promo", "PROMO_TILE", "DRAFT"),
     ]);
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
 
-    await waitFor(() =>
-      expect(
-        screen.getByText(dict.banners.statusLabels.PUBLISHED),
-      ).toBeInTheDocument(),
-    );
+    await screen.findByText("Summer Hero");
     expect(
-      screen.getByText(dict.banners.statusLabels.DRAFT),
-    ).toBeInTheDocument();
+      within(rowOf("Summer Hero")).getAllByText(d.displayStates.live).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(rowOf("Glass Promo")).getAllByText(d.displayStates.draft).length,
+    ).toBeGreaterThan(0);
   });
 
   /**
-   * TASK-430 — the scheduled badge wore the same grey as a draft and named no date,
-   * so the row did not answer the question a schedule raises.
+   * TASK-430 — a scheduled row says WHEN. Since wave 198 the date lives in the
+   * window column («з …») next to the «Заплановано» badge.
    */
-  it("shows the scheduled date rather than a bare «Заплановано»", async () => {
+  it("shows the scheduled start next to «Заплановано»", async () => {
     stubBanners([
       {
         ...makeBannerRow("banner-3", "Friday Hero", "HERO_SLIDE", "SCHEDULED"),
-        scheduledAt: "2026-09-19T08:00:00.000Z",
+        scheduledAt: "2099-09-19T08:00:00.000Z",
       },
     ]);
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
 
+    await screen.findByText("Friday Hero");
+    const row = rowOf("Friday Hero");
     expect(
-      await screen.findByText(dict.banners.statusScheduledOn("19.09.2026")),
-    ).toBeInTheDocument();
+      within(row).getAllByText(
+        d.windowFrom(formatDateTime("2099-09-19T08:00:00.000Z")),
+      ).length,
+    ).toBeGreaterThan(0);
     expect(
-      screen.queryByText(dict.banners.statusLabels.DRAFT),
+      within(row).getAllByText(d.displayStates.scheduled).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(row).queryByText(d.displayStates.draft),
     ).not.toBeInTheDocument();
   });
 
-  it("falls back to «Заплановано» with no instant, never «Invalid Date»", async () => {
+  it("falls back to a bare «Заплановано» with no instant, never «Invalid Date»", async () => {
     stubBanners([
       makeBannerRow("banner-4", "No Date", "HERO_SLIDE", "SCHEDULED"),
     ]);
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
 
+    await screen.findByText("No Date");
     expect(
-      await screen.findByText(dict.banners.statusLabels.SCHEDULED),
+      within(rowOf("No Date")).getAllByText(d.displayStates.scheduled).length,
+    ).toBeGreaterThan(0);
+    expect(screen.queryByText(/Invalid Date/)).not.toBeInTheDocument();
+  });
+
+  it("shows the window: «до …» with days left, or «без кінця» since publication", async () => {
+    stubBanners([
+      {
+        ...makeBannerRow("banner-5", "Акція", "ANNOUNCEMENT_BAR", "PUBLISHED"),
+        scheduledUntil: "2099-10-15T20:59:00.000Z",
+      },
+      makeBannerRow("banner-6", "Назавжди", "HERO_SLIDE", "PUBLISHED"),
+    ]);
+
+    renderTable();
+
+    await screen.findByText("Акція");
+    expect(
+      within(rowOf("Акція")).getAllByText(
+        d.windowUntil(formatDateTime("2099-10-15T20:59:00.000Z")),
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(rowOf("Назавжди")).getAllByText(d.windowEndless).length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(rowOf("Назавжди")).getByText(
+        d.windowFrom(formatDate("2026-07-01T00:00:00.000Z")),
+      ),
     ).toBeInTheDocument();
   });
 
-  it("renders an edit action linking to the banner edit route", async () => {
+  it("links the title to the edit route, and keeps «Редагувати» in the row «⋯»", async () => {
     stubBanners([
       makeBannerRow("banner-1", "Summer Hero", "HERO_SLIDE", "PUBLISHED"),
     ]);
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
 
-    const editLink = await screen.findByRole("link", {
-      name: dict.common.edit,
-    });
-    expect(editLink).toHaveAttribute("href", "/banners/banner-1/edit");
+    expect(
+      await screen.findByRole("link", { name: "Summer Hero" }),
+    ).toHaveAttribute("href", "/banners/banner-1/edit");
+
+    await openRowMenu("Summer Hero");
+    expect(
+      await screen.findByRole("menuitem", { name: dict.common.edit }),
+    ).toHaveAttribute("href", "/banners/banner-1/edit");
   });
 
   it("shows the empty state when there are no banners", async () => {
     stubBanners([]);
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
+
+    await waitFor(() => expect(screen.getByText(d.empty)).toBeInTheDocument());
+  });
+});
+
+/** The rendered row (`<tr>`) that holds `title`. */
+function rowOf(title: string): HTMLElement {
+  const cell = screen.getAllByText(title)[0];
+  const row = cell.closest("tr");
+  if (!row) throw new Error(`no row for ${title}`);
+  return row as HTMLElement;
+}
+
+describe("AdminBannerTable — display-state views (TASK-1073)", () => {
+  const rows = () => [
+    makeBannerRow("b-live", "Живий", "HERO_SLIDE", "PUBLISHED", 0),
+    {
+      ...makeBannerRow("b-sch", "Майбутній", "HERO_SLIDE", "SCHEDULED", 1),
+      scheduledAt: "2099-01-01T00:00:00.000Z",
+    },
+    {
+      ...makeBannerRow("b-end", "Минулий", "PROMO_TILE", "PUBLISHED", 0),
+      scheduledUntil: "2000-01-01T00:00:00.000Z",
+    },
+    makeBannerRow("b-draft", "Чорновик", "PROMO_TILE", "DRAFT", 1),
+  ];
+
+  it("counts each view from the unfiltered list", async () => {
+    stubBanners(rows());
+    renderTable();
+
+    await screen.findByText("Живий");
+    const views = screen.getByRole("tablist", {
+      name: dict.common.registry.quickViewsLabel,
+    });
+    const tab = (label: string) =>
+      within(views).getByRole("tab", { name: new RegExp(`^${label}`) });
+    expect(tab(d.quickViews.all)).toHaveTextContent("4");
+    expect(tab(d.quickViews.live)).toHaveTextContent("1");
+    expect(tab(d.quickViews.scheduled)).toHaveTextContent("1");
+    expect(tab(d.quickViews.ended)).toHaveTextContent("1");
+    expect(tab(d.quickViews.draft)).toHaveTextContent("1");
+  });
+
+  it("a view hides the other rows and LOCKS reordering", async () => {
+    stubBanners(rows());
+    renderTable();
+
+    await screen.findByText("Живий");
+    await userEvent.click(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${d.quickViews.scheduled}`),
+      }),
+    );
 
     await waitFor(() =>
-      expect(screen.getByText(dict.banners.empty)).toBeInTheDocument(),
+      expect(screen.queryByText("Живий")).not.toBeInTheDocument(),
     );
+    expect(screen.getByText("Майбутній")).toBeInTheDocument();
+    expect(screen.queryByText("Чорновик")).not.toBeInTheDocument();
+    expect(screen.getByText(d.viewLockedHint)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: dict.reorderList.handleLabel("Майбутній"),
+      }),
+    ).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+describe("AdminBannerTable — row actions (TASK-1073)", () => {
+  const HERO = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+
+  function hero() {
+    return {
+      ...makeBannerRow(HERO, "Аксесуари", "HERO_SLIDE", "PUBLISHED"),
+      subtitle: "Чохли та скло",
+      imageUrl: "/uploads/banners/a.webp",
+      ctaLabel: "До каталогу",
+      ctaHref: "/products",
+      theme: "primary",
+      scheduledUntil: "2099-01-01T00:00:00.000Z",
+    };
+  }
+
+  it("unpublishes a live banner from «⋯»", async () => {
+    stubBanners([hero()]);
+    const calls: string[] = [];
+    server.use(
+      http.patch("*/api/admin/banners/:id/unpublish", ({ params }) => {
+        calls.push(String(params.id));
+        return HttpResponse.json({ data: { ...hero(), status: "DRAFT" } });
+      }),
+    );
+    renderTable();
+
+    await openRowMenu("Аксесуари");
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: d.unpublish }),
+    );
+
+    await waitFor(() => expect(calls).toEqual([HERO]));
+  });
+
+  it("publishes a draft from «⋯»", async () => {
+    stubBanners([{ ...hero(), status: "DRAFT", publishedAt: null }]);
+    const calls: string[] = [];
+    server.use(
+      http.patch("*/api/admin/banners/:id/publish", ({ params }) => {
+        calls.push(String(params.id));
+        return HttpResponse.json({ data: hero() });
+      }),
+    );
+    renderTable();
+
+    await openRowMenu("Аксесуари");
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: d.publish }),
+    );
+
+    await waitFor(() => expect(calls).toEqual([HERO]));
+  });
+
+  it("«Дублювати» creates a DRAFT copy in the same placement through the create endpoint", async () => {
+    stubBanners([hero()]);
+    const bodies: unknown[] = [];
+    server.use(
+      http.post("*/api/admin/banners", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({ data: { ...hero(), id: "copy" } });
+      }),
+    );
+    renderTable();
+
+    await openRowMenu("Аксесуари");
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: d.duplicate }),
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({
+      placement: "HERO_SLIDE",
+      title: d.duplicateTitle("Аксесуари"),
+      subtitle: "Чохли та скло",
+      imageUrl: "/uploads/banners/a.webp",
+      ctaLabel: "До каталогу",
+      ctaHref: "/products",
+      theme: "primary",
+      status: "DRAFT",
+    });
+  });
+
+  it("«Перенести в … — в кінець» sends ONLY the new placement (the API appends it, TASK-580)", async () => {
+    stubBanners([hero()]);
+    const bodies: unknown[] = [];
+    server.use(
+      http.put("*/api/admin/banners/:id", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json({
+          data: { ...hero(), placement: "PROMO_TILE" },
+        });
+      }),
+    );
+    renderTable();
+
+    await openRowMenu("Аксесуари");
+    // Its own placement is not offered.
+    expect(
+      screen.queryByRole("menuitem", {
+        name: d.moveTo(d.placements.HERO_SLIDE),
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(d.moveGroup)).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: d.moveTo(d.placements.PROMO_TILE) }),
+    );
+
+    await waitFor(() => expect(bodies).toEqual([{ placement: "PROMO_TILE" }]));
+  });
+
+  it("«Видалити…» asks in an AlertDialog; cancelling deletes nothing", async () => {
+    stubBanners([hero()]);
+    const deleted: string[] = [];
+    server.use(
+      http.delete("*/api/admin/banners/:id", ({ params }) => {
+        deleted.push(String(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const confirmSpy = jest.spyOn(window, "confirm");
+    renderTable();
+
+    await openRowMenu("Аксесуари");
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: d.deleteAction }),
+    );
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(d.deleteTitle("Аксесуари")),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(d.deleteDescription)).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+    expect(deleted).toEqual([]);
+
+    await openRowMenu("Аксесуари");
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: d.deleteAction }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: d.deleteConfirmLabel,
+      }),
+    );
+
+    await waitFor(() => expect(deleted).toEqual([HERO]));
+    // TASK-812: the browser prompt is gone.
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+});
+
+describe("AdminBannerTable — without banners:write (TASK-1073 БН3)", () => {
+  it("is view-only: no add, no «⋯», no grips — and says so", async () => {
+    stubBanners([
+      makeBannerRow("banner-1", "Summer Hero", "HERO_SLIDE", "PUBLISHED"),
+    ]);
+
+    renderTable([]);
+
+    await screen.findByText("Summer Hero");
+    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: d.add })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", {
+        name: d.addHereAria(d.placements.HERO_SLIDE),
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: dict.common.registry.rowActionsAria("Summer Hero"),
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: dict.reorderList.handleLabel("Summer Hero"),
+      }),
+    ).not.toBeInTheDocument();
+    // The title is plain text — the edit route would only answer 403.
+    expect(
+      screen.queryByRole("link", { name: "Summer Hero" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -182,22 +550,22 @@ describe("AdminBannerTable — ?placement= deep link (TASK-264-C)", () => {
       makeBannerRow("banner-3", "Top Strip", "ANNOUNCEMENT_BAR", "PUBLISHED"),
     ]);
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
 
     // Only the Hero section renders…
     await waitFor(() =>
       expect(
-        screen.getByText(dict.banners.placements.HERO_SLIDE),
+        screen.getByRole("heading", { name: d.placements.HERO_SLIDE }),
       ).toBeInTheDocument(),
     );
     expect(screen.getByText("Summer Hero")).toBeInTheDocument();
     // …the other placements' headings and rows are absent even though the
     // response included banners for them.
     expect(
-      screen.queryByText(dict.banners.placements.PROMO_TILE),
+      screen.queryByRole("heading", { name: d.placements.PROMO_TILE }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByText(dict.banners.placements.ANNOUNCEMENT_BAR),
+      screen.queryByRole("heading", { name: d.placements.ANNOUNCEMENT_BAR }),
     ).not.toBeInTheDocument();
     expect(screen.queryByText("Glass Promo")).not.toBeInTheDocument();
     expect(screen.queryByText("Top Strip")).not.toBeInTheDocument();
@@ -210,16 +578,16 @@ describe("AdminBannerTable — ?placement= deep link (TASK-264-C)", () => {
       makeBannerRow("banner-2", "Glass Promo", "PROMO_TILE", "DRAFT"),
     ]);
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
 
     await waitFor(() =>
       expect(
-        screen.getByText(dict.banners.placements.HERO_SLIDE),
+        screen.getByRole("heading", { name: d.placements.HERO_SLIDE }),
       ).toBeInTheDocument(),
     );
     // Both sections render — the invalid param is ignored, not rendered empty.
     expect(
-      screen.getByText(dict.banners.placements.PROMO_TILE),
+      screen.getByRole("heading", { name: d.placements.PROMO_TILE }),
     ).toBeInTheDocument();
     expect(screen.getByText("Summer Hero")).toBeInTheDocument();
     expect(screen.getByText("Glass Promo")).toBeInTheDocument();
@@ -300,8 +668,10 @@ const assertive = () =>
   screen.getByTestId("tree-live-assertive").textContent ?? "";
 
 async function renderGrids() {
-  const result = renderWithProviders(<AdminBannerTable />);
-  await screen.findByText(dict.banners.placements.HERO_SLIDE);
+  const result = renderTable();
+  await screen.findByRole("heading", {
+    name: dict.banners.placements.HERO_SLIDE,
+  });
   await waitFor(() => expect(heroIds()).toHaveLength(3));
   return result;
 }
@@ -515,7 +885,9 @@ describe("AdminBannerTable — the payload can never be partial (TASK-295)", () 
     // Only the deep-linked section renders…
     expect(screen.getAllByRole("grid")).toHaveLength(1);
     expect(
-      screen.queryByText(dict.banners.placements.PROMO_TILE),
+      screen.queryByRole("heading", {
+        name: dict.banners.placements.PROMO_TILE,
+      }),
     ).not.toBeInTheDocument();
 
     keyboardMoveUp(H3);
@@ -549,7 +921,7 @@ describe("AdminBannerTable — toolbar (TASK-357)", () => {
       }),
     );
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
     await screen.findByText("Summer Hero");
     expect(urls).toHaveLength(1);
 
@@ -575,7 +947,7 @@ describe("AdminBannerTable — toolbar (TASK-357)", () => {
       ),
     );
 
-    renderWithProviders(<AdminBannerTable />);
+    renderTable();
 
     expect(await screen.findByText(dict.banners.loadError)).toBeInTheDocument();
     // The state where a refresh matters most used to hide the whole toolbar.

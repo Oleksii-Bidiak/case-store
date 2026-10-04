@@ -39,10 +39,16 @@ const DICTIONARY = path.join(SRC, "shared/config/dictionary.ts");
 const DYNAMIC_ACCESS: Record<string, string> = {
   "banners.placements":
     "widgets/banner-list/ui/admin-banner-table.tsx — placements[placement]",
-  "banners.statusLabels":
-    "widgets/banner-list/ui/admin-banner-table.tsx — statusLabels[status]",
+  "banners.quickViews":
+    "widgets/banner-list/ui/admin-banner-table.tsx — quickViews[view] per display state",
+  "banners.displayStates":
+    "widgets/banner-list/ui/admin-banner-table.tsx, widgets/banner-form-view/ui/edit-banner-view.tsx — displayStates[state]",
+  "banners.placementWhere":
+    "widgets/banner-list/ui/admin-banner-table.tsx, features/banner-form/ui/banner-form.tsx — placementWhere[placement]",
   "bannerForm.placements":
-    "features/banner-form/ui/banner-form.tsx — <option> per placement enum",
+    "features/banner-form/ui/banner-form.tsx — RadioCard per placement",
+  "bannerForm.imageHints":
+    "features/banner-form/ui/banner-form.tsx — imageHints[placement] as the picture hint",
   "bannerPreview.shape":
     "shared/ui/banner-placement-preview/banner-placement-preview.tsx — shape[placement]",
   "carousels.placementLabels":

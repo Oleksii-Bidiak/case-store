@@ -205,6 +205,15 @@ export const handlers = [
   http.get("*/api/categories/admin/tree", () =>
     HttpResponse.json({ data: [] }),
   ),
+  // Public category tree + product list — the banner LinkPicker's sources
+  // (wave 198, TASK-1073). Empty by default; the picker suites override them.
+  http.get("*/api/categories/tree", () => HttpResponse.json({ data: [] })),
+  http.get("*/api/products", () =>
+    HttpResponse.json({
+      data: [],
+      meta: { total: 0, page: 1, limit: 8, totalPages: 0 },
+    }),
+  ),
 
   // Auth — admin session bootstrap.
   http.post("*/api/auth/login", () =>
