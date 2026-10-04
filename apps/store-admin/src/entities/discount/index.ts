@@ -9,6 +9,9 @@ export {
   useAdminCreateDiscount,
   useAdminUpdateDiscount,
   useAdminDeactivateDiscount,
+  // Wave 198 (TASK-1076): the public «active» list is exactly what the
+  // storefront «Акції» page renders — the content map reads it.
+  useListActiveDiscounts,
   getAdminListDiscountsQueryKey,
   getAdminGetDiscountQueryKey,
 } from "@/shared/api";
