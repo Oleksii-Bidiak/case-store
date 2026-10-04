@@ -4,18 +4,32 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_URL } from "@/shared/config";
+import { toast } from "@/shared/ui/toast";
 import { getCategoryControllerGetAdminTreeQueryKey } from "@/entities/category";
 import { EditCategoryView } from "./edit-category-view";
 
+const mockPush = jest.fn();
 // next/navigation is unavailable under jsdom — mock the router.
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ replace: jest.fn(), push: mockPush }),
 }));
 
-const CATEGORY_ID = "cat-uuid-1";
+jest.mock("@/shared/ui/toast", () => ({
+  UNDO_TOAST_DURATION_MS: 10_000,
+  toast: {
+    success: jest.fn(),
+    error: jest.fn(),
+    undo: jest.fn(),
+    dismiss: jest.fn(),
+  },
+}));
+
+const CATEGORY_ID = "11111111-1111-4111-8111-111111111111";
+const CHILD_ID = "22222222-2222-4222-8222-222222222222";
 
 function makeCategory(isActive: boolean) {
   return {
@@ -34,31 +48,127 @@ function makeCategory(isActive: boolean) {
   };
 }
 
-function stubCategory(category: ReturnType<typeof makeCategory>) {
+function treeNode(
+  id: string,
+  name: string,
+  extra: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id,
+    name,
+    slug: name,
+    description: null,
+    image: null,
+    isActive: true,
+    sortOrder: 0,
+    metaTitle: null,
+    metaDescription: null,
+    updatedAt: "2026-06-01T09:00:00.000Z",
+    parentId: null,
+    productCount: 0,
+    subtreeProductCount: 0,
+    depth: 1,
+    children: [],
+    ...extra,
+  };
+}
+
+function stubCategory(
+  category: ReturnType<typeof makeCategory>,
+  {
+    addonStatus = 200,
+    putStatus = 200,
+  }: { addonStatus?: number; putStatus?: number } = {},
+) {
+  const calls: string[] = [];
   const putCalls: unknown[] = [];
+  const addonCalls: unknown[] = [];
   server.use(
-    // Parent-category options for the form's select — TASK-291 feeds it from the
-    // COMPLETE admin tree, not the capped flat admin list.
+    // Parent options + header counts — the COMPLETE admin tree (TASK-291).
     http.get("*/api/categories/admin/tree", () =>
-      HttpResponse.json({ data: [] }),
+      HttpResponse.json({
+        data: [
+          treeNode(CATEGORY_ID, "Чохли", {
+            slug: "chohly",
+            isActive: category.isActive,
+            productCount: 0,
+            subtreeProductCount: 30,
+            children: [
+              treeNode(CHILD_ID, "Чохли для iPhone", {
+                parentId: CATEGORY_ID,
+                depth: 2,
+                productCount: 30,
+                subtreeProductCount: 30,
+              }),
+            ],
+          }),
+        ],
+      }),
     ),
-    // Structured-spec template editor mounted below the form (TASK-191).
+    // Characteristics section (TASK-191).
     http.get(`*/api/categories/${CATEGORY_ID}/attribute-definitions`, () =>
       HttpResponse.json({ data: [] }),
+    ),
+    // Add-on services section (TASK-174).
+    http.get("*/api/addon-services/admin/active", () =>
+      HttpResponse.json({
+        data: [
+          {
+            id: "svc-1",
+            name: "Гарантія",
+            description: null,
+            price: "499.00",
+            isActive: true,
+            createdAt: "2026-07-01T00:00:00.000Z",
+            updatedAt: "2026-07-01T00:00:00.000Z",
+          },
+        ],
+      }),
+    ),
+    http.get("*/api/addon-services/templates/category/:categoryId", () =>
+      HttpResponse.json({ data: { addonServiceIds: [] } }),
+    ),
+    http.get(
+      "*/api/addon-services/templates/category/:categoryId/resolved",
+      () =>
+        HttpResponse.json({
+          data: {
+            source: "none",
+            sourceCategoryId: null,
+            sourceCategoryName: null,
+            addons: [],
+          },
+        }),
+    ),
+    http.patch(
+      "*/api/addon-services/templates/category/:categoryId",
+      async ({ request }) => {
+        calls.push("addons");
+        addonCalls.push(await request.json());
+        return addonStatus === 200
+          ? HttpResponse.json({ data: { addonServiceIds: ["svc-1"] } })
+          : HttpResponse.json({ message: "boom" }, { status: addonStatus });
+      },
     ),
     http.get(`*/api/admin/categories/${CATEGORY_ID}`, () =>
       HttpResponse.json({ data: category }),
     ),
     http.put(`*/api/admin/categories/${CATEGORY_ID}`, async ({ request }) => {
+      calls.push("category");
       putCalls.push(await request.json());
-      return HttpResponse.json({ data: category });
+      return putStatus === 200
+        ? HttpResponse.json({ data: category })
+        : HttpResponse.json({ message: "boom" }, { status: putStatus });
     }),
   );
-  return putCalls;
+  return { calls, putCalls, addonCalls };
 }
 
-async function renderAndWaitForForm(category: ReturnType<typeof makeCategory>) {
-  const putCalls = stubCategory(category);
+async function renderAndWaitForForm(
+  category: ReturnType<typeof makeCategory>,
+  options?: Parameters<typeof stubCategory>[1],
+) {
+  const stubs = stubCategory(category, options);
   const { queryClient } = renderWithProviders(
     <EditCategoryView categoryId={CATEGORY_ID} />,
   );
@@ -67,24 +177,37 @@ async function renderAndWaitForForm(category: ReturnType<typeof makeCategory>) {
       category.slug,
     ),
   );
-  return { putCalls, queryClient };
+  return { ...stubs, queryClient };
 }
 
 const submit = () =>
-  userEvent.click(
-    screen.getByRole("button", { name: dict.common.saveChanges }),
-  );
+  userEvent.click(screen.getByRole("button", { name: dict.common.save }));
+
+beforeEach(() => {
+  mockPush.mockClear();
+  (toast.success as jest.Mock).mockClear();
+  (toast.error as jest.Mock).mockClear();
+});
 
 describe("EditCategoryView — slug-rename guard (TASK-285)", () => {
   let confirmSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    // Wave 198: an AlertDialog — `window.confirm` must never be reached.
+    confirmSpy = jest.spyOn(window, "confirm");
   });
 
   afterEach(() => {
+    expect(confirmSpy).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
+
+  async function changeSlug() {
+    const slugField = screen.getByLabelText(dict.categoryForm.slug);
+    await userEvent.clear(slugField);
+    await userEvent.type(slugField, "nova-adresa");
+    await submit();
+  }
 
   it("submits without any confirm when the slug is unchanged on an active category", async () => {
     const { putCalls } = await renderAndWaitForForm(makeCategory(true));
@@ -92,52 +215,52 @@ describe("EditCategoryView — slug-rename guard (TASK-285)", () => {
     await submit();
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  it("blocks the update when the admin cancels the active-slug-change confirm", async () => {
-    confirmSpy.mockReturnValue(false);
+  it("blocks the update when the admin cancels the active-slug-change dialog", async () => {
     const { putCalls } = await renderAndWaitForForm(makeCategory(true));
 
-    const slugField = screen.getByLabelText(dict.categoryForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
-    await submit();
+    await changeSlug();
 
-    expect(confirmSpy).toHaveBeenCalledWith(
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(
       dict.categories.slugChangeConfirm("chohly", "nova-adresa"),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
     );
     expect(putCalls).toHaveLength(0);
   });
 
-  it("fires the update after the admin accepts the confirm", async () => {
+  it("fires the update after the admin accepts the dialog", async () => {
     const { putCalls } = await renderAndWaitForForm(makeCategory(true));
 
-    const slugField = screen.getByLabelText(dict.categoryForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
-    await submit();
+    await changeSlug();
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: dict.categories.slugChangeConfirmAction,
+      }),
+    );
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("never confirms a slug change on an INACTIVE category", async () => {
+  it("never asks about a slug change on an INACTIVE category", async () => {
     const { putCalls } = await renderAndWaitForForm(makeCategory(false));
 
-    const slugField = screen.getByLabelText(dict.categoryForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
-    await submit();
+    await changeSlug();
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });
 
 describe("EditCategoryView — cache invalidation (TASK-291-K)", () => {
   it("invalidates the admin-tree query after a successful save", async () => {
-    const confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
     const { putCalls, queryClient } = await renderAndWaitForForm(
       makeCategory(true),
     );
@@ -153,6 +276,129 @@ describe("EditCategoryView — cache invalidation (TASK-291-K)", () => {
         queryKey: getCategoryControllerGetAdminTreeQueryKey(),
       }),
     );
-    confirmSpy.mockRestore();
+  });
+});
+
+describe("EditCategoryView — CategoriesProposal КТ5 (wave 198)", () => {
+  it("heads the page with the name, the site status and the counts", async () => {
+    await renderAndWaitForForm(makeCategory(true));
+
+    expect(
+      screen.getByRole("link", { name: dict.categories.back }),
+    ).toHaveAttribute("href", "/categories");
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Чохли" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.categories.tree.statusShown),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByText(dict.categories.headerProducts(30, 1), {
+          exact: false,
+        }),
+      ).toHaveTextContent("/categories/chohly"),
+    );
+  });
+
+  it("«⋯» offers the category on the site, in a new tab", async () => {
+    await renderAndWaitForForm(makeCategory(true));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.categories.headerMenuAria }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: dict.categories.openOnSite }),
+    ).toHaveAttribute("href", `${STOREFRONT_URL}/categories/chohly`);
+  });
+
+  it("puts every section in one form: characteristics and add-on services included", async () => {
+    await renderAndWaitForForm(makeCategory(true));
+
+    const nav = screen.getByRole("navigation", {
+      name: dict.categoryForm.sectionsAria,
+    });
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((a) => a.textContent),
+    ).toEqual([
+      dict.categoryForm.sectionMain,
+      dict.categoryForm.sectionImage,
+      dict.categoryForm.sectionAttributes,
+      dict.categoryForm.sectionAddons,
+      dict.categoryForm.sectionSeo,
+    ]);
+    // ONE save button on the page — the add-on section lost its own.
+    expect(screen.getAllByRole("button", { name: /Зберегти/ })).toHaveLength(1);
+  });
+
+  it("one «Зберегти» saves the category FIRST, then the add-on services, then leaves", async () => {
+    const { calls, addonCalls } = await renderAndWaitForForm(
+      makeCategory(false),
+    );
+
+    await userEvent.click(await screen.findByLabelText("Гарантія"));
+    const bar = document.querySelector('[data-slot="form-actions-bar"]');
+    expect(bar).toHaveTextContent(
+      dict.canon.unsavedChanges(dict.categoryForm.sectionAddons),
+    );
+
+    await submit();
+
+    await waitFor(() => expect(calls).toEqual(["category", "addons"]));
+    expect(addonCalls[0]).toEqual({ addonServiceIds: ["svc-1"] });
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(dict.categories.toastUpdated),
+    );
+    expect(mockPush).toHaveBeenCalledWith("/categories");
+  });
+
+  it("does not touch the add-on services when nobody changed them", async () => {
+    const { calls } = await renderAndWaitForForm(makeCategory(false));
+
+    await submit();
+
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/categories"));
+    expect(calls).toEqual(["category"]);
+  });
+
+  it("stops at the first failing section: the category fails → add-ons are not sent", async () => {
+    const { calls } = await renderAndWaitForForm(makeCategory(false), {
+      putStatus: 500,
+    });
+
+    await userEvent.click(await screen.findByLabelText("Гарантія"));
+    await submit();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        dict.categories.saveStepFailed("", dict.categoryForm.sectionMain),
+      ),
+    );
+    expect(calls).toEqual(["category"]);
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("says what DID save when a later section fails, and stays on the page", async () => {
+    const { calls } = await renderAndWaitForForm(makeCategory(false), {
+      addonStatus: 500,
+    });
+
+    await userEvent.click(await screen.findByLabelText("Гарантія"));
+    await submit();
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        dict.categories.saveStepFailed(
+          dict.categoryForm.sectionMain,
+          dict.categoryForm.sectionAddons,
+        ),
+      ),
+    );
+    expect(calls).toEqual(["category", "addons"]);
+    expect(mockPush).not.toHaveBeenCalled();
+    // The add-on edit is still on screen, still unsaved.
+    expect(screen.getByLabelText("Гарантія")).toBeChecked();
   });
 });

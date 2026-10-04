@@ -67,6 +67,23 @@ async function selectParent(name: string) {
   await userEvent.click(await screen.findByRole("option", { name }));
 }
 
+/**
+ * The name field. Its label carries the required « *» (form canon 1.5), which
+ * is `aria-hidden` — so it is found by its ACCESSIBLE name, «Назва».
+ */
+const nameInput = () =>
+  screen.getByRole("textbox", { name: dict.categoryForm.name });
+
+/**
+ * Wave 198 (КТ5): on an EXISTING category «SEO і соцмережі» starts folded to
+ * a one-line summary; unfold it to reach the fields.
+ */
+async function openSeo() {
+  await userEvent.click(
+    screen.getByRole("button", { name: dict.canon.expand }),
+  );
+}
+
 /** Click the form's submit button. */
 async function submitForm() {
   await userEvent.click(
@@ -88,10 +105,7 @@ describe("CategoryForm — media library picker (TASK-441)", () => {
       { auth: { permissions: MEDIA_PERMISSIONS } },
     );
 
-    await userEvent.type(
-      screen.getByLabelText(dict.categoryForm.name),
-      "Чохли",
-    );
+    await userEvent.type(nameInput(), "Чохли");
     await pickFromLibrary("Плитка категорії");
 
     await waitFor(() =>
@@ -128,10 +142,7 @@ describe("CategoryForm — parent persistence (TASK-149)", () => {
     const onSubmit = jest.fn();
     renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.type(
-      screen.getByLabelText(dict.categoryForm.name),
-      "New Category",
-    );
+    await userEvent.type(nameInput(), "New Category");
     await selectParent("Category A");
     await submitForm();
 
@@ -173,9 +184,7 @@ describe("CategoryForm — parent persistence (TASK-149)", () => {
       />,
     );
 
-    await waitFor(() =>
-      expect(screen.getByLabelText(dict.categoryForm.name)).toHaveValue("Sub"),
-    );
+    await waitFor(() => expect(nameInput()).toHaveValue("Sub"));
   });
 
   it("EDIT: a re-render with the same id does NOT reset a new selection", async () => {
@@ -213,7 +222,7 @@ describe("CategoryForm — parent persistence (TASK-149)", () => {
 
   it("EDIT: changing the id prop re-seeds the form, same id does not (Rule 2b)", async () => {
     stubCategories();
-    const nameField = () => screen.getByLabelText(dict.categoryForm.name);
+    const nameField = () => nameInput();
     const { rerender } = renderWithProviders(
       <CategoryForm
         id="cat-1"
@@ -368,10 +377,7 @@ describe("CategoryForm — order field removed, parent Select kept (TASK-291-K)"
     const onSubmit = jest.fn();
     renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.type(
-      screen.getByLabelText(dict.categoryForm.name),
-      "New Category",
-    );
+    await userEvent.type(nameInput(), "New Category");
     await submitForm();
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
@@ -432,6 +438,7 @@ describe("CategoryForm — SERP snippet preview (TASK-268)", () => {
       />,
     );
 
+    await openSeo();
     await waitFor(() =>
       expect(previewTitle()).toHaveTextContent("iPhone Cases | CaseStore"),
     );
@@ -449,6 +456,7 @@ describe("CategoryForm — SERP snippet preview (TASK-268)", () => {
       />,
     );
 
+    await openSeo();
     await userEvent.type(
       screen.getByLabelText(dict.categoryForm.metaTitle),
       "Best Cases",
@@ -553,10 +561,7 @@ describe("CategoryForm — SEO meta fields (TASK-236)", () => {
     const onSubmit = jest.fn();
     renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.type(
-      screen.getByLabelText(dict.categoryForm.name),
-      "New Category",
-    );
+    await userEvent.type(nameInput(), "New Category");
     await userEvent.type(
       screen.getByLabelText(dict.categoryForm.metaTitle),
       "Best Cases",
@@ -592,6 +597,13 @@ describe("CategoryForm — SEO meta fields (TASK-236)", () => {
       />,
     );
 
+    // Folded, the section still says what is in it.
+    await waitFor(() =>
+      expect(
+        screen.getByText(dict.categoryForm.seoSummary(true, 0, false)),
+      ).toBeInTheDocument(),
+    );
+    await openSeo();
     await waitFor(() =>
       expect(screen.getByLabelText(dict.categoryForm.metaTitle)).toHaveValue(
         "Seeded Title",
@@ -603,16 +615,209 @@ describe("CategoryForm — SEO meta fields (TASK-236)", () => {
   });
 
   // TASK-437 — the honest hint is the point of the field, so it is pinned here
-  // too: a category page's card and its internal tags.
-  it("renders the tag and OG fields, with the «not a Google meta tag» hint", () => {
+  // too: a category page's card and its internal tags. TASK-1117: the hint no
+  // longer promises search — nothing reads a category's tags yet.
+  it("renders the tag and OG fields, with the honest «not searched yet» hint", () => {
     stubCategories();
     renderWithProviders(
       <CategoryForm onSubmit={jest.fn()} isPending={false} />,
     );
 
-    expect(screen.getByLabelText(dict.seoFields.keywords)).toBeInTheDocument();
+    const tags = screen.getByLabelText(dict.categoryForm.keywords);
+    expect(tags).toBeInTheDocument();
     expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
-    expect(screen.getByText(dict.seoFields.keywordsHint)).toBeInTheDocument();
+    expect(tags).toHaveAccessibleDescription(dict.categoryForm.keywordsHint);
+    expect(
+      screen.queryByText(dict.seoFields.keywordsHint),
+    ).not.toBeInTheDocument();
+  });
+});
+
+/* ───────────── wave 198: CategoriesProposal КТ5 (TASK-1052) ───────────── */
+
+describe("CategoryForm — sections, one «Зберегти», the visibility switch (КТ5)", () => {
+  const f = dict.categoryForm;
+  const PARENT = UUID_A;
+  const CHILD = UUID_B;
+
+  /** Чохли (8 own products) ⟶ one child with 22: 30 in the subtree. */
+  function stubTreeWithChild() {
+    server.use(
+      http.get("*/api/categories/admin/tree", () =>
+        HttpResponse.json({
+          data: [
+            {
+              ...makeCategoryRow(PARENT, "Чохли"),
+              productCount: 8,
+              subtreeProductCount: 30,
+              children: [
+                {
+                  ...makeCategoryRow(CHILD, "Чохли для iPhone"),
+                  parentId: PARENT,
+                  depth: 2,
+                  productCount: 22,
+                  subtreeProductCount: 22,
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    );
+  }
+
+  it("indexes its sections — and only the ones it has", () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm onSubmit={jest.fn()} isPending={false} />,
+    );
+
+    const nav = screen.getByRole("navigation", { name: f.sectionsAria });
+    const links = within(nav)
+      .getAllByRole("link")
+      .map((a) => a.textContent);
+    expect(links).toEqual([f.sectionMain, f.sectionImage, f.sectionSeo]);
+    for (const link of within(nav).getAllByRole("link")) {
+      const target = link.getAttribute("href")?.slice(1) ?? "";
+      expect(document.getElementById(target)).not.toBeNull();
+    }
+  });
+
+  it("slots extra sections between «Зображення» and SEO, in the index too", () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm
+        onSubmit={jest.fn()}
+        isPending={false}
+        extraSections={[
+          {
+            id: "x-attrs",
+            label: f.sectionAttributes,
+            node: <section id="x-attrs">attrs</section>,
+          },
+          {
+            id: "x-addons",
+            label: f.sectionAddons,
+            node: <section id="x-addons">addons</section>,
+          },
+        ]}
+      />,
+    );
+
+    const nav = screen.getByRole("navigation", { name: f.sectionsAria });
+    expect(
+      within(nav)
+        .getAllByRole("link")
+        .map((a) => a.textContent),
+    ).toEqual([
+      f.sectionMain,
+      f.sectionImage,
+      f.sectionAttributes,
+      f.sectionAddons,
+      f.sectionSeo,
+    ]);
+  });
+
+  it("«Показувати на сайті» is a switch, submitted as isActive", async () => {
+    stubCategories();
+    const onSubmit = jest.fn();
+    renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
+
+    const visible = screen.getByRole("switch", { name: f.active });
+    expect(visible).toBeChecked();
+    await userEvent.click(visible);
+    expect(visible).not.toBeChecked();
+
+    await userEvent.type(nameInput(), "Нова");
+    await submitForm();
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ isActive: false });
+  });
+
+  it("says what switching it off takes along — counted from the tree", async () => {
+    stubTreeWithChild();
+    renderWithProviders(
+      <CategoryForm
+        id={PARENT}
+        defaultValues={{ name: "Чохли" }}
+        excludeParentId={PARENT}
+        onSubmit={jest.fn()}
+        isPending={false}
+      />,
+    );
+
+    const visible = screen.getByRole("switch", { name: f.active });
+    await waitFor(() =>
+      expect(visible).toHaveAccessibleDescription(f.hideConsequence(1, 30)),
+    );
+  });
+
+  it("falls back to the general consequence on a new category", () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm onSubmit={jest.fn()} isPending={false} />,
+    );
+
+    expect(
+      screen.getByRole("switch", { name: f.active }),
+    ).toHaveAccessibleDescription(f.hideConsequenceGeneric);
+  });
+
+  it("the sticky bar names the dirty sections and «Скасувати зміни» restores them", async () => {
+    stubCategories();
+    renderWithProviders(
+      <CategoryForm
+        id="cat-1"
+        defaultValues={{ name: "Чохли", image: "" }}
+        onSubmit={jest.fn()}
+        isPending={false}
+        extraDirtySections={[f.sectionAddons]}
+        onDiscardExtra={jest.fn()}
+      />,
+    );
+
+    const bar = document.querySelector('[data-slot="form-actions-bar"]');
+    expect(bar).toHaveAttribute("data-variant", "sticky");
+    await waitFor(() =>
+      expect(bar).toHaveTextContent(dict.canon.unsavedChanges(f.sectionAddons)),
+    );
+
+    const name = nameInput();
+    await userEvent.type(name, " нові");
+    await waitFor(() =>
+      expect(bar).toHaveTextContent(
+        dict.canon.unsavedChanges(`${f.sectionMain}, ${f.sectionAddons}`),
+      ),
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.discardChanges }),
+    );
+    await waitFor(() => expect(name).toHaveValue("Чохли"));
+  });
+
+  it("a folded SEO section opens by itself when a field in it is invalid", async () => {
+    stubCategories();
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <CategoryForm
+        id="cat-1"
+        defaultValues={{ name: "Чохли", ogImage: "not a url" }}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+
+    await waitFor(() => expect(nameInput()).toHaveValue("Чохли"));
+    await submitForm();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: dict.canon.collapse }),
+      ).toHaveAttribute("aria-expanded", "true"),
+    );
+    expect(screen.getByLabelText(dict.seoFields.ogImage)).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });
 
@@ -649,10 +854,7 @@ describe("CategoryForm — OG image upload and library pick (TASK-728)", () => {
     const onSubmit = jest.fn();
     renderWithProviders(<CategoryForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.type(
-      screen.getByLabelText(dict.categoryForm.name),
-      "Чохли",
-    );
+    await userEvent.type(nameInput(), "Чохли");
     await userEvent.upload(
       ogScope().getByTestId("single-image-upload-input"),
       new File(["png-bytes"], "og.png", { type: "image/png" }),
@@ -699,10 +901,7 @@ describe("CategoryForm — OG image upload and library pick (TASK-728)", () => {
     await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
     expect(imageField()).toHaveValue("");
 
-    await userEvent.type(
-      screen.getByLabelText(dict.categoryForm.name),
-      "Чохли",
-    );
+    await userEvent.type(nameInput(), "Чохли");
     await submitForm();
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit.mock.calls[0][0]).toMatchObject({ ogImage: OG_URL });
