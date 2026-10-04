@@ -1,9 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { PlusIcon } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   getBrandControllerAdminFindAllQueryKey,
@@ -11,82 +12,99 @@ import {
   useAdminBrandControllerSetStatus,
   type BrandEntity,
 } from "@/entities/brand";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import {
-  Badge,
   Button,
+  Callout,
+  DataRegistry,
   LiveAnnouncer,
-  Table,
-  TableBody,
-  TableCell,
-  TableFilters,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableToolbar,
+  SummaryValue,
   pageSizeFrom,
-  type TableFilterDef,
+  useConfirmDialog,
+  useDataRegistry,
+  type QuickView,
+  type RowActionItem,
 } from "@/shared/ui";
-import { dict, STOREFRONT_URL } from "@/shared/config";
-import { AdminBrandTableSkeleton } from "./admin-brand-table-skeleton";
+import { countLabel } from "@/shared/lib";
+import { useUrlParams } from "@/shared/lib/use-url-params";
+import { dict } from "@/shared/config";
+import {
+  brandProductsHref,
+  buildBrandColumns,
+  renderBrandCard,
+} from "./brand-registry-columns";
 
-/**
- * The API documents a brand logo as "absolute or storefront-relative". A
- * storefront-relative path (`/brands/spigen.svg`) would resolve against the
- * ADMIN origin here and render a broken image, so it is anchored to the
- * storefront. Anything unparsable is passed through untouched — a broken
- * thumbnail is a smaller failure than a crashed table.
- */
-function logoSrc(logo: string): string {
-  if (!logo.startsWith("/") || logo.startsWith("//")) return logo;
-  try {
-    return new URL(logo, STOREFRONT_URL).toString();
-  } catch {
-    return logo;
-  }
-}
+const d = dict.brands;
 
+const ALL_VIEW = "all";
+/** The old `?status=` values — kept, so every bookmarked filter still works. */
 const ACTIVE_OPTION = "active";
 const INACTIVE_OPTION = "inactive";
 
+/** The one-row request whose `meta.total` is a view counter. */
+const COUNT_QUERY = { page: 1, limit: 1 } as const;
+
+const getRowId = (brand: BrandEntity) => brand.id;
+const getRowLabel = (brand: BrandEntity) => brand.name;
+const editHref = (brand: BrandEntity) => `/brands/${brand.id}/edit`;
+
+/** View counters from the API's own `meta.total` (the blog / reviews pattern). */
+function useViewCounts(): Record<string, number | undefined> {
+  const all = useBrandControllerAdminFindAll(COUNT_QUERY);
+  const shown = useBrandControllerAdminFindAll({
+    ...COUNT_QUERY,
+    isActive: true,
+  });
+  const hidden = useBrandControllerAdminFindAll({
+    ...COUNT_QUERY,
+    isActive: false,
+  });
+  return {
+    [ALL_VIEW]: all.data?.meta?.total,
+    [ACTIVE_OPTION]: shown.data?.meta?.total,
+    [INACTIVE_OPTION]: hidden.data?.meta?.total,
+  };
+}
+
 /**
- * Paginated, searchable admin brand table with a per-row active/inactive toggle.
- * Search, status filter, and page all live in the URL (`?search=`, `?status=`,
- * `?page=`) so the view is shareable and refresh-safe. The search input is
- * debounced before it touches the URL. Status is a reversible visibility toggle
- * (TASK-189) — no delete.
+ * The brand registry (TASK-189 → TASK-357 → TASK-840) on the shared
+ * `DataRegistry` (wave 198, BrandsProposal БР1–БР4, TASK-1078).
  *
- * TASK-357 moved the existing search + status filter into the shared
- * `TableToolbar` and added the refresh control this table never had. Nothing
- * about the query changed; the toolbar is a container, not a rewrite.
+ * The URL contract is unchanged: `?search=`, `?status=active|inactive`,
+ * `?page=`, `?limit=`. The status select became the quick views
+ * «Усі · Показуються · Приховані», counted by the API.
  *
- * TASK-423 went one step further and replaced the CONTROLS themselves with the
- * shared `TableSearch` / `TableFilters` / `TablePagination`, so `?limit=` now
- * carries the page size too. Behaviour is unchanged — this was already one of the
- * five tables that debounced to the URL — but it no longer keeps its own copy of
- * the logic to drift.
+ * What moved, nothing removed: «Редагувати» and «Приховати / Активувати» went
+ * from two buttons into «⋯»; hiding now asks first and says what happens to
+ * the brand's products (БР4); the row opens the form; the count links into
+ * «Товари» filtered by the brand (for a session with `products:read`).
  *
- * TASK-840 (AD-CAT-12) added the two columns an operator actually scans a brand
- * list by: the logo (the thing a brand is recognised by) and the number of live
- * products carrying it — hidden ones included, deleted ones not — so a brand in
- * use is told apart from an empty one without a trip to the catalogue.
+ * Not drawn because the API has no support (TASK-1078…1081 API tails): the
+ * «Без логотипа» view (no logo filter; the list is paged, so a local filter
+ * would lie), search by slug (the API searches the name), «Видалити…» (no
+ * `DELETE /brands/:id`), «Об'єднати з іншим брендом…» (TASK-1079) and
+ * «Сторінка бренду на сайті» (no storefront `/brands/<slug>` — TASK-1080).
  *
- * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
- * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
- * component that renders the provider would read the default no-op context.
+ * Every admin brand route needs `brands:write` today — there is no read-only
+ * key — so the view-only state below is what a future `brands:read` gets.
  */
 export function AdminBrandTable() {
   return (
     <LiveAnnouncer>
-      <AdminBrandView />
+      <AdminBrandRegistry />
     </LiveAnnouncer>
   );
 }
 
-function AdminBrandView() {
+function AdminBrandRegistry() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const updateParams = useUrlParams();
+  const { can } = useAuth();
+  const canWrite = can(PERM.brandsWrite);
+  const canOpenProducts = can(PERM.productsRead);
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const searchParam = searchParams.get("search") ?? "";
   const statusParam = searchParams.get("status") ?? "";
@@ -100,191 +118,172 @@ function AdminBrandView() {
         ? false
         : undefined;
 
-  const { data, isLoading, isFetching, isError, refetch } =
+  const { data, dataUpdatedAt, isLoading, isFetching, isError, refetch } =
     useBrandControllerAdminFindAll({
       page,
       limit: pageSize,
       search: searchParam || undefined,
       isActive: isActiveFilter,
     });
+  const counts = useViewCounts();
 
   const setStatus = useAdminBrandControllerSetStatus();
 
-  const brands = data?.data ?? [];
+  const brands = useMemo(() => data?.data ?? [], [data]);
+  const total = data?.meta?.total ?? 0;
   const totalPages = data?.meta?.totalPages ?? 1;
 
+  const columns = useMemo(
+    () => buildBrandColumns({ canOpenProducts }),
+    [canOpenProducts],
+  );
+  const registry = useDataRegistry({
+    tableId: "brands",
+    columns,
+    rows: brands,
+    getRowId,
+  });
+
+  // Prefix match: the key without params covers the page AND the counters.
   const invalidateList = () =>
     queryClient.invalidateQueries({
       queryKey: getBrandControllerAdminFindAllQueryKey(),
     });
 
-  const handleToggle = (brand: BrandEntity) => {
+  const setVisibility = (brand: BrandEntity, isActive: boolean) => {
     setStatus.mutate(
-      { id: brand.id, data: { isActive: !brand.isActive } },
+      { id: brand.id, data: { isActive } },
       {
         onSuccess: () => {
           void invalidateList();
-          toast.success(
-            brand.isActive
-              ? dict.brands.toastDeactivated
-              : dict.brands.toastActivated,
-          );
+          toast.success(isActive ? d.toastActivated : d.toastDeactivated);
         },
-        onError: () => toast.error(dict.brands.toastStatusFailed),
+        onError: () => toast.error(d.toastStatusFailed),
       },
     );
   };
 
-  const filters: TableFilterDef[] = [
+  // БР4 — hiding takes the brand out of the storefront filter; say so first.
+  // Showing it again has no consequence to warn about.
+  const handleToggle = async (brand: BrandEntity) => {
+    if (!brand.isActive) {
+      setVisibility(brand, true);
+      return;
+    }
+    const confirmed = await confirm({
+      title: d.hideTitle(brand.name),
+      description: d.hideBody(brand.productCount),
+      confirmLabel: d.hideAction,
+    });
+    if (confirmed) setVisibility(brand, false);
+  };
+
+  const rowActions = (brand: BrandEntity): RowActionItem[] => {
+    const items: RowActionItem[] = [
+      {
+        label: canWrite ? dict.common.edit : dict.common.view,
+        href: editHref(brand),
+      },
+    ];
+    if (canOpenProducts && brand.productCount !== undefined) {
+      items.push({
+        label: d.rowProducts(brand.productCount),
+        href: brandProductsHref(brand),
+      });
+    }
+    if (canWrite) {
+      items.push({
+        label: brand.isActive ? d.deactivate : d.activate,
+        onSelect: () => void handleToggle(brand),
+        disabled: setStatus.isPending,
+        separatorBefore: true,
+      });
+    }
+    return items;
+  };
+
+  const activeView =
+    statusParam === ""
+      ? ALL_VIEW
+      : isActiveFilter === undefined
+        ? ""
+        : statusParam;
+  const quickViews: QuickView[] = [
+    { id: ALL_VIEW, label: d.allStatuses, count: counts[ALL_VIEW] },
+    { id: ACTIVE_OPTION, label: d.viewShown, count: counts[ACTIVE_OPTION] },
     {
-      param: "status",
-      label: dict.brands.filterStatusAria,
-      allLabel: dict.brands.allStatuses,
-      options: [
-        { value: ACTIVE_OPTION, label: dict.brands.statusActive },
-        { value: INACTIVE_OPTION, label: dict.brands.statusInactive },
-      ],
+      id: INACTIVE_OPTION,
+      label: d.viewHidden,
+      count: counts[INACTIVE_OPTION],
     },
   ];
 
   return (
-    <div className="flex flex-col gap-4">
-      <TableToolbar
-        className="mb-0"
+    <>
+      <DataRegistry
+        registry={registry}
+        title={d.heading}
+        description={d.description}
+        headerActions={
+          canWrite ? (
+            <Button asChild>
+              <Link href="/brands/new">
+                <PlusIcon aria-hidden="true" />
+                {d.add}
+              </Link>
+            </Button>
+          ) : null
+        }
+        quickViews={{
+          items: quickViews,
+          activeId: activeView,
+          onChange: (id) =>
+            updateParams({
+              status: id === ALL_VIEW ? undefined : id,
+              page: undefined,
+            }),
+        }}
+        search={{
+          value: searchParam,
+          placeholder: d.searchPlaceholder,
+          label: d.searchAria,
+        }}
+        views={{ defaultName: d.viewDefault }}
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
-        search={
-          <TableSearch
-            value={searchParam}
-            placeholder={dict.brands.searchPlaceholder}
-            label={dict.brands.searchAria}
-          />
+        notice={
+          canWrite ? null : (
+            <Callout variant="strip">{d.viewOnlyNotice}</Callout>
+          )
         }
-        filters={
-          <TableFilters filters={filters} values={{ status: statusParam }} />
+        summary={
+          data ? (
+            <>
+              {d.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, d.itemForms)}</SummaryValue>
+            </>
+          ) : null
         }
+        sortLabel={d.sortByName}
+        updatedAt={dataUpdatedAt || undefined}
+        itemForms={d.itemForms}
+        getRowLabel={getRowLabel}
+        getRowHref={editHref}
+        rowActions={rowActions}
+        rowActionsLabel={(brand) => d.rowActionsAria(brand.name)}
+        renderCard={renderBrandCard}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={d.loadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={d.empty}
+        searchQuery={searchParam || undefined}
+        isFiltered={Boolean(statusParam)}
+        pagination={{ page, totalPages, pageSize }}
       />
-
-      {isLoading ? (
-        <AdminBrandTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.brands.loadError}
-        </p>
-      ) : brands.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {/* "There are no brands yet" and "your search matched nothing" are
-              different answers, and only the first one has an obvious next step
-              (TASK-423). */}
-          {searchParam || statusParam
-            ? dict.common.table.emptyFiltered
-            : dict.brands.empty}
-        </div>
-      ) : (
-        <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
-          {isFetching && !isLoading && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
-            >
-              <Loader2 className="size-6 animate-spin text-primary" />
-            </div>
-          )}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-16">{dict.brands.colLogo}</TableHead>
-                <TableHead>{dict.brands.colName}</TableHead>
-                <TableHead hideOnMobile>{dict.brands.colSlug}</TableHead>
-                <TableHead
-                  className="text-right"
-                  title={dict.brands.colProductsHint}
-                >
-                  {dict.brands.colProducts}
-                </TableHead>
-                <TableHead>{dict.brands.colStatus}</TableHead>
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {brands.map((brand) => (
-                <TableRow key={brand.id}>
-                  <TableCell label={dict.brands.colLogo}>
-                    {brand.logo ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- admin thumbnail off arbitrary upload hosts; next/image would need every one allowlisted
-                      <img
-                        src={logoSrc(brand.logo)}
-                        alt={dict.brands.logoAlt(brand.name)}
-                        loading="lazy"
-                        className="size-10 rounded border border-border bg-background object-contain"
-                      />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {dict.brands.noLogo}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    <Link
-                      href={`/brands/${brand.id}/edit`}
-                      className="hover:underline"
-                    >
-                      {brand.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell hideOnMobile className="text-muted-foreground">
-                    {brand.slug}
-                  </TableCell>
-                  <TableCell
-                    label={dict.brands.colProducts}
-                    className="text-right tabular-nums"
-                  >
-                    {/* Absent only if the API predates TASK-840 — say so with a
-                        dash rather than claim the brand is empty. */}
-                    {brand.productCount ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={brand.isActive ? "default" : "secondary"}>
-                      {brand.isActive
-                        ? dict.brands.statusActive
-                        : dict.brands.statusInactive}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={`/brands/${brand.id}/edit`}>
-                          {dict.common.edit}
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={setStatus.isPending}
-                        onClick={() => handleToggle(brand)}
-                      >
-                        {brand.isActive
-                          ? dict.brands.deactivate
-                          : dict.brands.activate}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!isLoading && !isError && brands.length > 0 && (
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
-        />
-      )}
-    </div>
+      {confirmDialog}
+    </>
   );
 }

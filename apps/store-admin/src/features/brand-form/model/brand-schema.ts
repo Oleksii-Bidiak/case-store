@@ -20,7 +20,7 @@ export const brandSchema = z.object({
     .string()
     .trim()
     .max(255, e.slugMax)
-    .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
+    .regex(SLUG_PATTERN, e.slugPattern)
     .optional()
     .or(z.literal("")),
 

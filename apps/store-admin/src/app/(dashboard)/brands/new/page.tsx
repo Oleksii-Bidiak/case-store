@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { CreateBrandView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
+import { BrandFormSkeleton, CreateBrandView } from "@/widgets";
+
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function NewBrandPage() {
   return (
-    <Suspense fallback={<AdminFormSkeleton />}>
+    <Suspense fallback={<BrandFormSkeleton />}>
       <CreateBrandView />
     </Suspense>
   );

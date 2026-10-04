@@ -31,7 +31,11 @@ export {
   // Product compat writes (used by the product form).
   useProductControllerUpdateDeviceCompat,
   useProductControllerUpdateGroupDeviceCompat,
+  // Live compatibility landing pages (wave 198, TASK-1082).
+  useCatalogLandingControllerFindCompatPages,
 } from "@/shared/api";
+
+export { useLiveCompatPages } from "./model/use-live-compat-pages";
 
 export type {
   DeviceBrandEntity,
@@ -50,5 +54,6 @@ export type {
   SetDeviceCompatDto,
   ProductCompatibleDeviceEntity,
   AdminDeviceControllerFindModelsParams,
+  CompatLandingPageEntity,
   DeviceControllerFindModelsParams,
 } from "@/shared/api";

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { EditBrandView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
+import { BrandFormSkeleton, EditBrandView } from "@/widgets";
+
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -16,7 +16,7 @@ export default async function EditBrandPage({ params }: EditBrandPageProps) {
   const { id } = await params;
 
   return (
-    <Suspense fallback={<AdminFormSkeleton />}>
+    <Suspense fallback={<BrandFormSkeleton withAside />}>
       <EditBrandView brandId={id} />
     </Suspense>
   );

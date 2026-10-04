@@ -36,7 +36,7 @@ describe("brandSchema", () => {
     expect(result.success).toBe(false);
     // TASK-811: the same wording as the other seven entity forms.
     expect(result.error?.issues[0]?.message).toBe(
-      dict.seoFields.errors.slugPattern,
+      dict.brandForm.errors.slugPattern,
     );
   });
 

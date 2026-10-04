@@ -25,11 +25,12 @@ export {
   DeviceModelTableSkeleton,
 } from "./device-model-list";
 export {
-  CreateDeviceBrandView,
-  EditDeviceBrandView,
-} from "./device-brand-form-view";
+  DeviceSectionHeader,
+  DeviceSectionHeaderSkeleton,
+} from "./device-section";
 export {
   CreateDeviceModelView,
+  DeviceModelFormSkeleton,
   EditDeviceModelView,
 } from "./device-model-form-view";
 export {
@@ -61,7 +62,11 @@ export {
   AddonServiceTable,
   AddonServiceTableSkeleton,
 } from "./addon-service-list";
-export { CreateBrandView, EditBrandView } from "./brand-form-view";
+export {
+  BrandFormSkeleton,
+  CreateBrandView,
+  EditBrandView,
+} from "./brand-form-view";
 export { SiteContactSettingsView } from "./site-contact-settings-view";
 export { SeoSettingsView } from "./seo-settings-view";
 export { AdminFaqTable, AdminFaqTableSkeleton } from "./faq-list";

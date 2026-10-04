@@ -13,11 +13,14 @@ import {
   getBrandControllerAdminFindAllQueryKey,
   useAdminBrandControllerCreate,
 } from "@/entities/brand";
+import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 /**
- * Create-brand body: renders the form and wires the create mutation, list-cache
- * invalidation, toasts, and redirect back to the list.
+ * Create-brand page (wave 198, BrandsProposal БР7): «← Бренди», «Новий
+ * бренд», the sectioned form and the sticky «Скасувати · Створити бренд».
+ * Wires the create mutation, list-cache invalidation, toasts and the redirect
+ * back to the list.
  */
 export function CreateBrandView() {
   const router = useRouter();
@@ -44,10 +47,10 @@ export function CreateBrandView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
         <Link
           href="/brands"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="w-fit text-sm text-muted-foreground hover:text-foreground"
         >
           {dict.brands.back}
         </Link>
@@ -60,6 +63,11 @@ export function CreateBrandView() {
         onSubmit={handleSubmit}
         isPending={create.isPending}
         submitLabel={dict.brands.createSubmit}
+        barActions={
+          <Button asChild variant="outline">
+            <Link href="/brands">{dict.common.cancel}</Link>
+          </Button>
+        }
       />
     </div>
   );

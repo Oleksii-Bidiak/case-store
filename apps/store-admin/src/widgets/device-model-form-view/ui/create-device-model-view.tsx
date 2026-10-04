@@ -13,9 +13,17 @@ import {
   getAdminDeviceControllerFindModelsQueryKey,
   useAdminDeviceControllerCreateModel,
 } from "@/entities/device";
+import { Button } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
-/** Create-device-model page body: form + create mutation + toasts + redirect. */
+const NO_PAGES = [] as const;
+
+/**
+ * Create-device-model page (wave 198, DevicesProposal ПР9): «← Пристрої ·
+ * Моделі», «Нова модель», the sectioned form and the sticky «Скасувати ·
+ * Створити модель». A new model has no compatibility pages yet — the list
+ * says when they will appear.
+ */
 export function CreateDeviceModelView() {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -39,10 +47,10 @@ export function CreateDeviceModelView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
         <Link
           href="/devices/models"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="w-fit text-sm text-muted-foreground hover:text-foreground"
         >
           {dict.devices.backToModels}
         </Link>
@@ -51,7 +59,17 @@ export function CreateDeviceModelView() {
         </h2>
       </div>
 
-      <DeviceModelForm onSubmit={handleSubmit} isPending={create.isPending} />
+      <DeviceModelForm
+        onSubmit={handleSubmit}
+        isPending={create.isPending}
+        submitLabel={dict.deviceModelForm.createSubmit}
+        livePages={NO_PAGES}
+        barActions={
+          <Button asChild variant="outline">
+            <Link href="/devices/models">{dict.common.cancel}</Link>
+          </Button>
+        }
+      />
     </div>
   );
 }
