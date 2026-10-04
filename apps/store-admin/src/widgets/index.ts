@@ -48,10 +48,7 @@ export {
   BlogCategoryTable,
   BlogCategoryTableSkeleton,
 } from "./blog-category-list";
-export {
-  CreateBlogCategoryView,
-  EditBlogCategoryView,
-} from "./blog-category-form-view";
+export { BlogCategoryFormDialog } from "./blog-category-form-view";
 export { AdminBannerTable, AdminBannerTableSkeleton } from "./banner-list";
 export { CreateBannerView, EditBannerView } from "./banner-form-view";
 export { AdminBrandTable, AdminBrandTableSkeleton } from "./brand-list";

@@ -35,6 +35,12 @@ export interface RowActionsMenuProps {
   /** Menu alignment against the trigger. */
   align?: "start" | "end";
   className?: string;
+  /**
+   * The trigger's tab stop — for a row inside a roving-tabindex grid (the
+   * sortable flat lists, wave 198 «Контент»), where only the focused row's
+   * controls are in the tab order. Default: the button's own.
+   */
+  tabIndex?: number;
 }
 
 /**
@@ -47,6 +53,7 @@ export function RowActionsMenu({
   items,
   align = "end",
   className,
+  tabIndex,
 }: RowActionsMenuProps) {
   if (items.length === 0) return null;
   return (
@@ -57,6 +64,7 @@ export function RowActionsMenu({
           variant="ghost"
           size="icon-sm"
           aria-label={label}
+          tabIndex={tabIndex}
           data-registry-interactive=""
           className={cn(
             "text-muted-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground",

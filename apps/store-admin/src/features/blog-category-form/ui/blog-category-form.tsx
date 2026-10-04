@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Button, FormActionsBar, Input, Label } from "@/shared/ui";
+import { Button, FieldError, Input, Label } from "@/shared/ui";
 import { slugify } from "@/shared/lib/slug";
 import { dict } from "@/shared/config";
 import {
@@ -12,10 +12,14 @@ import {
   type BlogCategoryFormValues,
 } from "../model/blog-category-schema";
 
+const f = dict.blogCategoryForm;
+
 interface BlogCategoryFormProps {
   id?: string;
   defaultValues?: Partial<BlogCategoryFormInput>;
   onSubmit: (values: BlogCategoryFormValues) => void;
+  /** «Скасувати» — shown when the host (a dialog) can be closed. */
+  onCancel?: () => void;
   isPending: boolean;
   submitLabel?: string;
 }
@@ -25,13 +29,21 @@ const EMPTY_VALUES: BlogCategoryFormInput = {
   slug: "",
 };
 
-/** Reusable create/edit blog-category form (name, slug, sort order). */
+const errorId = (field: string) => `blog-category-${field}-error`;
+
+/**
+ * Reusable create/edit blog-category form (name + the filter address) — the
+ * body of the dialog over the categories list since wave 198
+ * (BlogCategoriesProposal КБ4, owner decision 2026-10-01). The slug is named
+ * for what it is on the site: `/blog?category=<slug>`.
+ */
 export function BlogCategoryForm({
   id,
   defaultValues,
   onSubmit,
+  onCancel,
   isPending,
-  submitLabel = dict.blogCategoryForm.submit,
+  submitLabel = f.submit,
 }: BlogCategoryFormProps) {
   const {
     register,
@@ -44,6 +56,7 @@ export function BlogCategoryForm({
     defaultValues: EMPTY_VALUES,
   });
 
+  // forms.md: re-seed only when a different category is opened.
   useEffect(() => {
     if (id && defaultValues) {
       reset({ ...EMPTY_VALUES, ...defaultValues });
@@ -57,46 +70,80 @@ export function BlogCategoryForm({
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
-      className="flex max-w-lg flex-col gap-5"
+      className="flex flex-col gap-4"
       noValidate
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="category-name">{dict.blogCategoryForm.name}</Label>
-        <Input id="category-name" {...register("name")} />
-        {errors.name && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.name.message}
-          </p>
-        )}
+        <Label htmlFor="blog-category-name" required>
+          {f.name}
+        </Label>
+        <Input
+          id="blog-category-name"
+          aria-required="true"
+          aria-invalid={errors.name ? true : undefined}
+          aria-describedby={errors.name ? errorId("name") : undefined}
+          {...register("name")}
+        />
+        <FieldError id={errorId("name")}>{errors.name?.message}</FieldError>
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="category-slug">{dict.blogCategoryForm.slug}</Label>
-        <Input
-          id="category-slug"
-          placeholder={dict.blogCategoryForm.slugPlaceholder}
-          {...register("slug")}
-        />
+        <Label htmlFor="blog-category-slug">{f.slug}</Label>
+        <div className="flex">
+          <span
+            aria-hidden="true"
+            className="inline-flex shrink-0 items-center rounded-l-md border border-r-0 border-input bg-muted px-2.5 font-mono text-sm text-muted-foreground"
+          >
+            {f.slugPrefix}
+          </span>
+          <Input
+            id="blog-category-slug"
+            placeholder={f.slugPlaceholder}
+            className="rounded-l-none font-mono"
+            aria-invalid={errors.slug ? true : undefined}
+            aria-describedby={[
+              "blog-category-slug-hint",
+              errors.slug ? errorId("slug") : undefined,
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            {...register("slug")}
+          />
+        </div>
         {!slugValue && nameValue.trim().length > 0 && (
           <p
-            className="text-sm text-muted-foreground"
+            className="text-xs text-muted-foreground"
             data-testid="slug-preview"
           >
-            {dict.blogCategoryForm.slugPreview(slugify(nameValue))}
+            {f.slugPreview(slugify(nameValue))}
           </p>
         )}
-        {errors.slug && (
-          <p role="alert" className="text-sm text-destructive">
-            {errors.slug.message}
-          </p>
-        )}
+        <p
+          id="blog-category-slug-hint"
+          className="text-xs text-muted-foreground"
+        >
+          {f.slugHint}
+        </p>
+        <FieldError id={errorId("slug")}>{errors.slug?.message}</FieldError>
       </div>
 
-      <FormActionsBar>
+      <p className="text-xs text-muted-foreground">{f.chipHint}</p>
+
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+        {onCancel ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onCancel}
+            disabled={isPending}
+          >
+            {dict.common.cancel}
+          </Button>
+        ) : null}
         <Button type="submit" disabled={isPending}>
           {isPending ? dict.common.saving : submitLabel}
         </Button>
-      </FormActionsBar>
+      </div>
     </form>
   );
 }

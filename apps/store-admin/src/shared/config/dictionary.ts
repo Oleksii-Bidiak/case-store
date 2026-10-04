@@ -1973,22 +1973,15 @@ export const dict = {
 
   blogCategories: {
     metaTitle: "Категорії блогу — Адмін",
-    metaTitleNew: "Створення категорії — Адмін",
-    metaTitleEdit: "Редагування категорії — Адмін",
-    heading: "Категорії блогу",
     add: "Додати категорію",
-    backToPosts: "← Назад до статей",
     loadError: "Не вдалося завантажити категорії. Спробуйте ще раз.",
     empty: "Категорій ще немає. Створіть першу категорію.",
     colName: "Назва",
-    colSlug: "Slug",
     // TASK-295: no `colSort` — the order column is gone; order IS the row order.
     gridLabel: "Категорії блогу — порядок",
-    deleteConfirm: (name: string) =>
-      `Видалити категорію «${name}»? Цю дію не можна скасувати.`,
-    back: "← Назад до категорій",
-    createHeading: "Створення категорії",
-    editHeading: "Редагування категорії",
+    // Wave 198 (КБ4): the form is a dialog over the list.
+    createHeading: "Нова категорія",
+    editHeading: "Редагувати категорію",
     createSubmit: "Створити категорію",
     loadOneError: "Не вдалося завантажити категорію. Спробуйте ще раз.",
     toastCreated: "Категорію створено",
@@ -1996,23 +1989,49 @@ export const dict = {
     toastUpdated: "Категорію оновлено",
     toastUpdateFailed: "Не вдалося оновити категорію",
     toastDeleted: "Категорію видалено",
-    toastDeleteFailed:
-      "Не вдалося видалити категорію (можливо, у ній ще є статті)",
+    // A 409 «has posts» gets its own dialog now (КБ3); this is any other refusal.
+    toastDeleteFailed: "Не вдалося видалити категорію",
+    // --- Wave 198, BlogCategoriesProposal КБ1–КБ6 (TASK-1072) ----------------
+    searchPlaceholder: "Назва категорії…",
+    orderHint:
+      "Порядок рядків = порядок чипів категорій на сторінці «Блог». Перетягніть рядок за ⠿.",
+    colSite: "На сайті",
+    colPosts: "Статей",
+    postsLink: "Статті →",
+    postsLinkAria: (name: string) => `Статті категорії «${name}»`,
+    siteLinkAria: (name: string) => `Категорія «${name}» на сайті`,
+    rowActionsAria: (name: string) => `Дії з категорією «${name}»`,
+    rowEdit: "Редагувати",
+    rowShowPosts: "Показати статті",
+    rowOpenSite: "Відкрити на сайті",
+    rowDelete: "Видалити…",
+    deleteTitle: (name: string) => `Видалити категорію «${name}»?`,
+    deleteDescription: (slug: string) =>
+      `Цю дію не можна скасувати. Адреси статей не зміняться; фільтр /blog?category=${slug} перестане діяти й покаже весь блог.`,
+    deleteAction: "Видалити категорію",
+    hasPostsTitle: (name: string) => `Категорію «${name}» не видалено`,
+    hasPostsDescription:
+      "У категорії є статті. Стаття не може бути без категорії, тому спершу перенесіть їх в іншу.",
   },
 
   blogCategoryForm: {
     name: "Назва",
-    slug: "Slug",
-    slugPlaceholder: "Залиште порожнім для авто-генерації із назви",
+    slug: "Адреса фільтра на сайті",
+    slugPlaceholder: "створимо із назви",
     slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
     // TASK-295: no `sortOrder` label — the order field is gone from this form
     // (category order lives in the sortable categories grid).
-    submit: "Зберегти категорію",
+    submit: "Зберегти",
     errors: {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 120 символів",
-      slugMax: "Slug має містити не більше 255 символів",
+      slugMax: "Адреса має містити не більше 255 символів",
     },
+    // --- Wave 198, BlogCategoriesProposal КБ4 (TASK-1072) --------------------
+    slugPrefix: "/blog?category=",
+    slugHint:
+      "Порожньо — створимо із назви. Зміна зламає вже розіслані посилання на фільтр.",
+    chipHint: "Показується чипом на сторінці «Блог» у тому ж порядку, що тут.",
   },
 
   // --- Homepage banners (TASK-186) --------------------------------------------

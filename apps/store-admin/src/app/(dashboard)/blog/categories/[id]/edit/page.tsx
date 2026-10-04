@@ -1,25 +1,17 @@
-import { Suspense } from "react";
-import type { Metadata } from "next";
-import { EditBlogCategoryView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
-import { dict } from "@/shared/config";
-
-export const metadata: Metadata = {
-  title: dict.blogCategories.metaTitleEdit,
-};
+import { redirect } from "next/navigation";
 
 interface EditBlogCategoryPageProps {
   params: Promise<{ id: string }>;
 }
 
+/**
+ * Wave 198 (BlogCategoriesProposal КБ4, owner decision 2026-10-01): the
+ * category form is a dialog over the list now. This address keeps working —
+ * it opens that dialog for the same category.
+ */
 export default async function EditBlogCategoryPage({
   params,
 }: EditBlogCategoryPageProps) {
   const { id } = await params;
-
-  return (
-    <Suspense fallback={<AdminFormSkeleton />}>
-      <EditBlogCategoryView categoryId={id} />
-    </Suspense>
-  );
+  redirect(`/blog/categories?edit=${encodeURIComponent(id)}`);
 }
