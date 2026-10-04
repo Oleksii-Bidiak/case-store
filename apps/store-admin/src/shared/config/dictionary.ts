@@ -475,7 +475,7 @@ export const dict = {
     metaTitle: "Товари — Адмін",
     metaTitleNew: "Створення товару — Адмін",
     metaTitleEdit: "Редагування товару — Адмін",
-    metaTitlePreview: "Перегляд товару — Адмін",
+    metaTitlePreview: "Огляд товару — Адмін",
     heading: "Товари",
     add: "Додати товар",
     // Wave 198: names the fields the admin search really reads (TASK-406 added SKU).
@@ -623,12 +623,9 @@ export const dict = {
     toastUpdated: "Товар оновлено",
     toastUpdateFailed: "Не вдалося оновити товар",
     // Staff preview of deactivated products (TASK-155)
-    previewLink: "Переглянути",
-    previewBack: "← Назад",
-    previewEditLink: "Редагувати товар",
-    previewLoadError: "Не вдалося завантажити товар для перегляду.",
-    previewDeactivatedBanner:
-      "Цей товар деактивований і не відображається для покупців. Це службовий перегляд.",
+    // Wave 198 (TASK-1087): the staff OVERVIEW is «Огляд»; the customer view is
+    // «Подивитись на сайті» (TASK-670) — two names for two different pages.
+    previewLink: "Огляд",
     previewNoImages: "Зображень немає",
     previewCategory: "Категорія",
     previewStock: "Вільний залишок",
@@ -637,7 +634,6 @@ export const dict = {
     previewPhysical: "Фізично на складі",
     previewSku: "Артикул",
     previewAttributes: "Атрибути",
-    previewSiblings: "Інші позиції групи",
     previewNoDescription: "Опис відсутній",
     previewActive: "Активний",
     previewInactive: "Деактивований",
@@ -6452,6 +6448,90 @@ export const dict = {
     loadError: "Не вдалося завантажити список. Спробуйте ще раз.",
     footerHint:
       "«Розділ» — Каталог, Акції, Блог…; «Своє» — будь-яка адреса, заходить у поле, як зараз.",
+  },
+
+  // Огляд товару `/products/preview/[slug]` (хвиля 198, ProductPreviewProposal
+  // ПП1–ПП10, TASK-1087): службовий огляд — склад, видимість, SEO, група,
+  // історія. Як товар бачить покупець — «Подивитись на сайті» (TASK-670).
+  productOverview: {
+    heading: "Огляд товару",
+    back: "Товари",
+    breadcrumbAria: "Навігація",
+    onSite: "На сайті",
+    hidden: "Прихований",
+    copyAddress: "Копіювати адресу",
+    addressCopied: "Адресу скопійовано.",
+    copyFailed:
+      "Не вдалося скопіювати — браузер не дав доступу до буфера обміну.",
+    viewOnSite: "Подивитись на сайті",
+    edit: "Редагувати",
+    intro:
+      "Службовий огляд: склад, видимість, SEO та історія змін. Як товар бачить покупець — «Подивитись на сайті» (працює й для прихованого — за тимчасовим посиланням).",
+    hiddenLead: "Покупці не бачать цей товар:",
+    hiddenWhyOff: "його вимкнено. Нижче — як він виглядатиме після увімкнення.",
+    hiddenWhyCategory: (name: string) =>
+      `прихована його категорія «${name}». Увімкнений сам товар цього не змінить — змініть категорію або перенесіть товар.`,
+    photoAlt: (name: string, n: number) => `${name} — фото ${n}`,
+    photoThumbAria: (n: number) => `Показати фото ${n}`,
+    noPhotos: "Фото немає",
+    noPhotosHint:
+      "На вітрині замість фото буде заглушка. Додайте фото у формі товару.",
+    discount: (percent: number) => `−${percent}%`,
+    sku: "Артикул",
+    skuMissing: "— не задано",
+    brand: "Бренд",
+    category: "Категорія",
+    addons: "Додаткові послуги",
+    description: "Опис",
+    descriptionEmpty:
+      "Опису немає — на сторінці товару цей блок буде порожнім.",
+    specs: "Характеристики",
+    specsEmpty:
+      "Не заповнено — у фільтрах каталогу товар не знайдуть за кольором чи матеріалом.",
+    compat: "Сумісність",
+    compatEmpty:
+      "Не прив'язано до пристроїв — у «Підібрати до свого пристрою» товар не з'явиться.",
+    visibility: "Видимість на сайті",
+    visEnabled: "Увімкнено",
+    visDisabled: "Вимкнено",
+    visNotDeleted: "Не видалено",
+    visCategoryShown: (name: string) => `Категорія «${name}» показується`,
+    visCategoryHidden: (name: string) => `Категорія «${name}» прихована`,
+    visCategoryUnknown: (name: string) => `Категорія «${name}»`,
+    visFixEnable: "Увімкнути →",
+    visFixCategory: "Відкрити категорію →",
+    visFootnote: "Покупець бачить товар, лише коли виконано всі умови.",
+    visOk: "виконано",
+    visFail: "не виконано",
+    visUnknown: "не вдалося перевірити",
+    stock: "Склад",
+    stockSellable: "Можна продати",
+    stockReserved: "У резерві",
+    stockPhysical: "Фізично на складі",
+    stockOut: "Немає в наявності — на сайті «Немає в наявності»",
+    seo: "Як у пошуку Google",
+    seoOverridden: "перевизначено",
+    seoAuto: "автоматично з назви",
+    group: "Група",
+    groupCount: (n: number) =>
+      `Група · ${countLabel(n, ["варіант", "варіанти", "варіантів"])}`,
+    groupOpen: "Відкрити групу →",
+    groupThis: "цей",
+    groupThisHidden: "цей · прихований",
+    groupHidden: "прихований",
+    groupNone: "Окремий товар, не входить у групу варіантів.",
+    history: "Історія змін",
+    historyAll: "Уся історія →",
+    historyEmpty: "Змін ще не записано.",
+    historyError: "Не вдалося завантажити історію.",
+    notFound: "Товар не знайдено",
+    notFoundHint:
+      "Його могли видалити або змінити адресу. Знайдіть товар у списку за назвою чи артикулом.",
+    loadError: "Не вдалося завантажити товар",
+    loadErrorHint:
+      "Сервер не відповів. Перевірте з'єднання й спробуйте ще раз.",
+    retry: "Спробувати ще раз",
+    toList: "До списку товарів",
   },
 } as const;
 
