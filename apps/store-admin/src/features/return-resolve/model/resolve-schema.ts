@@ -79,6 +79,20 @@ export function orderBalanceOf(
 }
 
 /**
+ * «Можна повернути максимум» (TASK-959, ReturnsProposal Р3–Р5): the lower of
+ * the ceilings this card knows, or `null` when it knows neither. With only
+ * the returned value known it is that value — the server may still refuse
+ * less if the order balance is lower, and its 400 is put under the field.
+ */
+export function refundCapOf(ceilings: RefundCeilings): string | null {
+  const known = [ceilings.returnedValue, ceilings.orderBalance].filter(
+    (value): value is string => value != null,
+  );
+  if (known.length === 0) return null;
+  return centsToString(Math.min(...known.map(toCents)));
+}
+
+/**
  * The operator's decision on a return (TASK-340).
  *
  * `refundedAmount` is a decimal STRING, matching the backend's `@Matches`

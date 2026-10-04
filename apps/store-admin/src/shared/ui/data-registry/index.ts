@@ -85,6 +85,7 @@ export {
   REGISTRY_CARD_QUERY,
   RegistryTable,
   type RegistryCardParts,
+  type RegistryRowGroup,
   type RegistrySort,
   type RegistryTableProps,
 } from "./registry-table";

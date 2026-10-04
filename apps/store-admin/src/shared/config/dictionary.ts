@@ -439,6 +439,8 @@ export const dict = {
       rowActionsAria: (label: string) => `Дії: ${label}`,
       totalsOnPage: (countLabel: string) => `Разом на сторінці: ${countLabel}`,
       noResults: (query: string) => `Нічого не знайдено за запитом «${query}».`,
+      // Rows with a detail panel (wave 198, AuditLogProposal Ж2).
+      expandRowAria: (label: string) => `Деталі: ${label}`,
     },
   },
 
@@ -3355,7 +3357,7 @@ export const dict = {
     metaTitle: "Повернення — Адмін",
     metaTitleDetail: (id: string) => `Повернення ${id} — Адмін`,
     heading: "Повернення",
-    back: "← Назад до повернень",
+    back: "← Повернення",
     title: (id: string) => `Повернення #${id}`,
 
     filterStatusAria: "Фільтр за статусом повернення",
@@ -3365,11 +3367,12 @@ export const dict = {
     empty: "Запитів на повернення ще немає.",
     emptyStatus: (s: string) => `Немає повернень зі статусом «${s}».`,
 
-    colReturn: "Повернення",
+    colReturn: "№",
     colOrder: "Замовлення",
     colStatus: "Статус",
-    colItems: "Позиції",
-    colRequested: "Запит",
+    // Одиниці, а не рядки (TASK-1056): «2» — це два чохли, не дві позиції.
+    colItems: "Шт.",
+    colRequested: "Подано",
     colRefunded: "Повернуто",
     rowAria: (id: string) => `Повернення ${id}`,
     viewOrder: "Замовлення",
@@ -3383,30 +3386,26 @@ export const dict = {
     statusRECEIVED: "Товар отримано",
     statusREFUNDED: "Гроші повернуто",
 
-    reason: "Причина (від клієнта)",
+    reason: "Причина від клієнта",
     noReason: "Причину не вказано",
     operatorNotes: "Внутрішні примітки",
     operatorNotesPlaceholder: "Нотатка для команди…",
-    operatorNotesHint: "Бачить лише команда. Клієнту не показується.",
-    requestedAt: "Запит створено",
-    resolvedAt: "Рішення прийнято",
+    operatorNotesHint: "Бачить лише команда.",
     restockedAt: "Повернуто на склад",
     notRestocked: "На склад не повертали",
     refundedAmount: "Повернуто коштів",
-    notRefunded: "Кошти не повертали",
-    itemsHeading: "Позиції до повернення",
+    itemsHeading: "Що повертають",
     itemProduct: "Товар",
-    itemQty: "К-сть",
-    itemPrice: "Ціна за од.",
+    itemQty: "Шт.",
+    itemPrice: "Ціна",
 
     // --- Resolve action -------------------------------------------------------
-    resolveHeading: "Рішення",
-    resolveStatus: "Новий статус",
-    resolveStatusAria: "Новий статус повернення",
-    resolveStatusPlaceholder: "Оберіть статус…",
+    // Wave 198 (TASK-1056): one «Наступний крок» card with only the actions the
+    // status allows, instead of a status select + one «Зберегти рішення».
+    resolveHeading: "Наступний крок",
     resolveNoTransitions:
       "Це повернення завершене — змінити його статус більше не можна.",
-    resolveRefundedAmount: "Сума повернення",
+    resolveRefundedAmount: "Сума повернення, ₴",
     resolveRefundedAmountPlaceholder: "499.00",
     // Partial refunds are normal: shipping is not always refundable and a
     // customer may be returning one line out of three.
@@ -3423,33 +3422,36 @@ export const dict = {
         : "Сума більша за вартість позицій, що повертаються. Перевірте, чи не пропущено крапку.",
     resolveRefundExceedsOrderBalance: (max?: string) =>
       max
-        ? `Сума більша за те, що ще можна повернути за цим замовленням (${max}) з урахуванням знижки та інших повернень.`
+        ? `Не більше ${max} — це все, що ще можна повернути за цим замовленням.`
         : "Сума більша за те, що ще можна повернути за цим замовленням з урахуванням знижки та інших повернень.",
     // TASK-794 — the limit is `ResolveReturnDto.operatorNotes` (@MaxLength).
     operatorNotesTooLong: "Примітка має містити не більше 2000 символів.",
-    resolveRestock: "Повернути товар у продаж",
     // `restock` is explicit rather than inferred from the status because "the
     // parcel arrived" and "the contents are sellable again" are different claims.
+    // Ticked by default since wave 198 (Р3): most parcels come back sellable.
     resolveRestockHint:
-      "Доступно лише для статусу «Товар отримано». Позначайте, коли товар справді придатний до продажу.",
+      "Зніміть, якщо товар пошкоджений і продавати його не можна.",
     resolveRestockAlreadyDone:
       "Товар уже повернуто на склад — повторно це зробити не можна.",
-    resolveSubmit: "Зберегти рішення",
     resolveSuccess: "Рішення збережено.",
     resolveFailed: "Не вдалося зберегти рішення. Спробуйте ще раз.",
     // 409 from the return state machine / the double-restock guard.
     resolveConflict:
       "Повернення вже змінилося — оновіть сторінку й прийміть рішення ще раз.",
+    // TASK-956: this used to say «Повернення товару на склад доступне лише для
+    // статусу…» for EVERY 400 — false for most of them. Field-specific refusals
+    // now go under their field; this is what is left.
     resolveBadRequest:
-      "Повернення товару на склад доступне лише для статусу «Товар отримано».",
+      "Сервер не прийняв цей крок. Перевірте суму й примітку та спробуйте ще раз.",
 
     // Free-text search (TASK-423). The queue had none, so an operator with the
     // customer on the phone could only page through it. The placeholder names
     // what the term is actually matched against — the return id, the order
-    // number, the customer's email or phone, and the reason they wrote.
-    searchPlaceholder: "Номер повернення, замовлення, пошта або телефон…",
+    // number, the customer's email or phone, and the reason they wrote. Not the
+    // name: the API does not search it (TASK-1056's API tail).
+    searchPlaceholder:
+      "Номер повернення чи замовлення, телефон, email або причина…",
     searchAria: "Пошук повернень",
-    emptyMatch: (q: string) => `Немає повернень за запитом «${q}».`,
 
     // --- Доступ до розділу (TASK-370) -----------------------------------------
     // Сторінки прикривав лише AdminShellGuard по isStaff, тож будь-який
@@ -3474,6 +3476,78 @@ export const dict = {
     createSuccess: "Заявку на повернення створено.",
     createFailed: "Не вдалося створити заявку. Спробуйте ще раз.",
     createdByOperator: "Заявку створив оператор",
+
+    // --- Реєстр і картка (хвиля 198, TASK-1056, ReturnsProposal Р1–Р6) --------
+    itemForms: ["заявка", "заявки", "заявок"],
+    summaryFound: "Знайдено",
+    viewDefault: "Стандартний",
+    // Швидкі види за етапом — над тим самим `?status=`, тож глибокі посилання
+    // працюють як раніше. Лічильників немає: API їх не віддає (хвіст TASK-1056).
+    tabNew: "Нові",
+    tabAwaitingGoods: "Чекаємо товар",
+    tabRefundDue: "Повернути гроші",
+    tabDone: "Завершені",
+    tabRejected: "Відхилені",
+    tabAll: "Усі",
+    filterStatus: "Етап",
+    filtersApply: "Показати заявки",
+    colReason: "Причина",
+    colAmount: "Сума",
+    // «Вік» незакритої заявки — під датою подання.
+    ageWaiting: (days: number) =>
+      days < 1 ? "чекає менше доби" : `чекає ${days} дн`,
+    ageAwaitingGoods: (days: number) =>
+      days < 1 ? "чекаємо товар менше доби" : `чекаємо товар ${days} дн`,
+    ageRefundDue: "повернути гроші",
+    units: (count: number) => `${count} шт.`,
+    sortRequestedDesc: "подано, нові зверху",
+    sortRequestedAsc: "подано, старі зверху",
+    sortStatusAsc: "статус, від нових до завершених",
+    sortStatusDesc: "статус, від завершених до нових",
+    sortRefundedDesc: "повернуто, більші зверху",
+    sortRefundedAsc: "повернуто, менші зверху",
+    rowOpen: "Відкрити",
+    rowOpenNewTab: "Відкрити в новій вкладці",
+    rowCopyNumber: "Скопіювати номер",
+    rowOpenOrder: "Відкрити замовлення",
+    copiedNumber: (number: string) => `Номер ${number} скопійовано.`,
+    copyFailed:
+      "Не вдалося скопіювати — браузер не дав доступу до буфера обміну.",
+    cardActionsAria: "Дії із заявкою",
+    submittedAt: (date: string) => `подано ${date}`,
+    // Кроки заявки (Р3–Р5).
+    stepsAria: "Етапи заявки",
+    stepNow: "зараз",
+    itemLineForms: ["позиція", "позиції", "позицій"],
+    itemsCount: (linesLabel: string, units: number) =>
+      `${linesLabel} · ${units} шт.`,
+    itemSum: "Сума",
+    itemsTotal: "Сума позицій",
+    alreadyRefunded: "Уже повернуто за замовленням",
+    maxRefund: "Можна повернути максимум",
+    // «Наступний крок» — лише дії, доречні для статусу (Р3–Р5).
+    nextRequested: "Перевірте причину й вирішіть, чи приймаєте повернення.",
+    approve: "Схвалити заявку",
+    nextApproved: "Коли посилка від клієнта прийде й ви її перевірите:",
+    restockUnits: (count: number) => `Повернути товар на склад (${count} шт.)`,
+    markReceived: "Товар отримано",
+    reject: "Відхилити заявку…",
+    rejectConfirmTitle: "Відхилити заявку?",
+    rejectConfirmDescription:
+      "Клієнт побачить, що в поверненні відмовлено. Змінити це рішення потім не можна — нове звернення буде новою заявкою.",
+    rejectConfirm: "Відхилити",
+    nextReceived: (restocked: boolean) =>
+      restocked
+        ? "Товар отримано й повернуто на склад. Лишилось повернути гроші клієнту."
+        : "Товар отримано. Лишилось повернути гроші клієнту.",
+    refundCapHint: (max: string) =>
+      `Максимум ${max}. Доставку повертають не завжди.`,
+    resolveRefundedAmountRequired: "Вкажіть суму, яку повернули клієнту.",
+    markRefunded: "Гроші повернуто",
+    saving: "Зберігаємо…",
+    notesEdit: "Змінити",
+    notesEditHint: "Збережеться разом із наступним кроком.",
+    notesEmpty: "Приміток немає.",
   },
 
   // --- Operator-created (phone) orders (TASK-341) ------------------------------
@@ -4186,18 +4260,19 @@ export const dict = {
     emptyFiltered: "Немає записів за поточними фільтрами.",
     colWhen: "Коли",
     colWho: "Хто",
-    colAction: "Дія",
+    // Wave 198 (Ж1): the column is a sentence now, not a code.
+    colAction: "Що зроблено",
     colEntity: "Об'єкт",
     filterActionPlaceholder: "Дія (напр. product.update)",
     filterActionAria: "Фільтр за дією",
     filterEntityAria: "Фільтр за типом об'єкта",
-    filterEntityAll: "Усі об'єкти",
+    filterEntityAll: "Усі",
     systemActor: "Система",
     // The log denormalises the actor's email on purpose, so an entry stays
     // readable after the account is deleted. Show that, never a raw id.
     deletedActor: (email: string) => `${email} (акаунт видалено)`,
     noEntity: "—",
-    diffToggle: "Що змінилося",
+    diffCaption: "Що змінилося",
     diffFrom: "Було",
     diffTo: "Стало",
 
@@ -4398,12 +4473,12 @@ export const dict = {
     // negated actor filter it keeps working after a manager is dismissed, because
     // the role is denormalised onto every entry.
     filterActorAria: "Фільтр за автором дії",
-    filterActorAll: "Усі співробітники",
+    filterActorAll: "Усі",
     filterActorMine: "Мої дії",
     /** An `actorId` from a pasted link that is not the viewer's own. */
     filterActorOther: (id: string) => `Співробітник ${id.slice(0, 8)}…`,
     filterRoleAria: "Фільтр за роллю",
-    filterRoleAll: "Усі ролі",
+    filterRoleAll: "Будь-який",
 
     // --- Доступ до розділу (TASK-639) -----------------------------------------
     // `audit:read` не видається окремою галочкою (`grantable: false`), тож
@@ -4411,6 +4486,141 @@ export const dict = {
     forbidden: "У вас немає доступу до журналу дій.",
     forbiddenHint:
       "Журнал дій бачать лише власник магазину та його заступники (адміністратори). Окремо це право не видається.",
+
+    // --- Реєстр (хвиля 198, TASK-1068, AuditLogProposal Ж1–Ж6) ----------------
+    itemForms: ["запис", "записи", "записів"],
+    summaryFound: "Знайдено",
+    viewDefault: "Стандартний",
+    sortCreatedDesc: "коли, нові зверху",
+    sortCreatedAsc: "коли, старі зверху",
+    sortActorAsc: "хто, А–Я",
+    sortActorDesc: "хто, Я–А",
+    sortActionAsc: "що зроблено, А–Я",
+    sortActionDesc: "що зроблено, Я–А",
+    // Групи за днями (Ж1).
+    dayToday: (date: string) => `Сьогодні, ${date}`,
+    dayYesterday: (date: string) => `Вчора, ${date}`,
+    // Що змінилося — під реченням і в розгорнутому записі (Ж2). «Було» відоме
+    // лише там, де маршрут сам пише запис (права, власність); решта записів
+    // зберігає тільки тіло запиту — людське «Було» скрізь є хвостом API.
+    changeTo: (field: string, to: string) => `${field} → ${to}`,
+    changeFromTo: (field: string, from: string, to: string) =>
+      `${field} ${from} → ${to}`,
+    moreChanges: (count: number) => `ще ${count}`,
+    diffField: "Поле",
+    diffEmpty: "Змінених полів запис не містить.",
+    valueYes: "так",
+    valueNo: "ні",
+    technicalDetails: "Технічні деталі",
+    copyId: "Скопіювати ID",
+    copiedId: "Скопійовано",
+    copyIdFailed: "Не вдалося скопіювати",
+    copyIdAria: (ref: string) => `Скопіювати повний ID ${ref}`,
+    // «Фільтри» (Ж3). Кілька співробітників і рівень «Власник» API не вміє —
+    // хвости TASK-1068; швидких видів за областю теж немає з тієї ж причини.
+    filterActor: "Співробітник",
+    filterActorSearch: "Знайти співробітника…",
+    filterActorSearchAria: "Пошук співробітника",
+    filterActorHint:
+      "У списку — усі, хто колись діяв у панелі, зокрема вимкнені.",
+    filterPeriod: "Період",
+    periodToday: "Сьогодні",
+    period7Days: "7 днів",
+    period30Days: "30 днів",
+    periodCustom: "Свій",
+    periodSince: (date: string) => `з ${date}`,
+    periodUntil: (date: string) => `до ${date}`,
+    filterLevel: "Рівень",
+    filterEntity: "Що змінювали",
+    filtersApply: "Показати записи",
+    filtersApplyCount: (countLabel: string) => `Показати ${countLabel}`,
+    chipActor: (name: string) => `Співробітник: ${name}`,
+    chipLevel: (level: string) => `Рівень: ${level}`,
+    chipEntity: (label: string) => `Що змінювали: ${label}`,
+    chipPeriod: (range: string) => `Період: ${range}`,
+    chipAction: (label: string) => `Дія: ${label}`,
+    // Об'єкт запису в реченні: «Змінено статус замовлення #7C1E4B2A». Назви
+    // об'єкта в записі немає (хвіст API), тож іменник + короткий номер.
+    entityNouns: {
+      addonService: "послуга",
+      attributeDefinition: "характеристика",
+      banner: "банер",
+      blog: "стаття",
+      brand: "бренд",
+      carousel: "карусель",
+      catalogImport: "імпорт каталогу",
+      category: "категорія",
+      contact: "повідомлення",
+      delivery: "доставка",
+      device: "пристрій",
+      discount: "промокод",
+      faq: "питання",
+      media: "файл медіатеки",
+      order: "замовлення",
+      page: "сторінка",
+      payment: "оплата замовлення",
+      permissionTemplate: "шаблон прав",
+      product: "товар",
+      productGroup: "група товарів",
+      productImage: "фото товару",
+      return: "повернення",
+      review: "відгук",
+      search: "пошуковий індекс",
+      searchSynonyms: "синоніми пошуку",
+      seoSettings: "SEO-налаштування",
+      siteContact: "контакти сайту",
+      staff: "співробітник",
+      uploads: "файл",
+      user: "клієнт",
+      userNote: "нотатка про клієнта",
+    },
+    // «Поле» людськими словами (Ж2). Ключ — поле тіла запиту; невідоме поле
+    // показується як є.
+    fieldLabels: {
+      attributes: "Характеристики",
+      brandId: "Бренд",
+      categoryId: "Категорія",
+      code: "Код",
+      compareAtPrice: "Стара (закреслена) ціна",
+      description: "Опис",
+      email: "Email",
+      expiresAt: "Діє до",
+      firstName: "Ім'я",
+      groupId: "Група",
+      image: "Зображення",
+      internalNotes: "Внутрішні нотатки",
+      isActive: "Показується",
+      isOwner: "Власник",
+      keywords: "Ключові слова",
+      lastName: "Прізвище",
+      maxRedemptions: "Ліміт використань",
+      metaDescription: "SEO-опис",
+      metaTitle: "SEO-заголовок",
+      minSpend: "Мінімальна сума",
+      name: "Назва",
+      operatorNotes: "Примітки",
+      outcome: "Результат",
+      parentId: "Батьківська категорія",
+      paymentStatus: "Статус оплати",
+      permissions: "Права",
+      phone: "Телефон",
+      positionOrder: "Порядок",
+      price: "Ціна",
+      reason: "Причина",
+      refundedAmount: "Сума повернення",
+      restock: "Повернути на склад",
+      role: "Роль",
+      shippingAddress: "Адреса доставки",
+      sku: "Артикул",
+      slug: "Адреса (slug)",
+      startsAt: "Діє з",
+      status: "Статус",
+      stock: "Залишок",
+      title: "Заголовок",
+      trackingNumber: "ТТН",
+      type: "Тип",
+      value: "Значення",
+    },
   },
 
   // --- Own admin profile (TASK-317) -------------------------------------------

@@ -3,7 +3,11 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LoaderCircleIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  LoaderCircleIcon,
+} from "lucide-react";
 
 import { cn } from "@/shared/lib/utils";
 import { countLabel, type PluralForms } from "@/shared/lib/plural";
@@ -49,6 +53,14 @@ export interface RegistryCardParts {
   /** The row's selection checkbox, or `null`. */
   select: React.ReactNode;
   href?: string;
+  /** The row's expand toggle (`renderExpanded`), or `null`. */
+  expand?: React.ReactNode;
+}
+
+/** A section heading between runs of rows (`groupBy`) — e.g. one per day. */
+export interface RegistryRowGroup {
+  key: string;
+  label: string;
 }
 
 export interface RegistrySort {
@@ -95,6 +107,19 @@ export interface RegistryTableProps<T> {
   searchQuery?: string;
   /** Filters (not a search) emptied the list. */
   isFiltered?: boolean;
+  /**
+   * Section headings between runs of consecutive rows that share a key
+   * (AuditLogProposal Ж1: «Сьогодні», «Вчора», dates). `null` = no heading.
+   * The caller keeps the rows ordered so a group is one run.
+   */
+  groupBy?: (row: T) => RegistryRowGroup | null;
+  /**
+   * A row's detail panel, opened by a toggle in the trailing column and by a
+   * click on a row that has no `getRowHref` (Ж2). `null` = nothing to open.
+   */
+  renderExpanded?: (row: T) => React.ReactNode;
+  /** Accessible name of a row's expand toggle. */
+  expandLabel?: (row: T) => string;
   className?: string;
 }
 
@@ -147,6 +172,9 @@ export function RegistryTable<T>({
   emptyState,
   searchQuery,
   isFiltered = false,
+  groupBy,
+  renderExpanded,
+  expandLabel,
   className,
 }: RegistryTableProps<T>) {
   const router = useRouter();
@@ -154,22 +182,40 @@ export function RegistryTable<T>({
   const [live, setLive] = React.useState<{ id: string; width: number } | null>(
     null,
   );
+  const [expanded, setExpanded] = React.useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const panelPrefix = React.useId();
 
   const widthOf = (id: string) =>
     live?.id === id ? live.width : (widths[id] ?? DEFAULT_MIN_COLUMN_WIDTH);
-  const hasActions = Boolean(rowActions);
+  // The trailing column holds «⋯» and/or the expand toggle.
+  const hasActions = Boolean(rowActions) || Boolean(renderExpanded);
   const pad = cellPadding[density];
 
-  const open = (event: React.MouseEvent<HTMLElement>, href?: string) => {
-    if (!href) return;
+  const toggleExpanded = (id: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  /** A click meant for the row itself — not a control, a portal, a selection. */
+  const isRowIntent = (event: React.MouseEvent<HTMLElement>) => {
     const row = event.currentTarget;
     const target = event.target as Element;
     // Bubbled out of a portal (a menu opened from this row): not a row click.
-    if (!row.contains(target)) return;
+    if (!row.contains(target)) return false;
     const control = target.closest(INTERACTIVE);
-    if (control && row.contains(control)) return;
+    if (control && row.contains(control)) return false;
     // Selecting text in a cell is not an intent to open the record.
-    if (window.getSelection?.()?.toString()) return;
+    return !window.getSelection?.()?.toString();
+  };
+
+  const open = (event: React.MouseEvent<HTMLElement>, href?: string) => {
+    if (!href) return;
+    if (!isRowIntent(event)) return;
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -180,6 +226,18 @@ export function RegistryTable<T>({
       return;
     }
     router.push(href);
+  };
+
+  /** A row with a link opens it; one without opens its detail panel, if any. */
+  const onRowClick = (event: React.MouseEvent<HTMLElement>, row: T) => {
+    const href = getRowHref?.(row);
+    if (href) {
+      open(event, href);
+      return;
+    }
+    if (renderExpanded && isRowIntent(event) && renderExpanded(row) !== null) {
+      toggleExpanded(getRowId(row));
+    }
   };
 
   const onAux = (event: React.MouseEvent<HTMLElement>, href?: string) => {
@@ -207,6 +265,49 @@ export function RegistryTable<T>({
         items={rowActions(row)}
       />
     );
+  };
+
+  const panelId = (row: T) => `${panelPrefix}-${getRowId(row)}`;
+
+  const expandControl = (row: T) => {
+    if (!renderExpanded || renderExpanded(row) === null) return null;
+    const open = expanded.has(getRowId(row));
+    const Icon = open ? ChevronDownIcon : ChevronRightIcon;
+    return (
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={open ? panelId(row) : undefined}
+        aria-label={expandLabel?.(row) ?? r.expandRowAria(getRowLabel(row))}
+        onClick={() => toggleExpanded(getRowId(row))}
+        className="inline-flex size-8 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        <Icon aria-hidden="true" className="size-4" />
+      </button>
+    );
+  };
+
+  const trailingControls = (row: T) => {
+    const toggle = expandControl(row);
+    const menu = actionsControl(row);
+    if (toggle && menu) {
+      return (
+        <span className="inline-flex items-center">
+          {menu}
+          {toggle}
+        </span>
+      );
+    }
+    return toggle ?? menu;
+  };
+
+  /** Consecutive rows with the same group key share one heading. */
+  const groupStarts = (index: number): RegistryRowGroup | null => {
+    if (!groupBy) return null;
+    const group = groupBy(rows[index]);
+    if (!group) return null;
+    const previous = index > 0 ? groupBy(rows[index - 1]) : null;
+    return previous?.key === group.key ? null : group;
   };
 
   /* ── states ─────────────────────────────────────────────────────────── */
@@ -274,27 +375,52 @@ export function RegistryTable<T>({
         aria-busy={isRefetching || undefined}
       >
         <ul aria-label={label} className="flex flex-col gap-3">
-          {rows.map((row) => {
+          {rows.map((row, index) => {
             const href = getRowHref?.(row);
+            const id = getRowId(row);
+            const group = groupStarts(index);
+            const isOpen = expanded.has(id);
             return (
-              <li
-                key={getRowId(row)}
-                aria-label={getRowLabel(row)}
-                onClick={(event) => open(event, href)}
-                onAuxClick={(event) => onAux(event, href)}
-                className={cn(
-                  "rounded-lg border bg-card p-3 shadow-card",
-                  href && "cursor-pointer",
-                  selection?.isSelected(getRowId(row)) &&
-                    "border-primary/40 bg-primary/7",
-                )}
-              >
-                {renderCard(row, {
-                  actions: actionsControl(row),
-                  select: selectControl(row),
-                  href,
-                })}
-              </li>
+              <React.Fragment key={id}>
+                {group ? (
+                  <li
+                    role="presentation"
+                    data-slot="registry-group"
+                    className="pt-1"
+                  >
+                    <h3 className="text-xs font-semibold text-muted-foreground">
+                      {group.label}
+                    </h3>
+                  </li>
+                ) : null}
+                <li
+                  aria-label={getRowLabel(row)}
+                  onClick={(event) => onRowClick(event, row)}
+                  onAuxClick={(event) => onAux(event, href)}
+                  className={cn(
+                    "rounded-lg border bg-card p-3 shadow-card",
+                    href && "cursor-pointer",
+                    selection?.isSelected(id) &&
+                      "border-primary/40 bg-primary/7",
+                  )}
+                >
+                  {renderCard(row, {
+                    actions: actionsControl(row),
+                    select: selectControl(row),
+                    href,
+                    expand: expandControl(row),
+                  })}
+                  {isOpen && renderExpanded ? (
+                    <div
+                      id={panelId(row)}
+                      data-slot="registry-expanded"
+                      className="mt-3 border-t pt-3"
+                    >
+                      {renderExpanded(row)}
+                    </div>
+                  ) : null}
+                </li>
+              </React.Fragment>
             );
           })}
         </ul>
@@ -413,56 +539,90 @@ export function RegistryTable<T>({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row) => {
+          {rows.map((row, index) => {
             const id = getRowId(row);
             const href = getRowHref?.(row);
             const selected = selection?.isSelected(id) ?? false;
+            const group = groupStarts(index);
+            const isOpen = renderExpanded ? expanded.has(id) : false;
+            const span =
+              columns.length + (selection ? 1 : 0) + (hasActions ? 1 : 0);
             return (
-              <TableRow
-                key={id}
-                data-state={selected ? "selected" : undefined}
-                onClick={(event) => open(event, href)}
-                onAuxClick={(event) => onAux(event, href)}
-                className={cn(
-                  "hover:bg-muted/50 data-[state=selected]:bg-primary/7",
-                  href && "cursor-pointer",
-                )}
-              >
-                {selection ? (
-                  <td className={cn("w-9 pr-0 pl-2 align-top", pad)}>
-                    {selectControl(row)}
-                  </td>
-                ) : null}
-                {columns.map((column) => (
-                  <TableCell
-                    key={column.id}
-                    data-column-id={column.id}
-                    hideOnMobile={column.hideOnMobile}
-                    className={cn(
-                      "overflow-hidden align-top break-words whitespace-normal",
-                      pad,
-                      column.align === "end" && "text-right",
-                      column.className,
-                    )}
+              <React.Fragment key={id}>
+                {group ? (
+                  <TableRow
+                    data-slot="registry-group"
+                    className="bg-muted/60 hover:bg-muted/60"
                   >
-                    {column.rowLink && href ? (
-                      <Link
-                        href={href}
-                        className="rounded-xs outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
-                      >
-                        {column.cell(row)}
-                      </Link>
-                    ) : (
-                      column.cell(row)
-                    )}
-                  </TableCell>
-                ))}
-                {hasActions ? (
-                  <td className="w-11 py-1 pr-1.5 pl-0 text-right align-top">
-                    {actionsControl(row)}
-                  </td>
+                    <th
+                      scope="colgroup"
+                      colSpan={span}
+                      className="px-2 py-1.5 text-left text-xs font-semibold text-muted-foreground"
+                    >
+                      {group.label}
+                    </th>
+                  </TableRow>
                 ) : null}
-              </TableRow>
+                <TableRow
+                  data-state={selected ? "selected" : undefined}
+                  onClick={(event) => onRowClick(event, row)}
+                  onAuxClick={(event) => onAux(event, href)}
+                  className={cn(
+                    "hover:bg-muted/50 data-[state=selected]:bg-primary/7",
+                    (href || expandControl(row)) && "cursor-pointer",
+                    isOpen && "border-b-0 bg-muted/40",
+                  )}
+                >
+                  {selection ? (
+                    <td className={cn("w-9 pr-0 pl-2 align-top", pad)}>
+                      {selectControl(row)}
+                    </td>
+                  ) : null}
+                  {columns.map((column) => (
+                    <TableCell
+                      key={column.id}
+                      data-column-id={column.id}
+                      hideOnMobile={column.hideOnMobile}
+                      className={cn(
+                        "overflow-hidden align-top break-words whitespace-normal",
+                        pad,
+                        column.align === "end" && "text-right",
+                        column.className,
+                      )}
+                    >
+                      {column.rowLink && href ? (
+                        <Link
+                          href={href}
+                          className="rounded-xs outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          {column.cell(row)}
+                        </Link>
+                      ) : (
+                        column.cell(row)
+                      )}
+                    </TableCell>
+                  ))}
+                  {hasActions ? (
+                    <td className="w-11 py-1 pr-1.5 pl-0 text-right align-top">
+                      {trailingControls(row)}
+                    </td>
+                  ) : null}
+                </TableRow>
+                {isOpen && renderExpanded ? (
+                  <TableRow
+                    data-slot="registry-expanded"
+                    className="bg-muted/40 hover:bg-muted/40"
+                  >
+                    <td
+                      id={panelId(row)}
+                      colSpan={span}
+                      className="px-2 pt-0 pb-3 whitespace-normal"
+                    >
+                      {renderExpanded(row)}
+                    </td>
+                  </TableRow>
+                ) : null}
+              </React.Fragment>
             );
           })}
         </TableBody>
