@@ -38,7 +38,11 @@ export {
 export { CreateDiscountView, EditDiscountView } from "./discount-form-view";
 export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
-export { BlogPostTable, BlogPostTableSkeleton } from "./blog-post-list";
+export {
+  BlogPostTable,
+  BlogPostTableSkeleton,
+  BlogSectionTabs,
+} from "./blog-post-list";
 export { CreateBlogPostView, EditBlogPostView } from "./blog-post-form-view";
 export {
   BlogCategoryTable,

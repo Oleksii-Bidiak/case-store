@@ -4,6 +4,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -136,18 +137,27 @@ describe("BlogPostForm — existing fields smoke (TASK-266 baseline coverage)", 
     renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
 
     const f = dict.blogPostForm;
-    expect(screen.getByLabelText(f.title)).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: f.title })).toBeInTheDocument();
     expect(screen.getByLabelText(f.slug)).toBeInTheDocument();
-    expect(screen.getByLabelText(f.category)).toBeInTheDocument();
-    expect(screen.getByLabelText(f.excerpt)).toBeInTheDocument();
-    expect(screen.getByLabelText(f.author)).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: f.category }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("textbox", { name: f.excerpt }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: f.author })).toBeInTheDocument();
     expect(screen.getByLabelText(f.coverImageUrl)).toBeInTheDocument();
     expect(screen.getByLabelText(f.readingMinutes)).toBeInTheDocument();
     expect(screen.getByLabelText(f.featured)).toBeInTheDocument();
-    expect(screen.getByLabelText(f.status)).toBeInTheDocument();
+    expect(screen.getByLabelText(f.listed)).toBeInTheDocument();
+    expect(
+      screen.getByRole("radiogroup", { name: f.status }),
+    ).toBeInTheDocument();
     expect(screen.getByTestId("rte-stub")).toBeInTheDocument();
 
-    // Category options arrive from the (stubbed) admin endpoint.
+    // Category options arrive from the (stubbed) admin endpoint — in a Select
+    // now (БЛ7), not a native <select>.
+    await userEvent.click(screen.getByRole("combobox", { name: f.category }));
     expect(
       await screen.findByRole("option", { name: "Огляди" }),
     ).toBeInTheDocument();
@@ -175,11 +185,30 @@ describe("BlogPostForm — existing fields smoke (TASK-266 baseline coverage)", 
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  // БЛ10: one line above the form names what to fix, in form order.
+  it("sums the invalid fields up above the form", async () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.blogPostForm.submit }),
+    );
+
+    const f = dict.blogPostForm;
+    expect(
+      await screen.findByText(
+        f.errorsSummary(
+          "5 полів",
+          `«${f.title}», «${f.category}», «${f.author}», «${f.excerpt}», «${f.content}»`,
+        ),
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows the live slug preview derived from the title", async () => {
     renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
 
     await userEvent.type(
-      screen.getByLabelText(dict.blogPostForm.title),
+      screen.getByRole("textbox", { name: dict.blogPostForm.title }),
       "Огляд iPhone",
     );
 
@@ -234,7 +263,7 @@ describe("BlogPostForm — SEO section (TASK-437)", () => {
     renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
 
     await userEvent.type(
-      screen.getByLabelText(dict.blogPostForm.title),
+      screen.getByRole("textbox", { name: dict.blogPostForm.title }),
       "Огляд iPhone",
     );
     await waitFor(() =>
@@ -311,5 +340,141 @@ describe("BlogPostForm — content preview tab (TASK-266)", () => {
     expect(screen.getByTestId("rich-text-preview")).toHaveTextContent(
       dict.contentPreview.emptyContent,
     );
+  });
+});
+
+/**
+ * Wave 198 (BlogProposal БЛ7–БЛ10, TASK-1070): sections with an index, one
+ * sticky «Зберегти», the status as a three-way switch, and the text's own
+ * numbers under the editor.
+ */
+describe("BlogPostForm — sections and publishing (БЛ7–БЛ10)", () => {
+  const f = dict.blogPostForm;
+  // Testing Library collapses the DOM's no-break spaces («100 000») but
+  // not the matcher's, so the expected label uses plain ones.
+  const MAX_LABEL = (100_000).toLocaleString("uk-UA").replace(/\s/g, " ");
+  const filled = {
+    title: "Огляд",
+    excerpt: "Коротко",
+    content: "<p>Текст</p>",
+    categoryId: "cat-1",
+    authorName: "Олег",
+  };
+
+  it("indexes its six sections", () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    const nav = screen.getByRole("navigation", { name: f.sectionsAria });
+    expect(
+      Array.from(nav.querySelectorAll("a")).map((link) => link.textContent),
+    ).toEqual([
+      f.sectionMain,
+      f.sectionContent,
+      f.sectionCover,
+      f.sectionShow,
+      f.sectionSeo,
+      f.sectionPublish,
+    ]);
+  });
+
+  it("switches the status with three radios and asks for a date only when scheduled", async () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    const group = screen.getByRole("radiogroup", { name: f.status });
+    const radios = within(group).getAllByRole("radio");
+    expect(radios.map((radio) => radio.getAttribute("value"))).toEqual([
+      "PUBLISHED",
+      "DRAFT",
+      "SCHEDULED",
+    ]);
+    expect(
+      within(group).getByRole("radio", { name: f.statusDraft }),
+    ).toBeChecked();
+    expect(
+      screen.queryByLabelText(new RegExp(`^${f.scheduledAt}`)),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      within(group).getByRole("radio", { name: f.statusScheduled }),
+    );
+
+    expect(
+      screen.getByLabelText(new RegExp(`^${f.scheduledAt}`)),
+    ).toBeInTheDocument();
+  });
+
+  it("submits the picked status", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <BlogPostForm
+        id="p1"
+        defaultValues={filled}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: f.title })).toHaveValue(
+        "Огляд",
+      ),
+    );
+
+    await userEvent.click(
+      screen.getByRole("radio", { name: f.statusPublished }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ status: "PUBLISHED" });
+  });
+
+  it("counts the text under the editor and offers the estimate for «Час читання»", async () => {
+    renderWithProviders(<BlogPostForm onSubmit={noop} isPending={false} />);
+
+    expect(screen.getByText(f.contentStatsEmpty)).toBeInTheDocument();
+
+    await userEvent.type(
+      screen.getByTestId("rte-stub"),
+      "<p>Три слова тут</p>",
+    );
+
+    expect(
+      await screen.findByText(f.contentStats(1, "3 слова", "0 зображень")),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(f.contentLength("20", MAX_LABEL)),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: f.readingApply(1) }),
+    );
+    expect(screen.getByLabelText(f.readingMinutes)).toHaveValue(1);
+  });
+
+  it("refuses a body longer than the API accepts", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(
+      <BlogPostForm
+        id="p1"
+        defaultValues={{
+          ...filled,
+          content: `<p>${"a".repeat(100_000)}</p>`,
+        }}
+        onSubmit={onSubmit}
+        isPending={false}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: f.title })).toHaveValue(
+        "Огляд",
+      ),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    expect(
+      await screen.findByText(f.errors.contentMax(MAX_LABEL)),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

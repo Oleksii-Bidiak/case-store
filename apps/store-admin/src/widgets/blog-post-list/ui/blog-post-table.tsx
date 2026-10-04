@@ -1,288 +1,330 @@
 "use client";
 
-import Link from "next/link";
+import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "@/shared/ui/toast";
 import {
   getAdminBlogControllerFindAllQueryKey,
+  useAdminBlogControllerDelete,
   useAdminBlogControllerFindAll,
+  useAdminBlogControllerFindCategories,
   useAdminBlogControllerPublish,
   useAdminBlogControllerUnpublish,
-  useAdminBlogControllerDelete,
+  type BlogPostEntity,
 } from "@/entities/blog";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
+import { useUrlParams } from "@/shared/lib/use-url-params";
+import { toast } from "@/shared/ui/toast";
 import {
-  Badge,
-  Button,
+  DataRegistry,
   LiveAnnouncer,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableToolbar,
+  SummaryValue,
   pageSizeFrom,
+  useConfirmDialog,
+  useDataRegistry,
+  type FilterChip,
+  type QuickView,
+  type RowActionItem,
 } from "@/shared/ui";
-import { formatDate } from "@/shared/lib";
-import { dict } from "@/shared/config";
-import { BlogPostTableSkeleton } from "./blog-post-table-skeleton";
+import { countLabel } from "@/shared/lib";
+import { dict, STOREFRONT_URL } from "@/shared/config";
+import {
+  ALL_VIEW,
+  BLOG_POST_VIEWS,
+  parseStatusParam,
+  type BlogPostStatusParam,
+} from "../model/post-views";
+import {
+  buildBlogPostColumns,
+  renderBlogPostCard,
+} from "./blog-post-registry-columns";
+import { BlogPostFilterSheet } from "./blog-post-filter-sheet";
+import { ALL_POSTS_COUNT_QUERY } from "./blog-section-tabs";
 
-const STATUS_LABEL: Record<string, string> = {
-  DRAFT: dict.blogPosts.statusDraft,
-  SCHEDULED: dict.blogPosts.statusScheduled,
-  PUBLISHED: dict.blogPosts.statusPublished,
-};
+const d = dict.blogPosts;
+
+const getRowId = (post: BlogPostEntity) => post.id;
+const getRowLabel = (post: BlogPostEntity) => post.title;
+const editHref = (post: BlogPostEntity) => `/blog/${post.id}/edit`;
+/** The article on the storefront — `/blog/<slug>`; only a live one is linked. */
+const siteHref = (post: BlogPostEntity) =>
+  `${STOREFRONT_URL}/blog/${post.slug}`;
 
 /**
- * The status badge (TASK-430).
- *
- * A scheduled post already read «Заплановано» here — but in the same grey as a
- * draft and without the date, so the row still did not answer the only question it
- * raises: WHEN does this go live. The date is what separates a post going out on
- * Friday from one somebody forgot, and «Заплановано» alone made the operator open
- * the post to find out.
- *
- * `formatDate`, so the year is visible — a schedule typed into the wrong year is the
- * one mistake worth catching from the list.
+ * The view counters: one-row requests, the API's own `meta.total` (the same
+ * pattern as the reviews queue). Hooks in a fixed order, one per view; «Усі»
+ * shares its request with the section tab.
  */
-function BlogStatusBadge({
-  status,
-  scheduledAt,
-}: {
-  status: string;
-  scheduledAt?: string | null;
-}) {
-  if (status === "SCHEDULED") {
-    return (
-      <Badge variant="warning">
-        {scheduledAt
-          ? dict.blogPosts.statusScheduledOn(formatDate(scheduledAt))
-          : dict.blogPosts.statusScheduled}
-      </Badge>
-    );
-  }
-
-  return (
-    <Badge variant={status === "PUBLISHED" ? "default" : "secondary"}>
-      {STATUS_LABEL[status] ?? status}
-    </Badge>
-  );
+function useViewCounts(): Record<string, number | undefined> {
+  const all = useAdminBlogControllerFindAll(ALL_POSTS_COUNT_QUERY);
+  const published = useAdminBlogControllerFindAll({
+    ...ALL_POSTS_COUNT_QUERY,
+    status: "PUBLISHED",
+  });
+  const scheduled = useAdminBlogControllerFindAll({
+    ...ALL_POSTS_COUNT_QUERY,
+    status: "SCHEDULED",
+  });
+  const drafts = useAdminBlogControllerFindAll({
+    ...ALL_POSTS_COUNT_QUERY,
+    status: "DRAFT",
+  });
+  return {
+    [ALL_VIEW]: all.data?.meta?.total,
+    PUBLISHED: published.data?.meta?.total,
+    SCHEDULED: scheduled.data?.meta?.total,
+    DRAFT: drafts.data?.meta?.total,
+  };
 }
 
 /**
- * Admin blog-post table: title, category, status badge, featured flag, and
- * per-row actions (edit, publish/unpublish toggle, delete with confirm).
+ * The posts register (TASK-172) on the shared registry (wave 198, TASK-1070,
+ * BlogProposal БЛ1–БЛ6).
  *
- * TASK-357 fixed a SILENT TRUNCATION: this table asked the (already paginated
- * and searchable) admin endpoint for `limit: 100` and rendered no page controls,
- * so post 101 existed on the server and nowhere in the panel — no warning, no
- * empty slot, nothing to click. The backend needed no change at all; the missing
- * control was the whole bug. Page and search live in the URL (`?page=`,
- * `?search=`); the API calls its free-text parameter `q`, so the URL key and the
- * wire key deliberately differ — `?search=` is what every other admin table uses
- * and the operator should not have to know which endpoint they are on.
+ * The URL contract grew, nothing was dropped: `?page=`, `?limit=`, `?search=`
+ * (sent as the API's `q` — TASK-357), plus `?status=` (quick views) and
+ * `?category=` (a slug — what «Показати статті» on a category links to).
  *
- * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
- * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
- * component that renders the provider would read the default no-op context.
+ * What moved, nothing removed: «Редагувати / Опублікувати · Зняти з публікації
+ * / Видалити» went from three buttons into «⋯» (with «Відкрити на сайті» for a
+ * live post), the delete `window.confirm` became an AlertDialog (TASK-812),
+ * the «Головна» and «У списках» columns became badges by the status.
+ *
+ * Not drawn, because the API does not provide them (TASK-1070 API tails): bulk
+ * actions and the checkbox column (no bulk endpoint), the «Не в списках» view
+ * and the author / «Головна» / period filters (no such filters), author search
+ * (`q` covers title + excerpt), a sort control (the list is newest-first only).
+ *
+ * Every admin blog route needs `blog:write` today — there is no read-only blog
+ * key — so the view-only state below is what a future `blog:read` will get.
  */
 export function BlogPostTable() {
-  return (
-    <LiveAnnouncer>
-      <BlogPostView />
-    </LiveAnnouncer>
-  );
-}
-
-function BlogPostView() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const updateParams = useUrlParams();
+  const { can } = useAuth();
+  const canWrite = can(PERM.blogWrite);
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const searchParam = searchParams.get("search") ?? "";
+  const statusParam = searchParams.get("status") ?? "";
+  const categoryParam = searchParams.get("category") ?? "";
+  const status: BlogPostStatusParam | undefined = parseStatusParam(statusParam);
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
-  const { data, isLoading, isFetching, isError, refetch } =
+  const { data, dataUpdatedAt, isLoading, isFetching, isError, refetch } =
     useAdminBlogControllerFindAll({
       page,
       limit: pageSize,
       q: searchParam || undefined,
+      status,
+      category: categoryParam || undefined,
     });
+  const counts = useViewCounts();
+  const categoriesQuery = useAdminBlogControllerFindCategories();
+  const categories = useMemo(
+    () => categoriesQuery.data?.data ?? [],
+    [categoriesQuery.data],
+  );
+
   const publish = useAdminBlogControllerPublish();
   const unpublish = useAdminBlogControllerUnpublish();
   const remove = useAdminBlogControllerDelete();
+  const isMutating =
+    publish.isPending || unpublish.isPending || remove.isPending;
 
-  const posts = data?.data ?? [];
+  const posts = useMemo(() => data?.data ?? [], [data]);
+  const total = data?.meta?.total ?? 0;
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  // Prefix match: the key without params covers every paged/searched variant.
+  const columns = useMemo(() => buildBlogPostColumns(), []);
+  const registry = useDataRegistry({
+    tableId: "blog-posts",
+    columns,
+    rows: posts,
+    getRowId,
+  });
+
+  // Prefix match: the key without params covers every paged, filtered and
+  // counting variant — the view counters move with a publish or a delete.
   const invalidateList = () =>
     queryClient.invalidateQueries({
       queryKey: getAdminBlogControllerFindAllQueryKey(),
     });
 
-  const handleToggle = (id: string, isPublished: boolean) => {
+  const handleToggle = (post: BlogPostEntity) => {
+    const isPublished = post.status === "PUBLISHED";
     const mutation = isPublished ? unpublish : publish;
     mutation.mutate(
-      { id },
+      { id: post.id },
       {
         onSuccess: () => {
           void invalidateList();
-          toast.success(
-            isPublished
-              ? dict.blogPosts.toastUnpublished
-              : dict.blogPosts.toastPublished,
-          );
+          toast.success(isPublished ? d.toastUnpublished : d.toastPublished);
         },
-        onError: () => toast.error(dict.blogPosts.toastStatusFailed),
+        onError: () => toast.error(d.toastStatusFailed),
       },
     );
   };
 
-  const handleDelete = (id: string, title: string, isPublished: boolean) => {
-    if (!window.confirm(dict.blogPosts.deleteConfirm(title, isPublished)))
-      return;
+  const handleDelete = async (post: BlogPostEntity) => {
+    const isPublished = post.status === "PUBLISHED";
+    const confirmed = await confirm({
+      title: d.deleteTitle(post.title),
+      description: (
+        <>
+          <span className="block">
+            {d.deleteIrreversible}
+            {isPublished ? ` ${d.deleteIndexed}` : null}
+          </span>
+          {/* Only a live, listed post can be "removed from the blog" without
+              deleting it — for anything else the hint would be noise. */}
+          {isPublished && post.listed ? (
+            <span className="mt-2 block">{d.deleteListedHint}</span>
+          ) : null}
+        </>
+      ),
+      confirmLabel: d.deleteAction,
+      destructive: true,
+    });
+    if (!confirmed) return;
     remove.mutate(
-      { id },
+      { id: post.id },
       {
         onSuccess: () => {
           void invalidateList();
-          toast.success(dict.blogPosts.toastDeleted);
+          toast.success(d.toastDeleted);
         },
-        onError: () => toast.error(dict.blogPosts.toastDeleteFailed),
+        onError: () => toast.error(d.toastDeleteFailed),
       },
     );
   };
 
-  const isMutating =
-    publish.isPending || unpublish.isPending || remove.isPending;
+  const rowActions = (post: BlogPostEntity): RowActionItem[] => {
+    const isPublished = post.status === "PUBLISHED";
+    const items: RowActionItem[] = [];
+    if (canWrite) items.push({ label: d.rowEdit, href: editHref(post) });
+    // Owner decision 2026-10-01: only PUBLISHED content is linked, in a new
+    // tab — a draft preview is TASK-670.
+    if (isPublished) {
+      items.push({ label: d.rowOpenSite, href: siteHref(post), newTab: true });
+    }
+    if (canWrite) {
+      items.push(
+        {
+          label: isPublished ? d.unpublish : d.publish,
+          onSelect: () => handleToggle(post),
+          disabled: isMutating,
+        },
+        {
+          label: d.rowDelete,
+          onSelect: () => void handleDelete(post),
+          destructive: true,
+          separatorBefore: true,
+          disabled: isMutating,
+        },
+      );
+    }
+    return items;
+  };
+
+  const activeView = status ?? (statusParam ? "" : ALL_VIEW);
+  const quickViews: QuickView[] = BLOG_POST_VIEWS.map((view) => ({
+    id: view.id,
+    label: view.label,
+    count: counts[view.id],
+  }));
+
+  const categoryName =
+    categories.find((category) => category.slug === categoryParam)?.name ??
+    categoryParam;
+  const chips: FilterChip[] = categoryParam
+    ? [
+        {
+          key: "category",
+          label: d.chipCategory(categoryName),
+          onRemove: () =>
+            updateParams({ category: undefined, page: undefined }),
+        },
+      ]
+    : [];
+  const isFiltered = Boolean(status || categoryParam);
 
   return (
-    <div className="flex flex-col gap-4">
-      <TableToolbar
-        className="mb-0"
+    <LiveAnnouncer>
+      <DataRegistry
+        registry={registry}
+        title={d.tabPosts}
+        showHeader={false}
+        quickViews={{
+          items: quickViews,
+          activeId: activeView,
+          onChange: (id) =>
+            updateParams({
+              status: id === ALL_VIEW ? undefined : id,
+              page: undefined,
+            }),
+        }}
+        search={{
+          value: searchParam,
+          placeholder: d.searchPlaceholder,
+          label: d.searchAria,
+        }}
+        filters={{
+          count: categoryParam ? 1 : 0,
+          renderSheet: ({ open, onOpenChange }) => (
+            <BlogPostFilterSheet
+              open={open}
+              onOpenChange={onOpenChange}
+              applied={{ status: status ?? "", category: categoryParam }}
+              categories={categories}
+              onApply={(next) =>
+                updateParams({
+                  status: next.status || undefined,
+                  category: next.category || undefined,
+                  page: undefined,
+                })
+              }
+            />
+          ),
+        }}
+        views={{ defaultName: d.viewDefault }}
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
-        search={
-          <TableSearch
-            value={searchParam}
-            placeholder={dict.blogPosts.searchPlaceholder}
-            label={dict.blogPosts.searchAria}
-          />
+        chips={chips}
+        onClearAllChips={() =>
+          updateParams({ category: undefined, page: undefined })
         }
+        summary={
+          data ? (
+            <>
+              {d.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, d.itemForms)}</SummaryValue>
+            </>
+          ) : null
+        }
+        sortLabel={d.sortNewest}
+        updatedAt={dataUpdatedAt || undefined}
+        itemForms={d.itemForms}
+        getRowLabel={getRowLabel}
+        getRowHref={canWrite ? editHref : undefined}
+        rowActions={rowActions}
+        rowActionsLabel={(post) => d.rowActionsAria(post.title)}
+        renderCard={renderBlogPostCard}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={d.loadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={d.empty}
+        searchQuery={searchParam || undefined}
+        isFiltered={isFiltered}
+        pagination={{ page, totalPages, pageSize }}
       />
-
-      {isLoading ? (
-        <BlogPostTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.blogPosts.loadError}
-        </p>
-      ) : posts.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {searchParam
-            ? dict.blogPosts.emptyMatch(searchParam)
-            : dict.blogPosts.empty}
-        </div>
-      ) : (
-        <div className="rounded-lg border border-border shadow-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{dict.blogPosts.colTitle}</TableHead>
-                <TableHead hideOnMobile>{dict.blogPosts.colCategory}</TableHead>
-                <TableHead>{dict.blogPosts.colStatus}</TableHead>
-                <TableHead hideOnMobile>{dict.blogPosts.colFeatured}</TableHead>
-                <TableHead hideOnMobile>{dict.blogPosts.colListed}</TableHead>
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {posts.map((post) => {
-                const isPublished = post.status === "PUBLISHED";
-                return (
-                  <TableRow key={post.id}>
-                    <TableCell className="font-medium">
-                      <Link
-                        href={`/blog/${post.id}/edit`}
-                        className="hover:underline"
-                      >
-                        {post.title}
-                      </Link>
-                    </TableCell>
-                    <TableCell hideOnMobile className="text-muted-foreground">
-                      {post.category.name}
-                    </TableCell>
-                    <TableCell>
-                      <BlogStatusBadge
-                        status={post.status}
-                        scheduledAt={post.scheduledAt}
-                      />
-                    </TableCell>
-                    <TableCell hideOnMobile>
-                      {post.featured ? dict.blogPosts.featuredYes : "—"}
-                    </TableCell>
-                    {/* TASK-436 — an unlisted post is published and reachable,
-                        so no status badge reveals it. Without a column of its
-                        own the owner cannot tell it apart from a normal post. */}
-                    <TableCell hideOnMobile>
-                      {post.listed ? (
-                        "—"
-                      ) : (
-                        <Badge variant="secondary">
-                          {dict.blogPosts.unlistedBadge}
-                        </Badge>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/blog/${post.id}/edit`}>
-                            {dict.common.edit}
-                          </Link>
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={isMutating}
-                          onClick={() => handleToggle(post.id, isPublished)}
-                        >
-                          {isPublished
-                            ? dict.blogPosts.unpublish
-                            : dict.blogPosts.publish}
-                        </Button>
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          disabled={isMutating}
-                          onClick={() =>
-                            handleDelete(post.id, post.title, isPublished)
-                          }
-                        >
-                          {dict.common.delete}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!isLoading && !isError && posts.length > 0 && (
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
-        />
-      )}
-    </div>
+      {confirmDialog}
+    </LiveAnnouncer>
   );
 }
