@@ -11,6 +11,8 @@ export {
   useAttributeDefinitionControllerDelete,
   useAttributeDefinitionControllerReorder,
   getAttributeDefinitionControllerFindByCategoryQueryKey,
+  // Wave 198 — «зараз N з 6» counts the EFFECTIVE (own + inherited) facets.
+  getAttributeDefinitionControllerFindEffectiveQueryKey,
   // TASK-707 — categories of a subtree over the storefront facet ceiling.
   useAttributeDefinitionControllerFacetCeiling,
   getAttributeDefinitionControllerFacetCeilingQueryKey,

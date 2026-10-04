@@ -846,7 +846,7 @@ export const dict = {
       "додаємо з типом «Текст» — такий тип не може бути фільтром. Щоб зробити " +
       "характеристику фільтром, відкрийте " +
       "«Категорії» → категорію → «Характеристики», змініть тип на «Вибір зі списку» " +
-      "(і перелічіть значення) або «Так/Ні» та увімкніть «Використовувати як фільтр каталогу».",
+      "(і перелічіть значення) або «Так / Ні» та увімкніть «Використовувати як фільтр каталогу».",
 
     // Rows
     createsHeading: (n: number) => `Нові товари (${n})`,
@@ -1002,8 +1002,9 @@ export const dict = {
   // --- Categories (TASK-115) --------------------------------------------------
   categories: {
     // Add-on template panel embedded in the category form (TASK-174).
+    // Wave 198 (КТ5): it is a section of the one form now — its title is
+    // `categoryForm.sectionAddons`, and the form's «Зберегти» saves it.
     addonTemplate: {
-      heading: "Додаткові послуги цієї категорії",
       hint:
         "Позначте послуги, які пропонуватимуться для ВСІХ товарів цієї категорії та її підкатегорій. " +
         "Якщо не позначити жодної, категорія успадкує послуги найближчої батьківської категорії.",
@@ -1016,9 +1017,6 @@ export const dict = {
       emptyCatalog:
         "У каталозі ще немає активних послуг. Спершу створіть їх у розділі «Додаткові послуги».",
       loadError: "Не вдалося завантажити послуги. Спробуйте ще раз.",
-      save: "Зберегти послуги категорії",
-      toastSaved: "Послуги категорії збережено",
-      toastFailed: "Не вдалося зберегти послуги категорії",
     },
     metaTitle: "Категорії — Адмін",
     metaTitleNew: "Створення категорії — Адмін",
@@ -1042,7 +1040,7 @@ export const dict = {
     productsDirect: (count: number) => `прямо ${count}`,
     colStatus: "Статус",
     root: "Коренева",
-    back: "← Назад до категорій",
+    back: "← Категорії",
     createHeading: "Створення категорії",
     editHeading: "Редагування категорії",
     createSubmit: "Створити категорію",
@@ -1050,7 +1048,8 @@ export const dict = {
     toastCreated: "Категорію створено",
     toastCreateFailed: "Не вдалося створити категорію",
     toastUpdated: "Категорію оновлено",
-    toastUpdateFailed: "Не вдалося оновити категорію",
+    // (No `toastUpdateFailed`: since wave 198 a failed save names the section
+    // it stopped at — `saveStepFailed` below.)
     // --- Category tree (TASK-291) ---------------------------------------------
     // Labels for the treegrid screen: the persistent Undo control, the per-row
     // "Дії" menu (the WCAG 2.2 SC 2.5.7 non-dragging alternative), the
@@ -1160,6 +1159,24 @@ export const dict = {
       `Ви змінюєте адресу активної категорії з «${oldSlug}» на «${newSlug}». ` +
       `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
       `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
+
+    // --- Wave 198, CategoriesProposal КТ5 (TASK-1052): the edit page ---------
+    // The slug guard is an AlertDialog now, not `window.confirm`.
+    slugChangeConfirmTitle: "Змінити адресу категорії?",
+    slugChangeConfirmAction: "Змінити адресу",
+    // Header line: «30 товарів у 3 підкатегоріях · /categories/cases».
+    headerProducts: (products: number, subcategories: number) =>
+      subcategories > 0
+        ? `${countLabel(products, ["товар", "товари", "товарів"])} у ${countLabel(subcategories, ["підкатегорії", "підкатегоріях", "підкатегоріях"])}`
+        : countLabel(products, ["товар", "товари", "товарів"]),
+    headerMenuAria: "Дії з категорією",
+    openOnSite: "Відкрити на сайті",
+    // One «Зберегти» saves the sections in order and stops at the first that
+    // fails — saying what DID save, so nobody re-enters it.
+    saveStepFailed: (saved: string, failed: string) =>
+      saved
+        ? `Збережено: ${saved}. Не вдалося зберегти: ${failed} — спробуйте ще раз.`
+        : `Не вдалося зберегти: ${failed} — спробуйте ще раз.`,
   },
 
   categoryForm: {
@@ -1174,7 +1191,8 @@ export const dict = {
     loading: "Завантаження…",
     // TASK-291-K: no `sortOrder` label — the order field is gone from this form
     // (sibling order lives in the treegrid).
-    active: "Активна (показувати в магазині)",
+    // Wave 198 (КТ5): a Switch, worded as what it does on the site.
+    active: "Показувати на сайті",
     metaTitle: "SEO-заголовок (meta title)",
     metaTitlePlaceholder: "Залиште порожнім, щоб використати назву",
     metaDescription: "SEO-опис (meta description)",
@@ -1207,6 +1225,47 @@ export const dict = {
         "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
       errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
     },
+
+    // --- Wave 198, CategoriesProposal КТ5 (TASK-1052, TASK-1117) ------------
+    sectionsAria: "Розділи форми категорії",
+    sectionMain: "Основне",
+    sectionImage: "Зображення",
+    sectionAttributes: "Характеристики",
+    sectionAddons: "Додаткові послуги",
+    sectionSeo: "SEO і соцмережі",
+    // Read after a section's dot in the section index.
+    sectionDirty: "є незбережені зміни",
+    sectionError: "є помилка",
+    // Under «Показувати на сайті»: what switching it off takes with it.
+    hideConsequence: (subcategories: number, products: number) => {
+      const goods = countLabel(products, ["товаром", "товарами", "товарами"]);
+      if (subcategories === 0) {
+        return `Вимкнення ховає з сайту категорію разом із її ${goods}.`;
+      }
+      if (subcategories === 1) {
+        return `Вимкнення ховає й 1 підкатегорію разом із їхніми ${goods}.`;
+      }
+      return `Вимкнення ховає й усі ${countLabel(subcategories, ["підкатегорію", "підкатегорії", "підкатегорій"])} разом із їхніми ${goods}.`;
+    },
+    // No tree yet (a new category) — nothing to count.
+    hideConsequenceGeneric:
+      "Вимкнена категорія не показується на сайті — разом з усіма підкатегоріями та їхніми товарами.",
+    // TASK-1117: `Category.keywords` has no consumer — no index, no search — so
+    // the hint says so instead of promising search and AI assistants.
+    keywords: "Теги категорії",
+    keywordsHint:
+      "Для вашого впорядкування. Пошук на сайті їх поки що не враховує — щоб товар знаходили за словом, додайте його в назву чи опис товару.",
+    // The one line that stands in for the folded SEO section.
+    seoSummary: (ownTitle: boolean, tags: number, ownOgImage: boolean) =>
+      [
+        ownTitle
+          ? "Свій заголовок для Google"
+          : "Заголовок для Google — з назви",
+        tags > 0 ? countLabel(tags, ["тег", "теги", "тегів"]) : "без тегів",
+        ownOgImage
+          ? "своя картинка для соцмереж"
+          : "картинка для соцмереж — автоматична",
+      ].join(" · "),
   },
 
   // --- Devices: compatibility taxonomy (TASK-190) -----------------------------
@@ -1361,7 +1420,7 @@ export const dict = {
   attributeDefinitions: {
     heading: "Характеристики",
     description:
-      "Шаблони характеристик для товарів цієї категорії. Успадковуються підкатегоріями.",
+      "Шаблон характеристик для товарів цієї категорії; підкатегорії його успадковують.",
     add: "Додати характеристику",
     empty: "Ще немає характеристик для цієї категорії.",
     edit: "Редагувати",
@@ -1372,7 +1431,7 @@ export const dict = {
     loadError: "Не вдалося завантажити характеристики.",
     confirmRemove:
       "Видалити цю характеристику разом з усіма значеннями товарів?",
-    filterableBadge: "Фільтр",
+    filterableBadge: "у фільтрах",
     // form
     key: "Ключ (лат.)",
     keyPlaceholder: "material",
@@ -1387,7 +1446,7 @@ export const dict = {
     // TASK-488 / рішення B-10: фасет — це «Так/Ні» або «Вибір зі списку».
     // Вільний текст і числа дають стільки значень фільтра, скільки товарів.
     isFilterableHint:
-      "Доступно для типів «Так/Ні» та «Вибір зі списку»: у фільтрі мають бути готові значення, а не вільний текст",
+      "Доступно для типів «Так / Ні» та «Вибір зі списку»: у фільтрі мають бути готові значення, а не вільний текст",
     submitCreate: "Додати",
     submitUpdate: "Зберегти",
     cancel: "Скасувати",
@@ -1395,7 +1454,7 @@ export const dict = {
     editTitle: "Редагування характеристики",
     typeText: "Текст",
     typeNumber: "Число",
-    typeBoolean: "Так/Ні",
+    typeBoolean: "Так / Ні",
     typeSelect: "Вибір зі списку",
     toastCreated: "Характеристику додано",
     toastUpdated: "Характеристику оновлено",
@@ -1412,7 +1471,7 @@ export const dict = {
       optionsRequired:
         "Додайте хоча б одне значення для типу «Вибір зі списку»",
       filterableType:
-        "Фільтром каталогу може бути лише «Так/Ні» або «Вибір зі списку»",
+        "Фільтром каталогу може бути лише «Так / Ні» або «Вибір зі списку»",
       // TASK-514 — «,» і «;» розділяють значення у фільтрі каталогу (?specs=).
       optionSeparator: (option: string) =>
         `«${option}»: кома й крапка з комою в значенні недопустимі — вони розділяють значення у фільтрі каталогу. Напишіть, напр., «Силікон — мʼякий» або «Силікон (мʼякий)»`,
@@ -1426,6 +1485,21 @@ export const dict = {
     facetCeilingHint:
       "Зніміть позначку «Використовувати як фільтр» з менш важливих характеристик або підніміть важливіші вище — показуються перші за порядком.",
     facetCeilingLoadError: "Не вдалося перевірити кількість фільтрів.",
+
+    // --- Wave 198, CategoriesProposal КТ5 (TASK-1052) ----------------------
+    // The type in the operator's words, with what it means for the filters.
+    typeTextLine: "Текст · не може бути фільтром",
+    typeNumberLine: "Число · не може бути фільтром",
+    optionForms: ["варіант", "варіанти", "варіантів"],
+    // «Вітрина показує у фільтрах не більше 6 — зараз 4 з 6.» The count is the
+    // category's EFFECTIVE facets (own + inherited), the same rule the
+    // storefront applies.
+    facetNowLead: (limit: number) =>
+      `Вітрина показує у фільтрах не більше ${limit} — `,
+    facetNow: (count: number, limit: number) => `зараз ${count} з ${limit}`,
+    rowActionsAria: (label: string) => `Дії: «${label}»`,
+    removeMenu: "Видалити…",
+    removeTitle: (label: string) => `Видалити «${label}»?`,
   },
 
   // --- Discounts / promo codes (TASK-079) -------------------------------------
