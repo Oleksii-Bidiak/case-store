@@ -235,14 +235,20 @@ function PaymentStatusBadge({ order }: { order: OrderEntity }) {
   );
 }
 
-function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
+/**
+ * Width the default-visible columns may share at 1440: content area 1136 minus
+ * the «⋯» column and the box border (no checkbox column — no bulk actions yet).
+ */
+export const ORDER_COLUMNS_WIDTH_BUDGET = 1136 - 44 - 2;
+
+export function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
   return [
     {
       id: "number",
       label: d.colNumber,
       locked: true,
       rowLink: true,
-      defaultWidth: 112,
+      defaultWidth: 104,
       minWidth: 96,
       cell: (order) => <OrderNumber id={order.id} />,
     },
@@ -250,7 +256,7 @@ function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
       id: "created",
       label: d.colCreated,
       sortField: "createdAt",
-      defaultWidth: 120,
+      defaultWidth: 104,
       cell: (order) => (
         <span className="flex flex-col gap-0.5 tabular-nums">
           <span className="text-foreground">{formatDate(order.createdAt)}</span>
@@ -263,7 +269,7 @@ function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
     {
       id: "client",
       label: d.colCustomer,
-      defaultWidth: 220,
+      defaultWidth: 200,
       minWidth: 140,
       cell: (order) => <ClientCell order={order} />,
     },
@@ -271,14 +277,14 @@ function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
       id: "status",
       label: d.colStatus,
       sortField: "status",
-      defaultWidth: 200,
+      defaultWidth: 190,
       minWidth: 140,
       cell: (order) => <StatusCell order={order} now={now} />,
     },
     {
       id: "payment",
       label: d.colPayment,
-      defaultWidth: 160,
+      defaultWidth: 150,
       cell: (order) => (
         <span className="flex flex-col items-start gap-0.5">
           <PaymentStatusBadge order={order} />
@@ -291,7 +297,7 @@ function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
     {
       id: "delivery",
       label: d.colDelivery,
-      defaultWidth: 220,
+      defaultWidth: 180,
       minWidth: 140,
       cell: (order) => {
         const ttn = waybill(order);
@@ -317,7 +323,7 @@ function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
       label: d.colTotal,
       sortField: "total",
       align: "end",
-      defaultWidth: 120,
+      defaultWidth: 104,
       className: "font-medium tabular-nums",
       cell: (order) => formatCurrency(order.total),
       footer: (rows) => formatCurrency(pageSum(rows)),
@@ -326,8 +332,8 @@ function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
       id: "items",
       label: d.colItemsShort,
       align: "end",
-      defaultWidth: 72,
-      minWidth: 56,
+      defaultWidth: 56,
+      minWidth: 48,
       className: "text-muted-foreground tabular-nums",
       cell: (order) => order.items.length,
       footer: (rows) => rows.reduce((sum, row) => sum + row.items.length, 0),
