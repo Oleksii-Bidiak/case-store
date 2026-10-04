@@ -5,6 +5,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -62,6 +63,16 @@ function field(name: string): HTMLInputElement {
   return element as HTMLInputElement;
 }
 
+/**
+ * Untick «Одержувач — той самий клієнт» (wave 198, Н1): the recipient's name
+ * and phone are hidden — and copied from the client — until then.
+ */
+async function showRecipient(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    screen.getByRole("checkbox", { name: dict.orderCreate.sameRecipient }),
+  );
+}
+
 /** Pick the ACCOUNT tab and search for the seeded customer. */
 async function pickOlena(user: ReturnType<typeof userEvent.setup>) {
   usersRespondWithOlena();
@@ -93,6 +104,8 @@ describe("OrderCreateForm — the customer (TASK-426)", () => {
     renderWithProviders(<OrderCreateForm />);
 
     await pickOlena(user);
+    // The recipient is the client by default; the fields are one click away.
+    await showRecipient(user);
 
     expect(field("firstName")).toHaveValue("Олена");
     expect(field("lastName")).toHaveValue("Шевченко");
@@ -107,6 +120,7 @@ describe("OrderCreateForm — the customer (TASK-426)", () => {
     renderWithProviders(<OrderCreateForm />);
 
     // "Send it to my sister" is an ordinary instruction on a phone call.
+    await showRecipient(user);
     await user.type(field("firstName"), "Ірина");
     await pickOlena(user);
 
@@ -217,6 +231,7 @@ describe("OrderCreateForm — the phone fields (TASK-426)", () => {
     const user = userEvent.setup();
     renderWithProviders(<OrderCreateForm />);
 
+    await showRecipient(user);
     await user.type(field("contactPhone"), "+48 123 456 789");
     await user.type(field("phone"), "+1 (212) 555-0123");
 
@@ -266,5 +281,268 @@ describe("OrderCreateForm — the notes say why they block (TASK-794)", () => {
     ).toBeInTheDocument();
     expect(field("notes")).toHaveAttribute("aria-invalid", "true");
     expect(field("internal-notes")).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("says how far over the limit a note is", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+
+    fireEvent.change(field("internal-notes"), {
+      target: { value: "н".repeat(2140) },
+    });
+    await user.click(
+      screen.getByRole("button", { name: dict.orderCreate.submit }),
+    );
+
+    expect(
+      await screen.findByText(dict.orderCreate.internalNotesTooLong),
+    ).toHaveTextContent(dict.orderCreate.tooLongNow(2140));
+  });
+});
+
+/** Wave 198 (TASK-1047, OrderNewProposal Н1–Н4). */
+describe("OrderCreateForm — by mockup (TASK-1047)", () => {
+  const t = dict.orderCreate;
+
+  const PRODUCTS = [
+    {
+      id: "p-1",
+      name: "Силіконовий чохол",
+      price: "1299",
+      sku: "SC-IP15",
+      stock: 8,
+      reservedQty: 0,
+    },
+    {
+      id: "p-2",
+      name: "Чохол без залишку",
+      price: "899",
+      sku: null,
+      stock: 0,
+      reservedQty: 0,
+    },
+  ];
+
+  function serveProducts() {
+    server.use(
+      http.get("*/api/products/admin/list", () =>
+        HttpResponse.json({
+          data: PRODUCTS,
+          meta: { total: 2, page: 1, limit: 8, totalPages: 1 },
+        }),
+      ),
+    );
+  }
+
+  async function addFirstProduct(user: ReturnType<typeof userEvent.setup>) {
+    serveProducts();
+    await user.type(
+      screen.getByRole("searchbox", { name: t.itemsSearchAria }),
+      "чохол",
+    );
+    await user.click(
+      await screen.findByRole("button", {
+        name: t.itemsAddAria("Силіконовий чохол"),
+      }),
+    );
+  }
+
+  async function fillGuestAndAddress(
+    user: ReturnType<typeof userEvent.setup>,
+    name = "Оксана Шевченко",
+  ) {
+    await user.type(field("contactPhone"), "+380 50 318 22 47");
+    await user.type(field("contactName"), name);
+    server.use(
+      http.get("*/api/delivery/cities", () => HttpResponse.json({ data: [] })),
+      http.get("*/api/delivery/warehouses", () =>
+        HttpResponse.json({ data: [] }),
+      ),
+    );
+    await user.type(field("city"), "Київ");
+    await user.type(field("address1"), "Відділення №12");
+  }
+
+  it("shows the four numbered sections and the summary beside them", () => {
+    renderWithProviders(<OrderCreateForm />);
+
+    for (const title of [
+      t.customerHeading,
+      t.itemsHeading,
+      t.addressHeading,
+      t.paymentHeading,
+    ]) {
+      expect(screen.getByRole("heading", { name: title })).toBeInTheDocument();
+    }
+    expect(
+      screen.getByRole("complementary", { name: t.summaryHeading }),
+    ).toBeInTheDocument();
+    // Both actions live in the summary.
+    expect(screen.getByRole("button", { name: t.submit })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: t.cancel })).toBeInTheDocument();
+  });
+
+  it("on an empty submit, says «Додайте хоча б один товар» WITH the field errors, and lists them", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    expect(await screen.findByText(t.itemsEmpty)).toBeInTheDocument();
+    expect(screen.getByText(t.contactNameInvalid)).toBeInTheDocument();
+    const summary = screen.getByRole("complementary", {
+      name: t.summaryHeading,
+    });
+    expect(
+      within(summary).getByText(t.errorsTitle("5 полів")),
+    ).toBeInTheDocument();
+    expect(
+      within(summary)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual([
+      t.contactPhone,
+      t.contactName,
+      t.itemsHeading,
+      t.addressCity,
+      t.addressAddress1,
+    ]);
+    // The recipient is still «the same client»: its errors follow the client's.
+    expect(
+      screen.getByRole("checkbox", { name: t.sameRecipient }),
+    ).toBeChecked();
+  });
+
+  it("shows SKU and free stock, and does not let a sold-out product be added", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+    serveProducts();
+
+    await user.type(
+      screen.getByRole("searchbox", { name: t.itemsSearchAria }),
+      "чохол",
+    );
+
+    expect(
+      await screen.findByText(`${t.itemSku("SC-IP15")} · ${t.itemFree(8)}`),
+    ).toBeInTheDocument();
+    expect(screen.getByText(t.itemNoStock)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: t.itemsAddAria("Чохол без залишку") }),
+    ).toBeDisabled();
+  });
+
+  it("changes a line's quantity with −/+ and totals it in the summary", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+    await addFirstProduct(user);
+
+    await user.click(
+      screen.getByRole("button", {
+        name: t.itemsQtyIncrease("Силіконовий чохол"),
+      }),
+    );
+
+    expect(
+      screen.getByRole("spinbutton", {
+        name: t.itemsQtyAria("Силіконовий чохол"),
+      }),
+    ).toHaveValue(2);
+    const summary = within(
+      screen.getByRole("complementary", { name: t.summaryHeading }),
+    );
+    expect(summary.getByText(t.summaryPositionsValue(2))).toBeInTheDocument();
+    expect(summary.getAllByText(/2\s?598 ₴/).length).toBeGreaterThan(0);
+  });
+
+  it("sends the client as the recipient when «той самий клієнт» is ticked", async () => {
+    const user = userEvent.setup();
+    const bodies: Array<Record<string, unknown>> = [];
+    server.use(
+      http.post("*/api/admin/orders", async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>);
+        return HttpResponse.json({
+          data: { id: "11111111-2222-3333-4444-555555555555" },
+          meta: { accessUrl: null },
+        });
+      }),
+    );
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuestAndAddress(user);
+    await addFirstProduct(user);
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0].shippingAddress).toMatchObject({
+      firstName: "Оксана",
+      lastName: "Шевченко",
+      phone: "+380 50 318 22 47",
+      city: "Київ",
+      address1: "Відділення №12",
+    });
+  });
+
+  it("turns «той самий клієнт» off when the client's name gives no surname", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuestAndAddress(user, "Оксана");
+    await addFirstProduct(user);
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("checkbox", { name: t.sameRecipient }),
+      ).not.toBeChecked(),
+    );
+    expect(field("lastName")).toHaveAttribute("aria-invalid", "true");
+  });
+
+  it("puts a stock refusal (400) under the line and says so in the summary", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post("*/api/admin/orders", () =>
+        HttpResponse.json(
+          {
+            statusCode: 400,
+            message: 'Insufficient stock for "Силіконовий чохол" — 0 available',
+            error: "Bad Request",
+          },
+          { status: 400 },
+        ),
+      ),
+    );
+    renderWithProviders(<OrderCreateForm />);
+    await fillGuestAndAddress(user);
+    await addFirstProduct(user);
+
+    await user.click(screen.getByRole("button", { name: t.submit }));
+
+    expect(await screen.findByText(t.lineStockGone(0))).toBeInTheDocument();
+    const summary = within(
+      screen.getByRole("complementary", { name: t.summaryHeading }),
+    );
+    expect(summary.getByText(t.serverErrorTitle)).toBeInTheDocument();
+    expect(summary.getByText(t.serverErrorLine)).toBeInTheDocument();
+    // The form is kept as it was.
+    expect(field("contactName")).toHaveValue("Оксана Шевченко");
+  });
+
+  it("chooses the payment method with pills", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<OrderCreateForm />);
+
+    const group = within(
+      screen.getByRole("group", { name: t.paymentMethodAria }),
+    );
+    expect(
+      group.getByRole("button", { name: t.methodOnDelivery }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await user.click(group.getByRole("button", { name: t.methodOnline }));
+    expect(group.getByRole("button", { name: t.methodOnline })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });

@@ -3222,7 +3222,7 @@ export const dict = {
     contactEmailInvalid: "Вкажіть коректну електронну пошту.",
     contactPhoneInvalid: "Вкажіть коректний номер телефону.",
 
-    addressHeading: "Адреса доставки",
+    addressHeading: "Доставка",
     addressFirstName: "Імʼя",
     addressLastName: "Прізвище",
     addressPhone: "Телефон",
@@ -3231,7 +3231,7 @@ export const dict = {
     addressPostalCode: "Індекс",
     addressRequired: "Обовʼязкове поле.",
 
-    itemsHeading: "Позиції",
+    itemsHeading: "Товари",
     itemsSearchPlaceholder: "Пошук товару за назвою…",
     itemsSearchAria: "Пошук товару для замовлення",
     itemsSearching: "Пошук…",
@@ -3249,15 +3249,15 @@ export const dict = {
     paymentHeading: "Оплата й примітки",
     paymentMethod: "Спосіб оплати",
     paymentMethodAria: "Спосіб оплати замовлення",
-    notes: "Примітки для клієнта",
+    notes: "Примітка клієнта",
     notesPlaceholder: "Побажання клієнта…",
     internalNotes: "Внутрішні примітки",
     internalNotesPlaceholder: "Нотатка для команди…",
     // TASK-794 — the limits are `CreateManualOrderDto` (@MaxLength 500 / 2000).
     // Shown under the field: a blocked submit with no visible reason is a button
     // that silently does nothing.
-    notesTooLong: "Примітка для клієнта — не більше 500 символів.",
-    internalNotesTooLong: "Внутрішня примітка — не більше 2000 символів.",
+    notesTooLong: "Не більше 500 символів.",
+    internalNotesTooLong: "Не більше 2000 символів.",
 
     submit: "Створити замовлення",
     cancel: "Скасувати",
@@ -3339,6 +3339,44 @@ export const dict = {
       "Довідник Нової Пошти недоступний — введіть місто та відділення вручну.",
     npPickAria: (name: string) => `Вибрати «${name}»`,
     npPicked: "Обрано з довідника Нової Пошти.",
+
+    // --- Нове замовлення за макетом (хвиля 198, TASK-1047, Н1–Н4) ------------
+    createIntro:
+      "Склад не редагується після створення — перевірте позиції перед збереженням.",
+    sameRecipient: "Одержувач — той самий клієнт",
+    sameRecipientHint:
+      "Інший одержувач? Зніміть позначку — з'являться ім'я, прізвище й телефон одержувача.",
+    methodOnDelivery: "Оплата при отриманні",
+    methodOnline: "Картка онлайн",
+    methodInstallments: "Оплата частинами",
+    // Після правила під полем приміток: скільки символів зараз.
+    tooLongNow: (count: number) => `Зараз ${count}.`,
+    itemSku: (sku: string) => `SKU ${sku}`,
+    itemFree: (count: number) => `вільно ${count} шт`,
+    itemNoStock: "Немає вільного залишку",
+    itemPerUnit: (price: string) => `${price} за шт`,
+    itemsQtyDecrease: (name: string) => `Менше «${name}»`,
+    itemsQtyIncrease: (name: string) => `Більше «${name}»`,
+    // 400 від API біля позиції (Н3).
+    lineStockGone: (count: number) =>
+      `Поки ви оформлювали, залишок закінчився: вільно ${count} шт. Приберіть позицію або зменште кількість.`,
+    lineUnavailable: "Товар більше не продається. Приберіть позицію.",
+    // Липкий «Підсумок»
+    summaryHeading: "Підсумок",
+    summaryPositions: "Позицій",
+    summaryPositionsValue: (count: number) => `${count} шт`,
+    summaryGoods: "Товари",
+    summaryDelivery: "Доставка",
+    summaryDeliveryValue: "за тарифом НП",
+    summaryTotal: "Разом",
+    summaryChecklistAria: "Що вже заповнено",
+    fieldForms: ["поле", "поля", "полів"],
+    errorsTitle: (countLabel: string) => `Перевірте ${countLabel}`,
+    serverErrorTitle: "Замовлення не створено",
+    serverErrorLine:
+      "Одна позиція вже недоступна — див. «Товари». Інші дані збережено у формі.",
+    serverErrorFields:
+      "Сервер не прийняв позначені поля — інші дані збережено у формі.",
   },
 
   // --- Users (TASK-115) -------------------------------------------------------
