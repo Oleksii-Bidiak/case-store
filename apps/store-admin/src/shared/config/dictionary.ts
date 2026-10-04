@@ -2332,21 +2332,20 @@ export const dict = {
     metaTitleEdit: "Редагування бренду — Адмін",
     heading: "Бренди",
     add: "Додати бренд",
-    searchPlaceholder: "Пошук за назвою…",
+    // BR1: the API searches the NAME only — «або slug» is an API tail (TASK-1078).
+    searchPlaceholder: "Назва бренду…",
     searchAria: "Пошук брендів за назвою",
-    filterStatusAria: "Фільтр за статусом",
-    allStatuses: "Усі статуси",
-    statusActive: "Активний",
-    statusInactive: "Прихований",
+    allStatuses: "Усі",
+    statusActive: "Показується",
+    statusInactive: "Приховано",
     colName: "Назва",
-    colSlug: "Slug",
-    colStatus: "Статус",
-    activate: "Активувати",
-    deactivate: "Приховати",
+    colStatus: "Статус на сайті",
+    activate: "Показати на сайті",
+    deactivate: "Приховати з сайту…",
     loadError: "Не вдалося завантажити бренди. Спробуйте ще раз.",
     empty: "Брендів ще немає. Створіть свій перший бренд.",
-    back: "← Назад до брендів",
-    createHeading: "Створення бренду",
+    back: "← Бренди",
+    createHeading: "Новий бренд",
     editHeading: "Редагування бренду",
     createSubmit: "Створити бренд",
     loadOneError: "Не вдалося завантажити бренд. Спробуйте ще раз.",
@@ -2370,26 +2369,57 @@ export const dict = {
     // in use from an empty one without opening the catalogue.
     colLogo: "Лого",
     logoAlt: (name: string) => `Логотип ${name}`,
-    noLogo: "без лого",
     colProducts: "Товарів",
     colProductsHint:
-      "Усі товари бренду, крім видалених, — і видимі, і приховані",
+      "Усі товари бренду, крім видалених, — і ті, що показуються, і приховані. Клік по числу відкриє їх у «Товарах».",
+    // Wave 198, BrandsProposal БР1–БР10 (TASK-1078).
+    description:
+      "Бренди товарів. Видимі бренди потрапляють у фільтр «Бренд» на сайті; прихований бренд з фільтра зникає, а його товари лишаються в каталозі.",
+    viewShown: "Показуються",
+    viewHidden: "Приховані",
+    summaryFound: "Знайдено",
+    sortByName: "За назвою",
+    itemForms: ["бренд", "бренди", "брендів"],
+    viewDefault: "Усі бренди",
+    colProductsHintAria: "Що рахує колонка «Товарів»",
+    productsLinkAria: (count: number, name: string) =>
+      `${countLabel(count, ["товар", "товари", "товарів"])} бренду «${name}» — відкрити в «Товарах»`,
+    productsCount: (count: number) =>
+      countLabel(count, ["товар", "товари", "товарів"]),
+    rowActionsAria: (name: string) => `Дії з брендом «${name}»`,
+    rowProducts: (count: number) => `Товари бренду (${count})`,
+    hideTitle: (name: string) => `Приховати бренд «${name}» з сайту?`,
+    hideBody: (count: number | undefined) =>
+      count
+        ? `Бренд зникне з фільтра «Бренд» у каталозі. Його ${countLabel(count, ["товар", "товари", "товарів"])} лишаться на сайті й у пошуку — щоб сховати і їх, приховайте товари. Повернути бренд можна будь-коли.`
+        : "Бренд зникне з фільтра «Бренд» у каталозі. Повернути бренд можна будь-коли.",
+    hideAction: "Приховати",
+    viewOnlyNotice:
+      "Ви можете переглядати бренди, але не змінювати. Щоб редагувати, попросіть власника надати право «Бренди: змінювати».",
+    asideProducts: "Товарів",
+    asideUpdated: "Змінено",
+    technicalTitle: "Технічне: ID бренду",
   },
 
   brandForm: {
     name: "Назва",
-    slug: "Slug",
-    slugPlaceholder: "Залиште порожнім для автогенерації",
-    slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
-    logo: "Логотип (URL)",
+    slug: "Адреса в посиланні (slug)",
+    slugPlaceholder: "Залиште порожнім — зробимо з назви",
+    slugPreview: (slug: string) => `Буде: ${slug}`,
+    // БР5: the URL box sits under a fold, and its label names IT — not the
+    // section (the old «Логотип (URL)» pointed at the uploader).
+    logo: "Або посилання на зображення",
     logoPlaceholder: "https://…",
-    active: "Активний (показувати у магазині)",
-    submit: "Зберегти бренд",
+    active: "Показувати на сайті",
+    submit: "Зберегти",
     errors: {
       nameRequired: "Вкажіть назву бренду",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
       logoUrl: "Вкажіть коректний URL логотипа",
+      // БР7 — what the slug may contain, with an example (wave 198).
+      slugPattern:
+        "Лише малі латинські літери, цифри й дефіси — напр. «apple-inc».",
     },
     // TASK-424: the brand logo accepts a FILE as well as a link.
     logoUpload: {
@@ -2401,7 +2431,7 @@ export const dict = {
       removeTitle: "Прибрати логотип бренду?",
       removeDescription:
         "Поле очиститься, і після збереження бренд буде без логотипа. Сам файл залишиться у сховищі.",
-      hint: "JPEG, PNG, WebP або GIF — до 20 МБ; великі зменшимо самі. Найкраще виглядає логотип на прозорому фоні. Або вставте посилання в поле нижче.",
+      hint: "Найкраще виглядає PNG на прозорому фоні. JPEG, PNG, WebP або GIF — до 20 МБ; великі зменшимо самі.",
       toastUploaded: "Логотип завантажено — не забудьте зберегти бренд",
       errorTooLarge:
         "Файл завеликий — максимум 20 МБ. Стисніть зображення і спробуйте ще раз.",
@@ -2409,6 +2439,20 @@ export const dict = {
         "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
       errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
     },
+    // Wave 198, BrandsProposal БР5–БР9 (TASK-1078).
+    sectionMain: "Основне",
+    sectionLogo: "Логотип",
+    namePlaceholder: "Напр.: Apple",
+    // The slug is the storefront FILTER value today; a `/brands/<slug>` page
+    // with a redirect on rename is TASK-1080 — so the hint says only what is true.
+    slugHint: (slug: string) =>
+      `На сайті: фільтр каталогу /catalog?brand=${slug}.`,
+    logoHintNew:
+      "Логотипа ще немає — без нього в списку буде сірий квадрат із першими літерами назви.",
+    activeHint:
+      "Вимкніть, щоб прибрати бренд із фільтра «Бренд». Товари бренду лишаться в каталозі.",
+    errorSummary: (count: number) =>
+      `Не вдалося зберегти — виправте ${countLabel(count, ["поле", "поля", "полів"])} нижче.`,
   },
 
   // --- Add-on services / protection plans (TASK-174) ---------------------------

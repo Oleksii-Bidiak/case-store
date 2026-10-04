@@ -60,6 +60,12 @@ export interface SingleImageUploadProps {
   hint?: ReactNode;
   /** Server-side failure message, rendered as an alert. */
   error?: string | null;
+  /**
+   * Extra controls in the SAME row as the upload button, between it and
+   * «Прибрати» — e.g. «З медіатеки» (wave 198, BrandsProposal БР5). Optional;
+   * without it the control renders exactly as before.
+   */
+  actions?: ReactNode;
 }
 
 export function SingleImageUpload({
@@ -72,6 +78,7 @@ export function SingleImageUpload({
   isDeleting = false,
   hint,
   error,
+  actions,
 }: SingleImageUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -122,6 +129,8 @@ export function SingleImageUpload({
               )}
               {imageUrl ? labels.replace : labels.upload}
             </Button>
+
+            {actions}
 
             {imageUrl && (
               <Button
