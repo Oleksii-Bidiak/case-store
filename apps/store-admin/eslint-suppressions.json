@@ -108,10 +108,5 @@
     "tailwindcss/no-arbitrary-value": {
       "count": 1
     }
-  },
-  "src/widgets/subscriber-list/ui/AdminSubscriberTableSkeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
   }
 }

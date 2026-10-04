@@ -4460,22 +4460,66 @@ export const dict = {
   subscribers: {
     metaTitle: "Підписники — Адмін",
     heading: "Підписники розсилки",
+    // `GET /api/newsletter/admin` шукає лише за email — ім'я клієнта й
+    // пристрій з артборда ПД1 є хвостом API, тож плейсхолдер їх не обіцяє.
     searchPlaceholder: "Пошук за email…",
     searchAria: "Пошук підписників",
     filterStatusAria: "Фільтр за статусом",
-    allStatuses: "Усі статуси",
     statusSubscribed: "Підписаний",
-    statusUnsubscribed: "Відписаний",
+    statusUnsubscribed: "Відписався",
     loadError: "Не вдалося завантажити підписників. Спробуйте ще раз.",
-    empty: "Немає підписників за поточними фільтрами.",
     colEmail: "Email",
     colStatus: "Статус",
     colSource: "Джерело",
-    colDate: "Дата підписки",
+    colDate: "Підписався",
     sourceEmpty: "—",
-    exportCsv: "Експорт CSV",
-    exporting: "Експортуємо…",
     exportError: "Не вдалося експортувати CSV. Спробуйте ще раз.",
+
+    // --- Wave 198, SubscribersProposal ПД1–ПД9 (TASK-1063) --------------------
+    // «…і хто чекає на товар» з артборда — лише з вкладкою «Чекають на товар»
+    // (TASK-1066); до того підпис каже те, що на екрані є.
+    intro: "Хто погодився отримувати листи магазину.",
+    viewSubscribed: "Підписані",
+    viewUnsubscribed: "Відписані",
+    viewAll: "Усі",
+    itemForms: ["підписник", "підписники", "підписників"],
+    summaryFound: "Знайдено",
+    summaryBreakdown: (subscribed: number, unsubscribed: number) =>
+      `підписаних ${subscribed}, відписались ${unsubscribed}`,
+    sortCreatedDesc: "підписався, нові зверху",
+    sortCreatedAsc: "підписався, старі зверху",
+    sortEmailAsc: "email, А→Я",
+    sortEmailDesc: "email, Я→А",
+    sortStatusAsc: "статус, спершу підписані",
+    sortStatusDesc: "статус, спершу відписані",
+    viewDefault: "Стандартний",
+    filterStatus: "Статус",
+    filtersApply: "Показати підписників",
+    chipStatus: (label: string) => `Статус: ${label}`,
+    chipSearch: (query: string) => `Пошук: «${query}»`,
+    colUnsubscribed: "Відписався",
+    // Ключі `source` з вітрини (`NewsletterSubscribeForm source=…`) людською
+    // мовою; невідомий ключ показуємо як є, а не ховаємо.
+    sourceHome: "Головна",
+    sourcePromo: "Сторінка акції",
+    sourceBlog: "Блог",
+    sourceFooter: "Футер сайту",
+    emptyAllTitle: "Підписників ще немає",
+    emptyAllBody:
+      "Вони з'являться, коли відвідувачі підпишуться на розсилку — на головній сторінці, на сторінці акції або в блозі.",
+    emptySearchTitle: (query: string) => `Нікого за запитом «${query}»`,
+    emptySearchBody: (query: string) =>
+      `Немає адрес із «${query}». Перевірте написання або скиньте пошук.`,
+    emptySearchReset: "Скинути пошук",
+    emptyStatusTitle: (label: string) =>
+      `Немає підписників зі статусом «${label}»`,
+    emptyStatusBody: "Спробуйте інший вид або скиньте фільтр.",
+    emptyReset: "Скинути фільтри",
+    exportFootnote: "Разом із датою й джерелом згоди — на випадок перевірки.",
+    rowOpen: "Картка підписника",
+    cardSince: (date: string) => `з ${date}`,
+    cardSection: "Підписка",
+    cardUpdated: "Остання зміна",
   },
 
   userBan: {

@@ -47,6 +47,11 @@ export interface ExportMenuProps {
    * picked there, so it is not drawn. Default `true`.
    */
   selectable?: boolean;
+  /**
+   * Replaces the default «Лише видимі колонки…» line — for a screen whose file
+   * the API shapes with fixed columns, where that sentence would be untrue.
+   */
+  footnote?: React.ReactNode;
 }
 
 /**
@@ -61,6 +66,7 @@ export function ExportMenu({
   onExport,
   disabled = false,
   selectable = true,
+  footnote,
 }: ExportMenuProps) {
   const [scope, setScope] = React.useState<RegistryExportScope>("found");
   const hasSelection = selectedIds.length > 0;
@@ -121,7 +127,7 @@ export function ExportMenu({
           </DropdownMenuItem>
         ))}
         <p className="px-2 pt-1 pb-1.5 text-xs text-muted-foreground">
-          {r.exportFootnote}
+          {footnote ?? r.exportFootnote}
         </p>
       </DropdownMenuContent>
     </DropdownMenu>
