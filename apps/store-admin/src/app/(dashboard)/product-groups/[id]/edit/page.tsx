@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { EditProductGroupView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
+import { EditProductGroupView, ProductGroupFormSkeleton } from "@/widgets";
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -18,7 +17,7 @@ export default async function EditProductGroupPage({
   const { id } = await params;
 
   return (
-    <Suspense fallback={<AdminFormSkeleton />}>
+    <Suspense fallback={<ProductGroupFormSkeleton />}>
       <EditProductGroupView groupId={id} />
     </Suspense>
   );

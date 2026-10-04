@@ -62,17 +62,72 @@ function stubGroups(
   return requests;
 }
 
+const g = dict.productGroups;
+const OWNER = { auth: { isOwner: true } };
+
 describe("AdminProductGroupTable", () => {
-  it("renders group rows with axes, positions and an edit link", async () => {
+  it("renders group rows: the name opens the group, axes as badges, positions, status", async () => {
+    stubGroups([
+      makeGroupRow("g1", "Чохли iPhone 15"),
+      { ...makeGroupRow("g2", "Кабель Hoco", false), positionCount: 0 },
+    ]);
+
+    renderWithProviders(<AdminProductGroupTable />, OWNER);
+
+    expect(
+      await screen.findByRole("link", { name: "Чохли iPhone 15" }),
+    ).toHaveAttribute("href", "/product-groups/g1/edit");
+    expect(screen.getAllByText("Колір").length).toBeGreaterThan(0);
+    expect(screen.getByText("3")).toBeInTheDocument();
+    // A group with no positions shows nothing on the site — say so.
+    expect(screen.getByText(g.noPositions)).toBeInTheDocument();
+    expect(screen.getByText(g.statusActive)).toBeInTheDocument();
+    expect(screen.getByText(g.statusInactive)).toBeInTheDocument();
+  });
+
+  it("explains what a group is and offers «Додати групу» with products:write", async () => {
     stubGroups([makeGroupRow("g1", "Чохли iPhone 15")]);
 
-    renderWithProviders(<AdminProductGroupTable />);
+    renderWithProviders(<AdminProductGroupTable />, OWNER);
+    await screen.findByRole("link", { name: "Чохли iPhone 15" });
 
-    expect(await screen.findByText("Чохли iPhone 15")).toBeInTheDocument();
-    expect(screen.getByText("Колір")).toBeInTheDocument();
     expect(
-      screen.getByRole("link", { name: dict.common.edit }),
+      screen.getByRole("heading", { name: g.heading }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(g.intro)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: g.add })).toHaveAttribute(
+      "href",
+      "/product-groups/new",
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.common.registry.rowActionsAria("Чохли iPhone 15"),
+      }),
+    );
+    expect(
+      screen.getByRole("menuitem", { name: dict.common.edit }),
     ).toHaveAttribute("href", "/product-groups/g1/edit");
+  });
+
+  it("without products:write hides «Додати групу» and the row actions (TASK-1011)", async () => {
+    stubGroups([makeGroupRow("g1", "Чохли iPhone 15")]);
+
+    renderWithProviders(<AdminProductGroupTable />, {
+      auth: { permissions: ["products:read"] },
+    });
+
+    // The group still opens — read-only.
+    expect(
+      await screen.findByRole("link", { name: "Чохли iPhone 15" }),
+    ).toHaveAttribute("href", "/product-groups/g1/edit");
+    expect(screen.getByText(g.viewOnly)).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: g.add })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: dict.common.registry.rowActionsAria("Чохли iPhone 15"),
+      }),
+    ).not.toBeInTheDocument();
   });
 
   it("shows the empty state when there are no groups", async () => {
@@ -109,7 +164,7 @@ describe("AdminProductGroupTable", () => {
       const requests = stubGroups([makeGroupRow("g1", "Чохли iPhone 15")]);
 
       renderWithProviders(<AdminProductGroupTable />);
-      await screen.findByText("Чохли iPhone 15");
+      await screen.findByRole("link", { name: "Чохли iPhone 15" });
 
       expect(requests[0].searchParams.get("limit")).toBe("20");
       expect(requests[0].searchParams.get("page")).toBe("1");
@@ -124,7 +179,7 @@ describe("AdminProductGroupTable", () => {
       });
 
       renderWithProviders(<AdminProductGroupTable />);
-      await screen.findByText("Чохли iPhone 15");
+      await screen.findByRole("link", { name: "Чохли iPhone 15" });
 
       expect(screen.getByText(dict.common.pageOf(1, 5))).toBeInTheDocument();
 
@@ -139,7 +194,7 @@ describe("AdminProductGroupTable", () => {
       const requests = stubGroups([makeGroupRow("g1", "Чохли iPhone 15")]);
 
       renderWithProviders(<AdminProductGroupTable />);
-      await screen.findByText("Чохли iPhone 15");
+      await screen.findByRole("link", { name: "Чохли iPhone 15" });
       expect(requests).toHaveLength(1);
 
       await userEvent.click(
@@ -154,7 +209,7 @@ describe("AdminProductGroupTable", () => {
       const requests = stubGroups([makeGroupRow("g1", "Чохли iPhone 15")]);
 
       renderWithProviders(<AdminProductGroupTable />);
-      await screen.findByText("Чохли iPhone 15");
+      await screen.findByRole("link", { name: "Чохли iPhone 15" });
 
       expect(requests[0].searchParams.get("search")).toBe("iphone");
     });

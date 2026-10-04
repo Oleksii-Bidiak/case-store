@@ -2,37 +2,62 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useProductGroupControllerFindAll } from "@/entities/product-group";
+import { PlusIcon } from "lucide-react";
+import {
+  useProductGroupControllerFindAll,
+  type ProductGroupSummaryEntity,
+} from "@/entities/product-group";
+import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
 import {
   Button,
+  Callout,
+  DataRegistry,
   LiveAnnouncer,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableToolbar,
+  RegistryHeader,
+  SummaryValue,
   pageSizeFrom,
+  useDataRegistry,
+  type RegistryCardParts,
+  type RowActionItem,
 } from "@/shared/ui";
+import { countLabel } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { AdminProductGroupTableSkeleton } from "./admin-product-group-table-skeleton";
+import {
+  PRODUCT_GROUP_COLUMNS,
+  ProductGroupAxes,
+  ProductGroupStatusBadge,
+} from "./product-group-registry-columns";
+
+const g = dict.productGroups;
+
+const editHref = (group: ProductGroupSummaryEntity) =>
+  `/product-groups/${group.id}/edit`;
+
+const getRowId = (group: ProductGroupSummaryEntity) => group.id;
 
 /**
- * Product-group list for the admin panel (TASK-142). Each group shows its axes
- * and how many positions belong to it, with a link to the edit form.
+ * The product-group registry (TASK-142; paging, search and refresh TASK-357;
+ * wave 198 — ProductGroupsProposal ГТ1, ГТ2, ГТ9, TASK-1084) on the shared
+ * `DataRegistry`.
  *
- * TASK-357 added server paging + name search (URL-parked as `?search=` /
- * `?page=`) and a refresh control. Note that `GET /api/product-groups` is
- * ALSO read by the product form's group picker, which passes no page/limit and
- * therefore still gets the complete list — paging is opt-in on the server for
- * exactly that reason, and this table is the only caller opting in.
+ * The header explains what a group is. The name opens the group (a real
+ * link); «Редагувати» moved into «⋯». Without `products:write` (TASK-1011)
+ * «Додати групу» and «⋯» are gone and a strip says why — the group still opens,
+ * read-only.
  *
- * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
- * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
- * component that renders the provider would read the default no-op context.
+ * Search, page and page size stay in the URL and on the SERVER, exactly as
+ * TASK-357 left them. `GET /api/product-groups` is also read by the product
+ * form's group picker, which passes no page/limit and gets the complete list;
+ * this table is the caller that opts into paging.
+ *
+ * NOT drawn, because the list endpoint has no such data or filter (API tails):
+ * the views «Усі · Показуються · Приховані · Є проблеми» with their counts
+ * (no `isActive` filter, no problem check on the server), search by a
+ * product's name, the category filter and the category under the name, sort,
+ * «показується N з M», «Ціни». «Як це працює →» is not drawn either: the
+ * shell's section help is local state of the header and cannot be opened from
+ * a page.
  */
 export function AdminProductGroupTable() {
   return (
@@ -44,100 +69,126 @@ export function AdminProductGroupTable() {
 
 function AdminProductGroupView() {
   const searchParams = useSearchParams();
+  const { can } = useAuth();
+  const canWrite = can(PERM.productsWrite);
 
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
+  const search = searchParam || undefined;
   const { data, isLoading, isFetching, isError, refetch } =
-    useProductGroupControllerFindAll({
-      page,
-      limit: pageSize,
-      search: searchParam || undefined,
-    });
+    useProductGroupControllerFindAll({ page, limit: pageSize, search });
 
   const groups = data?.data ?? [];
+  const total = data?.meta?.total;
   const totalPages = data?.meta?.totalPages ?? 1;
+
+  const registry = useDataRegistry({
+    tableId: "product-groups",
+    columns: PRODUCT_GROUP_COLUMNS,
+    rows: groups,
+    getRowId,
+  });
+
+  const rowActions = canWrite
+    ? (group: ProductGroupSummaryEntity): RowActionItem[] => [
+        { label: dict.common.edit, href: editHref(group) },
+      ]
+    : undefined;
 
   return (
     <div className="flex flex-col gap-4">
-      <TableToolbar
-        className="mb-0"
-        onRefresh={() => void refetch()}
-        isRefreshing={isFetching}
-        search={
-          <TableSearch
-            value={searchParam}
-            placeholder={dict.productGroups.searchPlaceholder}
-            label={dict.productGroups.searchAria}
-          />
+      <RegistryHeader
+        title={g.heading}
+        description={g.intro}
+        actions={
+          canWrite ? (
+            <Button asChild className="max-md:h-11">
+              <Link href="/product-groups/new">
+                <PlusIcon aria-hidden="true" />
+                {g.add}
+              </Link>
+            </Button>
+          ) : null
         }
       />
+      {canWrite ? null : <Callout variant="strip">{g.viewOnly}</Callout>}
 
-      {/* The exported skeleton, not a second hand-rolled one — the route's
-          Suspense fallback already uses it, so the two states now match. */}
-      {isLoading ? (
-        <AdminProductGroupTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.productGroups.loadError}
-        </p>
-      ) : groups.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {searchParam
-            ? dict.productGroups.emptyMatch(searchParam)
-            : dict.productGroups.empty}
-        </div>
-      ) : (
-        <div className="rounded-lg border border-border shadow-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{dict.productGroups.colName}</TableHead>
-                <TableHead hideOnMobile>{dict.productGroups.colAxes}</TableHead>
-                <TableHead hideOnMobile>
-                  {dict.productGroups.colPositions}
-                </TableHead>
-                <TableHead>{dict.productGroups.colStatus}</TableHead>
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {groups.map((group) => (
-                <TableRow key={group.id}>
-                  <TableCell className="font-medium">{group.name}</TableCell>
-                  <TableCell hideOnMobile className="text-muted-foreground">
-                    {group.axes.length > 0
-                      ? group.axes.map((axis) => axis.name).join(", ")
-                      : "—"}
-                  </TableCell>
-                  <TableCell hideOnMobile>{group.positionCount}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {group.isActive ? dict.common.active : dict.common.inactive}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/product-groups/${group.id}/edit`}>
-                        {dict.common.edit}
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <DataRegistry
+        registry={registry}
+        title={g.heading}
+        showHeader={false}
+        search={{
+          value: searchParam,
+          placeholder: g.searchPlaceholder,
+          label: g.searchAria,
+        }}
+        columnsMenu={false}
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        summary={
+          total === undefined ? null : (
+            <>
+              {g.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, g.itemForms)}</SummaryValue>
+            </>
+          )
+        }
+        itemForms={g.itemForms}
+        getRowLabel={(group) => group.name}
+        getRowHref={editHref}
+        rowActions={rowActions}
+        renderCard={renderCard}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={g.loadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={g.empty}
+        searchQuery={search}
+        pagination={{ page, totalPages, pageSize }}
+      />
+    </div>
+  );
+}
 
-      {!isLoading && !isError && groups.length > 0 && (
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
-        />
-      )}
+/** One group below md (ProductGroupsProposal ГТ2). */
+function renderCard(
+  group: ProductGroupSummaryEntity,
+  parts: RegistryCardParts,
+) {
+  return (
+    <div className="flex items-start gap-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        {parts.href ? (
+          <Link
+            href={parts.href}
+            className="rounded-xs font-medium break-words text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {group.name}
+          </Link>
+        ) : (
+          <span className="font-medium text-foreground">{group.name}</span>
+        )}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={
+              group.positionCount === 0
+                ? "text-xs text-destructive"
+                : "text-xs text-muted-foreground"
+            }
+          >
+            {group.positionCount === 0
+              ? g.noPositions
+              : g.positionsCount(group.positionCount)}
+          </span>
+          <ProductGroupAxes group={group} />
+          <ProductGroupStatusBadge isActive={group.isActive} />
+        </div>
+      </div>
+      {parts.actions}
     </div>
   );
 }

@@ -68,10 +68,5 @@
     "tailwindcss/no-arbitrary-value": {
       "count": 1
     }
-  },
-  "src/widgets/product-group-list/ui/admin-product-group-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
   }
 }

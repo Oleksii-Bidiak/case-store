@@ -1,9 +1,9 @@
-import { AdminFormSkeleton } from "@/shared/ui";
+import { ProductGroupFormSkeleton } from "@/widgets";
 
 /**
  * Route-level loading UI for `/product-groups/new`; mirrors the page's
  * `<Suspense>` fallback so there is no visual jump on navigation.
  */
 export default function Loading() {
-  return <AdminFormSkeleton />;
+  return <ProductGroupFormSkeleton />;
 }
