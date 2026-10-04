@@ -96,8 +96,62 @@ describe("MediaPicker — choosing an existing asset", () => {
       tile.focus();
     });
     await userEvent.keyboard("{Enter}");
+    // Enter on a tile SELECTS it (БЛ11); the choice is confirmed separately.
+    expect(tile).toHaveAttribute("aria-pressed", "true");
+    expect(onPick).not.toHaveBeenCalled();
+
+    const confirm = screen.getByRole("button", { name: t.useSelected });
+    await act(async () => {
+      confirm.focus();
+    });
+    await userEvent.keyboard("{Enter}");
 
     await waitFor(() => expect(onPick).toHaveBeenCalledTimes(1));
+  });
+
+  it("highlights a choice and hands it back only on «Використати вибране» (БЛ11)", async () => {
+    stubMediaLibrary([
+      makeMediaAsset("m1", { alt: LIBRARY_ASSET_ALT }),
+      makeMediaAsset("m2", { alt: "Чохол MagSafe" }),
+    ]);
+    const onPick = renderPicker();
+
+    await userEvent.click(screen.getByRole("button", { name: t.trigger }));
+    const confirm = screen.getByRole("button", { name: t.useSelected });
+    expect(confirm).toBeDisabled();
+
+    const first = await screen.findByRole("button", {
+      name: t.pickCardAria(LIBRARY_ASSET_ALT),
+    });
+    const second = screen.getByRole("button", {
+      name: t.pickCardAria("Чохол MagSafe"),
+    });
+    await userEvent.click(first);
+    await userEvent.click(second);
+
+    // One choice at a time; the dialog stays open while choosing.
+    expect(first).toHaveAttribute("aria-pressed", "false");
+    expect(second).toHaveAttribute("aria-pressed", "true");
+    expect(onPick).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await userEvent.click(confirm);
+
+    expect(onPick).toHaveBeenCalledTimes(1);
+    expect(onPick.mock.calls[0][0]).toMatchObject({ id: "m2" });
+  });
+
+  it("lays the grid out by the dialog's own width — four columns (БЛ11)", async () => {
+    stubMediaLibrary();
+    renderPicker();
+
+    await userEvent.click(screen.getByRole("button", { name: t.trigger }));
+    const grid = await screen.findByRole("list", {
+      name: dict.mediaLibrary.gridAria,
+    });
+
+    expect(grid.className).toContain("@2xl:grid-cols-4");
+    expect(grid.parentElement?.className).toContain("@container");
   });
 
   it("filters the library by what was typed, without touching the URL", async () => {

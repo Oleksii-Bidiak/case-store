@@ -117,14 +117,28 @@ export function stubMediaLibrary(
   return { state, listRequests, uploadedNames };
 }
 
-/** Open the picker from its default trigger and choose the tile called `name`. */
+/**
+ * Open the picker from its default trigger, choose the tile called `name` and
+ * confirm with «Використати вибране» (wave 198, БЛ11: select, then confirm).
+ */
 export async function pickFromLibrary(name = LIBRARY_ASSET_ALT) {
   await userEvent.click(
     await screen.findByRole("button", { name: dict.mediaPicker.trigger }),
   );
+  await chooseInOpenPicker(name);
+}
+
+/**
+ * The second half of {@link pickFromLibrary}, for a picker opened some other
+ * way (the rich-text editor's «Зображення ▾» menu, a custom trigger).
+ */
+export async function chooseInOpenPicker(name = LIBRARY_ASSET_ALT) {
   await userEvent.click(
     await screen.findByRole("button", {
       name: dict.mediaPicker.pickCardAria(name),
     }),
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: dict.mediaPicker.useSelected }),
   );
 }

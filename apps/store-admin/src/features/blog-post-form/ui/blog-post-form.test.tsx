@@ -95,6 +95,10 @@ describe("BlogPostForm — media library picker (TASK-441/547)", () => {
         name: dict.mediaPicker.pickCardAria("Обкладинка огляду"),
       }),
     );
+    // Wave 198 (БЛ11): a tile is selected, then the choice is confirmed.
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.mediaPicker.useSelected }),
+    );
 
     await waitFor(() =>
       expect(

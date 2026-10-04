@@ -13,23 +13,36 @@
 
 import * as React from "react";
 import {
+  fireEvent,
   renderWithProviders,
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
+import { PERM } from "@/entities/permission";
 import { dict } from "@/shared/config";
 // The module, NOT `@/shared/ui`: the barrel wraps the editor in
 // `next/dynamic({ ssr: false })`, which renders nothing under jsdom.
 import { RichTextEditor } from "@/shared/ui/rich-text-editor/rich-text-editor";
 import {
   MEDIA_PERMISSIONS,
+  chooseInOpenPicker,
   makeMediaAsset,
   stubMediaLibrary,
 } from "../model/media-picker.fixture";
 import { MediaPickerEditorButton } from "./media-picker-editor-button";
 
 const t = dict.mediaPicker;
+const rte = dict.richTextEditor;
+
+/** Open the editor's «Зображення ▾» menu (РЕ1). */
+async function openImageMenu() {
+  await userEvent.click(
+    await screen.findByRole("button", { name: t.editorInsert }),
+  );
+  return screen.findByRole("menu");
+}
 
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
@@ -62,14 +75,11 @@ describe("MediaPickerEditorButton", () => {
       auth: { permissions: MEDIA_PERMISSIONS },
     });
 
+    const menu = await openImageMenu();
     await userEvent.click(
-      await screen.findByRole("button", { name: t.editorInsert }),
+      within(menu).getByRole("menuitem", { name: rte.imageFromLibrary }),
     );
-    await userEvent.click(
-      await screen.findByRole("button", {
-        name: t.pickCardAria("Чохол MagSafe на столі"),
-      }),
-    );
+    await chooseInOpenPicker("Чохол MagSafe на столі");
 
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     const html = onChange.mock.calls.at(-1)?.[0] as string;
@@ -88,10 +98,59 @@ describe("MediaPickerEditorButton", () => {
 
     await screen.findByLabelText("Текстовий редактор");
     // The editor keeps every other toolbar action — losing the image button is
-    // not losing the editor.
+    // not losing the editor; the operator has exactly the toolbar they had.
     expect(screen.getByLabelText("Жирний")).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: t.editorInsert }),
     ).not.toBeInTheDocument();
+  });
+
+  it("offers the library but no upload with media:read alone", async () => {
+    stubMediaLibrary();
+    renderWithProviders(<EditorUnderTest onChange={jest.fn()} />, {
+      auth: { permissions: [PERM.mediaRead] },
+    });
+
+    const menu = await openImageMenu();
+    expect(
+      within(menu).getByRole("menuitem", { name: rte.imageFromLibrary }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole("menuitem", { name: rte.imageUpload }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uploads a file dropped into the text into the LIBRARY, then inserts it (РЕ5, РЕ6)", async () => {
+    const { uploadedNames } = stubMediaLibrary([]);
+    const onChange = jest.fn();
+
+    renderWithProviders(<EditorUnderTest onChange={onChange} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    const editable = await screen.findByLabelText("Текстовий редактор");
+    await waitFor(() => expect(editable).toHaveTextContent("Текст"));
+    // The menu says upload is available once the slot has registered.
+    const menu = await openImageMenu();
+    expect(
+      within(menu).getByRole("menuitem", { name: rte.imageUpload }),
+    ).toBeInTheDocument();
+    await userEvent.keyboard("{Escape}");
+
+    fireEvent.drop(editable, {
+      dataTransfer: {
+        files: [new File(["png-bytes"], "camera.png", { type: "image/png" })],
+        items: [],
+        types: ["Files"],
+      },
+    });
+
+    // `POST /api/admin/media` — the picture becomes a library asset.
+    await waitFor(() => expect(uploadedNames).toEqual(["camera.png"]));
+    await waitFor(() =>
+      expect(onChange.mock.calls.at(-1)?.[0]).toContain(
+        'src="http://localhost:3001/uploads/media/up-1.webp"',
+      ),
+    );
   });
 });
