@@ -478,6 +478,23 @@ describe("UserDetailView (customer card, TASK-252)", () => {
   // ─── Customer notes (TASK-430) ────────────────────────────────────────────
 
   describe("staff notes journal", () => {
+    it("opens the main column, above the order history (read during a call)", async () => {
+      mockCard();
+
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      const notes = await screen.findByRole("heading", {
+        name: dict.users.notesHeading,
+      });
+      const orders = await screen.findByRole("heading", {
+        name: dict.users.cardRecentOrders,
+      });
+      expect(
+        notes.compareDocumentPosition(orders) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
     it("renders each entry as date · author · text", async () => {
       mockCard();
       mockNotes([makeNote()]);

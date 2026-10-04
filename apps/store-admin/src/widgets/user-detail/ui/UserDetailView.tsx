@@ -225,6 +225,16 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="flex min-w-0 flex-col gap-6 lg:col-span-2">
+          {/* Staff notes (TASK-430) open the main column, above the history: the
+              operator reads them while the customer is still on the phone
+              (owner decision 2026-10-04 — К4 drew them at the foot). */}
+          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground">
+              {d.notesHeading}
+            </h3>
+            <UserNotesPanel userId={user.id} />
+          </section>
+
           {card ? (
             <CustomerHistorySections card={card} />
           ) : (
@@ -239,15 +249,6 @@ export function UserDetailView({ userId }: UserDetailViewProps) {
               {d.cardPermissionRequired}
             </Callout>
           )}
-
-          {/* Staff notes (TASK-430) — at the foot of the main column, as on
-              К4: the journal is read alongside the history it comments on. */}
-          <section className="flex flex-col gap-3 rounded-md border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground">
-              {d.notesHeading}
-            </h3>
-            <UserNotesPanel userId={user.id} />
-          </section>
         </div>
 
         <div className="flex min-w-0 flex-col gap-6">
