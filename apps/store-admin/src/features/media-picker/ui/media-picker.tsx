@@ -52,6 +52,13 @@ export interface MediaPickerProps {
    */
   children?: ReactElement;
   /**
+   * Controlled open state (wave 198). With `open` given and no `children`, the
+   * picker renders NO trigger of its own — the rich-text editor opens it from
+   * a menu item («З медіатеки…»), which a Radix trigger cannot be.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /**
    * Accessible name for the DEFAULT trigger, when the form has more than one
    * image field (TASK-728): two buttons both announced as «З медіатеки» give a
    * screen-reader user no way to tell which field each one fills. The visible
@@ -88,7 +95,10 @@ export interface MediaPickerProps {
  * gallery attaches three; a single-value field simply keeps the last.
  *
  * ── Closing ────────────────────────────────────────────────────────────────
- * A pick from the grid closes immediately — the choice is made. An upload
+ * A click on a tile SELECTS it (highlight, `aria-pressed`); «Використати
+ * вибране» hands it over and closes (wave 198, БЛ11 — owner decision: a
+ * mis-click used to close the dialog with the wrong picture already in the
+ * form). The grid counts its columns by the DIALOG's width — four. An upload
  * closes only when the whole batch succeeded: a batch with a failure in it
  * keeps the dialog open, because the per-file reason exists nowhere else.
  *
@@ -104,12 +114,20 @@ export function MediaPicker({
   disabled,
   children,
   ariaLabel,
+  open: openProp,
+  onOpenChange,
 }: MediaPickerProps) {
   const { can } = useAuth();
   const canRead = can(PERM.mediaRead);
   const canWrite = can(PERM.mediaWrite);
 
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const controlled = openProp !== undefined;
+  const open = controlled ? openProp : openState;
+  const setOpen = (next: boolean) => {
+    if (!controlled) setOpenState(next);
+    onOpenChange?.(next);
+  };
 
   if (!canRead && !canWrite) return null;
 
@@ -121,19 +139,21 @@ export function MediaPicker({
         setOpen(next);
       }}
     >
-      <DialogTrigger asChild>
-        {children ?? (
-          <Button
-            type="button"
-            variant="outline"
-            disabled={disabled}
-            aria-label={ariaLabel}
-          >
-            <ImageIcon />
-            {t.trigger}
-          </Button>
-        )}
-      </DialogTrigger>
+      {(!controlled || children) && (
+        <DialogTrigger asChild>
+          {children ?? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={disabled}
+              aria-label={ariaLabel}
+            >
+              <ImageIcon />
+              {t.trigger}
+            </Button>
+          )}
+        </DialogTrigger>
+      )}
 
       <DialogContent className="max-h-screen overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
@@ -155,14 +175,6 @@ export function MediaPicker({
             onClose={() => setOpen(false)}
           />
         )}
-
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button type="button" variant="outline">
-              {dict.common.close}
-            </Button>
-          </DialogClose>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -201,95 +213,124 @@ function MediaPickerTabs({
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
   const [tab, setTab] = useState(canRead ? "browse" : "upload");
+  /**
+   * The highlighted tile (БЛ11, owner decision): a click SELECTS, and
+   * «Використати вибране» confirms. Picking on the first click closed the
+   * dialog on a mis-click with the wrong picture already in the form.
+   */
+  const [selected, setSelected] = useState<MediaAssetEntity | null>(null);
 
-  const pick = (asset: MediaAssetEntity) => {
-    onPick(asset);
+  const confirm = () => {
+    if (!selected) return;
+    onPick(selected);
     onClose();
   };
 
   return (
-    <Tabs value={tab} onValueChange={setTab} className="gap-3">
-      {/* One tab is not a choice — the strip only earns its space with two. */}
-      {canRead && canWrite && (
-        <TabsList>
-          <TabsTrigger value="browse">{t.tabBrowse}</TabsTrigger>
-          <TabsTrigger value="upload">{t.tabUpload}</TabsTrigger>
-        </TabsList>
-      )}
+    <>
+      <Tabs value={tab} onValueChange={setTab} className="gap-3">
+        {/* One tab is not a choice — the strip only earns its space with two. */}
+        {canRead && canWrite && (
+          <TabsList>
+            <TabsTrigger value="browse">{t.tabBrowse}</TabsTrigger>
+            <TabsTrigger value="upload">{t.tabUpload}</TabsTrigger>
+          </TabsList>
+        )}
 
-      {canRead && (
-        <TabsContent value="browse" className="flex flex-col gap-3">
-          <TableSearch
-            mode="local"
-            id="media-picker-search"
-            value={search}
-            label={t.searchLabel}
-            placeholder={dict.mediaLibrary.searchPlaceholder}
-            onChange={(next) => {
-              // A narrowed library has different pages; staying on page 4 of the
-              // old result would show a page that no longer exists.
-              setSearch(next ?? "");
-              setPage(1);
-            }}
-          />
+        {canRead && (
+          <TabsContent value="browse" className="flex flex-col gap-3">
+            <TableSearch
+              mode="local"
+              id="media-picker-search"
+              value={search}
+              label={t.searchLabel}
+              placeholder={dict.mediaLibrary.searchPlaceholder}
+              onChange={(next) => {
+                // A narrowed library has different pages; staying on page 4 of the
+                // old result would show a page that no longer exists.
+                setSearch(next ?? "");
+                setPage(1);
+              }}
+            />
 
-          <MediaAssetGrid
-            search={search}
-            page={page}
-            pageSize={PICKER_PAGE_SIZE}
-            onOpen={pick}
-            cardLabel={t.pickCardAria}
-            footer={(totalPages) =>
-              totalPages > 1 && (
-                <div className="flex items-center justify-between gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label={t.prevPage}
-                    disabled={page <= 1}
-                    onClick={() => setPage((current) => current - 1)}
-                  >
-                    {dict.common.previous}
-                  </Button>
-                  <span role="status" className="text-sm text-muted-foreground">
-                    {dict.common.pageOf(page, totalPages)}
-                  </span>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-label={t.nextPage}
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((current) => current + 1)}
-                  >
-                    {dict.common.next}
-                  </Button>
-                </div>
-              )
-            }
-          />
-        </TabsContent>
-      )}
+            <MediaAssetGrid
+              search={search}
+              page={page}
+              pageSize={PICKER_PAGE_SIZE}
+              onOpen={setSelected}
+              selectedId={selected?.id ?? null}
+              layout="dialog"
+              cardLabel={t.pickCardAria}
+              footer={(totalPages) =>
+                totalPages > 1 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={t.prevPage}
+                      disabled={page <= 1}
+                      onClick={() => setPage((current) => current - 1)}
+                    >
+                      {dict.common.previous}
+                    </Button>
+                    <span
+                      role="status"
+                      className="text-sm text-muted-foreground"
+                    >
+                      {dict.common.pageOf(page, totalPages)}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={t.nextPage}
+                      disabled={page >= totalPages}
+                      onClick={() => setPage((current) => current + 1)}
+                    >
+                      {dict.common.next}
+                    </Button>
+                  </div>
+                )
+              }
+            />
+          </TabsContent>
+        )}
 
-      {canWrite && (
-        <TabsContent value="upload">
-          <MediaUploadZone
-            onAssetUploaded={onPick}
-            onBatchSettled={async (summary) => {
-              // The new files belong at the top of the browse tab, and a delete
-              // or an upload shifts every page — so the whole list key goes,
-              // not just the page on screen.
-              await queryClient.invalidateQueries({
-                queryKey: getMediaControllerFindAllQueryKey(),
-              });
-              // Anything less than a clean run stays on screen: the failed rows
-              // and their reasons live in this queue and nowhere else.
-              if (summary.failed === 0 && summary.done > 0) onClose();
-            }}
-          />
-        </TabsContent>
-      )}
-    </Tabs>
+        {canWrite && (
+          <TabsContent value="upload">
+            <MediaUploadZone
+              onAssetUploaded={onPick}
+              onBatchSettled={async (summary) => {
+                // The new files belong at the top of the browse tab, and a delete
+                // or an upload shifts every page — so the whole list key goes,
+                // not just the page on screen.
+                await queryClient.invalidateQueries({
+                  queryKey: getMediaControllerFindAllQueryKey(),
+                });
+                // Anything less than a clean run stays on screen: the failed rows
+                // and their reasons live in this queue and nowhere else.
+                if (summary.failed === 0 && summary.done > 0) onClose();
+              }}
+            />
+          </TabsContent>
+        )}
+      </Tabs>
+
+      <DialogFooter>
+        <DialogClose asChild>
+          <Button type="button" variant="outline">
+            {dict.common.close}
+          </Button>
+        </DialogClose>
+        {/* Only where there is something to choose: the upload tab hands
+            each new asset over by itself, as it always did. */}
+        {canRead && tab === "browse" && (
+          <Button type="button" disabled={!selected} onClick={confirm}>
+            {t.useSelected}
+          </Button>
+        )}
+      </DialogFooter>
+    </>
   );
 }

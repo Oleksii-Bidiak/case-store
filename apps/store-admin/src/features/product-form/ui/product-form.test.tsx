@@ -918,6 +918,10 @@ describe("ProductForm — OG image upload and library pick (TASK-728)", () => {
         name: dict.mediaPicker.pickCardAria("Картка для соцмереж"),
       }),
     );
+    // Wave 198 (БЛ11): a tile is selected, then the choice is confirmed.
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.mediaPicker.useSelected }),
+    );
     await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
 
     // A refetch hands the form a NEW object with the server's (still empty)

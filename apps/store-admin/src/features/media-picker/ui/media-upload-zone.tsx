@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   Check,
   ImagePlus,
@@ -9,24 +9,17 @@ import {
   TriangleAlert,
   Upload,
 } from "lucide-react";
-import {
-  useMediaControllerUpload,
-  type MediaAssetDetailEntity,
-} from "@/entities/media";
-import {
-  CONTENT_IMAGE_ACCEPT,
-  imageUploadErrorMessage,
-} from "@/shared/lib/image-upload-error";
-import { Button, useAnnouncer } from "@/shared/ui";
-import { toast } from "@/shared/ui/toast";
-import {
-  useImageUploadQueue,
-  type UploadDrainSummary,
-  type UploadQueueItem,
-  type UploadQueueStatus,
+import type { MediaAssetDetailEntity } from "@/entities/media";
+import { CONTENT_IMAGE_ACCEPT } from "@/shared/lib/image-upload-error";
+import { Button } from "@/shared/ui";
+import type {
+  UploadDrainSummary,
+  UploadQueueItem,
+  UploadQueueStatus,
 } from "@/shared/lib/use-image-upload-queue";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
+import { useMediaUploads } from "../model/use-media-uploads";
 
 const t = dict.mediaLibrary;
 
@@ -79,64 +72,13 @@ export function MediaUploadZone({
 }: MediaUploadZoneProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const { announcePolite, announceAssertive } = useAnnouncer();
+  // The queue, the per-file announcements and the one toast per batch live in
+  // the shared hook — the /media screen lays the very same queue out
+  // differently (tiles in the grid), and two queues would drift apart.
+  const queue = useMediaUploads({ onBatchSettled, onAssetUploaded });
 
-  /**
-   * Kept current without re-capturing the drain loop.
-   *
-   * A loop outlives many renders and the closure it started with would go on
-   * calling a stale callback — the same reason the shared queue holds `send`
-   * and `describeError` in refs. See its docblock.
-   */
-  const onAssetUploadedRef = useRef(onAssetUploaded);
-  useEffect(() => {
-    onAssetUploadedRef.current = onAssetUploaded;
-  });
-
-  const upload = useMediaControllerUpload();
-  const queue = useImageUploadQueue<void>({
-    send: async (file) => {
-      const response = await upload.mutateAsync({ data: { file } });
-      // Reported here rather than from `onItemUploaded`, because that hook is
-      // handed the QUEUE ITEM (a file) and the caller needs the ASSET the
-      // server made of it — the id and the URL only exist in this response.
-      onAssetUploadedRef.current?.(response.data);
-      return response;
-    },
-    describeError: (error) => imageUploadErrorMessage(error, t),
-  });
-
-  /** Per-file screen-reader reporting, shared by the initial run and retries. */
-  const announcers = {
-    onItemUploaded: (item: { name: string }) =>
-      announcePolite(t.announceUploaded(item.name)),
-    onItemFailed: (item: { name: string }, reason: string) =>
-      announceAssertive(t.announceFailed(item.name, reason)),
-  };
-
-  /**
-   * One summary for everything a loop drained — two overlapping drops are a
-   * single upload from where the operator sits. A run that only JOINED a loop
-   * already in flight resolves to `null` and reports nothing.
-   */
-  const report = (run: Promise<UploadDrainSummary | null>) => {
-    void run.then(async (summary) => {
-      if (!summary) return;
-      await onBatchSettled(summary);
-      if (summary.failed === 0) {
-        toast.success(t.toastUploaded);
-      } else {
-        toast.error(t.toastUploadFailed);
-      }
-      announcePolite(t.announceAllDone(summary.done, summary.failed));
-    });
-  };
-
-  const accept = (fileList: FileList | null) => {
-    const files = Array.from(fileList ?? []);
-    if (files.length === 0) return;
-    report(queue.enqueue(undefined, files, announcers));
-  };
+  const accept = (fileList: FileList | null) =>
+    queue.accept(Array.from(fileList ?? []));
 
   const failedCount = queue.failedItems.length;
 
@@ -202,7 +144,7 @@ export function MediaUploadZone({
         <section className="flex flex-col gap-2 rounded-lg border border-border p-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold">
-              {t.queueHeading}{" "}
+              {t.queueHeading}:{" "}
               <span className="font-normal text-muted-foreground">
                 {t.queueProgress(queue.doneCount, queue.items.length)}
               </span>
@@ -214,11 +156,7 @@ export function MediaUploadZone({
                   variant="outline"
                   size="sm"
                   disabled={queue.isUploading}
-                  onClick={() =>
-                    report(
-                      queue.retry(undefined, queue.failedItems, announcers),
-                    )
-                  }
+                  onClick={() => queue.retry(queue.failedItems)}
                 >
                   <RotateCcw />
                   {t.retryAll}
@@ -262,9 +200,7 @@ export function MediaUploadZone({
                     variant="ghost"
                     size="sm"
                     disabled={queue.isUploading}
-                    onClick={() =>
-                      report(queue.retry(undefined, [item], announcers))
-                    }
+                    onClick={() => queue.retry([item])}
                   >
                     <RotateCcw />
                     {t.retry}

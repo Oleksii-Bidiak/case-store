@@ -21,3 +21,12 @@ export {
 export { MediaAssetDialog } from "./ui/media-asset-dialog";
 export { MediaUploadZone } from "./ui/media-upload-zone";
 export { MediaLibrarySkeleton } from "./ui/media-library-skeleton";
+// Wave 198 (МТ1–МТ12): the upload queue as a hook, so the /media screen can lay
+// it out as tiles in its grid while the picker keeps its drop zone.
+export {
+  useMediaUploads,
+  type MediaUploads,
+  type MediaUploadsOptions,
+} from "./model/use-media-uploads";
+export { MediaPendingTile } from "./ui/media-pending-tile";
+export { MediaUploadSummary } from "./ui/media-upload-summary";

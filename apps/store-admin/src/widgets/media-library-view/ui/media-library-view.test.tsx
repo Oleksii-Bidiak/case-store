@@ -237,7 +237,8 @@ describe("MediaLibraryView — the grid", () => {
     expect(
       await screen.findByRole("button", { name: t.openCardAria("a1.webp") }),
     ).toBeInTheDocument();
-    expect(screen.getByText(t.noAlt)).toBeInTheDocument();
+    // With media:write the empty line is a call to action (МТ1).
+    expect(screen.getByText(t.noAltAdd)).toBeInTheDocument();
   });
 
   it("shows the empty state when the library holds nothing", async () => {
@@ -359,15 +360,21 @@ describe("MediaLibraryView — editing tags", () => {
     renderLibrary();
     const dialog = await openCard("a1.webp");
 
+    // Tags are chips now (МТ5): a comma or Enter closes one and saves.
     await userEvent.type(
       await within(dialog).findByLabelText(t.tagsLabel),
-      "Банер, банер, iphone",
+      "Банер, банер, iphone{Enter}",
     );
 
-    await waitFor(() => expect(patches).toHaveLength(1));
+    await waitFor(() => expect(patches).toHaveLength(2));
     // «Банер» and «банер» are one tag — a library where they are two is a
-    // library whose filtering silently misses half the assets.
-    expect(patches[0].body).toEqual({ tags: ["Банер", "iphone"] });
+    // library whose filtering silently misses half the assets. The duplicate
+    // costs no request at all.
+    expect(patches[0].body).toEqual({ tags: ["Банер"] });
+    expect(patches[1].body).toEqual({ tags: ["Банер", "iphone"] });
+    expect(
+      within(dialog).getByRole("button", { name: t.tagRemoveAria("iphone") }),
+    ).toBeInTheDocument();
   });
 
   it("explains an over-long tag list instead of letting the API 400", async () => {
@@ -377,13 +384,12 @@ describe("MediaLibraryView — editing tags", () => {
     const dialog = await openCard("a1.webp");
 
     const tagsInput = await within(dialog).findByLabelText(t.tagsLabel);
-    // 21 tags — one past the cap the DTO enforces.
+    // 21 tags pasted at once — one past the cap the DTO enforces.
     fireEvent.change(tagsInput, {
       target: {
-        value: Array.from({ length: 21 }, (_, i) => `тег${i}`).join(", "),
+        value: Array.from({ length: 21 }, (_, i) => `тег${i}`).join(", ") + ",",
       },
     });
-    fireEvent.blur(tagsInput);
 
     expect(await within(dialog).findByText(t.tagsInvalid)).toBeInTheDocument();
     // Nothing was sent: a rejected list is caught before it costs a request.
@@ -433,7 +439,8 @@ describe("MediaLibraryView — deleting", () => {
     expect(
       within(dialog).getByRole("button", { name: t.delete }),
     ).toBeDisabled();
-    expect(within(dialog).getByText(t.deleteBlocked)).toBeInTheDocument();
+    // The reason sits next to the button, with the count (МТ6).
+    expect(within(dialog).getByText(t.deleteBlocked(1))).toBeInTheDocument();
   });
 
   it("names every place the picture is used when the API answers 409", async () => {
@@ -511,5 +518,298 @@ describe("MediaLibraryView — without media:write", () => {
     ).not.toBeInTheDocument();
     // The metadata is visible, but read-only.
     expect(await within(dialog).findByLabelText(t.altLabel)).toBeDisabled();
+  });
+});
+
+// ── Wave 198, MediaProposal МТ1–МТ12 (TASK-1077) ───────────────────────────
+
+describe("MediaLibraryView — header and cards (МТ1)", () => {
+  it("puts «Завантажити файли» in the page header, next to the heading", async () => {
+    stubMedia([]);
+
+    renderLibrary();
+
+    const heading = await screen.findByRole("heading", {
+      level: 2,
+      name: t.heading,
+    });
+    const header = heading.closest("header");
+    expect(header).not.toBeNull();
+    expect(
+      within(header as HTMLElement).getByRole("button", { name: t.upload }),
+    ).toBeInTheDocument();
+  });
+
+  it("gives an uploaded file its dimensions, weight and date on the card", async () => {
+    stubMedia([
+      makeAsset("a1", {
+        alt: "Банер",
+        uploadedById: "u1",
+        width: 2000,
+        height: 1333,
+        bytes: 184320,
+        createdAt: "2026-09-01T10:00:00.000Z",
+      }),
+    ]);
+
+    renderLibrary();
+
+    expect(
+      await screen.findByText(
+        `${t.cardDimensions(2000, 1333)} · 180 КБ · 01.09.2026`,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("says a backfilled asset came from the catalogue instead of «невідомо · невідомо»", async () => {
+    stubMedia([
+      makeAsset("a1", {
+        alt: "Навушники",
+        uploadedById: null,
+        width: 0,
+        height: 0,
+        bytes: 0,
+        createdAt: "2026-09-14T10:00:00.000Z",
+      }),
+    ]);
+
+    renderLibrary();
+
+    expect(await screen.findByText(t.importedSource)).toBeInTheDocument();
+    expect(screen.getByText("14.09.2026")).toBeInTheDocument();
+    expect(screen.queryByText(/невідомо/)).not.toBeInTheDocument();
+  });
+
+  it("asks for a description only when the operator can add one", async () => {
+    stubMedia([makeAsset("a1")]);
+
+    renderLibrary([PERM.mediaRead]);
+
+    expect(await screen.findByText(t.noAlt)).toBeInTheDocument();
+    expect(screen.queryByText(t.noAltAdd)).not.toBeInTheDocument();
+  });
+});
+
+describe("MediaLibraryView — uploading (МТ3, МТ4)", () => {
+  it("uploads files dropped anywhere on the page, not only on the strip", async () => {
+    const { uploadedNames } = stubMedia([]);
+
+    renderLibrary();
+    await screen.findByText(t.empty);
+
+    fireEvent.drop(document.body, {
+      dataTransfer: {
+        files: [makeFile("anywhere.png")],
+        items: [],
+        types: ["Files"],
+      },
+    });
+
+    await waitFor(() => expect(uploadedNames).toEqual(["anywhere.png"]));
+  });
+
+  it("covers the page with a drop overlay while files are dragged over it", async () => {
+    stubMedia([]);
+
+    renderLibrary();
+    await screen.findByText(t.empty);
+
+    fireEvent.dragEnter(document.body, {
+      dataTransfer: { files: [], items: [{}, {}], types: ["Files"] },
+    });
+
+    expect(await screen.findByText(t.dropZoneActive)).toBeInTheDocument();
+    expect(
+      screen.getByText(`${t.dropOverlayCount(2)} · ${t.dropOverlayHint}`),
+    ).toBeInTheDocument();
+  });
+
+  it("shows a file as a tile in the grid while it uploads, then marks the asset «Нове»", async () => {
+    const stub = stubMedia([makeAsset("old", { alt: "Старе фото" })]);
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    server.use(
+      http.post("*/api/admin/media", async ({ request }) => {
+        const form = await request.formData();
+        const file = form.get("file");
+        stub.uploadedNames.push(file instanceof File ? file.name : "");
+        await gate;
+        const created = makeAsset("fresh", { alt: "Свіже фото" });
+        stub.state.assets = [created, ...stub.state.assets];
+        return HttpResponse.json({ data: { ...created, usedIn: [] } });
+      }),
+    );
+
+    renderLibrary();
+    await screen.findByRole("button", { name: t.openCardAria("Старе фото") });
+
+    dropFiles([makeFile("fresh.png")]);
+
+    // The tile is in the grid at once, named by the file being sent.
+    const grid = screen.getByRole("list", { name: t.gridAria });
+    expect(await within(grid).findByText("fresh.png")).toBeInTheDocument();
+    expect(
+      within(grid).getByText(t.pendingUploading(null)),
+    ).toBeInTheDocument();
+
+    release();
+
+    const card = await screen.findByRole("button", {
+      name: t.openCardAria("Свіже фото"),
+    });
+    expect(within(card).getByText(t.newBadge)).toBeInTheDocument();
+    // Only what arrived now is new.
+    expect(
+      within(
+        screen.getByRole("button", { name: t.openCardAria("Старе фото") }),
+      ).queryByText(t.newBadge),
+    ).not.toBeInTheDocument();
+  });
+
+  it("names a refused file with its reason above the grid and keeps both retries", async () => {
+    stubMedia([]);
+    server.use(
+      http.post("*/api/admin/media", () =>
+        HttpResponse.json(
+          { statusCode: 415, message: "Unsupported" },
+          { status: 415 },
+        ),
+      ),
+    );
+
+    renderLibrary();
+    await screen.findByText(t.empty);
+
+    dropFiles([makeFile("catalogue-scan.pdf")]);
+
+    // Visible above the grid — not only in the screen-reader announcement.
+    const summary = await screen.findByRole("region", {
+      name: t.queueHeading,
+    });
+    expect(
+      await within(summary).findByText(
+        `catalogue-scan.pdf — ${t.errorUnsupportedType}`,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(summary).getByText(t.queueProgress(0, 1)),
+    ).toBeInTheDocument();
+    expect(
+      within(summary).getByRole("button", { name: t.retryAll }),
+    ).toBeInTheDocument();
+    expect(
+      within(summary).getByRole("button", { name: t.retry }),
+    ).toBeInTheDocument();
+    expect(
+      within(summary).getByRole("button", { name: t.clearQueue }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("MediaLibraryView — the asset dialog (МТ5–МТ9)", () => {
+  it("lists what is known about the file, and that an imported one was never measured", async () => {
+    stubMedia([
+      makeAsset("a1", {
+        alt: "Імпортоване",
+        uploadedById: null,
+        width: 0,
+        height: 0,
+        bytes: 0,
+      }),
+    ]);
+
+    renderLibrary();
+    const dialog = await openCard("Імпортоване");
+
+    expect(
+      await within(dialog).findByText(t.importedSource),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(t.notMeasured)).toBeInTheDocument();
+    expect(within(dialog).getByText("WebP")).toBeInTheDocument();
+  });
+
+  it("removes a tag chip and saves the shorter list", async () => {
+    const { patches } = stubMedia([
+      makeAsset("a1", { alt: "Банер", tags: ["банер", "осінь"] }),
+    ]);
+
+    renderLibrary();
+    const dialog = await openCard("Банер");
+
+    await userEvent.click(
+      await within(dialog).findByRole("button", {
+        name: t.tagRemoveAria("банер"),
+      }),
+    );
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0].body).toEqual({ tags: ["осінь"] });
+  });
+
+  it("links every usage the operator may open, and only those", async () => {
+    const stub = stubMedia([
+      makeAsset("a1", { alt: "Спільне", usedInCount: 2 }),
+    ]);
+    stub.state.usage.a1 = [
+      { kind: "PRODUCT_IMAGE", entityId: "p1", label: "AirPods Pro 2" },
+      { kind: "BANNER_IMAGE", entityId: "n1", label: "Осінній розпродаж" },
+    ];
+
+    renderLibrary([PERM.mediaRead, PERM.mediaWrite, PERM.productsRead]);
+    const dialog = await openCard("Спільне");
+
+    const productLink = await within(dialog).findByRole("link", {
+      name: t.usageOpenAria(t.usageKinds.PRODUCT_IMAGE, "AirPods Pro 2"),
+    });
+    expect(productLink).toHaveAttribute("href", "/products/p1");
+    // No banners:write — the row is still listed, but not as a dead link.
+    expect(
+      within(dialog).getByText(
+        t.usageRow(t.usageKinds.BANNER_IMAGE, "Осінній розпродаж"),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("link", {
+        name: t.usageOpenAria(t.usageKinds.BANNER_IMAGE, "Осінній розпродаж"),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("copies the file's public address", async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText },
+      configurable: true,
+    });
+    stubMedia([makeAsset("a1", { alt: "Посилання" })]);
+
+    renderLibrary();
+    const dialog = await openCard("Посилання");
+
+    await userEvent.click(
+      await within(dialog).findByRole("button", { name: t.copyLink }),
+    );
+
+    expect(writeText).toHaveBeenCalledWith(
+      "http://localhost:3001/uploads/media/a1.webp",
+    );
+  });
+
+  it("keeps «Відкрити оригінал» and a read-only tag field without media:write", async () => {
+    stubMedia([makeAsset("a1", { alt: "Чуже", tags: ["банер"] })]);
+
+    renderLibrary([PERM.mediaRead]);
+    const dialog = await openCard("Чуже");
+
+    expect(
+      await within(dialog).findByRole("link", { name: t.openOriginal }),
+    ).toHaveAttribute("href", "http://localhost:3001/uploads/media/a1.webp");
+    expect(within(dialog).getByText("банер")).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", { name: t.tagRemoveAria("банер") }),
+    ).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText(t.tagsLabel)).toBeDisabled();
   });
 });
