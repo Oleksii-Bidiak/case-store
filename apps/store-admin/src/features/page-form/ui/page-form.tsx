@@ -418,7 +418,8 @@ export function PageForm({
                   name="slug"
                   render={({ field }) => (
                     <Select
-                      value={field.value || undefined}
+                      // Always controlled — see the blog post form (`?? ""`).
+                      value={field.value ?? ""}
                       onValueChange={(value) => {
                         if (value === "") return;
                         field.onChange(value);

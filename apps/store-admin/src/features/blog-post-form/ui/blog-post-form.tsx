@@ -352,7 +352,9 @@ export function BlogPostForm({
                   name="categoryId"
                   render={({ field }) => (
                     <Select
-                      value={field.value || undefined}
+                      // Always controlled: `undefined` → id flipped the Select
+                      // from uncontrolled to controlled once the post loaded.
+                      value={field.value ?? ""}
                       onValueChange={(value) => {
                         // Radix re-dispatches "" from its hidden native select
                         // when the id-keyed reset() seeds a category before the
