@@ -3,14 +3,12 @@ import { OrderCreateForm } from "@/features/order-create";
 import { dict } from "@/shared/config";
 
 /**
- * Page body for creating an order on a customer's behalf (TASK-341).
+ * Page body for creating an order on a customer's behalf (TASK-341; wave 198
+ * TASK-1047, OrderNewProposal Н1–Н4).
  *
- * Carries the standing note about line editing. The backend deliberately does
- * NOT support changing an existing order's lines — doing so means returning and
- * re-reserving stock atomically while recomputing totals against the discount
- * and add-on invariants — so the operator is told here, once, while they still
- * have the chance to get the lines right. That is the alternative to an edit
- * button on the detail page that silently does nothing.
+ * Carries the standing note about line editing: the backend deliberately does
+ * NOT change an existing order's lines, so the operator is told here, once,
+ * while they can still get the lines right.
  */
 export function OrderCreateView() {
   return (
@@ -18,7 +16,7 @@ export function OrderCreateView() {
       <div className="flex flex-col gap-1">
         <Link
           href="/orders"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="self-start rounded-xs text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           {dict.orders.back}
         </Link>
@@ -26,7 +24,7 @@ export function OrderCreateView() {
           {dict.orders.createHeading}
         </h2>
         <p className="text-sm text-muted-foreground">
-          {dict.orders.itemsLockedHint}
+          {dict.orderCreate.createIntro}
         </p>
       </div>
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -27,13 +27,16 @@ import {
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
+import { ChevronDownIcon, TruckIcon } from "lucide-react";
 import {
   Button,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { toTransitionOptions } from "../model/transitions";
@@ -48,6 +51,67 @@ import { UnpaidShipDialog } from "./unpaid-ship-dialog";
 
 interface OrderStatusSelectProps {
   orderId: string;
+  /** Drawn at the end of the button row — the card's «⋯» menu. */
+  trailing?: ReactNode;
+}
+
+/** Every order status, lifecycle first — the menu's order. */
+const LIFECYCLE: readonly string[] = [
+  OrderEntityStatus.PENDING,
+  OrderEntityStatus.CONFIRMED,
+  OrderEntityStatus.PROCESSING,
+  OrderEntityStatus.SHIPPED,
+  OrderEntityStatus.DELIVERED,
+  OrderEntityStatus.CANCELLED,
+  OrderEntityStatus.REFUNDED,
+];
+
+/** The forward path, for «назад не можна». */
+const FORWARD: readonly string[] = LIFECYCLE.slice(0, 5);
+
+/**
+ * The primary button: the natural next step (OrdersProposal К1). Offered only
+ * when the server lists it among the legal moves.
+ */
+const NEXT_STEP: Readonly<Record<string, { status: string; label: string }>> = {
+  [OrderEntityStatus.PENDING]: {
+    status: OrderEntityStatus.CONFIRMED,
+    label: dict.orderStatus.nextConfirm,
+  },
+  [OrderEntityStatus.CONFIRMED]: {
+    status: OrderEntityStatus.SHIPPED,
+    label: dict.orderStatus.nextShip,
+  },
+  [OrderEntityStatus.PROCESSING]: {
+    status: OrderEntityStatus.SHIPPED,
+    label: dict.orderStatus.nextShip,
+  },
+  [OrderEntityStatus.SHIPPED]: {
+    status: OrderEntityStatus.DELIVERED,
+    label: dict.orderStatus.nextDeliver,
+  },
+};
+
+/**
+ * Why a status is NOT on the server's list right now (К2 «Недоступно зараз»).
+ *
+ * Words only: WHICH moves are legal is the server's answer (`allowed`), never
+ * re-derived here — this only names the likely reason for the ones it left
+ * out, from the same few facts the state machine is built on.
+ */
+export function unavailableReason(current: string, target: string): string {
+  const s = dict.orderStatus;
+  if (current === OrderEntityStatus.REFUNDED) return s.reasonRefundedFinal;
+  if (target === OrderEntityStatus.REFUNDED) return s.reasonRefundAfterShipment;
+  if (current === OrderEntityStatus.CANCELLED) return s.reasonReviveFirst;
+  if (
+    FORWARD.includes(current) &&
+    FORWARD.includes(target) &&
+    FORWARD.indexOf(target) < FORWARD.indexOf(current)
+  ) {
+    return s.reasonNoWayBack;
+  }
+  return s.reasonOther;
 }
 
 /**
@@ -99,13 +163,19 @@ const RETURNABLE_STATUSES: readonly string[] = [
  * with a misleading "somebody changed this order" toast teaches the operator to
  * distrust the panel. The server stays the barrier; this just stops lying.
  */
-export function OrderStatusSelect({ orderId }: OrderStatusSelectProps) {
+export function OrderStatusSelect({
+  orderId,
+  trailing,
+}: OrderStatusSelectProps) {
   const { can } = useAuth();
   if (!can(PERM.ordersWrite)) return null;
-  return <OrderStatusSelectControl orderId={orderId} />;
+  return <OrderStatusSelectControl orderId={orderId} trailing={trailing} />;
 }
 
-function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
+function OrderStatusSelectControl({
+  orderId,
+  trailing,
+}: OrderStatusSelectProps) {
   const queryClient = useQueryClient();
   const { can } = useAuth();
   const transitions = useAdminOrderControllerGetAllowedTransitions(orderId);
@@ -393,45 +463,114 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
     );
   }
 
+  const current = transitions.data?.data?.current ?? order?.status ?? "";
+  const unavailable = LIFECYCLE.filter(
+    (status) => status !== current && !allowed.includes(status),
+  );
+  const next = NEXT_STEP[current];
+  const nextAction = next && allowed.includes(next.status) ? next : null;
+  const askPayment = (status: string) => warningFor(status) === "unpaidShip";
+
   return (
-    <div className="flex flex-col gap-2">
-      {allowed.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          {dict.orderStatus.noTransitions}
-        </p>
-      ) : (
-        <>
-          <Select
-            value=""
-            onValueChange={handleChange}
-            disabled={updateStatus.isPending}
-          >
-            <SelectTrigger
-              className="w-56"
-              aria-label={dict.orderStatus.updateAria}
-            >
-              <SelectValue placeholder={dict.orderStatus.changeStatus} />
-            </SelectTrigger>
-            <SelectContent>
-              {allowed.map((status) => (
-                <SelectItem key={status} value={status}>
-                  {orderStatusLabel(status)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            {dict.orderStatus.transitionsHint}
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        {allowed.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            {dict.orderStatus.noTransitions}
           </p>
-        </>
-      )}
+        ) : (
+          <DropdownMenu modal={false}>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={updateStatus.isPending}
+                className="data-[state=open]:bg-secondary"
+              >
+                {dict.orders.updateStatus}
+                <ChevronDownIcon aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground">
+                {dict.orderStatus.menuCurrent(orderStatusLabel(current))}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuGroup aria-label={dict.orderStatus.menuAllowed}>
+                <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground">
+                  {dict.orderStatus.menuAllowed}
+                </DropdownMenuLabel>
+                {allowed.map((status) => (
+                  <DropdownMenuItem
+                    key={status}
+                    variant={
+                      status === OrderEntityStatus.CANCELLED
+                        ? "destructive"
+                        : "default"
+                    }
+                    onSelect={() => handleChange(status)}
+                  >
+                    {orderStatusLabel(status)}
+                    {askPayment(status) ? (
+                      <span
+                        aria-hidden="true"
+                        className="ml-auto text-xs text-muted-foreground"
+                      >
+                        {dict.orderStatus.menuAskPayment}
+                      </span>
+                    ) : null}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+              {unavailable.length ? (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuGroup
+                    aria-label={dict.orderStatus.menuUnavailable}
+                  >
+                    <DropdownMenuLabel className="text-xs font-semibold text-muted-foreground">
+                      {dict.orderStatus.menuUnavailable}
+                    </DropdownMenuLabel>
+                    {unavailable.map((status) => (
+                      <DropdownMenuItem key={status} disabled>
+                        {orderStatusLabel(status)}
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          {unavailableReason(current, status)}
+                        </span>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuGroup>
+                </>
+              ) : null}
+              <p className="px-2 pt-1 pb-1.5 text-xs text-muted-foreground">
+                {dict.orderStatus.transitionsHint}
+              </p>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {/* The natural next step, one click — the SAME mutation and the same
+            unpaid-shipment question as picking it from the menu. */}
+        {nextAction ? (
+          <Button
+            type="button"
+            disabled={updateStatus.isPending}
+            onClick={() => handleChange(nextAction.status)}
+          >
+            {nextAction.status === OrderEntityStatus.SHIPPED ? (
+              <TruckIcon aria-hidden="true" />
+            ) : null}
+            {nextAction.label}
+          </Button>
+        ) : null}
+        {trailing}
+      </div>
 
       {conflict ? (
         <div
           role="alert"
-          className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          className="flex basis-full flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          <span>{conflict}</span>
+          <span className="flex-1">{conflict}</span>
           {showReload ? (
             <Button variant="outline" size="sm" onClick={handleReload}>
               {dict.orderStatus.reloadCta}
@@ -473,6 +612,6 @@ function OrderStatusSelectControl({ orderId }: OrderStatusSelectProps) {
           disabled={createReturn.isPending || updateStatus.isPending}
         />
       ) : null}
-    </div>
+    </>
   );
 }

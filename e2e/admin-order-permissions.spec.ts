@@ -31,7 +31,8 @@ const ORDER_URL = `/orders/${E2E_ORDER_PENDING_ID}`;
 const ORDER_HEADING = `Замовлення #${E2E_ORDER_PENDING_ID.slice(0, 8)}`;
 
 const VIEW_ONLY = "Ви можете переглядати, але не змінювати.";
-const STATUS_PICKER = "Оновити статус замовлення";
+// Wave 198 (TASK-1046): the status picker is a menu-button «Змінити статус ▾».
+const STATUS_PICKER = "Змінити статус";
 const PAYMENT_PICKER = "Оновити статус оплати";
 const ADDRESS_EDIT = "Змінити адресу";
 const DETAILS_SAVE = "Зберегти";
@@ -56,7 +57,7 @@ test.describe("order card without orders:write (TASK-715)", () => {
     await expect(page.getByText(VIEW_ONLY)).toBeVisible();
 
     await expect(
-      page.getByRole("combobox", { name: STATUS_PICKER }),
+      page.getByRole("button", { name: STATUS_PICKER, exact: true }),
     ).toHaveCount(0);
     await expect(
       page.getByRole("combobox", { name: PAYMENT_PICKER }),
@@ -100,7 +101,7 @@ test.describe("order card without orders:write (TASK-715)", () => {
     await page.goto(ORDER_URL);
 
     await expect(
-      page.getByRole("combobox", { name: STATUS_PICKER }),
+      page.getByRole("button", { name: STATUS_PICKER, exact: true }),
     ).toBeVisible();
     await expect(
       page.getByRole("button", { name: ADDRESS_EDIT }),

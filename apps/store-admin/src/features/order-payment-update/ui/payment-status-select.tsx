@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { BanknoteIcon } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -10,6 +11,7 @@ import {
   getAdminOrderControllerGetAllowedPaymentTransitionsQueryKey,
   getAdminOrderControllerGetAllowedTransitionsQueryKey,
   getAdminOrderControllerGetHistoryQueryKey,
+  OrderEntityPaymentMethod,
   OrderEntityPaymentStatus,
   paymentStatusLabel,
   useAdminOrderControllerGetAllowedPaymentTransitions,
@@ -29,6 +31,7 @@ import {
   SelectValue,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
+import { formatCurrency } from "@/shared/lib";
 import { toPaymentTransitionOptions } from "../model/payment-transitions";
 import {
   paymentConflictMessage,
@@ -47,6 +50,13 @@ interface PaymentStatusSelectProps {
    * later.
    */
   currentPaymentStatus?: string;
+  /**
+   * How the order is paid for. On cash on delivery, still unpaid, the control
+   * leads with «Гроші від НП отримано» (wave 198, К1).
+   */
+  paymentMethod?: string;
+  /** The order total, named in the cash-on-delivery box. */
+  total?: string;
 }
 
 /**
@@ -81,15 +91,27 @@ interface PaymentStatusSelectProps {
  * Not rendered at all without `orders:write` (TASK-715) — the PATCH behind it
  * answers 403 to anyone else.
  */
-export function PaymentStatusSelect({ orderId }: PaymentStatusSelectProps) {
+export function PaymentStatusSelect({
+  orderId,
+  paymentMethod,
+  total,
+}: PaymentStatusSelectProps) {
   const { can } = useAuth();
   if (!can(PERM.ordersWrite)) return null;
-  return <PaymentStatusSelectControl orderId={orderId} />;
+  return (
+    <PaymentStatusSelectControl
+      orderId={orderId}
+      paymentMethod={paymentMethod}
+      total={total}
+    />
+  );
 }
 
 function PaymentStatusSelectControl({
   orderId,
-}: Pick<PaymentStatusSelectProps, "orderId">) {
+  paymentMethod,
+  total,
+}: Pick<PaymentStatusSelectProps, "orderId" | "paymentMethod" | "total">) {
   const queryClient = useQueryClient();
   const transitions =
     useAdminOrderControllerGetAllowedPaymentTransitions(orderId);
@@ -227,52 +249,115 @@ function PaymentStatusSelectControl({
     </>
   ) : null;
 
+  const label = (
+    <span className="text-sm font-medium text-foreground">
+      {dict.orderStatus.updatePaymentStatus}
+    </span>
+  );
+
   if (transitions.isLoading) {
     return (
-      <p className="text-sm text-muted-foreground">
-        {dict.orderStatus.paymentTransitionsLoading}
-      </p>
+      <div className="flex flex-col gap-2">
+        {label}
+        <p className="text-sm text-muted-foreground">
+          {dict.orderStatus.paymentTransitionsLoading}
+        </p>
+      </div>
     );
   }
 
   if (transitions.isError) {
     return (
-      <p role="alert" className="text-sm text-destructive">
-        {dict.orderStatus.paymentTransitionsLoadError}
-      </p>
+      <div className="flex flex-col gap-2">
+        {label}
+        <p role="alert" className="text-sm text-destructive">
+          {dict.orderStatus.paymentTransitionsLoadError}
+        </p>
+      </div>
     );
   }
 
   if (allowed.length === 0) {
     return (
       <div className="flex flex-col gap-2">
+        {label}
         <NoPaymentTransitions orderId={orderId} current={current} />
         {correction}
       </div>
     );
   }
 
+  // Cash on delivery, still unpaid (OrdersProposal К1): the one move the
+  // operator makes here is «the money from NP arrived» — the SAME transition to
+  // PAID the list below offers, one click instead of two, with what it means
+  // said beside it. The full list stays, as «Інший статус оплати».
+  const cod =
+    paymentMethod === OrderEntityPaymentMethod.ON_DELIVERY &&
+    current === OrderEntityPaymentStatus.PENDING &&
+    allowed.includes(OrderEntityPaymentStatus.PAID);
+
+  const select = (
+    <Select
+      value=""
+      onValueChange={handleChange}
+      disabled={updatePaymentStatus.isPending}
+    >
+      <SelectTrigger
+        className="w-56"
+        aria-label={dict.orderStatus.paymentUpdateAria}
+      >
+        <SelectValue placeholder={dict.orderStatus.changePaymentStatus} />
+      </SelectTrigger>
+      <SelectContent>
+        {allowed.map((status) => (
+          <SelectItem key={status} value={status}>
+            {paymentStatusLabel(status)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+
   return (
     <div className="flex flex-col gap-2">
-      <Select
-        value=""
-        onValueChange={handleChange}
-        disabled={updatePaymentStatus.isPending}
-      >
-        <SelectTrigger
-          className="w-56"
-          aria-label={dict.orderStatus.paymentUpdateAria}
-        >
-          <SelectValue placeholder={dict.orderStatus.changePaymentStatus} />
-        </SelectTrigger>
-        <SelectContent>
-          {allowed.map((status) => (
-            <SelectItem key={status} value={status}>
-              {paymentStatusLabel(status)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {cod ? (
+        <>
+          <div className="flex flex-wrap items-center gap-3 rounded-md border border-warning/35 bg-warning/7 p-3 text-sm">
+            <BanknoteIcon
+              aria-hidden="true"
+              className="size-4 shrink-0 text-muted-foreground"
+            />
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              <b className="font-semibold text-foreground">
+                {dict.orderStatus.codTitle(formatCurrency(total ?? "0"))}
+              </b>
+              <span className="text-xs text-muted-foreground">
+                {dict.orderStatus.codHint}
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={updatePaymentStatus.isPending}
+              onClick={() => handleChange(OrderEntityPaymentStatus.PAID)}
+            >
+              {dict.orderStatus.codReceived}
+            </Button>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {dict.orderStatus.otherPaymentStatus}
+            </span>
+            {select}
+          </div>
+        </>
+      ) : (
+        <>
+          {label}
+          {select}
+        </>
+      )}
       <p className="text-xs text-muted-foreground">
         {dict.orderStatus.paymentTransitionsHint}
       </p>

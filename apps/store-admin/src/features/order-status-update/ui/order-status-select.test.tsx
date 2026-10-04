@@ -4,6 +4,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
@@ -139,7 +140,7 @@ function stubStatusPatch(respond: () => Response): {
 
 const openPicker = async () =>
   userEvent.click(
-    await screen.findByRole("combobox", { name: dict.orderStatus.updateAria }),
+    await screen.findByRole("button", { name: dict.orders.updateStatus }),
   );
 
 describe("OrderStatusSelect — server-driven options (TASK-332)", () => {
@@ -153,27 +154,27 @@ describe("OrderStatusSelect — server-driven options (TASK-332)", () => {
     await openPicker();
 
     expect(
-      await screen.findByRole("option", {
+      await screen.findByRole("menuitem", {
         name: orderStatusLabel("DELIVERED"),
       }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: orderStatusLabel("CANCELLED") }),
+      screen.getByRole("menuitem", { name: orderStatusLabel("CANCELLED") }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("option", { name: orderStatusLabel("REFUNDED") }),
+      screen.getByRole("menuitem", { name: orderStatusLabel("REFUNDED") }),
     ).toBeInTheDocument();
 
     // Backwards moves the state machine forbids are absent from the DOM — the
     // operator cannot pick them and then be told no.
     expect(
-      screen.queryByRole("option", { name: orderStatusLabel("PENDING") }),
+      screen.queryByRole("menuitem", { name: orderStatusLabel("PENDING") }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("option", { name: orderStatusLabel("CONFIRMED") }),
+      screen.queryByRole("menuitem", { name: orderStatusLabel("CONFIRMED") }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("option", { name: orderStatusLabel("PROCESSING") }),
+      screen.queryByRole("menuitem", { name: orderStatusLabel("PROCESSING") }),
     ).not.toBeInTheDocument();
   });
 
@@ -186,7 +187,7 @@ describe("OrderStatusSelect — server-driven options (TASK-332)", () => {
     renderSelect();
     await openPicker();
     await userEvent.click(
-      await screen.findByRole("option", {
+      await screen.findByRole("menuitem", {
         name: orderStatusLabel("DELIVERED"),
       }),
     );
@@ -207,7 +208,7 @@ describe("OrderStatusSelect — server-driven options (TASK-332)", () => {
       await screen.findByText(dict.orderStatus.noTransitions),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("combobox", { name: dict.orderStatus.updateAria }),
+      screen.queryByRole("button", { name: dict.orders.updateStatus }),
     ).not.toBeInTheDocument();
   });
 
@@ -239,7 +240,7 @@ describe("OrderStatusSelect — 409 conflicts (TASK-332, edge case E-11)", () =>
     renderSelect();
     await openPicker();
     await userEvent.click(
-      await screen.findByRole("option", {
+      await screen.findByRole("menuitem", {
         name: orderStatusLabel("DELIVERED"),
       }),
     );
@@ -269,7 +270,7 @@ describe("OrderStatusSelect — 409 conflicts (TASK-332, edge case E-11)", () =>
     renderSelect();
     await openPicker();
     await userEvent.click(
-      await screen.findByRole("option", {
+      await screen.findByRole("menuitem", {
         name: orderStatusLabel("DELIVERED"),
       }),
     );
@@ -301,7 +302,9 @@ describe("OrderStatusSelect — shipping an unpaid online order (TASK-468)", () 
   const pickShipped = async () => {
     await openPicker();
     await userEvent.click(
-      await screen.findByRole("option", { name: orderStatusLabel("SHIPPED") }),
+      await screen.findByRole("menuitem", {
+        name: orderStatusLabel("SHIPPED"),
+      }),
     );
   };
 
@@ -421,7 +424,9 @@ describe("OrderStatusSelect — refunding with no return on file (TASK-469)", ()
   const pickRefunded = async () => {
     await openPicker();
     await userEvent.click(
-      await screen.findByRole("option", { name: orderStatusLabel("REFUNDED") }),
+      await screen.findByRole("menuitem", {
+        name: orderStatusLabel("REFUNDED"),
+      }),
     );
   };
 
@@ -631,7 +636,9 @@ describe("OrderStatusSelect — returns lookup follows returns:read (TASK-630)",
   const pickRefunded = async () => {
     await openPicker();
     await userEvent.click(
-      await screen.findByRole("option", { name: orderStatusLabel("REFUNDED") }),
+      await screen.findByRole("menuitem", {
+        name: orderStatusLabel("REFUNDED"),
+      }),
     );
   };
 
@@ -701,7 +708,7 @@ describe("OrderStatusSelect — orders:write gate (TASK-715)", () => {
     const { container } = renderSelect({ permissions: ["orders:read"] });
 
     expect(
-      screen.queryByRole("combobox", { name: dict.orderStatus.updateAria }),
+      screen.queryByRole("button", { name: dict.orders.updateStatus }),
     ).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
   });
@@ -712,10 +719,117 @@ describe("OrderStatusSelect — orders:write gate (TASK-715)", () => {
     renderSelect({ permissions: ["orders:read", "orders:write"] });
 
     expect(
-      await screen.findByRole("combobox", {
-        name: dict.orderStatus.updateAria,
-      }),
+      await screen.findByRole("button", { name: dict.orders.updateStatus }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Wave 198 (TASK-1046, К1/К2): the picker is a menu-button — «Зараз: …», the
+ * moves the server allows, the rest under «Недоступно зараз» with a reason —
+ * and the natural next step is the primary button. Both run the same write.
+ */
+describe("OrderStatusSelect — menu-button and next step (TASK-1046)", () => {
+  it("shows the current status, the allowed moves, and the rest as unavailable with a reason", async () => {
+    stubOrder({ status: "CONFIRMED" });
+    server.use(
+      http.get("*/api/admin/orders/:orderId/allowed-transitions", () =>
+        HttpResponse.json({
+          data: {
+            current: "CONFIRMED",
+            allowed: ["PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"],
+            updatedAt: "2026-06-01T10:00:00.000Z",
+          },
+        }),
+      ),
+    );
+    renderSelect();
+    await openPicker();
+
+    expect(
+      await screen.findByText(
+        dict.orderStatus.menuCurrent(orderStatusLabel("CONFIRMED")),
+      ),
+    ).toBeInTheDocument();
+    const allowed = within(
+      screen.getByRole("group", { name: dict.orderStatus.menuAllowed }),
+    );
+    expect(
+      allowed.getAllByRole("menuitem").map((item) => item.textContent),
+    ).toEqual(["В обробці", "Відправлено", "Доставлено", "Скасовано"]);
+
+    const unavailable = within(
+      screen.getByRole("group", { name: dict.orderStatus.menuUnavailable }),
+    );
+    const back = unavailable.getByRole("menuitem", {
+      name: new RegExp(orderStatusLabel("PENDING")),
+    });
+    expect(back).toHaveAttribute("aria-disabled", "true");
+    expect(back).toHaveTextContent(dict.orderStatus.reasonNoWayBack);
+    expect(
+      unavailable.getByRole("menuitem", {
+        name: new RegExp(orderStatusLabel("REFUNDED")),
+      }),
+    ).toHaveTextContent(dict.orderStatus.reasonRefundAfterShipment);
+  });
+
+  it("offers «Відправити» as the primary step and asks about an unpaid online order first", async () => {
+    stubOrder({
+      status: "CONFIRMED",
+      paymentMethod: "ONLINE",
+      paymentStatus: "PENDING",
+    });
+    server.use(
+      http.get("*/api/admin/orders/:orderId/allowed-transitions", () =>
+        HttpResponse.json({
+          data: {
+            current: "CONFIRMED",
+            allowed: ["PROCESSING", "SHIPPED", "CANCELLED"],
+            updatedAt: "2026-06-01T10:00:00.000Z",
+          },
+        }),
+      ),
+    );
+    const patch = stubStatusPatch(() =>
+      HttpResponse.json({ data: { id: ORDER_ID } }),
+    );
+    renderSelect();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orderStatus.nextShip }),
+    );
+
+    // The same speed bump as picking «Відправлено» from the menu (TASK-468).
+    expect(
+      await screen.findByText(dict.orderStatus.unpaidShipTitle),
+    ).toBeInTheDocument();
+    expect(patch.bodies).toHaveLength(0);
+  });
+
+  it("writes the next step straight away when there is nothing to ask", async () => {
+    stubOrder({ status: "SHIPPED" });
+    stubTransitions(["DELIVERED", "CANCELLED", "REFUNDED"]);
+    const patch = stubStatusPatch(() =>
+      HttpResponse.json({ data: { id: ORDER_ID } }),
+    );
+    renderSelect();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orderStatus.nextDeliver }),
+    );
+
+    await waitFor(() => expect(patch.bodies).toHaveLength(1));
+    expect(patch.bodies[0]).toMatchObject({ status: "DELIVERED" });
+  });
+
+  it("offers no primary step the server does not allow", async () => {
+    stubTransitions(["CANCELLED"]);
+    renderSelect();
+
+    await screen.findByRole("button", { name: dict.orders.updateStatus });
+    expect(
+      screen.queryByRole("button", { name: dict.orderStatus.nextDeliver }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -767,7 +881,7 @@ describe("OrderStatusSelect — payment options follow the order (TASK-842)", ()
 
     await openPicker();
     await userEvent.click(
-      await screen.findByRole("option", {
+      await screen.findByRole("menuitem", {
         name: orderStatusLabel("CANCELLED"),
       }),
     );

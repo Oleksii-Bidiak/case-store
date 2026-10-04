@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
@@ -15,6 +15,7 @@ import {
 import {
   orderConflictMessage,
   orderWriteErrorMessage,
+  requiresReload,
   type ApiErrorLike,
 } from "@/features/order-status-update";
 import { PERM } from "@/entities/permission";
@@ -24,7 +25,9 @@ import { dict } from "@/shared/config";
 import { useEditLockToken } from "@/shared/lib/use-edit-lock-token";
 import {
   createOrderDetailsSchema,
+  isValidWaybill,
   isWaybillRejection,
+  npTrackingUrl,
   mapOrderToDetailsValues,
   orderDetailsValuesToDto,
   type OrderDetailsFormValues,
@@ -85,8 +88,18 @@ function OrderDetailsReadOnly({ order }: OrderDetailsFormProps) {
         <dt className="font-medium text-foreground">
           {dict.orders.trackingNumber}
         </dt>
-        <dd className="text-muted-foreground">
-          {trackingNumber || dict.orders.detailsValueEmpty}
+        <dd className="flex flex-col gap-1 text-muted-foreground">
+          <span>{trackingNumber || dict.orders.detailsValueEmpty}</span>
+          {isValidWaybill(trackingNumber) ? (
+            <a
+              href={npTrackingUrl(trackingNumber)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="self-start rounded-xs text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {dict.orders.trackOnNp}
+            </a>
+          ) : null}
         </dd>
       </div>
       <div className="flex flex-col gap-1">
@@ -146,6 +159,28 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
   // included — is neither and yields null: the conflict check is gated on the
   // status now, so the old `isWaybillRejection` carve-out here is gone.
   const conflict = orderWriteErrorMessage(updateDetails.error as ApiErrorLike);
+  const showReload = requiresReload(updateDetails.error as ApiErrorLike);
+
+  // К1/К3: the tracking link appears for a real waybill; the error says how
+  // many digits there are now.
+  const trackingValue =
+    useWatch({ control: form.control, name: "trackingNumber" }) ?? "";
+  const trackingDigits = trackingValue.replace(/\D/g, "").length;
+  const trackingValid = isValidWaybill(trackingValue);
+
+  /** «Оновити» on the 409 banner: refetch the order, clear the refusal. */
+  const handleReload = () => {
+    updateDetails.reset();
+    const key = getAdminOrderControllerFindByIdQueryKey(order.id);
+    void queryClient
+      .invalidateQueries({ queryKey: key })
+      .then(() =>
+        lock.rebase(
+          queryClient.getQueryData<{ data?: OrderEntity }>(key)?.data
+            ?.updatedAt,
+        ),
+      );
+  };
 
   const onSubmit = (values: OrderDetailsFormValues) => {
     updateDetails.mutate(
@@ -250,7 +285,24 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
         {form.formState.errors.trackingNumber ? (
           <p role="alert" className="text-xs text-destructive">
             {form.formState.errors.trackingNumber.message}
+            {/* К3: say how far off it is — «Зараз 13.» — so a dropped digit
+                is found without counting by hand. */}
+            {trackingDigits > 0 ? (
+              <span>
+                {" "}
+                {dict.orders.trackingNumberDigitsNow(trackingDigits)}
+              </span>
+            ) : null}
           </p>
+        ) : trackingValid ? (
+          <a
+            href={npTrackingUrl(trackingValue)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="self-start rounded-xs text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            {dict.orders.trackOnNp}
+          </a>
         ) : null}
       </div>
 
@@ -280,12 +332,22 @@ function OrderDetailsEditor({ order }: OrderDetailsFormProps) {
       </div>
 
       {conflict ? (
-        <p
+        <div
           role="alert"
-          className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+          className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
         >
-          {conflict}
-        </p>
+          <span className="flex-1">{conflict}</span>
+          {showReload ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleReload}
+            >
+              {dict.orderStatus.reloadCta}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       <div>

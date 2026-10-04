@@ -24,6 +24,8 @@ const COLUMNS: Record<number, string> = {
   2: "md:grid-cols-2",
   3: "md:grid-cols-3",
   4: "md:grid-cols-4",
+  // The order path (OrdersProposal К1): five steps in one row from lg.
+  5: "lg:grid-cols-5",
 };
 
 /**

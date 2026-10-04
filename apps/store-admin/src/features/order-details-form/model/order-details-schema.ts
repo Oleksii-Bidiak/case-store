@@ -36,6 +36,14 @@ export function isValidWaybill(raw: string): boolean {
 }
 
 /**
+ * Nova Poshta's public tracking page for a waybill (wave 198, К1 «Відстежити на
+ * сайті НП ↗»). Digits only — the spaces an operator pastes are not part of it.
+ */
+export function npTrackingUrl(waybill: string): string {
+  return `https://novaposhta.ua/tracking/?cargo_number=${waybill.replace(/\D/g, "")}`;
+}
+
+/**
  * The two operator-editable fields that are not part of the order's lifecycle
  * (TASK-335 waybill, TASK-336 internal notes).
  *

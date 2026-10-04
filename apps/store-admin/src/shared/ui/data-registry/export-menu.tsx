@@ -42,6 +42,11 @@ export interface ExportMenuProps {
   formats: readonly RegistryExportFormat[];
   onExport: (request: RegistryExportRequest) => void;
   disabled?: boolean;
+  /**
+   * `false` on a screen without row selection: «Лише вибрані» could never be
+   * picked there, so it is not drawn. Default `true`.
+   */
+  selectable?: boolean;
 }
 
 /**
@@ -55,6 +60,7 @@ export function ExportMenu({
   formats,
   onExport,
   disabled = false,
+  selectable = true,
 }: ExportMenuProps) {
   const [scope, setScope] = React.useState<RegistryExportScope>("found");
   const hasSelection = selectedIds.length > 0;
@@ -87,13 +93,15 @@ export function ExportMenu({
           >
             {r.exportFound(foundLabel)}
           </DropdownMenuRadioItem>
-          <DropdownMenuRadioItem
-            value="selected"
-            disabled={!hasSelection}
-            onSelect={(event) => event.preventDefault()}
-          >
-            {r.exportSelectedOnly}
-          </DropdownMenuRadioItem>
+          {selectable ? (
+            <DropdownMenuRadioItem
+              value="selected"
+              disabled={!hasSelection}
+              onSelect={(event) => event.preventDefault()}
+            >
+              {r.exportSelectedOnly}
+            </DropdownMenuRadioItem>
+          ) : null}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         {formats.map((format) => (

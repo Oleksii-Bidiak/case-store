@@ -231,6 +231,11 @@ export interface CheckListItem {
   /** Right-aligned count, e.g. orders in that status. */
   count?: number;
   isNew?: boolean;
+  /**
+   * What the row means, for a screen reader (`aria-describedby`) — for a
+   * terse label whose rule needs a sentence («Вікно оплати»).
+   */
+  description?: string;
   /** Nested rows — the parent shows mixed when only some are on. */
   children?: readonly CheckListItem[];
 }
@@ -299,10 +304,16 @@ export function CheckList({
               id={id}
               checked={stateOf(item)}
               onCheckedChange={() => toggle(item)}
+              aria-describedby={item.description ? `${id}-desc` : undefined}
             />
             <label htmlFor={id} className="min-w-0 text-foreground">
               {item.label}
             </label>
+            {item.description ? (
+              <span id={`${id}-desc`} className="sr-only">
+                {item.description}
+              </span>
+            ) : null}
             {item.isNew ? <NewTag /> : null}
           </span>
           {item.count !== undefined ? (

@@ -20,6 +20,10 @@ export interface DraftLine {
   /** Catalogue price at pick time — DISPLAY ONLY. Never sent. */
   readonly price: string;
   readonly quantity: number;
+  /** Shown under the name (Н1). DISPLAY ONLY. */
+  readonly sku?: string | null;
+  /** Free stock at pick time — caps «+», DISPLAY ONLY; the server re-checks. */
+  readonly stock?: number;
 }
 
 /**

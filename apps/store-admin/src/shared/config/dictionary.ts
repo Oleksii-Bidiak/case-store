@@ -2560,12 +2560,10 @@ export const dict = {
     metaTitleDetail: (id: string) => `Замовлення ${id} — Адмін`,
     heading: "Замовлення",
     filterStatusAria: "Фільтр за статусом",
-    allStatuses: "Усі статуси",
-    tabsAria: "Швидкі фільтри за статусом",
     tabNew: "Нові",
     tabProcessing: "В обробці",
     tabShipped: "Відправлені",
-    tabAll: "Всі",
+    tabAll: "Усі",
     loadError: "Не вдалося завантажити замовлення. Спробуйте ще раз.",
     emptyStatus: (s: string) => `Немає замовлень зі статусом «${s}».`,
     empty: "Замовлень ще немає.",
@@ -2574,14 +2572,13 @@ export const dict = {
     colStatus: "Статус",
     colPayment: "Оплата",
     colTotal: "Сума",
-    colItems: "Позиції",
     colCreated: "Створено",
     // TASK-276: names the card-mode row group for screen readers.
     rowAria: (id: string) => `Замовлення ${id}`,
-    back: "← Назад до замовлень",
+    back: "← Замовлення",
     title: (id: string) => `Замовлення #${id}`,
     timeline: (created: string, updated: string) =>
-      `Створено ${created} · Оновлено ${updated}`,
+      `Створено ${created} · оновлено ${updated}`,
     updateStatus: "Змінити статус",
     itemProduct: "Товар",
     itemUnitPrice: "Ціна за од.",
@@ -2597,25 +2594,24 @@ export const dict = {
     total: "Разом",
     shippingAddress: "Адреса доставки",
     billingAddress: "Платіжна адреса",
-    notes: "Примітки",
+    notes: "Примітка клієнта",
     loadOneError: "Не вдалося завантажити замовлення. Спробуйте ще раз.",
     // TASK-254: stock-hold badges on the order detail page.
     holdsStock: (n: number) => `Тримає залишок: ${n} шт`,
     restockedAt: (time: string) => `Залишок повернуто ${time}`,
     // TASK-251: order status/payment history timeline.
-    timelineHeading: "Історія змін",
+    timelineHeading: "Історія",
     timelineLoadError: "Не вдалося завантажити історію змін.",
     timelineEmpty: "Історія змін порожня.",
 
     // --- Free-text search (TASK-336) ------------------------------------------
     // Deliberately does NOT mention "ID": what an operator has on the phone is a
     // number the customer read off an email, or a phone number — never a UUID.
-    searchPlaceholder: "Номер замовлення, пошта або телефон…",
+    searchPlaceholder: "Номер, телефон або email…",
     searchAria: "Пошук замовлень",
-    emptySearch: (q: string) => `Нічого не знайдено за запитом «${q}».`,
 
     // --- Operator-editable fields (TASK-335 / TASK-336) -----------------------
-    detailsHeading: "Дані для оператора",
+    detailsHeading: "Доставка і дані для оператора",
     trackingNumber: "ТТН (Нова Пошта)",
     trackingNumberPlaceholder: "20450000000001",
     // Says out loud that we do NOT create the waybill: creating one needs a
@@ -2626,7 +2622,7 @@ export const dict = {
     // TASK-426: the rule is 14 DIGITS, not «до 64 символів» — and the operator
     // must read the real rule off the field, because saving a wrong ТТН on a
     // SHIPPED order emails the customer a tracking link that leads nowhere.
-    trackingNumberInvalid: "ТТН Нової Пошти — це рівно 14 цифр.",
+    trackingNumberInvalid: "ТТН Нової Пошти — рівно 14 цифр.",
     internalNotes: "Внутрішні примітки",
     internalNotesPlaceholder: "Нотатка для команди…",
     // The whole point of TASK-336: this field and `notes` are different things,
@@ -2705,9 +2701,9 @@ export const dict = {
     allPaymentStatuses: "Будь-яка оплата",
     filterPaymentMethodAria: "Фільтр за способом оплати",
     allPaymentMethods: "Будь-який спосіб оплати",
-    paymentMethodOnDelivery: "Оплата при отриманні",
+    paymentMethodOnDelivery: "Післяплата",
     paymentMethodOnline: "Картка онлайн",
-    paymentMethodInstallments: "Оплата частинами",
+    paymentMethodInstallments: "Частинами",
     // No number in this label, on purpose: the threshold lives in ONE place
     // (the API's PENDING_STALE_HOURS, shared with the dashboard tile). A «понад
     // 48 год» written here would be a second copy of it, and the day it moves
@@ -2763,7 +2759,6 @@ export const dict = {
       "Показати лише скасовані замовлення, оплата за якими надійшла після скасування",
 
     // --- CSV export (TASK-425) ------------------------------------------------
-    exportCsv: "Експорт CSV",
     exportSuccess: (count: number) => `Експортовано ${count} замовл. у CSV.`,
     // Sticky (it goes through toast.error) because an incomplete file that looks
     // complete is the one failure the operator must not scroll past. The count
@@ -2848,6 +2843,76 @@ export const dict = {
     // Після часткового повернення всю суму вже не повернути — лише залишок
     // (TASK-1302).
     refundModeRemainder: (amount: string) => `Увесь залишок — ${amount}`,
+
+    // --- Список як реєстр (хвиля 198, TASK-1045, OrdersProposal П1–П8) -------
+    itemForms: ["замовлення", "замовлення", "замовлень"],
+    summaryFound: "Знайдено",
+    viewDefault: "Усі замовлення",
+    colNumber: "№",
+    colItemsShort: "Поз.",
+    colDelivery: "Доставка",
+    colEmail: "Email",
+    colCity: "Місто",
+    colUpdated: "Оновлено",
+    colPaymentMethod: "Спосіб оплати",
+    ttnValue: (number: string) => `ТТН ${number}`,
+    // Лише на підтвердженому й «в обробці»: саме тоді ТТН уже мала б бути.
+    ttnMissing: "ТТН не вказано",
+    deliveryPickup: "Самовивіз",
+    rowOpen: "Відкрити",
+    rowOpenNewTab: "Відкрити в новій вкладці",
+    rowCopyNumber: "Скопіювати номер",
+    rowCopyTtn: "Скопіювати ТТН",
+    rowChangeStatus: "Змінити статус…",
+    copiedNumber: (number: string) => `Номер ${number} скопійовано.`,
+    copiedTtn: "ТТН скопійовано.",
+    copyFailed:
+      "Не вдалося скопіювати — браузер не дав доступу до буфера обміну.",
+    sortCreatedDesc: "створено, нові зверху",
+    sortCreatedAsc: "створено, старі зверху",
+    sortTotalDesc: "сума, більші зверху",
+    sortTotalAsc: "сума, менші зверху",
+    sortStatusAsc: "статус, від нових до завершених",
+    sortStatusDesc: "статус, від завершених до нових",
+    // «Фільтри»
+    filterPeriod: "Період (створено)",
+    periodToday: "Сьогодні",
+    periodYesterday: "Вчора",
+    period7Days: "7 днів",
+    period30Days: "30 днів",
+    periodMonth: "Цей місяць",
+    periodCustom: "Свій період",
+    filterOrderStatus: "Статус замовлення",
+    filterPayment: "Оплата",
+    filterSignals: "Сигнали",
+    filtersApply: "Показати замовлення",
+    filtersApplyCount: (countLabel: string) => `Показати ${countLabel}`,
+    chipPeriod: (range: string) => `Період: ${range}`,
+    periodSince: (date: string) => `з ${date}`,
+    periodUntil: (date: string) => `до ${date}`,
+    chipStatus: (labels: string) => `Статус: ${labels}`,
+    chipPaymentStatus: (label: string) => `Оплата: ${label}`,
+    chipPaymentMethod: (label: string) => `Спосіб оплати: ${label}`,
+    // Ціль плитки «Очікують оплати» на дашборді (TASK-248) — досі жила лише в
+    // URL, тепер її видно чипом і можна зняти.
+    unpaidInTransitChip: "Неоплачені в роботі",
+    unpaidInTransitChipAria:
+      "Показати лише активні замовлення, гроші за які ще не надійшли",
+
+    // --- Картка замовлення (хвиля 198, TASK-1046, OrdersProposal К1–К4) -------
+    stepsAria: "Шлях замовлення",
+    itemsHeading: "Позиції",
+    moreActionsAria: "Інші дії",
+    accessLinkAction: "Посилання для покупця…",
+    deliveryMethodLabels: {
+      NOVA_POSHTA: "Нова Пошта",
+      PICKUP: "Самовивіз",
+      COURIER: "Кур'єр",
+      OTHER: "Інша доставка",
+    },
+    trackOnNp: "Відстежити на сайті НП ↗",
+    // Під полем ТТН, після правила: скільки цифр зараз.
+    trackingNumberDigitsNow: (count: number) => `Зараз ${count}.`,
   },
 
   reviews: {
@@ -3075,8 +3140,6 @@ export const dict = {
 
   orderStatus: {
     noTransitions: "Немає доступних переходів",
-    changeStatus: "Змінити статус…",
-    updateAria: "Оновити статус замовлення",
     toastUpdated: (s: string) => `Статус замовлення змінено на ${s}`,
     toastFailed: "Не вдалося оновити статус замовлення",
     updatePaymentStatus: "Статус оплати",
@@ -3220,6 +3283,29 @@ export const dict = {
       `Відхилено подію оплати (статус оплати лишився «${current}»)`,
     paymentEventRefusedHistoryNote:
       "Платіжна система повідомила про зміну, яку магазин не прийняв: такий перехід статусу оплати заборонений. Гроші й статус не змінились; подробиці — в журналі сервера.",
+
+    // --- «Змінити статус ▾» як меню (хвиля 198, TASK-1046, К2) ----------------
+    // Перелік дозволених — від сервера; причина «недоступно» лише пояснює,
+    // правило лишається на сервері.
+    menuCurrent: (status: string) => `Зараз: ${status}`,
+    menuAllowed: "Можна змінити на",
+    menuUnavailable: "Недоступно зараз",
+    menuAskPayment: "спитаємо про оплату",
+    reasonNoWayBack: "назад не можна",
+    reasonRefundAfterShipment: "лише після відправлення",
+    reasonRefundedFinal: "кошти вже повернено",
+    reasonReviveFirst: "спершу відновіть замовлення",
+    reasonOther: "не з поточного статусу",
+    // Головна кнопка — природний наступний крок.
+    nextConfirm: "Підтвердити",
+    nextShip: "Відправити",
+    nextDeliver: "Позначити доставленим",
+    // Післяплата (К1): той самий перехід оплати в «Оплачено», що й у списку.
+    codTitle: (amount: string) => `Післяплата · ${amount}`,
+    codHint:
+      "Гроші надійдуть від Нової Пошти після того, як покупець забере посилку. Коли переказ прийде — позначте оплату.",
+    codReceived: "Гроші від НП отримано",
+    otherPaymentStatus: "Інший статус оплати:",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
@@ -3411,7 +3497,7 @@ export const dict = {
     contactEmailInvalid: "Вкажіть коректну електронну пошту.",
     contactPhoneInvalid: "Вкажіть коректний номер телефону.",
 
-    addressHeading: "Адреса доставки",
+    addressHeading: "Доставка",
     addressFirstName: "Імʼя",
     addressLastName: "Прізвище",
     addressPhone: "Телефон",
@@ -3420,7 +3506,7 @@ export const dict = {
     addressPostalCode: "Індекс",
     addressRequired: "Обовʼязкове поле.",
 
-    itemsHeading: "Позиції",
+    itemsHeading: "Товари",
     itemsSearchPlaceholder: "Пошук товару за назвою…",
     itemsSearchAria: "Пошук товару для замовлення",
     itemsSearching: "Пошук…",
@@ -3438,15 +3524,15 @@ export const dict = {
     paymentHeading: "Оплата й примітки",
     paymentMethod: "Спосіб оплати",
     paymentMethodAria: "Спосіб оплати замовлення",
-    notes: "Примітки для клієнта",
+    notes: "Примітка клієнта",
     notesPlaceholder: "Побажання клієнта…",
     internalNotes: "Внутрішні примітки",
     internalNotesPlaceholder: "Нотатка для команди…",
     // TASK-794 — the limits are `CreateManualOrderDto` (@MaxLength 500 / 2000).
     // Shown under the field: a blocked submit with no visible reason is a button
     // that silently does nothing.
-    notesTooLong: "Примітка для клієнта — не більше 500 символів.",
-    internalNotesTooLong: "Внутрішня примітка — не більше 2000 символів.",
+    notesTooLong: "Не більше 500 символів.",
+    internalNotesTooLong: "Не більше 2000 символів.",
 
     submit: "Створити замовлення",
     cancel: "Скасувати",
@@ -3528,6 +3614,44 @@ export const dict = {
       "Довідник Нової Пошти недоступний — введіть місто та відділення вручну.",
     npPickAria: (name: string) => `Вибрати «${name}»`,
     npPicked: "Обрано з довідника Нової Пошти.",
+
+    // --- Нове замовлення за макетом (хвиля 198, TASK-1047, Н1–Н4) ------------
+    createIntro:
+      "Склад не редагується після створення — перевірте позиції перед збереженням.",
+    sameRecipient: "Одержувач — той самий клієнт",
+    sameRecipientHint:
+      "Інший одержувач? Зніміть позначку — з'являться ім'я, прізвище й телефон одержувача.",
+    methodOnDelivery: "Оплата при отриманні",
+    methodOnline: "Картка онлайн",
+    methodInstallments: "Оплата частинами",
+    // Після правила під полем приміток: скільки символів зараз.
+    tooLongNow: (count: number) => `Зараз ${count}.`,
+    itemSku: (sku: string) => `SKU ${sku}`,
+    itemFree: (count: number) => `вільно ${count} шт`,
+    itemNoStock: "Немає вільного залишку",
+    itemPerUnit: (price: string) => `${price} за шт`,
+    itemsQtyDecrease: (name: string) => `Менше «${name}»`,
+    itemsQtyIncrease: (name: string) => `Більше «${name}»`,
+    // 400 від API біля позиції (Н3).
+    lineStockGone: (count: number) =>
+      `Поки ви оформлювали, залишок закінчився: вільно ${count} шт. Приберіть позицію або зменште кількість.`,
+    lineUnavailable: "Товар більше не продається. Приберіть позицію.",
+    // Липкий «Підсумок»
+    summaryHeading: "Підсумок",
+    summaryPositions: "Позицій",
+    summaryPositionsValue: (count: number) => `${count} шт`,
+    summaryGoods: "Товари",
+    summaryDelivery: "Доставка",
+    summaryDeliveryValue: "за тарифом НП",
+    summaryTotal: "Разом",
+    summaryChecklistAria: "Що вже заповнено",
+    fieldForms: ["поле", "поля", "полів"],
+    errorsTitle: (countLabel: string) => `Перевірте ${countLabel}`,
+    serverErrorTitle: "Замовлення не створено",
+    serverErrorLine:
+      "Одна позиція вже недоступна — див. «Товари». Інші дані збережено у формі.",
+    serverErrorFields:
+      "Сервер не прийняв позначені поля — інші дані збережено у формі.",
   },
 
   // --- Users (TASK-115) -------------------------------------------------------
