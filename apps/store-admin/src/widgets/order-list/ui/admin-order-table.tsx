@@ -1,38 +1,26 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  Clock3,
-  Download,
-  Loader2,
-  BadgeAlert,
-  PackageX,
-  Timer,
-  TimerOff,
-  Wallet,
-} from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { toast } from "@/shared/ui/toast";
 import {
   OrderEntityStatus,
-  OrderEntityPaymentStatus,
+  OrderNumber,
+  formatOrderNumber,
   orderDerivedMarks,
   orderStatusBadgeVariant,
   orderStatusLabel,
   paymentStatusBadgeVariant,
   paymentStatusLabel,
   useAdminOrderControllerFindAll,
+  type OrderEntity,
 } from "@/entities/order";
-// The payment-METHOD enum and the CSV endpoint are not part of what
-// `@/entities/order` re-exports, and that barrel is another wave's file. A widget
-// may read `@/shared` directly (the product list already does), so this is the
-// honest import rather than a duplicated string union.
-import {
-  adminOrderControllerExport,
-  OrderEntityPaymentMethod,
-} from "@/shared/api";
+// The CSV endpoint is not part of what `@/entities/order` re-exports, and that
+// barrel is another wave's file. A widget may read `@/shared` directly (the
+// product list already does).
+import { adminOrderControllerExport } from "@/shared/api";
 import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import { useTableSort } from "@/shared/lib/use-table-sort";
@@ -40,693 +28,641 @@ import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
 import {
   Badge,
   Button,
+  DataRegistry,
+  ExportMenu,
   LiveAnnouncer,
-  SortableColumnHeader,
-  Table,
-  TableBody,
-  TableCell,
-  TableFilters,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableToolbar,
-  Tabs,
-  TabsList,
-  TabsTrigger,
+  SummaryValue,
   pageSizeFrom,
-  type TableFilterDef,
+  useDataRegistry,
+  type FilterChip,
+  type RegistryCardParts,
+  type RegistryColumn,
+  type RowActionItem,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { formatCurrency, formatDateTime } from "@/shared/lib";
-import { downloadCsv } from "@/shared/lib/download-csv";
-import { AdminOrderTableSkeleton } from "./admin-order-table-skeleton";
+import {
+  countLabel,
+  formatCurrency,
+  formatDate,
+  formatDateTime,
+  formatTime,
+  formatUAPhone,
+  isValidUAPhone,
+} from "@/shared/lib";
 
-const ALL_OPTION = "__all__";
+import { downloadCsv } from "@/shared/lib/download-csv";
+import { cn } from "@/shared/lib/utils";
+import {
+  ALL_VIEW,
+  QUICK_VIEWS,
+  activeQuickView,
+  hasNonStatusFilters,
+  orderFilterChips,
+  orderFiltersToQuery,
+  orderFiltersToUrl,
+  paymentMethodLabel,
+  readOrderFilters,
+} from "../model/order-filters";
+import { OrderFilterSheet } from "./order-filter-sheet";
+
+const d = dict.orders;
 
 const EXPORT_FILENAME = "orders.csv";
 
-/**
- * Payment-status filter options (TASK-425). Every value of the enum: an
- * operator's question is as often "what failed" as it is "what is unpaid".
- *
- * TASK-472 added PARTIALLY_REFUNDED here at the same time as it added it to the
- * enum. "Every value" is the rule this list lives by, and a new payment status
- * that the list cannot be filtered by is a status the operator can only find by
- * scrolling — which is how a half-refunded order gets forgotten.
- */
-const PAYMENT_STATUS_FILTER_OPTIONS = [
-  OrderEntityPaymentStatus.PENDING,
-  OrderEntityPaymentStatus.PAID,
-  OrderEntityPaymentStatus.FAILED,
-  OrderEntityPaymentStatus.PARTIALLY_REFUNDED,
-  OrderEntityPaymentStatus.REFUNDED,
-];
-
-/**
- * Ukrainian labels for the payment METHOD (TASK-425).
- *
- * A near-copy of the map in `features/order-create` — deliberately not imported
- * from there: a widget reaching into a feature's UI file for a constant is a
- * worse dependency than three duplicated strings. Their shared home is
- * `entities/order` beside `paymentStatusLabel`, which is where this belongs the
- * moment either file is touched again.
- */
-const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  [OrderEntityPaymentMethod.ON_DELIVERY]: dict.orders.paymentMethodOnDelivery,
-  [OrderEntityPaymentMethod.ONLINE]: dict.orders.paymentMethodOnline,
-  [OrderEntityPaymentMethod.INSTALLMENTS]:
-    dict.orders.paymentMethodInstallments,
-};
-
-const STATUS_FILTER_OPTIONS = [
-  OrderEntityStatus.PENDING,
+/** Where a confirmed order is expected to carry a waybill already. */
+const NEEDS_TTN: readonly string[] = [
   OrderEntityStatus.CONFIRMED,
   OrderEntityStatus.PROCESSING,
-  OrderEntityStatus.SHIPPED,
-  OrderEntityStatus.DELIVERED,
-  OrderEntityStatus.CANCELLED,
-  OrderEntityStatus.REFUNDED,
 ];
 
-/**
- * Lifecycle preset tabs (TASK-250) — a quick-access layer over the existing
- * `?status=` param. "В обробці" is a multi-status filter (`CONFIRMED,PROCESSING`),
- * only valid because the admin endpoint accepts a CSV `status` param. Each status
- * `value` is written verbatim to the URL.
- *
- * "Всі" carries the `ALL_OPTION` sentinel rather than the `""` it held until
- * TASK-405: the empty string is not a legal Radix `Tabs` value, so that tab could
- * never render active, and clicking it fed `""` back into a controlled
- * `Tabs.Root`. The sentinel never reaches the URL — `handleTabChange` maps it
- * back to "no `?status=`", exactly as the `<Select>` beside it already did.
- */
-const STATUS_TABS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: OrderEntityStatus.PENDING, label: dict.orders.tabNew },
-  {
-    value: `${OrderEntityStatus.CONFIRMED},${OrderEntityStatus.PROCESSING}`,
-    label: dict.orders.tabProcessing,
-  },
-  { value: OrderEntityStatus.SHIPPED, label: dict.orders.tabShipped },
-  { value: ALL_OPTION, label: dict.orders.tabAll },
-];
+/* ── Reading a row ──────────────────────────────────────────────────────── */
+
+const text = (value: unknown): string | undefined =>
+  typeof value === "string" && value.trim() ? value.trim() : undefined;
+
+const address = (order: OrderEntity): Record<string, unknown> =>
+  (order.shippingAddress ?? {}) as Record<string, unknown>;
+
+const phoneText = (raw: string | undefined): string | undefined =>
+  raw ? (isValidUAPhone(raw) ? formatUAPhone(raw) : raw) : undefined;
+
+const emailOf = (order: OrderEntity): string | undefined =>
+  order.customer?.email ?? order.guest?.email ?? undefined;
 
 /**
- * Radix `Tabs.Root` value used when the current `?status=` doesn't match any
- * preset (e.g. a `DELIVERED` deep link or a single `CONFIRMED` from the Select):
- * it matches no `TabsTrigger`, so no tab renders active — the honest state.
+ * «Ірина Мельник» + «+380 67 214 55 90» (П1). The name is the account's, else
+ * the recipient's, else the email; the second line is the phone — the guest's,
+ * or the one on the delivery address — and the email only when there is no
+ * phone (an account order taken before addresses carried one).
  */
-const CUSTOM_TAB = "__custom__";
+function clientOf(order: OrderEntity): {
+  name: string;
+  contact?: string;
+  guest: boolean;
+  isId?: boolean;
+} {
+  const shipping = address(order);
+  if (order.guest) {
+    return {
+      name: order.guest.name || "—",
+      contact: phoneText(order.guest.phone) ?? order.guest.email ?? undefined,
+      guest: true,
+    };
+  }
+  if (order.customer) {
+    const own = [order.customer.firstName, order.customer.lastName]
+      .filter(Boolean)
+      .join(" ");
+    const recipient = [text(shipping.firstName), text(shipping.lastName)]
+      .filter(Boolean)
+      .join(" ");
+    const name = own || recipient || order.customer.email;
+    const phone = phoneText(text(shipping.phone));
+    return {
+      name,
+      contact:
+        phone ??
+        (name !== order.customer.email ? order.customer.email : undefined),
+      guest: false,
+    };
+  }
+  // No account joined (a deleted user): the id is all there is.
+  return {
+    name: order.userId ? `${order.userId.slice(0, 8)}…` : "—",
+    guest: false,
+    isId: true,
+  };
+}
+
+/** «Київ, Відділення №12» — or «Самовивіз». */
+function deliveryShort(order: OrderEntity): string {
+  if (order.deliveryMethod === "PICKUP") return d.deliveryPickup;
+  const shipping = address(order);
+  const place = text(shipping.npWarehouseName) ?? text(shipping.address1);
+  return [text(shipping.city), place].filter(Boolean).join(", ") || "—";
+}
+
+/** «ТТН …», «ТТН не вказано» where one is due, «—» otherwise. */
+function waybill(order: OrderEntity): { label: string; missing: boolean } {
+  if (order.trackingNumber) {
+    return { label: d.ttnValue(order.trackingNumber), missing: false };
+  }
+  return NEEDS_TTN.includes(order.status)
+    ? { label: d.ttnMissing, missing: true }
+    : { label: "—", missing: false };
+}
+
+/** Kopecks, so a page of «29.99» rows adds up without float drift. */
+function pageSum(rows: readonly OrderEntity[]): number {
+  return (
+    rows.reduce((sum, row) => sum + Math.round(Number(row.total) * 100), 0) /
+    100
+  );
+}
+
+function copy(value: string, success: string) {
+  const write = navigator.clipboard?.writeText(value);
+  if (!write) {
+    toast.error(d.copyFailed);
+    return;
+  }
+  write.then(
+    () => toast.success(success),
+    () => toast.error(d.copyFailed),
+  );
+}
+
+function sortLabel(sortBy: string, sortOrder: "asc" | "desc"): string {
+  const asc = sortOrder === "asc";
+  if (sortBy === "total") return asc ? d.sortTotalAsc : d.sortTotalDesc;
+  if (sortBy === "status") return asc ? d.sortStatusAsc : d.sortStatusDesc;
+  return asc ? d.sortCreatedAsc : d.sortCreatedDesc;
+}
+
+const orderHref = (order: OrderEntity) => `/orders/${order.id}`;
+const rowLabel = (order: OrderEntity) => d.rowAria(formatOrderNumber(order.id));
+const getRowId = (order: OrderEntity) => order.id;
+
+/* ── Cells ──────────────────────────────────────────────────────────────── */
+
+function ClientCell({ order }: { order: OrderEntity }) {
+  const client = clientOf(order);
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="flex flex-wrap items-center gap-1.5">
+        <span
+          className={cn(
+            "text-foreground",
+            client.isId && "font-mono text-xs text-muted-foreground",
+          )}
+        >
+          {client.name}
+        </span>
+        {client.guest ? <Badge variant="warning">{d.guestBadge}</Badge> : null}
+      </span>
+      {client.contact ? (
+        <span className="text-xs break-all text-muted-foreground">
+          {client.contact}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function StatusCell({ order, now }: { order: OrderEntity; now: number }) {
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      <Badge variant={orderStatusBadgeVariant(order.status)}>
+        {orderStatusLabel(order.status)}
+      </Badge>
+      {/* TASK-470 / 471 / 472: the derived marks of B-1, beside the status
+          they qualify. The clock is `dataUpdatedAt` — «Очікує оплати · N хв»
+          is a statement about the rows that were fetched. */}
+      {orderDerivedMarks(order, now).map((mark) => (
+        <Badge key={mark.kind} variant={mark.variant}>
+          {mark.label}
+        </Badge>
+      ))}
+    </span>
+  );
+}
+
+function PaymentStatusBadge({ order }: { order: OrderEntity }) {
+  return (
+    <Badge variant={paymentStatusBadgeVariant(order.paymentStatus)}>
+      {paymentStatusLabel(order.paymentStatus)}
+    </Badge>
+  );
+}
+
+function buildColumns(now: number): RegistryColumn<OrderEntity>[] {
+  return [
+    {
+      id: "number",
+      label: d.colNumber,
+      locked: true,
+      rowLink: true,
+      defaultWidth: 112,
+      minWidth: 96,
+      cell: (order) => <OrderNumber id={order.id} />,
+    },
+    {
+      id: "created",
+      label: d.colCreated,
+      sortField: "createdAt",
+      defaultWidth: 120,
+      cell: (order) => (
+        <span className="flex flex-col gap-0.5 tabular-nums">
+          <span className="text-foreground">{formatDate(order.createdAt)}</span>
+          <span className="text-xs text-muted-foreground">
+            {formatTime(order.createdAt)}
+          </span>
+        </span>
+      ),
+    },
+    {
+      id: "client",
+      label: d.colCustomer,
+      defaultWidth: 220,
+      minWidth: 140,
+      cell: (order) => <ClientCell order={order} />,
+    },
+    {
+      id: "status",
+      label: d.colStatus,
+      sortField: "status",
+      defaultWidth: 200,
+      minWidth: 140,
+      cell: (order) => <StatusCell order={order} now={now} />,
+    },
+    {
+      id: "payment",
+      label: d.colPayment,
+      defaultWidth: 160,
+      cell: (order) => (
+        <span className="flex flex-col items-start gap-0.5">
+          <PaymentStatusBadge order={order} />
+          <span className="text-xs text-muted-foreground">
+            {paymentMethodLabel(order.paymentMethod)}
+          </span>
+        </span>
+      ),
+    },
+    {
+      id: "delivery",
+      label: d.colDelivery,
+      defaultWidth: 220,
+      minWidth: 140,
+      cell: (order) => {
+        const ttn = waybill(order);
+        return (
+          <span className="flex flex-col gap-0.5">
+            <span className="text-foreground">{deliveryShort(order)}</span>
+            <span
+              className={cn(
+                "text-xs",
+                ttn.missing
+                  ? "font-medium text-warning"
+                  : "text-muted-foreground tabular-nums",
+              )}
+            >
+              {ttn.label}
+            </span>
+          </span>
+        );
+      },
+    },
+    {
+      id: "total",
+      label: d.colTotal,
+      sortField: "total",
+      align: "end",
+      defaultWidth: 120,
+      className: "font-medium tabular-nums",
+      cell: (order) => formatCurrency(order.total),
+      footer: (rows) => formatCurrency(pageSum(rows)),
+    },
+    {
+      id: "items",
+      label: d.colItemsShort,
+      align: "end",
+      defaultWidth: 72,
+      minWidth: 56,
+      className: "text-muted-foreground tabular-nums",
+      cell: (order) => order.items.length,
+      footer: (rows) => rows.reduce((sum, row) => sum + row.items.length, 0),
+    },
+    // Hidden by default; one click away in «Колонки».
+    {
+      id: "customerType",
+      label: d.colCustomerType,
+      defaultVisible: false,
+      defaultWidth: 130,
+      cell: (order) =>
+        order.customer ? (
+          <Badge variant="secondary">{d.customerTypeAccount}</Badge>
+        ) : order.guest ? (
+          <Badge variant="warning">{d.customerTypeGuest}</Badge>
+        ) : (
+          <span className="text-muted-foreground">—</span>
+        ),
+    },
+    {
+      id: "paymentMethod",
+      label: d.colPaymentMethod,
+      defaultVisible: false,
+      defaultWidth: 150,
+      cell: (order) => paymentMethodLabel(order.paymentMethod),
+    },
+    {
+      id: "email",
+      label: d.colEmail,
+      defaultVisible: false,
+      defaultWidth: 220,
+      cell: (order) => (
+        <span className="break-all">{emailOf(order) ?? "—"}</span>
+      ),
+    },
+    {
+      id: "city",
+      label: d.colCity,
+      defaultVisible: false,
+      defaultWidth: 140,
+      cell: (order) => text(address(order).city) ?? "—",
+    },
+    {
+      id: "updated",
+      label: d.colUpdated,
+      defaultVisible: false,
+      defaultWidth: 150,
+      cell: (order) => (
+        <span className="text-muted-foreground tabular-nums">
+          {formatDateTime(order.updatedAt)}
+        </span>
+      ),
+    },
+  ];
+}
+
+/** One order below md (OrdersProposal П7). */
+function renderCard(order: OrderEntity, parts: RegistryCardParts, now: number) {
+  const client = clientOf(order);
+  const marks = orderDerivedMarks(order, now);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        {parts.href ? (
+          <Link
+            href={parts.href}
+            className="rounded-xs outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <OrderNumber id={order.id} />
+          </Link>
+        ) : (
+          <OrderNumber id={order.id} />
+        )}
+        <Badge variant={orderStatusBadgeVariant(order.status)}>
+          {orderStatusLabel(order.status)}
+        </Badge>
+      </div>
+      {marks.length ? (
+        <div className="flex flex-wrap justify-end gap-1">
+          {marks.map((mark) => (
+            <Badge key={mark.kind} variant={mark.variant}>
+              {mark.label}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex min-w-0 flex-wrap items-center gap-1.5">
+          <span className="text-foreground">{client.name}</span>
+          {client.guest ? (
+            <Badge variant="warning">{d.guestBadge}</Badge>
+          ) : null}
+        </span>
+        <b className="font-semibold text-foreground tabular-nums">
+          {formatCurrency(order.total)}
+        </b>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <PaymentStatusBadge order={order} />
+        <span className="min-w-0 truncate text-xs text-muted-foreground">
+          {deliveryShort(order)}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {formatDateTime(order.createdAt)}
+        </span>
+        {parts.actions}
+      </div>
+    </div>
+  );
+}
 
 /**
- * Paginated order table for the admin panel, listing orders across all users.
+ * The order queue on the shared registry (wave 198, TASK-1045 / TASK-732,
+ * OrdersProposal П1–П8).
  *
- * Status filter and page state live in the URL (`?status=`, `?page=`). The order
- * and customer IDs are shown truncated; full detail is one click away.
+ * The URL contract is the one the dashboard tiles and the e2e deep links rely
+ * on, unchanged: `?status=` (one status or a CSV — the quick views write it
+ * verbatim, «Усі» drops it), `?search=`, `?paymentStatus=`, `?paymentMethod=`,
+ * the seven signal booleans, `?dateFrom=`/`?dateTo=`, sort, page and size.
  *
- * TASK-354 moved the controls into `TableToolbar` and added the refresh button.
- * The lifecycle Tabs sit in the toolbar's `filters` slot next to the Select,
- * inside their own wrapper so the two wrap against each other; when the whole
- * block does not fit beside the search, the toolbar's wrapping row drops it to
- * a second line (TASK-775 / TASK-732). Their deep-link contract is
- * untouched — this is a relayout, not a rework.
+ * What moved, nothing removed: the three selects and the six toggles went into
+ * «Фільтри», «Переглянути» became a row click + «⋯ → Відкрити», «Експорт CSV»
+ * became «Експорт ▾ → CSV», «Тип клієнта» became the «гість» badge in the
+ * client cell (the column stays in «Колонки»).
+ *
+ * No checkbox column and no bulk bar: bulk status change needs the dry-run API
+ * (TASK-1045's API tail), and a selection with nothing to do is noise.
  */
 export function AdminOrderTable() {
   const searchParams = useSearchParams();
   const { can } = useAuth();
-  const canCreateOrders = can(PERM.ordersWrite);
+  const canWriteOrders = can(PERM.ordersWrite);
 
-  const statusParam = searchParams.get("status") ?? "";
-  // TASK-336: free-text search over order number / email / phone — what an
-  // operator actually holds when a customer rings up.
+  // TASK-336: free-text search over order number / email / phone.
   const searchParam = searchParams.get("search") ?? "";
-  // TASK-248 deep-link: `?unpaidInTransit=true` filters to active-but-unpaid
-  // orders (the needs-action widget's target). The status <Select> has no option
-  // for this compound preset — reconciling it is deferred to TASK-250's tabs.
-  const unpaidInTransit = searchParams.get("unpaidInTransit") === "true";
-  // TASK-425: the queue filters. Payment status and method are ordinary
-  // single-value filters; `pendingOverdue` is a SERVER-side predicate — the
-  // threshold lives in the API's PENDING_STALE_HOURS, shared with the dashboard
-  // tile, so the chip and the tile can never answer differently.
-  const paymentStatusParam = searchParams.get("paymentStatus") ?? "";
-  const paymentMethodParam = searchParams.get("paymentMethod") ?? "";
-  const pendingOverdue = searchParams.get("pendingOverdue") === "true";
-  // TASK-470 / 471: the four derived-mark filters. SERVER predicates, like
-  // `pendingOverdue` — none of them is a value of any one column, and filtering
-  // the visible page on the client would answer "how many on this page", which
-  // is the wrong number the moment the list is longer than one.
-  const hasDebt = searchParams.get("hasDebt") === "true";
-  const awaitingPayment = searchParams.get("awaitingPayment") === "true";
-  const reservationExpired = searchParams.get("reservationExpired") === "true";
-  const hasUnavailableItems =
-    searchParams.get("hasUnavailableItems") === "true";
-  // TASK-352 (c): the «Оплачено після скасування» tile's deep link.
-  const paidAfterCancel = searchParams.get("paidAfterCancel") === "true";
+  const filters = readOrderFilters(searchParams);
+  const statusParam = searchParams.get("status") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
   const updateParams = useUrlParams();
-
-  // Column sort lives in the URL (TASK-147).
   const { sortBy, sortOrder, onSort } = useTableSort(
     searchParams,
     updateParams,
   );
 
-  // TASK-423: the focus-sensitive `lastPushedRef` guard this table hand-rolled
-  // (forms.md rule 1b) now lives inside the shared `TableSearch` — it was the
-  // reference implementation for it, and keeping a local copy was how the other
-  // twelve tables ended up without one.
-
+  const query = orderFiltersToQuery(filters, searchParam);
   const { data, dataUpdatedAt, isLoading, isFetching, isError, refetch } =
     useAdminOrderControllerFindAll(
-      {
-        page,
-        limit: pageSize,
-        // The generated `status` param is a plain string (CSV) since TASK-250, so
-        // single (`PENDING`) and multi (`CONFIRMED,PROCESSING`) values pass straight
-        // through — no enum cast needed.
-        status: statusParam || undefined,
-        // TASK-336: matches order-number prefix, email and phone, for account AND
-        // guest orders alike.
-        search: searchParam || undefined,
-        // TASK-248 deep-link: active-but-unpaid ("in-transit") filter.
-        unpaidInTransit: unpaidInTransit || undefined,
-        // TASK-425. Cast for the same reason the subscriber table casts its
-        // status: the value comes off the URL as a string, and an illegal one is
-        // rejected by the DTO rather than pretended away here.
-        paymentStatus: paymentStatusParam
-          ? (paymentStatusParam as OrderEntityPaymentStatus)
-          : undefined,
-        paymentMethod: paymentMethodParam
-          ? (paymentMethodParam as OrderEntityPaymentMethod)
-          : undefined,
-        pendingOverdue: pendingOverdue || undefined,
-        // TASK-470 / 471. `|| undefined` rather than the raw boolean, so an
-        // unticked chip leaves the param off the request entirely and the query
-        // key stays the one an unfiltered list already cached.
-        hasDebt: hasDebt || undefined,
-        awaitingPayment: awaitingPayment || undefined,
-        reservationExpired: reservationExpired || undefined,
-        hasUnavailableItems: hasUnavailableItems || undefined,
-        paidAfterCancel: paidAfterCancel || undefined,
-        sortBy,
-        sortOrder,
-      },
+      { ...query, page, limit: pageSize, sortBy, sortOrder },
       // The order queue is the table two operators stare at simultaneously —
       // the one place where the panel-wide five-minute `staleTime` is wrong.
       { query: OPERATIONAL_LIST_QUERY },
     );
 
-  const orders = data?.data ?? [];
+  const orders = useMemo(() => data?.data ?? [], [data]);
   const totalPages = data?.meta?.totalPages ?? 1;
   const total = data?.meta?.total ?? 0;
+
+  const columns = useMemo(() => buildColumns(dataUpdatedAt), [dataUpdatedAt]);
+  const registry = useDataRegistry({
+    tableId: "orders",
+    columns,
+    rows: orders,
+    getRowId,
+  });
 
   const [isExporting, setIsExporting] = useState(false);
 
   /**
-   * CSV of the CURRENT SELECTION — every active filter, not the visible page
-   * (TASK-425). The server caps the row count; rather than restating that cap
-   * here (two copies of a number is how they drift), the file's own row count is
-   * compared against `meta.total`, which this table already holds. A truncated
-   * export reports itself through `toast.error`, which stays on screen: a
-   * spreadsheet that is quietly missing half the orders is the one outcome the
-   * operator must not scroll past.
+   * CSV of the CURRENT FILTERS — not the visible page (TASK-425). A truncated
+   * file says so through the sticky `toast.error`; the row count is read off
+   * the file, which is sound only because the server flattens every field to
+   * one physical line (`toSingleCsvLine`).
    */
   const handleExport = async () => {
     setIsExporting(true);
     try {
-      const csv = await adminOrderControllerExport({
-        status: statusParam || undefined,
-        search: searchParam || undefined,
-        unpaidInTransit: unpaidInTransit || undefined,
-        paymentStatus: paymentStatusParam
-          ? (paymentStatusParam as OrderEntityPaymentStatus)
-          : undefined,
-        paymentMethod: paymentMethodParam
-          ? (paymentMethodParam as OrderEntityPaymentMethod)
-          : undefined,
-        pendingOverdue: pendingOverdue || undefined,
-        // TASK-470 / 471: the export is "the rows you are looking at". A mark
-        // filter that narrowed the screen and not the file would hand over a
-        // spreadsheet that silently disagrees with the list it came from.
-        hasDebt: hasDebt || undefined,
-        awaitingPayment: awaitingPayment || undefined,
-        reservationExpired: reservationExpired || undefined,
-        hasUnavailableItems: hasUnavailableItems || undefined,
-        paidAfterCancel: paidAfterCancel || undefined,
-      });
-      // Rows = lines minus the header, which is only sound because the SERVER
-      // now guarantees one order occupies one physical line: `toCsvRow` runs
-      // every field through `toSingleCsvLine` before escaping it.
-      //
-      // It used to rest on the assumption that no exported field can contain a
-      // newline, which was false — `customerName` and `city` are free text (a
-      // max length and a trim, no character rules), and a correctly QUOTED
-      // multi-line field still spans several physical lines. One such order at
-      // the server's row cap inflated this count up to `total`, skipped the
-      // truncation branch below, and handed the operator a green success toast
-      // for a file silently missing every order past the cap. Do not relax the
-      // server-side flattening without replacing this count.
+      const csv = await adminOrderControllerExport(query);
       const exported = Math.max(0, csv.split("\r\n").length - 1);
       downloadCsv(csv, EXPORT_FILENAME);
       if (total > exported) {
-        toast.error(dict.orders.exportTruncated(exported, total));
+        toast.error(d.exportTruncated(exported, total));
       } else {
-        toast.success(dict.orders.exportSuccess(exported));
+        toast.success(d.exportSuccess(exported));
       }
     } catch {
-      toast.error(dict.orders.exportError);
+      toast.error(d.exportError);
     } finally {
       setIsExporting(false);
     }
   };
 
-  const filters: TableFilterDef[] = [
-    {
-      param: "status",
-      label: dict.orders.filterStatusAria,
-      allLabel: dict.orders.allStatuses,
-      options: STATUS_FILTER_OPTIONS.map((status) => ({
-        value: status,
-        label: orderStatusLabel(status),
-      })),
-      // A lifecycle tab can set a multi-status preset this Select has no single
-      // option for; the chip still has to be readable and clearable.
-      resolveLabel: (raw) =>
-        raw
-          .split(",")
-          .map((status) => orderStatusLabel(status))
-          .join(", "),
-    },
-    // TASK-425: "has the money arrived" was not answerable from this table at
-    // all — the payment column could be read but never filtered on.
-    {
-      param: "paymentStatus",
-      label: dict.orders.filterPaymentStatusAria,
-      allLabel: dict.orders.allPaymentStatuses,
-      options: PAYMENT_STATUS_FILTER_OPTIONS.map((status) => ({
-        value: status,
-        label: paymentStatusLabel(status),
-      })),
-    },
-    // Separate from the status above because they answer different questions: a
-    // cash-on-delivery order is unpaid until the courier hands it over, a card
-    // order that is unpaid means the money never arrived.
-    {
-      param: "paymentMethod",
-      label: dict.orders.filterPaymentMethodAria,
-      allLabel: dict.orders.allPaymentMethods,
-      options: Object.values(OrderEntityPaymentMethod).map((method) => ({
-        value: method,
-        label: PAYMENT_METHOD_LABELS[method] ?? method,
-      })),
-    },
-  ];
+  const chips: FilterChip[] = orderFilterChips(filters).map((chip) => ({
+    key: chip.key,
+    label: chip.label,
+    onRemove: () => updateParams({ ...chip.clear, page: undefined }),
+  }));
 
-  /**
-   * The derived-mark toggles (TASK-470 / 471), beside the older
-   * `pendingOverdue` one and built exactly like it: `aria-pressed` is what makes
-   * a button a toggle for a screen reader, and the filled variant is the visual
-   * half of the same state.
-   *
-   * Toggles rather than `<Select>` options because none of these is a value of a
-   * column — each is a server predicate over two or three of them — and because
-   * an operator legitimately wants two at once ("delivered, unpaid AND missing a
-   * position"), which a single-choice Select cannot express.
-   *
-   * Written as data and mapped, not as four copied JSX blocks: the copies differ
-   * only in three strings, and the fifth mark added by hand is the one that
-   * forgets to reset `page`.
-   */
-  const markToggles: ReadonlyArray<{
-    param: string;
-    active: boolean;
-    label: string;
-    aria: string;
-    Icon: typeof Clock3;
-  }> = [
-    {
-      param: "hasDebt",
-      active: hasDebt,
-      label: dict.orders.debtChip,
-      aria: dict.orders.debtChipAria,
-      Icon: Wallet,
-    },
-    {
-      param: "awaitingPayment",
-      active: awaitingPayment,
-      label: dict.orders.awaitingPaymentChip,
-      aria: dict.orders.awaitingPaymentChipAria,
-      Icon: Timer,
-    },
-    {
-      param: "reservationExpired",
-      active: reservationExpired,
-      label: dict.orders.reservationExpiredChip,
-      aria: dict.orders.reservationExpiredChipAria,
-      Icon: TimerOff,
-    },
-    {
-      param: "hasUnavailableItems",
-      active: hasUnavailableItems,
-      label: dict.orders.unavailableItemsChip,
-      aria: dict.orders.unavailableItemsChipAria,
-      Icon: PackageX,
-    },
-    {
-      param: "paidAfterCancel",
-      active: paidAfterCancel,
-      label: dict.orders.paidAfterCancelChip,
-      aria: dict.orders.paidAfterCancelChipAria,
-      Icon: BadgeAlert,
-    },
-  ];
-
-  // The active preset tab is the one whose value exactly matches the current
-  // `?status=` string, with an absent filter standing for the "Всі" sentinel;
-  // otherwise CUSTOM_TAB → no tab renders active.
-  const currentTabValue = statusParam || ALL_OPTION;
-  const activeTab = STATUS_TABS.some((tab) => tab.value === currentTabValue)
-    ? currentTabValue
-    : CUSTOM_TAB;
-
-  const handleTabChange = (value: string) => {
-    updateParams({
-      status: value === ALL_OPTION ? undefined : value,
-      page: undefined,
-    });
+  const rowActions = (order: OrderEntity): RowActionItem[] => {
+    const href = orderHref(order);
+    const number = formatOrderNumber(order.id);
+    const items: RowActionItem[] = [
+      { label: d.rowOpen, href },
+      { label: d.rowOpenNewTab, href, newTab: true },
+      {
+        label: d.rowCopyNumber,
+        onSelect: () => copy(number, d.copiedNumber(number)),
+      },
+    ];
+    if (order.trackingNumber) {
+      const ttn = order.trackingNumber;
+      items.push({
+        label: d.rowCopyTtn,
+        onSelect: () => copy(ttn, d.copiedTtn),
+      });
+    }
+    // The card's status control, behind the same `orders:write` it needs
+    // there. A link, not an inline picker: the move needs the server's list of
+    // legal transitions and the unpaid-shipment / return dialogs of the card.
+    if (canWriteOrders) {
+      items.push({
+        label: d.rowChangeStatus,
+        href: `${href}#order-status`,
+        separatorBefore: true,
+      });
+    }
+    return items;
   };
+
+  // «Немає замовлень зі статусом …» when ONLY a status narrowed the list,
+  // the generic filtered sentence when anything else did.
+  const otherFilters = hasNonStatusFilters(filters);
+  const emptyState =
+    statusParam && !otherFilters
+      ? d.emptyStatus(filters.status.map(orderStatusLabel).join(", "))
+      : d.empty;
 
   return (
     <LiveAnnouncer>
-      <div className="flex flex-col gap-4">
-        <TableToolbar
-          className="mb-0"
-          onRefresh={() => void refetch()}
-          isRefreshing={isFetching}
-          search={
-            <TableSearch
-              value={searchParam}
-              placeholder={dict.orders.searchPlaceholder}
-              label={dict.orders.searchAria}
+      <DataRegistry
+        registry={registry}
+        title={d.heading}
+        headerActions={
+          <>
+            <ExportMenu
+              foundLabel={countLabel(total, d.itemForms)}
+              selectedIds={[]}
+              selectable={false}
+              columns={registry.visibleColumnIds}
+              formats={["csv"]}
+              onExport={() => void handleExport()}
+              disabled={isExporting}
             />
-          }
-          filters={
-            <div className="flex flex-wrap items-center gap-2">
-              <Tabs value={activeTab} onValueChange={handleTabChange}>
-                <TabsList aria-label={dict.orders.tabsAria}>
-                  {STATUS_TABS.map((tab) => (
-                    <TabsTrigger key={tab.value} value={tab.value}>
-                      {tab.label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-              <TableFilters
-                filters={filters}
-                values={{
-                  status: statusParam,
-                  paymentStatus: paymentStatusParam,
-                  paymentMethod: paymentMethodParam,
-                }}
-              />
-              {/* TASK-425: "waiting too long". A toggle rather than a Select
-                  option, because it is not a value of any one column — it is a
-                  server predicate over status AND age. `aria-pressed` is what
-                  makes it a toggle for a screen reader; the visual state is the
-                  filled variant. */}
-              <Button
-                type="button"
-                variant={pendingOverdue ? "secondary" : "outline"}
-                size="sm"
-                aria-pressed={pendingOverdue}
-                aria-label={dict.orders.overdueChipAria}
-                onClick={() =>
-                  updateParams({
-                    pendingOverdue: pendingOverdue ? undefined : "true",
-                    page: undefined,
-                  })
-                }
-              >
-                <Clock3 aria-hidden="true" className="size-3.5" />
-                {dict.orders.overdueChip}
+            {/* TASK-341 / 715: a phone order starts here — only for a session
+                that may create one. */}
+            {canWriteOrders ? (
+              <Button asChild>
+                <Link href="/orders/new">{d.createCta}</Link>
               </Button>
-              {/* TASK-470 / 471: the same control for each derived mark. */}
-              {markToggles.map(({ param, active, label, aria, Icon }) => (
-                <Button
-                  key={param}
-                  type="button"
-                  variant={active ? "secondary" : "outline"}
-                  size="sm"
-                  aria-pressed={active}
-                  aria-label={aria}
-                  onClick={() =>
-                    updateParams({
-                      [param]: active ? undefined : "true",
-                      page: undefined,
-                    })
-                  }
-                >
-                  <Icon aria-hidden="true" className="size-3.5" />
-                  {label}
-                </Button>
-              ))}
-            </div>
-          }
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              {/* TASK-425: the CURRENT SELECTION as CSV — the filters as applied,
-                  not the page on screen. */}
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isExporting}
-                onClick={() => void handleExport()}
-              >
-                {isExporting ? (
-                  <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-                ) : (
-                  <Download aria-hidden="true" className="size-4" />
-                )}
-                {dict.orders.exportCsv}
-              </Button>
-              {/* TASK-341: a phone order starts here. TASK-715: only for a
-                  session that may create one — `POST /admin/orders` answers 403
-                  to anyone else, after the whole form has been filled in. */}
-              {canCreateOrders ? (
-                <Button asChild>
-                  <Link href="/orders/new">{dict.orders.createCta}</Link>
-                </Button>
-              ) : null}
-            </div>
-          }
-        />
-
-        {isLoading ? (
-          <AdminOrderTableSkeleton />
-        ) : isError ? (
-          <p role="alert" className="text-sm text-destructive">
-            {dict.orders.loadError}
-          </p>
-        ) : orders.length === 0 ? (
-          <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-            {/* A search miss names the query, not the status filter: "no PENDING
-              orders" would be a lie when the operator typed a phone number. */}
-            {searchParam
-              ? dict.orders.emptySearch(searchParam)
-              : statusParam
-                ? dict.orders.emptyStatus(orderStatusLabel(statusParam))
-                : dict.orders.empty}
-          </div>
-        ) : (
-          <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
-            {isFetching && !isLoading && (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
-              >
-                <Loader2 className="size-6 animate-spin text-primary" />
-              </div>
-            )}
-            <Table layout="card">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{dict.orders.colOrder}</TableHead>
-                  <TableHead>{dict.orders.colCustomer}</TableHead>
-                  {/* TASK-425: account or guest, as its own column. It was
-                      inferable from whether a name sat under the email; an
-                      operator should not have to infer it. */}
-                  <TableHead>{dict.orders.colCustomerType}</TableHead>
-                  <SortableColumnHeader
-                    field="status"
-                    label={dict.orders.colStatus}
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={onSort}
-                  />
-                  <TableHead>{dict.orders.colPayment}</TableHead>
-                  <SortableColumnHeader
-                    field="total"
-                    label={dict.orders.colTotal}
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={onSort}
-                  />
-                  <TableHead>{dict.orders.colItems}</TableHead>
-                  <SortableColumnHeader
-                    field="createdAt"
-                    label={dict.orders.colCreated}
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={onSort}
-                  />
-                  <TableHead className="text-right">
-                    {dict.common.actions}
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {orders.map((order) => (
-                  <TableRow
-                    key={order.id}
-                    rowLabel={dict.orders.rowAria(order.id.slice(0, 8))}
-                  >
-                    <TableCell
-                      label={dict.orders.colOrder}
-                      className="font-mono text-xs"
-                    >
-                      {order.id.slice(0, 8)}…
-                    </TableCell>
-                    <TableCell label={dict.orders.colCustomer}>
-                      {order.customer ? (
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm">
-                            {order.customer.email}
-                          </span>
-                          {(order.customer.firstName ||
-                            order.customer.lastName) && (
-                            <span className="text-xs text-muted-foreground">
-                              {[
-                                order.customer.firstName,
-                                order.customer.lastName,
-                              ]
-                                .filter(Boolean)
-                                .join(" ")}
-                            </span>
-                          )}
-                        </div>
-                      ) : order.guest ? (
-                        // Guest order (TASK-338): the contact typed at checkout is
-                        // the only way to reach this buyer, so show it rather than
-                        // an id that does not exist.
-                        //
-                        // The primary line falls back to the phone because the
-                        // email is legitimately null on an order the operator took
-                        // over the phone (TASK-426 made it optional). Reading the
-                        // email alone left this cell blank on exactly the orders
-                        // the operator created themselves — the one contact they
-                        // had just typed in, invisible.
-                        <div className="flex flex-col gap-0.5">
-                          <span className="text-sm">
-                            {order.guest.email || order.guest.phone}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {order.guest.name
-                              ? `${order.guest.name} · ${dict.orders.guestBadge}`
-                              : dict.orders.guestBadge}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {order.userId ? `${order.userId.slice(0, 8)}…` : "—"}
-                        </span>
-                      )}
-                    </TableCell>
-                    <TableCell label={dict.orders.colCustomerType}>
-                      {order.customer ? (
-                        <Badge variant="secondary">
-                          {dict.orders.customerTypeAccount}
-                        </Badge>
-                      ) : order.guest ? (
-                        <Badge variant="warning">
-                          {dict.orders.customerTypeGuest}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell label={dict.orders.colStatus}>
-                      <div className="flex flex-wrap items-center gap-1">
-                        <Badge variant={orderStatusBadgeVariant(order.status)}>
-                          {orderStatusLabel(order.status)}
-                        </Badge>
-                        {/* TASK-470 / 471 / 472: the derived marks of B-1, beside
-                            the status they qualify. Nothing here is stored and
-                            nothing here blocks anything — the marks exist so an
-                            operator can SEE the awkward states the system
-                            deliberately allows (a delivered order nobody paid
-                            for, a card order whose reservation is running out)
-                            rather than have them refused and then faked.
-
-                            The clock is `dataUpdatedAt`, not `Date.now()`:
-                            reading the real clock during render is impure (two
-                            rows sharing a deadline could disagree), and this is
-                            also the honest instant — «Очікує оплати · N хв» is a
-                            statement about the rows that were fetched, so it
-                            should count down from when they were. */}
-                        {orderDerivedMarks(order, dataUpdatedAt).map((mark) => (
-                          <Badge key={mark.kind} variant={mark.variant}>
-                            {mark.label}
-                          </Badge>
-                        ))}
-                      </div>
-                    </TableCell>
-                    <TableCell label={dict.orders.colPayment}>
-                      <Badge
-                        variant={paymentStatusBadgeVariant(order.paymentStatus)}
-                      >
-                        {paymentStatusLabel(order.paymentStatus)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell label={dict.orders.colTotal}>
-                      {formatCurrency(order.total)}
-                    </TableCell>
-                    <TableCell label={dict.orders.colItems}>
-                      {order.items.length}
-                    </TableCell>
-                    <TableCell
-                      label={dict.orders.colCreated}
-                      className="text-muted-foreground"
-                    >
-                      {formatDateTime(order.createdAt)}
-                    </TableCell>
-                    <TableCell
-                      label={dict.common.actions}
-                      className="text-right max-md:text-left"
-                    >
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={`/orders/${order.id}`}>
-                          {dict.common.view}
-                        </Link>
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-
-        {!isLoading && !isError && orders.length > 0 && (
-          <TablePagination
-            page={page}
-            totalPages={totalPages}
-            pageSize={pageSize}
-          />
-        )}
-      </div>
+            ) : null}
+          </>
+        }
+        quickViews={{
+          items: QUICK_VIEWS,
+          activeId: activeQuickView(statusParam),
+          onChange: (id) =>
+            updateParams({
+              status: id === ALL_VIEW ? undefined : id,
+              page: undefined,
+            }),
+        }}
+        search={{
+          value: searchParam,
+          placeholder: d.searchPlaceholder,
+          label: d.searchAria,
+        }}
+        filters={{
+          count: chips.length,
+          renderSheet: ({ open, onOpenChange }) => (
+            <OrderFilterSheet
+              open={open}
+              onOpenChange={onOpenChange}
+              applied={filters}
+              search={searchParam}
+              onApply={(next) =>
+                updateParams({ ...orderFiltersToUrl(next), page: undefined })
+              }
+            />
+          ),
+        }}
+        views={{ defaultName: d.viewDefault }}
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        chips={chips}
+        onClearAllChips={() =>
+          updateParams({
+            ...Object.fromEntries(
+              orderFilterChips(filters).flatMap((chip) =>
+                Object.keys(chip.clear).map((key) => [key, undefined]),
+              ),
+            ),
+            page: undefined,
+          })
+        }
+        summary={
+          data ? (
+            <>
+              {d.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, d.itemForms)}</SummaryValue>
+            </>
+          ) : null
+        }
+        sortLabel={sortLabel(sortBy, sortOrder)}
+        updatedAt={data ? dataUpdatedAt : undefined}
+        itemForms={d.itemForms}
+        getRowLabel={rowLabel}
+        getRowHref={orderHref}
+        rowActions={rowActions}
+        sort={{ sortBy, sortOrder, onSort }}
+        totals
+        renderCard={(order, parts) => renderCard(order, parts, dataUpdatedAt)}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={d.loadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={emptyState}
+        searchQuery={searchParam || undefined}
+        isFiltered={otherFilters}
+        pagination={{ page, totalPages, pageSize }}
+      />
     </LiveAnnouncer>
   );
 }

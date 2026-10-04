@@ -82,6 +82,10 @@ export function QuickViews({
   className,
 }: QuickViewsProps) {
   const refs = React.useRef<(HTMLButtonElement | null)[]>([]);
+  // A deep link can select something no view matches (`?status=DELIVERED`).
+  // Roving focus still needs one tab in the Tab order, or the views become
+  // unreachable from the keyboard — the first one stands in.
+  const anyActive = items.some((item) => item.id === activeId);
 
   const focusAt = (index: number) => {
     const count = items.length;
@@ -106,7 +110,7 @@ export function QuickViews({
             type="button"
             role="tab"
             aria-selected={active}
-            tabIndex={active ? 0 : -1}
+            tabIndex={active || (!anyActive && index === 0) ? 0 : -1}
             onClick={() => onChange(item.id)}
             onKeyDown={(event) => {
               if (event.key === "ArrowRight") focusAt(index + 1);

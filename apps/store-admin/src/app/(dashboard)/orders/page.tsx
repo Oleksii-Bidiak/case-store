@@ -10,6 +10,11 @@ import { dict } from "@/shared/config";
  * followed by a query-only `router.replace` re-renders nothing and the controls
  * go dead. Rendering on request makes each of those a real navigation. Every
  * admin route sits behind auth, so there is no static payload worth keeping.
+ *
+ * Wave 198 (TASK-1045): the heading moved into the registry, beside «Експорт»
+ * and «Створити замовлення» — both read the list's own state (the filters to
+ * export, the count found), so the header lives with the list. The skeleton
+ * draws the same heading, so nothing jumps.
  */
 export const dynamic = "force-dynamic";
 
@@ -19,14 +24,8 @@ export const metadata: Metadata = {
 
 export default function OrdersPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-        {dict.orders.heading}
-      </h2>
-
-      <Suspense fallback={<AdminOrderTableSkeleton />}>
-        <AdminOrderTable />
-      </Suspense>
-    </div>
+    <Suspense fallback={<AdminOrderTableSkeleton />}>
+      <AdminOrderTable />
+    </Suspense>
   );
 }

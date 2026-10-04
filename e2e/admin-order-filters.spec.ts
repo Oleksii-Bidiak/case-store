@@ -16,7 +16,7 @@ import { loginAsAdmin } from "./fixtures/admin-session";
  *      string served a prerender that a later query-only `router.replace()`
  *      never re-rendered — the tabs wrote the URL and the list sat still.
  *      Fixed by `export const dynamic = "force-dynamic"` on the list routes.
- *   2. The "Всі" tab carried `value: ""`, which is not a legal Radix `Tabs`
+ *   2. The "Всі" (now «Усі», wave 198) tab carried `value: ""`, not a legal Radix `Tabs`
  *      value. Fixed with the `__all__` sentinel, which must never reach the URL.
  *
  * The widget-level halves live in
@@ -32,7 +32,7 @@ const PROCESSING_ROW = E2E_ORDER_PROCESSING_ID.slice(0, 8);
 const PENDING_ROW = E2E_ORDER_PENDING_ID.slice(0, 8);
 
 const TAB_NEW = "Нові";
-const TAB_ALL = "Всі";
+const TAB_ALL = "Усі";
 
 /**
  * Wait for the queue to settle: the toolbar's refresh spinner is `aria-hidden`,
@@ -66,7 +66,7 @@ test.describe("admin order filters (TASK-405)", () => {
     await expectOnlyRow(page, PENDING_ROW, PROCESSING_ROW);
   });
 
-  test("«Всі» clears a deep-linked filter without leaking the sentinel", async ({
+  test("«Усі» clears a deep-linked filter without leaking the sentinel", async ({
     page,
   }) => {
     await page.goto("/orders?status=PROCESSING");
@@ -81,7 +81,7 @@ test.describe("admin order filters (TASK-405)", () => {
 
     // And with no filter, the sentinel is what makes the tab render active —
     // with `value: ""` it could not.
-    await expect(allTab).toHaveAttribute("data-state", "active");
+    await expect(allTab).toHaveAttribute("aria-selected", "true");
 
     await expect(page.getByText(PROCESSING_ROW)).toBeVisible();
     await expect(page.getByText(PENDING_ROW)).toBeVisible();

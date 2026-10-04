@@ -2285,12 +2285,10 @@ export const dict = {
     metaTitleDetail: (id: string) => `Замовлення ${id} — Адмін`,
     heading: "Замовлення",
     filterStatusAria: "Фільтр за статусом",
-    allStatuses: "Усі статуси",
-    tabsAria: "Швидкі фільтри за статусом",
     tabNew: "Нові",
     tabProcessing: "В обробці",
     tabShipped: "Відправлені",
-    tabAll: "Всі",
+    tabAll: "Усі",
     loadError: "Не вдалося завантажити замовлення. Спробуйте ще раз.",
     emptyStatus: (s: string) => `Немає замовлень зі статусом «${s}».`,
     empty: "Замовлень ще немає.",
@@ -2299,7 +2297,6 @@ export const dict = {
     colStatus: "Статус",
     colPayment: "Оплата",
     colTotal: "Сума",
-    colItems: "Позиції",
     colCreated: "Створено",
     // TASK-276: names the card-mode row group for screen readers.
     rowAria: (id: string) => `Замовлення ${id}`,
@@ -2335,9 +2332,8 @@ export const dict = {
     // --- Free-text search (TASK-336) ------------------------------------------
     // Deliberately does NOT mention "ID": what an operator has on the phone is a
     // number the customer read off an email, or a phone number — never a UUID.
-    searchPlaceholder: "Номер замовлення, пошта або телефон…",
+    searchPlaceholder: "Номер, телефон або email…",
     searchAria: "Пошук замовлень",
-    emptySearch: (q: string) => `Нічого не знайдено за запитом «${q}».`,
 
     // --- Operator-editable fields (TASK-335 / TASK-336) -----------------------
     detailsHeading: "Дані для оператора",
@@ -2430,9 +2426,9 @@ export const dict = {
     allPaymentStatuses: "Будь-яка оплата",
     filterPaymentMethodAria: "Фільтр за способом оплати",
     allPaymentMethods: "Будь-який спосіб оплати",
-    paymentMethodOnDelivery: "Оплата при отриманні",
+    paymentMethodOnDelivery: "Післяплата",
     paymentMethodOnline: "Картка онлайн",
-    paymentMethodInstallments: "Оплата частинами",
+    paymentMethodInstallments: "Частинами",
     // No number in this label, on purpose: the threshold lives in ONE place
     // (the API's PENDING_STALE_HOURS, shared with the dashboard tile). A «понад
     // 48 год» written here would be a second copy of it, and the day it moves
@@ -2488,7 +2484,6 @@ export const dict = {
       "Показати лише скасовані замовлення, оплата за якими надійшла після скасування",
 
     // --- CSV export (TASK-425) ------------------------------------------------
-    exportCsv: "Експорт CSV",
     exportSuccess: (count: number) => `Експортовано ${count} замовл. у CSV.`,
     // Sticky (it goes through toast.error) because an incomplete file that looks
     // complete is the one failure the operator must not scroll past. The count
@@ -2573,6 +2568,61 @@ export const dict = {
     // Після часткового повернення всю суму вже не повернути — лише залишок
     // (TASK-1302).
     refundModeRemainder: (amount: string) => `Увесь залишок — ${amount}`,
+
+    // --- Список як реєстр (хвиля 198, TASK-1045, OrdersProposal П1–П8) -------
+    itemForms: ["замовлення", "замовлення", "замовлень"],
+    summaryFound: "Знайдено",
+    viewDefault: "Усі замовлення",
+    colNumber: "№",
+    colItemsShort: "Поз.",
+    colDelivery: "Доставка",
+    colEmail: "Email",
+    colCity: "Місто",
+    colUpdated: "Оновлено",
+    colPaymentMethod: "Спосіб оплати",
+    ttnValue: (number: string) => `ТТН ${number}`,
+    // Лише на підтвердженому й «в обробці»: саме тоді ТТН уже мала б бути.
+    ttnMissing: "ТТН не вказано",
+    deliveryPickup: "Самовивіз",
+    rowOpen: "Відкрити",
+    rowOpenNewTab: "Відкрити в новій вкладці",
+    rowCopyNumber: "Скопіювати номер",
+    rowCopyTtn: "Скопіювати ТТН",
+    rowChangeStatus: "Змінити статус…",
+    copiedNumber: (number: string) => `Номер ${number} скопійовано.`,
+    copiedTtn: "ТТН скопійовано.",
+    copyFailed:
+      "Не вдалося скопіювати — браузер не дав доступу до буфера обміну.",
+    sortCreatedDesc: "створено, нові зверху",
+    sortCreatedAsc: "створено, старі зверху",
+    sortTotalDesc: "сума, більші зверху",
+    sortTotalAsc: "сума, менші зверху",
+    sortStatusAsc: "статус, від нових до завершених",
+    sortStatusDesc: "статус, від завершених до нових",
+    // «Фільтри»
+    filterPeriod: "Період (створено)",
+    periodToday: "Сьогодні",
+    periodYesterday: "Вчора",
+    period7Days: "7 днів",
+    period30Days: "30 днів",
+    periodMonth: "Цей місяць",
+    periodCustom: "Свій період",
+    filterOrderStatus: "Статус замовлення",
+    filterPayment: "Оплата",
+    filterSignals: "Сигнали",
+    filtersApply: "Показати замовлення",
+    filtersApplyCount: (countLabel: string) => `Показати ${countLabel}`,
+    chipPeriod: (range: string) => `Період: ${range}`,
+    periodSince: (date: string) => `з ${date}`,
+    periodUntil: (date: string) => `до ${date}`,
+    chipStatus: (labels: string) => `Статус: ${labels}`,
+    chipPaymentStatus: (label: string) => `Оплата: ${label}`,
+    chipPaymentMethod: (label: string) => `Спосіб оплати: ${label}`,
+    // Ціль плитки «Очікують оплати» на дашборді (TASK-248) — досі жила лише в
+    // URL, тепер її видно чипом і можна зняти.
+    unpaidInTransitChip: "Неоплачені в роботі",
+    unpaidInTransitChipAria:
+      "Показати лише активні замовлення, гроші за які ще не надійшли",
   },
 
   reviews: {
