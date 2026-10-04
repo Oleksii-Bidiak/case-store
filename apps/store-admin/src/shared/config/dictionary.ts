@@ -69,7 +69,8 @@ export const dict = {
     returns: "Повернення",
     reviews: "Відгуки",
     messages: "Повідомлення",
-    users: "Користувачі",
+    // «Клієнти», не «Користувачі» — рішення власника 2026-09-30 (TASK-1058).
+    users: "Клієнти",
     // TASK-480 — службові акаунти живуть окремо від клієнтів. Гейтиться
     // `staff:read`, правом без гранту: його тримають лише власник і заступники.
     // «Співробітники», не «Персонал» — рішення власника 2026-09-30 (TASK-1059).
@@ -159,7 +160,7 @@ export const dict = {
     quickActions: "Швидкі дії",
     addProduct: "Додати товар",
     viewOrders: "Переглянути замовлення",
-    manageUsers: "Керувати користувачами",
+    manageUsers: "Керувати клієнтами",
     totalRevenue: "Загальна виручка",
     revenueLifetime: "За весь час (лише оплачені замовлення)",
     revenue30: "Виручка (30 днів)",
@@ -3656,8 +3657,8 @@ export const dict = {
 
   // --- Users (TASK-115) -------------------------------------------------------
   users: {
-    metaTitle: "Користувачі — Адмін",
-    metaTitleDetail: (id: string) => `Користувач ${id} — Адмін`,
+    metaTitle: "Клієнти — Адмін",
+    metaTitleDetail: (id: string) => `Клієнт ${id} — Адмін`,
     heading: "Клієнти",
     // TASK-480. Заголовок і підпис більше не обіцяють «усіх користувачів»: із
     // TASK-476 `GET /api/users` віддає лише CUSTOMER, а службові акаунти живуть
@@ -3665,36 +3666,41 @@ export const dict = {
     // цього не знайшов власник на прогоні 2026-08-27.
     intro:
       "Тут лише покупці. Службові акаунти — адміністратори й менеджери — живуть у розділі «Співробітники»: там же їх створюють і там же видають права.",
-    searchPlaceholder: "Пошук за поштою або іменем…",
+    // Лише те, що шукає `GET /api/users`: пошта, ім'я, прізвище. Телефон — ні
+    // (хвіст API), тож плейсхолдер його не обіцяє.
+    searchPlaceholder: "Ім'я, прізвище або пошта…",
     searchAria: "Пошук клієнтів",
     roleCustomer: "Клієнт",
     roleAdmin: "Адміністратор",
     filterStatusAria: "Фільтр за статусом",
-    allStatuses: "Усі статуси",
     loadError: "Не вдалося завантажити клієнтів. Спробуйте ще раз.",
-    empty: "Немає клієнтів за поточними фільтрами.",
-    colEmail: "Електронна пошта",
-    colName: "Ім'я",
+    // `allStatuses`, `empty`, `colEmail`, `colName` stood here until wave 198:
+    // the status select became quick views + «Фільтри», the one empty sentence
+    // became two (К3), and name + email share the «Клієнт» column (К1).
     colStatus: "Статус",
-    colJoined: "Дата реєстрації",
-    back: "← Назад до клієнтів",
-    accountStatus: "Статус акаунта",
-    accountActive: "Акаунт активний, користувач може входити.",
-    accountInactive: "Акаунт деактивовано, користувач не може входити.",
+    colJoined: "Зареєстровано",
+    back: "← Клієнти",
+    accountStatus: "Доступ до акаунта",
+    accountActive:
+      "Акаунт активний, клієнт може входити й замовляти зі своїм кабінетом.",
+    accountInactive:
+      "Акаунт деактивовано: клієнт не може увійти в кабінет на сайті. Замовлення, відгуки й нотатки лишилися.",
     accountMetadata: "Метадані акаунта",
     fieldEmail: "Електронна пошта",
-    fieldFullName: "Повне ім'я",
+    // `fieldFullName` and `fieldMemberSince` («Учасник з», which repeated
+    // «Створено») left with the profile grid — the header says both (К4).
     fieldPhone: "Телефон",
-    fieldMemberSince: "Учасник з",
     fieldUserId: "ID користувача",
     fieldCreated: "Створено",
     fieldUpdated: "Останнє оновлення",
-    loadOneError: "Не вдалося завантажити користувача. Спробуйте ще раз.",
+    loadOneError: "Не вдалося завантажити клієнта. Спробуйте ще раз.",
     // --- Customer card (TASK-252) ---------------------------------------------
-    cardLtv: "Сума покупок (LTV)",
-    cardOrderCount: "Кількість замовлень",
-    cardRecentOrders: "Останні замовлення",
-    cardViewAllOrders: "Переглянути всі",
+    // «оплачені», а не «доставлені», як на артборді: `ltv` з API — сума
+    // оплачених замовлень (PAID). Підпис каже те, що рахує сервер.
+    cardLtv: "Сума покупок · оплачені",
+    cardOrderCount: "Замовлень",
+    cardRecentOrders: "Замовлення",
+    cardViewAllOrders: "Усі замовлення клієнта →",
     cardNoOrders: "Замовлень ще немає.",
     cardReviews: "Відгуки",
     cardNoReviews: "Відгуків ще немає.",
@@ -3759,7 +3765,7 @@ export const dict = {
 
     deleteHeading: "Видалити акаунт",
     deleteDescription: (email: string) =>
-      `Акаунт ${email} буде позначено як видалений: користувач більше не зможе увійти, але його замовлення та історія залишаться. Дію не можна скасувати з панелі.`,
+      `Акаунт ${email} буде позначено як видалений: клієнт більше не зможе увійти, але його замовлення та історія залишаться. Дію не можна скасувати з панелі.`,
     deleteConfirm: "Так, видалити акаунт",
     deleteToastDone: "Акаунт видалено",
     deleteToastFailed: "Не вдалося видалити акаунт",
@@ -3770,7 +3776,7 @@ export const dict = {
     // to say the three things the operator would otherwise assume wrongly: the
     // new address is NOT confirmed by this, the customer is signed out
     // everywhere, and the reason is written into the journal.
-    changeEmailOpen: "Змінити email",
+    changeEmailOpen: "Змінити email для входу…",
     changeEmailHeading: "Змінити email для входу",
     changeEmailDescription: (email: string) =>
       `Зараз клієнт входить з адресою ${email}. Нова адреса стане адресою для входу одразу, але НЕ буде підтвердженою: на неї піде лист із посиланням. Усі сеанси клієнта буде завершено.`,
@@ -3835,7 +3841,55 @@ export const dict = {
 
     lockoutHeading: "Блокування входу",
     lockoutUnavailable:
-      "API поки не віддає стан блокування (`lockedUntil`, `failedLoginAttempts`), тож показати, чому користувач не може увійти, неможливо. Якщо працівник скаржиться на вхід — скиньте йому пароль: це знімає тимчасове блокування після невдалих спроб.",
+      "Після кількох невдалих спроб входу акаунт тимчасово блокується й розблоковується сам.",
+
+    // --- Wave 198, UsersProposal К1–К8 (TASK-1058) ----------------------------
+    viewAll: "Усі",
+    viewActive: "Активні",
+    viewInactive: "Неактивні",
+    itemForms: ["клієнт", "клієнти", "клієнтів"],
+    summaryFound: "Знайдено",
+    sortCreatedDesc: "зареєстровано, нові зверху",
+    sortCreatedAsc: "зареєстровано, старі зверху",
+    sortEmailAsc: "пошта, А→Я",
+    sortEmailDesc: "пошта, Я→А",
+    viewDefault: "Стандартний",
+    filterStatus: "Статус",
+    filtersApply: "Показати клієнтів",
+    chipStatus: (label: string) => `Статус: ${label}`,
+    colCustomer: "Клієнт",
+    colPhone: "Телефон",
+    rowOpen: "Відкрити",
+    emptyAllTitle: "Клієнтів ще немає",
+    emptyAllBody:
+      "Вони з'являться тут після першої реєстрації на сайті. Гості, що замовляють без реєстрації, у цьому списку не показуються — їх видно в замовленнях.",
+    emptyStatusTitle: (active: boolean) =>
+      active ? "Немає активних клієнтів" : "Немає неактивних клієнтів",
+    emptyStatusBody: (label: string) =>
+      `За фільтром «Статус: ${label}» нікого не знайдено.`,
+    emptyReset: "Скинути фільтри",
+    customerSince: (date: string) => `клієнт з ${date}`,
+    cardReviewsCount: "Відгуків",
+    cardLastOrder: "Останнє замовлення",
+    metaId: "ID",
+    copyId: "Скопіювати",
+    copyIdDone: "Скопійовано",
+    copyIdFailed: "Не вдалося скопіювати — виділіть ID вручну",
+    copyIdAria: "Скопіювати ID клієнта",
+    deleteOpen: "Видалити акаунт…",
+    // `lockedUntil` / `failedLoginAttempts` віддає API — тож панель каже, чи
+    // заблоковано вхід просто зараз, а не «поки не показує», як на артборді.
+    lockoutLockedUntil: (dateTime: string) =>
+      `Зараз вхід заблоковано до ${dateTime}.`,
+    lockoutNone: "Зараз вхід не заблоковано.",
+    lockoutAttempts: (count: number) => `Невдалих спроб поспіль: ${count}`,
+    // «Роль співробітника» з картки клієнта прибрано (рішення власника
+    // 2026-09-30): доступ до панелі видають лише в «Співробітниках».
+    staffAccessHintBefore:
+      "Потрібно дати цій людині доступ до панелі? Додайте її в розділі ",
+    staffAccessHintLink: "«Співробітники»",
+    staffAccessHintAfter: " за цією поштою — акаунт і замовлення лишаться.",
+    colOrderNumber: "№",
   },
 
   // The `permissionsMatrix` block lived here until TASK-475. It was the copy for
@@ -4406,31 +4460,81 @@ export const dict = {
   subscribers: {
     metaTitle: "Підписники — Адмін",
     heading: "Підписники розсилки",
+    // `GET /api/newsletter/admin` шукає лише за email — ім'я клієнта й
+    // пристрій з артборда ПД1 є хвостом API, тож плейсхолдер їх не обіцяє.
     searchPlaceholder: "Пошук за email…",
     searchAria: "Пошук підписників",
     filterStatusAria: "Фільтр за статусом",
-    allStatuses: "Усі статуси",
     statusSubscribed: "Підписаний",
-    statusUnsubscribed: "Відписаний",
+    statusUnsubscribed: "Відписався",
     loadError: "Не вдалося завантажити підписників. Спробуйте ще раз.",
-    empty: "Немає підписників за поточними фільтрами.",
     colEmail: "Email",
     colStatus: "Статус",
     colSource: "Джерело",
-    colDate: "Дата підписки",
+    colDate: "Підписався",
     sourceEmpty: "—",
-    exportCsv: "Експорт CSV",
-    exporting: "Експортуємо…",
     exportError: "Не вдалося експортувати CSV. Спробуйте ще раз.",
+
+    // --- Wave 198, SubscribersProposal ПД1–ПД9 (TASK-1063) --------------------
+    // «…і хто чекає на товар» з артборда — лише з вкладкою «Чекають на товар»
+    // (TASK-1066); до того підпис каже те, що на екрані є.
+    intro: "Хто погодився отримувати листи магазину.",
+    viewSubscribed: "Підписані",
+    viewUnsubscribed: "Відписані",
+    viewAll: "Усі",
+    itemForms: ["підписник", "підписники", "підписників"],
+    summaryFound: "Знайдено",
+    summaryBreakdown: (subscribed: number, unsubscribed: number) =>
+      `підписаних ${subscribed}, відписались ${unsubscribed}`,
+    sortCreatedDesc: "підписався, нові зверху",
+    sortCreatedAsc: "підписався, старі зверху",
+    sortEmailAsc: "email, А→Я",
+    sortEmailDesc: "email, Я→А",
+    sortStatusAsc: "статус, спершу підписані",
+    sortStatusDesc: "статус, спершу відписані",
+    viewDefault: "Стандартний",
+    filterStatus: "Статус",
+    filtersApply: "Показати підписників",
+    chipStatus: (label: string) => `Статус: ${label}`,
+    chipSearch: (query: string) => `Пошук: «${query}»`,
+    colUnsubscribed: "Відписався",
+    // Ключі `source` з вітрини (`NewsletterSubscribeForm source=…`) людською
+    // мовою; невідомий ключ показуємо як є, а не ховаємо.
+    sourceHome: "Головна",
+    sourcePromo: "Сторінка акції",
+    sourceBlog: "Блог",
+    sourceFooter: "Футер сайту",
+    emptyAllTitle: "Підписників ще немає",
+    emptyAllBody:
+      "Вони з'являться, коли відвідувачі підпишуться на розсилку — на головній сторінці, на сторінці акції або в блозі.",
+    emptySearchTitle: (query: string) => `Нікого за запитом «${query}»`,
+    emptySearchBody: (query: string) =>
+      `Немає адрес із «${query}». Перевірте написання або скиньте пошук.`,
+    emptySearchReset: "Скинути пошук",
+    emptyStatusTitle: (label: string) =>
+      `Немає підписників зі статусом «${label}»`,
+    emptyStatusBody: "Спробуйте інший вид або скиньте фільтр.",
+    emptyReset: "Скинути фільтри",
+    exportFootnote: "Разом із датою й джерелом згоди — на випадок перевірки.",
+    rowOpen: "Картка підписника",
+    cardSince: (date: string) => `з ${date}`,
+    cardSection: "Підписка",
+    cardUpdated: "Остання зміна",
   },
 
   userBan: {
-    toastDeactivated: "Користувача деактивовано.",
-    toastActivated: "Користувача активовано.",
-    toastFailed: "Не вдалося оновити статус користувача.",
+    toastDeactivated: "Акаунт клієнта деактивовано.",
+    toastActivated: "Акаунт клієнта активовано.",
+    toastFailed: "Не вдалося оновити статус клієнта.",
     cannotSelf: "Неможливо деактивувати власний акаунт.",
-    deactivateUserAria: "Деактивувати користувача",
-    activateUserAria: "Активувати користувача",
+    deactivateUserAria: "Деактивувати клієнта",
+    activateUserAria: "Активувати клієнта",
+    // Wave 198, UsersProposal К6 — деактивація лише через AlertDialog.
+    deactivateOpen: "Деактивувати…",
+    confirmTitle: "Деактивувати акаунт клієнта?",
+    confirmDescription: (who: string) =>
+      `${who} більше не зможе увійти в кабінет на сайті. Його замовлення, відгуки й нотатки лишаться. Повернути доступ можна будь-коли кнопкою «Активувати».`,
+    confirmAction: "Деактивувати",
   },
 
   statusToggle: {

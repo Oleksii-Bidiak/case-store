@@ -4,6 +4,10 @@ import { AdminSubscriberTable, AdminSubscriberTableSkeleton } from "@/widgets";
 import { dict } from "@/shared/config";
 
 /**
+ * «Підписники розсилки» (wave 198, SubscribersProposal, TASK-1063). The
+ * registry draws the header itself: its «Експорт ▾» exports what the list's
+ * own filters found, so the two live in one component.
+ *
  * TASK-405: this table keeps its view state (`?status=`, `?page=`, `?search=`,
  * sort) in the query string. A statically prerendered route serves one and the
  * same prerender for every query string, so a hard load of a filtered URL
@@ -19,14 +23,8 @@ export const metadata: Metadata = {
 
 export default function SubscribersPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-        {dict.subscribers.heading}
-      </h2>
-
-      <Suspense fallback={<AdminSubscriberTableSkeleton />}>
-        <AdminSubscriberTable />
-      </Suspense>
-    </div>
+    <Suspense fallback={<AdminSubscriberTableSkeleton />}>
+      <AdminSubscriberTable />
+    </Suspense>
   );
 }
