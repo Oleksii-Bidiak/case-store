@@ -29,7 +29,6 @@ import {
   ProductAddonDeltaPanel,
   type StagedAddon,
 } from "@/features/product-addon-delta-panel";
-import { Separator } from "@/shared/ui";
 import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import { apiErrorMessage } from "@/shared/lib";
@@ -103,6 +102,8 @@ export function CreateProductView() {
   const [stagedAddons, setStagedAddons] = useState<StagedAddon[]>([]);
 
   const [replay, setReplay] = useState<ReplayState | null>(null);
+  // Bumped by «Скасувати зміни» to re-mount the staged editors empty.
+  const [discardKey, setDiscardKey] = useState(0);
   const isSaving = replay !== null;
 
   const create = useProductControllerCreate();
@@ -222,11 +223,11 @@ export function CreateProductView() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <Link
           href="/products"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="self-start text-sm text-muted-foreground hover:text-foreground"
         >
           {dict.products.back}
         </Link>
@@ -281,50 +282,54 @@ export function CreateProductView() {
         </section>
       )}
 
-      <div className="flex max-w-2xl flex-col gap-6">
-        <ProductForm
-          onSubmit={handleSubmit}
-          isPending={isSaving}
-          submitLabel={dict.products.createSubmit}
-          renderSpecsSection={(categoryId) => (
-            <>
-              <Separator />
-              {/* No productId: the editor stages the payload instead of
-                  saving it, but renders the SAME inputs the edit page does —
-                  its definition query is keyed by category, not by product. */}
-              <ProductSpecsEditor
-                categoryId={categoryId}
-                onStage={setStagedSpecs}
-              />
-            </>
-          )}
-        />
-
-        <Separator />
-
-        <section className="flex flex-col gap-3">
-          <h3 className="text-lg font-semibold text-foreground">
-            {dict.products.imagesHeading}
-          </h3>
+      {/* The same sectioned layout as the edit page (wave 198, TASK-1050):
+          every area is staged here and written by «Створити товар», so all of
+          them count as unsaved until then. «Скасувати зміни» clears the staged
+          areas too — they hold their picks internally, so they are re-mounted
+          (focus is on the bar's button at that moment, not in them). */}
+      <ProductForm
+        onSubmit={handleSubmit}
+        isPending={isSaving}
+        submitLabel={dict.products.createSubmit}
+        externalDirty={{
+          specs: stagedSpecs.length > 0,
+          photos: stagedImages.length > 0,
+          compat: stagedCompat.length > 0,
+          addons: stagedAddons.length > 0,
+        }}
+        onDiscard={() => {
+          setStagedImages([]);
+          setStagedSpecs([]);
+          setStagedCompat([]);
+          setStagedAddons([]);
+          setDiscardKey((key) => key + 1);
+        }}
+        renderSpecsSection={(categoryId) => (
+          // No productId: the editor stages the payload instead of saving
+          // it, but renders the SAME inputs the edit page does.
+          <ProductSpecsEditor
+            key={discardKey}
+            embedded
+            categoryId={categoryId}
+            onStage={setStagedSpecs}
+          />
+        )}
+        photosSection={
           <ProductImageManager value={stagedImages} onStage={setStagedImages} />
-        </section>
-
-        <Separator />
-
-        <ProductAddonDeltaPanel
-          value={stagedAddons}
-          onStage={setStagedAddons}
-        />
-
-        <Separator />
-
-        <section className="flex flex-col gap-3">
-          <h3 className="text-lg font-semibold text-foreground">
-            {dict.productCompat.title}
-          </h3>
-          <ProductDeviceCompatManager onStage={setStagedCompat} />
-        </section>
-      </div>
+        }
+        compatSection={
+          <ProductDeviceCompatManager
+            key={discardKey}
+            onStage={setStagedCompat}
+          />
+        }
+        addonsSection={
+          <ProductAddonDeltaPanel
+            value={stagedAddons}
+            onStage={setStagedAddons}
+          />
+        }
+      />
     </div>
   );
 }

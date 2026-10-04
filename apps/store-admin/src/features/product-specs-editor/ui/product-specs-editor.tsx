@@ -1,11 +1,19 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
+import type { SectionSaveController } from "@/shared/lib/section-save";
+import { cn } from "@/shared/lib/utils";
 import {
   Button,
-  Checkbox,
   Input,
   Label,
   Select,
@@ -48,6 +56,16 @@ interface ProductSpecsEditorProps {
    * an effect and not a callback on the inputs.
    */
   onStage?: (specs: ProductSpecValueDto[]) => void;
+  /**
+   * Wave 198 (TASK-1050): the page's one «Зберегти» drives this section. When
+   * given, the editor renders no save button of its own and exposes
+   * `save()` / `discard()` here instead.
+   */
+  controllerRef?: Ref<SectionSaveController>;
+  /** Fired whenever the editor starts or stops differing from the saved specs. */
+  onDirtyChange?: (dirty: boolean) => void;
+  /** Inside a form section card that already carries the title. */
+  embedded?: boolean;
 }
 
 const NO_SPECS: ProductSpecEntity[] = [];
@@ -71,6 +89,9 @@ export function ProductSpecsEditor({
   categoryId,
   initialSpecs = NO_SPECS,
   onStage,
+  controllerRef,
+  onDirtyChange,
+  embedded = false,
 }: ProductSpecsEditorProps) {
   const queryClient = useQueryClient();
   const definitionsQuery = useAttributeDefinitionControllerFindEffective(
@@ -142,6 +163,58 @@ export function ProductSpecsEditor({
     onStage(specs);
   }, [specs, onStage]);
 
+  /**
+   * Differs from what the server holds: a value changed, or a saved spec whose
+   * key the (new) category no longer defines — saving would drop it. Judged
+   * only once the definitions are in, so a loading list is never "dirty".
+   */
+  const isDirty = useMemo(() => {
+    if (!productId || definitions.length === 0) return false;
+    const saved = new Map(initialSpecs.map((spec) => [spec.key, spec.value]));
+    const keys = new Set(definitions.map((def) => def.key));
+    return (
+      definitions.some(
+        (def) =>
+          (values[def.key] ?? "").trim() !== (saved.get(def.key) ?? "").trim(),
+      ) || initialSpecs.some((spec) => !keys.has(spec.key))
+    );
+  }, [definitions, initialSpecs, productId, values]);
+
+  const lastDirtyRef = useRef(false);
+  useEffect(() => {
+    if (lastDirtyRef.current === isDirty) return;
+    lastDirtyRef.current = isDirty;
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  // The controller reads the LATEST payload at call time (it is called from an
+  // async save chain that outlives renders), hence the refs.
+  const saveRef = useRef<() => Promise<void>>(async () => {});
+  const discardRef = useRef<() => void>(() => {});
+  const mutateAsync = mutation.mutateAsync;
+  useEffect(() => {
+    saveRef.current = async () => {
+      if (!productId) return;
+      await mutateAsync({ id: productId, data: { specs } });
+      await queryClient.invalidateQueries({
+        queryKey: getProductControllerFindByIdQueryKey(productId),
+      });
+    };
+    discardRef.current = () => {
+      const seeded: Record<string, string> = {};
+      for (const spec of initialSpecs) seeded[spec.key] = spec.value;
+      setValues(seeded);
+    };
+  }, [initialSpecs, mutateAsync, productId, queryClient, specs]);
+  useImperativeHandle(
+    controllerRef,
+    () => ({
+      save: () => saveRef.current(),
+      discard: () => discardRef.current(),
+    }),
+    [],
+  );
+
   const handleSave = () => {
     if (!productId) return;
     mutation.mutate(
@@ -164,10 +237,12 @@ export function ProductSpecsEditor({
 
   return (
     <section className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1">
-        <h3 className="text-lg font-semibold text-foreground">{d.heading}</h3>
-        <p className="text-sm text-muted-foreground">{d.description}</p>
-      </div>
+      {embedded ? null : (
+        <div className="flex flex-col gap-1">
+          <h3 className="text-lg font-semibold text-foreground">{d.heading}</h3>
+          <p className="text-sm text-muted-foreground">{d.description}</p>
+        </div>
+      )}
 
       {definitionsQuery.isError ? (
         <p role="alert" className="text-sm text-destructive">
@@ -177,7 +252,7 @@ export function ProductSpecsEditor({
         <p className="text-sm text-muted-foreground">{d.empty}</p>
       ) : (
         <>
-          <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {definitions.map((definition) => (
               <SpecField
                 key={definition.id}
@@ -187,7 +262,7 @@ export function ProductSpecsEditor({
               />
             ))}
           </div>
-          {productId ? (
+          {controllerRef ? null : productId ? (
             <div>
               <Button
                 type="button"
@@ -223,16 +298,12 @@ function SpecField({ definition, value, onChange }: SpecFieldProps) {
   return (
     <div className="flex flex-col gap-1.5">
       {definition.type === AttributeDefinitionEntityType.BOOLEAN ? (
-        <div className="flex items-center gap-2">
-          <Checkbox
-            id={fieldId}
-            checked={value === "true"}
-            onCheckedChange={(checked) =>
-              onChange(checked === true ? "true" : "false")
-            }
-          />
-          <Label htmlFor={fieldId}>{labelText}</Label>
-        </div>
+        <BooleanSegments
+          id={fieldId}
+          label={labelText}
+          value={value}
+          onChange={onChange}
+        />
       ) : (
         <>
           <Label htmlFor={fieldId}>{labelText}</Label>
@@ -269,5 +340,60 @@ function SpecField({ definition, value, onChange }: SpecFieldProps) {
         </>
       )}
     </div>
+  );
+}
+
+const BOOLEAN_SEGMENTS = [
+  { value: "true", label: d.booleanYes },
+  { value: "false", label: d.booleanNo },
+  { value: "", label: d.booleanUnset },
+] as const;
+
+/**
+ * «Так | Ні | Не вказано» (wave 198, TASK-1050). A checkbox could not say
+ * "not specified": once touched it wrote «false», which the storefront then
+ * printed as a fact. «Не вказано» writes nothing — the spec leaves the payload.
+ */
+function BooleanSegments({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const current = value === "true" || value === "false" ? value : "";
+  return (
+    <>
+      <span id={id} className="text-sm leading-none font-medium">
+        {label}
+      </span>
+      <div
+        role="group"
+        aria-labelledby={id}
+        className="inline-flex self-start rounded-md border bg-background p-0.5"
+      >
+        {BOOLEAN_SEGMENTS.map((segment) => {
+          const on = current === segment.value;
+          return (
+            <button
+              key={segment.value || "unset"}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChange(segment.value)}
+              className={cn(
+                "inline-flex h-8 items-center rounded-sm px-3 text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+                on && "bg-accent font-medium text-foreground",
+              )}
+            >
+              {segment.label}
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }

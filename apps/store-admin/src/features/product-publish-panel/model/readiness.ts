@@ -100,3 +100,29 @@ export function buildReadinessChecks(input: ReadinessInput): ReadinessCheck[] {
 export function canPublish(checks: ReadinessCheck[]): boolean {
   return checks.every((check) => !check.blocking || check.done);
 }
+
+/**
+ * The product-form section a check is fixed in (wave 198, ProductFormProposal
+ * Ф1) — keys are the form's section ids, so the page can paint a «не
+ * заповнено» dot next to the section that needs work.
+ */
+export const READINESS_SECTION: Record<string, string> = {
+  name: "main",
+  category: "main",
+  price: "price",
+  stock: "price",
+  photo: "photos",
+  description: "description",
+  specs: "specs",
+  compat: "compat",
+};
+
+/** Section ids with at least one unmet check, each once, in check order. */
+export function missingSections(checks: ReadinessCheck[]): string[] {
+  const out: string[] = [];
+  for (const check of checks) {
+    const section = READINESS_SECTION[check.key];
+    if (!check.done && section && !out.includes(section)) out.push(section);
+  }
+  return out;
+}

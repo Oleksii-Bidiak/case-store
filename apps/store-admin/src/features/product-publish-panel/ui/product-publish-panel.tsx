@@ -107,60 +107,53 @@ export function ProductPublishPanel({
   return (
     <section
       aria-labelledby="publish-heading"
-      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-5 shadow-card"
+      className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-card"
     >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-col gap-1">
-          <h3
-            id="publish-heading"
-            className="text-lg font-semibold text-foreground"
-          >
-            {dict.productPublish.heading}
-          </h3>
-          <Badge
-            variant={isActive ? "default" : "secondary"}
-            className="self-start"
-          >
-            {isActive
-              ? dict.productPublish.liveBadge
-              : dict.productPublish.draftBadge}
-          </Badge>
-        </div>
-
-        <Button
-          type="button"
-          variant={isActive ? "outline" : "default"}
-          onClick={handleToggle}
-          // A live product can ALWAYS be pulled down — the checklist only ever
-          // gates going live, never coming back off sale.
-          disabled={isPending || (!isActive && !ready)}
+      <div className="flex items-center justify-between gap-2">
+        <h3
+          id="publish-heading"
+          className="text-sm font-semibold text-foreground"
         >
-          {isActive ? (
-            <EyeOff className="size-4" />
-          ) : (
-            <Eye className="size-4" />
-          )}
+          {dict.productPublish.heading}
+        </h3>
+        <Badge variant={isActive ? "default" : "secondary"}>
           {isActive
-            ? dict.productPublish.unpublish
-            : dict.productPublish.publish}
-        </Button>
+            ? dict.productPublish.liveBadge
+            : dict.productPublish.draftBadge}
+        </Badge>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <p className="text-sm text-muted-foreground">
-          {ready
-            ? dict.productPublish.readyHint
-            : dict.productPublish.blockersHint}
-        </p>
-        <ul className="flex flex-col gap-1.5">
-          {checks.map((check) => (
-            <ChecklistRow key={check.key} check={check} />
-          ))}
-        </ul>
+      {ready ? null : (
         <p className="text-xs text-muted-foreground">
-          {dict.productPublish.advisoryNote}
+          {dict.productPublish.blockersHint}
         </p>
-      </div>
+      )}
+      <ul className="flex flex-col gap-1.5">
+        {checks.map((check) => (
+          <ChecklistRow key={check.key} check={check} />
+        ))}
+      </ul>
+      {ready && !isActive ? (
+        <p className="text-xs text-muted-foreground">
+          {dict.productPublish.readyHint}
+        </p>
+      ) : null}
+
+      <Button
+        type="button"
+        variant={isActive ? "outline" : "default"}
+        onClick={handleToggle}
+        // A live product can ALWAYS be pulled down — the checklist only ever
+        // gates going live, never coming back off sale.
+        disabled={isPending || (!isActive && !ready)}
+        className="w-full"
+      >
+        {isActive ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+        {isActive ? dict.productPublish.unpublish : dict.productPublish.publish}
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        {dict.productPublish.advisoryNote}
+      </p>
     </section>
   );
 }
@@ -177,14 +170,14 @@ function ChecklistRow({ check }: { check: ReadinessCheck }) {
     <li
       data-testid={`publish-check-${check.key}`}
       data-done={check.done ? "true" : "false"}
-      className="flex items-center gap-2 text-sm"
+      className="flex items-start gap-2 text-xs"
     >
-      <Icon className={`size-4 shrink-0 ${tone}`} aria-hidden="true" />
+      <Icon className={`mt-px size-3.5 shrink-0 ${tone}`} aria-hidden="true" />
       <span className={check.done ? "text-foreground" : tone}>
         {check.label}
       </span>
       {check.blocking && !check.done && (
-        <span className="text-xs text-destructive">
+        <span className="text-destructive">
           {dict.productPublish.requiredMark}
         </span>
       )}

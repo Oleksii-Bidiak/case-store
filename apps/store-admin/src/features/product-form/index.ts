@@ -1,4 +1,10 @@
-export { ProductForm } from "./ui/product-form";
+export {
+  ProductForm,
+  productFormSectionLabel,
+  type ProductFormSectionId,
+  type ProductFormSubmitContext,
+  type ProductFormSubmitResult,
+} from "./ui/product-form";
 export {
   productSchema,
   productFormValuesToDto,

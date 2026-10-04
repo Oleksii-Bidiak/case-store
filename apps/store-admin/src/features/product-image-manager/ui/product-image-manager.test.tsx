@@ -326,3 +326,84 @@ describe("ProductImageManager — a second drop while the first is uploading", (
     ).toBeInTheDocument();
   });
 });
+
+describe("ProductImageManager — «Обкладинка» is the first photo (TASK-1050, TASK-1104)", () => {
+  const img = (id: string, sortOrder: number, isPrimary: boolean) => ({
+    id,
+    url: `https://cdn.example.com/${id}.jpg`,
+    alt: null,
+    blurDataUrl: null,
+    sortOrder,
+    isPrimary,
+  });
+
+  function stubThree() {
+    const bodies: unknown[] = [];
+    server.use(
+      http.get(`*/api/products/${PRODUCT_ID}/images`, () =>
+        HttpResponse.json({
+          data: [img("a", 0, true), img("b", 1, false), img("c", 2, false)],
+        }),
+      ),
+      http.patch(
+        `*/api/products/${PRODUCT_ID}/images/reorder`,
+        async ({ request }) => {
+          bodies.push(await request.json());
+          return new HttpResponse(null, { status: 204 });
+        },
+      ),
+    );
+    return bodies;
+  }
+
+  it("marks the cover once and offers «Зробити обкладинкою» on the others", async () => {
+    stubThree();
+    renderWithProviders(<ProductImageManager productId={PRODUCT_ID} />);
+
+    expect(await screen.findAllByText(dict.productImages.primary)).toHaveLength(
+      1,
+    );
+    expect(
+      screen.getAllByRole("button", { name: dict.productImages.setPrimary }),
+    ).toHaveLength(2);
+    expect(screen.getByText(dict.productImages.coverHint)).toBeInTheDocument();
+  });
+
+  it("«Зробити обкладинкою» moves the photo to the front and makes it the one primary", async () => {
+    const bodies = stubThree();
+    renderWithProviders(<ProductImageManager productId={PRODUCT_ID} />);
+    await screen.findAllByText(dict.productImages.primary);
+
+    await userEvent.click(
+      screen.getAllByRole("button", { name: dict.productImages.setPrimary })[1],
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({
+      items: [
+        { id: "c", sortOrder: 0, isPrimary: true },
+        { id: "a", sortOrder: 1, isPrimary: false },
+        { id: "b", sortOrder: 2, isPrimary: false },
+      ],
+    });
+  });
+
+  it("moving a photo to the front makes it the cover too — never zero, never two", async () => {
+    const bodies = stubThree();
+    renderWithProviders(<ProductImageManager productId={PRODUCT_ID} />);
+    await screen.findAllByText(dict.productImages.primary);
+
+    await userEvent.click(
+      screen.getAllByRole("button", { name: dict.productImages.moveLeft })[1],
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toEqual({
+      items: [
+        { id: "b", sortOrder: 0, isPrimary: true },
+        { id: "a", sortOrder: 1, isPrimary: false },
+        { id: "c", sortOrder: 2, isPrimary: false },
+      ],
+    });
+  });
+});
