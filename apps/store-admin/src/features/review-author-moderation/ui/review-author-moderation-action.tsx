@@ -27,6 +27,9 @@ import { dict } from "@/shared/config";
 
 const d = dict.reviews;
 
+/** Which author action a row offers — see {@link authorModerationMode}. */
+export type AuthorModerationMode = "hide" | "restore";
+
 interface ReviewAuthorModerationActionProps {
   /** The account whose whole contribution is at stake. */
   userId: string;
@@ -41,18 +44,8 @@ interface ReviewAuthorModerationActionProps {
 }
 
 /**
- * Withdraw (or restore) one account's entire review contribution — TASK-446.
+ * Which action a row offers, from `hiddenReason` (TASK-1004).
  *
- * ── Why it asks first ────────────────────────────────────────────────────────
- * This is the only action on the moderation screen whose blast radius is not the
- * row it sits in. `POST …/authors/:userId/hide` stamps `hiddenAt` and clears
- * `ratingVisible` on EVERY review that account ever wrote, on every product, in
- * one request. The button lives in a row that is about one product and is
- * surrounded by controls that act on one review, so the confirm copy has to say
- * «ВСІ» and «на всіх товарах» in as many words — the surrounding context is
- * actively misleading about what is about to happen.
- *
- * ── Which action a row offers, from `hiddenReason` (TASK-1004) ──────────────
  * `AdminReviewEntity` carries `hiddenAt` and `hiddenReason` since TASK-596/599,
  * so the choice is read, not inferred. It used to be inferred from
  * `ratingVisible`, which folds a moderator's hide and an unconfirmed email into
@@ -70,31 +63,62 @@ interface ReviewAuthorModerationActionProps {
  *     wrong hand (`ReviewService.unhideAuthor` only lifts what its own reason
  *     put down — an un-ban restores a ban, nothing restores a deletion), and
  *     «приховати» would stack a moderator verdict under a hold the operator
- *     cannot see from this row. The badge beside the rating already names the
- *     reason; the remedy lives on the customer card, not here.
+ *     cannot see from this row. The badge in the row already names the reason;
+ *     the remedy lives on the customer card, not here.
+ *
+ * Exported since wave 198 (TASK-1057): the action now lives in the row's «⋯»
+ * menu, and the row has to decide which item to draw without rendering this
+ * feature's button. Loose `== null`: an absent field reads as "not withdrawn",
+ * like the API's null.
  */
-export function ReviewAuthorModerationAction({
+export function authorModerationMode(
+  hiddenReason: ReviewHiddenReason | null | undefined,
+): AuthorModerationMode | null {
+  if (hiddenReason == null) return "hide";
+  if (hiddenReason === ReviewHiddenReason.MODERATOR) return "restore";
+  return null;
+}
+
+interface ReviewAuthorModerationDialogProps extends ReviewAuthorModerationActionProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+/**
+ * The confirm for withdrawing (or restoring) one account's entire review
+ * contribution — TASK-446 — controlled by its caller (wave 198: the row's «⋯»
+ * menu opens it, ReviewsProposal В7).
+ *
+ * ── Why it asks first ────────────────────────────────────────────────────────
+ * This is the only action on the moderation screen whose blast radius is not the
+ * row it sits in. `POST …/authors/:userId/hide` stamps `hiddenAt` and clears
+ * `ratingVisible` on EVERY review that account ever wrote, on every product, in
+ * one request. The item lives in a row that is about one product and is
+ * surrounded by controls that act on one review, so the confirm copy has to say
+ * «ВСІ» and «на всіх товарах» in as many words — the surrounding context is
+ * actively misleading about what is about to happen.
+ *
+ * Renders nothing without `reviews:moderate` or for a row the account itself
+ * holds (BAN / DELETED) — the same gate the menu item is drawn under.
+ */
+export function ReviewAuthorModerationDialog({
   userId,
   author,
   hiddenReason,
-}: ReviewAuthorModerationActionProps) {
+  open,
+  onOpenChange,
+}: ReviewAuthorModerationDialogProps) {
   const queryClient = useQueryClient();
   const { can } = useAuth();
-  const [isOpen, setOpen] = useState(false);
   const hide = useAdminReviewControllerHideAuthor();
   const unhide = useAdminReviewControllerUnhideAuthor();
 
-  if (!can(PERM.reviewsModerate)) {
+  const mode = authorModerationMode(hiddenReason);
+  if (!can(PERM.reviewsModerate) || mode === null) {
     return null;
   }
 
-  // Held by the account itself (ban / deletion) — see the header note. Loose
-  // `!= null`: an absent field reads as "not withdrawn", like the API's null.
-  if (hiddenReason != null && hiddenReason !== ReviewHiddenReason.MODERATOR) {
-    return null;
-  }
-
-  const isRestore = hiddenReason === ReviewHiddenReason.MODERATOR;
+  const isRestore = mode === "restore";
   const mutation = isRestore ? unhide : hide;
 
   const handleConfirm = () => {
@@ -119,7 +143,7 @@ export function ReviewAuthorModerationAction({
               ? d.unhideAuthorSuccess(count)
               : d.hideAuthorSuccess(count),
           );
-          setOpen(false);
+          onOpenChange(false);
         },
         onError: (error) =>
           toast.error(
@@ -129,6 +153,66 @@ export function ReviewAuthorModerationAction({
       },
     );
   };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            {isRestore ? d.unhideAuthorTitle : d.hideAuthorTitle}
+          </DialogTitle>
+          <DialogDescription>
+            {isRestore
+              ? d.unhideAuthorDescription(author)
+              : d.hideAuthorDescription(author)}
+          </DialogDescription>
+        </DialogHeader>
+
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={mutation.isPending}
+          >
+            {dict.common.cancel}
+          </Button>
+          <Button
+            type="button"
+            variant={isRestore ? "default" : "destructive"}
+            onClick={handleConfirm}
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending && (
+              <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+            )}
+            {isRestore ? d.unhideAuthorConfirm : d.hideAuthorConfirm}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * The standalone button + its confirm, for a screen that has no row menu to put
+ * the action into. The moderation queue uses {@link ReviewAuthorModerationDialog}
+ * from its «⋯» menu instead (wave 198).
+ */
+export function ReviewAuthorModerationAction({
+  userId,
+  author,
+  hiddenReason,
+}: ReviewAuthorModerationActionProps) {
+  const { can } = useAuth();
+  const [isOpen, setOpen] = useState(false);
+
+  const mode = authorModerationMode(hiddenReason);
+  if (!can(PERM.reviewsModerate) || mode === null) {
+    return null;
+  }
+
+  const isRestore = mode === "restore";
 
   return (
     <>
@@ -144,42 +228,13 @@ export function ReviewAuthorModerationAction({
         {isRestore ? d.unhideAuthorAction : d.hideAuthorAction}
       </Button>
 
-      <Dialog open={isOpen} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {isRestore ? d.unhideAuthorTitle : d.hideAuthorTitle}
-            </DialogTitle>
-            <DialogDescription>
-              {isRestore
-                ? d.unhideAuthorDescription(author)
-                : d.hideAuthorDescription(author)}
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setOpen(false)}
-              disabled={mutation.isPending}
-            >
-              {dict.common.cancel}
-            </Button>
-            <Button
-              type="button"
-              variant={isRestore ? "default" : "destructive"}
-              onClick={handleConfirm}
-              disabled={mutation.isPending}
-            >
-              {mutation.isPending && (
-                <Loader2 className="size-3.5 animate-spin" />
-              )}
-              {isRestore ? d.unhideAuthorConfirm : d.hideAuthorConfirm}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ReviewAuthorModerationDialog
+        userId={userId}
+        author={author}
+        hiddenReason={hiddenReason}
+        open={isOpen}
+        onOpenChange={setOpen}
+      />
     </>
   );
 }

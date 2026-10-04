@@ -68,6 +68,12 @@ export interface DataRegistryProps<T> {
   isRefreshing?: boolean;
 
   /* chips + summary */
+  /**
+   * A standing explanation between the toolbar and the chips — e.g. the
+   * «Схоже на накрутку…» card over a flagged series (ReviewsProposal В3) or the
+   * «Спам» explanation (MessagesProposal З4). Usually a `Callout`.
+   */
+  notice?: React.ReactNode;
   chips?: readonly FilterChip[];
   onClearAllChips?: () => void;
   summary?: React.ReactNode;
@@ -140,6 +146,7 @@ export function DataRegistry<T>({
   columnsMenu = true,
   onRefresh,
   isRefreshing,
+  notice,
   chips = [],
   onClearAllChips,
   summary,
@@ -233,6 +240,7 @@ export function DataRegistry<T>({
           onRefresh={onRefresh}
           isRefreshing={isRefreshing}
         />
+        {notice}
         <FilterChips chips={chips} onClearAll={onClearAllChips} />
         <RegistrySummary sortLabel={sortLabel} updatedAt={updatedAt}>
           {summary}

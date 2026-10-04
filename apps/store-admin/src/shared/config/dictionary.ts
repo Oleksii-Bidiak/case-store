@@ -2931,14 +2931,15 @@ export const dict = {
     colRating: "Оцінка",
     colComment: "Коментар",
     colDate: "Надіслано",
-    noComment: "—",
+    // Wave 198 (TASK-1057): a rating left without any text says so in words —
+    // a bare «—» read as a row that failed to load.
+    noComment: "Лише оцінка, без тексту",
     approve: "Схвалити",
     // TASK-446: the button says TEXT because only the text is withdrawn. The old
     // «Відхилити» described a hard delete that took the rating out of the
     // product's average with it — an operator who still reads it that way will
     // reject a one-star review believing the score recovers, and it will not.
     reject: "Відхилити текст",
-    emptyQueue: "Немає відгуків для модерації.",
     loadError: "Не вдалося завантажити відгуки. Спробуйте ще раз.",
     approveSuccess: "Відгук схвалено.",
     rejectSuccess: "Текст відгуку знято з сайту. Оцінка й далі враховується.",
@@ -2949,10 +2950,9 @@ export const dict = {
       `Відгук на «${product}» від ${author}`,
     // Bulk moderation over the on-screen selection (TASK-356).
     bulk: {
-      approve: (count: number) => `Схвалити (${count})`,
-      reject: (count: number) => `Відхилити текст (${count})`,
-      selectRow: (product: string, author: string) =>
-        `Вибрати відгук на «${product}» від ${author}`,
+      // «…» since wave 198: BOTH bulk verdicts now ask first (TASK-1057).
+      approve: (count: number) => `Схвалити (${count})…`,
+      reject: (count: number) => `Відхилити текст (${count})…`,
       // TASK-446: this prompt used to warn about a permanent loss. It no longer
       // happens — the row stays, the rating goes on counting, and the author can
       // rewrite the text from the storefront. The prompt still asks, because the
@@ -2965,6 +2965,19 @@ export const dict = {
       announceApproved: (count: number) => `Схвалено відгуків: ${count}`,
       announceRejected: (count: number) => `Відхилено текстів: ${count}`,
       announceFailed: "Не вдалося виконати масову дію",
+      // Wave 198 (TASK-1057, ReviewsProposal В6): approving publishes texts and
+      // lets ratings into the score, so it asks too — with its own words.
+      approveConfirmTitle: (countLabel: string) =>
+        `Опублікувати ${countLabel}?`,
+      approveConfirm:
+        "Тексти з’являться на сторінках товарів, а оцінки ввійдуть у рейтинг. Скасувати можна, відхиливши текст пізніше.",
+      approveConfirmLabel: (count: number) => `Опублікувати ${count}`,
+      // «Відхилити текст 3 відгуків?» — the noun in the genitive.
+      rejectConfirmTitle: (countLabel: string) =>
+        `Відхилити текст ${countLabel}?`,
+      genitiveForms: ["відгуку", "відгуків", "відгуків"],
+      idleHint:
+        "Виберіть відгуки, щоб схвалити чи відхилити текст кількох одразу",
     },
 
     // Free-text search (TASK-423). The queue had none at all, so triaging a
@@ -2972,13 +2985,11 @@ export const dict = {
     // that product?" was a question this screen could not answer.
     searchPlaceholder: "Пошук за текстом, автором або товаром…",
     searchAria: "Пошук відгуків",
-    emptyMatch: (q: string) => `Немає відгуків за запитом «${q}».`,
 
     // TASK-430: the queue showed a product NAME and nothing else, and this
     // catalogue has several positions per name (the same case in four colours), so
     // a moderator could not tell which one a complaint was about — nor look it up,
     // because the SKU is the key the catalogue is searched by.
-    colSku: "Артикул",
     noSku: "без артикулу",
     productLinkAria: (product: string) => `Відкрити картку товару «${product}»`,
 
@@ -2990,7 +3001,7 @@ export const dict = {
     // in as many words because nothing else on this screen is.
     replyAction: "Відповісти",
     replyEditAction: "Змінити відповідь",
-    replyBadge: "Є відповідь",
+    replyBadge: "Є відповідь магазину",
     replyTitle: "Відповідь магазину",
     replyDescription: (product: string) =>
       `Публічна відповідь під відгуком на «${product}». Її бачать усі відвідувачі сайту.`,
@@ -3056,10 +3067,59 @@ export const dict = {
     // Deep-link narrowing from the dashboard's rating-abuse card (TASK-601):
     // removable chips, since no control on this screen sets them.
     productChip: (product: string) => `Товар: ${product}`,
-    productChipAria: (product: string) =>
-      `Прибрати фільтр за товаром ${product}`,
     ipChip: (ip: string) => `IP: ${ip}`,
-    ipChipAria: (ip: string) => `Прибрати фільтр за IP-адресою ${ip}`,
+
+    // ── Wave 198 (TASK-1057, ReviewsProposal В1–В10) ─────────────────────────
+    // Quick views replace the two selects; the selects' labels live on as the
+    // filter sheet's pills.
+    viewAbuse: "Сигнали накрутки",
+    viewHiddenAuthors: "Приховані автори",
+    viewDefault: "Стандартний",
+    itemForms: ["відгук", "відгуки", "відгуків"],
+    summaryFound: "Знайдено",
+    // The API lists newest first, always (no sort parameter yet).
+    sortCreatedDesc: "надіслано, нові зверху",
+    colStatus: "Статус",
+    statusPending: "На розгляді",
+    statusApproved: "Опубліковано",
+    statusRejected: "Текст відхилено",
+    statusHidden: "Приховано",
+    bought: "купував",
+    notBought: "не купував",
+    hideAuthorMenu: "Приховати всі оцінки автора…",
+    unhideAuthorMenu: "Повернути оцінки автора…",
+    filtersApply: "Показати відгуки",
+    filterStatusTitle: "Статус тексту",
+    filterAuthorsTitle: "Автори",
+    chipStatus: (label: string) => `Статус: ${label}`,
+    chipAuthors: (label: string) => `Автори: ${label}`,
+    // The reply dialog (В8): the 1000-character limit, counted as you type.
+    replyHint: "Відповідь з'явиться під відгуком одразу після публікації.",
+    replyCounter: (length: number, max: number) => `${length} / ${max}`,
+    // «Сигнали накрутки» (В3, TASK-1004): the explanation card over the series
+    // the dashboard links to. Counted from the rows the API returned.
+    abuseTitleProduct: (count: string, span: string, product: string) =>
+      `Схоже на накрутку: ${count} за ${span} на «${product}»`,
+    abuseTitleIp: (count: string, span: string, ip: string) =>
+      `Схоже на накрутку: ${count} за ${span} з адреси ${ip}`,
+    abuseRatingForms: ["оцінка", "оцінки", "оцінок"],
+    abuseLowRatingForms: ["низька оцінка", "низькі оцінки", "низьких оцінок"],
+    dayForms: ["день", "дні", "днів"],
+    abuseSuspects: (count: number, total: number) =>
+      `${count} з ${total} — від акаунтів без покупки й без тексту.`,
+    abuseAdvice:
+      "Перевірте авторів і, якщо це накрутка, приховайте їхні оцінки через «⋯».",
+    abuseNext: (index: number, total: number) =>
+      `Наступний сигнал (${index} з ${total})`,
+    // Empty texts, one per view (В9).
+    emptyPendingTitle: "Усе розглянуто",
+    emptyPending:
+      "Нових відгуків на модерацію немає. Щойно покупець залишить відгук, він з'явиться тут, а в меню — лічильник.",
+    emptyApproved: "Опублікованих відгуків ще немає.",
+    emptyRejected: "Відхилених відгуків немає.",
+    emptyAbuse: "За цим сигналом відгуків не знайдено.",
+    emptyHiddenAuthors: "Прихованих авторів немає.",
+    emptyAll: "Відгуків ще немає.",
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------

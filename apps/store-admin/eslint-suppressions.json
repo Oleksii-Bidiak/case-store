@@ -104,11 +104,6 @@
       "count": 1
     }
   },
-  "src/widgets/review-moderation/ui/admin-review-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/widgets/subscriber-list/ui/AdminSubscriberTableSkeleton.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1
