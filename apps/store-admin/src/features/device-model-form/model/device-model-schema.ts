@@ -22,7 +22,7 @@ export const deviceModelSchema = z.object({
     .string()
     .trim()
     .max(255, e.slugMax)
-    .regex(SLUG_PATTERN, dict.seoFields.errors.slugPattern)
+    .regex(SLUG_PATTERN, e.slugPattern)
     .optional()
     .or(z.literal("")),
   series: z.string().trim().max(255, e.seriesMax).optional().or(z.literal("")),

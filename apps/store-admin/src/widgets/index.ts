@@ -24,11 +24,12 @@ export {
   DeviceModelTableSkeleton,
 } from "./device-model-list";
 export {
-  CreateDeviceBrandView,
-  EditDeviceBrandView,
-} from "./device-brand-form-view";
+  DeviceSectionHeader,
+  DeviceSectionHeaderSkeleton,
+} from "./device-section";
 export {
   CreateDeviceModelView,
+  DeviceModelFormSkeleton,
   EditDeviceModelView,
 } from "./device-model-form-view";
 export {

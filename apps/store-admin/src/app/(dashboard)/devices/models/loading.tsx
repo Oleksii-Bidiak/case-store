@@ -1,6 +1,17 @@
-import { DeviceModelTableSkeleton } from "@/widgets";
+import {
+  DeviceModelTableSkeleton,
+  DeviceSectionHeaderSkeleton,
+} from "@/widgets";
 
-/** Route-level loading UI for `/devices/models`. */
+/**
+ * Route-level loading UI for `/devices/models` (DevicesProposal ПР12): the
+ * section header with its tabs, then the registry's skeleton.
+ */
 export default function Loading() {
-  return <DeviceModelTableSkeleton />;
+  return (
+    <div className="flex flex-col gap-4">
+      <DeviceSectionHeaderSkeleton active="models" />
+      <DeviceModelTableSkeleton />
+    </div>
+  );
 }

@@ -1,6 +1,14 @@
-import { AdminFormSkeleton } from "@/shared/ui";
+import {
+  DeviceBrandTableSkeleton,
+  DeviceSectionHeaderSkeleton,
+} from "@/widgets";
 
-/** Route-level loading UI for `/devices/brands/new`. */
+/** `/devices/brands/new` renders the grid with the dialog — so does its loading UI. */
 export default function Loading() {
-  return <AdminFormSkeleton />;
+  return (
+    <div className="flex flex-col gap-4">
+      <DeviceSectionHeaderSkeleton active="brands" />
+      <DeviceBrandTableSkeleton />
+    </div>
+  );
 }

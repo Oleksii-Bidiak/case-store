@@ -1312,11 +1312,9 @@ export const dict = {
   // --- Devices: compatibility taxonomy (TASK-190) -----------------------------
   devices: {
     metaTitle: "Пристрої — Адмін",
-    brandsHeading: "Бренди пристроїв",
-    modelsHeading: "Моделі пристроїв",
     addBrand: "Додати бренд",
     addModel: "Додати модель",
-    tabBrands: "Бренди",
+    tabBrands: "Бренди пристроїв",
     tabModels: "Моделі",
     brandsLoadError: "Не вдалося завантажити бренди пристроїв.",
     modelsLoadError: "Не вдалося завантажити моделі пристроїв.",
@@ -1325,25 +1323,19 @@ export const dict = {
     modelsEmpty: "Моделей пристроїв ще немає. Створіть першу.",
     modelsSearchPlaceholder: "Пошук за назвою моделі…",
     modelsSearchAria: "Пошук моделей пристроїв",
-    modelsEmptyMatch: (q: string) => `Немає моделей за запитом «${q}».`,
-    colName: "Назва",
-    colSlug: "Slug",
     colBrand: "Бренд",
-    colSeries: "Серія",
     colYear: "Рік",
-    colModels: "Моделі",
+    colModels: "Моделей",
     // TASK-295: no `colSort` — the order column is gone; order IS the row order.
     brandsGridLabel: "Бренди пристроїв — порядок",
     colStatus: "Статус",
-    statusActive: "Активний",
-    statusInactive: "Прихований",
-    activate: "Активувати",
+    statusActive: "Показується",
+    statusInactive: "Приховано",
+    activate: "Показати на сайті",
     deactivate: "Приховати",
-    backToBrands: "← Назад до брендів",
-    backToModels: "← Назад до моделей",
-    createBrandHeading: "Створення бренду пристрою",
-    editBrandHeading: "Редагування бренду пристрою",
-    createModelHeading: "Створення моделі пристрою",
+    backToModels: "← Пристрої · Моделі",
+    createBrandHeading: "Новий бренд пристрою",
+    createModelHeading: "Нова модель",
     editModelHeading: "Редагування моделі пристрою",
     toastBrandCreated: "Бренд пристрою створено",
     toastBrandCreateFailed: "Не вдалося створити бренд пристрою",
@@ -1359,61 +1351,141 @@ export const dict = {
     // `deviceBrandId` and `isActive` since TASK-190 — the table simply never
     // passed them, so the only way to see one brand's models was to search by a
     // name fragment and hope the brand name was part of it.
-    filterBrandAria: "Фільтр за брендом",
     allBrands: "Усі бренди",
-    filterStatusAria: "Фільтр за статусом",
-    allStatuses: "Усі статуси",
+    allStatuses: "Усі",
+    // Wave 198, DevicesProposal ПР1–ПР12 (TASK-1082).
+    sectionDescription:
+      "Телефони, планшети й годинники, з якими сумісні товари. З них сайт будує вибір пристрою і сторінки «Чохли для iPhone 15 Pro».",
+    sectionTabsAria: "Розділи пристроїв",
+    viewShown: "Показуються",
+    viewHidden: "Приховані",
+    viewOnlyNotice: "Ви можете переглядати пристрої, але не змінювати.",
+    reorderHint:
+      "Порядок брендів = порядок у виборі пристрою на сайті. Перетягніть за ⠿ або візьміть рядок Пробілом і рухайте стрілками.",
+    modelsLinkAria: (count: number, name: string) =>
+      `${countLabel(count, ["модель", "моделі", "моделей"])} бренду «${name}» — відкрити моделі`,
+    brandRowActionsAria: (name: string) => `Дії з брендом пристрою «${name}»`,
+    brandDialogTitle: (name: string) => `Бренд пристрою «${name}»`,
+    brandDialogModels: (count: number) => `Моделей: ${count}`,
+    brandDialogGoModels: "Перейти до моделей →",
+    notFound: "Такого запису немає — можливо, його видалили.",
+    colModel: "Модель",
+    colPages: "Сторінок на сайті",
+    colPagesHint:
+      "Скільки сторінок «Категорія для моделі» зараз відкривається на сайті. Сторінка є, поки в категорії є хоч один сумісний товар, що показується.",
+    colPagesHintAria: "Що рахує колонка «Сторінок на сайті»",
+    pagesCount: (count: number) =>
+      countLabel(count, ["сторінка", "сторінки", "сторінок"]),
+    noPages: "сторінок немає",
+    summaryFound: "Знайдено",
+    modelItemForms: ["модель", "моделі", "моделей"],
+    sortNewest: "Новіші вище",
+    viewDefault: "Усі моделі",
+    modelRowActionsAria: (name: string) => `Дії з моделлю «${name}»`,
+    rowCompatProducts: "Сумісні товари",
+    rowOpenCatalog: "Каталог для цієї моделі на сайті",
+    hideModelItem: "Приховати з сайту…",
+    hideModelTitle: (name: string) => `Приховати «${name}» з сайту?`,
+    hideModelBody: (pages: number) =>
+      pages > 0
+        ? `Модель зникне з вибору пристрою, а її сторінки сумісності на сайті (зараз — ${countLabel(pages, ["сторінка", "сторінки", "сторінок"])}) перестануть відкриватися. Сумісні товари лишаться в каталозі. Повернути можна будь-коли.`
+        : "Модель зникне з вибору пристрою. Сумісні товари лишаться в каталозі. Повернути можна будь-коли.",
+    hideAction: "Приховати",
+    filterBrand: "Бренд",
+    filterBrandPlaceholder: "Назва бренду…",
+    filterNothingFound: "Нічого не знайдено",
+    filtersApply: "Показати",
+    chipBrand: (name: string) => `Бренд: ${name}`,
+    asideCompatProducts: "Сумісних товарів",
+    asidePages: "Сторінок на сайті",
   },
 
   deviceBrandForm: {
-    name: "Назва бренду",
-    slug: "Slug",
-    slugPlaceholder: "Залиште порожнім для авто-генерації з назви",
+    name: "Назва",
+    slug: "Адреса в посиланні (slug)",
+    slugPlaceholder: "apple",
     // TASK-295: no `sortOrder` label — the order field is gone from this form
     // (brand order lives in the sortable brands grid).
-    active: "Активний (показувати в магазині)",
-    submit: "Зберегти бренд",
+    active: "Показувати на сайті",
+    submit: "Зберегти",
     errors: {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
+      slugPattern:
+        "Лише малі латинські літери, цифри й дефіси — напр. «apple».",
     },
+    // Wave 198, DevicesProposal ПР6 — the form as a dialog (TASK-1082).
+    slugHint: "Залиште порожнім — зробимо з назви.",
+    activeHint: "Вимкніть — бренд зникне з вибору пристрою на сайті.",
+    createSubmit: "Створити бренд",
   },
 
   deviceModelForm: {
     brand: "Бренд пристрою",
-    brandPlaceholder: "Оберіть бренд",
     loading: "Завантаження…",
     name: "Назва моделі",
-    slug: "Slug",
-    slugPlaceholder: "Залиште порожнім для авто-генерації з назви",
+    slug: "Адреса в посиланні (slug)",
+    slugPlaceholder: "Залиште порожнім — зробимо з назви",
     series: "Серія",
     seriesPlaceholder: "Напр., iPhone 15",
-    releaseYear: "Рік випуску",
-    active: "Активна (показувати в магазині)",
-    submit: "Зберегти модель",
+    releaseYear: "Рік виходу",
+    active: "Показувати на сайті",
+    submit: "Зберегти",
     // TASK-490 — тексти сторінок сумісності «<Категорія> для <Модель>»
     // (/catalog/<категорія>/<модель>). Порожнє поле = згенерований шаблон, тож
     // підказки пояснюють саме це: писати треба лише там, де шаблон слабкий.
-    seoHeading: "Тексти сторінок сумісності",
+    seoHeading: "Сторінки сумісності на сайті",
     seoHint:
-      "Ці тексти показуються на сторінках «<Категорія> для <Модель>» — напр. «Чохли для iPhone 15 Pro». Порожнє поле означає автоматичний текст; один набір діє для всіх категорій цієї моделі.",
-    metaTitle: "SEO-заголовок (meta title)",
-    metaTitlePlaceholder: "Залиште порожнім для автоматичного заголовка",
-    metaDescription: "SEO-опис (meta description)",
-    metaDescriptionPlaceholder:
-      "Короткий опис сторінки сумісності для пошукових систем",
-    description: "Опис на сторінці",
-    descriptionPlaceholder: "Абзац під заголовком сторінки сумісності",
+      "Сторінка «Категорія для моделі» відкривається сама, щойно в категорії є сумісний товар, що показується. Тексти нижче — одні для всіх категорій цієї моделі; порожнє поле — автоматичний текст.",
+    metaTitle: "Заголовок для Google",
+    metaTitlePlaceholder: "Порожнє — автоматичний заголовок",
+    metaDescription: "Опис для Google",
+    metaDescriptionPlaceholder: "Порожнє — автоматичний опис.",
+    description: "Абзац на сторінці",
+    descriptionPlaceholder: "Порожнє — автоматичний підзаголовок.",
     errors: {
-      brandRequired: "Оберіть бренд",
-      nameRequired: "Вкажіть назву",
+      brandRequired:
+        "Оберіть бренд — без нього модель не з'явиться у виборі пристрою.",
+      nameRequired: "Вкажіть назву моделі.",
       nameMax: "Назва має містити не більше 255 символів",
       slugMax: "Slug має містити не більше 255 символів",
       seriesMax: "Серія має містити не більше 255 символів",
       yearInt: "Рік має бути коректним (1990–2100)",
       descriptionMax: "Опис має містити не більше 2000 символів",
+      slugPattern:
+        "Лише малі латинські літери, цифри й дефіси — напр. «iphone-15-pro».",
     },
+    // Wave 198, DevicesProposal ПР7–ПР11 (TASK-1082).
+    sectionMain: "Основне",
+    brandSearchPlaceholder: "Назва бренду…",
+    nothingFound: "Нічого не знайдено",
+    seriesHint: "Групує моделі у виборі пристрою на сайті.",
+    yearHint: "Новіші моделі стоять у списках вище.",
+    slugHint: (slug: string) =>
+      `Сторінки: /catalog/<категорія>/${slug}. Якщо змінити адресу, старі посилання переадресуємо.`,
+    slugPreview: "Буде зроблено з назви.",
+    pagesListAria: "Сторінки, що зараз відкриваються",
+    pagesEmpty:
+      "Сторінок ще немає: вони з'являться, коли до моделі прив'яжуть сумісні товари.",
+    pageProducts: (count: number) =>
+      countLabel(count, ["товар", "товари", "товарів"]),
+    pageOpenAria: (title: string) => `${title} — відкрити на сайті`,
+    pageTitle: (category: string, model: string) => `${category} для ${model}`,
+    // The model's own title REPLACES the whole <title> on every category page
+    // (`resolveSeo` tier 1) — the hint says so instead of promising a prefix.
+    metaTitleHint:
+      "Замінює заголовок на всіх сторінках сумісності цієї моделі.",
+    metaDescriptionHint: "Порожнє — автоматичний опис.",
+    descriptionHint: "Під заголовком сторінки, над товарами.",
+    counter: (count: number, max: number) => `${count} / ${max}`,
+    counterOver: "Довше, ніж Google показує",
+    snippetTitle: (model: string) => `Категорія для ${model}`,
+    activeHint:
+      "Вимкніть — модель зникне з вибору пристрою, а її сторінки сумісності перестануть відкриватися. Самі товари лишаться в каталозі.",
+    createSubmit: "Створити модель",
+    errorSummary: (count: number) =>
+      `Не вдалося зберегти — виправте ${countLabel(count, ["поле", "поля", "полів"])} нижче.`,
   },
 
   // Product-form device-compatibility multiselect + bulk action (TASK-190).

@@ -2,7 +2,8 @@
 
 /**
  * Device-brand reorder (TASK-295) — ONE global bucket, so the payload is a bare
- * `{ orderedIds }` naming every brand in the list.
+ * `{ orderedIds }` naming every brand in the list. Since wave 198 (TASK-1082)
+ * it posts the «Скасувати» toast after a move, like the other flat lists.
  */
 
 import { useCallback, useMemo } from "react";
@@ -19,10 +20,10 @@ import {
   flatReorderStrings,
   isFlatReorderConflict,
   orderedIdsIfChanged,
-  useReorderLifecycle,
   type ReorderLifecycleApi,
 } from "@/shared/lib/list-reorder";
 import type { TreeItem } from "@/shared/lib/sortable-tree";
+import { useUndoToastReorder } from "./use-undo-toast-reorder";
 
 const BRANDS_KEY = getAdminDeviceControllerFindBrandsQueryKey();
 
@@ -82,7 +83,7 @@ export function useDeviceBrandReorder({
 
   const strings = useMemo(() => flatReorderStrings, []);
 
-  return useReorderLifecycle<
+  return useUndoToastReorder<
     ReorderDeviceBrandsDto,
     AdminDeviceBrandListResponse
   >({
