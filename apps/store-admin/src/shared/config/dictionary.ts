@@ -5136,40 +5136,122 @@ export const dict = {
     empty: "Груп товарів ще немає. Створіть свою першу групу.",
     searchPlaceholder: "Пошук за назвою групи…",
     searchAria: "Пошук груп товарів",
-    emptyMatch: (q: string) => `Немає груп за запитом «${q}».`,
-    colName: "Назва",
-    colAxes: "Осі",
-    colPositions: "Позиції",
+    colName: "Група",
+    colAxes: "Вибір на сайті",
+    colPositions: "Позицій",
     colStatus: "Статус",
-    back: "← Назад до груп",
-    createHeading: "Створення групи",
+    back: "← Групи товарів",
+    createHeading: "Нова група",
     editHeading: "Редагування групи",
     createSubmit: "Створити групу",
     loadOneError: "Не вдалося завантажити групу. Спробуйте ще раз.",
-    positionsHeading: "Позиції в цій групі",
+    positionsHeading: "Позиції",
     positionsEmpty:
-      "Позицій ще не призначено. Призначте товар до цієї групи у селекторі «Група» форми товару.",
+      "Позицій ще немає. Натисніть «Додати позицію…» або оберіть цю групу в полі «Група» у формі товару.",
     toastCreated: "Групу створено",
     toastCreateFailed: "Не вдалося створити групу",
     toastUpdated: "Групу оновлено",
     toastUpdateFailed: "Не вдалося оновити групу",
+
+    // Wave 198 (ProductGroupsProposal ГТ1–ГТ10, TASK-1084). The status words are
+    // NOT the canon «Показується / Приховано»: the group flag does not reach the
+    // storefront yet (TASK-1031), and a badge must not promise what the site
+    // does not do.
+    intro:
+      "Група збирає варіанти одного товару — пам'ять, колір, довжину — в одну картку на сайті: " +
+      "покупець обирає значення, а сайт відкриває потрібну позицію.",
+    viewOnly:
+      "Ви можете переглядати групи, але не змінювати. «Додати групу» і дії рядка сховано, бо немає права «Товари: змінювати».",
+    statusActive: "Активна",
+    statusInactive: "Неактивна",
+    summaryFound: "Знайдено",
+    itemForms: ["група", "групи", "груп"],
+    noPositions: "позицій немає",
+    positionsCount: (n: number) =>
+      countLabel(n, ["позиція", "позиції", "позицій"]),
+    positionsEmptyNew:
+      "Позицій ще немає. Збережіть групу — тоді зможете додати позиції.",
+    positionsHint:
+      "Клік по рядку відкриває товар. Значення вибору — це характеристики позиції: змінюються у формі товару. У «⋯» рядка — «Прибрати з групи».",
+    colPrice: "Ціна",
+    colStock: "Наявність",
+    stockUnits: (n: number) => `${n} шт.`,
+    missingValue: "— немає",
+    missingValueAria: (axis: string) => `Немає значення «${axis}»`,
+    duplicateAria: "Така сама пара значень, як в іншої позиції",
+    positionShown: "Показується",
+    positionHidden: "Приховано",
+    positionOutOfStock: "Немає в наявності",
+    openProduct: "Відкрити товар",
+    openProductAria: (name: string) => `Відкрити товар «${name}»`,
+    removeFromGroup: "Прибрати з групи",
+    toastRemoved: "Позицію прибрано з групи",
+    toastRemoveFailed: "Не вдалося прибрати позицію з групи",
+    addPositions: "Додати позицію…",
+    problemsLead: (n: number) =>
+      `${countLabel(n, ["проблема", "проблеми", "проблем"])} в позиціях`,
+    problemsBody:
+      " — покупець не зможе обрати частину варіантів. Виправте їх у формі товару.",
+    preview: "Як виглядає на сайті",
+    previewEmpty:
+      "Додайте вибір і позиції — тут з'явиться те, що бачить покупець.",
+    openOnSite: "Відкрити на сайті",
+    summaryShown: "Показується",
+    summaryShownValue: (shown: number, total: number) =>
+      `${shown} з ${countLabel(total, ["позиції", "позицій", "позицій"])}`,
+    summaryPrices: "Ціни",
+    pickerTitle: "Додати позиції в групу",
+    pickerHint: "Товар може бути лише в одній групі.",
+    pickerSearch: "Назва товару…",
+    pickerSearchAria: "Пошук товарів",
+    pickerPrompt: "Почніть вводити назву товару.",
+    pickerEmpty: "Нічого не знайдено.",
+    pickerInOther: (group: string) =>
+      `Уже в групі «${group}» — спершу приберіть звідти`,
+    pickerInOtherUnnamed: "Уже в іншій групі — спершу приберіть звідти",
+    pickerInThis: "Уже в цій групі",
+    pickerSelected: (n: number) => `Обрано: ${n}`,
+    pickerSubmit: (n: number) =>
+      `Додати ${countLabel(n, ["позицію", "позиції", "позицій"])}`,
+    toastAdded: (n: number) =>
+      `Додано в групу: ${countLabel(n, ["позиція", "позиції", "позицій"])}`,
+    toastAddFailed: "Не вдалося додати позиції в групу",
   },
 
   productGroupForm: {
-    name: "Назва",
-    axes: "Осі атрибутів",
+    name: "Назва групи",
+    axes: "Вибір на сайті",
     axesHint:
-      "Упорядковані назви осей, які вітрина відображає як селектори (напр. колір, набір). Порядок тут задає порядок відображення кожної осі.",
-    axisPlaceholder: "назва осі (напр. color)",
-    axisNameAria: (i: number) => `Назва осі ${i}`,
-    removeAxisAria: (i: number) => `Видалити вісь ${i}`,
-    addAxis: "Додати вісь",
-    active: "Активна",
-    submit: "Зберегти групу",
+      "Що покупець обирає на сторінці товару. Назва має збігатися з характеристикою, записаною в позиціях, — список підказує ті, що в них уже є.",
+    axisPlaceholder: "Характеристика…",
+    axisNameAria: (i: number) => `Вибір ${i}: характеристика`,
+    removeAxisAria: (i: number) => `Прибрати вибір ${i}`,
+    addAxis: "Додати вибір",
+    active: "Активна група",
+    submit: "Зберегти",
     errors: {
-      nameRequired: "Вкажіть назву",
+      nameRequired: "Вкажіть назву групи.",
       nameMax: "Назва має містити не більше 255 символів",
     },
+
+    // Wave 198 (ProductGroupsProposal ГТ3–ГТ6, TASK-1084).
+    sectionMain: "Основне",
+    namePlaceholder: "Напр.: Смартфон Apple iPhone 16 Pro",
+    nameHint: "Бачите лише ви — на сайті кожна позиція має свою назву.",
+    axesOrder: "Порядок = порядок на сайті",
+    axisUsage: (n: number) =>
+      `у ${countLabel(n, ["позиції", "позиціях", "позиціях"])}`,
+    axesNoPositions:
+      "Позицій ще немає — впишіть назву так, як її записано в характеристиках товарів.",
+    moveAxisAria: (name: string) =>
+      `Перемістити «${name}»: стрілки вгору або вниз`,
+    axisMoved: (name: string, position: number, total: number) =>
+      `«${name}»: позиція ${position} з ${total}`,
+    unnamedAxis: "без назви",
+    // Honest until TASK-1031 makes the flag a visibility condition.
+    activeHint:
+      "Поки що це позначка лише для адмінки: позиції групи показуються на сайті незалежно від неї. Щоб сховати один варіант, приховайте саму позицію.",
+    formAlert: "Не вдалося зберегти — виправте поля нижче.",
   },
 
   productImages: {

@@ -10,6 +10,7 @@ export {
 export {
   CreateProductGroupView,
   EditProductGroupView,
+  ProductGroupFormSkeleton,
 } from "./product-group-form-view";
 // TASK-291: `category-list` (the flat AdminCategoryTable) is deleted — the
 // treegrid below is the only category list surface.
