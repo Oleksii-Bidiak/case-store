@@ -32,7 +32,7 @@ import {
   type ReactNode,
 } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronRight, GripVertical } from "lucide-react";
+import { ChevronDown, GripVertical, RefreshCwIcon } from "lucide-react";
 import { flattenAdminCategoryTree } from "@/entities/category";
 import {
   CategoryReorderUndoButton,
@@ -58,10 +58,12 @@ import {
   type MoveRefusal,
   type TreeItem,
 } from "@/shared/lib/sortable-tree";
+import { cn } from "@/shared/lib/utils";
 import {
   Badge,
   Button,
   Checkbox,
+  DropHintPill,
   LiveAnnouncer,
   SortableTree,
   Table,
@@ -88,6 +90,12 @@ export const INSTRUCTIONS_SHORT_ID = "cat-tree-instructions-short";
 
 /** Indent step for the name cell, in px (mirrors the pointer projection step). */
 const INDENT_PX = 24;
+
+/**
+ * Where an insertion line starts at depth 0: past the selection column (its
+ * `w-10` cell), so the line reads as "between these rows" (wave 198, КТ2).
+ */
+const LINE_INSET_PX = 40;
 
 /* ────────────────────────────── pure helpers ────────────────────────────── */
 
@@ -661,6 +669,28 @@ function CategoryTreeView() {
     [collapseRow, setExpandedFor],
   );
 
+  /**
+   * «Розгорнути все» / «Згорнути все» (wave 198, КТ1). Both buttons sit
+   * OUTSIDE the grid, so focus is on them, never on a row that collapses away;
+   * the roving tab stop already falls back to the nearest visible ancestor.
+   */
+  const expandAll = useCallback(() => {
+    const parents = new Set(items.map((i) => i.parentId));
+    setExpanded(
+      new Set(items.filter((i) => parents.has(i.id)).map((i) => i.id)),
+    );
+  }, [items]);
+
+  const collapseAll = useCallback(() => setExpanded(new Set()), []);
+
+  /** The toolbar's refresh: re-read the tree, then say so (TASK-353 rule). */
+  const { refetch } = query;
+  const refresh = useCallback(() => {
+    void refetch().then(() => {
+      announcePolite(dict.common.table.refreshed);
+    });
+  }, [announcePolite, refetch]);
+
   /* ── moves ──────────────────────────────────────────────────────────────── */
 
   /** Every non-drag move funnels through here. */
@@ -1053,6 +1083,8 @@ function CategoryTreeView() {
         level={row.level}
         posinset={row.posinset}
         setsize={row.setsize}
+        hasChildren={row.hasChildren}
+        dropHint={props.dropHint}
         ariaExpanded={row.ariaExpanded}
         descendantCount={row.descendantCount}
         matched={row.matched}
@@ -1086,7 +1118,7 @@ function CategoryTreeView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center">
         {/*
           TASK-423: this was the panel's LAST search-on-Enter form — a text box
           plus a «Пошук» button the operator had to find and press. It is the
@@ -1100,15 +1132,53 @@ function CategoryTreeView() {
           filtered view is not the real sibling order, so a drag inside it would
           write a `sortOrder` computed from rows the operator cannot see.
         */}
-        <TableSearch
-          value={search}
-          placeholder={dict.categories.searchPlaceholder}
-          label={dict.categories.searchAria}
-        />
-        <CategoryReorderUndoButton
-          canUndo={reorder.canUndo}
-          onUndo={reorder.undo}
-        />
+        <div className="min-w-0 md:w-full md:max-w-xl">
+          <TableSearch
+            value={search}
+            placeholder={dict.categories.searchPlaceholder}
+            label={dict.categories.searchAria}
+          />
+        </div>
+        <div className="flex flex-1 items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={expandAll}>
+            {t.expandAll}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={collapseAll}
+          >
+            {t.collapseAll}
+          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            {/*
+              TASK-963: the visible way back after a move is the «Скасувати»
+              toast now. This stays as the PERSISTENT control — a toast takes
+              no focus and expires, and the commit announcement names this
+              button — but as a quiet icon rather than a faded text button.
+            */}
+            <CategoryReorderUndoButton
+              canUndo={reorder.canUndo}
+              onUndo={reorder.undo}
+              iconOnly
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="icon-sm"
+              onClick={refresh}
+              disabled={query.isFetching || reorder.isPending}
+              aria-label={dict.common.table.refreshAria}
+              title={dict.common.table.refresh}
+            >
+              <RefreshCwIcon
+                aria-hidden="true"
+                className={cn("size-4", query.isFetching && "animate-spin")}
+              />
+            </Button>
+          </div>
+        </div>
       </div>
 
       {isLocked && (
@@ -1146,7 +1216,7 @@ function CategoryTreeView() {
           {search ? dict.categories.emptyMatch(search) : dict.categories.empty}
         </div>
       ) : (
-        <div className="rounded-lg border border-border shadow-card overflow-hidden">
+        <div className="overflow-hidden rounded-lg border border-border shadow-card">
           <Table
             role="treegrid"
             aria-label={t.label}
@@ -1156,7 +1226,7 @@ function CategoryTreeView() {
           >
             <TableHeader>
               <TableRow>
-                <TableHead className="w-10">
+                <TableHead className="w-10 max-md:px-3">
                   <Checkbox
                     checked={headerChecked}
                     onCheckedChange={toggleSelectAll}
@@ -1165,18 +1235,24 @@ function CategoryTreeView() {
                   />
                   <span className="sr-only">{b.colSelect}</span>
                 </TableHead>
-                <TableHead>{dict.categories.colName}</TableHead>
+                <TableHead className="max-md:px-2">
+                  {dict.categories.colName}
+                </TableHead>
                 <TableHead hideOnMobile>{dict.categories.colSlug}</TableHead>
-                <TableHead title={dict.categories.colProductsHint}>
+                <TableHead
+                  hideOnMobile
+                  className="text-right"
+                  title={dict.categories.colProductsHint}
+                >
                   {dict.categories.colProducts}
                   <span className="sr-only">
                     {" "}
                     {dict.categories.colProductsHint}
                   </span>
                 </TableHead>
-                <TableHead>{dict.categories.colStatus}</TableHead>
-                <TableHead className="text-right">
-                  {dict.common.actions}
+                <TableHead hideOnMobile>{dict.categories.colStatus}</TableHead>
+                <TableHead className="w-12 max-md:px-2">
+                  <span className="sr-only">{dict.common.actions}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
@@ -1188,6 +1264,7 @@ function CategoryTreeView() {
                 }))}
                 maxDepth={MAX_TREE_LEVELS}
                 disabled={isLocked || reorder.isPending || moveState !== null}
+                lineInset={LINE_INSET_PX}
                 renderRow={renderRow}
                 onMove={handlePointerMove}
                 announcements={pointerAnnouncements(items)}
@@ -1230,6 +1307,10 @@ interface CategoryTreeRowProps {
   level: number;
   posinset: number;
   setsize: number;
+  /** Has children in the tree (collapsed or not) — the «· прямо M» rule. */
+  hasChildren: boolean;
+  /** Set while a pointer drag would NEST into this row (КТ2 pill). */
+  dropHint: SortableTreeRowRenderProps["dropHint"];
   ariaExpanded: boolean | undefined;
   descendantCount: number;
   matched: boolean;
@@ -1265,6 +1346,8 @@ function CategoryTreeRow({
   level,
   posinset,
   setsize,
+  hasChildren,
+  dropHint,
   ariaExpanded,
   descendantCount,
   matched,
@@ -1292,8 +1375,8 @@ function CategoryTreeRow({
 
   /**
    * The APG `treegrid` Tab contract (§7.1/§7.2): from the focused row, `Tab`
-   * steps through the row's OWN focusable controls (twisty → grip → status
-   * toggle → actions menu, in DOM order) and then leaves the grid. That is
+   * steps through the row's OWN focusable controls (checkbox → grip → twisty →
+   * status toggle → actions menu, in DOM order) and then leaves the grid. That is
    * exactly native Tab behaviour once the controls of the row that owns the
    * roving `tabindex` are the only tabbable ones in the grid — every other row's
    * controls stay at `-1`, so Tab never walks the whole table.
@@ -1310,6 +1393,13 @@ function CategoryTreeRow({
     descendantCount,
     onCancel: () => statusRef.current?.focus(),
   });
+
+  /**
+   * What the SITE does with this row (wave 198, КТ1): an own-active category
+   * under a hidden ancestor is not shown either, and says why beside it.
+   */
+  const shown = isActive && !hiddenByParent;
+  const statusLabel = shown ? t.statusShown : t.statusHidden;
 
   return (
     <TableRow
@@ -1340,7 +1430,7 @@ function CategoryTreeRow({
               : undefined
       }
     >
-      <TableCell role="gridcell" className="w-10">
+      <TableCell role="gridcell" className="w-10 max-md:px-3">
         {/* Owns its own `Space` (Radix), which the row's keydown handler ignores
             because `event.target !== event.currentTarget` — so picking a row up
             still works from the row itself. */}
@@ -1352,99 +1442,128 @@ function CategoryTreeRow({
           aria-label={b.selectRow(name)}
         />
       </TableCell>
-      <TableCell role="gridcell">
+      <TableCell
+        role="gridcell"
+        className="max-md:px-2 max-md:whitespace-normal"
+      >
         <div
           className="flex items-center gap-1"
           style={{ paddingInlineStart: (level - 1) * INDENT_PX }}
         >
-          {ariaExpanded === undefined ? (
-            <span aria-hidden="true" className="inline-block size-6" />
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              tabIndex={controlTabIndex}
-              className="size-6 p-0"
-              aria-label={
-                ariaExpanded ? t.collapseRow(name) : t.expandRow(name)
-              }
-              onClick={onToggleExpand}
-            >
-              <ChevronRight
-                aria-hidden="true"
-                className={ariaExpanded ? "size-4 rotate-90" : "size-4"}
-              />
-            </Button>
-          )}
+          {/* КТ1: the grip leads, the twisty follows it. */}
           <button
             type="button"
             {...handleProps}
             tabIndex={controlTabIndex}
             aria-label={dict.reorderTree.handleLabel(name)}
             aria-disabled={locked || undefined}
-            className="inline-flex size-6 min-h-11 min-w-11 cursor-grab items-center justify-center text-muted-foreground md:min-h-0 md:min-w-0"
+            className="inline-flex size-6 min-h-11 min-w-11 shrink-0 cursor-grab items-center justify-center text-muted-foreground md:min-h-0 md:min-w-0"
           >
             <GripVertical aria-hidden="true" className="size-4" />
           </button>
-          <span className="font-medium">
-            {highlight(name, matched ? search : "")}
-          </span>
+          {ariaExpanded === undefined ? (
+            <span aria-hidden="true" className="inline-block size-6 shrink-0" />
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              tabIndex={controlTabIndex}
+              className="size-6 shrink-0 p-0"
+              aria-label={
+                ariaExpanded ? t.collapseRow(name) : t.expandRow(name)
+              }
+              onClick={onToggleExpand}
+            >
+              <ChevronDown
+                aria-hidden="true"
+                className={cn(
+                  "size-4 transition-transform motion-reduce:transition-none",
+                  !ariaExpanded && "-rotate-90",
+                )}
+              />
+            </Button>
+          )}
+          <div className="min-w-0">
+            <span className={level === 1 ? "font-semibold" : undefined}>
+              {highlight(name, matched ? search : "")}
+            </span>
+            {dropHint?.mode === "nest" ? (
+              <DropHintPill>{dropHint.label}</DropHintPill>
+            ) : null}
+            {/*
+              КТ4 (390 px): Slug, «Товарів» and «Статус» hide below `md`, so
+              their substance folds into one line under the name — the tree
+              never scrolls sideways on a phone.
+            */}
+            <span className="block text-xs text-muted-foreground md:hidden">
+              {t.mobileCount(subtreeProductCount)} · {statusLabel}
+              {hiddenByParent ? ` (${t.hiddenByParent})` : null}
+            </span>
+          </div>
         </div>
       </TableCell>
-      <TableCell role="gridcell" hideOnMobile className="text-muted-foreground">
+      <TableCell
+        role="gridcell"
+        hideOnMobile
+        className="text-xs text-muted-foreground"
+      >
         {slug}
       </TableCell>
       {/*
         The subtree total leads, because that is the number the storefront page
         for this category actually lists (TASK-236 rolls a listing up over the
-        whole subtree). The direct count follows in brackets, and only when the
-        two differ — otherwise every leaf would carry a redundant echo of itself.
+        whole subtree). A PARENT adds «· прямо M» (КТ1) — what sits on it
+        directly; on a leaf the two numbers are the same, so it would only echo.
       */}
-      <TableCell role="gridcell">
-        {subtreeProductCount}
-        {subtreeProductCount !== productCount ? (
-          <span className="ml-1 text-muted-foreground">
-            ({dict.categories.productsDirect(productCount)})
+      <TableCell role="gridcell" hideOnMobile className="text-right">
+        <span className="font-medium tabular-nums">{subtreeProductCount}</span>
+        {hasChildren ? (
+          <span className="text-xs text-muted-foreground">
+            {" · "}
+            {dict.categories.productsDirect(productCount)}
           </span>
         ) : null}
       </TableCell>
-      <TableCell role="gridcell">
-        <Button
-          ref={statusRef}
-          type="button"
-          variant="ghost"
-          size="sm"
-          tabIndex={controlTabIndex}
-          onClick={toggleStatus}
-          disabled={statusPending}
-          aria-label={
-            isActive
-              ? dict.statusToggle.categoryDeactivate
-              : dict.statusToggle.categoryActivate
-          }
-        >
-          <Badge variant={isActive ? "default" : "secondary"}>
-            {isActive ? dict.common.active : dict.common.inactive}
-          </Badge>
-        </Button>
-        {/* TASK-812: the blast-radius AlertDialog (portalled to <body>). */}
-        {statusConfirmDialog}
-        {/*
-          Outside the toggle button on purpose: it is a statement about an
-          ANCESTOR, not something this row's control can change.
-        */}
-        {hiddenByParent ? (
-          <Badge
-            variant="outline"
-            className="ml-1 align-middle"
-            title={t.hiddenByParentHint(hiddenByParent)}
+      <TableCell role="gridcell" hideOnMobile>
+        <div className="flex items-center gap-2">
+          <Button
+            ref={statusRef}
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="px-1"
+            tabIndex={controlTabIndex}
+            onClick={toggleStatus}
+            disabled={statusPending}
+            aria-label={
+              isActive
+                ? dict.statusToggle.categoryDeactivate
+                : dict.statusToggle.categoryActivate
+            }
           >
-            {t.hiddenByParent}
-          </Badge>
-        ) : null}
+            <Badge variant={shown ? "default" : "secondary"}>
+              {statusLabel}
+            </Badge>
+          </Button>
+          {/*
+            Outside the toggle button on purpose: it is a statement about an
+            ANCESTOR, not something this row's control can change.
+          */}
+          {hiddenByParent ? (
+            <span
+              className="text-xs font-medium whitespace-nowrap text-warning"
+              title={t.hiddenByParentHint(hiddenByParent)}
+            >
+              {t.hiddenByParent}
+            </span>
+          ) : null}
+        </div>
       </TableCell>
-      <TableCell role="gridcell" className="text-right">
+      <TableCell role="gridcell" className="text-right max-md:px-2">
+        {/* TASK-812: the blast-radius AlertDialog (portalled to <body>). It
+            lives in a cell that is never hidden, because «⋯» opens it too. */}
+        {statusConfirmDialog}
         <span data-row-menu>
           <CategoryTreeRowActions
             items={items}

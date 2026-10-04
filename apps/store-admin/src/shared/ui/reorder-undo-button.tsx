@@ -15,6 +15,7 @@
  * announcement's promise ("скористайтеся кнопкою …") a lie for keyboard users.
  */
 
+import { Undo2Icon } from "lucide-react";
 import { Button } from "./button";
 
 export interface ReorderUndoButtonProps {
@@ -22,26 +23,44 @@ export interface ReorderUndoButtonProps {
   onUndo: () => void;
   /** The control's visible label — the same string the commit announcement names. */
   label: string;
+  /**
+   * Wave 198 (Categories, TASK-963): a toolbar icon instead of a text button,
+   * for screens where a «Скасувати» toast is the visible way back. The label
+   * stays the accessible name (and the tooltip), so the commit announcement
+   * still names a control that exists.
+   */
+  iconOnly?: boolean;
 }
+
+/**
+ * TASK-963: the unavailable state is painted with the `disabled` tokens, not
+ * `opacity-50` — fading grey text on grey dropped it to ≈2:1. `aria-disabled`
+ * does not trigger the Button's own `disabled:` styles, hence the classes here.
+ */
+const UNAVAILABLE =
+  "border-transparent bg-disabled text-disabled-foreground shadow-none hover:bg-disabled hover:text-disabled-foreground";
 
 export function ReorderUndoButton({
   canUndo,
   onUndo,
   label,
+  iconOnly = false,
 }: ReorderUndoButtonProps) {
   return (
     <Button
       type="button"
       variant="outline"
-      size="sm"
+      size={iconOnly ? "icon-sm" : "sm"}
       aria-disabled={!canUndo}
-      className={canUndo ? undefined : "opacity-50"}
+      aria-label={iconOnly ? label : undefined}
+      title={iconOnly ? label : undefined}
+      className={canUndo ? undefined : UNAVAILABLE}
       onClick={() => {
         if (!canUndo) return;
         onUndo();
       }}
     >
-      {label}
+      {iconOnly ? <Undo2Icon aria-hidden="true" /> : label}
     </Button>
   );
 }

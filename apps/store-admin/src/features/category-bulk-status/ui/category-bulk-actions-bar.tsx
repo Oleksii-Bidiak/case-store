@@ -1,9 +1,10 @@
 "use client";
 
-import { Button } from "@/shared/ui";
+import { Button, RegistryBulkBar } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
-const t = dict.categories.tree.bulk;
+const tree = dict.categories.tree;
+const t = tree.bulk;
 
 export interface CategoryBulkActionsBarProps {
   selectedCount: number;
@@ -14,12 +15,17 @@ export interface CategoryBulkActionsBarProps {
 }
 
 /**
- * The bulk-action bar (TASK-293) — rendered only while the selection is non-empty,
- * above the treegrid.
+ * The bulk-action bar (TASK-293), on the registry's bar since wave 198
+ * (CategoriesProposal КТ1/КТ3).
  *
- * `role="status"`: appearing at all IS the feedback that a selection exists, and the
- * count changes as rows are picked; a polite live region reports both to a screen
- * reader without stealing focus from the grid.
+ * ALWAYS there now: idle, it is a dashed hint that teaches what ticking a row
+ * is for (and that rows are dragged by ⠿); active, it carries the count and
+ * «Показувати на сайті (N)» / «Приховати (N)» / «Зняти вибір». A bar that
+ * popped in used to push the tree down under the cursor at the exact moment
+ * the operator ticked a box.
+ *
+ * The count is a `role="status"` region inside `RegistryBulkBar`, so a screen
+ * reader still hears the selection change without focus leaving the grid.
  */
 export function CategoryBulkActionsBar({
   selectedCount,
@@ -28,43 +34,37 @@ export function CategoryBulkActionsBar({
   onDeactivate,
   onClear,
 }: CategoryBulkActionsBarProps) {
-  if (selectedCount === 0) return null;
-
   return (
-    <div
-      role="status"
-      className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/50 px-3 py-2"
-    >
-      <span className="text-sm font-medium">
-        {t.selectedCount(selectedCount)}
-      </span>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={isPending}
-        onClick={onActivate}
-      >
-        {t.activate(selectedCount)}
-      </Button>
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        disabled={isPending}
-        onClick={onDeactivate}
-      >
-        {t.deactivate(selectedCount)}
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        disabled={isPending}
-        onClick={onClear}
-      >
-        {t.clear}
-      </Button>
-    </div>
+    <RegistryBulkBar
+      selectedCount={selectedCount}
+      itemForms={tree.bulkItemForms}
+      idleHint={tree.bulkIdleHint}
+      isPending={isPending}
+      // The tree is one page: there is nothing for a selection to be «kept» across.
+      showKeptHint={false}
+      onClear={onClear}
+      actions={
+        <>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isPending}
+            onClick={onActivate}
+          >
+            {t.activate(selectedCount)}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={isPending}
+            onClick={onDeactivate}
+          >
+            {t.deactivate(selectedCount)}
+          </Button>
+        </>
+      }
+    />
   );
 }

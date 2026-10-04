@@ -1025,21 +1025,21 @@ export const dict = {
     metaTitleEdit: "Редагування категорії — Адмін",
     heading: "Категорії",
     add: "Додати категорію",
-    searchPlaceholder: "Пошук категорій…",
+    searchPlaceholder: "Назва категорії…",
     searchAria: "Пошук категорій",
     loadError: "Не вдалося завантажити категорії. Спробуйте ще раз.",
     emptyMatch: (q: string) => `Немає категорій за запитом «${q}».`,
     empty: "Категорій ще немає. Створіть свою першу категорію.",
     colName: "Назва",
     colSlug: "Slug",
-    colProducts: "Товари",
+    colProducts: "Товарів",
     // TASK-408: the column shows the SUBTREE total, because that is what the
     // storefront category page lists. The direct count is spelled out beside it —
     // without it a parent that files nothing of its own looks like a data error.
     colProductsHint:
       "Скільки товарів показує вітрина на сторінці категорії — разом з усіма підкатегоріями. " +
-      "У дужках — скільки лежить безпосередньо в самій категорії.",
-    productsDirect: (count: number) => `безпосередньо ${count}`,
+      "«Прямо» — скільки лежить безпосередньо в самій категорії.",
+    productsDirect: (count: number) => `прямо ${count}`,
     colStatus: "Статус",
     root: "Коренева",
     back: "← Назад до категорій",
@@ -1070,15 +1070,17 @@ export const dict = {
       outdent: "Підняти на рівень вище",
       moveTo: "Перемістити до…",
       edit: "Редагувати",
-      activate: "Активувати",
-      deactivate: "Деактивувати",
+      // Wave 198 (TASK-1052): the tree speaks of the SITE, not of a flag —
+      // the badge says «Показується / Приховано», so the actions match it.
+      activate: "Показувати на сайті",
+      deactivate: "Приховати",
       // TASK-408: an ACTIVE category under a deactivated ancestor is invisible on
       // the storefront, but its own row says «Активна» — the status column can only
       // speak about one row. The badge says what the tree does, so nobody spends an
       // afternoon wondering why an active category has no page.
-      hiddenByParent: "Прихована через батька",
+      hiddenByParent: "через батьківську",
       hiddenByParentHint: (name: string) =>
-        `Категорія активна, але не показується на вітрині: вимкнено «${name}» вище по дереву.`,
+        `Сама категорія увімкнена, але на сайті не показується: приховано «${name}» вище по дереву.`,
       // Blast radius (§3.11): stated BEFORE the mutation fires, N computed from
       // the tree already in memory.
       deactivateConfirm: (name: string, count: number) =>
@@ -1090,12 +1092,10 @@ export const dict = {
         colSelect: "Вибір",
         selectRow: (name: string) => `Вибрати „${name}“`,
         selectAll: "Вибрати всі видимі категорії",
-        selectedCount: (count: number) => `Вибрано: ${count}`,
-        activate: (count: number) => `Активувати (${count})`,
-        deactivate: (count: number) => `Деактивувати (${count})`,
-        clear: "Зняти вибір",
+        activate: (count: number) => `Показувати на сайті (${count})`,
+        deactivate: (count: number) => `Приховати (${count})`,
         deactivateConfirm: (count: number) =>
-          `Деактивувати вибрані категорії (${count})? Кожна з них зникне з вітрини разом з усім, що під нею. Статус самих підкатегорій не зміниться.`,
+          `Приховати вибрані категорії (${count})? Кожна з них зникне з сайту разом з усім, що під нею. Статус самих підкатегорій не зміниться.`,
         announce: {
           selected: (name: string, count: number) =>
             `Вибрано „${name}“. Усього вибрано: ${count}.`,
@@ -1105,8 +1105,8 @@ export const dict = {
           saving: (count: number) => `Зберігаю зміни для ${count} категорій…`,
           done: (count: number, isActive: boolean) =>
             isActive
-              ? `Активовано категорій: ${count}.`
-              : `Деактивовано категорій: ${count}.`,
+              ? `Показуються на сайті категорій: ${count}.`
+              : `Приховано категорій: ${count}.`,
           failed: "Не вдалося змінити статус. Спробуйте ще раз.",
         },
       },
@@ -1129,6 +1129,31 @@ export const dict = {
       // whole journey in one item; it runs the same outdent step repeatedly, so
       // it lands exactly where pressing «Підняти на рівень вище» twice would.
       makeRoot: "Зробити кореневою",
+
+      // --- Wave 198, CategoriesProposal КТ1–КТ4 (TASK-1052) ------------------
+      // The status badge says what the SITE does with the row (TASK-408 «через
+      // батьківську» sits beside it), not what the database flag is called.
+      statusShown: "Показується",
+      statusHidden: "Приховано",
+      expandAll: "Розгорнути все",
+      collapseAll: "Згорнути все",
+      // The always-visible bulk bar teaches what ticking a row is FOR.
+      bulkIdleHint:
+        "Виберіть категорії, щоб показати чи приховати кілька одразу. Перетягуйте за ⠿, щоб змінити порядок або вкласти.",
+      bulkItemForms: ["категорію", "категорії", "категорій"],
+      // The per-row blast-radius dialog's confirm button.
+      hideConfirm: "Приховати",
+      // 390 px: counts and status fold into one line under the name (КТ4).
+      mobileCount: (count: number) => `${count} тов.`,
+      // TASK-963: the toast that follows a move, carrying «Скасувати». The
+      // persistent «Скасувати останнє переміщення» control stays as well.
+      movedToast: {
+        nested: (name: string, parent: string) =>
+          `«${name}» вкладено в «${parent}».`,
+        root: (name: string) => `«${name}» тепер коренева категорія.`,
+        reordered: (name: string, pos: number, size: number) =>
+          `«${name}» переміщено: позиція ${pos} з ${size}.`,
+      },
     },
     // TASK-285: slug-rename guard on a publicly visible category.
     slugChangeConfirm: (oldSlug: string, newSlug: string) =>
@@ -4157,8 +4182,8 @@ export const dict = {
   statusToggle: {
     productDeactivate: "Приховати",
     productActivate: "Показати",
-    categoryDeactivate: "Деактивувати категорію",
-    categoryActivate: "Активувати категорію",
+    categoryDeactivate: "Приховати категорію",
+    categoryActivate: "Показувати категорію на сайті",
   },
 
   // --- Product groups (TASK-115 / TASK-142) -----------------------------------

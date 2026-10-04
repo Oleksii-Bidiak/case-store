@@ -11,8 +11,22 @@ import { dict } from "@/shared/config";
 import { LiveAnnouncer } from "@/shared/ui";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
 import { applyIntent, type TreeItem } from "@/shared/lib/sortable-tree";
+import { toast } from "@/shared/ui/toast";
 import { CategoryReorderUndoButton } from "../ui/category-reorder-undo-button";
 import { useCategoryTreeReorder } from "./use-category-tree-reorder";
+
+// Wave 198 (TASK-963): sonner renders nothing without a <Toaster>; spy instead.
+jest.mock("@/shared/ui/toast", () => ({
+  UNDO_TOAST_DURATION_MS: 10_000,
+  toast: {
+    success: jest.fn(),
+    error: jest.fn(),
+    undo: jest.fn(() => "undo-toast"),
+    dismiss: jest.fn(),
+  },
+}));
+const undoToast = toast.undo as jest.Mock;
+const dismissToast = toast.dismiss as jest.Mock;
 
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
@@ -87,7 +101,95 @@ function renderHarness(onFocusRow?: (id: string) => void) {
 const polite = () => screen.getByTestId("tree-live-polite").textContent;
 const assertive = () => screen.getByTestId("tree-live-assertive").textContent;
 
-beforeEach(() => resetReorderLock());
+beforeEach(() => {
+  resetReorderLock();
+  undoToast.mockClear();
+  dismissToast.mockClear();
+});
+
+describe("useCategoryTreeReorder — the «Скасувати» toast (wave 198, TASK-963)", () => {
+  it("a committed move posts ONE undo toast naming the move; its action replays the inverse", async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch("*/api/admin/categories/reorder", async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(SERVER_TREE);
+      }),
+    );
+
+    renderHarness();
+    await userEvent.click(
+      screen.getByRole("button", { name: "move-alpha-down" }),
+    );
+
+    await waitFor(() => expect(undoToast).toHaveBeenCalledTimes(1));
+    const [message, options] = undoToast.mock.calls[0] as [
+      string,
+      { onUndo: () => void },
+    ];
+    expect(message).toBe(
+      dict.categories.tree.movedToast.reordered("Alpha", 2, 3),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: dict.categories.tree.undo }),
+      ).toHaveAttribute("aria-disabled", "false"),
+    );
+    options.onUndo();
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({
+      groups: [{ parentId: null, orderedIds: [A, B, C] }],
+    });
+    // The undo itself is not a move — no new toast for it.
+    expect(undoToast).toHaveBeenCalledTimes(1);
+  });
+
+  it("a REJECTED move posts no undo toast", async () => {
+    server.use(
+      http.patch("*/api/admin/categories/reorder", () =>
+        HttpResponse.json(
+          { statusCode: 400, error: "CATEGORY_MAX_DEPTH", message: "nope" },
+          { status: 400 },
+        ),
+      ),
+    );
+
+    renderHarness();
+    await userEvent.click(
+      screen.getByRole("button", { name: "move-alpha-down" }),
+    );
+    await waitFor(() =>
+      expect(assertive()).toBe(dict.reorderTree.rejected.CATEGORY_MAX_DEPTH),
+    );
+    expect(undoToast).not.toHaveBeenCalled();
+  });
+
+  it("undoing through the PERSISTENT control dismisses the toast that offered the same undo", async () => {
+    server.use(
+      http.patch("*/api/admin/categories/reorder", () =>
+        HttpResponse.json(SERVER_TREE),
+      ),
+    );
+
+    renderHarness();
+    await userEvent.click(
+      screen.getByRole("button", { name: "move-alpha-down" }),
+    );
+    await waitFor(() => expect(undoToast).toHaveBeenCalledTimes(1));
+
+    const undo = screen.getByRole("button", {
+      name: dict.categories.tree.undo,
+    });
+    await waitFor(() => expect(undo).toHaveAttribute("aria-disabled", "false"));
+    await userEvent.click(undo);
+
+    await waitFor(() =>
+      expect(dismissToast).toHaveBeenCalledWith("undo-toast"),
+    );
+  });
+});
 
 describe("useCategoryTreeReorder — mutation lifecycle (TASK-291-I)", () => {
   it("sends the reorder payload and announces the commit, naming the Undo control", async () => {
