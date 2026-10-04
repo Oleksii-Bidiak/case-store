@@ -19,8 +19,9 @@
  * The public API (`CategoryTreeReorderApi`) is UNCHANGED.
  */
 
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "@/shared/ui/toast";
 import {
   flattenAdminCategoryTree,
   getCategoryControllerGetAdminTreeQueryKey,
@@ -46,6 +47,7 @@ export { CONFLICT_FLAG_MS, UNDO_WINDOW_MS } from "@/shared/lib/list-reorder";
 
 const a = dict.reorderTree.announce;
 const rejected = dict.reorderTree.rejected;
+const m = dict.categories.tree.movedToast;
 
 /** The admin-tree query key. Parameterless, so it is a module constant. */
 const TREE_KEY = getCategoryControllerGetAdminTreeQueryKey();
@@ -75,6 +77,34 @@ function describe(items: TreeItem[], id: string) {
   };
 }
 
+/**
+ * What the «Скасувати» toast says after a move (wave 198, TASK-963): where the
+ * row WENT, in the operator's words — «вкладено в», «тепер коренева», or the
+ * new position among the same siblings.
+ */
+export function movedToastMessage(
+  prev: TreeItem[],
+  next: TreeItem[],
+  movingId: string,
+): string | null {
+  const before = prev.find((i) => i.id === movingId);
+  const after = describe(next, movingId);
+  if (!before || !after) return null;
+  const parentId = next.find((i) => i.id === movingId)?.parentId ?? null;
+  if (parentId !== before.parentId) {
+    return after.parent === null
+      ? m.root(after.name)
+      : m.nested(after.name, after.parent);
+  }
+  return m.reordered(after.name, after.pos, after.size);
+}
+
+interface PendingMove {
+  prev: TreeItem[];
+  next: TreeItem[];
+  movingId: string;
+}
+
 export interface UseCategoryTreeReorderOptions {
   /** The flattened SERVER tree (what the query holds). */
   items: TreeItem[];
@@ -98,6 +128,20 @@ export function useCategoryTreeReorder({
     [],
   );
 
+  /**
+   * The move the NEXT `mutate` call belongs to (wave 198, TASK-963). Set by the
+   * wrapped `move` just before it hands over to the lifecycle and claimed
+   * synchronously by `mutate` — the lifecycle calls `mutate` inside `move` or
+   * not at all — so a move the lifecycle refused (busy, no-op) leaves nothing
+   * behind for a later undo to pick up. An undo's `mutate` finds it empty and
+   * therefore posts no toast.
+   */
+  const pendingMoveRef = useRef<PendingMove | null>(null);
+  /** The live «Скасувати» toast, so a newer move or an undo can retire it. */
+  const toastIdRef = useRef<string | number | null>(null);
+  /** The toast's action calls the CURRENT undo, not the one of its render. */
+  const undoRef = useRef<() => void>(() => undefined);
+
   const mutate = useCallback(
     (
       payload: ReorderCategoriesDto,
@@ -107,7 +151,30 @@ export function useCategoryTreeReorder({
         onSettled: () => void;
       },
     ) => {
-      rawMutate({ data: payload }, callbacks);
+      const moved = pendingMoveRef.current;
+      pendingMoveRef.current = null;
+      rawMutate(
+        { data: payload },
+        {
+          ...callbacks,
+          onSuccess: (response) => {
+            callbacks.onSuccess(response);
+            if (!moved) return;
+            const message = movedToastMessage(
+              moved.prev,
+              moved.next,
+              moved.movingId,
+            );
+            if (!message) return;
+            // One undo on offer at a time: the older toast would now undo the
+            // NEWER move, which is not what its words say.
+            if (toastIdRef.current !== null) toast.dismiss(toastIdRef.current);
+            toastIdRef.current = toast.undo(message, {
+              onUndo: () => undoRef.current(),
+            });
+          },
+        },
+      );
     },
     [rawMutate],
   );
@@ -206,7 +273,10 @@ export function useCategoryTreeReorder({
     [],
   );
 
-  return useReorderLifecycle<ReorderCategoriesDto, AdminCategoryTreeResponse>({
+  const lifecycle = useReorderLifecycle<
+    ReorderCategoriesDto,
+    AdminCategoryTreeResponse
+  >({
     resource: "categories",
     items,
     toPayload,
@@ -218,4 +288,46 @@ export function useCategoryTreeReorder({
     onFocusRow,
     isConflict,
   });
+
+  const {
+    items: effective,
+    move: lifecycleMove,
+    undo: lifecycleUndo,
+  } = lifecycle;
+
+  const move = useCallback<CategoryTreeReorderApi["move"]>(
+    (next, movingId, options) => {
+      pendingMoveRef.current = { prev: effective, next, movingId };
+      lifecycleMove(next, movingId, options);
+      pendingMoveRef.current = null;
+    },
+    [effective, lifecycleMove],
+  );
+
+  // The persistent control and the toast offer the SAME undo; whichever the
+  // operator uses, the other must not keep offering it.
+  const undo = useCallback(() => {
+    if (toastIdRef.current !== null) {
+      toast.dismiss(toastIdRef.current);
+      toastIdRef.current = null;
+    }
+    lifecycleUndo();
+  }, [lifecycleUndo]);
+
+  useEffect(() => {
+    undoRef.current = undo;
+  }, [undo]);
+
+  // A toast that outlives the screen would undo into an unmounted grid.
+  useEffect(
+    () => () => {
+      if (toastIdRef.current !== null) toast.dismiss(toastIdRef.current);
+    },
+    [],
+  );
+
+  return useMemo<CategoryTreeReorderApi>(
+    () => ({ ...lifecycle, move, undo }),
+    [lifecycle, move, undo],
+  );
 }

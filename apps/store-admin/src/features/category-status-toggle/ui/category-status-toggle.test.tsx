@@ -94,8 +94,9 @@ describe("CategoryStatusToggle — blast radius (TASK-291-I, §3.11)", () => {
     // Nothing is sent while the question is on screen.
     expect(calls).toEqual([]);
 
+    // Wave 198: the confirm button says what the row's badge will say — «Приховати».
     await userEvent.click(
-      screen.getByRole("button", { name: dict.common.deactivate }),
+      screen.getByRole("button", { name: dict.categories.tree.hideConfirm }),
     );
 
     await waitFor(() => expect(calls).toEqual([ID]));

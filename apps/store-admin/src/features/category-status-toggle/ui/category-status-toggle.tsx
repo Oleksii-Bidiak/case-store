@@ -76,7 +76,8 @@ export function useCategoryStatusToggle({
               name,
               descendantCount,
             ),
-            confirmLabel: dict.common.deactivate,
+            // Wave 198: the same verb the row's badge and menu use.
+            confirmLabel: dict.categories.tree.hideConfirm,
             destructive: true,
           }
         : null,
