@@ -1,5 +1,5 @@
 import { renderHook } from "@testing-library/react";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import type { CatalogImportPlan } from "../model/plan-types";
 import { useImportDecisions } from "../model/use-import-decisions";
@@ -31,14 +31,20 @@ describe("ImportPlanReview — reference hint (TASK-727)", () => {
   // The import creates characteristics as «Текст», and a «Текст» characteristic
   // can never be a filter (TASK-488). The hint used to promise «зробити їх
   // фільтрами можна пізніше» without saying the type has to change first.
-  it("tells the operator to change the type before making a characteristic a filter", () => {
+  it("tells the operator to change the type before making a characteristic a filter", async () => {
     const { result } = renderHook(() => useImportDecisions());
 
     renderWithProviders(
       <ImportPlanReview plan={makePlan()} decisions={result.current} />,
     );
 
-    const hint = screen.getByText(dict.catalogImport.refHint);
+    // Wave 198 (ІК4): the references moved into their own tab.
+    await userEvent.click(
+      screen.getByRole("tab", {
+        name: new RegExp(`^${dict.catalogImport.tabReferences}`),
+      }),
+    );
+    const hint = await screen.findByText(dict.catalogImport.refHint);
     const a = dict.attributeDefinitions;
     expect(hint).toHaveTextContent(`«${a.typeText}»`);
     expect(hint).toHaveTextContent(`«${a.typeSelect}»`);

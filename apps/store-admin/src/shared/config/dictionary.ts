@@ -475,7 +475,7 @@ export const dict = {
     metaTitle: "Товари — Адмін",
     metaTitleNew: "Створення товару — Адмін",
     metaTitleEdit: "Редагування товару — Адмін",
-    metaTitlePreview: "Перегляд товару — Адмін",
+    metaTitlePreview: "Огляд товару — Адмін",
     heading: "Товари",
     add: "Додати товар",
     // Wave 198: names the fields the admin search really reads (TASK-406 added SKU).
@@ -623,12 +623,9 @@ export const dict = {
     toastUpdated: "Товар оновлено",
     toastUpdateFailed: "Не вдалося оновити товар",
     // Staff preview of deactivated products (TASK-155)
-    previewLink: "Переглянути",
-    previewBack: "← Назад",
-    previewEditLink: "Редагувати товар",
-    previewLoadError: "Не вдалося завантажити товар для перегляду.",
-    previewDeactivatedBanner:
-      "Цей товар деактивований і не відображається для покупців. Це службовий перегляд.",
+    // Wave 198 (TASK-1087): the staff OVERVIEW is «Огляд»; the customer view is
+    // «Подивитись на сайті» (TASK-670) — two names for two different pages.
+    previewLink: "Огляд",
     previewNoImages: "Зображень немає",
     previewCategory: "Категорія",
     previewStock: "Вільний залишок",
@@ -637,7 +634,6 @@ export const dict = {
     previewPhysical: "Фізично на складі",
     previewSku: "Артикул",
     previewAttributes: "Атрибути",
-    previewSiblings: "Інші позиції групи",
     previewNoDescription: "Опис відсутній",
     previewActive: "Активний",
     previewInactive: "Деактивований",
@@ -812,25 +808,23 @@ export const dict = {
   catalogImport: {
     heading: "Імпорт каталогу з файлу",
     intro:
-      "Завантажте .xlsx від постачальника. Спершу покажемо, що саме зміниться — " +
+      "Завантажте .xlsx від постачальника. Спершу покажемо, що саме зміниться, — " +
       "і нічого не запишемо, доки ви не підтвердите.",
-    pickFile: "Оберіть файл .xlsx",
-    upload: "Розібрати файл",
+    pickFile: "Обрати файл",
     uploading: "Розбираємо файл…",
     uploadFailed: "Не вдалося розібрати файл",
     duplicateWarning:
       "Такий самий файл уже імпортували раніше. Якщо він не змінювався, змін не буде.",
 
     // Summary tiles
-    tileCreate: "Створити",
-    tileUpdate: "Оновити",
-    tileMissing: "Приховати",
-    tileUnchanged: "Без змін",
-    tileErrors: "Помилок у файлі",
-    tileConflicts: "Ручних правок під загрозою",
+    tileCreate: "створити",
+    tileUpdate: "оновити",
+    tileMissing: "приховати",
+    tileUnchanged: "без змін",
+    tileErrors: "рядків пропустимо",
+    tileConflicts: "ручні правки під загрозою",
 
     // Reference data the import will create
-    referencesHeading: "Довідники з файлу",
     refCategories: "Категорії",
     refBrands: "Бренди",
     refDeviceBrands: "Марки пристроїв",
@@ -847,41 +841,29 @@ export const dict = {
       "(і перелічіть значення) або «Так / Ні» та увімкніть «Використовувати як фільтр каталогу».",
 
     // Rows
-    createsHeading: (n: number) => `Нові товари (${n})`,
     createsHint:
-      "Кожен створюється прихованим і з нульовим залишком — у файлі немає залишків. " +
-      "Опублікуєте їх самі, коли перевірите.",
-    updatesHeading: (n: number) => `Зміни в наявних товарах (${n})`,
-    missingHeading: (n: number) => `Зникли з файлу (${n})`,
+      "Кожен створимо прихованим і з нульовим залишком — у файлі залишків немає. " +
+      "Опублікуєте самі, коли перевірите.",
     missingHint:
       "Ці товари приховаємо — не видалимо. Якщо постачальник поверне їх у файл, " +
       "вони знову зʼявляться.",
-    issuesHeading: (n: number) => `Рядки, які пропустимо (${n})`,
     rowNumber: (n: number) => `рядок ${n}`,
-    conflictBadge: "змінено вручну",
-    conflictHint:
-      "Це поле хтось правив в адмінці. За замовчуванням переможе файл — зніміть " +
-      "галочку, щоб зберегти вашу правку.",
-    uncheckConflicts: "Зняти всі ручні правки",
-    showMore: (n: number) => `Показати ще ${n}`,
+    conflictBadge: "змінено в адмінці",
+    // The same action as before — it unticks every change that would overwrite
+    // a hand edit — named by what it does for the operator (Д-ж3 §6).
+    uncheckConflicts: "Зберегти всі ручні правки",
+    showMore: "Показати ще",
 
     // Apply
     apply: "Застосувати",
     applying: "Записуємо…",
-    applyConfirm: (n: number) =>
-      `Застосувати ${n} змін? Товари створюються прихованими, тож на вітрині нічого не зміниться, ` +
-      `доки ви їх не опублікуєте.`,
-    cancel: "Відхилити",
-    cancelConfirm: "Відхилити цей розбір? Файл доведеться завантажити заново.",
     applyFailed: "Не вдалося застосувати імпорт",
     cancelled: "Розбір відхилено",
 
     // Progress / result
-    progress: (done: number, total: number) => `Записано ${done} з ${total}`,
     doneHeading: "Імпорт завершено",
     doneHint:
-      "Нові товари лежать прихованими у списку товарів. Проставте залишки й " +
-      "опублікуйте те, що готове до продажу.",
+      "Нові товари лежать прихованими. Проставте залишки й опублікуйте те, що готове до продажу.",
     failedHeading: "Імпорт зупинився",
     toStore: "До списку товарів",
     startOver: "Імпортувати інший файл",
@@ -897,6 +879,115 @@ export const dict = {
       CANCELLED: "Відхилено",
     } as Record<string, string>,
     loadError: "Не вдалося завантажити дані імпорту.",
+
+    // Хвиля 198, CatalogImportProposal ІК1–ІК14 (TASK-1086).
+    stepsAria: "Кроки імпорту",
+    stepFile: "Файл",
+    stepReview: "Перевірка",
+    stepWrite: "Запис",
+    dropTitle: "Перетягніть файл сюди",
+    dropSubtitle: "або оберіть його на комп'ютері",
+    dropHint:
+      "Лише .xlsx у форматі постачальника. Фото з файлу не завантажуємо — їх додають у товарі.",
+    dropRelease: "Відпустіть, щоб розібрати файл",
+    dropReleaseHint:
+      "Розбір займає до хвилини; нічого не запишемо без вашого підтвердження.",
+    wrongType: "Це не .xlsx — оберіть файл у форматі постачальника.",
+    parsedMeta: (date: string, email: string | null | undefined) =>
+      email ? `розібрано ${date} · ${email}` : `розібрано ${date}`,
+    noChangesBadge: "Без змін",
+    noChanges: (date: string) =>
+      `Цей самий файл уже імпортували ${date}. Змін немає — застосовувати нічого.`,
+    openThatImport: "Відкрити той імпорт →",
+    tabsAria: "Що зміниться",
+    tabChanges: "Зміни",
+    tabMissing: "Зникли з файлу",
+    tabCreates: "Нові",
+    tabWarnings: "Попередження",
+    tabSkipped: "Пропущені рядки",
+    tabReferences: "Довідники",
+    changesHint:
+      "Позначене — запишемо з файлу. Зніміть позначку, щоб лишити як є.",
+    warningsHint:
+      "Ці рядки запишемо, але з уточненнями. Перевірте, чи так і мало бути.",
+    changesEmpty: "Файл не змінює жодного наявного товару.",
+    missingEmpty: "Усі товари магазину є у файлі.",
+    createsEmpty: "Нових товарів у файлі немає.",
+    warningsEmpty: "Попереджень немає.",
+    skippedEmpty: "Усі рядки файлу прочитано.",
+    referencesEmpty: "Нових довідників не буде.",
+    openProduct: "Відкрити товар →",
+    colProduct: "Товар",
+    colSku: "Артикул",
+    colRow: "Рядок",
+    pageRange: (from: number, to: number, total: number) =>
+      `${from}–${to} із ${total.toLocaleString("uk-UA")}`,
+    barPositions: (n: number) =>
+      countLabel(n, ["позиція", "позиції", "позицій"]),
+    barKeep: (n: number) =>
+      `${countLabel(n, ["ручну правку", "ручні правки", "ручних правок"])} збережемо`,
+    barSkip: (n: number) =>
+      `${countLabel(n, ["рядок", "рядки", "рядків"])} пропустимо`,
+    rejectButton: "Відхилити…",
+    applyButton: (n: number) =>
+      `Застосувати ${countLabel(n, ["зміну", "зміни", "змін"])}…`,
+    applyTitle: (n: number) =>
+      `Застосувати ${countLabel(n, ["зміну", "зміни", "змін"])}?`,
+    applyCreates: (n: number) =>
+      `${countLabel(n, ["новий товар", "нові товари", "нових товарів"])} — прихованими, із залишком 0`,
+    applyUpdates: (n: number, kept: number) =>
+      kept > 0
+        ? `${countLabel(n, ["оновлення", "оновлення", "оновлень"])}; ${countLabel(kept, ["ручну правку", "ручні правки", "ручних правок"])} збережемо (знято позначку)`
+        : countLabel(n, ["оновлення", "оновлення", "оновлень"]),
+    applyMissing: (n: number) =>
+      `${countLabel(n, ["товар", "товари", "товарів"])} приховаємо — не видалимо`,
+    applyFootnote: (updates: number, missing: number) =>
+      `На вітрині зміняться ціни, назви й інші поля ${countLabel(updates, ["товару", "товарів", "товарів"])} і зникнуть ${missing}. Нові з'являться лише після публікації.`,
+    cancelTitle: (filename: string) => `Відхилити розбір ${filename}?`,
+    cancelDescription:
+      "Нічого не запишемо. Щоб імпортувати цей файл пізніше, його треба буде завантажити знову.",
+    cancelAction: "Відхилити",
+    progress: (done: number, total: number) =>
+      `Записуємо ${done.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")}`,
+    progressHint:
+      "Запис іде на сервері: можна закрити сторінку й повернутися — прогрес збережеться.",
+    doneCreated: "створено — приховані, залишок 0",
+    doneUpdated: "оновлено",
+    doneUpdatedKept: (kept: number) =>
+      `оновлено (${countLabel(kept, ["ручну правку", "ручні правки", "ручних правок"])} збережено)`,
+    doneHidden: "приховано — зникли з файлу",
+    doneSkipped: "рядків пропущено",
+    toNewProducts: (n: number) => `Нові товари (${n}) →`,
+    failedDb:
+      "Сервер на мить втратив зв'язок з базою даних. Спробуйте ще раз за кілька хвилин. Якщо повториться — передайте розробнику технічні деталі нижче.",
+    failedGeneric:
+      "Запис перервався на сервері. Спробуйте ще раз за кілька хвилин: у новому розборі лишиться лише те, що ще не записано. Якщо повториться — передайте розробнику технічні деталі нижче.",
+    techDetails: "Технічні деталі",
+    retry: "Спробувати ще раз",
+    copyDetails: "Скопіювати деталі",
+    detailsCopied: "Деталі скопійовано.",
+    copyFailed:
+      "Не вдалося скопіювати — браузер не дав доступу до буфера обміну.",
+    historyLive: "оновлюється після кожної дії",
+    colFile: "Файл",
+    colStatus: "Статус",
+    colWhen: "Коли",
+    colWho: "Хто",
+    colResult: "Результат",
+    historyOpen: "Відкрити",
+    historyItemForms: ["імпорт", "імпорти", "імпортів"] as const,
+    resultToCreate: (n: number) => `${n.toLocaleString("uk-UA")} нових`,
+    resultToUpdate: (n: number) => `${n.toLocaleString("uk-UA")} оновити`,
+    resultToHide: (n: number) => `${n.toLocaleString("uk-UA")} приховати`,
+    resultCreated: (n: number) => `${n.toLocaleString("uk-UA")} нових`,
+    resultUpdated: (n: number) => `${n.toLocaleString("uk-UA")} оновлено`,
+    resultHidden: (n: number) => `${n.toLocaleString("uk-UA")} приховано`,
+    resultNothing: "нічого не записано",
+    resultNoChanges: "змін немає",
+    resultStopped: (done: number, total: number) =>
+      `зупинився на ${done.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")}`,
+    resultWriting: (done: number, total: number) =>
+      `записано ${done.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")}`,
   },
 
   // TASK-361: publication is its own action, separate from saving the fields.
@@ -1634,27 +1725,18 @@ export const dict = {
     metaTitleEdit: "Редагування промокоду — Адмін",
     heading: "Промокоди",
     add: "Додати промокод",
-    searchPlaceholder: "Пошук за кодом…",
+    searchPlaceholder: "Код…",
     searchAria: "Пошук промокодів",
     loadError: "Не вдалося завантажити промокоди. Спробуйте ще раз.",
     loadOneError: "Не вдалося завантажити промокод. Спробуйте ще раз.",
-    emptyMatch: (q: string) => `Немає промокодів за запитом «${q}».`,
     empty: "Промокодів ще немає. Створіть свій перший промокод.",
     colCode: "Код",
-    colType: "Тип",
-    colValue: "Значення",
+    colValue: "Знижка",
     colRedeemed: "Використано",
-    colExpires: "Діє до",
     colStatus: "Статус",
-    typePercent: "Відсоток",
-    typeFixed: "Фіксована",
-    statusInactive: "Неактивний",
-    deactivate: "Деактивувати",
-    deactivating: "Деактивація…",
-    noExpiry: "—",
     redeemedOf: (used: number, max: number | null) =>
       max === null ? `${used}` : `${used} / ${max}`,
-    back: "← Назад до промокодів",
+    back: "← Промокоди",
     createHeading: "Створення промокоду",
     editHeading: "Редагування промокоду",
     createSubmit: "Створити промокод",
@@ -1662,44 +1744,134 @@ export const dict = {
     toastCreateFailed: "Не вдалося створити промокод",
     toastUpdated: "Промокод оновлено",
     toastUpdateFailed: "Не вдалося оновити промокод",
-    toastDeactivated: "Промокод деактивовано",
-    toastDeactivateFailed: "Не вдалося деактивувати промокод",
+    toastDeactivated: "Промокод вимкнено",
+    toastDeactivateFailed: "Не вдалося вимкнути промокод",
+    // Хвиля 198, DiscountsProposal ПК1–ПК8 (TASK-1085). The hint under the
+    // heading is owner-confirmed (2026-10-01): a guest cannot apply a code.
+    description:
+      "Коди, які покупець вводить у кошику. Застосувати промокод може лише зареєстрований покупець — гість застосувати його не зможе.",
+    readOnlyNotice: "Ви можете переглядати промокоди, але не змінювати.",
+    // Quick views. Only what the API filters by (`isActive`); «Діють ·
+    // Заплановані · Закінчились» need a date-aware state filter (TASK-1085 tail).
+    viewAll: "Усі",
+    viewDisabled: "Вимкнені",
+    colConditions: "Умови",
+    colPeriod: "Період",
+    onPromoPage: "На сторінці «Акції»",
+    value: (amount: string) => `−${amount}`,
+    condMinSpend: (amount: string) => `від ${amount}`,
+    condPerUser: (n: number) =>
+      `${countLabel(n, ["раз", "рази", "разів"])} на клієнта`,
+    condNone: "без умов",
+    periodNone: "без строку",
+    periodFrom: (date: string) => `з ${date}`,
+    periodUntil: (date: string) => `до ${date}`,
+    periodRange: (from: string, to: string) => `${from} – ${to}`,
+    // The status badge says the date — an expired code no longer looks active.
+    statusLive: "Діє",
+    statusScheduled: (date: string) => `Заплановано з ${date}`,
+    statusExpired: (date: string) => `Закінчився ${date}`,
+    statusDisabled: "Вимкнено",
+    usedCard: (used: string) => `використано ${used}`,
+    rowEdit: "Редагувати",
+    rowCopyCode: "Копіювати код",
+    rowDuplicate: "Дублювати",
+    rowDisable: "Вимкнути…",
+    rowEnable: "Увімкнути",
+    copyCodeAria: (code: string) => `Копіювати код ${code}`,
+    codeCopied: (code: string) => `Код ${code} скопійовано.`,
+    copyFailed:
+      "Не вдалося скопіювати — браузер не дав доступу до буфера обміну.",
+    disableTitle: (code: string) => `Вимкнути промокод ${code}?`,
+    disableDescription:
+      "Код перестане застосовуватися в кошику й зникне зі сторінки «Акції». Покупці, які вже додали його в кошик, побачать, що він більше не діє. Оформлені замовлення зі знижкою не зміняться. Увімкнути знову можна будь-коли.",
+    disableConfirm: "Вимкнути",
+    toastActivated: "Промокод увімкнено",
+    toastActivateFailed: "Не вдалося увімкнути промокод",
+    summaryFound: "Знайдено",
+    itemForms: ["промокод", "промокоди", "промокодів"] as const,
+    sortCreatedDesc: "спершу нові",
+    sortCreatedAsc: "спершу старі",
+    sortCodeAsc: "код, А–Я",
+    sortCodeDesc: "код, Я–А",
+    sortRedeemedDesc: "використано, більше зверху",
+    sortRedeemedAsc: "використано, менше зверху",
+    sortExpiresDesc: "кінець періоду, пізніші зверху",
+    sortExpiresAsc: "кінець періоду, раніші зверху",
+    sortPeriodHint: "Сортує за датою «Діє до».",
+    // «Дублювати»: the copy opens as a new draft; the code must be new.
+    duplicateNotice: (code: string) =>
+      `Копія промокоду ${code}: умови й період перенесено, код придумайте новий.`,
+    statsUsed: "Використано",
+    statsTimes: (n: number) => countLabel(n, ["раз", "рази", "разів"]),
   },
 
   discountForm: {
     code: "Код",
     codePlaceholder: "SUMMER10",
     type: "Тип знижки",
-    typePercent: "Відсоток (%)",
-    typeFixed: "Фіксована сума (₴)",
-    value: "Значення",
+    typePercent: "Відсоток",
+    typeFixed: "Сума в ₴",
+    value: "Розмір знижки",
     minSpend: "Мінімальна сума замовлення",
-    maxRedemptions: "Глобальний ліміт використань",
-    perUserLimit: "Ліміт на користувача",
-    startsAt: "Активний від",
-    expiresAt: "Діє до",
-    optional: "(необов'язково)",
-    active: "Активний",
+    maxRedemptions: "Скільки разів загалом",
+    perUserLimit: "Разів на одного клієнта",
+    startsAt: "Діє з",
+    expiresAt: "Діє до (включно)",
+    active: "Увімкнено",
     // TASK-731 (рішення B-11): a new code is private until published here.
     showOnPromoPage: "Показувати на сторінці «Акції»",
     showOnPromoPageHint:
-      "Без позначки код приватний: його немає на сторінці «Акції» вітрини, але він працює, якщо покупець введе його вручну.",
+      "Код з'явиться в блоці «Промокоди тижня» на /promo. Вимкніть для персональних кодів (VIP, розсилка).",
     submit: "Зберегти промокод",
     errors: {
       codeRequired: "Вкажіть код",
       codeMax: "Код має містити не більше 64 символів",
       valueRequired: "Вкажіть значення",
-      valuePositive: "Значення має бути більшим за 0",
+      valuePositive: "Знижка має бути більшою за 0.",
       percentRange: "Відсоток має бути в межах 1–100",
       minSpendInvalid: "Вкажіть невід'ємне число",
       intInvalid: "Вкажіть ціле число більше 0",
-      dateOrder: "Дата початку має передувати даті завершення",
+      dateOrder: "«Діє до» має бути не раніше за «Діє з».",
       // TASK-796: mirrors the API's `maxDecimalPlaces: 2` on money fields.
       decimalsMax: "Не більше двох знаків після коми",
+      // DiscountsProposal ПК4: a cap of 0 is not «no cap» — say what it means.
+      capZero: "0 означає «нікому». Залиште порожнім, якщо ліміту немає.",
     },
     // TASK-795: the window is a pair of KYIV calendar days, inclusive.
     datesHint:
-      "Дні — за київським часом, включно: код діє з 00:00 першого дня до 23:59 останнього.",
+      "За київським часом: з 00:00 першого дня до 23:59 останнього. Порожнє — без обмеження.",
+    // Хвиля 198, DiscountsProposal ПК3–ПК5 (TASK-1085).
+    sectionCode: "Код і знижка",
+    sectionConditions: "Умови",
+    sectionPeriod: "Період",
+    sectionVisibility: "Видимість",
+    guestNoticeBefore: "Промокод може застосувати лише ",
+    guestNoticeStrong: "зареєстрований",
+    guestNoticeAfter:
+      " покупець. Гість, який введе код у кошику, застосувати його не зможе, доки не увійде.",
+    codeHint:
+      "Латиниця й цифри, без пробілів. Покупець вводить без урахування регістру.",
+    codeLockedHint:
+      "Код не змінюється після створення — так старі розсилки й банери не зламаються.",
+    generate: "Згенерувати",
+    unitPercent: "%",
+    unitCurrency: "₴",
+    minSpendPlaceholder: "без мінімуму",
+    minSpendHint: "Порожнє — будь-яка сума.",
+    noLimitPlaceholder: "без ліміту",
+    maxRedemptionsHint: "Порожнє — без ліміту.",
+    perUserLimitHint: "Напр. 1 — кожен може використати лише раз.",
+    activeHint:
+      "Вимкніть — код перестане застосовуватися в кошику, навіть якщо період ще триває.",
+    previewTitle: "Як побачить покупець",
+    previewCode: "Промокод",
+    previewMinSpend: (amount: string) => `Діє для замовлень від ${amount}`,
+    previewFrom: (date: string) => `Діє з ${date}`,
+    previewUntil: (date: string) => `Діє до ${date}`,
+    previewRange: (from: string, to: string) => `Діє з ${from} до ${to}`,
+    errorSummary: (n: number) =>
+      `Не вдалося зберегти — виправте ${countLabel(n, ["поле", "поля", "полів"])} нижче.`,
   },
 
   // --- Static pages (TASK-153) ------------------------------------------------
@@ -6508,6 +6680,90 @@ export const dict = {
     loadError: "Не вдалося завантажити список. Спробуйте ще раз.",
     footerHint:
       "«Розділ» — Каталог, Акції, Блог…; «Своє» — будь-яка адреса, заходить у поле, як зараз.",
+  },
+
+  // Огляд товару `/products/preview/[slug]` (хвиля 198, ProductPreviewProposal
+  // ПП1–ПП10, TASK-1087): службовий огляд — склад, видимість, SEO, група,
+  // історія. Як товар бачить покупець — «Подивитись на сайті» (TASK-670).
+  productOverview: {
+    heading: "Огляд товару",
+    back: "Товари",
+    breadcrumbAria: "Навігація",
+    onSite: "На сайті",
+    hidden: "Прихований",
+    copyAddress: "Копіювати адресу",
+    addressCopied: "Адресу скопійовано.",
+    copyFailed:
+      "Не вдалося скопіювати — браузер не дав доступу до буфера обміну.",
+    viewOnSite: "Подивитись на сайті",
+    edit: "Редагувати",
+    intro:
+      "Службовий огляд: склад, видимість, SEO та історія змін. Як товар бачить покупець — «Подивитись на сайті» (працює й для прихованого — за тимчасовим посиланням).",
+    hiddenLead: "Покупці не бачать цей товар:",
+    hiddenWhyOff: "його вимкнено. Нижче — як він виглядатиме після увімкнення.",
+    hiddenWhyCategory: (name: string) =>
+      `прихована його категорія «${name}». Увімкнений сам товар цього не змінить — змініть категорію або перенесіть товар.`,
+    photoAlt: (name: string, n: number) => `${name} — фото ${n}`,
+    photoThumbAria: (n: number) => `Показати фото ${n}`,
+    noPhotos: "Фото немає",
+    noPhotosHint:
+      "На вітрині замість фото буде заглушка. Додайте фото у формі товару.",
+    discount: (percent: number) => `−${percent}%`,
+    sku: "Артикул",
+    skuMissing: "— не задано",
+    brand: "Бренд",
+    category: "Категорія",
+    addons: "Додаткові послуги",
+    description: "Опис",
+    descriptionEmpty:
+      "Опису немає — на сторінці товару цей блок буде порожнім.",
+    specs: "Характеристики",
+    specsEmpty:
+      "Не заповнено — у фільтрах каталогу товар не знайдуть за кольором чи матеріалом.",
+    compat: "Сумісність",
+    compatEmpty:
+      "Не прив'язано до пристроїв — у «Підібрати до свого пристрою» товар не з'явиться.",
+    visibility: "Видимість на сайті",
+    visEnabled: "Увімкнено",
+    visDisabled: "Вимкнено",
+    visNotDeleted: "Не видалено",
+    visCategoryShown: (name: string) => `Категорія «${name}» показується`,
+    visCategoryHidden: (name: string) => `Категорія «${name}» прихована`,
+    visCategoryUnknown: (name: string) => `Категорія «${name}»`,
+    visFixEnable: "Увімкнути →",
+    visFixCategory: "Відкрити категорію →",
+    visFootnote: "Покупець бачить товар, лише коли виконано всі умови.",
+    visOk: "виконано",
+    visFail: "не виконано",
+    visUnknown: "не вдалося перевірити",
+    stock: "Склад",
+    stockSellable: "Можна продати",
+    stockReserved: "У резерві",
+    stockPhysical: "Фізично на складі",
+    stockOut: "Немає в наявності — на сайті «Немає в наявності»",
+    seo: "Як у пошуку Google",
+    seoOverridden: "перевизначено",
+    seoAuto: "автоматично з назви",
+    group: "Група",
+    groupCount: (n: number) =>
+      `Група · ${countLabel(n, ["варіант", "варіанти", "варіантів"])}`,
+    groupOpen: "Відкрити групу →",
+    groupThis: "цей",
+    groupThisHidden: "цей · прихований",
+    groupHidden: "прихований",
+    groupNone: "Окремий товар, не входить у групу варіантів.",
+    history: "Історія змін",
+    historyAll: "Уся історія →",
+    historyEmpty: "Змін ще не записано.",
+    historyError: "Не вдалося завантажити історію.",
+    notFound: "Товар не знайдено",
+    notFoundHint:
+      "Його могли видалити або змінити адресу. Знайдіть товар у списку за назвою чи артикулом.",
+    loadError: "Не вдалося завантажити товар",
+    loadErrorHint:
+      "Сервер не відповів. Перевірте з'єднання й спробуйте ще раз.",
+    retry: "Спробувати ще раз",
+    toList: "До списку товарів",
   },
 } as const;
 

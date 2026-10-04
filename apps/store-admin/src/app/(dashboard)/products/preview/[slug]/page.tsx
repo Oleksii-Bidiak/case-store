@@ -1,6 +1,9 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { AdminProductPreviewView } from "@/widgets";
+import {
+  AdminProductPreviewSkeleton,
+  AdminProductPreviewView,
+} from "@/widgets";
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -12,9 +15,9 @@ interface PreviewProductPageProps {
 }
 
 /**
- * Staff-only preview of a product by slug, including deactivated products
- * (TASK-155). Not linked from the sidebar — reached via the "Preview" action on
- * the product edit page.
+ * «Огляд товару» — the staff overview of a product by slug, including
+ * deactivated products (TASK-155, wave 198 TASK-1087). Not in the sidebar —
+ * reached through «Огляд» on the product card and the edit page.
  */
 export default async function PreviewProductPage({
   params,
@@ -22,7 +25,7 @@ export default async function PreviewProductPage({
   const { slug } = await params;
 
   return (
-    <Suspense>
+    <Suspense fallback={<AdminProductPreviewSkeleton />}>
       <AdminProductPreviewView slug={slug} />
     </Suspense>
   );

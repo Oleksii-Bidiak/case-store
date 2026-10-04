@@ -23,3 +23,17 @@ export type {
   AdminDiscountListResponse,
   AdminListDiscountsParams,
 } from "@/shared/api";
+
+// Wave 198, DiscountsProposal ПК1 (TASK-1085): what a code does right now,
+// read from the switch AND the window, and the code's terms in words.
+export {
+  discountAmount,
+  discountConditions,
+  discountDisplayState,
+  discountPeriod,
+  discountStatusLabel,
+  discountValueLabel,
+  type DiscountDisplayState,
+  type DiscountStateFields,
+} from "./lib/display-state";
+export { DiscountStatusBadge } from "./ui/discount-status-badge";

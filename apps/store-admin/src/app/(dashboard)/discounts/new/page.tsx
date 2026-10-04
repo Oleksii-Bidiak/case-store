@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { CreateDiscountView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
+import { CreateDiscountView, DiscountFormSkeleton } from "@/widgets";
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -10,7 +9,9 @@ export const metadata: Metadata = {
 
 export default function NewDiscountPage() {
   return (
-    <Suspense fallback={<AdminFormSkeleton />}>
+    <Suspense
+      fallback={<DiscountFormSkeleton heading={dict.discounts.createHeading} />}
+    >
       <CreateDiscountView />
     </Suspense>
   );

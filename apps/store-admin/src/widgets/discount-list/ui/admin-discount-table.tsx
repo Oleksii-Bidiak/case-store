@@ -1,74 +1,83 @@
 "use client";
 
-import Link from "next/link";
+import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   useAdminListDiscounts,
   type DiscountEntity,
 } from "@/entities/discount";
-import { DiscountStatusToggle } from "@/features/discount-status-toggle";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
+import { useDiscountStatus } from "@/features/discount-status-toggle";
 import {
-  Button,
+  Callout,
+  DataRegistry,
   LiveAnnouncer,
-  SortableColumnHeader,
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableToolbar,
+  SummaryValue,
   pageSizeFrom,
+  useDataRegistry,
+  type QuickView,
+  type RowActionItem,
 } from "@/shared/ui";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
-import { formatCurrency, formatDate } from "@/shared/lib";
+import { countLabel } from "@/shared/lib";
 import { dict } from "@/shared/config";
-import { AdminDiscountTableSkeleton } from "./admin-discount-table-skeleton";
+import {
+  buildDiscountColumns,
+  copyDiscountCode,
+  renderDiscountCard,
+} from "./discount-registry-columns";
 
-/**
- * Format a discount's value cell by type (e.g. "10%" or "50 ₴"). A fixed amount
- * goes through the one money formatter (TASK-801) — it was `₴50.00`, the sign
- * in front and a dot, unlike every other sum in the panel.
- */
-function formatValue(discount: DiscountEntity): string {
-  return discount.type === "PERCENT"
-    ? `${Number(discount.value)}%`
-    : formatCurrency(discount.value);
+const d = dict.discounts;
+
+const ALL_VIEW = "all";
+const DISABLED_VIEW = "disabled";
+
+const getRowId = (discount: DiscountEntity) => discount.id;
+const getRowLabel = (discount: DiscountEntity) => discount.code;
+const editHref = (discount: DiscountEntity) => `/discounts/${discount.id}/edit`;
+
+/** One-row requests: the API's own `meta.total` per view. */
+const COUNT_QUERY = { page: 1, limit: 1 } as const;
+
+function sortLabel(sortBy: string, sortOrder: "asc" | "desc"): string {
+  const asc = sortOrder === "asc";
+  switch (sortBy) {
+    case "code":
+      return asc ? d.sortCodeAsc : d.sortCodeDesc;
+    case "redeemedCount":
+      return asc ? d.sortRedeemedAsc : d.sortRedeemedDesc;
+    case "expiresAt":
+      return asc ? d.sortExpiresAsc : d.sortExpiresDesc;
+    default:
+      return asc ? d.sortCreatedAsc : d.sortCreatedDesc;
+  }
 }
 
-/** Format the expiry cell (date only, or an em dash when unbounded). */
-function formatExpiry(expiresAt: string | null): string {
-  if (!expiresAt) return dict.discounts.noExpiry;
-  return formatDate(expiresAt);
-}
-
 /**
- * Paginated, searchable, sortable discount table for the admin panel.
+ * The promo-code register on the shared registry (wave 198, DiscountsProposal
+ * ПК1–ПК2, ПК6–ПК8, TASK-1085).
  *
- * Search, page, page size and sort state all live in the URL (`?search=`,
- * `?page=`, `?limit=`, `?sortBy=&sortOrder=`), so a view survives a refresh and
- * can be pasted to a colleague.
+ * The URL contract grew, nothing was dropped: `?search=`, `?page=`, `?limit=`,
+ * `?sortBy=&sortOrder=` (TASK-355) as before, plus `?isActive=false` for the
+ * «Вимкнені» view — the one state filter the API has.
  *
- * TASK-423 replaced the search FORM — a text box plus a «Пошук» button the
- * operator had to find and press — with the shared search-as-you-type box. Eight
- * tables worked that way and five did not, which is the inconsistency the owner
- * found when auditing the panel as a CRM.
+ * What moved: the status cell's «Деактивувати» button became «Вимкнути…» in
+ * «⋯», behind an AlertDialog that names the consequences (ПК6); the «Редагувати»
+ * button became a row click plus «⋯ → Редагувати». New in «⋯»: «Копіювати код»,
+ * «Дублювати» (a new draft seeded from this code) and «Увімкнути» — which used
+ * to need the edit form. Every write is `discounts:write`, the key the whole
+ * admin discount controller requires.
  *
- * The sort is SERVER-side and was already implemented: `DiscountListQueryDto`
- * has accepted `sortBy`/`sortOrder` since TASK-147, but this table hard-coded
- * `createdAt desc` and never offered the control (TASK-355). Only the four keys
- * the DTO's `@IsIn` allows are wired — `code`, `redeemedCount`, `expiresAt` are
- * visible columns; `createdAt` stays the default and has no column of its own.
+ * Not drawn, because the API does not provide them (TASK-1085 API tails): the
+ * date-aware views «Діють · Заплановані · Закінчились» (the list filters by
+ * `isActive` only — the badge reads the dates per row, but a view would count
+ * and page wrongly), «Замовлення з цим кодом» (the orders list cannot filter by
+ * promo code), bulk actions (no bulk endpoint).
  *
- * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
- * calls `useAnnouncer()` to confirm a finished refresh, and a hook called in the
- * same component that renders the provider would read the default no-op context.
- * TASK-355 shipped the toolbar here without a provider anywhere in the tree, so
- * the confirmation was dropped silently: the refetch still ran, nothing on screen
- * differed, and only a screen-reader user was left without feedback (TASK-357).
+ * `LiveAnnouncer` wraps the view — the toolbar confirms a refresh through it
+ * (TASK-357).
  */
 export function AdminDiscountTable() {
   return (
@@ -80,138 +89,151 @@ export function AdminDiscountTable() {
 
 function AdminDiscountView() {
   const searchParams = useSearchParams();
+  const updateParams = useUrlParams();
+  const { can } = useAuth();
+  const canWrite = can(PERM.discountsWrite);
+  const status = useDiscountStatus();
 
   const searchParam = searchParams.get("search") ?? "";
+  const isActiveParam = searchParams.get("isActive");
+  const isActive =
+    isActiveParam === "false"
+      ? false
+      : isActiveParam === "true"
+        ? true
+        : undefined;
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
-
-  const updateParams = useUrlParams();
-
   const { sortBy, sortOrder, onSort } = useTableSort(
     searchParams,
     updateParams,
   );
 
-  const { data, isLoading, isError, isFetching, refetch } =
+  const { data, dataUpdatedAt, isLoading, isError, isFetching, refetch } =
     useAdminListDiscounts({
       page,
       limit: pageSize,
       search: searchParam || undefined,
+      isActive,
       sortBy,
       sortOrder,
     });
+  const allCount = useAdminListDiscounts(COUNT_QUERY);
+  const disabledCount = useAdminListDiscounts({
+    ...COUNT_QUERY,
+    isActive: false,
+  });
 
-  const discounts = data?.data ?? [];
+  const discounts = useMemo(() => data?.data ?? [], [data]);
+  const total = data?.meta?.total ?? 0;
   const totalPages = data?.meta?.totalPages ?? 1;
+
+  const columns = useMemo(
+    () => buildDiscountColumns({ now: dataUpdatedAt }),
+    [dataUpdatedAt],
+  );
+  const registry = useDataRegistry({
+    tableId: "discounts",
+    columns,
+    rows: discounts,
+    getRowId,
+  });
+
+  const rowActions = (discount: DiscountEntity): RowActionItem[] => [
+    { label: d.rowEdit, href: editHref(discount) },
+    {
+      label: d.rowCopyCode,
+      onSelect: () => copyDiscountCode(discount.code),
+    },
+    {
+      label: d.rowDuplicate,
+      href: `/discounts/new?from=${discount.id}`,
+    },
+    discount.isActive
+      ? {
+          label: d.rowDisable,
+          onSelect: () => status.requestDeactivate(discount),
+          separatorBefore: true,
+          disabled: status.isPending,
+        }
+      : {
+          label: d.rowEnable,
+          onSelect: () => status.activate(discount),
+          separatorBefore: true,
+          disabled: status.isPending,
+        },
+  ];
+
+  const quickViews: QuickView[] = [
+    { id: ALL_VIEW, label: d.viewAll, count: allCount.data?.meta?.total },
+    {
+      id: DISABLED_VIEW,
+      label: d.viewDisabled,
+      count: disabledCount.data?.meta?.total,
+    },
+  ];
+  const activeView =
+    isActive === false ? DISABLED_VIEW : isActive === undefined ? ALL_VIEW : "";
+
+  const refresh = () => {
+    void refetch();
+    void allCount.refetch();
+    void disabledCount.refetch();
+  };
 
   return (
     <div className="flex flex-col gap-4">
-      <TableToolbar
-        className="mb-0"
-        onRefresh={() => void refetch()}
+      {canWrite ? null : <Callout variant="strip">{d.readOnlyNotice}</Callout>}
+      <DataRegistry
+        registry={registry}
+        title={d.heading}
+        showHeader={false}
+        quickViews={{
+          items: quickViews,
+          activeId: activeView,
+          onChange: (id) =>
+            updateParams({
+              isActive: id === DISABLED_VIEW ? "false" : undefined,
+              page: undefined,
+            }),
+        }}
+        search={{
+          value: searchParam,
+          placeholder: d.searchPlaceholder,
+          label: d.searchAria,
+        }}
+        onRefresh={refresh}
         isRefreshing={isFetching}
-        search={
-          <TableSearch
-            value={searchParam}
-            placeholder={dict.discounts.searchPlaceholder}
-            label={dict.discounts.searchAria}
-          />
+        summary={
+          data ? (
+            <>
+              {d.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, d.itemForms)}</SummaryValue>
+            </>
+          ) : null
         }
+        sortLabel={sortLabel(sortBy, sortOrder)}
+        updatedAt={dataUpdatedAt || undefined}
+        itemForms={d.itemForms}
+        getRowLabel={getRowLabel}
+        getRowHref={editHref}
+        rowActions={canWrite ? rowActions : undefined}
+        sort={{ sortBy, sortOrder, onSort }}
+        renderCard={(discount, parts) =>
+          renderDiscountCard(discount, parts, dataUpdatedAt)
+        }
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={d.loadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={d.empty}
+        searchQuery={searchParam || undefined}
+        isFiltered={isActive !== undefined}
+        pagination={{ page, totalPages, pageSize }}
       />
-
-      {isLoading ? (
-        <AdminDiscountTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.discounts.loadError}
-        </p>
-      ) : discounts.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {searchParam
-            ? dict.discounts.emptyMatch(searchParam)
-            : dict.discounts.empty}
-        </div>
-      ) : (
-        <div className="rounded-lg border border-border shadow-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <SortableColumnHeader
-                  field="code"
-                  label={dict.discounts.colCode}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <TableHead hideOnMobile>{dict.discounts.colType}</TableHead>
-                <TableHead>{dict.discounts.colValue}</TableHead>
-                <SortableColumnHeader
-                  field="redeemedCount"
-                  label={dict.discounts.colRedeemed}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                  hideOnMobile
-                />
-                <SortableColumnHeader
-                  field="expiresAt"
-                  label={dict.discounts.colExpires}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <TableHead>{dict.discounts.colStatus}</TableHead>
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {discounts.map((discount) => (
-                <TableRow key={discount.id}>
-                  <TableCell className="font-medium">{discount.code}</TableCell>
-                  <TableCell hideOnMobile className="text-muted-foreground">
-                    {discount.type === "PERCENT"
-                      ? dict.discounts.typePercent
-                      : dict.discounts.typeFixed}
-                  </TableCell>
-                  <TableCell>{formatValue(discount)}</TableCell>
-                  <TableCell hideOnMobile>
-                    {dict.discounts.redeemedOf(
-                      discount.redeemedCount,
-                      discount.maxRedemptions,
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatExpiry(discount.expiresAt)}
-                  </TableCell>
-                  <TableCell>
-                    <DiscountStatusToggle
-                      discountId={discount.id}
-                      isActive={discount.isActive}
-                    />
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/discounts/${discount.id}/edit`}>
-                        {dict.common.edit}
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!isLoading && !isError && discounts.length > 0 && (
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
-        />
-      )}
+      {status.confirmDialog}
     </div>
   );
 }

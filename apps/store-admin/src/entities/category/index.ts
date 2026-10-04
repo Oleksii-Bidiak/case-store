@@ -14,6 +14,9 @@ export {
   useAdminCategoryControllerSetStatusMany,
   useCategoryControllerGetAdminTree,
   useCategoryControllerGetCategoryTree,
+  // Wave 198 (TASK-1087): the PUBLIC read by slug — 404 for a hidden category,
+  // which is exactly what «Категорія показується» on the product overview asks.
+  useCategoryControllerFindBySlug,
   getAdminCategoryControllerFindAllWithProductCountQueryKey,
   getAdminCategoryControllerFindByIdQueryKey,
   getCategoryControllerGetAdminTreeQueryKey,

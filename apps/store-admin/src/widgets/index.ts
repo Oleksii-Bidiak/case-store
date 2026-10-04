@@ -2,7 +2,10 @@
 export { AdminSidebar, AdminHeader } from "./admin-shell";
 export { AdminProductTable, AdminProductTableSkeleton } from "./product-list";
 export { CreateProductView, EditProductView } from "./product-form-view";
-export { AdminProductPreviewView } from "./admin-product-preview";
+export {
+  AdminProductPreviewSkeleton,
+  AdminProductPreviewView,
+} from "./admin-product-preview";
 export {
   AdminProductGroupTable,
   AdminProductGroupTableSkeleton,
@@ -37,7 +40,11 @@ export {
   AdminDiscountTable,
   AdminDiscountTableSkeleton,
 } from "./discount-list";
-export { CreateDiscountView, EditDiscountView } from "./discount-form-view";
+export {
+  CreateDiscountView,
+  DiscountFormSkeleton,
+  EditDiscountView,
+} from "./discount-form-view";
 export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
 export {
