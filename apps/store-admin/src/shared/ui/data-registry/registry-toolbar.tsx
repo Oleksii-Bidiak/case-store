@@ -20,6 +20,14 @@ export interface RegistrySearch {
   label: string;
   /** Query param. Default `search`. */
   param?: string;
+  /**
+   * Present = LOCAL search (wave 198, block «Контент»): the needle stays in the
+   * caller's state and only hides rows — for the unpaginated, drag-reorderable
+   * lists where a URL param would imply a server-side narrowing that never
+   * happens (see `TableSearch`'s `local` mode). `value` is then the caller's
+   * committed needle.
+   */
+  onChange?: (value: string | undefined) => void;
 }
 
 export interface RegistryToolbarProps {
@@ -74,6 +82,8 @@ export function RegistryToolbar({
         variant="registry"
         value={search.value}
         param={search.param}
+        mode={search.onChange ? "local" : "url"}
+        onChange={search.onChange}
         placeholder={search.placeholder}
         label={search.label}
         className="basis-full md:max-w-150 md:flex-1 md:basis-auto"

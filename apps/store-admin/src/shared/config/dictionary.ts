@@ -1640,7 +1640,6 @@ export const dict = {
     loadError: "Не вдалося завантажити сторінки. Спробуйте ще раз.",
     empty: "Сторінок ще немає. Створіть свою першу сторінку.",
     colTitle: "Заголовок",
-    colSlug: "Slug",
     colStatus: "Статус",
     statusPublished: "Опубліковано",
     statusDraft: "Чернетка",
@@ -1652,20 +1651,8 @@ export const dict = {
     statusScheduledOn: (date: string) => `Заплановано на ${date}`,
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    // TASK-285: the published variant reminds the admin the URL may still be
-    // indexed by Google and deleting it leaves a 404 with NO redirect.
-    deleteConfirm: (title: string, isPublished: boolean) =>
-      `Видалити сторінку «${title}»? Цю дію не можна скасувати.` +
-      (isPublished
-        ? " Сторінка опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
-        : ""),
-    // TASK-285: slug-rename guard on a publicly visible page.
-    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
-      `Ви змінюєте адресу опублікованої сторінки з «${oldSlug}» на «${newSlug}». ` +
-      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
-      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
-    back: "← Назад до сторінок",
-    createHeading: "Створення сторінки",
+    back: "← Службові сторінки",
+    createHeading: "Нова сторінка",
     editHeading: "Редагування сторінки",
     createSubmit: "Створити сторінку",
     loadOneError: "Не вдалося завантажити сторінку. Спробуйте ще раз.",
@@ -1693,7 +1680,6 @@ export const dict = {
     kindLegal: "Юридична",
     kindInfo: "Довідкова",
     kindHub: "Хаб",
-    tabsAria: "Фільтр за видом сторінки",
     tabAll: "Усі",
     tabLegal: "Юридичні",
     tabInfo: "Довідкові",
@@ -1705,28 +1691,73 @@ export const dict = {
       "Змініть slug або відредагуйте наявну сторінку.",
     // TASK-565 — the storefront /info renders these rows inline by their exact
     // slug; renaming or unpublishing one changes /info.
-    inlinedOnInfo: "вбудована в /info",
     inlinedOnInfoHint:
       "Текст цієї сторінки показується прямо на сторінці /info вітрини. Не змінюйте slug і не знімайте з публікації — інакше відповідний блок /info зникне або покаже запасний текст.",
     // TASK-562 — status filter (`?status=`), local like the kind tabs, so it
     // locks reordering for the same reason.
-    filterStatus: "Фільтр за статусом",
-    filterStatusAll: "Усі статуси",
     statusLockedHint:
       "Поки увімкнено фільтр за статусом, порядок змінювати не можна: сторінки впорядковані одним спільним списком, а тут видно лише його частину. Зніміть фільтр.",
+
+    // Wave 198 (PagesProposal СР1–СР12, TASK-1069): the list became a registry —
+    // views with counters, «На сайті», «⋯», the filter sheet, AlertDialogs.
+    // SF-CNT-26 — one line saying where each kind lives on the storefront.
+    kindNoteAll:
+      "Юридичні — документи на /legal/…, довідкові — сторінки на /info/… (частина з них вбудована прямо в /info), хаби — заголовок і опис для пошуковиків розділів, які на сайті вже є.",
+    kindNoteHub:
+      "Хаб — не окрема сторінка, а заголовок і опис для пошуковиків розділу, який на сайті вже є. Тут їх 7 — по одному на кожен такий розділ; нових хабів не буває, лише редагування.",
+    searchPlaceholder: "Назва або адреса сторінки…",
+    searchLabel: "Пошук сторінок",
+    colSite: "На сайті",
+    // The caption under the address: what the row DOES on the storefront
+    // (TASK-565 — visible, no longer a tooltip).
+    siteInlined: "блоком на сторінці /info — адресу не міняти",
+    siteHub: "заголовок і опис для пошуковиків",
+    siteDraft: "не опублікована — на сайті ще немає",
+    siteScheduled: (date: string, time: string) =>
+      `з’явиться на сайті ${date} о ${time}`,
+    openPathAria: (path: string) => `Відкрити ${path} на сайті (нова вкладка)`,
+    rowActionsAria: (title: string) => `Дії зі сторінкою «${title}»`,
+    openOnSite: "Відкрити на сайті",
+    publishNow: "Опублікувати зараз",
+    deleteItem: "Видалити…",
+    // TASK-812 — AlertDialog instead of window.confirm. TASK-285: the published
+    // variant warns the address may still be in Google and becomes a 404.
+    deleteTitle: (title: string) => `Видалити сторінку «${title}»?`,
+    deleteBody: (isPublished: boolean) =>
+      "Цю дію не можна скасувати." +
+      (isPublished
+        ? " Сторінка опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
+        : ""),
+    deleteAction: "Видалити сторінку",
+    slugChangeTitle: "Змінити адресу сторінки?",
+    slugChangeBody: (oldPath: string, newPath: string) =>
+      `Адреса «${oldPath}» зміниться на «${newPath}». Стара адреса перестане працювати й випаде з результатів пошуку Google.`,
+    slugChangeRedirect:
+      "Ми автоматично налаштуємо переадресацію зі старої адреси на нову.",
+    slugChangeAction: "Змінити адресу",
+    // «Фільтри» — the status filter moved from the toolbar into the sheet.
+    filterStatusTitle: "Статус",
+    filterAll: "Усі",
+    filterChip: (label: string) => `Статус: ${label}`,
+    filtersApply: "Показати сторінки",
+    headerMenuAria: "Інші дії зі сторінкою",
+    // Form header + the sticky bar of a NEW page.
+    newUnsaved: "Нова сторінка ще не збережена",
+    formErrorsAlert: (count: number, fields: string) =>
+      `Перевірте ${countLabel(count, ["поле", "поля", "полів"])}: ${fields}. Сторінку не збережено.`,
+    formErrorsBar: (count: number) =>
+      `Не збережено: ${countLabel(count, ["поле", "поля", "полів"])} з помилками`,
   },
 
   pageForm: {
     title: "Заголовок",
-    slug: "Slug",
-    slugPlaceholder: "Залиште порожнім для авто-генерації із заголовка",
     slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
     content: "Вміст",
     contentPlaceholder: "Почніть писати вміст сторінки…",
     excerpt: "Короткий опис",
     excerptPlaceholder: "Короткий підсумок (необов'язково)",
-    metaTitle: "SEO заголовок",
-    metaDescription: "SEO опис",
+    metaTitle: "SEO-заголовок",
+    metaDescription: "SEO-опис",
     status: "Статус публікації",
     statusDraft: "Чернетка",
     statusScheduled: "Заплановано",
@@ -1760,6 +1791,36 @@ export const dict = {
       "Сторінка з іншою адресою просто ніде не показалася б.",
     hubContentHint:
       "На сайті цей текст не показується — у хаба немає власної сторінки. Опишіть тут, за що відповідає розділ, щоб наступному редактору було зрозуміло.",
+
+    // Wave 198 (PagesProposal СР8–СР12, TASK-1069): sections + one sticky save.
+    sectionsAria: "Розділи форми сторінки",
+    sectionMain: "Основне",
+    sectionContent: "Вміст",
+    sectionSeo: "SEO і соцмережі",
+    sectionPublish: "Публікація",
+    sectionDirty: "є незбережені зміни",
+    sectionError: "є помилка",
+    address: "Адреса на сайті",
+    addressPlaceholder: "створимо із заголовка",
+    addressHint:
+      "Залиште порожнім — адресу створимо із заголовка. Зміна адреси опублікованої сторінки спершу перепитає.",
+    // TASK-1154 — the API refuses `content` over 100 000 characters (of the
+    // stored HTML), so the form counts the same thing and says so before a 400.
+    contentCounter: (count: string, max: string) =>
+      `${count} з ${max} символів`,
+    contentOver: (over: string) => `Скоротіть на ${over} символів`,
+    contentMax: (max: string, over: string) =>
+      `Текст довший за ${max} символів — скоротіть на ${over} символів або розбийте на дві сторінки.`,
+    // TASK-1117 — nothing reads a page's tags yet (no index, no search), so
+    // the hint says so instead of promising search — the category form's text.
+    keywords: "Теги сторінки",
+    keywordsHint:
+      "Через кому. Для вашого впорядкування. Пошук на сайті їх поки що не враховує — щоб сторінку знаходили за словом, додайте його в заголовок чи текст.",
+    statusAria: "Статус публікації",
+    statusHint: "Для «Заплановано» з’явиться дата й час публікації.",
+    statusHintDraft: "Чернетку видно лише тут, на сайті її немає.",
+    statusHintInlined: (title: string) =>
+      `Не знімайте з публікації: блок «${title}» на /info покаже запасний текст.`,
   },
 
   // --- Blog CMS (TASK-172) ----------------------------------------------------
@@ -2567,8 +2628,6 @@ export const dict = {
     metaTitleNew: "Нове запитання — Адмін",
     metaTitleEdit: "Редагування запитання — Адмін",
     heading: "Часті запитання (FAQ)",
-    subheading:
-      "Ці запитання й відповіді показуються на сторінці «Інформація та підтримка» і допомагають клієнтам (та пошуковим системам) швидко знайти відповідь.",
     add: "Додати запитання",
     colQuestion: "Запитання",
     colStatus: "Статус",
@@ -2577,13 +2636,10 @@ export const dict = {
     activate: "Показати",
     deactivate: "Приховати",
     loadError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
-    loadOneError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
     empty: "Запитань ще немає. Додайте перше запитання.",
-    back: "← Назад до FAQ",
     createHeading: "Нове запитання",
-    editHeading: "Редагування запитання",
+    editHeading: "Редагувати запитання",
     createSubmit: "Додати запитання",
-    deleteConfirm: "Видалити це запитання? Дію не можна скасувати.",
     toastCreated: "Запитання додано",
     toastCreateFailed: "Не вдалося додати запитання",
     toastUpdated: "Запитання оновлено",
@@ -2598,29 +2654,58 @@ export const dict = {
     // column and its form field are gone, so the grid needs its own accessible name.
     gridLabel: "Часті запитання — порядок",
     reorderHint:
-      "Порядок запитань на сайті = порядок рядків тут. Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
+      "Порядок рядків = порядок на сайті. Перетягніть рядок за ⠿; клік по рядку розгортає відповідь.",
+
+    // Wave 198 (FaqProposal ЧП1–ЧП8, TASK-1075): accordion rows, views, «⋯»,
+    // the form as a dialog over the list.
+    subheadingLead: "Показуються на сторінці",
+    subheadingTail:
+      "«Інформація та підтримка» в цьому порядку й допомагають клієнтам (та пошуковим системам) швидко знайти відповідь.",
+    infoLinkAria: "Відкрити /info на сайті (нова вкладка)",
+    viewAll: "Усі",
+    viewShown: "Показуються",
+    viewHidden: "Приховані",
+    viewLockedHint:
+      "Поки вибрано вид, порядок змінювати не можна: тут видно лише частину списку. Оберіть «Усі».",
+    searchPlaceholder: "Запитання або текст відповіді…",
+    searchLabel: "Пошук запитань",
+    answerToggleAria: (question: string) => `Відповідь на «${question}»`,
+    rowActionsAria: (question: string) => `Дії із запитанням «${question}»`,
+    deleteItem: "Видалити…",
+    deleteTitle: "Видалити запитання?",
+    deleteBody: (question: string) =>
+      `«${question}» зникне зі сторінки /info. Цю дію не можна скасувати — якщо запитання ще знадобиться, краще «Приховати».`,
+    deleteAction: "Видалити запитання",
+    notFound: "Запитання не знайдено — можливо, його вже видалили.",
   },
 
   faqForm: {
     question: "Запитання",
     questionPlaceholder: "Скільки коштує доставка?",
-    questionHint:
-      "Коротке запитання так, як його поставив би клієнт (одне речення).",
+    questionHint: "Одне речення — так, як його поставив би клієнт.",
     answer: "Відповідь",
     answerPlaceholder:
       "Доставка Новою Поштою — за тарифами перевізника, безкоштовно від 1 000 ₴…",
-    answerHint:
-      "Повна відповідь простою мовою. Її бачитиме клієнт, коли розгорне запитання.",
+    answerHint: "Простою мовою; клієнт побачить її, коли розгорне запитання.",
     isActive: "Показувати на сайті",
     isActiveHint:
-      "Приховані запитання не показуються клієнтам, але залишаються тут для повторного увімкнення.",
-    submit: "Зберегти запитання",
+      "Приховані запитання не видно клієнтам, але вони лишаються тут, щоб увімкнути знову.",
+    submit: "Зберегти",
     errors: {
       questionRequired: "Вкажіть запитання",
       questionMax: "Запитання має містити не більше 500 символів",
       answerRequired: "Вкажіть відповідь",
       answerMax: "Відповідь має містити не більше 5000 символів",
     },
+
+    // Wave 198 (FaqProposal ЧП4–ЧП8): counters against the API's own limits,
+    // the /info preview and the one-line summary of a refused submit.
+    counter: (count: number, max: number) => `${count} / ${max}`,
+    counterAria: (label: string, count: number, max: number) =>
+      `${label}: ${count} з ${max} символів`,
+    preview: "Так виглядатиме на /info",
+    formAlert:
+      "Заповніть запитання й відповідь — без них на сайті вийде порожній пункт.",
   },
 
   // --- Orders (TASK-115) ------------------------------------------------------
@@ -5216,49 +5301,36 @@ export const dict = {
     metaTitle: "Де що на сайті — Адмін",
     heading: "Де що на сайті",
     subheading:
-      "Що де показується на сайті — і в якому розділі це редагувати. Оберіть блок, щоб перейти прямо до потрібного розділу.",
+      "Оберіть сторінку сайту — побачите, з яких блоків вона складається, що в кожному зараз і де це редагувати.",
     loadError: "Не вдалося порахувати",
     loading: "Рахуємо…",
-    statusShown: "Показується",
-    statusHidden: "Приховано",
-    // aria-label for the numeric active-item count sitting next to a zone.
-    countAria: (count: number) => `Активних елементів: ${count}`,
-    // Small caption clarifying which storefront page(s) a zone appears on.
-    appliesToLabel: "Де видно:",
     // The static, non-clickable note covering catalog/PDP product content.
     catalogNote:
-      "Назви, ціни, зображення й категорії товарів редагуються в розділах «Товари» та «Категорії» у меню зліва.",
-    groups: {
-      global: "Глобально — на кожній сторінці",
-      home: "Головна сторінка",
-      info: "«Інформація» та картка товару",
-      blog: "Блог",
-      legal: "Правові та інші сторінки",
-      // AD-CNT-26 (TASK-429): /promo — окрема сторінка вітрини, як і блог.
-      promo: "Сторінка «Акції»",
-    },
+      "Назви, ціни, фото й характеристики товарів — у розділах «Товари» та «Категорії». Кошик і оформлення замовлення не редагуються.",
     // TASK-720: banner zones use the placement names of the Banners screen
     // (banners.placements / bannerForm.placements) — one slot, one name.
+    // Wave 198 (ContentMapProposal): `source` is the zone's title on its card,
+    // `appliesTo` the line under it saying where on the page it sits.
     zones: {
       announcementBar: {
         source: "Смуга оголошень",
         target: "Банери",
-        appliesTo: "Кожна сторінка (шапка)",
+        appliesTo: "Тонка смуга над шапкою — і тут, і на всіх сторінках",
       },
       heroSlide: {
         source: "Головний слайдер",
         target: "Банери",
-        appliesTo: "Головна",
+        appliesTo: "Перший екран головної",
       },
       promoTile: {
         source: "Промо-плитки",
         target: "Банери",
-        appliesTo: "Головна",
+        appliesTo: "Три плитки під слайдером",
       },
       promoBanner: {
         source: "Промо-банер",
         target: "Банери",
-        appliesTo: "Головна",
+        appliesTo: "Широка смуга посередині",
       },
       faq: {
         source: "FAQ-блок",
@@ -5270,7 +5342,7 @@ export const dict = {
         target: "Сторінки → Юридичні",
         appliesTo: "Розділ «Правова інформація» та кожен документ",
       },
-      // TASK-435 — the Pages screen now edits three different things, so the map
+      // TASK-435 — the Pages screen edits three different things, so the map
       // shows three entries rather than one that quietly covered all of them.
       infoPages: {
         source: "Довідкові сторінки (зокрема «Про нас»)",
@@ -5279,10 +5351,10 @@ export const dict = {
           "Розділ «Інформація та підтримка»: блок «Про нас» і кожна довідкова сторінка",
       },
       hubPages: {
-        source: "Заголовок і опис розділу для Google",
+        source: "Заголовки й описи розділів для Google",
         target: "Сторінки → Хаби",
         appliesTo:
-          "Розділи «Категорії», «Блог», «Правова інформація», «Контакти», «Інформація», «Акції» — невидимо на сторінці (title, meta, прев'ю посилання)",
+          "Категорії, Каталог, Блог, Правова інформація, Контакти, Інформація, Акції — невидимо на сторінці",
       },
       blog: {
         source: "Стрічка блогу",
@@ -5290,29 +5362,133 @@ export const dict = {
         appliesTo: "Сторінка «Блог»",
       },
       siteContact: {
-        // TASK-721: lists what the Contacts form actually edits — there is no
-        // address field (SiteContactSettings has none; see TASK-873).
-        source:
-          "Контакти (телефон, пошта, години роботи, месенджери й Instagram)",
+        // TASK-721: what the Contacts form edits is listed in the zone's state
+        // (`contactParts`) — there is no address field (TASK-873).
+        source: "Контакти",
         target: "Контакти",
-        appliesTo: "Футер кожної сторінки та сторінка «Контакти»",
+        appliesTo: "Футер кожної сторінки й сторінка «Контакти»",
       },
       seoSettings: {
         // TASK-433 put the store name behind this same screen, and "where do I
         // change the name?" is exactly the question this map exists to answer.
-        source: "Назва магазину, meta-заголовки та SEO за замовчуванням",
+        source: "Назва магазину і SEO за замовчуванням",
         target: "SEO",
         appliesTo:
-          "Кожна сторінка: назва у вкладці браузера й у прев'ю посилань, решта — невидимо (title, meta, robots)",
+          "Вкладка браузера, прев'ю посилань, Google — невидимо на сторінці",
       },
       // AD-CNT-26 (TASK-429): /promo існує в шапці магазину, але його не було на
       // цій карті — і з адмінки не було видно, що ним керує розділ «Промокоди».
       promoCodes: {
-        source: "Промокоди тижня на сторінці «Акції»",
+        source: "Промокоди тижня",
         target: "Промокоди",
-        appliesTo: "Сторінка «Акції» (/promo), посилання в шапці",
+        appliesTo: "Сторінка «Акції» (/promo)",
+      },
+      // Wave 198 — the carousels are zones of the home page; their own /home
+      // editor is a later design session (Д-н2, TASK-662/664).
+      carouselTabs: {
+        source: "Популярне — вкладки",
+        target: "Каруселі",
+        appliesTo: "Блок вкладок із товарами",
+      },
+      carouselRails: {
+        source: "Рядки товарів",
+        target: "Каруселі",
+        appliesTo: "Окремі рядки нижче",
+      },
+      saleProducts: {
+        source: "Товари зі знижкою",
+        target: "Товари",
+        appliesTo: "Сітка під промокодами",
       },
     },
+
+    // Wave 198 (ContentMapProposal ДЩ1–ДЩ4, TASK-1076): tabs by storefront
+    // page, a numbered page schema, zone cards with their live state.
+    tabsAria: "Сторінки сайту",
+    tabs: {
+      home: "Головна",
+      all: "На кожній сторінці",
+      promo: "Акції",
+      info: "Інформація та картка товару",
+      blog: "Блог",
+      legal: "Правові",
+    },
+    schemaTitles: {
+      home: "Головна сторінка",
+      all: "Будь-яка сторінка",
+      promo: "Сторінка «Акції»",
+      info: "Сторінка «Інформація»",
+      blog: "Сторінка «Блог»",
+      legal: "Правова інформація",
+    },
+    blocks: {
+      header: "Шапка",
+      headerFull: "Шапка · меню · пошук",
+      footer: "Футер · контакти",
+      pageBody: "Вміст сторінки",
+      tile: "Плитка",
+      infoBlocks: "Блоки «Про нас», доставка, оплата",
+      faq: "Часті запитання",
+      blogFeed: "Стрічка статей",
+      legalList: "Список документів",
+    },
+    schemaNote:
+      "Номер блоку = номер у списку праворуч. Сірі блоки (товари, кошик) — з розділів «Товари» й «Категорії».",
+    schemaShow: "Показати схему сторінки",
+    schemaHide: "Сховати схему сторінки",
+    blockAria: (n: number, label: string) => `Блок ${n}: ${label}`,
+    // Per-page wording of a zone shared by two tabs.
+    contactsFooter: "Контакти у футері",
+    contactsFooterWhere: "Низ кожної сторінки",
+    announcementEverywhere: "Над шапкою кожної сторінки",
+    laterTag: "/home — Д-н2",
+    onSite: "на сайті",
+    onSiteAria: (title: string) => `${title} на сайті (нова вкладка)`,
+    editAria: (title: string, section: string) =>
+      `${title}: редагувати в розділі «${section}»`,
+    // Zone state lines.
+    shown: (n: number) =>
+      n === 0
+        ? "нічого не показується"
+        : `${n} ${pluralUk(n, ["показується", "показуються", "показуються"])}`,
+    scheduled: (n: number) => `${n} заплановано`,
+    endsBadge: (date: string, days: number) =>
+      `до ${date} · ще ${countLabel(days, ["день", "дні", "днів"])}`,
+    startsBadge: (date: string) => `з ${date} — заплановано`,
+    carouselTabsState: (n: number, titles: string) =>
+      `${countLabel(n, ["вкладка", "вкладки", "вкладок"])}: ${titles}`,
+    carouselRailsState: (n: number, titles: string) =>
+      `${countLabel(n, ["рядок", "рядки", "рядків"])}: ${titles}`,
+    contactParts: {
+      phone: "телефон",
+      email: "пошта",
+      hours: "години",
+      messengers: (n: number) =>
+        countLabel(n, ["месенджер", "месенджери", "месенджерів"]),
+      instagram: "Instagram",
+    },
+    contactsEmpty: "нічого не заповнено",
+    contactsFill: "заповнити",
+    seoWarnings: (n: number) =>
+      n === 0
+        ? "Стан SEO: без попереджень"
+        : `Стан SEO: ${countLabel(n, ["попередження", "попередження", "попереджень"])}`,
+    seoCheck: "перевірити",
+    hubs: (n: number) => countLabel(n, ["хаб", "хаби", "хабів"]),
+    promoShown: (n: number, codes: string) =>
+      n === 0
+        ? "на сторінці немає промокодів"
+        : `${n} ${pluralUk(n, ["показується", "показуються", "показуються"])}: ${codes}`,
+    promoExpired: (n: number) =>
+      `${n} уже ${pluralUk(n, ["закінчився", "закінчилися", "закінчилися"])}`,
+    saleProductsState: (n: number) =>
+      `${countLabel(n, ["товар", "товари", "товарів"])} зі старою ціною`,
+    infoPagesState: (n: number) =>
+      `${countLabel(n, ["сторінка", "сторінки", "сторінок"])} опубліковано`,
+    legalPagesState: (n: number) =>
+      `${countLabel(n, ["документ", "документи", "документів"])} опубліковано`,
+    blogState: (n: number) =>
+      `${countLabel(n, ["стаття", "статті", "статей"])} опубліковано`,
   },
 
   // SERP-snippet preview under the meta fields (план 130, TASK-268). A live

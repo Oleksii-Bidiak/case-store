@@ -1,6 +1,6 @@
 /**
- * `AdminPageTable` — the sortable static-page grid (TASK-153; reordering added in
- * TASK-428).
+ * `AdminPageTable` — the sortable static-page registry (TASK-153; reordering in
+ * TASK-428; the registry chrome of wave 198, PagesProposal СР1–СР7).
  *
  * KEYBOARD-ONLY moves, by design: jsdom has no layout, so dnd-kit's collision detection
  * cannot run. Pointer correctness rests on the pointer path sharing ONE `applyMove()`
@@ -17,19 +17,30 @@ import {
   within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { dict } from "@/shared/config";
+import { WithAuth } from "@/entities/session/model/auth-context.fixture";
+import { PERM } from "@/entities/permission";
+import { dict, STOREFRONT_URL } from "@/shared/config";
+import { formatDateTime } from "@/shared/lib";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
 import { AdminPageTable } from "./admin-page-table";
+import {
+  PAGE_COLUMNS_WIDTH_BUDGET,
+  buildPageColumns,
+} from "./page-registry-columns";
 
-// jsdom mounts no app router, and since the wave-176 merge this grid reads
-// `?kind=` and writes it back, so both ends need a stub.
+// jsdom mounts no app router; the registry reads `?kind=` / `?status=` and
+// writes them back, and a row click navigates.
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
   usePathname: () => "/pages",
   useSearchParams: () => mockSearchParams,
 }));
+
+const d = dict.pages;
+const r = dict.common.registry;
 
 /* ─────────────────────────────── fixtures ──────────────────────────────── */
 
@@ -47,7 +58,7 @@ const SLUGS: Record<string, string> = {
   [B]: "faq",
   [C]: "delivery",
 };
-/** TASK-435 kinds. HUB is deliberately unused — an empty tab is a case. */
+/** TASK-435 kinds. HUB is deliberately unused — an empty view is a case. */
 const KINDS: Record<string, "LEGAL" | "INFO" | "HUB"> = {
   [A]: "LEGAL",
   [B]: "LEGAL",
@@ -61,13 +72,13 @@ function listResponse(order: string[] = DEFAULT_ORDER) {
     data: order.map((id, i) => ({
       id,
       slug: SLUGS[id],
-      kind: KINDS[id],
+      kind: KINDS[id] as "LEGAL" | "INFO" | "HUB",
       title: TITLES[id],
       content: "<p>Body</p>",
       excerpt: null,
       metaTitle: null,
       metaDescription: null,
-      status: id === B ? "DRAFT" : "PUBLISHED",
+      status: (id === B ? "DRAFT" : "PUBLISHED") as string,
       publishedAt: id === B ? null : "2026-06-01T10:00:00.000Z",
       // Widened: the TASK-430 scheduled-badge tests override this with a date.
       scheduledAt: null as string | null,
@@ -107,6 +118,7 @@ beforeEach(() => {
   bodies = [];
   listCalls = 0;
   mockReplace.mockClear();
+  mockPush.mockClear();
   mockSearchParams = new URLSearchParams("");
 });
 
@@ -127,9 +139,24 @@ const polite = () => screen.getByTestId("tree-live-polite").textContent ?? "";
 const assertive = () =>
   screen.getByTestId("tree-live-assertive").textContent ?? "";
 
-async function renderGrid() {
-  const result = renderWithProviders(<AdminPageTable />);
-  await screen.findByRole("grid", { name: dict.pages.gridLabel });
+/** Owner by default; pass permissions for a manager. */
+function renderTable(options: { permissions?: string[] } = {}) {
+  return renderWithProviders(
+    options.permissions ? (
+      <WithAuth permissions={options.permissions}>
+        <AdminPageTable />
+      </WithAuth>
+    ) : (
+      <WithAuth isOwner>
+        <AdminPageTable />
+      </WithAuth>
+    ),
+  );
+}
+
+async function renderGrid(options: { permissions?: string[] } = {}) {
+  const result = renderTable(options);
+  await screen.findByRole("grid", { name: d.gridLabel });
   await waitFor(() => expect(rowIds()).toHaveLength(3));
   return result;
 }
@@ -142,21 +169,75 @@ function keyboardMoveUp(id: string) {
   fireEvent.keyDown(rowEl(id), { key: " " });
 }
 
+const searchBox = () => screen.getByRole("searchbox", { name: d.searchLabel });
+
+async function openRowMenu(id: string) {
+  await userEvent.click(
+    within(rowEl(id)).getByRole("button", {
+      name: d.rowActionsAria(TITLES[id]),
+    }),
+  );
+  return screen.findByRole("menu");
+}
+
+const view = (label: string) =>
+  screen.getByRole("tab", { name: new RegExp(`^${label}`) });
+
 /* ──────────────────────────────── the suite ────────────────────────────── */
 
-describe("AdminPageTable — rendering", () => {
-  it("renders page rows with title, slug, and status badge", async () => {
+describe("AdminPageTable — header (СР1)", () => {
+  it("shows the heading and «Додати сторінку» for pages:write", async () => {
+    mockReorder();
+    await renderGrid();
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: d.heading }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: d.add })).toHaveAttribute(
+      "href",
+      "/pages/new",
+    );
+  });
+});
+
+describe("AdminPageTable — rows (СР1)", () => {
+  it("renders the title, the storefront address, the kind and the status badge", async () => {
     mockReorder();
     await renderGrid();
 
     expect(screen.getByText("Privacy Policy")).toBeInTheDocument();
-    expect(screen.getByText("privacy-policy")).toBeInTheDocument();
-    expect(screen.getByText("FAQ")).toBeInTheDocument();
-    expect(screen.getAllByText(dict.pages.statusPublished)).toHaveLength(2);
-    expect(screen.getByText(dict.pages.statusDraft)).toBeInTheDocument();
+    expect(
+      within(rowEl(A)).getByText("/legal/privacy-policy"),
+    ).toBeInTheDocument();
+    expect(within(rowEl(C)).getByText("/info/delivery")).toBeInTheDocument();
+    expect(screen.getAllByText(d.statusPublished)).toHaveLength(2);
+    expect(screen.getByText(d.statusDraft)).toBeInTheDocument();
+    expect(within(rowEl(A)).getByText(d.kindLegal)).toBeInTheDocument();
+    expect(within(rowEl(C)).getByText(d.kindInfo)).toBeInTheDocument();
   });
 
-  it("marks the INFO rows /info renders inline — and only those (TASK-565)", async () => {
+  it("links the address to the storefront in a new tab — only for a published page", async () => {
+    mockReorder();
+    await renderGrid();
+
+    const live = within(rowEl(A)).getByRole("link", {
+      name: d.openPathAria("/legal/privacy-policy"),
+    });
+    expect(live).toHaveAttribute(
+      "href",
+      `${STOREFRONT_URL}/legal/privacy-policy`,
+    );
+    expect(live).toHaveAttribute("target", "_blank");
+    // The draft has no address yet — plain text and a caption saying so.
+    expect(
+      within(rowEl(B)).queryByRole("link", {
+        name: d.openPathAria("/legal/faq"),
+      }),
+    ).not.toBeInTheDocument();
+    expect(within(rowEl(B)).getByText(d.siteDraft)).toBeInTheDocument();
+  });
+
+  it("says in plain sight that an inlined INFO row lives on /info (TASK-565)", async () => {
     server.use(
       http.get("*/api/admin/pages", () => {
         const body = listResponse();
@@ -167,13 +248,25 @@ describe("AdminPageTable — rendering", () => {
     );
     await renderGrid();
 
-    expect(
-      within(rowEl(C)).getByText(dict.pages.inlinedOnInfo),
-    ).toBeInTheDocument();
-    expect(
-      within(rowEl(A)).queryByText(dict.pages.inlinedOnInfo),
-    ).not.toBeInTheDocument();
-    expect(screen.getAllByText(dict.pages.inlinedOnInfo)).toHaveLength(1);
+    expect(within(rowEl(C)).getByText("/info")).toBeInTheDocument();
+    expect(within(rowEl(C)).getByText(d.siteInlined)).toBeInTheDocument();
+    expect(within(rowEl(A)).queryByText(d.siteInlined)).not.toBeInTheDocument();
+    expect(screen.getAllByText(d.siteInlined)).toHaveLength(1);
+  });
+
+  it("explains a hub row instead of pretending it is a page", async () => {
+    server.use(
+      http.get("*/api/admin/pages", () => {
+        const body = listResponse();
+        body.data[2] = { ...body.data[2], kind: "HUB", slug: "promo" };
+        return HttpResponse.json(body);
+      }),
+    );
+    await renderGrid();
+
+    expect(within(rowEl(C)).getByText("/promo")).toBeInTheDocument();
+    expect(within(rowEl(C)).getByText(d.siteHub)).toBeInTheDocument();
+    expect(within(rowEl(C)).getByText(d.kindHub)).toBeInTheDocument();
   });
 
   it("has NO sort-order column any more — the row order IS the order", async () => {
@@ -183,13 +276,16 @@ describe("AdminPageTable — rendering", () => {
     expect(screen.queryByText("Порядок")).not.toBeInTheDocument();
   });
 
-  it("renders an edit action linking to the page edit route", async () => {
+  it("links the title to the edit route, and a click on the row opens it", async () => {
     mockReorder();
     await renderGrid();
 
     expect(
-      within(rowEl(A)).getByRole("link", { name: dict.common.edit }),
+      within(rowEl(A)).getByRole("link", { name: "Privacy Policy" }),
     ).toHaveAttribute("href", `/pages/${A}/edit`);
+
+    await userEvent.click(within(rowEl(A)).getByText(d.kindLegal));
+    expect(mockPush).toHaveBeenCalledWith(`/pages/${A}/edit`);
   });
 
   it("shows the error state when the request fails, keeping refresh reachable", async () => {
@@ -200,29 +296,23 @@ describe("AdminPageTable — rendering", () => {
       ),
     );
 
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
 
-    expect(await screen.findByText(dict.pages.loadError)).toBeInTheDocument();
+    expect(await screen.findByText(d.loadError)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: dict.common.table.refreshAria }),
     ).toBeInTheDocument();
   });
 });
 
-// TASK-285: the delete-confirm copy warns about the Google index only for a
-// currently-published row.
 /**
- * TASK-430 — a page scheduled for Friday was badged «Чернетка».
- *
- * The badge read `isActive`, which the schema documents as a derived mirror of
- * `status == PUBLISHED` — so it collapses DRAFT and SCHEDULED into one value, and the
- * operator could not tell a forgotten draft from a scheduled publication.
+ * TASK-430 — a page scheduled for Friday was badged «Чернетка». The badge reads
+ * `status`, never the `isActive` mirror; since wave 198 it carries the time too.
  */
 describe("AdminPageTable — scheduled badge (TASK-430)", () => {
-  /** The list with page B SCHEDULED for 19.09.2026 instead of DRAFT. */
-  function stubScheduled(
-    scheduledAt: string | null = "2026-09-19T08:00:00.000Z",
-  ) {
+  const AT = "2026-09-19T08:00:00.000Z";
+
+  function stubScheduled(scheduledAt: string | null = AT) {
     server.use(
       http.get("*/api/admin/pages", () => {
         const body = listResponse();
@@ -236,72 +326,176 @@ describe("AdminPageTable — scheduled badge (TASK-430)", () => {
     );
   }
 
-  it("shows the date instead of «Чернетка»", async () => {
+  it("shows the date and time instead of «Чернетка»", async () => {
     stubScheduled();
     await renderGrid();
 
     expect(
-      screen.getByText(dict.pages.statusScheduledOn("19.09.2026")),
+      screen.getByText(d.statusScheduledOn(formatDateTime(AT))),
+    ).toBeInTheDocument();
+    expect(
+      within(rowEl(B)).getByText(/з’явиться на сайті/),
     ).toBeInTheDocument();
     // The draft label must be GONE — B is the only non-published row.
-    expect(screen.queryByText(dict.pages.statusDraft)).not.toBeInTheDocument();
+    expect(screen.queryByText(d.statusDraft)).not.toBeInTheDocument();
   });
 
   it("falls back to «Заплановано» when the instant is missing", async () => {
-    // Should not happen (the API writes status and instant together), but the cell
-    // must not render "Invalid Date" if it ever does.
     stubScheduled(null);
     await renderGrid();
 
-    expect(screen.getByText(dict.pages.statusScheduled)).toBeInTheDocument();
+    expect(screen.getByText(d.statusScheduled)).toBeInTheDocument();
   });
 
-  it("leaves the published and draft badges alone", async () => {
-    mockReorder();
+  it("offers «Опублікувати зараз» for a scheduled page", async () => {
+    stubScheduled();
     await renderGrid();
 
-    expect(screen.getAllByText(dict.pages.statusPublished)).toHaveLength(2);
-    expect(screen.getByText(dict.pages.statusDraft)).toBeInTheDocument();
+    const menu = await openRowMenu(B);
+    expect(
+      within(menu).getByRole("menuitem", { name: d.publishNow }),
+    ).toBeInTheDocument();
   });
 });
 
-describe("AdminPageTable — delete confirm copy (TASK-285)", () => {
-  let confirmSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(false);
-  });
-
-  afterEach(() => {
-    confirmSpy.mockRestore();
-  });
-
-  it("appends the still-may-be-indexed warning for a published page", async () => {
+describe("AdminPageTable — row «⋯» (СР1, СР6)", () => {
+  it("keeps edit, open-on-site, unpublish and delete for pages:write", async () => {
     mockReorder();
     await renderGrid();
 
-    await userEvent.click(
-      within(rowEl(A)).getByRole("button", { name: dict.common.delete }),
-    );
-
-    expect(confirmSpy).toHaveBeenCalledWith(
-      dict.pages.deleteConfirm("Privacy Policy", true),
-    );
-    expect(confirmSpy.mock.calls[0][0]).toContain("пошуковому індексі");
+    const menu = await openRowMenu(A);
+    expect(
+      within(menu).getByRole("menuitem", { name: dict.common.edit }),
+    ).toHaveAttribute("href", `/pages/${A}/edit`);
+    expect(
+      within(menu).getByRole("menuitem", { name: d.openOnSite }),
+    ).toHaveAttribute("href", `${STOREFRONT_URL}/legal/privacy-policy`);
+    expect(
+      within(menu).getByRole("menuitem", { name: d.unpublish }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).getByRole("menuitem", { name: d.deleteItem }),
+    ).toBeInTheDocument();
   });
 
-  it("omits the indexed warning for a draft page", async () => {
+  it("offers «Опублікувати» and no site link on a draft", async () => {
     mockReorder();
     await renderGrid();
 
+    const menu = await openRowMenu(B);
+    expect(
+      within(menu).getByRole("menuitem", { name: d.publish }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole("menuitem", { name: d.openOnSite }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("publishes through PATCH /publish", async () => {
+    mockReorder();
+    let published = "";
+    server.use(
+      http.patch("*/api/admin/pages/:id/publish", ({ params }) => {
+        published = String(params.id);
+        return HttpResponse.json({ data: listResponse().data[1] });
+      }),
+    );
+    await renderGrid();
+
+    const menu = await openRowMenu(B);
     await userEvent.click(
-      within(rowEl(B)).getByRole("button", { name: dict.common.delete }),
+      within(menu).getByRole("menuitem", { name: d.publish }),
+    );
+    await waitFor(() => expect(published).toBe(B));
+  });
+
+  it("without pages:write: no «Додати», no handles, «Переглянути» + site link only", async () => {
+    mockReorder();
+    // A manager holding another content key, not pages:write.
+    await renderGrid({ permissions: [PERM.blogWrite] });
+
+    expect(screen.queryByRole("link", { name: d.add })).not.toBeInTheDocument();
+    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(
+      within(rowEl(A)).queryByRole("button", {
+        name: dict.reorderList.handleLabel("Privacy Policy"),
+      }),
+    ).not.toBeInTheDocument();
+
+    const menu = await openRowMenu(A);
+    expect(
+      within(menu).getByRole("menuitem", { name: dict.common.view }),
+    ).toHaveAttribute("href", `/pages/${A}/edit`);
+    expect(
+      within(menu).getByRole("menuitem", { name: d.openOnSite }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole("menuitem", { name: d.deleteItem }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(menu).queryByRole("menuitem", { name: d.unpublish }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// TASK-285 + TASK-812: the delete prompt is an AlertDialog, and it warns about
+// the Google index only for a currently-published row.
+describe("AdminPageTable — delete (СР5)", () => {
+  it("asks in an AlertDialog with the indexed warning for a published page, then deletes", async () => {
+    mockReorder();
+    let deleted = "";
+    server.use(
+      http.delete("*/api/admin/pages/:id", ({ params }) => {
+        deleted = String(params.id);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await renderGrid();
+
+    const menu = await openRowMenu(A);
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: d.deleteItem }),
     );
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      dict.pages.deleteConfirm("FAQ", false),
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(d.deleteTitle("Privacy Policy")),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/пошуковому індексі/)).toBeInTheDocument();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.deleteAction }),
     );
-    expect(confirmSpy.mock.calls[0][0]).not.toContain("пошуковому індексі");
+    await waitFor(() => expect(deleted).toBe(A));
+  });
+
+  it("omits the indexed warning for a draft, and «Скасувати» deletes nothing", async () => {
+    mockReorder();
+    let deleted = "";
+    server.use(
+      http.delete("*/api/admin/pages/:id", ({ params }) => {
+        deleted = String(params.id);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await renderGrid();
+
+    const menu = await openRowMenu(B);
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: d.deleteItem }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).queryByText(/пошуковому індексі/),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
+    expect(deleted).toBe("");
   });
 });
 
@@ -313,9 +507,10 @@ describe("AdminPageTable — ARIA model", () => {
     expect(screen.queryAllByRole("treegrid")).toHaveLength(0);
     expect(rowEl(A)).toHaveAttribute("aria-rowindex", "2");
     expect(rowEl(C)).toHaveAttribute("aria-rowindex", "4");
-    expect(
-      screen.getByRole("grid", { name: dict.pages.gridLabel }),
-    ).toHaveAttribute("aria-busy", "false");
+    expect(screen.getByRole("grid", { name: d.gridLabel })).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
     expect(rowIds().filter((id) => rowEl(id).tabIndex === 0)).toHaveLength(1);
   });
 });
@@ -352,7 +547,7 @@ describe("AdminPageTable — keyboard reorder", () => {
     expect(listCalls).toBe(before);
   });
 
-  it("the Undo control sends the INVERSE order", async () => {
+  it("the persistent Undo control sends the INVERSE order", async () => {
     mockReorder();
     await renderGrid();
 
@@ -394,22 +589,15 @@ describe("AdminPageTable — server rejections", () => {
 });
 
 /**
- * The two rules that keep the payload complete.
- *
- * TASK-357 gave this table server paging to fix a silent truncation (`limit: 100`, no
- * pager). TASK-428 had to take the paging back out: a page is a PARTIAL view, and a
- * reorder computed on one is a partial ordering the server rejects as a lost update. The
- * fix for the truncation is now the complete list, not a bigger slab.
+ * The two rules that keep the payload complete: the list is unpaginated, and
+ * anything that hides rows (search, view, status) LOCKS reordering.
  */
 describe("AdminPageTable — the payload can never be partial", () => {
   it("a search that hides rows LOCKS reordering", async () => {
     mockReorder();
     await renderGrid();
 
-    await userEvent.type(
-      screen.getByRole("searchbox", { name: dict.reorderList.searchLabel }),
-      "FAQ",
-    );
+    await userEvent.type(searchBox(), "FAQ");
 
     await waitFor(() => expect(rowIds()).toEqual([B]));
     expect(
@@ -428,16 +616,12 @@ describe("AdminPageTable — the payload can never be partial", () => {
     expect(bodies).toHaveLength(0);
   });
 
-  // The local needle also matches the SLUG: an operator hunting for a legal page usually
-  // remembers its URL rather than its exact heading (the server search did the same).
-  it("matches the slug as well as the title", async () => {
+  it("names what it searches, and matches the address as well as the title", async () => {
     mockReorder();
     await renderGrid();
 
-    await userEvent.type(
-      screen.getByRole("searchbox", { name: dict.reorderList.searchLabel }),
-      "privacy-pol",
-    );
+    expect(searchBox()).toHaveAttribute("placeholder", d.searchPlaceholder);
+    await userEvent.type(searchBox(), "privacy-pol");
 
     await waitFor(() => expect(rowIds()).toEqual([A]));
   });
@@ -451,7 +635,7 @@ describe("AdminPageTable — the payload can never be partial", () => {
       }),
     );
 
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
     await waitFor(() => expect(rowIds()).toHaveLength(3));
     expect(urls).toHaveLength(1);
 
@@ -478,138 +662,113 @@ describe("AdminPageTable — the payload can never be partial", () => {
       }),
     );
 
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
     await waitFor(() => expect(rowIds()).toHaveLength(3));
 
-    await userEvent.type(
-      screen.getByRole("searchbox", { name: dict.reorderList.searchLabel }),
-      "FAQ",
-    );
+    await userEvent.type(searchBox(), "FAQ");
     await waitFor(() => expect(rowIds()).toEqual([B]));
 
     expect(urls).toHaveLength(1);
     expect(urls[0].searchParams.get("search")).toBeNull();
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
   it("distinguishes an empty search result from an empty table", async () => {
     mockReorder();
     await renderGrid();
 
-    await userEvent.type(
-      screen.getByRole("searchbox", { name: dict.reorderList.searchLabel }),
-      "невідоме",
-    );
+    await userEvent.type(searchBox(), "невідоме");
 
     expect(
       await screen.findByText(dict.reorderList.emptyMatch("невідоме")),
     ).toBeInTheDocument();
-    expect(screen.queryByText(dict.pages.empty)).not.toBeInTheDocument();
+    expect(screen.queryByText(d.empty)).not.toBeInTheDocument();
   });
 });
 
-/* ───────────────────────── kind tabs (TASK-435 × TASK-428) ──────────────── */
+/* ─────────────────── kind views (TASK-435 × TASK-428 × wave 198) ──────── */
 
-/**
- * The tabs arrived on develop filtering SERVER-side, against a paginated list.
- * This grid is unpaginated because reordering rewrites one global order, so the
- * merge made the tabs a LOCAL filter that locks the drag — the same bargain the
- * search box beside them already made. These tests pin that bargain: the wave
- * that wrote the tabs and the wave that wrote the grid could each pass their own
- * suite while together producing a list that reorders itself wrongly.
- */
-describe("AdminPageTable — kind tabs", () => {
-  it("labels every row with its kind", async () => {
+describe("AdminPageTable — kind views", () => {
+  it("counts every kind from the complete list", async () => {
     mockReorder();
     await renderGrid();
 
-    expect(
-      within(rowEl(A)).getByText(dict.pages.kindLegal),
-    ).toBeInTheDocument();
-    expect(within(rowEl(C)).getByText(dict.pages.kindInfo)).toBeInTheDocument();
+    expect(view(d.tabAll)).toHaveTextContent("3");
+    expect(view(d.tabLegal)).toHaveTextContent("2");
+    expect(view(d.tabInfo)).toHaveTextContent("1");
+    expect(view(d.tabHub)).toHaveTextContent("0");
+    // SF-CNT-26 — where each kind lives on the storefront.
+    expect(screen.getByText(d.kindNoteAll)).toBeInTheDocument();
   });
 
-  it("writes ?kind= to the URL when a tab is clicked", async () => {
+  it("writes ?kind= to the URL when a view is picked", async () => {
     mockReorder();
     await renderGrid();
 
-    await userEvent.click(
-      screen.getByRole("tab", { name: dict.pages.tabInfo }),
-    );
+    await userEvent.click(view(d.tabInfo));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalled());
     expect(mockReplace.mock.calls.at(-1)?.[0]).toContain("kind=INFO");
   });
 
-  it("clears ?kind= again on the «Усі» tab", async () => {
+  it("clears ?kind= again on «Усі»", async () => {
     mockSearchParams = new URLSearchParams("kind=INFO");
     mockReorder();
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
     await waitFor(() => expect(rowIds()).toEqual([C]));
 
-    await userEvent.click(screen.getByRole("tab", { name: dict.pages.tabAll }));
+    await userEvent.click(view(d.tabAll));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalled());
     expect(mockReplace.mock.calls.at(-1)?.[0]).not.toContain("kind=");
   });
 
   it("filters the rows it already has instead of re-asking the server", async () => {
-    // The server round-trip is what would break the drag: a kind slice cannot
-    // describe the one global order that PATCH /reorder rewrites.
     mockSearchParams = new URLSearchParams("kind=INFO");
     mockReorder();
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
 
     await waitFor(() => expect(rowIds()).toEqual([C]));
     expect(listCalls).toBe(1);
   });
 
-  it("locks reordering while a kind tab is active, and says why", async () => {
+  it("locks reordering while a kind view is active, and says why", async () => {
     mockSearchParams = new URLSearchParams("kind=LEGAL");
     mockReorder();
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
     await waitFor(() => expect(rowIds()).toEqual([A, B]));
 
-    expect(screen.getByText(dict.pages.kindLockedHint)).toBeInTheDocument();
+    expect(screen.getByText(d.kindLockedHint)).toBeInTheDocument();
 
-    // The grid is locked, so a keyboard pick-up must move nothing.
     keyboardMoveUp(B);
     expect(rowIds()).toEqual([A, B]);
     expect(bodies).toHaveLength(0);
   });
 
-  it("says WHICH kind is empty rather than blaming a search nobody typed", async () => {
+  it("explains what a hub is on the «Хаби» view, and says it is empty", async () => {
     mockSearchParams = new URLSearchParams("kind=HUB");
     mockReorder();
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
 
-    expect(await screen.findByText(dict.pages.emptyKind)).toBeInTheDocument();
+    expect(await screen.findByText(d.emptyKind)).toBeInTheDocument();
+    expect(screen.getByText(d.kindNoteHub)).toBeInTheDocument();
   });
 
-  it("highlights no tab for a bogus ?kind= and lists everything", async () => {
+  it("selects no view for a bogus ?kind= and lists everything", async () => {
     mockSearchParams = new URLSearchParams("kind=NOT_A_KIND");
     mockReorder();
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
     await waitFor(() => expect(rowIds()).toEqual([A, B, C]));
 
-    for (const label of [
-      dict.pages.tabAll,
-      dict.pages.tabLegal,
-      dict.pages.tabInfo,
-      dict.pages.tabHub,
-    ]) {
-      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
-        "aria-selected",
-        "false",
-      );
+    for (const label of [d.tabAll, d.tabLegal, d.tabInfo, d.tabHub]) {
+      expect(view(label)).toHaveAttribute("aria-selected", "false");
     }
   });
 });
 
 /**
- * TASK-562 — the status filter. `AdminPageListQueryDto.status` exists on the API,
- * but like the kind tabs the filter is LOCAL: the grid needs the complete list to
- * reorder, so `?status=` hides rows and locks the drag instead of narrowing the
- * query.
+ * TASK-562 — the status filter, LOCAL like the kind views; since wave 198 it
+ * lives in «Фільтри» (TASK-1043) with a chip for what is applied.
  */
 describe("AdminPageTable — status filter (TASK-562)", () => {
   it("filters the rows it already has by ?status= — never asks the server", async () => {
@@ -623,45 +782,59 @@ describe("AdminPageTable — status filter (TASK-562)", () => {
         return HttpResponse.json(listResponse());
       }),
     );
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
 
     await waitFor(() => expect(rowIds()).toEqual([B]));
     expect(listCalls).toBe(1);
     expect(new URL(urls[0]).searchParams.has("status")).toBe(false);
   });
 
-  it("writes ?status= to the URL from the toolbar filter", async () => {
+  it("writes ?status= to the URL from the «Фільтри» sheet", async () => {
     mockReorder();
     await renderGrid();
 
+    await userEvent.click(screen.getByRole("button", { name: r.filters }));
     await userEvent.click(
-      screen.getByRole("combobox", { name: dict.pages.filterStatus }),
+      await screen.findByRole("button", { name: d.statusScheduled }),
     );
-    await userEvent.click(
-      screen.getByRole("option", { name: dict.pages.statusScheduled }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.filtersApply }));
 
     await waitFor(() => expect(mockReplace).toHaveBeenCalled());
     expect(mockReplace.mock.calls.at(-1)?.[0]).toContain("status=SCHEDULED");
   });
 
+  it("shows the applied status as a chip that removes it", async () => {
+    mockSearchParams = new URLSearchParams("status=PUBLISHED");
+    mockReorder();
+    renderTable();
+    await waitFor(() => expect(rowIds()).toEqual([A, C]));
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: r.removeChipAria(d.filterChip(d.statusPublished)),
+      }),
+    );
+    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+    expect(mockReplace.mock.calls.at(-1)?.[0]).not.toContain("status=");
+  });
+
   it("locks reordering while a status filter is active, and says why", async () => {
     mockSearchParams = new URLSearchParams("status=PUBLISHED");
     mockReorder();
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
     await waitFor(() => expect(rowIds()).toEqual([A, C]));
 
-    expect(screen.getByText(dict.pages.statusLockedHint)).toBeInTheDocument();
+    expect(screen.getByText(d.statusLockedHint)).toBeInTheDocument();
 
     keyboardMoveUp(C);
     expect(rowIds()).toEqual([A, C]);
     expect(bodies).toHaveLength(0);
   });
 
-  it("combines with the kind tab", async () => {
+  it("combines with the kind view", async () => {
     mockSearchParams = new URLSearchParams("kind=LEGAL&status=PUBLISHED");
     mockReorder();
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
 
     await waitFor(() => expect(rowIds()).toEqual([A]));
   });
@@ -669,12 +842,12 @@ describe("AdminPageTable — status filter (TASK-562)", () => {
   it("says the FILTER emptied the list, not that no pages exist", async () => {
     mockSearchParams = new URLSearchParams("status=SCHEDULED");
     mockReorder();
-    renderWithProviders(<AdminPageTable />);
+    renderTable();
 
     expect(
       await screen.findByText(dict.common.table.emptyFiltered),
     ).toBeInTheDocument();
-    expect(screen.queryByText(dict.pages.emptyKind)).toBeNull();
+    expect(screen.queryByText(d.emptyKind)).toBeNull();
   });
 
   it("ignores a bogus ?status= — every row listed, drag not locked", async () => {
@@ -683,6 +856,23 @@ describe("AdminPageTable — status filter (TASK-562)", () => {
     await renderGrid();
 
     expect(rowIds()).toEqual([A, B, C]);
-    expect(screen.getByText(dict.pages.reorderHint)).toBeInTheDocument();
+    expect(screen.getByText(d.reorderHint)).toBeInTheDocument();
+  });
+});
+
+/** Wave 198 canon: the default columns fit 1440 next to the «⋯» column. */
+describe("page list columns — default widths", () => {
+  it("every default-visible column declares a width and they fit the budget", () => {
+    const visible = buildPageColumns().filter(
+      (column) => column.defaultVisible !== false,
+    );
+    expect(visible.every((column) => column.defaultWidth !== undefined)).toBe(
+      true,
+    );
+    const total = visible.reduce(
+      (sum, column) => sum + (column.defaultWidth ?? 0),
+      0,
+    );
+    expect(total).toBeLessThanOrEqual(PAGE_COLUMNS_WIDTH_BUDGET);
   });
 });

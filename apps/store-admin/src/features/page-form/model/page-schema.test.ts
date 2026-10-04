@@ -1,5 +1,6 @@
 import { dict } from "@/shared/config";
 import {
+  MAX_PAGE_CONTENT_LENGTH,
   pageSchema,
   pageFormValuesToCreateDto,
   pageFormValuesToUpdateDto,
@@ -197,5 +198,27 @@ describe("page mappers — tags and ogImage (TASK-437)", () => {
       ogImage: "  https://cdn.example.com/og/delivery.jpg  ",
     });
     expect(dto.ogImage).toBe("https://cdn.example.com/og/delivery.jpg");
+  });
+});
+
+// TASK-1154 — the API refuses a body over 100 000 characters of HTML; the form
+// says so before the 400, and by how much.
+describe("pageSchema — content length (TASK-1154)", () => {
+  it("accepts a body exactly at the limit", () => {
+    const content = `<p>${"а".repeat(MAX_PAGE_CONTENT_LENGTH - 7)}</p>`;
+    expect(content).toHaveLength(MAX_PAGE_CONTENT_LENGTH);
+    expect(pageSchema.safeParse({ ...baseInput, content }).success).toBe(true);
+  });
+
+  it("refuses one character more, naming the overflow", () => {
+    const content = `<p>${"а".repeat(MAX_PAGE_CONTENT_LENGTH - 6)}</p>`;
+    const result = pageSchema.safeParse({ ...baseInput, content });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe(
+      dict.pageForm.contentMax(
+        MAX_PAGE_CONTENT_LENGTH.toLocaleString("uk-UA"),
+        "1",
+      ),
+    );
   });
 });

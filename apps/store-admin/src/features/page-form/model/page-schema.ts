@@ -13,6 +13,13 @@ import {
 const e = dict.pageForm.errors;
 const seoErrors = dict.seoFields.errors;
 
+/**
+ * Mirror of the API's `MAX_RICH_TEXT_CONTENT_LENGTH`
+ * (`apps/store-api/src/common/sanitize/rich-text.constants.ts`): the length of
+ * the stored HTML a page body may have.
+ */
+export const MAX_PAGE_CONTENT_LENGTH = 100_000;
+
 /** Publish lifecycle values — mirror of the API's PublishStatus enum. */
 export const PAGE_STATUS = ["DRAFT", "SCHEDULED", "PUBLISHED"] as const;
 export type PageStatus = (typeof PAGE_STATUS)[number];
@@ -48,7 +55,21 @@ export const pageSchema = z
       .refine(
         (html) => html.replace(/<[^>]*>/g, "").trim().length > 0,
         e.contentRequired,
-      ),
+      )
+      // TASK-1154 — the API's `@MaxLength(MAX_RICH_TEXT_CONTENT_LENGTH)`
+      // counts the stored HTML, so this does too; the message says by how much.
+      .superRefine((html, ctx) => {
+        const over = html.length - MAX_PAGE_CONTENT_LENGTH;
+        if (over > 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: dict.pageForm.contentMax(
+              MAX_PAGE_CONTENT_LENGTH.toLocaleString("uk-UA"),
+              over.toLocaleString("uk-UA"),
+            ),
+          });
+        }
+      }),
 
     excerpt: z
       .string()

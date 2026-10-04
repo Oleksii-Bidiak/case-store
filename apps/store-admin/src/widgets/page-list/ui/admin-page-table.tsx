@@ -1,37 +1,42 @@
 "use client";
 
 /**
- * Admin static-page grid (TASK-153; drag/keyboard reordering added in TASK-428).
+ * Admin static-page registry (TASK-153; drag/keyboard reordering since TASK-428;
+ * the registry chrome of wave 198 — PagesProposal СР1–СР7, TASK-1069).
  *
  * The sortable grid REPLACED the flat table and its hand-typed «Порядок» column: the row
- * order IS the order the `/legal` hub renders. Every page used to be created with
- * `sortOrder = 0`, so the hub's order was whatever the database returned.
+ * order IS the order the `/legal` and `/info` hubs render.
  *
  * TWO RULES MAKE THAT SAFE, and they are the same two the banner / blog-category /
  * device-brand grids follow:
  *
- * 1. THE LIST IS NOT PAGINATED. TASK-357 gave this table server paging (`?page=`) to fix
- *    a silent truncation — it asked for `limit: 100` and rendered no pager. A page is a
- *    PARTIAL view, though, and a reorder computed on a partial view is a partial
- *    ordering: the server rejects it as a lost update (409). So the view now reads the
- *    COMPLETE list, which TASK-428 also had to make reachable — the admin query DTO used
- *    to inherit `page = 1` / `limit = 20` field initializers from the public one, so
- *    "everything" was not expressible. The endpoint still accepts `page`/`limit` (the
- *    content map uses them for a count).
- * 2. THE SEARCH IS LOCAL AND LOCKS REORDERING. A needle hides ROWS, so the visible order
- *    is not the real one — dragging inside it would write the wrong `sortOrder`. The
- *    search therefore moved out of the URL (`mode="local"`) and sets `locked`.
+ * 1. THE LIST IS NOT PAGINATED. A page of rows is a PARTIAL view, and a reorder
+ *    computed on a partial view is a partial ordering the server rejects as a lost
+ *    update (409). So the view reads the COMPLETE list.
+ * 2. ANYTHING THAT HIDES ROWS LOCKS REORDERING. The search box, the kind views and the
+ *    status filter all filter LOCALLY (never a narrowed API query — pages carry ONE
+ *    global `sortOrder` and `PATCH /reorder` rewrites the whole list), and each of them
+ *    sets `locked`: dragging inside a slice would write the wrong `sortOrder`.
+ *
+ * Wave 198 built the registry AROUND that grid from the shared pieces
+ * (`shared/ui/data-registry`): header, quick views with counters (counted from the
+ * complete list the grid already holds — no extra request), the toolbar, the «Фільтри»
+ * sheet with chips, «Колонки», and «⋯» per row. `DataRegistry`'s own table is not used:
+ * it has no drag-reorder, and the grid's ARIA model (`role="grid"`, roving tabindex,
+ * keyboard moves) lives in `useSortableListGrid`.
+ *
+ * Below md the SAME rows paint as cards through `max-md:` classes — one DOM, so the
+ * keyboard model and dnd-kit keep working on a phone, with the 44 px grip.
  *
  * `LiveAnnouncer` MUST wrap the view, not sit inside it: the reorder lifecycle and the
- * grid both call `useAnnouncer()`, and a hook called in the same component that renders
- * the provider would read the default no-op context.
+ * grid both call `useAnnouncer()`.
  */
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { GripVertical } from "lucide-react";
+import { GripVertical, LockIcon } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   getAdminPageControllerFindAllQueryKey,
@@ -42,6 +47,8 @@ import {
   PageEntityKind,
   type PageEntity,
 } from "@/entities/page";
+import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
 import { pagesToItems, usePageReorder } from "@/features/list-reorder";
 import {
   useRowFocus,
@@ -49,88 +56,55 @@ import {
   type SortableListRow,
 } from "@/shared/lib/list-reorder";
 import {
-  Badge,
   Button,
+  ColumnsMenu,
+  ErrorState,
+  FilterChips,
   LiveAnnouncer,
+  QuickViews,
+  RegistryHeader,
+  RegistryToolbar,
   ReorderUndoButton,
+  RowActionsMenu,
   SortableTree,
   Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
-  TableFilters,
   TableRow,
-  TableSearch,
-  TableToolbar,
-  Tabs,
-  TabsList,
-  TabsTrigger,
+  useConfirmDialog,
+  useDataRegistry,
+  type FilterChip,
+  type RegistryColumn,
+  type RowActionItem,
   type SortableTreeRowRenderProps,
-  type TableFilterDef,
 } from "@/shared/ui";
-import { formatDate } from "@/shared/lib";
+import { cn } from "@/shared/lib/utils";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
-import { isInlinedOnInfoHub } from "@/shared/config/hub-pages";
 import { AdminPageTableSkeleton } from "./admin-page-table-skeleton";
+import { PageFilterSheet } from "./page-filter-sheet";
+import { buildPageColumns, pageSiteHref } from "./page-registry-columns";
 
 export const PAGE_INSTRUCTIONS_LONG_ID = "page-grid-instructions-long";
 export const PAGE_INSTRUCTIONS_SHORT_ID = "page-grid-instructions-short";
 
-/**
- * Kind tabs (TASK-435), filtering LOCALLY (TASK-428).
- *
- * One screen holds three different things: legal documents served at
- * `/legal/<slug>`, help pages at `/info/<slug>`, and hub rows that are not
- * pages at all (meta tags for a listing route). Mixed into one list they are
- * indistinguishable, so the tabs write `?kind=` and a badge column labels each
- * row.
- *
- * The filter is applied HERE rather than sent to the API, and that is the one
- * thing that changed when this wave met the reorder grid: pages carry ONE
- * global `sortOrder`, and `PATCH /reorder` rewrites the complete list. A
- * server-side `?kind=` would return a slice, and a drag inside a slice cannot
- * describe the whole order — so, exactly like the search needle beside it, a
- * kind tab hides rows and LOCKS dragging. Same idiom as the banner,
- * blog-category and device-brand lists.
- *
- * "Усі" carries the `ALL_OPTION` sentinel rather than an empty string, which is
- * not a legal Radix `Tabs` value (the lesson TASK-405 learned on the order
- * table): the sentinel never reaches the URL — `handleKindChange` maps it back
- * to no `?kind=` at all.
- */
-const ALL_OPTION = "__all__";
+const d = dict.pages;
 
-/**
- * Radix `Tabs.Root` value used when `?kind=` matches no tab (a hand-typed or
- * stale value): it matches no `TabsTrigger`, so no tab renders active — the
- * honest state rather than a lie about what is being listed.
- */
-const CUSTOM_TAB = "__custom__";
+/** «Усі» — the view with no `?kind=`. */
+const ALL_VIEW = "all";
 
-const KIND_TABS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: ALL_OPTION, label: dict.pages.tabAll },
-  { value: PageEntityKind.LEGAL, label: dict.pages.tabLegal },
-  { value: PageEntityKind.INFO, label: dict.pages.tabInfo },
-  { value: PageEntityKind.HUB, label: dict.pages.tabHub },
+const KIND_VIEWS: ReadonlyArray<{ id: string; label: string }> = [
+  { id: ALL_VIEW, label: d.tabAll },
+  { id: PageEntityKind.LEGAL, label: d.tabLegal },
+  { id: PageEntityKind.INFO, label: d.tabInfo },
+  { id: PageEntityKind.HUB, label: d.tabHub },
 ];
 
-/** Plain-UA label for a row's kind. */
-const KIND_LABELS: Record<PageEntityKind, string> = {
-  [PageEntityKind.LEGAL]: dict.pages.kindLegal,
-  [PageEntityKind.INFO]: dict.pages.kindInfo,
-  [PageEntityKind.HUB]: dict.pages.kindHub,
-};
-
 /**
- * Status filter (TASK-562), LOCAL for the same reason as the kind tabs: the API's
- * `AdminPageListQueryDto.status` exists, but a server-side slice cannot be
- * reordered, so the complete list stays loaded and `?status=` only hides rows —
- * and, like every other row-hiding control on this grid, locks the drag.
- *
- * Reads `status`, never the `isActive` mirror, so «Заплановано» is its own
- * option rather than being folded into «Чернетка» (the TASK-430 lesson).
+ * Status filter (TASK-562), LOCAL for the same reason as the kind views. Reads
+ * `status`, never the `isActive` mirror, so «Заплановано» is its own option.
  */
 const PAGE_STATUSES = [
   "PUBLISHED",
@@ -138,15 +112,10 @@ const PAGE_STATUSES = [
   "DRAFT",
 ] as const satisfies ReadonlyArray<PageEntity["status"]>;
 
-const STATUS_FILTER: TableFilterDef = {
-  param: "status",
-  label: dict.pages.filterStatus,
-  allLabel: dict.pages.filterStatusAll,
-  options: [
-    { value: "PUBLISHED", label: dict.pages.statusPublished },
-    { value: "SCHEDULED", label: dict.pages.statusScheduled },
-    { value: "DRAFT", label: dict.pages.statusDraft },
-  ],
+const STATUS_LABELS: Record<PageEntity["status"], string> = {
+  PUBLISHED: d.statusPublished,
+  SCHEDULED: d.statusScheduled,
+  DRAFT: d.statusDraft,
 };
 
 /** Narrow an arbitrary `?status=` string to a page status. */
@@ -159,6 +128,21 @@ function isPageKind(value: string): value is PageEntityKind {
   return Object.values(PageEntityKind).includes(value as PageEntityKind);
 }
 
+/** Clicks on these never open the row: they are controls with their own job. */
+const INTERACTIVE =
+  "a,button,input,[role=menuitem],[data-registry-interactive]";
+
+/* ── card layout below md (one DOM — see the header) ─────────────────────── */
+
+const CARD_ROW =
+  "max-md:relative max-md:mb-3 max-md:flex max-md:flex-wrap max-md:items-center max-md:gap-x-1.5 max-md:gap-y-1.5 max-md:rounded-lg max-md:border max-md:bg-card max-md:py-3 max-md:pr-12 max-md:shadow-card max-md:last:mb-0";
+const CARD_CELL: Record<string, string> = {
+  title: "max-md:basis-full max-md:p-0",
+  site: "max-md:basis-full max-md:p-0",
+  kind: "max-md:p-0",
+  status: "max-md:p-0",
+};
+
 export function AdminPageTable() {
   return (
     <LiveAnnouncer>
@@ -169,6 +153,12 @@ export function AdminPageTable() {
 
 function AdminPageGrid() {
   const queryClient = useQueryClient();
+  const router = useRouter();
+  const { can } = useAuth();
+  // Same key as the API's class guard on every write here (and, today, on the
+  // list itself — see the report's API tail about a `pages:read` key).
+  const canWrite = can(PERM.pagesWrite);
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   // No arguments: the COMPLETE list. The reorder adapter writes the server's refreshed
   // list into this exact query key, so the two calls must match.
@@ -185,37 +175,44 @@ function AdminPageGrid() {
     [pages],
   );
 
+  const columns = useMemo(() => buildPageColumns(), []);
+  const registry = useDataRegistry<PageEntity>({
+    tableId: "pages",
+    columns,
+    rows: pages,
+    getRowId: (page) => page.id,
+  });
+
   const [search, setSearch] = useState("");
   const needle = search.trim().toLowerCase();
   const searchActive = needle.length > 0;
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const searchParams = useSearchParams();
   const updateParams = useUrlParams();
   const kindParam = searchParams.get("kind") ?? "";
   const kindFilter = isPageKind(kindParam) ? kindParam : undefined;
   const kindActive = kindFilter !== undefined;
-  // A hand-typed `?status=bogus` filters nothing — and so shows no chip either
-  // (the `values` passed to TableFilters below), rather than a chip for a
-  // filter that is not applied.
+  // A hand-typed `?status=bogus` filters nothing — and so shows no chip either.
   const statusParam = searchParams.get("status") ?? "";
   const statusFilter = isPageStatus(statusParam) ? statusParam : undefined;
   const statusActive = statusFilter !== undefined;
 
-  // Any filter hides rows, and any one therefore locks the drag.
+  // Any filter hides rows, and any one therefore locks the drag; so does a
+  // session that may not reorder at all.
   const filterActive = searchActive || kindActive || statusActive;
 
-  // The active tab is the one matching `?kind=` exactly, with an absent filter
-  // standing for the "Усі" sentinel; otherwise CUSTOM_TAB → nothing highlighted.
-  const currentTabValue = kindParam || ALL_OPTION;
-  const activeTab = KIND_TABS.some((tab) => tab.value === currentTabValue)
-    ? currentTabValue
-    : CUSTOM_TAB;
+  // A bogus `?kind=` selects no view — the honest state.
+  const activeView = kindParam || ALL_VIEW;
+  const counts = useMemo(() => {
+    const byKind = new Map<string, number>();
+    for (const page of pages) {
+      byKind.set(page.kind, (byKind.get(page.kind) ?? 0) + 1);
+    }
+    return byKind;
+  }, [pages]);
 
-  const handleKindChange = (value: string) => {
-    updateParams({ kind: value === ALL_OPTION ? undefined : value });
-  };
-
-  // Title OR slug — an operator hunting for a legal page usually remembers its URL.
+  // Title OR address — an operator hunting for a legal page usually remembers its URL.
   const visibleIds = useMemo(() => {
     if (!filterActive) return undefined;
     return new Set(
@@ -241,48 +238,100 @@ function AdminPageGrid() {
     reorder,
     focus,
     rowIdPrefix: "page-row-",
-    locked: filterActive,
+    locked: filterActive || !canWrite,
     visibleIds,
   });
 
-  // Prefix match: the key without params covers every paged/searched variant.
+  // Prefix match: the key without params covers every variant.
   const invalidateList = () =>
     queryClient.invalidateQueries({
       queryKey: getAdminPageControllerFindAllQueryKey(),
     });
 
-  const handleToggle = (id: string, isActive: boolean) => {
-    const mutation = isActive ? unpublish : publish;
+  const handleToggle = (page: PageEntity) => {
+    const mutation = page.isActive ? unpublish : publish;
     mutation.mutate(
-      { id },
+      { id: page.id },
       {
         onSuccess: () => {
           void invalidateList();
-          toast.success(
-            isActive ? dict.pages.toastUnpublished : dict.pages.toastPublished,
-          );
+          toast.success(page.isActive ? d.toastUnpublished : d.toastPublished);
         },
-        onError: () => toast.error(dict.pages.toastStatusFailed),
+        onError: () => toast.error(d.toastStatusFailed),
       },
     );
   };
 
-  const handleDelete = (id: string, title: string, isPublished: boolean) => {
-    if (!window.confirm(dict.pages.deleteConfirm(title, isPublished))) return;
+  // TASK-812 — AlertDialog instead of window.confirm; TASK-285 — the Google
+  // warning only for a page that is live right now.
+  const handleDelete = async (page: PageEntity) => {
+    const confirmed = await confirm({
+      title: d.deleteTitle(page.title),
+      description: d.deleteBody(page.isActive),
+      confirmLabel: d.deleteAction,
+      destructive: true,
+    });
+    if (!confirmed) return;
     remove.mutate(
-      { id },
+      { id: page.id },
       {
         onSuccess: () => {
           void invalidateList();
-          toast.success(dict.pages.toastDeleted);
+          toast.success(d.toastDeleted);
         },
-        onError: () => toast.error(dict.pages.toastDeleteFailed),
+        onError: () => toast.error(d.toastDeleteFailed),
       },
     );
   };
 
   const isMutating =
     publish.isPending || unpublish.isPending || remove.isPending;
+
+  const rowActions = (page: PageEntity): RowActionItem[] => {
+    const editHref = `/pages/${page.id}/edit`;
+    const siteHref = pageSiteHref(page);
+    const site: RowActionItem[] = siteHref
+      ? [{ label: d.openOnSite, href: siteHref, newTab: true }]
+      : [];
+    if (!canWrite) {
+      return [{ label: dict.common.view, href: editHref }, ...site];
+    }
+    return [
+      { label: dict.common.edit, href: editHref },
+      ...site,
+      {
+        label: page.isActive
+          ? d.unpublish
+          : page.status === "SCHEDULED"
+            ? d.publishNow
+            : d.publish,
+        onSelect: () => handleToggle(page),
+        disabled: isMutating,
+      },
+      {
+        label: d.deleteItem,
+        onSelect: () => void handleDelete(page),
+        destructive: true,
+        separatorBefore: true,
+        disabled: isMutating,
+      },
+    ];
+  };
+
+  const openRow = (event: MouseEvent<HTMLTableRowElement>, href: string) => {
+    const row = event.currentTarget;
+    const target = event.target as Element;
+    // Bubbled out of a portal (the «⋯» menu) or from a control: not a row click.
+    if (!row.contains(target)) return;
+    const control = target.closest(INTERACTIVE);
+    if (control && row.contains(control)) return;
+    if (window.getSelection?.()?.toString()) return;
+    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+      window.open(href, "_blank", "noopener");
+      return;
+    }
+    router.push(href);
+  };
 
   const renderRow = (props: SortableTreeRowRenderProps) => {
     const row = grid.rows.find((r) => r.item.id === props.item.id);
@@ -293,10 +342,11 @@ function AdminPageGrid() {
         key={page.id}
         page={page}
         row={row}
-        locked={searchActive}
-        isMutating={isMutating}
-        onToggle={handleToggle}
-        onDelete={handleDelete}
+        columns={registry.visibleColumns}
+        canWrite={canWrite}
+        locked={filterActive}
+        actions={rowActions(page)}
+        onOpen={openRow}
         registerRef={(node) => {
           focus.registerRow(page.id)(node);
           props.setNodeRef(node);
@@ -307,58 +357,103 @@ function AdminPageGrid() {
     );
   };
 
+  const chips: FilterChip[] = statusFilter
+    ? [
+        {
+          key: "status",
+          label: d.filterChip(STATUS_LABELS[statusFilter]),
+          onRemove: () => updateParams({ status: undefined }),
+        },
+      ]
+    : [];
+
+  const hint = !canWrite
+    ? dict.common.viewOnly
+    : searchActive
+      ? dict.reorderList.searchLockedHint
+      : kindActive
+        ? d.kindLockedHint
+        : statusActive
+          ? d.statusLockedHint
+          : d.reorderHint;
+  const HintIcon = !canWrite || filterActive ? LockIcon : GripVertical;
+
+  const widthOf = (id: string) => registry.widths[id];
+
   return (
     <div className="flex flex-col gap-4">
-      <Tabs value={activeTab} onValueChange={handleKindChange}>
-        <TabsList aria-label={dict.pages.tabsAria}>
-          {KIND_TABS.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value}>
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
-
-      <TableToolbar
-        className="mb-0"
-        onRefresh={() => void refetch()}
-        isRefreshing={isFetching}
-        search={
-          // `mode="local"`: the needle hides ROWS, it does not narrow a query — see the
-          // header for why this grid stays unpaginated and why a search LOCKS reordering
-          // instead of PATCHing a partial ordering.
-          <TableSearch
-            mode="local"
-            value={search}
-            onChange={(next) => setSearch(next ?? "")}
-            placeholder={dict.reorderList.searchPlaceholder}
-            label={dict.reorderList.searchLabel}
-          />
-        }
-        filters={
-          <TableFilters
-            filters={[STATUS_FILTER]}
-            values={{ status: statusFilter ?? "" }}
-          />
-        }
+      <RegistryHeader
+        title={d.heading}
         actions={
-          <ReorderUndoButton
-            canUndo={reorder.canUndo}
-            onUndo={reorder.undo}
-            label={dict.reorderList.undo}
-          />
+          canWrite ? (
+            <Button asChild>
+              <Link href="/pages/new">{d.add}</Link>
+            </Button>
+          ) : null
         }
       />
 
-      <p className="text-sm text-muted-foreground">
-        {searchActive
-          ? dict.reorderList.searchLockedHint
-          : kindActive
-            ? dict.pages.kindLockedHint
-            : statusActive
-              ? dict.pages.statusLockedHint
-              : dict.pages.reorderHint}
-      </p>
+      <div className="flex flex-col gap-2">
+        <QuickViews
+          items={KIND_VIEWS.map((v) => ({
+            id: v.id,
+            label: v.label,
+            count: v.id === ALL_VIEW ? pages.length : (counts.get(v.id) ?? 0),
+          }))}
+          activeId={activeView}
+          onChange={(id) =>
+            updateParams({ kind: id === ALL_VIEW ? undefined : id })
+          }
+        />
+        {/* SF-CNT-26 — what each kind is and where it lives on the site. */}
+        <p className="max-w-3xl text-xs text-muted-foreground">
+          {kindFilter === PageEntityKind.HUB ? d.kindNoteHub : d.kindNoteAll}
+        </p>
+      </div>
+
+      <div className="flex flex-col gap-3">
+        <RegistryToolbar
+          search={{
+            value: search,
+            placeholder: d.searchPlaceholder,
+            label: d.searchLabel,
+            // LOCAL: the needle hides rows of the complete list and locks the
+            // drag; it never narrows the API query (rule 2 in the header).
+            onChange: (next) => setSearch(next ?? ""),
+          }}
+          filters={{
+            count: chips.length,
+            open: filtersOpen,
+            onOpenChange: setFiltersOpen,
+          }}
+          columnsMenu={
+            <ColumnsMenu
+              columns={registry.columns}
+              settings={registry.settings}
+            />
+          }
+          onRefresh={() => void refetch()}
+          isRefreshing={isFetching}
+        />
+        <FilterChips chips={chips} />
+
+        <div className="flex items-start justify-between gap-3">
+          <p className="flex items-start gap-2 text-xs text-muted-foreground">
+            <HintIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+            <span>{hint}</span>
+          </p>
+          {canWrite ? (
+            // The persistent way back for the keyboard; the toast after a
+            // move (TASK-963, `features/list-reorder`) is the visible one.
+            <ReorderUndoButton
+              iconOnly
+              canUndo={reorder.canUndo}
+              onUndo={reorder.undo}
+              label={dict.reorderList.undo}
+            />
+          ) : null}
+        </div>
+      </div>
 
       <div id={PAGE_INSTRUCTIONS_LONG_ID} className="sr-only">
         {dict.reorderList.instructionsLong}
@@ -368,43 +463,60 @@ function AdminPageGrid() {
       </div>
 
       {isLoading ? (
-        <AdminPageTableSkeleton />
+        <AdminPageTableSkeleton withChrome={false} />
       ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.pages.loadError}
-        </p>
+        <ErrorState
+          variant="card"
+          message={d.loadError}
+          onRetry={() => void refetch()}
+          isRetrying={isFetching}
+        />
       ) : pages.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {dict.pages.empty}
+        <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
+          {d.empty}
         </div>
       ) : grid.rows.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
+        <div className="rounded-lg border p-8 text-center text-sm text-muted-foreground">
           {searchActive
             ? dict.reorderList.emptyMatch(search.trim())
             : statusActive
               ? dict.common.table.emptyFiltered
-              : dict.pages.emptyKind}
+              : d.emptyKind}
         </div>
       ) : (
-        <div className="rounded-lg border border-border shadow-card overflow-hidden">
+        <div className="rounded-lg border shadow-card max-md:rounded-none max-md:border-0 max-md:shadow-none md:overflow-hidden">
           <Table
             role="grid"
-            aria-label={dict.pages.gridLabel}
+            aria-label={d.gridLabel}
             aria-describedby={PAGE_INSTRUCTIONS_LONG_ID}
             aria-busy={reorder.isPending}
+            className="table-fixed max-md:block"
           >
-            <TableHeader>
-              <TableRow aria-rowindex={1}>
-                <TableHead>{dict.pages.colTitle}</TableHead>
-                <TableHead hideOnMobile>{dict.pages.colSlug}</TableHead>
-                <TableHead>{dict.pages.colKind}</TableHead>
-                <TableHead>{dict.pages.colStatus}</TableHead>
-                <TableHead className="text-right">
-                  {dict.common.actions}
+            <colgroup className="max-md:hidden">
+              {registry.visibleColumns.map((column) => (
+                <col key={column.id} style={{ width: widthOf(column.id) }} />
+              ))}
+              <col className="w-11" />
+            </colgroup>
+            <TableHeader className="max-md:hidden">
+              <TableRow aria-rowindex={1} className="hover:bg-transparent">
+                {registry.visibleColumns.map((column) => (
+                  <TableHead
+                    key={column.id}
+                    className={cn(
+                      "px-3",
+                      column.id === "title" && canWrite && "pl-10",
+                    )}
+                  >
+                    {column.label}
+                  </TableHead>
+                ))}
+                <TableHead className="w-11 px-0">
+                  <span className="sr-only">{dict.common.actions}</span>
                 </TableHead>
               </TableRow>
             </TableHeader>
-            <TableBody>
+            <TableBody className="max-md:block">
               <SortableTree
                 items={grid.sortableItems}
                 maxDepth={1}
@@ -417,56 +529,27 @@ function AdminPageGrid() {
           </Table>
         </div>
       )}
+
+      <PageFilterSheet
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        applied={{ status: statusFilter ?? "" }}
+        onApply={(next) => updateParams({ status: next.status || undefined })}
+      />
+      {confirmDialog}
     </div>
-  );
-}
-
-/**
- * The status badge (TASK-430).
- *
- * Reads `status`, NOT `isActive`. `Page.isActive` is documented in the schema as a
- * derived read-only MIRROR of `status == PUBLISHED`, kept only so the old badges and
- * toggles keep working — which means it collapses DRAFT and SCHEDULED into one
- * value, and this badge was reporting a page scheduled for Friday as «Чернетка».
- * An operator could not tell it apart from one somebody forgot to publish, which is
- * the difference the schedule exists to make.
- *
- * The publish/unpublish BUTTON below still reads `isActive`, correctly: "is it live
- * right now" is exactly what that mirror answers.
- *
- * The date is `formatDate` — «Заплановано на 19.09.2026», the full year included.
- * A day-and-month shorthand would hide the one mistake worth catching here: a
- * schedule typed into the wrong year.
- */
-function PageStatusBadge({ page }: { page: PageEntity }) {
-  if (page.status === "SCHEDULED") {
-    return (
-      <Badge variant="warning">
-        {page.scheduledAt
-          ? dict.pages.statusScheduledOn(formatDate(page.scheduledAt))
-          : // SCHEDULED with no instant should not exist (the API sets them
-            // together) — say «Заплановано» rather than render "Invalid Date".
-            dict.pages.statusScheduled}
-      </Badge>
-    );
-  }
-
-  const isPublished = page.status === "PUBLISHED";
-
-  return (
-    <Badge variant={isPublished ? "default" : "secondary"}>
-      {isPublished ? dict.pages.statusPublished : dict.pages.statusDraft}
-    </Badge>
   );
 }
 
 interface PageRowProps {
   page: PageEntity;
   row: SortableListRow;
+  columns: readonly RegistryColumn<PageEntity>[];
+  canWrite: boolean;
+  /** A filter hides rows — the grip stays but says it is unavailable. */
   locked: boolean;
-  isMutating: boolean;
-  onToggle: (id: string, isActive: boolean) => void;
-  onDelete: (id: string, title: string, isPublished: boolean) => void;
+  actions: RowActionItem[];
+  onOpen: (event: MouseEvent<HTMLTableRowElement>, href: string) => void;
   registerRef: (node: HTMLTableRowElement | null) => void;
   style: React.CSSProperties;
   handleProps: SortableTreeRowRenderProps["handleProps"];
@@ -475,15 +558,17 @@ interface PageRowProps {
 function PageRow({
   page,
   row,
+  columns,
+  canWrite,
   locked,
-  isMutating,
-  onToggle,
-  onDelete,
+  actions,
+  onOpen,
   registerRef,
   style,
   handleProps,
 }: PageRowProps) {
   const tabIndex = row.controlTabIndex;
+  const editHref = `/pages/${page.id}/edit`;
 
   return (
     <TableRow
@@ -491,79 +576,72 @@ function PageRow({
       {...row.rowProps}
       aria-describedby={PAGE_INSTRUCTIONS_SHORT_ID}
       style={style}
-      className={
+      onClick={(event) => onOpen(event, editHref)}
+      className={cn(
+        "cursor-pointer",
+        CARD_ROW,
+        canWrite ? "max-md:pl-13" : "max-md:pl-4",
         row.grabbed
           ? "outline outline-2 outline-ring"
           : row.conflict
             ? "bg-accent"
-            : undefined
-      }
+            : undefined,
+      )}
     >
-      <TableCell role="gridcell" className="font-medium">
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            {...handleProps}
-            tabIndex={tabIndex}
-            aria-label={dict.reorderList.handleLabel(page.title)}
-            aria-disabled={locked || undefined}
-            className="inline-flex size-6 min-h-11 min-w-11 cursor-grab items-center justify-center text-muted-foreground md:min-h-0 md:min-w-0"
+      {columns.map((column) =>
+        column.id === "title" ? (
+          <TableCell
+            key={column.id}
+            role="gridcell"
+            className={cn(
+              "px-3 font-medium whitespace-normal break-words",
+              CARD_CELL.title,
+            )}
           >
-            <GripVertical aria-hidden="true" className="size-4" />
-          </button>
-          <Link
-            href={`/pages/${page.id}/edit`}
-            tabIndex={tabIndex}
-            className="hover:underline"
+            <div className="flex items-center gap-1">
+              {canWrite ? (
+                <button
+                  type="button"
+                  {...handleProps}
+                  tabIndex={tabIndex}
+                  aria-label={dict.reorderList.handleLabel(page.title)}
+                  aria-disabled={locked || undefined}
+                  className="inline-flex size-6 min-h-11 min-w-11 shrink-0 cursor-grab items-center justify-center rounded-md text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50 max-md:absolute max-md:top-1/2 max-md:left-1 max-md:-translate-y-1/2 md:-ml-2 md:size-8 md:min-h-0 md:min-w-0"
+                >
+                  <GripVertical aria-hidden="true" className="size-4" />
+                </button>
+              ) : null}
+              <Link
+                href={editHref}
+                tabIndex={tabIndex}
+                className="rounded-xs outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {page.title}
+              </Link>
+            </div>
+          </TableCell>
+        ) : (
+          <TableCell
+            key={column.id}
+            role="gridcell"
+            className={cn(
+              "px-3 whitespace-normal",
+              CARD_CELL[column.id] ?? "max-md:p-0",
+            )}
           >
-            {page.title}
-          </Link>
-        </div>
-      </TableCell>
-      <TableCell role="gridcell" hideOnMobile className="text-muted-foreground">
-        {page.slug}
-      </TableCell>
-      <TableCell role="gridcell">
-        <div className="flex flex-wrap items-center gap-1">
-          <Badge variant="outline">{KIND_LABELS[page.kind]}</Badge>
-          {/* TASK-565 — the storefront finds these rows by their exact slug
-              and renders them inside /info; say so where a rename happens. */}
-          {isInlinedOnInfoHub(page.kind, page.slug) && (
-            <Badge variant="secondary" title={dict.pages.inlinedOnInfoHint}>
-              {dict.pages.inlinedOnInfo}
-            </Badge>
-          )}
-        </div>
-      </TableCell>
-      <TableCell role="gridcell">
-        <PageStatusBadge page={page} />
-      </TableCell>
-      <TableCell role="gridcell" className="text-right">
-        <div className="flex justify-end gap-2">
-          <Button asChild variant="outline" size="sm">
-            <Link href={`/pages/${page.id}/edit`} tabIndex={tabIndex}>
-              {dict.common.edit}
-            </Link>
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            tabIndex={tabIndex}
-            disabled={isMutating}
-            onClick={() => onToggle(page.id, page.isActive)}
-          >
-            {page.isActive ? dict.pages.unpublish : dict.pages.publish}
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            tabIndex={tabIndex}
-            disabled={isMutating}
-            onClick={() => onDelete(page.id, page.title, page.isActive)}
-          >
-            {dict.common.delete}
-          </Button>
-        </div>
+            {column.cell(page)}
+          </TableCell>
+        ),
+      )}
+      <TableCell
+        role="gridcell"
+        className="w-11 px-0 pr-1.5 text-right max-md:absolute max-md:top-2 max-md:right-1 max-md:w-auto max-md:p-0"
+      >
+        <RowActionsMenu
+          label={d.rowActionsAria(page.title)}
+          items={actions}
+          tabIndex={tabIndex}
+        />
       </TableCell>
     </TableRow>
   );

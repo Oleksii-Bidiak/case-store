@@ -5,6 +5,10 @@ import { dict } from "@/shared/config";
 
 const e = dict.faqForm.errors;
 
+/** Mirrors of the API DTO limits (`create-faq-item.dto.ts` @MaxLength). */
+export const FAQ_QUESTION_MAX = 500;
+export const FAQ_ANSWER_MAX = 5000;
+
 /**
  * Validation schema for the admin FAQ form (TASK-242).
  *
@@ -18,9 +22,13 @@ export const faqSchema = z.object({
     .string()
     .trim()
     .min(1, e.questionRequired)
-    .max(500, e.questionMax),
+    .max(FAQ_QUESTION_MAX, e.questionMax),
 
-  answer: z.string().trim().min(1, e.answerRequired).max(5000, e.answerMax),
+  answer: z
+    .string()
+    .trim()
+    .min(1, e.answerRequired)
+    .max(FAQ_ANSWER_MAX, e.answerMax),
 
   isActive: z.boolean().optional(),
 });

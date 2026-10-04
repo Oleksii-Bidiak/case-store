@@ -85,3 +85,17 @@ export function pagePreviewPath(
       return hubRouteForSlug(slug);
   }
 }
+
+/**
+ * Where an operator SEES this row on the storefront (wave 198, PagesProposal
+ * СР1 «На сайті»). Same as {@link pagePreviewPath} except for the INFO rows
+ * `/info` renders inline (TASK-565): their text lives on `/info` itself, so
+ * that is the address worth opening.
+ */
+export function pageSitePath(
+  kind: PageEntityKind,
+  slug: string,
+): string | null {
+  if (isInlinedOnInfoHub(kind, slug)) return "/info";
+  return pagePreviewPath(kind, slug);
+}

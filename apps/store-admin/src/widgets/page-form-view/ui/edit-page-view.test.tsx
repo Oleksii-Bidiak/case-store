@@ -4,14 +4,18 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { dict } from "@/shared/config";
+import { WithAuth } from "@/entities/session/model/auth-context.fixture";
+import { PERM } from "@/entities/permission";
+import { dict, STOREFRONT_URL } from "@/shared/config";
 import { EditPageView } from "./edit-page-view";
 
 // next/navigation is unavailable under jsdom — mock the router.
+const mockPush = jest.fn();
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: jest.fn(), push: jest.fn() }),
+  useRouter: () => ({ replace: jest.fn(), push: mockPush }),
 }));
 
 // The rich-text body editor (Tiptap) touches the DOM on init; stub it with a
@@ -41,6 +45,7 @@ jest.mock("@/shared/ui/toast", () => ({
   },
 }));
 
+const d = dict.pages;
 const PAGE_ID = "page-uuid-1";
 
 function makePage(
@@ -50,6 +55,7 @@ function makePage(
   return {
     id: PAGE_ID,
     slug: "dostavka",
+    kind: "LEGAL",
     title: "Доставка",
     content: "<p>Body</p>",
     excerpt: null,
@@ -79,36 +85,107 @@ function stubPage(page: ReturnType<typeof makePage>) {
   return putCalls;
 }
 
-async function renderAndWaitForForm(page: ReturnType<typeof makePage>) {
+const slugField = () => screen.getByLabelText(dict.pageForm.address);
+
+async function renderAndWaitForForm(
+  page: ReturnType<typeof makePage>,
+  permissions?: string[],
+) {
   const putCalls = stubPage(page);
-  renderWithProviders(<EditPageView pageId={PAGE_ID} />);
-  await waitFor(() =>
-    expect(screen.getByLabelText(dict.pageForm.slug)).toHaveValue(page.slug),
+  renderWithProviders(
+    permissions ? (
+      <WithAuth permissions={permissions}>
+        <EditPageView pageId={PAGE_ID} />
+      </WithAuth>
+    ) : (
+      <WithAuth isOwner>
+        <EditPageView pageId={PAGE_ID} />
+      </WithAuth>
+    ),
   );
+  await waitFor(() => expect(slugField()).toHaveValue(page.slug));
   return putCalls;
 }
 
 const submit = () =>
-  userEvent.click(
-    screen.getByRole("button", { name: dict.common.saveChanges }),
-  );
+  userEvent.click(screen.getByRole("button", { name: dict.common.save }));
+
+async function renameSlug(next: string) {
+  await userEvent.clear(slugField());
+  await userEvent.type(slugField(), next);
+}
+
+beforeEach(() => {
+  mockPush.mockClear();
+  toastError.mockClear();
+});
+
+/** PagesProposal СР8 — the header says what the page is and where it lives. */
+describe("EditPageView — header", () => {
+  it("names the page, its status and kind, and links a live page to the site", async () => {
+    await renderAndWaitForForm(makePage("PUBLISHED"));
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Доставка" }),
+    ).toBeInTheDocument();
+    const open = screen.getByRole("link", { name: d.openOnSite });
+    expect(open).toHaveAttribute("href", `${STOREFRONT_URL}/legal/dostavka`);
+    expect(open).toHaveAttribute("target", "_blank");
+    expect(screen.getAllByText(d.statusPublished).length).toBeGreaterThan(0);
+  });
+
+  it("offers no site link for a draft", async () => {
+    await renderAndWaitForForm(makePage("DRAFT"));
+
+    expect(
+      screen.queryByRole("link", { name: d.openOnSite }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("deletes from «⋯» after an AlertDialog and returns to the list", async () => {
+    let deleted = false;
+    server.use(
+      http.delete(`*/api/admin/pages/${PAGE_ID}`, () => {
+        deleted = true;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await renderAndWaitForForm(makePage("PUBLISHED"));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: d.headerMenuAria }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: d.deleteItem }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.deleteAction }),
+    );
+
+    await waitFor(() => expect(deleted).toBe(true));
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/pages"));
+  });
+
+  it("is view-only without pages:write — no save, no «⋯»", async () => {
+    await renderAndWaitForForm(makePage("PUBLISHED"), [PERM.blogWrite]);
+
+    expect(
+      screen.queryByRole("button", { name: dict.common.save }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: d.headerMenuAria }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
+  });
+});
 
 /**
  * The whole chain — widget seeding → form input → zod mapper → PUT body — must
- * speak KYIV time, because that is what the page LIST speaks (TASK-421, review
- * finding #10).
+ * speak KYIV time, because that is what the page LIST speaks (TASK-421).
  *
- * 21:00 UTC on 1 October is 00:00 on 2 OCTOBER in Kyiv. Picked deliberately: the
- * two zones disagree about the calendar DAY here, so the old browser-zone
- * seeding is off by a day rather than by an invisible hour, and the operator who
- * re-typed what the list showed them («02.10») moved the publication a day
- * earlier without any screen saying so.
- *
- * On a Kyiv machine — this one — both implementations agree, so this test cannot
- * prove the fix on its own; the zone-independent proof lives in
- * `shared/lib/format/datetime-local.test.ts`. What this one pins is that the
- * widget and the mapper actually go THROUGH those helpers end to end, which no
- * unit test of the helpers can show.
+ * 21:00 UTC on 1 October is 00:00 on 2 OCTOBER in Kyiv: the two zones disagree
+ * about the calendar DAY here.
  */
 describe("EditPageView — the schedule is Kyiv time, not the browser's", () => {
   const SCHEDULED_UTC = "2026-10-01T21:00:00.000Z";
@@ -136,55 +213,56 @@ describe("EditPageView — the schedule is Kyiv time, not the browser's", () => 
   });
 });
 
+/** TASK-285 + TASK-812 — the rename guard is an AlertDialog (СР12). */
 describe("EditPageView — slug-rename guard (TASK-285)", () => {
-  let confirmSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
-  });
-
-  afterEach(() => {
-    confirmSpy.mockRestore();
-  });
-
-  it("submits without any confirm when the slug is unchanged on a published page", async () => {
+  it("submits without any dialog when the slug is unchanged on a published page", async () => {
     const putCalls = await renderAndWaitForForm(makePage("PUBLISHED"));
 
     await submit();
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  it("blocks the update when the admin cancels the published-slug-change confirm", async () => {
-    confirmSpy.mockReturnValue(false);
+  it("blocks the update when the admin cancels the published-slug-change dialog", async () => {
     const putCalls = await renderAndWaitForForm(makePage("PUBLISHED"));
 
-    const slugField = screen.getByLabelText(dict.pageForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
+    await renameSlug("nova-adresa");
     await submit();
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      dict.pages.slugChangeConfirm("dostavka", "nova-adresa"),
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText(d.slugChangeTitle)).toBeInTheDocument();
+    expect(
+      within(dialog).getByText(
+        d.slugChangeBody("/legal/dostavka", "/legal/nova-adresa"),
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText(d.slugChangeRedirect)).toBeInTheDocument();
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
     );
-    // Cancel → the mutation never fires.
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+    );
     expect(putCalls).toHaveLength(0);
   });
 
-  it("fires the update after the admin accepts the confirm", async () => {
+  it("fires the update after the admin accepts the dialog", async () => {
     const putCalls = await renderAndWaitForForm(makePage("PUBLISHED"));
 
-    const slugField = screen.getByLabelText(dict.pageForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
+    await renameSlug("nova-adresa");
     await submit();
 
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: d.slugChangeAction }),
+    );
+
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
   });
 
-  // TASK-566 — a slug is unique per kind; the refusal names the tab holding the owner.
+  // TASK-566 — a slug is unique per kind; the refusal names the kind holding it.
   it("names the kind in the toast when the address is already taken", async () => {
     const page = { ...makePage("DRAFT"), kind: "INFO" };
     server.use(
@@ -201,32 +279,28 @@ describe("EditPageView — slug-rename guard (TASK-285)", () => {
         ),
       ),
     );
-    renderWithProviders(<EditPageView pageId={PAGE_ID} />);
-    await waitFor(() =>
-      expect(screen.getByLabelText(dict.pageForm.slug)).toHaveValue(page.slug),
+    renderWithProviders(
+      <WithAuth isOwner>
+        <EditPageView pageId={PAGE_ID} />
+      </WithAuth>,
     );
+    await waitFor(() => expect(slugField()).toHaveValue(page.slug));
 
-    const slugField = screen.getByLabelText(dict.pageForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "oplata");
+    await renameSlug("oplata");
     await submit();
 
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith(
-        dict.pages.toastSlugTaken(dict.pages.kindInfo),
-      ),
+      expect(toastError).toHaveBeenCalledWith(d.toastSlugTaken(d.kindInfo)),
     );
   });
 
-  it("never confirms a slug change on a DRAFT page", async () => {
+  it("never asks about a slug change on a DRAFT page", async () => {
     const putCalls = await renderAndWaitForForm(makePage("DRAFT"));
 
-    const slugField = screen.getByLabelText(dict.pageForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
+    await renameSlug("nova-adresa");
     await submit();
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });

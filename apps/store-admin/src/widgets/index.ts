@@ -64,7 +64,6 @@ export { CreateBrandView, EditBrandView } from "./brand-form-view";
 export { SiteContactSettingsView } from "./site-contact-settings-view";
 export { SeoSettingsView } from "./seo-settings-view";
 export { AdminFaqTable, AdminFaqTableSkeleton } from "./faq-list";
-export { CreateFaqView, EditFaqView } from "./faq-form-view";
 export { AdminOrderTable, AdminOrderTableSkeleton } from "./order-list";
 export {
   AdminReviewTable,
