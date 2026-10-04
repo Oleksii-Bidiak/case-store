@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { EditCarouselView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
+import { CarouselFormSkeleton, EditCarouselView } from "@/widgets";
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -18,7 +17,7 @@ export default async function EditCarouselPage({
   const { id } = await params;
 
   return (
-    <Suspense fallback={<AdminFormSkeleton />}>
+    <Suspense fallback={<CarouselFormSkeleton />}>
       <EditCarouselView carouselId={id} />
     </Suspense>
   );

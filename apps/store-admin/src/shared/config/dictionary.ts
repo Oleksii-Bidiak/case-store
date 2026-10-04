@@ -2115,20 +2115,10 @@ export const dict = {
     },
     /** Each placement section is its own grid — and says so. */
     gridLabel: (placement: string) => `Банери: ${placement} — порядок`,
-    statusLabels: {
-      DRAFT: "Чернетка",
-      SCHEDULED: "Заплановано",
-      PUBLISHED: "Опубліковано",
-    },
-    // TASK-430: same as the blog list — a scheduled banner says WHEN it goes live,
-    // since that date is the only thing separating it from a forgotten draft.
-    statusScheduledOn: (date: string) => `Заплановано на ${date}`,
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    deleteConfirm: (title: string) =>
-      `Видалити банер «${title}»? Цю дію не можна скасувати.`,
-    back: "← Назад до банерів",
-    createHeading: "Створення банера",
+    back: "← Банери",
+    createHeading: "Новий банер",
     editHeading: "Редагування банера",
     createSubmit: "Створити банер",
     loadOneError: "Не вдалося завантажити банер. Спробуйте ще раз.",
@@ -2141,10 +2131,67 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити статус банера",
     toastDeleted: "Банер видалено",
     toastDeleteFailed: "Не вдалося видалити банер",
+
+    // Wave 198 (TASK-1073, BannersProposal БН1–БН4). The display state is
+    // derived from `status` + the publication window, never stored:
+    // «Показується» = PUBLISHED inside its window, «Завершено» = PUBLISHED past
+    // its end (until the scheduler takes it down), «Заплановано» = SCHEDULED.
+    quickViews: {
+      all: "Усі",
+      live: "Показуються",
+      scheduled: "Заплановані",
+      ended: "Завершені",
+      draft: "Чернетки",
+    },
+    displayStates: {
+      live: "Показується",
+      scheduled: "Заплановано",
+      ended: "Завершено",
+      draft: "Чернетка",
+    },
+    searchPlaceholder: "Заголовок або текст банера…",
+    viewLockedHint:
+      "Поки вибрано вид, порядок змінювати не можна: частину банерів сховано. Поверніться до «Усі».",
+    // Where each placement sits on the storefront — under the section heading.
+    placementWhere: {
+      ANNOUNCEMENT_BAR:
+        "Тонка смуга над шапкою на всіх сторінках. Тільки заголовок і посилання.",
+      HERO_SLIDE: "Перший екран головної, слайди по черзі у цьому порядку.",
+      PROMO_TILE: "Ряд із трьох плиток під слайдером.",
+      PROMO_BANNER: "Широка смуга посередині головної.",
+    },
+    addHere: "Додати сюди",
+    addHereAria: (placement: string) => `Додати банер у «${placement}»`,
+    sectionEmpty: "Тут ще немає банерів.",
+    colWindow: "Вікно показу",
+    thumbEmpty: "без фото",
+    ctaLine: (label: string) => `Кнопка «${label}» →`,
+    linkLine: "Посилання →",
+    windowUntil: (date: string) => `до ${date}`,
+    windowFrom: (date: string) => `з ${date}`,
+    windowEndless: "без кінця",
+    windowDaysLeft: (days: number) =>
+      `залишилось ${countLabel(days, ["день", "дні", "днів"])}`,
+    windowDaysUntil: (days: number) =>
+      `через ${countLabel(days, ["день", "дні", "днів"])}`,
+    duplicate: "Дублювати",
+    duplicateTitle: (title: string) => `${title} (копія)`,
+    toastDuplicated: "Копію збережено як чернетку — вона в кінці свого місця",
+    toastDuplicateFailed: "Не вдалося продублювати банер",
+    moveGroup: "Перенести в",
+    moveTo: (placement: string) => `${placement} — в кінець`,
+    toastMoved: (placement: string) =>
+      `Банер перенесено в «${placement}» — в кінець списку`,
+    toastMoveFailed: "Не вдалося перенести банер",
+    deleteAction: "Видалити…",
+    deleteTitle: (title: string) => `Видалити банер «${title}»?`,
+    deleteDescription:
+      "Цю дію не можна скасувати. Якщо банер ще знадобиться — краще «Зняти з публікації».",
+    deleteConfirmLabel: "Видалити банер",
   },
 
   bannerForm: {
-    placement: "Розташування",
+    placement: "Де показувати",
     placements: {
       HERO_SLIDE: "Головний слайдер",
       PROMO_TILE: "Промо-плитки",
@@ -2154,22 +2201,19 @@ export const dict = {
     title: "Заголовок",
     subtitle: "Підзаголовок",
     subtitlePlaceholder: "Додатковий текст (необов'язково)",
-    imageUrl: "Зображення (URL)",
-    imageUrlPlaceholder: "/images/banners/… або https://…",
+    imageUrl: "Або посилання на зображення",
+    imageUrlPlaceholder: "https://…",
     ctaLabel: "Текст кнопки",
-    ctaHref: "Посилання кнопки",
-    // TASK-836 — a route the storefront actually has: a bare `/catalog` never
-    // existed and every banner pointing there logged a 404 prefetch.
-    ctaHrefPlaceholder: "/products",
-    theme: "Тема / акцент",
+    ctaHref: "Куди веде кнопка",
+    theme: "Оформлення",
     themePlaceholder: "accent, default…",
     // TASK-295: no `sortOrder` label — the order field is gone from this form
     // (banner order lives in the sortable grid of its placement).
-    status: "Статус публікації",
+    status: "Показ",
     statusDraft: "Чернетка",
     statusScheduled: "Заплановано",
     statusPublished: "Опубліковано",
-    scheduledAt: "Публікувати з",
+    scheduledAt: "Показувати з",
     scheduledAtHint:
       "Банер автоматично опублікується у вказаний час (для статусу «Заплановано»).",
     submit: "Зберегти банер",
@@ -2185,6 +2229,8 @@ export const dict = {
       // TASK-429: an end before the start is not a window.
       scheduledUntilBeforeStart:
         "Дата зняття має бути пізніше за дату публікації",
+      // Wave 198 (БН8): a button with words and nowhere to go.
+      ctaHrefRequired: "Є текст кнопки — оберіть, куди вона веде",
     },
     // TASK-424: the banner image accepts a FILE as well as a link.
     imageUpload: {
@@ -2204,14 +2250,54 @@ export const dict = {
         "Непідтримуваний формат. Дозволені JPEG, PNG, WebP і GIF.",
       errorGeneric: "Не вдалося завантажити файл. Спробуйте ще раз.",
     },
-    // TASK-429: the publication WINDOW. `scheduledAt` above is its start; these
-    // strings describe its end — the instant the scheduler takes the banner down
-    // by itself, so a promo that must vanish on the 1st needs nobody awake at
-    // midnight to remove it.
-    windowLegend: "Вікно публікації",
-    scheduledUntil: "Знімати з публікації",
+    // TASK-429: the END of the publication window — the instant the scheduler
+    // takes the banner down by itself, so a promo that must vanish on the 1st
+    // needs nobody awake at midnight to remove it.
+    scheduledUntil: "Зняти після",
     scheduledUntilHint:
-      "Необов'язково. У вказаний час банер автоматично стане чернеткою і зникне з сайту. Порожнє поле — банер лишається, доки ви не знімете його вручну.",
+      "Порожнє «Зняти після» — банер лишається, доки ви не знімете його вручну.",
+
+    // Wave 198 (TASK-1073, BannersProposal БН5–БН9).
+    sectionText: "Текст",
+    sectionImage: "Зображення",
+    sectionButton: "Кнопка",
+    ctaLabelPlaceholder: "Наприклад, «Детальніше»",
+    // «28 / 60»: the length the slot shows comfortably, not the API limit
+    // (255 / 500) — a longer text still saves, the counter only turns amber.
+    counter: (count: number, max: number) => `${count} / ${max}`,
+    counterOver: "Довше, ніж зручно вміщається на сайті",
+    // The proportion hint under the picture, per placement.
+    imageHints: {
+      HERO_SLIDE:
+        "Для слайдера — широке, ≈ 2,2:1, від 1936×880 px. JPEG, PNG, WebP або GIF — до 20 МБ.",
+      PROMO_TILE:
+        "Для плитки — ≈ 1/3 ширини ряду, висота за текстом; від 800×600 px. JPEG, PNG, WebP або GIF — до 20 МБ.",
+      PROMO_BANNER:
+        "Для промо-банера — на всю ширину, ≈ 1280 px; висота за текстом. JPEG, PNG, WebP або GIF — до 20 МБ.",
+      ANNOUNCEMENT_BAR:
+        "Смуга оголошень зображення не показує — поле можна лишити порожнім.",
+    },
+    themes: {
+      auto: "Автоматично",
+      primary: "Фіолетова",
+      sale: "Червона «розпродаж»",
+      success: "Зелена",
+    },
+    themeCustom: "Своє…",
+    themeCustomLabel: "Свій ключ оформлення",
+    themeHint: "«Автоматично» — кольори чергуються за порядком, як зараз.",
+    themeTilesOnly: "Колір зараз враховують лише промо-плитки.",
+    errorSummary: (fields: readonly string[]) => {
+      const quoted = fields.map((field) => `«${field}»`);
+      const list =
+        quoted.length > 1
+          ? `${quoted.slice(0, -1).join(", ")} і ${quoted[quoted.length - 1]}`
+          : (quoted[0] ?? "");
+      return `Перевірте ${countLabel(fields.length, ["поле", "поля", "полів"])}: ${list}. Банер не збережено.`;
+    },
+    barNew: "Новий банер ще не збережений",
+    barErrors: (count: number) =>
+      `Не збережено: ${countLabel(count, ["поле", "поля", "полів"])} з помилками`,
   },
 
   // --- Live banner preview in the banner form (TASK-265) ----------------------
@@ -5578,14 +5664,12 @@ export const dict = {
     loadError: "Не вдалося завантажити каруселі. Спробуйте ще раз.",
     empty: "Каруселей ще немає. Створіть свою першу карусель.",
     colTitle: "Заголовок",
-    colSource: "Джерело",
-    colPlacement: "Місце на сайті",
     colStatus: "Статус",
     // TASK-720: the same words as carouselForm.placementOptions and its hint — the
     // list and the form used to name one place two ways.
     placementLabels: {
-      HOME_TABS: "Таб у секції «Популярне»",
-      HOME_RAILS: "Окремий рейл нижче",
+      HOME_TABS: "Вкладка в блоці «Популярне»",
+      HOME_RAILS: "Окремий рядок нижче",
     },
     sourceLabels: {
       BESTSELLING: "Хіти продажів",
@@ -5603,10 +5687,8 @@ export const dict = {
     statusScheduledOn: (date: string) => `Заплановано на ${date}`,
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    deleteConfirm: (title: string) =>
-      `Видалити карусель «${title}»? Цю дію не можна скасувати.`,
-    back: "← Назад до каруселей",
-    createHeading: "Створення каруселі",
+    back: "← Каруселі",
+    createHeading: "Нова карусель",
     editHeading: "Редагування каруселі",
     createSubmit: "Створити карусель",
     loadOneError: "Не вдалося завантажити карусель. Спробуйте ще раз.",
@@ -5624,13 +5706,38 @@ export const dict = {
     // «Порядок» column and its form field are gone.
     gridLabel: (placement: string) => `Каруселі: ${placement} — порядок`,
     reorderHint:
-      "Порядок каруселей на головній = порядок рядків у межах кожного блоку. Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
+      "Порядок рядків у блоці = порядок на головній. Перетягніть рядок за ⠿.",
+
+    // Wave 198 (TASK-1074, CarouselsProposal КР1–КР4).
+    searchPlaceholder: "Назва каруселі…",
+    // Where each placement sits on the home page — under the section heading.
+    placementWhere: {
+      HOME_TABS: "Вгорі головної; покупець перемикає вкладки.",
+      HOME_RAILS: "Власний рядок товарів нижче на головній.",
+    },
+    sourceAuto: (source: string) => `${source} · автоматично`,
+    sourceCategory: (name: string) => `Категорія «${name}»`,
+    shows: (count: number) => `показує ${count}`,
+    colShows: "Скільки показує",
+    duplicate: "Дублювати",
+    duplicateTitle: (title: string) => `${title} (копія)`,
+    toastDuplicated: "Копію збережено як чернетку — вона в кінці свого блоку",
+    toastDuplicateFailed: "Не вдалося продублювати карусель",
+    deleteAction: "Видалити…",
+    deleteTitle: (title: string) => `Видалити карусель «${title}»?`,
+    deleteDescriptionTab: (title: string) =>
+      `Цю дію не можна скасувати. Вкладка «${title}» зникне з блоку «Популярне» на головній. Якщо карусель ще знадобиться — краще «Зняти з публікації».`,
+    deleteDescriptionRail: (title: string) =>
+      `Цю дію не можна скасувати. Рядок «${title}» зникне з головної. Якщо карусель ще знадобиться — краще «Зняти з публікації».`,
+    deleteConfirmLabel: "Видалити карусель",
+    toastItemsFailed:
+      "Карусель збережено, але список товарів — ні. Відкрийте її й спробуйте ще раз.",
   },
 
   // --- Recommendation carousel form (TASK-139) --------------------------------
   carouselForm: {
     title: "Заголовок",
-    source: "Джерело товарів",
+    source: "Звідки товари",
     sourceOptions: {
       BESTSELLING: "Хіти продажів",
       NEWEST: "Новинки",
@@ -5638,19 +5745,18 @@ export const dict = {
       CATEGORY: "Категорія",
       MANUAL: "Вибрані вручну",
     },
-    placement: "Місце на головній сторінці",
+    placement: "Місце на головній",
     placementOptions: {
-      HOME_TABS: "Таб у секції «Популярне»",
-      HOME_RAILS: "Окремий рейл нижче",
+      HOME_TABS: "Вкладка в блоці «Популярне»",
+      HOME_RAILS: "Окремий рядок нижче",
     },
     placementHint:
-      "«Таб у секції «Популярне»» — карусель стає вкладкою у блоці «Популярне» вгорі головної (клієнт перемикає таби). «Окремий рейл нижче» — карусель показується окремим рядком товарів нижче на головній. Порядок табів і рейлів задається перетягуванням рядків у списку каруселей — окремо для кожного блоку.",
+      "Порядок вкладок і рядків задається перетягуванням у списку каруселей — окремо для кожного блоку.",
     category: "Категорія",
     categoryPlaceholder: "Оберіть категорію",
-    itemLimit: "Кількість товарів",
-    itemLimitHint:
-      "Від 1 до 24. Ігнорується для джерела «Вибрані вручну» — там показуються всі додані товари.",
-    status: "Статус публікації",
+    itemLimit: "Скільки товарів показувати",
+    itemLimitHint: "Від 1 до 24.",
+    status: "Публікація",
     statusDraft: "Чернетка",
     statusScheduled: "Заплановано",
     statusPublished: "Опубліковано",
@@ -5665,25 +5771,42 @@ export const dict = {
       itemLimitRange: "Кількість товарів має бути цілим числом від 1 до 24",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої каруселі",
     },
+
+    // Wave 198 (TASK-1074, CarouselsProposal КР5–КР8).
+    sectionMain: "Основне",
+    titleHint:
+      "Так карусель підписана на головній: назва вкладки або заголовок рядка.",
+    sourceDescriptions: {
+      BESTSELLING: "Сайт сам бере найпопулярніші",
+      NEWEST: "Останні додані товари",
+      ON_SALE: "Товари зі знижкою",
+      CATEGORY: "Товари обраної категорії",
+      MANUAL: "Ви обираєте товари й порядок",
+    },
+    stepDown: "Менше",
+    stepUp: "Більше",
+    livePreview: (count: number) =>
+      `Зараз на сайті — ${countLabel(count, ["товар", "товари", "товарів"])}, порядок задає сайт`,
+    barNew: "Нова карусель ще не збережена",
+    barErrors: (count: number) =>
+      `Не збережено: ${countLabel(count, ["поле", "поля", "полів"])} з помилками`,
   },
 
   // --- MANUAL carousel item picker (TASK-139) ----------------------------------
   carouselItems: {
     heading: "Товари каруселі",
-    hint: "Знайдіть товари через пошук і додайте їх до каруселі. Порядок у списку — це порядок на сайті.",
-    searchPlaceholder: "Пошук товарів…",
+    hint: "Порядок у списку — порядок на сайті. Перетягніть за ⠿.",
+    // Only what `GET /products/admin/list` searches: name, description, SKU.
+    searchPlaceholder: "Назва або SKU…",
     searchEmpty: "Нічого не знайдено",
     searchError: "Не вдалося виконати пошук. Спробуйте ще раз.",
     addLabel: "Додати",
-    alreadyAdded: "Уже додано",
+    alreadyAdded: "У каруселі",
     removeAria: (name: string) => `Прибрати «${name}» з каруселі`,
-    moveUpAria: (name: string) => `Перемістити «${name}» вгору`,
-    moveDownAria: (name: string) => `Перемістити «${name}» вниз`,
-    emptyHint: "Товарів ще немає. Знайдіть і додайте товари через пошук вище.",
+    emptyHint:
+      "Товарів ще немає. Знайдіть і додайте їх через пошук — список можна скласти до першого збереження.",
     loadError: "Не вдалося завантажити товари каруселі. Спробуйте ще раз.",
     inactiveBadge: "Неактивний",
-    toastSaved: "Список товарів збережено",
-    toastSaveFailed: "Не вдалося зберегти список товарів",
     // AD-CNT-25 (TASK-429): for every source except «Вибрані вручну» this section
     // used to render NOTHING at all, so the operator concluded that reordering was
     // broken rather than inapplicable. Now it says what is actually true.
@@ -5691,7 +5814,15 @@ export const dict = {
     autoHint: (sourceLabel: string) =>
       `Ця карусель наповнюється автоматично — джерело «${sourceLabel}». Сайт сам обирає товари та їхню послідовність, тому вручну переставляти їх немає де.`,
     autoSwitchHint:
-      "Щоб обрати товари самому й задати їхній порядок, змініть «Джерело товарів» на «Вибрані вручну» та збережіть карусель — після цього тут з'явиться список товарів.",
+      "Щоб самому обрати товари й задати їх порядок, виберіть «Вибрані вручну» — список з'явиться одразу, без збереження.",
+
+    // Wave 198 (TASK-1074, CarouselsProposal КР5/КР6).
+    searchHint:
+      "Почніть вводити — знайдені товари з'являться тут. Уже додані позначено «У каруселі».",
+    inStock: (count: number) => `в наявності ${count} шт.`,
+    outOfStock: "немає в наявності",
+    keyboardHint:
+      "На значку ⠿ стрілки вгору й вниз змінюють місце товару, Home і End — на початок і в кінець.",
   },
 
   // --- Generic drag-and-drop / keyboard reorder tree (TASK-291, plan 158 §7.3–§7.4) ---
@@ -6109,6 +6240,42 @@ export const dict = {
     noAlt: "Без опису",
     imageCount: (count: number) =>
       countLabel(count, ["зображення", "зображення", "зображень"]),
+  },
+
+  // Wave 198 (TASK-1073, BannersProposal БН6): «Куди веде кнопка» chosen from
+  // the site's own sections, categories and products instead of a typed URL.
+  // It stores the SAME address string the field always held.
+  linkPicker: {
+    placeholder: "Оберіть сторінку, категорію чи товар…",
+    tabSection: "Розділ",
+    tabCategory: "Категорія",
+    tabProduct: "Товар",
+    tabCustom: "Своє",
+    sectionCatalog: "Каталог",
+    sectionPromo: "Акції",
+    sectionCategories: "Усі категорії",
+    sectionBlog: "Блог",
+    sectionInfo: "Довідка",
+    sectionContact: "Контакти",
+    noteCatalog: "весь каталог",
+    notePromo: "товари зі знижкою",
+    noteCategories: "список категорій",
+    noteBlog: "статті блогу",
+    noteInfo: "довідкові сторінки",
+    noteContact: "форма зв'язку",
+    leadsTo: "Веде на",
+    categorySearch: "Назва категорії…",
+    productSearch: "Назва товару…",
+    productSearchHint: "Почніть вводити назву товару.",
+    customLabel: "Своя адреса",
+    customPlaceholder: "/products або https://…",
+    customApply: "Застосувати",
+    clear: "Прибрати посилання",
+    empty: "Нічого не знайдено.",
+    loading: "Завантаження…",
+    loadError: "Не вдалося завантажити список. Спробуйте ще раз.",
+    footerHint:
+      "«Розділ» — Каталог, Акції, Блог…; «Своє» — будь-яка адреса, заходить у поле, як зараз.",
   },
 } as const;
 

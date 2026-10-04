@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { CreateBannerView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
+import { BannerFormSkeleton, CreateBannerView } from "@/widgets";
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -10,7 +9,9 @@ export const metadata: Metadata = {
 
 export default function NewBannerPage() {
   return (
-    <Suspense fallback={<AdminFormSkeleton />}>
+    <Suspense
+      fallback={<BannerFormSkeleton heading={dict.banners.createHeading} />}
+    >
       <CreateBannerView />
     </Suspense>
   );

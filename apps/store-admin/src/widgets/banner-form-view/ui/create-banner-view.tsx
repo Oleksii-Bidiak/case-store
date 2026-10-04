@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
   BannerForm,
+  BANNER_PLACEMENT,
   bannerFormValuesToCreateDto,
   type BannerFormValues,
+  type BannerPlacementValue,
 } from "@/features/banner-form";
 import {
   getAdminBannerControllerFindAllQueryKey,
@@ -15,14 +17,24 @@ import {
 } from "@/entities/banner";
 import { dict } from "@/shared/config";
 
+function placementFromQuery(
+  value: string | null,
+): BannerPlacementValue | undefined {
+  return (BANNER_PLACEMENT as readonly string[]).includes(value ?? "")
+    ? (value as BannerPlacementValue)
+    : undefined;
+}
+
 /**
  * Create-banner body: renders the form and wires the create mutation, list-cache
- * invalidation, toasts, and redirect back to the list.
+ * invalidation, toasts, and redirect back to the list. `?placement=` — set by a
+ * section's «Додати сюди» (TASK-1073) — preselects where the banner goes.
  */
 export function CreateBannerView() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const create = useAdminBannerControllerCreate();
+  const placement = placementFromQuery(useSearchParams().get("placement"));
 
   const handleSubmit = (values: BannerFormValues) => {
     create.mutate(
@@ -57,6 +69,7 @@ export function CreateBannerView() {
       </div>
 
       <BannerForm
+        defaultValues={placement ? { placement } : undefined}
         onSubmit={handleSubmit}
         isPending={create.isPending}
         submitLabel={dict.banners.createSubmit}

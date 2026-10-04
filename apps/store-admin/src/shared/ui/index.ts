@@ -206,6 +206,17 @@ export {
 } from "./stepper";
 export { RadioCard, RadioCardGroup, type RadioCardProps } from "./radio-card";
 export {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentedOption,
+} from "./segmented-control";
+export { NumberStepper, type NumberStepperProps } from "./number-stepper";
+export {
+  SwatchPicker,
+  type SwatchOption,
+  type SwatchPickerProps,
+} from "./swatch-picker";
+export {
   StatusDot,
   type StatusDotProps,
   type StatusDotTone,

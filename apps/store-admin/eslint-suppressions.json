@@ -59,11 +59,6 @@
       "count": 2
     }
   },
-  "src/widgets/banner-list/ui/admin-banner-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/widgets/brand-list/ui/admin-brand-table-skeleton.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1

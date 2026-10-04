@@ -10,6 +10,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../dropdown-menu";
@@ -25,6 +26,11 @@ export interface RowActionItem {
   destructive?: boolean;
   /** Draw a separator above this item — groups navigation apart from actions. */
   separatorBefore?: boolean;
+  /**
+   * A small caption above this item, starting a group — «Перенести в» over the
+   * move targets (BannersProposal БН1). Drawn after `separatorBefore`.
+   */
+  groupLabel?: string;
   disabled?: boolean;
 }
 
@@ -78,6 +84,11 @@ export function RowActionsMenu({
         {items.map((item) => (
           <React.Fragment key={item.label}>
             {item.separatorBefore ? <DropdownMenuSeparator /> : null}
+            {item.groupLabel ? (
+              <DropdownMenuLabel className="text-xs text-muted-foreground">
+                {item.groupLabel}
+              </DropdownMenuLabel>
+            ) : null}
             {item.href ? (
               <DropdownMenuItem
                 asChild

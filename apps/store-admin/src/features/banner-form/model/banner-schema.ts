@@ -85,6 +85,17 @@ export const bannerSchema = z
     scheduledUntil: z.string().optional().or(z.literal("")),
   })
   .superRefine((values, ctx) => {
+    // Wave 198 (BannersProposal БН8): words on a button that leads nowhere. The
+    // storefront drops such a CTA silently on the promo banner and renders a dead
+    // button on the hero — either way the operator meant something else.
+    if (values.ctaLabel?.trim() && !values.ctaHref?.trim()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["ctaHref"],
+        message: e.ctaHrefRequired,
+      });
+    }
+
     if (values.status === "SCHEDULED" && !values.scheduledAt) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
