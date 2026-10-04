@@ -122,14 +122,37 @@
 - AD-MKT-40;
 - AD-IMP-40.
 
+**Доробка того ж дня.**
+
+- Playwright admin на кінцевому стані хвилі — 13/13.
+- Скриншоти знято на `store_s198_demo` (таблиця нижче).
+- Консоль 12 екранів блоку перевірено окремим прогоном. На огляді товару знайдено ваду: характеристика, яку група
+  також несе під людською назвою («Колір», «Пам'ять»), показувалась двічі, і React попереджав про дублікати ключів.
+- Вступний рядок огляду обіцяв «Подивитись на сайті» для прихованого товару за тимчасовим посиланням, хоча TASK-670
+  не зроблено. Обидві вади виправлено в `10bfb6ca` з тестом.
+
+| Екран             | 1440: код · артборд                                                                                                                                           | 390: код · артборд                                                                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Бренди            | [код](../images/wave-198/brands/brands-code-1440.png) · [БР1](../images/wave-198/brands/brands-artboard-БР1-1440.png)                                         | [код](../images/wave-198/brands/brands-code-390.png) · [БР3](../images/wave-198/brands/brands-artboard-БР3-390.png)                                     |
+| Бренд — форма     | [код](../images/wave-198/brands/brand-edit-code-1440.png)                                                                                                     | [код](../images/wave-198/brands/brand-edit-code-390.png)                                                                                                |
+| Пристрої — моделі | [код](../images/wave-198/devices/device-models-code-1440.png) · [ПР1](../images/wave-198/devices/device-models-artboard-ПР1-1440.png)                         | [код](../images/wave-198/devices/device-models-code-390.png) · [ПР4](../images/wave-198/devices/device-models-artboard-ПР4-390.png)                     |
+| Пристрої — бренди | [код](../images/wave-198/devices/device-brands-code-1440.png)                                                                                                 | [код](../images/wave-198/devices/device-brands-code-390.png)                                                                                            |
+| Модель — форма    | [код](../images/wave-198/devices/device-model-edit-code-1440.png)                                                                                             | [код](../images/wave-198/devices/device-model-edit-code-390.png)                                                                                        |
+| Додаткові послуги | [код](../images/wave-198/addon-services/addon-services-code-1440.png) · [ДП1](../images/wave-198/addon-services/addon-services-artboard-ДП1-1440.png)         | [код](../images/wave-198/addon-services/addon-services-code-390.png) · [ДП3](../images/wave-198/addon-services/addon-services-artboard-ДП3-390.png)     |
+| Групи товарів     | [код](../images/wave-198/product-groups/product-groups-code-1440.png) · [ГТ1](../images/wave-198/product-groups/product-groups-artboard-ГТ1-1440.png)         | [код](../images/wave-198/product-groups/product-groups-code-390.png) · [ГТ2](../images/wave-198/product-groups/product-groups-artboard-ГТ2-390.png)     |
+| Група — форма     | [код](../images/wave-198/product-groups/product-group-edit-code-1440.png) · [ГТ3](../images/wave-198/product-groups/product-group-edit-artboard-ГТ3-1440.png) | [код](../images/wave-198/product-groups/product-group-edit-code-390.png)                                                                                |
+| Промокоди         | [код](../images/wave-198/discounts/discounts-code-1440.png) · [ПК1](../images/wave-198/discounts/discounts-artboard-ПК1-1440.png)                             | [код](../images/wave-198/discounts/discounts-code-390.png) · [ПК2](../images/wave-198/discounts/discounts-artboard-ПК2-390.png)                         |
+| Промокод — форма  | [код](../images/wave-198/discounts/discount-edit-code-1440.png) · [ПК3](../images/wave-198/discounts/discount-edit-artboard-ПК3-1440.png)                     | [код](../images/wave-198/discounts/discount-edit-code-390.png)                                                                                          |
+| Імпорт каталогу   | [код](../images/wave-198/catalog-import/catalog-import-code-1440.png) · [ІК1](../images/wave-198/catalog-import/catalog-import-artboard-ІК1-1440.png)         | [код](../images/wave-198/catalog-import/catalog-import-code-390.png) · [ІК3](../images/wave-198/catalog-import/catalog-import-artboard-ІК3-390.png)     |
+| Огляд товару      | [код](../images/wave-198/product-preview/product-preview-code-1440.png) · [ПП1](../images/wave-198/product-preview/product-preview-artboard-ПП1-1440.png)     | [код](../images/wave-198/product-preview/product-preview-code-390.png) · [ПП2](../images/wave-198/product-preview/product-preview-artboard-ПП2-390.png) |
+
 ## Хвиля 198 — що лишилось до мержу
 
-Усі чотири блоки зроблено кодом. Перед мержем гілки в develop потрібно:
+Усі чотири блоки зроблено кодом. Playwright admin на кінцевому стані пройшов 13/13, скриншоти всіх блоків знято.
+Перед мержем гілки в develop лишилось:
 
-1. Прогнати Playwright admin на кінцевому стані. Це зручніше, коли на машині вільно хоча б 5 ГБ.
-2. Зняти скриншоти «код проти артборда» для «Контенту» й «Каталогу». Для «Бази» й «CRM» вони вже є.
-3. Зробити ревʼю diff гілки й `git merge develop` у гілку.
-4. Після мержу:
+1. Зробити ревʼю diff гілки й `git merge develop` у гілку.
+2. Після мержу:
    - синк дизайн-системи адмінки й копія `_ds` у «store-admin — Pages» (змінились `shared/ui` і `globals.css`);
    - переписати посібник адміністратора (TASK-1723);
    - після кожного мержу шукати дублі id чеків у `qa-recheck.md`.

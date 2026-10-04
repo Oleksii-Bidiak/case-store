@@ -118,12 +118,30 @@
 
 **Ручні перевірки** — `docs/qa-recheck.md`, AD-CNT-60…69. Усі позначено [🔁], id задач додано в Додаток А.
 
-**Ще не зроблено:**
+**Доробка 2026-10-05.** Борг, відкладений через нестачу пам'яті, закрито:
 
-- Playwright admin на кінцевому стані блоку;
-- скриншоти «Контенту» 1440/390 поруч з артбордами.
+- Playwright admin на кінцевому стані хвилі (`8d541696`) — 13/13.
+- Скриншоти знято на `store_s198_demo` з повним дев-сідом (таблиця нижче).
+- Консоль усіх 12 екранів перевірено окремим прогоном. Знайдено одну ваду: селект категорії у формі статті й
+  селект хабу у формі сторінки переходили з некерованого стану в керований, коли підтягувались дані. Виправлено в
+  `22edac29`.
+- На банерах є 404 на картинках — це дані: файлів сіду немає в `uploads` цього worktree, і екран чесно показує
+  «без фото».
 
-Обидва кроки виконати перед мержем хвилі. На час сесії їх відклав власник через нестачу пам'яті.
+| Екран                         | 1440: код · артборд                                                                                                                       | 390: код · артборд                                                                                                                      |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Сторінки                      | [код](../images/wave-198/pages/pages-code-1440.png) · [СР1](../images/wave-198/pages/pages-artboard-СР1-1440.png)                         | [код](../images/wave-198/pages/pages-code-390.png) · [СР2](../images/wave-198/pages/pages-artboard-СР2-390.png)                         |
+| Сторінка — форма              | [код](../images/wave-198/pages/page-edit-code-1440.png)                                                                                   | [код](../images/wave-198/pages/page-edit-code-390.png)                                                                                  |
+| FAQ                           | [код](../images/wave-198/faq/faq-code-1440.png) · [ЧП1](../images/wave-198/faq/faq-artboard-ЧП1-1440.png)                                 | [код](../images/wave-198/faq/faq-code-390.png) · [ЧП2](../images/wave-198/faq/faq-artboard-ЧП2-390.png)                                 |
+| Де що на сайті                | [код](../images/wave-198/content-map/content-map-code-1440.png) · [ДЩ1](../images/wave-198/content-map/content-map-artboard-ДЩ1-1440.png) | [код](../images/wave-198/content-map/content-map-code-390.png) · [ДЩ3](../images/wave-198/content-map/content-map-artboard-ДЩ3-390.png) |
+| Статті блогу                  | [код](../images/wave-198/blog/blog-code-1440.png) · [БЛ1](../images/wave-198/blog/blog-artboard-БЛ1-1440.png)                             | [код](../images/wave-198/blog/blog-code-390.png) · [БЛ3](../images/wave-198/blog/blog-artboard-БЛ3-390.png)                             |
+| Стаття — форма                | [код](../images/wave-198/blog/blog-edit-code-1440.png)                                                                                    | [код](../images/wave-198/blog/blog-edit-code-390.png)                                                                                   |
+| Категорії блогу               | [код](../images/wave-198/blog/blog-categories-code-1440.png) · [КБ1](../images/wave-198/blog/blog-categories-artboard-КБ1-1440.png)       | [код](../images/wave-198/blog/blog-categories-code-390.png) · [КБ5](../images/wave-198/blog/blog-categories-artboard-КБ5-390.png)       |
+| Банери                        | [код](../images/wave-198/banners/banners-code-1440.png) · [БН1](../images/wave-198/banners/banners-artboard-БН1-1440.png)                 | [код](../images/wave-198/banners/banners-code-390.png) · [БН2](../images/wave-198/banners/banners-artboard-БН2-390.png)                 |
+| Банер — форма                 | [код](../images/wave-198/banners/banner-edit-code-1440.png)                                                                               | [код](../images/wave-198/banners/banner-edit-code-390.png)                                                                              |
+| Каруселі                      | [код](../images/wave-198/carousels/carousels-code-1440.png) · [КР1](../images/wave-198/carousels/carousels-artboard-КР1-1440.png)         | [код](../images/wave-198/carousels/carousels-code-390.png) · [КР2](../images/wave-198/carousels/carousels-artboard-КР2-390.png)         |
+| Карусель — форма              | [код](../images/wave-198/carousels/carousel-edit-code-1440.png)                                                                           | [код](../images/wave-198/carousels/carousel-edit-code-390.png)                                                                          |
+| Медіатека (порожня в демо-БД) | [код](../images/wave-198/media/media-code-1440.png) · [МТ1](../images/wave-198/media/media-artboard-МТ1-1440.png)                         | [код](../images/wave-198/media/media-code-390.png) · [МТ2](../images/wave-198/media/media-artboard-МТ2-390.png)                         |
 
 **Синк дизайн-системи адмінки.** Блок знову змінив `apps/store-admin/src/shared/ui/**`:
 
