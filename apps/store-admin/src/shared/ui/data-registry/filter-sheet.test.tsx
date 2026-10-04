@@ -119,6 +119,10 @@ function Harness({
   );
 }
 
+// The draft case types into four controls through a Radix sheet: ~3 s alone,
+// over the 5 s default whenever other suites share the machine (wave 198).
+jest.setTimeout(15000);
+
 describe("FilterSheet — draft, then apply", () => {
   it("changes nothing until «Показати…», then hands over the whole draft", async () => {
     const onApply = jest.fn();
