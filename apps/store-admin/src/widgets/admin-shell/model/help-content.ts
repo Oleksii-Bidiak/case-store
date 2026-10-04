@@ -50,7 +50,6 @@ export interface HelpSection {
 const RAW = {
   categoriesDelete: "categories:delete",
   attributesWrite: "attributes:write",
-  messagesWrite: "messages:write",
   analyticsRevenue: "analytics:revenue",
 } as const;
 
@@ -316,7 +315,7 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
     rights: [
       { permission: PERM.messagesRead, phrase: "читати звернення" },
       {
-        permission: RAW.messagesWrite,
+        permission: PERM.messagesWrite,
         phrase: "змінювати статуси й писати примітки",
       },
     ],

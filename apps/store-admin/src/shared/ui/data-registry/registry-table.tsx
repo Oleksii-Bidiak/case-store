@@ -68,6 +68,15 @@ export interface RegistryTableProps<T> {
   getRowLabel: (row: T) => string;
   /** Makes the row open the record. Rendered as a real link (`rowLink`). */
   getRowHref?: (row: T) => string | undefined;
+  /**
+   * For a record that opens in place (a side sheet) rather than on its own
+   * page: a click on the row — outside its controls — calls this. Ignored for
+   * a row that has an href. The screen still gives the keyboard a control that
+   * opens the record (a button in the row or a «⋯» item).
+   */
+  onRowOpen?: (row: T) => void;
+  /** Extra classes for a row (table) / card — e.g. an unread tint. */
+  rowClassName?: (row: T) => string | undefined;
   /** Effective width per column id. */
   widths: Readonly<Record<string, number>>;
   onResize?: (id: string, width: number) => void;
@@ -128,6 +137,8 @@ export function RegistryTable<T>({
   getRowId,
   getRowLabel,
   getRowHref,
+  onRowOpen,
+  rowClassName,
   widths,
   onResize,
   density = "comfortable",
@@ -160,8 +171,13 @@ export function RegistryTable<T>({
   const hasActions = Boolean(rowActions);
   const pad = cellPadding[density];
 
-  const open = (event: React.MouseEvent<HTMLElement>, href?: string) => {
-    if (!href) return;
+  const open = (
+    event: React.MouseEvent<HTMLElement>,
+    href?: string,
+    record?: T,
+  ) => {
+    const inPlace = !href && onRowOpen && record !== undefined;
+    if (!href && !inPlace) return;
     const row = event.currentTarget;
     const target = event.target as Element;
     // Bubbled out of a portal (a menu opened from this row): not a row click.
@@ -170,6 +186,12 @@ export function RegistryTable<T>({
     if (control && row.contains(control)) return;
     // Selecting text in a cell is not an intent to open the record.
     if (window.getSelection?.()?.toString()) return;
+    if (!href) {
+      // Opens in place (a sheet): no new tab to offer, so a middle click
+      // does nothing rather than something surprising.
+      if (event.button === 0) onRowOpen?.(record as T);
+      return;
+    }
     if (
       event.ctrlKey ||
       event.metaKey ||
@@ -280,11 +302,12 @@ export function RegistryTable<T>({
               <li
                 key={getRowId(row)}
                 aria-label={getRowLabel(row)}
-                onClick={(event) => open(event, href)}
+                onClick={(event) => open(event, href, row)}
                 onAuxClick={(event) => onAux(event, href)}
                 className={cn(
                   "rounded-lg border bg-card p-3 shadow-card",
-                  href && "cursor-pointer",
+                  (href || onRowOpen) && "cursor-pointer",
+                  rowClassName?.(row),
                   selection?.isSelected(getRowId(row)) &&
                     "border-primary/40 bg-primary/7",
                 )}
@@ -421,11 +444,12 @@ export function RegistryTable<T>({
               <TableRow
                 key={id}
                 data-state={selected ? "selected" : undefined}
-                onClick={(event) => open(event, href)}
+                onClick={(event) => open(event, href, row)}
                 onAuxClick={(event) => onAux(event, href)}
                 className={cn(
                   "hover:bg-muted/50 data-[state=selected]:bg-primary/7",
-                  href && "cursor-pointer",
+                  (href || onRowOpen) && "cursor-pointer",
+                  rowClassName?.(row),
                 )}
               >
                 {selection ? (

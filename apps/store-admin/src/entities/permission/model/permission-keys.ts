@@ -103,6 +103,12 @@ export const PERM = {
   customersCard: "customers:card",
 
   messagesRead: "messages:read",
+  // TASK-1011 (wave 198, TASK-1060): every write on an inbox message — a
+  // status change (one or many) and the internal note. The API has guarded
+  // `PATCH /contact/admin/:id` and `PATCH /contact/admin/status` with it since
+  // plan 181; the UI asked for nothing, so a read-only manager saw the buttons
+  // and got a 403.
+  messagesWrite: "messages:write",
 
   settingsSeo: "settings:seo",
   settingsContacts: "settings:contacts",

@@ -328,12 +328,6 @@ export const dict = {
       selectAll: "Вибрати всі рядки на сторінці",
       selectedCount: (count: number) => `Вибрано: ${count}`,
       clearSelection: "Зняти вибір",
-      announceSelected: (name: string, count: number) =>
-        `„${name}“ вибрано. Усього вибрано: ${count}`,
-      announceDeselected: (name: string, count: number) =>
-        `„${name}“ знято. Усього вибрано: ${count}`,
-      announceSelectedAll: (count: number) => `Вибрано рядків: ${count}`,
-      announceCleared: "Вибір знято",
 
       // One search, one filter idiom, one page size (TASK-423). These strings
       // are the reason the shared controls can be dropped into a table without
@@ -3126,11 +3120,9 @@ export const dict = {
   messages: {
     metaTitle: "Повідомлення — Адмін",
     heading: "Вхідні повідомлення",
-    filterStatusAria: "Фільтр за статусом",
     filterAll: "Усі",
     filterNew: "Нові",
     filterRead: "Прочитані",
-    filterArchived: "В архіві",
     colName: "Відправник",
     colTopic: "Тема",
     colMessage: "Повідомлення",
@@ -3148,19 +3140,14 @@ export const dict = {
     // Detail dialog
     open: "Відкрити",
     detailTitle: "Повідомлення",
-    fieldName: "Імʼя",
-    fieldPhone: "Телефон",
     fieldEmail: "Email",
-    fieldTopic: "Тема",
     fieldOrderRef: "Замовлення",
-    fieldMessage: "Повідомлення",
     fieldAdminNote: "Внутрішня примітка",
     adminNotePlaceholder: "Примітка для команди (не бачить клієнт)…",
     markRead: "Позначити прочитаним",
     markArchived: "В архів",
     markNew: "Повернути в нові",
     saveNote: "Зберегти примітку",
-    receivedAt: (date: string) => `Отримано ${date}`,
     updateSuccess: "Повідомлення оновлено.",
     updateError: "Не вдалося оновити повідомлення. Спробуйте ще раз.",
     // IN_PROGRESS status + inbox→profile link (TASK-256)
@@ -3178,7 +3165,6 @@ export const dict = {
       markInProgress: (count: number) => `В роботу (${count})`,
       markRead: (count: number) => `Прочитано (${count})`,
       markArchived: (count: number) => `В архів (${count})`,
-      selectRow: (name: string) => `Вибрати повідомлення від ${name}`,
       announceSaving: (count: number) => `Оновлення ${count} повідомл.…`,
       announceDone: (count: number) => `Оновлено повідомлень: ${count}`,
       announceFailed: "Не вдалося виконати масову дію",
@@ -3189,13 +3175,55 @@ export const dict = {
     // was to page through the archive.
     searchPlaceholder: "Імʼя, пошта, телефон, тема або текст…",
     searchAria: "Пошук повідомлень",
-    emptyMatch: (q: string) => `Немає повідомлень за запитом «${q}».`,
 
     // TASK-761: звернення, що спрацювали на поле-пастку для ботів. Не входять
     // у «Усі» й у лічильник непрочитаних; видно лише за цим фільтром — щоб
     // хибне спрацювання (менеджер паролів заповнив пастку) можна було помітити.
     filterSpam: "Спам",
     statusSpam: "Спам",
+
+    // ── Wave 198 (TASK-1060, TASK-734, MessagesProposal З1–З9) ───────────────
+    // The registry: views over the same `?status=`, the summary, the sort line.
+    viewArchived: "Архів",
+    viewDefault: "Стандартний",
+    itemForms: ["повідомлення", "повідомлення", "повідомлень"],
+    summaryFound: "Знайдено",
+    summaryNew: "нове",
+    sortCreatedDesc: "отримано, нові зверху",
+    sortCreatedAsc: "отримано, старі зверху",
+    sortNameAsc: "відправник, А→Я",
+    sortNameDesc: "відправник, Я→А",
+    sortStatusAsc: "статус, нові спершу",
+    sortStatusDesc: "статус, архів спершу",
+    colOrder: "Замовлення",
+    orderLinkAria: (number: string) => `Знайти замовлення ${number}`,
+    // Topic keys of the storefront's contact form, in words.
+    topicOrder: "Замовлення",
+    topicDelivery: "Доставка",
+    topicWarranty: "Гарантія та сервіс",
+    topicReturn: "Повернення",
+    topicOther: "Інше",
+    bulkIdleHint:
+      "Виберіть повідомлення, щоб узяти в роботу, позначити прочитаними чи перенести в архів кілька одразу",
+    // TASK-1011: without `messages:write` the inbox is read-only, and says so.
+    readOnly:
+      "Лише перегляд. Брати в роботу, змінювати статус і писати примітки може співробітник із правом «Опрацьовувати звернення».",
+    // TASK-761: the «Спам» view explains itself (З4).
+    spamTitle: "Сюди потрапляє те, що форма визнала ботом",
+    spamText:
+      "Спрацювало приховане поле-пастка. Інколи його заповнює менеджер паролів справжнього клієнта — прочитайте й, якщо це людина, поверніть звернення в нові.",
+    // Empty texts, one per view.
+    emptyNew: "Нових повідомлень немає.",
+    emptyInProgress: "У роботі нічого немає.",
+    emptyRead: "Прочитаних повідомлень немає.",
+    emptyArchived: "В архіві порожньо.",
+    emptySpam: "У спамі порожньо.",
+    // The side panel (З5–З8) — what exists today: the customer's message, its
+    // source, the status and the one internal note.
+    statusMenu: (label: string) => `Статус: ${label}`,
+    sourceForm: "форма на сайті",
+    noteHidden: "клієнт не бачить",
+    noteHint: "Бачить лише команда. Клієнту не надсилається.",
   },
 
   orderStatus: {
