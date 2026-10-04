@@ -2418,56 +2418,90 @@ export const dict = {
     metaTitleEdit: "Редагування послуги — Адмін",
     heading: "Додаткові послуги",
     intro:
-      "Гарантії, страхування, налаштування — послуги, які покупець може додати до товару в кошику. " +
-      "Де саме вони пропонуються, задається шаблоном на КАТЕГОРІЇ (у формі категорії) і винятками на " +
-      "ТОВАРІ (у формі товару).",
+      "Гарантії, страхування, налаштування — те, що покупець може додати до товару в кошику. " +
+      "Де саме послуга пропонується, задає шаблон категорії, а виняток — форма товару.",
     add: "Додати послугу",
+    // The API searches the NAME only (`AddonServiceListQueryDto.search`) — the
+    // artboard's «Назва або опис…» waits for it (wave 198 API tail).
     searchPlaceholder: "Пошук за назвою…",
     searchAria: "Пошук послуг за назвою",
-    filterStatusAria: "Фільтр за статусом",
-    allStatuses: "Усі статуси",
-    statusActive: "Активна",
-    statusInactive: "Прихована",
-    colName: "Назва",
+    statusActive: "Показується",
+    statusInactive: "Приховано",
+    colName: "Послуга",
     colPrice: "Ціна",
     colStatus: "Статус",
-    activate: "Активувати",
+    activate: "Показати в кошику",
     deactivate: "Приховати",
     loadError: "Не вдалося завантажити послуги. Спробуйте ще раз.",
     empty: "Послуг ще немає. Створіть першу послугу.",
-    back: "← Назад до послуг",
-    createHeading: "Створення послуги",
-    editHeading: "Редагування послуги",
+    createHeading: "Нова послуга",
     createSubmit: "Створити послугу",
     loadOneError: "Не вдалося завантажити послугу. Спробуйте ще раз.",
     toastCreated: "Послугу створено",
     toastCreateFailed: "Не вдалося створити послугу",
     toastUpdated: "Послугу оновлено",
     toastUpdateFailed: "Не вдалося оновити послугу",
-    toastActivated: "Послугу активовано",
+    toastActivated: "Послуга знову показується в кошику",
     toastDeactivated: "Послугу приховано",
     toastStatusFailed: "Не вдалося змінити статус послуги",
+
+    // Wave 198 (AddonServicesProposal ДП1–ДП10, TASK-1083): the registry, the
+    // per-row pending state, the hide confirmation and the form dialog.
+    viewAll: "Усі",
+    viewShown: "Показуються",
+    viewHidden: "Приховані",
+    summaryFound: "Знайдено",
+    itemForms: ["послуга", "послуги", "послуг"],
+    free: "Безкоштовно",
+    statusHiding: "Приховуємо…",
+    statusShowing: "Показуємо…",
+    hideFromCart: "Приховати з кошика…",
+    hideTitle: (name: string) => `Приховати «${name}»?`,
+    // Generic on purpose: WHERE the service is offered (which category, which
+    // products) is not in the list payload — the artboard's «в категорії
+    // «Смартфони»» waits for that summary (API tail).
+    hideBody:
+      "Послуга зникне з кошика в усіх категоріях і товарах, де її пропонують. " +
+      "Ті, хто вже купив її, нічого не втратять — оформлені замовлення не зміняться. " +
+      "Повернути можна будь-коли.",
+    viewOnly: "Ви можете переглядати послуги, але не змінювати.",
+    notFound: "Послугу не знайдено — можливо, її вже немає.",
+    emptyStatusTitle: (shown: boolean) =>
+      shown ? "Немає послуг, що показуються" : "Немає прихованих послуг",
+    emptyReset: "Показати всі",
   },
 
   addonServiceForm: {
     name: "Назва",
     description: "Опис для покупця",
     descriptionPlaceholder: "Що саме входить у послугу…",
-    price: "Ціна, ₴",
-    priceHint: "Може бути 0 — послуга буде безкоштовною.",
-    active: "Активна (пропонувати у кошику)",
+    price: "Ціна",
+    priceHint:
+      "0 — послуга безкоштовна. Ціну для окремого товару можна змінити у формі товару.",
+    active: "Показувати в кошику",
     activeHint:
-      "Якщо приховати, послуга миттєво зникає з усіх категорій і товарів. " +
-      "Уже оформлені замовлення не змінюються.",
-    submit: "Зберегти послугу",
+      "Вимкніть — послуга зникне з кошика в усіх категоріях і товарах. Оформлені замовлення не зміняться.",
+    submit: "Зберегти",
     errors: {
-      nameRequired: "Вкажіть назву послуги",
+      nameRequired: "Вкажіть назву послуги.",
       nameMax: "Назва має містити не більше 255 символів",
-      descriptionMax: "Опис має містити не більше 2000 символів",
-      priceRequired: "Вкажіть ціну",
+      descriptionMax: "Опис має містити не більше 300 символів",
+      priceRequired:
+        "Вкажіть ціну — 0 або більше. Якщо послуга безкоштовна, напишіть 0.",
       priceNumber: "Ціна має бути числом",
-      priceNonNegative: "Ціна не може бути відʼємною",
+      priceNonNegative:
+        "Вкажіть ціну — 0 або більше. Якщо послуга безкоштовна, напишіть 0.",
     },
+
+    // Wave 198 (AddonServicesProposal ДП4–ДП7, TASK-1083).
+    namePlaceholder: "Напр.: Наклеювання захисного скла",
+    descriptionHint: "Покупець бачить його в кошику біля галочки послуги.",
+    currency: "₴",
+    counter: (count: number, max: number) => `${count} / ${max}`,
+    counterAria: (label: string, count: number, max: number) =>
+      `${label}: ${count} з ${max} символів`,
+    formAlert: (count: number) =>
+      `Не вдалося зберегти — виправте ${countLabel(count, ["поле", "поля", "полів"])} нижче.`,
   },
 
   // --- Site contact settings (TASK-154) ---------------------------------------

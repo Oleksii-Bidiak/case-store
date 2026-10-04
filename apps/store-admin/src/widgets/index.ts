@@ -60,10 +60,6 @@ export {
   AddonServiceTable,
   AddonServiceTableSkeleton,
 } from "./addon-service-list";
-export {
-  CreateAddonServiceView,
-  EditAddonServiceView,
-} from "./addon-service-form-view";
 export { CreateBrandView, EditBrandView } from "./brand-form-view";
 export { SiteContactSettingsView } from "./site-contact-settings-view";
 export { SeoSettingsView } from "./seo-settings-view";
