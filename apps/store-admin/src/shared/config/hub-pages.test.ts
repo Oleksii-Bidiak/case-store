@@ -4,6 +4,7 @@ import {
   hubRouteForSlug,
   isInlinedOnInfoHub,
   pagePreviewPath,
+  pageSitePath,
 } from "./hub-pages";
 
 /**
@@ -44,5 +45,13 @@ describe("HUB_PAGES", () => {
   it("previews a products hub row at /products, not under /legal", () => {
     expect(hubRouteForSlug("products")).toBe("/products");
     expect(pagePreviewPath("HUB", "products")).toBe("/products");
+  });
+
+  it("puts an inlined INFO row on /info itself — the address it is seen at (wave 198)", () => {
+    expect(pageSitePath("INFO", "info-delivery")).toBe("/info");
+    expect(pageSitePath("INFO", "returns-howto")).toBe("/info/returns-howto");
+    expect(pageSitePath("LEGAL", "delivery")).toBe("/legal/delivery");
+    expect(pageSitePath("HUB", "promo")).toBe("/promo");
+    expect(pageSitePath("HUB", "nowhere")).toBeNull();
   });
 });

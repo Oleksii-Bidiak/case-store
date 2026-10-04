@@ -5,5 +5,6 @@ export {
   HUB_PAGES,
   hubRouteForSlug,
   pagePreviewPath,
+  pageSitePath,
   type HubSlug,
 } from "./hub-pages";

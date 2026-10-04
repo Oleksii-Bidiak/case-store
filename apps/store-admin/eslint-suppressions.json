@@ -89,11 +89,6 @@
       "count": 1
     }
   },
-  "src/widgets/page-list/ui/admin-page-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/widgets/product-group-list/ui/admin-product-group-table-skeleton.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1

@@ -1640,7 +1640,6 @@ export const dict = {
     loadError: "Не вдалося завантажити сторінки. Спробуйте ще раз.",
     empty: "Сторінок ще немає. Створіть свою першу сторінку.",
     colTitle: "Заголовок",
-    colSlug: "Slug",
     colStatus: "Статус",
     statusPublished: "Опубліковано",
     statusDraft: "Чернетка",
@@ -1652,20 +1651,8 @@ export const dict = {
     statusScheduledOn: (date: string) => `Заплановано на ${date}`,
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    // TASK-285: the published variant reminds the admin the URL may still be
-    // indexed by Google and deleting it leaves a 404 with NO redirect.
-    deleteConfirm: (title: string, isPublished: boolean) =>
-      `Видалити сторінку «${title}»? Цю дію не можна скасувати.` +
-      (isPublished
-        ? " Сторінка опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
-        : ""),
-    // TASK-285: slug-rename guard on a publicly visible page.
-    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
-      `Ви змінюєте адресу опублікованої сторінки з «${oldSlug}» на «${newSlug}». ` +
-      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
-      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
-    back: "← Назад до сторінок",
-    createHeading: "Створення сторінки",
+    back: "← Службові сторінки",
+    createHeading: "Нова сторінка",
     editHeading: "Редагування сторінки",
     createSubmit: "Створити сторінку",
     loadOneError: "Не вдалося завантажити сторінку. Спробуйте ще раз.",
@@ -1693,7 +1680,6 @@ export const dict = {
     kindLegal: "Юридична",
     kindInfo: "Довідкова",
     kindHub: "Хаб",
-    tabsAria: "Фільтр за видом сторінки",
     tabAll: "Усі",
     tabLegal: "Юридичні",
     tabInfo: "Довідкові",
@@ -1705,28 +1691,73 @@ export const dict = {
       "Змініть slug або відредагуйте наявну сторінку.",
     // TASK-565 — the storefront /info renders these rows inline by their exact
     // slug; renaming or unpublishing one changes /info.
-    inlinedOnInfo: "вбудована в /info",
     inlinedOnInfoHint:
       "Текст цієї сторінки показується прямо на сторінці /info вітрини. Не змінюйте slug і не знімайте з публікації — інакше відповідний блок /info зникне або покаже запасний текст.",
     // TASK-562 — status filter (`?status=`), local like the kind tabs, so it
     // locks reordering for the same reason.
-    filterStatus: "Фільтр за статусом",
-    filterStatusAll: "Усі статуси",
     statusLockedHint:
       "Поки увімкнено фільтр за статусом, порядок змінювати не можна: сторінки впорядковані одним спільним списком, а тут видно лише його частину. Зніміть фільтр.",
+
+    // Wave 198 (PagesProposal СР1–СР12, TASK-1069): the list became a registry —
+    // views with counters, «На сайті», «⋯», the filter sheet, AlertDialogs.
+    // SF-CNT-26 — one line saying where each kind lives on the storefront.
+    kindNoteAll:
+      "Юридичні — документи на /legal/…, довідкові — сторінки на /info/… (частина з них вбудована прямо в /info), хаби — заголовок і опис для пошуковиків розділів, які на сайті вже є.",
+    kindNoteHub:
+      "Хаб — не окрема сторінка, а заголовок і опис для пошуковиків розділу, який на сайті вже є. Тут їх 7 — по одному на кожен такий розділ; нових хабів не буває, лише редагування.",
+    searchPlaceholder: "Назва або адреса сторінки…",
+    searchLabel: "Пошук сторінок",
+    colSite: "На сайті",
+    // The caption under the address: what the row DOES on the storefront
+    // (TASK-565 — visible, no longer a tooltip).
+    siteInlined: "блоком на сторінці /info — адресу не міняти",
+    siteHub: "заголовок і опис для пошуковиків",
+    siteDraft: "не опублікована — на сайті ще немає",
+    siteScheduled: (date: string, time: string) =>
+      `з’явиться на сайті ${date} о ${time}`,
+    openPathAria: (path: string) => `Відкрити ${path} на сайті (нова вкладка)`,
+    rowActionsAria: (title: string) => `Дії зі сторінкою «${title}»`,
+    openOnSite: "Відкрити на сайті",
+    publishNow: "Опублікувати зараз",
+    deleteItem: "Видалити…",
+    // TASK-812 — AlertDialog instead of window.confirm. TASK-285: the published
+    // variant warns the address may still be in Google and becomes a 404.
+    deleteTitle: (title: string) => `Видалити сторінку «${title}»?`,
+    deleteBody: (isPublished: boolean) =>
+      "Цю дію не можна скасувати." +
+      (isPublished
+        ? " Сторінка опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
+        : ""),
+    deleteAction: "Видалити сторінку",
+    slugChangeTitle: "Змінити адресу сторінки?",
+    slugChangeBody: (oldPath: string, newPath: string) =>
+      `Адреса «${oldPath}» зміниться на «${newPath}». Стара адреса перестане працювати й випаде з результатів пошуку Google.`,
+    slugChangeRedirect:
+      "Ми автоматично налаштуємо переадресацію зі старої адреси на нову.",
+    slugChangeAction: "Змінити адресу",
+    // «Фільтри» — the status filter moved from the toolbar into the sheet.
+    filterStatusTitle: "Статус",
+    filterAll: "Усі",
+    filterChip: (label: string) => `Статус: ${label}`,
+    filtersApply: "Показати сторінки",
+    headerMenuAria: "Інші дії зі сторінкою",
+    // Form header + the sticky bar of a NEW page.
+    newUnsaved: "Нова сторінка ще не збережена",
+    formErrorsAlert: (count: number, fields: string) =>
+      `Перевірте ${countLabel(count, ["поле", "поля", "полів"])}: ${fields}. Сторінку не збережено.`,
+    formErrorsBar: (count: number) =>
+      `Не збережено: ${countLabel(count, ["поле", "поля", "полів"])} з помилками`,
   },
 
   pageForm: {
     title: "Заголовок",
-    slug: "Slug",
-    slugPlaceholder: "Залиште порожнім для авто-генерації із заголовка",
     slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
     content: "Вміст",
     contentPlaceholder: "Почніть писати вміст сторінки…",
     excerpt: "Короткий опис",
     excerptPlaceholder: "Короткий підсумок (необов'язково)",
-    metaTitle: "SEO заголовок",
-    metaDescription: "SEO опис",
+    metaTitle: "SEO-заголовок",
+    metaDescription: "SEO-опис",
     status: "Статус публікації",
     statusDraft: "Чернетка",
     statusScheduled: "Заплановано",
@@ -1760,6 +1791,36 @@ export const dict = {
       "Сторінка з іншою адресою просто ніде не показалася б.",
     hubContentHint:
       "На сайті цей текст не показується — у хаба немає власної сторінки. Опишіть тут, за що відповідає розділ, щоб наступному редактору було зрозуміло.",
+
+    // Wave 198 (PagesProposal СР8–СР12, TASK-1069): sections + one sticky save.
+    sectionsAria: "Розділи форми сторінки",
+    sectionMain: "Основне",
+    sectionContent: "Вміст",
+    sectionSeo: "SEO і соцмережі",
+    sectionPublish: "Публікація",
+    sectionDirty: "є незбережені зміни",
+    sectionError: "є помилка",
+    address: "Адреса на сайті",
+    addressPlaceholder: "створимо із заголовка",
+    addressHint:
+      "Залиште порожнім — адресу створимо із заголовка. Зміна адреси опублікованої сторінки спершу перепитає.",
+    // TASK-1154 — the API refuses `content` over 100 000 characters (of the
+    // stored HTML), so the form counts the same thing and says so before a 400.
+    contentCounter: (count: string, max: string) =>
+      `${count} з ${max} символів`,
+    contentOver: (over: string) => `Скоротіть на ${over} символів`,
+    contentMax: (max: string, over: string) =>
+      `Текст довший за ${max} символів — скоротіть на ${over} символів або розбийте на дві сторінки.`,
+    // TASK-1117 — nothing reads a page's tags yet (no index, no search), so
+    // the hint says so instead of promising search — the category form's text.
+    keywords: "Теги сторінки",
+    keywordsHint:
+      "Через кому. Для вашого впорядкування. Пошук на сайті їх поки що не враховує — щоб сторінку знаходили за словом, додайте його в заголовок чи текст.",
+    statusAria: "Статус публікації",
+    statusHint: "Для «Заплановано» з’явиться дата й час публікації.",
+    statusHintDraft: "Чернетку видно лише тут, на сайті її немає.",
+    statusHintInlined: (title: string) =>
+      `Не знімайте з публікації: блок «${title}» на /info покаже запасний текст.`,
   },
 
   // --- Blog CMS (TASK-172) ----------------------------------------------------
