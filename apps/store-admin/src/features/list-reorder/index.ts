@@ -26,6 +26,9 @@ export {
   usePageReorder,
   type UsePageReorderOptions,
 } from "./model/use-page-reorder";
+// Wave 198 (TASK-963): the content adapters (all but device brands) post a
+// «Скасувати» toast after a committed move — `model/use-undo-toast-reorder.ts`;
+// the persistent undo control stays.
 export {
   carouselsToItems,
   useCarouselReorder,

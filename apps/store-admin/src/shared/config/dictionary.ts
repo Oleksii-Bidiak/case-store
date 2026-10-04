@@ -5595,6 +5595,31 @@ export const dict = {
       `Не вдалося перемістити „${name}“. Список оновлено.`,
     saveFailed: (name: string) =>
       `Не вдалося зберегти переміщення „${name}“. Попередній порядок відновлено. Спробуйте ще раз.`,
+
+    // Wave 198 (TASK-963): the toast that follows a move, carrying «Скасувати»
+    // (BlogCategoriesProposal КБ2: «…переміщено на друге місце»). Still
+    // noun-free: the ordinal agrees with «місце», never with the row's noun.
+    // The persistent «Скасувати останнє переміщення» control stays as well.
+    movedToast: {
+      neutral: "Порядок змінено.",
+      moved: (name: string, pos: number, size: number) => {
+        const ordinals = [
+          "перше",
+          "друге",
+          "третє",
+          "четверте",
+          "п’яте",
+          "шосте",
+          "сьоме",
+          "восьме",
+          "дев’яте",
+          "десяте",
+        ];
+        return pos >= 1 && pos <= ordinals.length
+          ? `«${name}» переміщено на ${ordinals[pos - 1]} місце.`
+          : `«${name}» переміщено: позиція ${pos} з ${size}.`;
+      },
+    },
   },
 
   // --- Спільні SEO-поля сутностей: теги + OG-картинка (TASK-437) ---------------

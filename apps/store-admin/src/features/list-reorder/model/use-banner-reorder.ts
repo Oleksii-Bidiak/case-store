@@ -29,10 +29,10 @@ import {
   flatReorderStrings,
   isFlatReorderConflict,
   orderedIdsIfChanged,
-  useReorderLifecycle,
   type ReorderLifecycleApi,
 } from "@/shared/lib/list-reorder";
 import type { TreeItem } from "@/shared/lib/sortable-tree";
+import { useUndoToastReorder } from "./use-undo-toast-reorder";
 
 const BANNERS_KEY = getAdminBannerControllerFindAllQueryKey();
 
@@ -102,7 +102,7 @@ export function useBannerReorder({
 
   const strings = useMemo(() => flatReorderStrings, []);
 
-  return useReorderLifecycle<ReorderBannersDto, AdminBannerListResponse>({
+  return useUndoToastReorder<ReorderBannersDto, AdminBannerListResponse>({
     resource: "banners",
     items,
     toPayload,

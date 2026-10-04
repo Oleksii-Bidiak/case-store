@@ -19,10 +19,10 @@ import {
   flatReorderStrings,
   isFlatReorderConflict,
   orderedIdsIfChanged,
-  useReorderLifecycle,
   type ReorderLifecycleApi,
 } from "@/shared/lib/list-reorder";
 import type { TreeItem } from "@/shared/lib/sortable-tree";
+import { useUndoToastReorder } from "./use-undo-toast-reorder";
 
 const CATEGORIES_KEY = getAdminBlogControllerFindCategoriesQueryKey();
 
@@ -84,7 +84,7 @@ export function useBlogCategoryReorder({
 
   const strings = useMemo(() => flatReorderStrings, []);
 
-  return useReorderLifecycle<
+  return useUndoToastReorder<
     ReorderBlogCategoriesDto,
     BlogCategoryListResponse
   >({
