@@ -5374,14 +5374,12 @@ export const dict = {
     loadError: "Не вдалося завантажити каруселі. Спробуйте ще раз.",
     empty: "Каруселей ще немає. Створіть свою першу карусель.",
     colTitle: "Заголовок",
-    colSource: "Джерело",
-    colPlacement: "Місце на сайті",
     colStatus: "Статус",
     // TASK-720: the same words as carouselForm.placementOptions and its hint — the
     // list and the form used to name one place two ways.
     placementLabels: {
-      HOME_TABS: "Таб у секції «Популярне»",
-      HOME_RAILS: "Окремий рейл нижче",
+      HOME_TABS: "Вкладка в блоці «Популярне»",
+      HOME_RAILS: "Окремий рядок нижче",
     },
     sourceLabels: {
       BESTSELLING: "Хіти продажів",
@@ -5399,10 +5397,8 @@ export const dict = {
     statusScheduledOn: (date: string) => `Заплановано на ${date}`,
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    deleteConfirm: (title: string) =>
-      `Видалити карусель «${title}»? Цю дію не можна скасувати.`,
-    back: "← Назад до каруселей",
-    createHeading: "Створення каруселі",
+    back: "← Каруселі",
+    createHeading: "Нова карусель",
     editHeading: "Редагування каруселі",
     createSubmit: "Створити карусель",
     loadOneError: "Не вдалося завантажити карусель. Спробуйте ще раз.",
@@ -5420,13 +5416,38 @@ export const dict = {
     // «Порядок» column and its form field are gone.
     gridLabel: (placement: string) => `Каруселі: ${placement} — порядок`,
     reorderHint:
-      "Порядок каруселей на головній = порядок рядків у межах кожного блоку. Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
+      "Порядок рядків у блоці = порядок на головній. Перетягніть рядок за ⠿.",
+
+    // Wave 198 (TASK-1074, CarouselsProposal КР1–КР4).
+    searchPlaceholder: "Назва каруселі…",
+    // Where each placement sits on the home page — under the section heading.
+    placementWhere: {
+      HOME_TABS: "Вгорі головної; покупець перемикає вкладки.",
+      HOME_RAILS: "Власний рядок товарів нижче на головній.",
+    },
+    sourceAuto: (source: string) => `${source} · автоматично`,
+    sourceCategory: (name: string) => `Категорія «${name}»`,
+    shows: (count: number) => `показує ${count}`,
+    colShows: "Скільки показує",
+    duplicate: "Дублювати",
+    duplicateTitle: (title: string) => `${title} (копія)`,
+    toastDuplicated: "Копію збережено як чернетку — вона в кінці свого блоку",
+    toastDuplicateFailed: "Не вдалося продублювати карусель",
+    deleteAction: "Видалити…",
+    deleteTitle: (title: string) => `Видалити карусель «${title}»?`,
+    deleteDescriptionTab: (title: string) =>
+      `Цю дію не можна скасувати. Вкладка «${title}» зникне з блоку «Популярне» на головній. Якщо карусель ще знадобиться — краще «Зняти з публікації».`,
+    deleteDescriptionRail: (title: string) =>
+      `Цю дію не можна скасувати. Рядок «${title}» зникне з головної. Якщо карусель ще знадобиться — краще «Зняти з публікації».`,
+    deleteConfirmLabel: "Видалити карусель",
+    toastItemsFailed:
+      "Карусель збережено, але список товарів — ні. Відкрийте її й спробуйте ще раз.",
   },
 
   // --- Recommendation carousel form (TASK-139) --------------------------------
   carouselForm: {
     title: "Заголовок",
-    source: "Джерело товарів",
+    source: "Звідки товари",
     sourceOptions: {
       BESTSELLING: "Хіти продажів",
       NEWEST: "Новинки",
@@ -5434,19 +5455,18 @@ export const dict = {
       CATEGORY: "Категорія",
       MANUAL: "Вибрані вручну",
     },
-    placement: "Місце на головній сторінці",
+    placement: "Місце на головній",
     placementOptions: {
-      HOME_TABS: "Таб у секції «Популярне»",
-      HOME_RAILS: "Окремий рейл нижче",
+      HOME_TABS: "Вкладка в блоці «Популярне»",
+      HOME_RAILS: "Окремий рядок нижче",
     },
     placementHint:
-      "«Таб у секції «Популярне»» — карусель стає вкладкою у блоці «Популярне» вгорі головної (клієнт перемикає таби). «Окремий рейл нижче» — карусель показується окремим рядком товарів нижче на головній. Порядок табів і рейлів задається перетягуванням рядків у списку каруселей — окремо для кожного блоку.",
+      "Порядок вкладок і рядків задається перетягуванням у списку каруселей — окремо для кожного блоку.",
     category: "Категорія",
     categoryPlaceholder: "Оберіть категорію",
-    itemLimit: "Кількість товарів",
-    itemLimitHint:
-      "Від 1 до 24. Ігнорується для джерела «Вибрані вручну» — там показуються всі додані товари.",
-    status: "Статус публікації",
+    itemLimit: "Скільки товарів показувати",
+    itemLimitHint: "Від 1 до 24.",
+    status: "Публікація",
     statusDraft: "Чернетка",
     statusScheduled: "Заплановано",
     statusPublished: "Опубліковано",
@@ -5461,25 +5481,42 @@ export const dict = {
       itemLimitRange: "Кількість товарів має бути цілим числом від 1 до 24",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої каруселі",
     },
+
+    // Wave 198 (TASK-1074, CarouselsProposal КР5–КР8).
+    sectionMain: "Основне",
+    titleHint:
+      "Так карусель підписана на головній: назва вкладки або заголовок рядка.",
+    sourceDescriptions: {
+      BESTSELLING: "Сайт сам бере найпопулярніші",
+      NEWEST: "Останні додані товари",
+      ON_SALE: "Товари зі знижкою",
+      CATEGORY: "Товари обраної категорії",
+      MANUAL: "Ви обираєте товари й порядок",
+    },
+    stepDown: "Менше",
+    stepUp: "Більше",
+    livePreview: (count: number) =>
+      `Зараз на сайті — ${countLabel(count, ["товар", "товари", "товарів"])}, порядок задає сайт`,
+    barNew: "Нова карусель ще не збережена",
+    barErrors: (count: number) =>
+      `Не збережено: ${countLabel(count, ["поле", "поля", "полів"])} з помилками`,
   },
 
   // --- MANUAL carousel item picker (TASK-139) ----------------------------------
   carouselItems: {
     heading: "Товари каруселі",
-    hint: "Знайдіть товари через пошук і додайте їх до каруселі. Порядок у списку — це порядок на сайті.",
-    searchPlaceholder: "Пошук товарів…",
+    hint: "Порядок у списку — порядок на сайті. Перетягніть за ⠿.",
+    // Only what `GET /products/admin/list` searches: name, description, SKU.
+    searchPlaceholder: "Назва або SKU…",
     searchEmpty: "Нічого не знайдено",
     searchError: "Не вдалося виконати пошук. Спробуйте ще раз.",
     addLabel: "Додати",
-    alreadyAdded: "Уже додано",
+    alreadyAdded: "У каруселі",
     removeAria: (name: string) => `Прибрати «${name}» з каруселі`,
-    moveUpAria: (name: string) => `Перемістити «${name}» вгору`,
-    moveDownAria: (name: string) => `Перемістити «${name}» вниз`,
-    emptyHint: "Товарів ще немає. Знайдіть і додайте товари через пошук вище.",
+    emptyHint:
+      "Товарів ще немає. Знайдіть і додайте їх через пошук — список можна скласти до першого збереження.",
     loadError: "Не вдалося завантажити товари каруселі. Спробуйте ще раз.",
     inactiveBadge: "Неактивний",
-    toastSaved: "Список товарів збережено",
-    toastSaveFailed: "Не вдалося зберегти список товарів",
     // AD-CNT-25 (TASK-429): for every source except «Вибрані вручну» this section
     // used to render NOTHING at all, so the operator concluded that reordering was
     // broken rather than inapplicable. Now it says what is actually true.
@@ -5487,7 +5524,15 @@ export const dict = {
     autoHint: (sourceLabel: string) =>
       `Ця карусель наповнюється автоматично — джерело «${sourceLabel}». Сайт сам обирає товари та їхню послідовність, тому вручну переставляти їх немає де.`,
     autoSwitchHint:
-      "Щоб обрати товари самому й задати їхній порядок, змініть «Джерело товарів» на «Вибрані вручну» та збережіть карусель — після цього тут з'явиться список товарів.",
+      "Щоб самому обрати товари й задати їх порядок, виберіть «Вибрані вручну» — список з'явиться одразу, без збереження.",
+
+    // Wave 198 (TASK-1074, CarouselsProposal КР5/КР6).
+    searchHint:
+      "Почніть вводити — знайдені товари з'являться тут. Уже додані позначено «У каруселі».",
+    inStock: (count: number) => `в наявності ${count} шт.`,
+    outOfStock: "немає в наявності",
+    keyboardHint:
+      "На значку ⠿ стрілки вгору й вниз змінюють місце товару, Home і End — на початок і в кінець.",
   },
 
   // --- Generic drag-and-drop / keyboard reorder tree (TASK-291, plan 158 §7.3–§7.4) ---

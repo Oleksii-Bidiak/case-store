@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { CreateCarouselView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
+import { CarouselFormSkeleton, CreateCarouselView } from "@/widgets";
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -10,7 +9,9 @@ export const metadata: Metadata = {
 
 export default function NewCarouselPage() {
   return (
-    <Suspense fallback={<AdminFormSkeleton />}>
+    <Suspense
+      fallback={<CarouselFormSkeleton heading={dict.carousels.createHeading} />}
+    >
       <CreateCarouselView />
     </Suspense>
   );

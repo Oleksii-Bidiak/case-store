@@ -4,11 +4,13 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { CarouselForm, flattenCategoryTree } from "./carousel-form";
 
+const f = dict.carouselForm;
 const noop = () => {};
 
 function stubAdminTree() {
@@ -39,6 +41,18 @@ function stubAdminTree() {
   );
 }
 
+// The required star is aria-hidden, so the title is found by its NAME.
+const titleInput = () => screen.getByRole("textbox", { name: f.title });
+const submitButton = () => screen.getByRole("button", { name: f.submit });
+const sourceGroup = () => screen.getByRole("radiogroup", { name: f.source });
+const placementGroup = () =>
+  screen.getByRole("radiogroup", { name: f.placement });
+const chooseSource = (value: keyof typeof f.sourceOptions) =>
+  userEvent.click(
+    within(sourceGroup()).getByRole("radio", { name: f.sourceOptions[value] }),
+  );
+const categorySelect = () => screen.getByRole("combobox", { name: f.category });
+
 describe("flattenCategoryTree", () => {
   it("keeps EVERY node — parents included — unlike the leaf-only product-form helper", () => {
     const options = flattenCategoryTree([
@@ -56,24 +70,25 @@ describe("flattenCategoryTree", () => {
   });
 });
 
-describe("CarouselForm — conditional fields per source", () => {
-  it("hides the category select for a rule source and shows it for CATEGORY", async () => {
+describe("CarouselForm — «Звідки товари» as cards (КР5/КР7)", () => {
+  it("explains every source and hides the category select until CATEGORY", async () => {
     stubAdminTree();
     renderWithProviders(<CarouselForm onSubmit={noop} isPending={false} />);
 
-    // Default source is BESTSELLING — no category select.
     expect(
-      screen.queryByLabelText(dict.carouselForm.category),
+      within(sourceGroup()).getByRole("radio", {
+        name: f.sourceOptions.BESTSELLING,
+      }),
+    ).toBeChecked();
+    expect(
+      within(sourceGroup()).getByText(f.sourceDescriptions.MANUAL),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("combobox", { name: f.category }),
     ).not.toBeInTheDocument();
 
-    await userEvent.selectOptions(
-      screen.getByLabelText(dict.carouselForm.source),
-      "CATEGORY",
-    );
+    await chooseSource("CATEGORY");
 
-    const categorySelect = await screen.findByLabelText(
-      dict.carouselForm.category,
-    );
     // PARENT categories are offered too (subtree rollup happens server-side).
     await waitFor(() =>
       expect(screen.getByRole("option", { name: "Чохли" })).toBeInTheDocument(),
@@ -81,28 +96,52 @@ describe("CarouselForm — conditional fields per source", () => {
     expect(
       screen.getByRole("option", { name: /iPhone Cases/ }),
     ).toBeInTheDocument();
-    expect(categorySelect).toBeInTheDocument();
+    expect(categorySelect()).toBeInTheDocument();
   });
 
-  it("keeps the item-limit field visible for MANUAL, labelled as ignored", async () => {
+  it("counts with −/+ within 1…24 for an automatic source, and hides it for MANUAL", async () => {
     stubAdminTree();
-    renderWithProviders(<CarouselForm onSubmit={noop} isPending={false} />);
+    const onSubmit = jest.fn();
+    renderWithProviders(<CarouselForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.selectOptions(
-      screen.getByLabelText(dict.carouselForm.source),
-      "MANUAL",
+    const limit = screen.getByRole("spinbutton", { name: f.itemLimit });
+    expect(limit).toHaveValue(12);
+    await userEvent.click(screen.getByRole("button", { name: f.stepUp }));
+    expect(limit).toHaveValue(13);
+    await userEvent.click(screen.getByRole("button", { name: f.stepDown }));
+    await userEvent.click(screen.getByRole("button", { name: f.stepDown }));
+    expect(limit).toHaveValue(11);
+    expect(screen.getByText(f.itemLimitHint)).toBeInTheDocument();
+
+    await userEvent.type(titleInput(), "Хіти");
+    await userEvent.click(submitButton());
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ itemLimit: 11 });
+
+    // «Вибрані вручну» shows every product added — the count does not apply.
+    await chooseSource("MANUAL");
+    expect(
+      screen.queryByRole("spinbutton", { name: f.itemLimit }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("stops − at 1 and + at 24", async () => {
+    stubAdminTree();
+    renderWithProviders(
+      <CarouselForm
+        id="c1"
+        defaultValues={{ title: "Хіти", itemLimit: "24" }}
+        onSubmit={noop}
+        isPending={false}
+      />,
     );
 
-    expect(
-      screen.getByLabelText(dict.carouselForm.itemLimit),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(dict.carouselForm.itemLimitHint),
-    ).toBeInTheDocument();
-    // …and the category select stays hidden.
-    expect(
-      screen.queryByLabelText(dict.carouselForm.category),
-    ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByRole("spinbutton", { name: f.itemLimit })).toHaveValue(
+        24,
+      ),
+    );
+    expect(screen.getByRole("button", { name: f.stepUp })).toBeDisabled();
   });
 
   it("blocks submit with the categoryRequired error when CATEGORY has no category", async () => {
@@ -110,21 +149,14 @@ describe("CarouselForm — conditional fields per source", () => {
     const onSubmit = jest.fn();
     renderWithProviders(<CarouselForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.type(
-      screen.getByLabelText(dict.carouselForm.title),
-      "Аксесуари",
-    );
-    await userEvent.selectOptions(
-      screen.getByLabelText(dict.carouselForm.source),
-      "CATEGORY",
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.carouselForm.submit }),
-    );
+    await userEvent.type(titleInput(), "Аксесуари");
+    await chooseSource("CATEGORY");
+    await userEvent.click(submitButton());
 
     expect(
-      await screen.findByText(dict.carouselForm.errors.categoryRequired),
+      await screen.findByText(f.errors.categoryRequired),
     ).toBeInTheDocument();
+    expect(screen.getByText(f.barErrors(1))).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
@@ -133,24 +165,13 @@ describe("CarouselForm — conditional fields per source", () => {
     const onSubmit = jest.fn();
     renderWithProviders(<CarouselForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.type(
-      screen.getByLabelText(dict.carouselForm.title),
-      "Чохли тижня",
-    );
-    await userEvent.selectOptions(
-      screen.getByLabelText(dict.carouselForm.source),
-      "CATEGORY",
-    );
-    const categorySelect = await screen.findByLabelText(
-      dict.carouselForm.category,
-    );
+    await userEvent.type(titleInput(), "Чохли тижня");
+    await chooseSource("CATEGORY");
     await waitFor(() =>
       expect(screen.getByRole("option", { name: "Чохли" })).toBeInTheDocument(),
     );
-    await userEvent.selectOptions(categorySelect, "cat-parent");
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.carouselForm.submit }),
-    );
+    await userEvent.selectOptions(categorySelect(), "cat-parent");
+    await userEvent.click(submitButton());
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
@@ -164,18 +185,13 @@ describe("CarouselForm — conditional fields per source", () => {
     });
   });
 
-  it("submits parsed values for a valid CATEGORY carousel with the default placement", async () => {
+  it("submits the default placement", async () => {
     stubAdminTree();
     const onSubmit = jest.fn();
     renderWithProviders(<CarouselForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.type(
-      screen.getByLabelText(dict.carouselForm.title),
-      "Хіти",
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.carouselForm.submit }),
-    );
+    await userEvent.type(titleInput(), "Хіти");
+    await userEvent.click(submitButton());
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     // Mirrors the API's CreateCarouselDto default.
@@ -198,35 +214,28 @@ describe("CarouselForm — conditional fields per source", () => {
 
     expect(screen.queryByTestId("items-panel")).not.toBeInTheDocument();
 
-    await userEvent.selectOptions(
-      screen.getByLabelText(dict.carouselForm.source),
-      "MANUAL",
-    );
+    await chooseSource("MANUAL");
 
     expect(await screen.findByTestId("items-panel")).toBeInTheDocument();
   });
 });
 
-describe("CarouselForm — placement (TASK-288)", () => {
-  it("offers both placements and explains that dragging list rows sets the order", async () => {
+describe("CarouselForm — «Місце на головній» (TASK-288, КР5)", () => {
+  it("offers both placements as cards that say where they are", () => {
     stubAdminTree();
     renderWithProviders(<CarouselForm onSubmit={noop} isPending={false} />);
 
-    const placementSelect = screen.getByLabelText(dict.carouselForm.placement);
-    expect(placementSelect).toHaveValue("HOME_RAILS");
     expect(
-      screen.getByRole("option", {
-        name: dict.carouselForm.placementOptions.HOME_TABS,
+      within(placementGroup()).getByRole("radio", {
+        name: f.placementOptions.HOME_RAILS,
       }),
-    ).toBeInTheDocument();
+    ).toBeChecked();
     expect(
-      screen.getByRole("option", {
-        name: dict.carouselForm.placementOptions.HOME_RAILS,
-      }),
+      within(placementGroup()).getByText(
+        dict.carousels.placementWhere.HOME_TABS,
+      ),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(dict.carouselForm.placementHint),
-    ).toBeInTheDocument();
+    expect(screen.getByText(f.placementHint)).toBeInTheDocument();
   });
 
   it("submits HOME_TABS once the admin picks the tab placement", async () => {
@@ -234,17 +243,13 @@ describe("CarouselForm — placement (TASK-288)", () => {
     const onSubmit = jest.fn();
     renderWithProviders(<CarouselForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.type(
-      screen.getByLabelText(dict.carouselForm.title),
-      "Новинки",
-    );
-    await userEvent.selectOptions(
-      screen.getByLabelText(dict.carouselForm.placement),
-      "HOME_TABS",
-    );
+    await userEvent.type(titleInput(), "Новинки");
     await userEvent.click(
-      screen.getByRole("button", { name: dict.carouselForm.submit }),
+      within(placementGroup()).getByRole("radio", {
+        name: f.placementOptions.HOME_TABS,
+      }),
     );
+    await userEvent.click(submitButton());
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalled());
     expect(onSubmit.mock.calls[0][0]).toMatchObject({
@@ -253,7 +258,7 @@ describe("CarouselForm — placement (TASK-288)", () => {
     });
   });
 
-  it("seeds the select from the edited carousel in edit mode", async () => {
+  it("seeds the placement from the edited carousel in edit mode", async () => {
     stubAdminTree();
     renderWithProviders(
       <CarouselForm
@@ -265,9 +270,62 @@ describe("CarouselForm — placement (TASK-288)", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByLabelText(dict.carouselForm.placement)).toHaveValue(
-        "HOME_TABS",
-      ),
+      expect(
+        screen.getByRole("radio", { name: f.placementOptions.HOME_TABS }),
+      ).toBeChecked(),
     );
+  });
+});
+
+describe("CarouselForm — «Публікація» and the sticky bar", () => {
+  it("chooses the status from segments and asks for a date when SCHEDULED", async () => {
+    stubAdminTree();
+    renderWithProviders(<CarouselForm onSubmit={noop} isPending={false} />);
+
+    const status = screen.getByRole("radiogroup", { name: f.status });
+    expect(
+      within(status).getByRole("radio", { name: f.statusDraft }),
+    ).toBeChecked();
+    expect(screen.queryByLabelText(f.scheduledAt)).not.toBeInTheDocument();
+
+    await userEvent.click(
+      within(status).getByRole("radio", { name: f.statusScheduled }),
+    );
+    expect(screen.getByLabelText(f.scheduledAt)).toHaveAttribute(
+      "type",
+      "datetime-local",
+    );
+  });
+
+  it("says a new carousel is not saved yet", () => {
+    stubAdminTree();
+    renderWithProviders(<CarouselForm onSubmit={noop} isPending={false} />);
+
+    expect(screen.getByText(f.barNew)).toBeInTheDocument();
+  });
+
+  it("names the host's unsaved items section and discards it too", async () => {
+    stubAdminTree();
+    const onDiscardExtra = jest.fn();
+    renderWithProviders(
+      <CarouselForm
+        id="c1"
+        defaultValues={{ title: "Редакція обирає", source: "MANUAL" }}
+        onSubmit={noop}
+        isPending={false}
+        extraDirtySections={[dict.carouselItems.heading]}
+        onDiscardExtra={onDiscardExtra}
+      />,
+    );
+
+    expect(
+      await screen.findByText(
+        dict.canon.unsavedChanges(dict.carouselItems.heading),
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.discardChanges }),
+    );
+    expect(onDiscardExtra).toHaveBeenCalled();
   });
 });

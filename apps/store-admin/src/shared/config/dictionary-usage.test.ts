@@ -52,15 +52,19 @@ const DYNAMIC_ACCESS: Record<string, string> = {
   "bannerPreview.shape":
     "shared/ui/banner-placement-preview/banner-placement-preview.tsx — shape[placement]",
   "carousels.placementLabels":
-    "widgets/carousel-list/ui/admin-carousel-table.tsx — section heading per placement",
+    "widgets/carousel-list/ui/admin-carousel-table.tsx, widgets/carousel-form-view/ui/edit-carousel-view.tsx — per placement",
+  "carousels.placementWhere":
+    "widgets/carousel-list/ui/admin-carousel-table.tsx, features/carousel-form/ui/carousel-form.tsx — where the placement is",
   "carousels.sourceLabels":
-    "widgets/carousel-list/ui/admin-carousel-table.tsx — badge per source",
+    "widgets/carousel-list/ui/admin-carousel-table.tsx — the source in words",
   "carousels.statusLabels":
-    "widgets/carousel-list/ui/admin-carousel-table.tsx — badge per status",
+    "widgets/carousel-list/ui/admin-carousel-table.tsx, widgets/carousel-form-view/ui/edit-carousel-view.tsx — badge per status",
   "carouselForm.sourceOptions":
-    "features/carousel-form/ui/carousel-form.tsx, widgets/carousel-form-view/ui/edit-carousel-view.tsx — per source",
+    "features/carousel-form/ui/carousel-form.tsx, widgets/carousel-form-view/ui/carousel-source-panels.tsx — per source",
+  "carouselForm.sourceDescriptions":
+    "features/carousel-form/ui/carousel-form.tsx — RadioCard description per source",
   "carouselForm.placementOptions":
-    "features/carousel-form/ui/carousel-form.tsx — <option> per placement",
+    "features/carousel-form/ui/carousel-form.tsx — RadioCard per placement",
   "catalogImport.status":
     "widgets/catalog-import-view/ui/catalog-import-view.tsx — d.status[run.status]",
   "auditLog.entityLabels":

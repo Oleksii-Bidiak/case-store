@@ -121,8 +121,22 @@ const polite = () => screen.getByTestId("tree-live-polite").textContent ?? "";
 const assertive = () =>
   screen.getByTestId("tree-live-assertive").textContent ?? "";
 
+const WRITER = ["carousels:write"];
+
+function renderTable(permissions: string[] = WRITER) {
+  return renderWithProviders(<AdminCarouselTable />, { auth: { permissions } });
+}
+
+async function openRowMenu(title: string) {
+  await userEvent.click(
+    await screen.findByRole("button", {
+      name: dict.common.registry.rowActionsAria(title),
+    }),
+  );
+}
+
 async function renderGrids() {
-  const result = renderWithProviders(<AdminCarouselTable />);
+  const result = renderTable();
   await screen.findByRole("grid", {
     name: dict.carousels.gridLabel(dict.carousels.placementLabels.HOME_RAILS),
   });
@@ -141,44 +155,86 @@ function keyboardMoveUp(id: string) {
 /* ──────────────────────────────── the suite ────────────────────────────── */
 
 describe("AdminCarouselTable — rendering", () => {
-  // TASK-720: the list said «Окремий рейл» where the form says «Окремий рейл
-  // нижче» — the section headings must use the form's words for the same place.
+  // TASK-720: the list and the form name one place one way.
   it("names each placement section exactly as the carousel form does", () => {
     expect(dict.carousels.placementLabels).toEqual(
       dict.carouselForm.placementOptions,
     );
-    for (const label of Object.values(dict.carouselForm.placementOptions)) {
-      expect(dict.carouselForm.placementHint).toContain(`«${label}»`);
-    }
   });
 
-  it("renders carousel rows with source and status badges", async () => {
+  it("says where the source comes from in words, with the count and status", async () => {
     mockReorder();
     await renderGrids();
 
     expect(screen.getByText("Хіти тижня")).toBeInTheDocument();
     expect(screen.getByText("Редакція обирає")).toBeInTheDocument();
     expect(
-      screen.getAllByText(dict.carousels.sourceLabels.BESTSELLING),
+      screen.getAllByText(
+        dict.carousels.sourceAuto(dict.carousels.sourceLabels.BESTSELLING),
+      ),
     ).toHaveLength(2);
     expect(
       screen.getByText(dict.carousels.sourceLabels.MANUAL),
     ).toBeInTheDocument();
+    // «показує 12» for an automatic source — the count is in the list payload.
     expect(
-      screen.getAllByText(dict.carousels.statusLabels.PUBLISHED),
-    ).toHaveLength(2);
+      within(rowEl(R1)).getAllByText(dict.carousels.shows(12)).length,
+    ).toBeGreaterThan(0);
     expect(
-      screen.getByText(dict.carousels.statusLabels.DRAFT),
+      within(rowEl(R2)).queryByText(dict.carousels.shows(12)),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText(dict.carousels.statusLabels.PUBLISHED).length,
+    ).toBeGreaterThanOrEqual(2);
+    expect(
+      within(rowEl(R2)).getAllByText(dict.carousels.statusLabels.DRAFT).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("names a CATEGORY source by the category's name", async () => {
+    server.use(
+      http.get("*/api/admin/carousels", () =>
+        HttpResponse.json({
+          data: [
+            {
+              ...row(R1),
+              source: "CATEGORY",
+              categoryId: "cat-1",
+            },
+          ],
+          meta: { total: 1, page: 1, limit: 1, totalPages: 1 },
+        }),
+      ),
+      http.get("*/api/categories/tree", () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: "cat-1",
+              name: "Чохли",
+              slug: "cases",
+              isActive: true,
+              sortOrder: 0,
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              children: [],
+            },
+          ],
+        }),
+      ),
+    );
+    renderTable();
+
+    expect(
+      await screen.findByText(dict.carousels.sourceCategory("Чохли")),
     ).toBeInTheDocument();
   });
 
   /**
    * TASK-288 gave every row a placement BADGE so a tab could be told from a rail.
    * TASK-428 replaced it with a stronger signal: the placement is now the SECTION a row
-   * lives in, which is also the unit of reordering. The badge column is gone because
-   * every row under a heading has that heading's placement by construction.
+   * lives in, which is also the unit of reordering. Wave 198 adds where on the
+   * home page that section is.
    */
-  it("groups the rows into one section per placement instead of a placement column", async () => {
+  it("groups the rows into one section per placement, each saying where it is", async () => {
     mockReorder();
     await renderGrids();
 
@@ -193,8 +249,12 @@ describe("AdminCarouselTable — rendering", () => {
       }),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("columnheader", { name: dict.carousels.colPlacement }),
-    ).not.toBeInTheDocument();
+      screen.getByText(dict.carousels.placementWhere.HOME_TABS),
+    ).toBeInTheDocument();
+    // No placement column — the section IS the placement.
+    expect(
+      screen.queryAllByRole("columnheader").map((header) => header.textContent),
+    ).not.toContain("Місце на сайті");
     // The tab bucket renders its own grid, with only its own row.
     const tabGrid = screen.getByRole("grid", {
       name: dict.carousels.gridLabel(dict.carousels.placementLabels.HOME_TABS),
@@ -210,12 +270,16 @@ describe("AdminCarouselTable — rendering", () => {
     expect(screen.queryByText("Порядок")).not.toBeInTheDocument();
   });
 
-  it("renders an edit action linking to the carousel edit route", async () => {
+  it("links the title to the edit route, and keeps «Редагувати» in «⋯»", async () => {
     mockReorder();
     await renderGrids();
 
     expect(
-      within(rowEl(R1)).getByRole("link", { name: dict.common.edit }),
+      within(rowEl(R1)).getByRole("link", { name: "Хіти тижня" }),
+    ).toHaveAttribute("href", `/carousels/${R1}/edit`);
+    await openRowMenu("Хіти тижня");
+    expect(
+      await screen.findByRole("menuitem", { name: dict.common.edit }),
     ).toHaveAttribute("href", `/carousels/${R1}/edit`);
   });
 
@@ -229,14 +293,14 @@ describe("AdminCarouselTable — rendering", () => {
       ),
     );
 
-    renderWithProviders(<AdminCarouselTable />);
+    renderTable();
 
     expect(await screen.findByText(dict.carousels.empty)).toBeInTheDocument();
   });
 });
 
-describe("AdminCarouselTable — publish toggles and delete", () => {
-  it("publishes a draft via the toggle and PATCHes the publish endpoint", async () => {
+describe("AdminCarouselTable — row «⋯» (publish toggle, duplicate, delete)", () => {
+  it("publishes a draft from «⋯» and PATCHes the publish endpoint", async () => {
     mockReorder();
     let published = false;
     server.use(
@@ -247,14 +311,15 @@ describe("AdminCarouselTable — publish toggles and delete", () => {
     );
     await renderGrids();
 
+    await openRowMenu("Редакція обирає");
     await userEvent.click(
-      within(rowEl(R2)).getByRole("button", { name: dict.carousels.publish }),
+      await screen.findByRole("menuitem", { name: dict.carousels.publish }),
     );
 
     await waitFor(() => expect(published).toBe(true));
   });
 
-  it("unpublishes a published carousel via the toggle", async () => {
+  it("unpublishes a published carousel from «⋯»", async () => {
     mockReorder();
     let unpublished = false;
     server.use(
@@ -265,62 +330,142 @@ describe("AdminCarouselTable — publish toggles and delete", () => {
     );
     await renderGrids();
 
+    await openRowMenu("Хіти тижня");
     await userEvent.click(
-      within(rowEl(R1)).getByRole("button", { name: dict.carousels.unpublish }),
+      await screen.findByRole("menuitem", { name: dict.carousels.unpublish }),
     );
 
     await waitFor(() => expect(unpublished).toBe(true));
   });
 
-  describe("delete with confirm", () => {
-    let confirmSpy: jest.SpyInstance;
-
-    afterEach(() => {
-      confirmSpy.mockRestore();
-    });
-
-    it("deletes after the admin confirms", async () => {
-      confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
-      mockReorder();
-      let deleted = false;
-      server.use(
-        http.delete(`*/api/admin/carousels/${R1}`, () => {
-          deleted = true;
-          return new HttpResponse(null, { status: 204 });
+  it("«Дублювати» creates a DRAFT copy and gives a MANUAL copy the same list", async () => {
+    mockReorder();
+    const created: unknown[] = [];
+    const itemWrites: { url: string; body: unknown }[] = [];
+    server.use(
+      http.post("*/api/admin/carousels", async ({ request }) => {
+        created.push(await request.json());
+        return HttpResponse.json({ data: { ...row(R2), id: "copy-1" } });
+      }),
+      http.get(`*/api/admin/carousels/${R2}/items`, () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: "i1",
+              productId: "p1",
+              sortOrder: 0,
+              product: {
+                id: "p1",
+                name: "Чохол",
+                imageUrl: null,
+                price: "10.00",
+                isActive: true,
+              },
+            },
+          ],
         }),
-      );
-      await renderGrids();
+      ),
+      http.put("*/api/admin/carousels/:id/items", async ({ request }) => {
+        itemWrites.push({ url: request.url, body: await request.json() });
+        return HttpResponse.json({ data: [] });
+      }),
+    );
+    await renderGrids();
 
-      await userEvent.click(
-        within(rowEl(R1)).getByRole("button", { name: dict.common.delete }),
-      );
+    await openRowMenu("Редакція обирає");
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: dict.carousels.duplicate }),
+    );
 
-      expect(confirmSpy).toHaveBeenCalledWith(
-        dict.carousels.deleteConfirm("Хіти тижня"),
-      );
-      await waitFor(() => expect(deleted).toBe(true));
+    await waitFor(() => expect(itemWrites).toHaveLength(1));
+    expect(created[0]).toEqual({
+      title: dict.carousels.duplicateTitle("Редакція обирає"),
+      source: "MANUAL",
+      placement: "HOME_RAILS",
+      itemLimit: 12,
+      status: "DRAFT",
     });
-
-    it("does nothing when the admin cancels the confirm", async () => {
-      confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(false);
-      mockReorder();
-      let deleted = false;
-      server.use(
-        http.delete(`*/api/admin/carousels/${R1}`, () => {
-          deleted = true;
-          return new HttpResponse(null, { status: 204 });
-        }),
-      );
-      await renderGrids();
-
-      await userEvent.click(
-        within(rowEl(R1)).getByRole("button", { name: dict.common.delete }),
-      );
-
-      expect(confirmSpy).toHaveBeenCalled();
-      // Give any (wrong) mutation a beat to fire before asserting it did not.
-      await waitFor(() => expect(deleted).toBe(false));
+    expect(itemWrites[0].url).toContain("/api/admin/carousels/copy-1/items");
+    expect(itemWrites[0].body).toEqual({
+      items: [{ productId: "p1", sortOrder: 0 }],
     });
+  });
+
+  it("«Видалити…» asks in an AlertDialog; only «Видалити карусель» deletes", async () => {
+    mockReorder();
+    const deleted: string[] = [];
+    server.use(
+      http.delete("*/api/admin/carousels/:id", ({ params }) => {
+        deleted.push(String(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const confirmSpy = jest.spyOn(window, "confirm");
+    await renderGrids();
+
+    await openRowMenu("Популярне");
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: dict.carousels.deleteAction,
+      }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(dict.carousels.deleteTitle("Популярне")),
+    ).toBeInTheDocument();
+    // A tab and a rail disappear from different places — the text says which.
+    expect(
+      within(dialog).getByText(
+        dict.carousels.deleteDescriptionTab("Популярне"),
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+    expect(deleted).toEqual([]);
+
+    await openRowMenu("Хіти тижня");
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: dict.carousels.deleteAction,
+      }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: dict.carousels.deleteConfirmLabel,
+      }),
+    );
+
+    await waitFor(() => expect(deleted).toEqual([R1]));
+    // TASK-812: the browser prompt is gone.
+    expect(confirmSpy).not.toHaveBeenCalled();
+    confirmSpy.mockRestore();
+  });
+});
+
+describe("AdminCarouselTable — without carousels:write (КР3)", () => {
+  it("is view-only: no add, no «⋯», no grips — and says so", async () => {
+    mockReorder();
+    renderTable([]);
+
+    await screen.findByText("Хіти тижня");
+    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: dict.carousels.add }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: dict.common.registry.rowActionsAria("Хіти тижня"),
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: dict.reorderList.handleLabel("Хіти тижня"),
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Хіти тижня" }),
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -444,7 +589,7 @@ describe("AdminCarouselTable — the payload can never be partial", () => {
       }),
     );
 
-    renderWithProviders(<AdminCarouselTable />);
+    renderTable();
     await waitFor(() => expect(railIds()).toHaveLength(2));
     expect(urls).toHaveLength(1);
 
@@ -471,7 +616,7 @@ describe("AdminCarouselTable — the payload can never be partial", () => {
       }),
     );
 
-    renderWithProviders(<AdminCarouselTable />);
+    renderTable();
     await waitFor(() => expect(railIds()).toHaveLength(2));
 
     await userEvent.type(

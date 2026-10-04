@@ -1,13 +1,23 @@
 "use client";
 
-import { useEffect } from "react";
-import { useForm, useWatch } from "react-hook-form";
+import { useEffect, type FormEvent, type ReactNode } from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   useCategoryControllerGetAdminTree,
   type CategoryTreeNodeEntity,
 } from "@/shared/api";
-import { Button, Input, Label } from "@/shared/ui";
+import {
+  FieldError,
+  FormActionsBar,
+  Input,
+  Label,
+  NumberStepper,
+  RadioCard,
+  RadioCardGroup,
+  SegmentedControl,
+} from "@/shared/ui";
+import { FormSectionCard } from "@/shared/ui/form-section-card";
 import { dict } from "@/shared/config";
 import {
   carouselSchema,
@@ -15,8 +25,13 @@ import {
   CAROUSEL_SOURCE,
   type CarouselFormInput,
   type CarouselFormValues,
+  type CarouselPlacementValue,
   type CarouselSourceValue,
+  type CarouselStatusValue,
 } from "../model/carousel-schema";
+
+const f = dict.carouselForm;
+const FORM_ID = "carousel-form";
 
 /** A selectable category, flattened out of the admin tree with its depth. */
 interface CategoryOption {
@@ -52,17 +67,19 @@ interface CarouselFormProps {
    *  carousel, never on a background refetch. Omitted in create mode. */
   id?: string;
   defaultValues?: Partial<CarouselFormInput>;
-  onSubmit: (values: CarouselFormValues) => void;
+  onSubmit: (values: CarouselFormValues) => void | Promise<void>;
   isPending: boolean;
   submitLabel?: string;
   /**
-   * Optional slot rendered below the fields — receives the LIVE selected
-   * `source` so the edit view can show the MANUAL item picker the moment the
-   * admin flips the source select, before saving (mirrors `product-form`'s
-   * `renderSpecsSection` slot shape). Omitted in create mode (items cannot
-   * exist before the carousel does).
+   * The section under «Звідки товари» — receives the LIVE `source`, so the
+   * host shows the MANUAL item picker the moment «Вибрані вручну» is picked,
+   * before saving, and something truthful for every automatic source.
    */
-  renderItemsSection?: (source: CarouselSourceValue) => React.ReactNode;
+  renderItemsSection?: (source: CarouselSourceValue) => ReactNode;
+  /** Labels of host-owned sections with unsaved edits (the item list). */
+  extraDirtySections?: readonly string[];
+  /** «Скасувати зміни» for the host-owned sections. */
+  onDiscardExtra?: () => void;
 }
 
 /** Empty form baseline used for create mode and as the merge base in edit mode. */
@@ -79,31 +96,64 @@ const EMPTY_VALUES: CarouselFormInput = {
   scheduledAt: "",
 };
 
+/** The API's limits for `itemLimit` (CreateCarouselDto: 1…24). */
+const LIMIT_MIN = 1;
+const LIMIT_MAX = 24;
+
+const STATUS_OPTIONS: readonly { value: CarouselStatusValue; label: string }[] =
+  [
+    { value: "PUBLISHED", label: f.statusPublished },
+    { value: "DRAFT", label: f.statusDraft },
+    { value: "SCHEDULED", label: f.statusScheduled },
+  ];
+
+type FieldName = keyof CarouselFormInput;
+
+const SECTIONS: readonly { label: string; fields: readonly FieldName[] }[] = [
+  { label: f.sectionMain, fields: ["title", "placement"] },
+  { label: f.source, fields: ["source", "categoryId", "itemLimit"] },
+  { label: f.status, fields: ["status", "scheduledAt"] },
+];
+
+const ERROR_FIELDS: readonly FieldName[] = [
+  "title",
+  "placement",
+  "source",
+  "categoryId",
+  "itemLimit",
+  "status",
+  "scheduledAt",
+];
+
+const errorId = (field: FieldName) => `carousel-${field}-error`;
+
 /**
- * Reusable create/edit carousel form: title, source select, placement select
- * (TASK-288 — tab inside the home "Популярне" section vs. its own rail below),
- * a conditional category select (visible only for `source = CATEGORY`, offering
- * ALL tree nodes — parents roll up their subtree), item limit (kept visible but
- * labelled as ignored for MANUAL), plus the shared publish controls (status /
- * scheduledAt) — byte-for-byte the `BannerForm` block.
+ * Create/edit carousel form (CarouselsProposal КР5–КР8, wave 198): «Основне»
+ * (title + «Місце на головній» as cards), «Звідки товари» as cards with what
+ * each source does, the count as −/+ for an automatic source, the host's items
+ * section right under it, «Публікація» as segments — and ONE sticky «Зберегти»
+ * that names what is unsaved, the host's item list included.
  *
- * TASK-428 removed the sort-order number field, as it did on `BannerForm`: the order
- * within a placement is set by dragging rows in the carousel list.
+ * «Місце на головній» stays a field here until the `/home` block editor takes
+ * it over (Д-н2, TASK-662/664). TASK-428 removed the sort-order number field:
+ * the order within a placement is set by dragging rows in the carousel list.
  */
 export function CarouselForm({
   id,
   defaultValues,
   onSubmit,
   isPending,
-  submitLabel = dict.carouselForm.submit,
+  submitLabel = f.submit,
   renderItemsSection,
+  extraDirtySections = [],
+  onDiscardExtra,
 }: CarouselFormProps) {
   const {
     register,
     control,
     handleSubmit,
     reset,
-    formState: { errors },
+    formState: { errors, dirtyFields, submitCount },
   } = useForm<CarouselFormInput, unknown, CarouselFormValues>({
     resolver: zodResolver(carouselSchema),
     defaultValues: EMPTY_VALUES,
@@ -126,160 +176,223 @@ export function CarouselForm({
   const categoriesQuery = useCategoryControllerGetAdminTree();
   const categoryOptions = flattenCategoryTree(categoriesQuery.data?.data ?? []);
 
+  const errorCount = ERROR_FIELDS.filter((field) => errors[field]).length;
+  const dirtySections = [
+    ...SECTIONS.filter((section) =>
+      section.fields.some((field) => dirtyFields[field]),
+    ).map((section) => section.label),
+    ...extraDirtySections,
+  ];
+  const summary =
+    submitCount > 0 && errorCount > 0
+      ? f.barErrors(errorCount)
+      : !id && dirtySections.length === 0
+        ? f.barNew
+        : undefined;
+
+  const onFormSubmit = (event: FormEvent<HTMLFormElement>) => {
+    // A submit bubbling through a portal (a dialog's own form) is not ours.
+    if (event.target !== event.currentTarget) return;
+    void handleSubmit(onSubmit)(event);
+  };
+
+  const fieldA11y = (field: FieldName, hintId?: string) => {
+    const describedBy = [hintId, errors[field] ? errorId(field) : undefined]
+      .filter(Boolean)
+      .join(" ");
+    return {
+      "aria-invalid": errors[field] ? true : undefined,
+      "aria-describedby": describedBy || undefined,
+    };
+  };
+
   return (
     <form
-      onSubmit={handleSubmit(onSubmit)}
+      id={FORM_ID}
+      onSubmit={onFormSubmit}
       className="flex flex-col gap-4"
       noValidate
     >
-      <div className="flex max-w-2xl flex-col gap-5">
+      <FormSectionCard title={f.sectionMain}>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="carousel-title">{dict.carouselForm.title}</Label>
-          <Input id="carousel-title" {...register("title")} />
-          {errors.title && (
-            <p role="alert" className="text-sm text-destructive">
-              {errors.title.message}
-            </p>
-          )}
+          <Label htmlFor="carousel-title" required>
+            {f.title}
+          </Label>
+          <Input
+            id="carousel-title"
+            aria-required="true"
+            {...fieldA11y("title", "carousel-title-hint")}
+            {...register("title")}
+          />
+          <p id="carousel-title-hint" className="text-xs text-muted-foreground">
+            {f.titleHint}
+          </p>
+          <FieldError id={errorId("title")}>{errors.title?.message}</FieldError>
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="carousel-source">{dict.carouselForm.source}</Label>
-          <select
-            id="carousel-source"
-            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-            {...register("source")}
-          >
-            {CAROUSEL_SOURCE.map((value) => (
-              <option key={value} value={value}>
-                {dict.carouselForm.sourceOptions[value]}
-              </option>
-            ))}
-          </select>
+          <p className="text-sm font-medium text-foreground">{f.placement}</p>
+          <Controller
+            control={control}
+            name="placement"
+            render={({ field }) => (
+              <RadioCardGroup
+                aria-label={f.placement}
+                value={field.value}
+                onValueChange={(value) =>
+                  field.onChange(value as CarouselPlacementValue)
+                }
+                className="md:grid-cols-2"
+              >
+                {CAROUSEL_PLACEMENT.map((placement) => (
+                  <RadioCard
+                    key={placement}
+                    value={placement}
+                    title={f.placementOptions[placement]}
+                    description={dict.carousels.placementWhere[placement]}
+                    className="data-[state=checked]:bg-primary/6"
+                  />
+                ))}
+              </RadioCardGroup>
+            )}
+          />
+          <p className="text-xs text-muted-foreground">{f.placementHint}</p>
         </div>
+      </FormSectionCard>
+
+      <FormSectionCard title={f.source}>
+        <Controller
+          control={control}
+          name="source"
+          render={({ field }) => (
+            <RadioCardGroup
+              aria-label={f.source}
+              value={field.value}
+              onValueChange={(value) =>
+                field.onChange(value as CarouselSourceValue)
+              }
+              className="md:grid-cols-3"
+            >
+              {CAROUSEL_SOURCE.map((source) => (
+                <RadioCard
+                  key={source}
+                  value={source}
+                  title={f.sourceOptions[source]}
+                  description={f.sourceDescriptions[source]}
+                  className="data-[state=checked]:bg-primary/6"
+                />
+              ))}
+            </RadioCardGroup>
+          )}
+        />
 
         {sourceValue === "CATEGORY" && (
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="carousel-category">
-              {dict.carouselForm.category}
-            </Label>
+          <div className="flex flex-col gap-1.5 md:max-w-sm">
+            <Label htmlFor="carousel-category">{f.category}</Label>
             <select
               id="carousel-category"
-              className="h-10 rounded-md border border-border bg-background px-3 text-sm"
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm aria-invalid:border-destructive"
+              {...fieldA11y("categoryId")}
               {...register("categoryId")}
             >
-              <option value="">{dict.carouselForm.categoryPlaceholder}</option>
+              <option value="">{f.categoryPlaceholder}</option>
               {categoryOptions.map((option) => (
                 <option key={option.id} value={option.id}>
-                  {`${" ".repeat(option.depth * 2)}${option.name}`}
+                  {`${" ".repeat(option.depth * 2)}${option.name}`}
                 </option>
               ))}
             </select>
-            {errors.categoryId && (
-              <p role="alert" className="text-sm text-destructive">
-                {errors.categoryId.message}
-              </p>
-            )}
+            <FieldError id={errorId("categoryId")}>
+              {errors.categoryId?.message}
+            </FieldError>
           </div>
         )}
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="carousel-placement">
-            {dict.carouselForm.placement}
-          </Label>
-          <select
-            id="carousel-placement"
-            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-            {...register("placement")}
-          >
-            {CAROUSEL_PLACEMENT.map((value) => (
-              <option key={value} value={value}>
-                {dict.carouselForm.placementOptions[value]}
-              </option>
-            ))}
-          </select>
-          <p className="text-sm text-muted-foreground">
-            {dict.carouselForm.placementHint}
-          </p>
-        </div>
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="carousel-item-limit">
-            {dict.carouselForm.itemLimit}
-          </Label>
-          <Input
-            id="carousel-item-limit"
-            type="number"
-            inputMode="numeric"
-            min="1"
-            max="24"
-            step="1"
-            {...register("itemLimit")}
-          />
-          <p className="text-sm text-muted-foreground">
-            {dict.carouselForm.itemLimitHint}
-          </p>
-          {errors.itemLimit && (
-            <p role="alert" className="text-sm text-destructive">
-              {errors.itemLimit.message}
-            </p>
-          )}
-        </div>
-
-        {/*
-          TASK-428 removed the "Порядок сортування" number field here: it defaulted to 0,
-          so every carousel an operator created landed in the same slot and the homepage
-          order was whatever the database felt like. The position is now set where it is
-          seen — by dragging a row inside its placement in the carousel list — and a new
-          carousel is appended to that placement by the server.
-        */}
-
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="carousel-status">{dict.carouselForm.status}</Label>
-          <select
-            id="carousel-status"
-            className="h-10 rounded-md border border-border bg-background px-3 text-sm"
-            {...register("status")}
-          >
-            <option value="DRAFT">{dict.carouselForm.statusDraft}</option>
-            <option value="SCHEDULED">
-              {dict.carouselForm.statusScheduled}
-            </option>
-            <option value="PUBLISHED">
-              {dict.carouselForm.statusPublished}
-            </option>
-          </select>
-        </div>
-
-        {statusValue === "SCHEDULED" && (
+        {/* «Вибрані вручну» shows every product added — the count does not
+            apply there, so it is not asked (its value is kept). */}
+        {sourceValue !== "MANUAL" && (
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="carousel-scheduled-at">
-              {dict.carouselForm.scheduledAt}
-            </Label>
-            <Input
-              id="carousel-scheduled-at"
-              type="datetime-local"
-              {...register("scheduledAt")}
+            <Label htmlFor="carousel-item-limit">{f.itemLimit}</Label>
+            <Controller
+              control={control}
+              name="itemLimit"
+              render={({ field }) => (
+                <NumberStepper
+                  id="carousel-item-limit"
+                  value={field.value ?? ""}
+                  onChange={field.onChange}
+                  onBlur={field.onBlur}
+                  min={LIMIT_MIN}
+                  max={LIMIT_MAX}
+                  decreaseLabel={f.stepDown}
+                  increaseLabel={f.stepUp}
+                  {...fieldA11y("itemLimit", "carousel-item-limit-hint")}
+                />
+              )}
             />
-            <p className="text-sm text-muted-foreground">
-              {dict.carouselForm.scheduledAtHint}
+            <p
+              id="carousel-item-limit-hint"
+              className="text-xs text-muted-foreground"
+            >
+              {f.itemLimitHint}
             </p>
-            {errors.scheduledAt && (
-              <p role="alert" className="text-sm text-destructive">
-                {errors.scheduledAt.message}
-              </p>
-            )}
+            <FieldError id={errorId("itemLimit")}>
+              {errors.itemLimit?.message}
+            </FieldError>
           </div>
         )}
-      </div>
+      </FormSectionCard>
 
       {renderItemsSection?.(sourceValue)}
 
-      <div>
-        <Button type="submit" disabled={isPending}>
-          {isPending ? dict.common.saving : submitLabel}
-        </Button>
-      </div>
+      <FormSectionCard title={f.status}>
+        <Controller
+          control={control}
+          name="status"
+          render={({ field }) => (
+            <SegmentedControl
+              aria-label={f.status}
+              value={field.value}
+              onValueChange={field.onChange}
+              options={STATUS_OPTIONS}
+            />
+          )}
+        />
+
+        {statusValue === "SCHEDULED" && (
+          <div className="flex flex-col gap-1.5 md:max-w-sm">
+            <Label htmlFor="carousel-scheduled-at">{f.scheduledAt}</Label>
+            <Input
+              id="carousel-scheduled-at"
+              type="datetime-local"
+              {...fieldA11y("scheduledAt", "carousel-scheduled-at-hint")}
+              {...register("scheduledAt")}
+            />
+            <p
+              id="carousel-scheduled-at-hint"
+              className="text-xs text-muted-foreground"
+            >
+              {f.scheduledAtHint}
+            </p>
+            <FieldError id={errorId("scheduledAt")}>
+              {errors.scheduledAt?.message}
+            </FieldError>
+          </div>
+        )}
+      </FormSectionCard>
+
+      <FormActionsBar
+        variant="sticky"
+        dirtySections={dirtySections}
+        summary={summary}
+        onDiscard={() => {
+          reset();
+          onDiscardExtra?.();
+        }}
+        saveLabel={isPending ? dict.common.saving : submitLabel}
+        formId={FORM_ID}
+        isSaving={isPending}
+      />
     </form>
   );
 }

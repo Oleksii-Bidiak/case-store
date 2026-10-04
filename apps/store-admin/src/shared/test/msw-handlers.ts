@@ -208,6 +208,8 @@ export const handlers = [
   // Public category tree + product list — the banner LinkPicker's sources
   // (wave 198, TASK-1073). Empty by default; the picker suites override them.
   http.get("*/api/categories/tree", () => HttpResponse.json({ data: [] })),
+  // Public carousels — the carousel form's «Зараз на сайті» (TASK-1074).
+  http.get("*/api/carousels", () => HttpResponse.json({ data: [] })),
   http.get("*/api/products", () =>
     HttpResponse.json({
       data: [],

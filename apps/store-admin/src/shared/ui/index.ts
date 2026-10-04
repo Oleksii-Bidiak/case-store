@@ -210,6 +210,7 @@ export {
   type SegmentedControlProps,
   type SegmentedOption,
 } from "./segmented-control";
+export { NumberStepper, type NumberStepperProps } from "./number-stepper";
 export {
   SwatchPicker,
   type SwatchOption,

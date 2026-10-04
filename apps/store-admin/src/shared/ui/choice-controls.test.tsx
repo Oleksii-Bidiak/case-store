@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { SegmentedControl } from "./segmented-control";
 import { SwatchPicker } from "./swatch-picker";
 import { RadioCard, RadioCardGroup } from "./radio-card";
+import { NumberStepper } from "./number-stepper";
 
 function Segmented() {
   const [value, setValue] = useState("a");
@@ -58,6 +59,46 @@ describe("SwatchPicker (wave 198)", () => {
     expect(screen.getByRole("radio", { name: "Автоматично" })).toBeChecked();
     await userEvent.click(screen.getByRole("radio", { name: "Своє…" }));
     expect(screen.getByRole("radio", { name: "Своє…" })).toBeChecked();
+  });
+});
+
+describe("NumberStepper (wave 198)", () => {
+  function Stepper({ initial }: { initial: string }) {
+    const [value, setValue] = useState(initial);
+    return (
+      <>
+        <label htmlFor="n">Скільки</label>
+        <NumberStepper
+          id="n"
+          value={value}
+          onChange={setValue}
+          min={1}
+          max={3}
+          decreaseLabel="Менше"
+          increaseLabel="Більше"
+        />
+      </>
+    );
+  }
+
+  it("steps within min…max and keeps the middle a real spinbutton", async () => {
+    render(<Stepper initial="2" />);
+
+    const field = screen.getByRole("spinbutton", { name: "Скільки" });
+    await userEvent.click(screen.getByRole("button", { name: "Більше" }));
+    expect(field).toHaveValue(3);
+    expect(screen.getByRole("button", { name: "Більше" })).toBeDisabled();
+    await userEvent.click(screen.getByRole("button", { name: "Менше" }));
+    await userEvent.click(screen.getByRole("button", { name: "Менше" }));
+    expect(field).toHaveValue(1);
+    expect(screen.getByRole("button", { name: "Менше" })).toBeDisabled();
+  });
+
+  it("starts from the minimum when the field is empty", async () => {
+    render(<Stepper initial="" />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Більше" }));
+    expect(screen.getByRole("spinbutton", { name: "Скільки" })).toHaveValue(2);
   });
 });
 
