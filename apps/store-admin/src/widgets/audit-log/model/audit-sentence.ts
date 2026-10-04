@@ -61,6 +61,9 @@ export interface AuditSentence {
   object: { text: string; href?: string } | null;
 }
 
+/** Fixed ids of settings singletons: `00000000-0000-0000-0000-00000000000N`. */
+const NIL_ID = /^0{8}(-0{4}){3}-0{8}[0-9a-f]{4}$/i;
+
 /** The type an entry is about — its own field, else the action's first half. */
 function entityTypeOf(entry: Pick<AuditEntry, "action" | "entityType">) {
   return entry.entityType ?? entry.action.split(".")[0] ?? "";
@@ -82,7 +85,12 @@ export function auditSentence(entry: AuditEntry): AuditSentence {
   const verb = ACTION_VERBS[verbKey];
   const type = entityTypeOf(entry);
   const noun = ENTITY_NOUNS[type];
-  const ref = entry.entityId ? formatOrderNumber(entry.entityId) : null;
+  // Settings singletons (site contacts, SEO) live under fixed zero ids:
+  // «контакти сайту #00000000» names nothing, so they read without a number.
+  const ref =
+    entry.entityId && !NIL_ID.test(entry.entityId)
+      ? formatOrderNumber(entry.entityId)
+      : null;
 
   const text = [noun, ref].filter(Boolean).join(" ");
   const href =

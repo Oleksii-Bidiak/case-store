@@ -45,6 +45,17 @@ describe("auditSentence — «що зроблено + з чим» (TASK-1068)", 
     ).toEqual({ text: `${d.entityNouns.payment} #7C1E4B2A` });
   });
 
+  it("gives a settings singleton no «#00000000» number", () => {
+    const sentence = auditSentence(
+      entry({
+        action: "siteContact.update",
+        entityType: "siteContact",
+        entityId: "00000000-0000-0000-0000-000000000001",
+      }),
+    );
+    expect(sentence.object?.text).not.toMatch(/#/);
+  });
+
   it("falls back to the raw key for a verb it cannot name", () => {
     const sentence = auditSentence(
       entry({ action: "warehouse.rebalance", entityType: "warehouse" }),

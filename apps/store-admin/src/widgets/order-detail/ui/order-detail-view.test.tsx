@@ -818,7 +818,7 @@ describe("OrderDetailView — returns on the card (TASK-724)", () => {
 
     expect(
       await screen.findByRole("link", {
-        name: dict.returns.title("ret00001"),
+        name: dict.returns.title("RET00001"),
       }),
     ).toHaveAttribute("href", "/returns/ret00001-aaaa");
   });
