@@ -812,25 +812,23 @@ export const dict = {
   catalogImport: {
     heading: "Імпорт каталогу з файлу",
     intro:
-      "Завантажте .xlsx від постачальника. Спершу покажемо, що саме зміниться — " +
+      "Завантажте .xlsx від постачальника. Спершу покажемо, що саме зміниться, — " +
       "і нічого не запишемо, доки ви не підтвердите.",
-    pickFile: "Оберіть файл .xlsx",
-    upload: "Розібрати файл",
+    pickFile: "Обрати файл",
     uploading: "Розбираємо файл…",
     uploadFailed: "Не вдалося розібрати файл",
     duplicateWarning:
       "Такий самий файл уже імпортували раніше. Якщо він не змінювався, змін не буде.",
 
     // Summary tiles
-    tileCreate: "Створити",
-    tileUpdate: "Оновити",
-    tileMissing: "Приховати",
-    tileUnchanged: "Без змін",
-    tileErrors: "Помилок у файлі",
-    tileConflicts: "Ручних правок під загрозою",
+    tileCreate: "створити",
+    tileUpdate: "оновити",
+    tileMissing: "приховати",
+    tileUnchanged: "без змін",
+    tileErrors: "рядків пропустимо",
+    tileConflicts: "ручні правки під загрозою",
 
     // Reference data the import will create
-    referencesHeading: "Довідники з файлу",
     refCategories: "Категорії",
     refBrands: "Бренди",
     refDeviceBrands: "Марки пристроїв",
@@ -847,41 +845,29 @@ export const dict = {
       "(і перелічіть значення) або «Так / Ні» та увімкніть «Використовувати як фільтр каталогу».",
 
     // Rows
-    createsHeading: (n: number) => `Нові товари (${n})`,
     createsHint:
-      "Кожен створюється прихованим і з нульовим залишком — у файлі немає залишків. " +
-      "Опублікуєте їх самі, коли перевірите.",
-    updatesHeading: (n: number) => `Зміни в наявних товарах (${n})`,
-    missingHeading: (n: number) => `Зникли з файлу (${n})`,
+      "Кожен створимо прихованим і з нульовим залишком — у файлі залишків немає. " +
+      "Опублікуєте самі, коли перевірите.",
     missingHint:
       "Ці товари приховаємо — не видалимо. Якщо постачальник поверне їх у файл, " +
       "вони знову зʼявляться.",
-    issuesHeading: (n: number) => `Рядки, які пропустимо (${n})`,
     rowNumber: (n: number) => `рядок ${n}`,
-    conflictBadge: "змінено вручну",
-    conflictHint:
-      "Це поле хтось правив в адмінці. За замовчуванням переможе файл — зніміть " +
-      "галочку, щоб зберегти вашу правку.",
-    uncheckConflicts: "Зняти всі ручні правки",
-    showMore: (n: number) => `Показати ще ${n}`,
+    conflictBadge: "змінено в адмінці",
+    // The same action as before — it unticks every change that would overwrite
+    // a hand edit — named by what it does for the operator (Д-ж3 §6).
+    uncheckConflicts: "Зберегти всі ручні правки",
+    showMore: "Показати ще",
 
     // Apply
     apply: "Застосувати",
     applying: "Записуємо…",
-    applyConfirm: (n: number) =>
-      `Застосувати ${n} змін? Товари створюються прихованими, тож на вітрині нічого не зміниться, ` +
-      `доки ви їх не опублікуєте.`,
-    cancel: "Відхилити",
-    cancelConfirm: "Відхилити цей розбір? Файл доведеться завантажити заново.",
     applyFailed: "Не вдалося застосувати імпорт",
     cancelled: "Розбір відхилено",
 
     // Progress / result
-    progress: (done: number, total: number) => `Записано ${done} з ${total}`,
     doneHeading: "Імпорт завершено",
     doneHint:
-      "Нові товари лежать прихованими у списку товарів. Проставте залишки й " +
-      "опублікуйте те, що готове до продажу.",
+      "Нові товари лежать прихованими. Проставте залишки й опублікуйте те, що готове до продажу.",
     failedHeading: "Імпорт зупинився",
     toStore: "До списку товарів",
     startOver: "Імпортувати інший файл",
@@ -897,6 +883,115 @@ export const dict = {
       CANCELLED: "Відхилено",
     } as Record<string, string>,
     loadError: "Не вдалося завантажити дані імпорту.",
+
+    // Хвиля 198, CatalogImportProposal ІК1–ІК14 (TASK-1086).
+    stepsAria: "Кроки імпорту",
+    stepFile: "Файл",
+    stepReview: "Перевірка",
+    stepWrite: "Запис",
+    dropTitle: "Перетягніть файл сюди",
+    dropSubtitle: "або оберіть його на комп'ютері",
+    dropHint:
+      "Лише .xlsx у форматі постачальника. Фото з файлу не завантажуємо — їх додають у товарі.",
+    dropRelease: "Відпустіть, щоб розібрати файл",
+    dropReleaseHint:
+      "Розбір займає до хвилини; нічого не запишемо без вашого підтвердження.",
+    wrongType: "Це не .xlsx — оберіть файл у форматі постачальника.",
+    parsedMeta: (date: string, email: string | null | undefined) =>
+      email ? `розібрано ${date} · ${email}` : `розібрано ${date}`,
+    noChangesBadge: "Без змін",
+    noChanges: (date: string) =>
+      `Цей самий файл уже імпортували ${date}. Змін немає — застосовувати нічого.`,
+    openThatImport: "Відкрити той імпорт →",
+    tabsAria: "Що зміниться",
+    tabChanges: "Зміни",
+    tabMissing: "Зникли з файлу",
+    tabCreates: "Нові",
+    tabWarnings: "Попередження",
+    tabSkipped: "Пропущені рядки",
+    tabReferences: "Довідники",
+    changesHint:
+      "Позначене — запишемо з файлу. Зніміть позначку, щоб лишити як є.",
+    warningsHint:
+      "Ці рядки запишемо, але з уточненнями. Перевірте, чи так і мало бути.",
+    changesEmpty: "Файл не змінює жодного наявного товару.",
+    missingEmpty: "Усі товари магазину є у файлі.",
+    createsEmpty: "Нових товарів у файлі немає.",
+    warningsEmpty: "Попереджень немає.",
+    skippedEmpty: "Усі рядки файлу прочитано.",
+    referencesEmpty: "Нових довідників не буде.",
+    openProduct: "Відкрити товар →",
+    colProduct: "Товар",
+    colSku: "Артикул",
+    colRow: "Рядок",
+    pageRange: (from: number, to: number, total: number) =>
+      `${from}–${to} із ${total.toLocaleString("uk-UA")}`,
+    barPositions: (n: number) =>
+      countLabel(n, ["позиція", "позиції", "позицій"]),
+    barKeep: (n: number) =>
+      `${countLabel(n, ["ручну правку", "ручні правки", "ручних правок"])} збережемо`,
+    barSkip: (n: number) =>
+      `${countLabel(n, ["рядок", "рядки", "рядків"])} пропустимо`,
+    rejectButton: "Відхилити…",
+    applyButton: (n: number) =>
+      `Застосувати ${countLabel(n, ["зміну", "зміни", "змін"])}…`,
+    applyTitle: (n: number) =>
+      `Застосувати ${countLabel(n, ["зміну", "зміни", "змін"])}?`,
+    applyCreates: (n: number) =>
+      `${countLabel(n, ["новий товар", "нові товари", "нових товарів"])} — прихованими, із залишком 0`,
+    applyUpdates: (n: number, kept: number) =>
+      kept > 0
+        ? `${countLabel(n, ["оновлення", "оновлення", "оновлень"])}; ${countLabel(kept, ["ручну правку", "ручні правки", "ручних правок"])} збережемо (знято позначку)`
+        : countLabel(n, ["оновлення", "оновлення", "оновлень"]),
+    applyMissing: (n: number) =>
+      `${countLabel(n, ["товар", "товари", "товарів"])} приховаємо — не видалимо`,
+    applyFootnote: (updates: number, missing: number) =>
+      `На вітрині зміняться ціни, назви й інші поля ${countLabel(updates, ["товару", "товарів", "товарів"])} і зникнуть ${missing}. Нові з'являться лише після публікації.`,
+    cancelTitle: (filename: string) => `Відхилити розбір ${filename}?`,
+    cancelDescription:
+      "Нічого не запишемо. Щоб імпортувати цей файл пізніше, його треба буде завантажити знову.",
+    cancelAction: "Відхилити",
+    progress: (done: number, total: number) =>
+      `Записуємо ${done.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")}`,
+    progressHint:
+      "Запис іде на сервері: можна закрити сторінку й повернутися — прогрес збережеться.",
+    doneCreated: "створено — приховані, залишок 0",
+    doneUpdated: "оновлено",
+    doneUpdatedKept: (kept: number) =>
+      `оновлено (${countLabel(kept, ["ручну правку", "ручні правки", "ручних правок"])} збережено)`,
+    doneHidden: "приховано — зникли з файлу",
+    doneSkipped: "рядків пропущено",
+    toNewProducts: (n: number) => `Нові товари (${n}) →`,
+    failedDb:
+      "Сервер на мить втратив зв'язок з базою даних. Спробуйте ще раз за кілька хвилин. Якщо повториться — передайте розробнику технічні деталі нижче.",
+    failedGeneric:
+      "Запис перервався на сервері. Спробуйте ще раз за кілька хвилин: у новому розборі лишиться лише те, що ще не записано. Якщо повториться — передайте розробнику технічні деталі нижче.",
+    techDetails: "Технічні деталі",
+    retry: "Спробувати ще раз",
+    copyDetails: "Скопіювати деталі",
+    detailsCopied: "Деталі скопійовано.",
+    copyFailed:
+      "Не вдалося скопіювати — браузер не дав доступу до буфера обміну.",
+    historyLive: "оновлюється після кожної дії",
+    colFile: "Файл",
+    colStatus: "Статус",
+    colWhen: "Коли",
+    colWho: "Хто",
+    colResult: "Результат",
+    historyOpen: "Відкрити",
+    historyItemForms: ["імпорт", "імпорти", "імпортів"] as const,
+    resultToCreate: (n: number) => `${n.toLocaleString("uk-UA")} нових`,
+    resultToUpdate: (n: number) => `${n.toLocaleString("uk-UA")} оновити`,
+    resultToHide: (n: number) => `${n.toLocaleString("uk-UA")} приховати`,
+    resultCreated: (n: number) => `${n.toLocaleString("uk-UA")} нових`,
+    resultUpdated: (n: number) => `${n.toLocaleString("uk-UA")} оновлено`,
+    resultHidden: (n: number) => `${n.toLocaleString("uk-UA")} приховано`,
+    resultNothing: "нічого не записано",
+    resultNoChanges: "змін немає",
+    resultStopped: (done: number, total: number) =>
+      `зупинився на ${done.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")}`,
+    resultWriting: (done: number, total: number) =>
+      `записано ${done.toLocaleString("uk-UA")} з ${total.toLocaleString("uk-UA")}`,
   },
 
   // TASK-361: publication is its own action, separate from saving the fields.
