@@ -568,12 +568,11 @@ export const dict = {
       announceUndoAvailable: (count: number, undoLabel: string) =>
         `Готово, змінено товарів: ${count}. Щоб повернути, як було, скористайтеся кнопкою «${undoLabel}».`,
     },
-    back: "← Назад до товарів",
+    back: "← Товари",
     createHeading: "Створення товару",
     editHeading: "Редагування товару",
     createSubmit: "Створити товар",
     loadOneError: "Не вдалося завантажити товар. Спробуйте ще раз.",
-    imagesHeading: "Зображення товару",
     // TASK-362: photo column + status/stock filters for the restock worklist.
     colPhoto: "Фото",
     noPhoto: "без фото",
@@ -626,11 +625,6 @@ export const dict = {
     },
     toastUpdated: "Товар оновлено",
     toastUpdateFailed: "Не вдалося оновити товар",
-    // TASK-285: slug-rename guard on a publicly visible product.
-    slugChangeConfirm: (oldSlug: string, newSlug: string) =>
-      `Ви змінюєте адресу активного товару з «${oldSlug}» на «${newSlug}». ` +
-      `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
-      `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
     // Staff preview of deactivated products (TASK-155)
     previewLink: "Переглянути",
     previewBack: "← Назад",
@@ -691,7 +685,6 @@ export const dict = {
 
     // ── Картка товару, лише для перегляду (TASK-427) ────────────────────────
     metaTitleCard: "Картка товару — Адмін",
-    cardAction: "Картка",
     cardBack: "← Назад до товарів",
     cardEditLink: "Редагувати",
     cardLoadError: "Не вдалося завантажити товар. Спробуйте ще раз.",
@@ -808,6 +801,14 @@ export const dict = {
           ? `Ціна: від ${from} ₴`
           : `Ціна: до ${to} ₴`,
     totalsFree: (count: number) => `${count} вільно`,
+
+    // ── Шапка форми товару (хвиля 198, TASK-1050, Ф1/Ф2) ────────────────────
+    editMeta: (sku: string, updated: string) =>
+      sku ? `SKU ${sku} · оновлено ${updated}` : `оновлено ${updated}`,
+    viewOnSite: "Подивитись на сайті",
+    headerMoreAria: "Інші дії з товаром",
+    menuCard: "Картка товару",
+    menuPreview: "Прев'ю",
   },
 
   // TASK-360: supplier-catalogue import.
@@ -904,10 +905,10 @@ export const dict = {
   // TASK-361: publication is its own action, separate from saving the fields.
   productPublish: {
     heading: "Публікація",
-    draftBadge: "Чернетка — покупці її не бачать",
-    liveBadge: "Опубліковано — товар на вітрині",
-    publish: "Опублікувати",
-    unpublish: "Зняти з публікації",
+    draftBadge: "Приховано",
+    liveBadge: "Показується",
+    publish: "Показати на сайті",
+    unpublish: "Приховати з сайту",
     readyHint: "Товар готовий до публікації.",
     blockersHint: "Щоб опублікувати товар, заповніть обов'язкові пункти:",
     advisoryNote:
@@ -931,27 +932,25 @@ export const dict = {
 
   productForm: {
     name: "Назва",
-    slug: "Slug",
+    slug: "Адреса на сайті (slug)",
     slugPlaceholder: "Залиште порожнім для авто-генерації з назви",
     slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
     description: "Опис",
     descriptionPlaceholder:
       "Опишіть товар: для чого він, з чого зроблений, що в комплекті",
-    price: "Ціна",
-    compareAtPrice: "Стара ціна",
-    sku: "Артикул",
+    price: "Ціна, ₴",
+    compareAtPrice: "Стара ціна, ₴",
+    sku: "Артикул (SKU)",
     category: "Категорія",
     categoryPlaceholder: "Оберіть категорію",
     loading: "Завантаження…",
-    stock: "Вільний залишок",
+    stock: "Вільно, шт",
     stockHint:
-      "Скільки одиниць товару можна продати прямо зараз. Це число вже враховує " +
-      "товари з непідтверджених/необроблених замовлень — вони віднімаються одразу " +
-      "при оформленні замовлення, а не при відправці.",
+      "Скільки можна продати прямо зараз. Резерв — у замовленнях, що ще не відправлені: " +
+      "його віднімаємо одразу при оформленні, а не при відправці.",
     // TASK-254: dynamic breakdown shown under the static hint in edit mode only.
     stockBreakdownHint: (physicalQty: number, reservedQty: number) =>
-      `Фізично на складі: ${physicalQty} шт (з них у ${reservedQty} шт зарезервовано ` +
-      `замовленнями на обробці).`,
+      `Резерв ${reservedQty} · на складі ${physicalQty}`,
     positionOrder: "Порядок позиції",
     group: "Група",
     groupNone: "Без групи",
@@ -997,6 +996,51 @@ export const dict = {
     // be scrolled through — so they became comboboxes.
     comboboxPlaceholder: "Почніть вводити назву…",
     comboboxEmpty: "Нічого не знайдено",
+
+    // ── Форма за макетом (хвиля 198, TASK-1050, ProductFormProposal Ф1–Ф5) ──
+    sectionsNav: "Розділи форми товару",
+    sectionMain: "Основне",
+    sectionPrice: "Ціна і склад",
+    sectionDescription: "Опис",
+    sectionSpecs: "Характеристики",
+    sectionPhotos: "Фото",
+    sectionCompat: "Сумісність",
+    sectionAddons: "Послуги",
+    sectionSeo: "SEO і соцмережі",
+    statusDirty: "є незбережені зміни",
+    statusMissing: "не заповнено",
+    statusDone: "заповнено",
+    requiredMark: "обов'язкове поле",
+    slugPrefix: "/products/",
+    slugChange: "Змінити…",
+    slugLockedHint:
+      "Товар уже на сайті: зміна адреси зламає старі посилання, тому спершу спитаємо.",
+    slugDialogTitle: "Змінити адресу товару?",
+    // Not the artboard's «перестане відкриватися»: the API records a 301 from
+    // the old slug (SlugRedirect, TASK-285), so old links still land here —
+    // what really changes is the indexed address.
+    slugDialogDescription: (oldSlug: string) =>
+      `Товар уже на сайті. Адреса /products/${oldSlug} зміниться: у Google вона випаде з пошуку й проіндексується заново, а покупців зі старих посилань і закладок ми переадресуємо на нову.`,
+    slugDialogLabel: "Нова адреса",
+    slugDialogConfirm: "Змінити адресу",
+    compareAtHint: (percent: number) =>
+      `Закреслена на вітрині — знижка ${percent}%`,
+    specsTemplateHint: (category: string) =>
+      `Список — із шаблону категорії «${category}»`,
+    seoSummaryMeta: (filled: boolean) =>
+      filled
+        ? "Заголовок і опис для Google заповнені"
+        : "Заголовок і опис для Google — автоматично з назви й опису",
+    seoSummaryOg: (set: boolean) =>
+      set
+        ? "картинка для соцмереж задана"
+        : "картинка для соцмереж — автоматична",
+    seoSummaryTags: (count: number) => `теги пошуку: ${count}`,
+    saveFailed: (section: string, message: string) =>
+      `Не вдалося зберегти «${section}»: ${message}`,
+    savedPartly: (sections: string) =>
+      `Решту вже збережено: ${sections}. Виправте розділ і натисніть «Зберегти» ще раз.`,
+    saveFailedGeneric: "сервер не прийняв зміни",
   },
 
   // --- Categories (TASK-115) --------------------------------------------------
@@ -1395,6 +1439,14 @@ export const dict = {
     // TASK-726: the save button said the block's title («Сумісні пристрої»)
     // instead of the action — mirrors productSpecs.save.
     save: "Зберегти сумісність",
+    // Хвиля 198 (TASK-1050, Ф3): пошук, бренди-пігулки й «Лише вибрані».
+    searchPlaceholder: "Модель: iPhone 15, Galaxy S24…",
+    searchAria: "Пошук моделі пристрою",
+    onlySelected: "Лише вибрані",
+    selectedCount: (count: number) => `Вибрано ${count}`,
+    allBrands: (count: number) => `Усі ${count}`,
+    brandFilterAria: "Бренд пристрою",
+    nothingFound: "Нічого не знайдено",
   },
 
   // --- Product structured-spec values editor (TASK-191) -----------------------
@@ -1414,6 +1466,10 @@ export const dict = {
     selectPlaceholder: "— не вибрано —",
     toastSaved: "Характеристики збережено",
     toastError: "Не вдалося зберегти характеристики.",
+    // Хвиля 198 (TASK-1050): так/ні — сегментами замість галочки, що писала «false».
+    booleanYes: "Так",
+    booleanNo: "Ні",
+    booleanUnset: "Не вказано",
   },
 
   // --- Structured-spec templates (TASK-191) -----------------------------------
@@ -4313,11 +4369,11 @@ export const dict = {
     loadError: "Не вдалося завантажити зображення. Спробуйте ще раз.",
     empty:
       "Зображень ще немає. Завантажте перше, щоб задати обкладинку товару.",
-    primary: "Головне",
+    primary: "Обкладинка",
     alt: "Зображення товару",
     moveLeft: "Перемістити ліворуч",
     moveRight: "Перемістити праворуч",
-    setPrimary: "Зробити головним",
+    setPrimary: "Зробити обкладинкою",
     deleteImage: "Видалити зображення",
     deleteTitle: "Видалити зображення?",
     deleteDescription:
@@ -4361,6 +4417,8 @@ export const dict = {
     stagedEmpty: "Фото ще не додано.",
     stagedCount: (count: number) => `Готово до завантаження: ${count}`,
     removeStaged: (name: string) => `Прибрати «${name}» зі списку`,
+    // Хвиля 198 (TASK-1050, TASK-1104): обкладинка — це перше фото.
+    coverHint: "Порядок — стрілками. Перше фото — обкладинка.",
   },
 
   // Media library («Медіатека», TASK-441, план 177) — окремий екран `/media`:

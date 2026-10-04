@@ -4,10 +4,12 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_URL } from "@/shared/config";
+import { formatDate } from "@/shared/lib";
 import { EditProductView } from "./edit-product-view";
 
 // next/navigation is unavailable under jsdom — mock the router. Stable
@@ -38,7 +40,7 @@ function makeProduct(isActive: boolean) {
     description: null,
     price: "29.99",
     compareAtPrice: null,
-    sku: null,
+    sku: null as string | null,
     stock: 10,
     reservedQty: 0,
     physicalQty: 10,
@@ -125,22 +127,20 @@ async function renderAndWaitForForm(product: ReturnType<typeof makeProduct>) {
 }
 
 const submit = () =>
-  userEvent.click(
-    screen.getByRole("button", { name: dict.common.saveChanges }),
-  );
+  userEvent.click(screen.getByRole("button", { name: dict.common.save }));
 
-describe("EditProductView — slug-rename guard (TASK-285)", () => {
+describe("EditProductView — changing the address of a live product (TASK-285, Ф4)", () => {
   let confirmSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
+    confirmSpy = jest.spyOn(window, "confirm");
   });
 
   afterEach(() => {
     confirmSpy.mockRestore();
   });
 
-  it("submits without any confirm when the slug is unchanged on an active product", async () => {
+  it("submits without any prompt when the slug is unchanged on an active product", async () => {
     const putCalls = await renderAndWaitForForm(makeProduct(true));
 
     await submit();
@@ -149,34 +149,79 @@ describe("EditProductView — slug-rename guard (TASK-285)", () => {
     expect(confirmSpy).not.toHaveBeenCalled();
   });
 
-  it("blocks the update when the admin cancels the active-slug-change confirm", async () => {
-    confirmSpy.mockReturnValue(false);
-    const putCalls = await renderAndWaitForForm(makeProduct(true));
+  it("locks the slug of a live product behind «Змінити…»", async () => {
+    await renderAndWaitForForm(makeProduct(true));
 
-    const slugField = screen.getByLabelText(dict.productForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
-    await submit();
-
-    expect(confirmSpy).toHaveBeenCalledWith(
-      dict.products.slugChangeConfirm("chohol-magsafe", "nova-adresa"),
+    expect(screen.getByLabelText(dict.productForm.slug)).toHaveAttribute(
+      "readonly",
     );
-    expect(putCalls).toHaveLength(0);
+    expect(
+      screen.getByText(dict.productForm.slugLockedHint),
+    ).toBeInTheDocument();
   });
 
-  it("fires the update after the admin accepts the confirm", async () => {
+  async function openSlugDialog(next: string) {
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.productForm.slugChange }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    const input = within(dialog).getByLabelText(
+      dict.productForm.slugDialogLabel,
+    );
+    await userEvent.clear(input);
+    await userEvent.type(input, next);
+    return dialog;
+  }
+
+  it("cancel in «Змінити адресу товару?» changes nothing", async () => {
     const putCalls = await renderAndWaitForForm(makeProduct(true));
 
-    const slugField = screen.getByLabelText(dict.productForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
-    await submit();
+    const dialog = await openSlugDialog("nova-adresa");
+    expect(dialog).toHaveTextContent(
+      dict.productForm.slugDialogDescription("chohol-magsafe"),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
 
+    expect(screen.getByLabelText(dict.productForm.slug)).toHaveValue(
+      "chohol-magsafe",
+    );
+    await submit();
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(putCalls[0]).toEqual(
+      expect.objectContaining({ slug: "chohol-magsafe" }),
+    );
+    expect(confirmSpy).not.toHaveBeenCalled();
   });
 
-  it("never confirms a slug change on an INACTIVE product", async () => {
+  it("«Змінити адресу» stages the new slug, and «Зберегти» sends it — no window.confirm", async () => {
+    const putCalls = await renderAndWaitForForm(makeProduct(true));
+
+    const dialog = await openSlugDialog("nova-adresa");
+    await userEvent.click(
+      within(dialog).getByRole("button", {
+        name: dict.productForm.slugDialogConfirm,
+      }),
+    );
+
+    expect(screen.getByLabelText(dict.productForm.slug)).toHaveValue(
+      "nova-adresa",
+    );
+    expect(
+      await screen.findByText(
+        dict.canon.unsavedChanges(dict.productForm.sectionMain),
+      ),
+    ).toBeInTheDocument();
+    await submit();
+    await waitFor(() => expect(putCalls).toHaveLength(1));
+    expect(putCalls[0]).toEqual(
+      expect.objectContaining({ slug: "nova-adresa" }),
+    );
+    expect(confirmSpy).not.toHaveBeenCalled();
+  });
+
+  it("an INACTIVE product's slug is a plain field", async () => {
     const putCalls = await renderAndWaitForForm(makeProduct(false));
 
     const slugField = screen.getByLabelText(dict.productForm.slug);
@@ -321,7 +366,10 @@ describe("EditProductView — delete (TASK-427)", () => {
     );
 
     await userEvent.click(
-      screen.getByRole("button", { name: dict.products.deleteAction }),
+      screen.getByRole("button", { name: dict.products.headerMoreAria }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: dict.products.rowDelete }),
     );
     await userEvent.click(
       await screen.findByRole("button", { name: dict.products.deleteConfirm }),
@@ -333,11 +381,260 @@ describe("EditProductView — delete (TASK-427)", () => {
     await waitFor(() => expect(mockReplace).toHaveBeenCalledWith("/products"));
   });
 
-  it("links to the read-only card", async () => {
+  it("links to the read-only card and the preview from «⋯»", async () => {
     await renderAndWaitForForm(makeProduct(true));
 
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.headerMoreAria }),
+    );
     expect(
-      screen.getByRole("link", { name: dict.products.cardAction }),
+      await screen.findByRole("menuitem", { name: dict.products.menuCard }),
     ).toHaveAttribute("href", `/products/${PRODUCT_ID}`);
+    expect(
+      screen.getByRole("menuitem", { name: dict.products.menuPreview }),
+    ).toHaveAttribute("href", "/products/preview/chohol-magsafe");
+  });
+
+  it("offers no «Видалити…» without products:delete", async () => {
+    stubProduct(makeProduct(true));
+    renderWithProviders(
+      <WithAuth permissions={["products:read", "products:write"]}>
+        <EditProductView productId={PRODUCT_ID} />
+      </WithAuth>,
+    );
+    await screen.findByRole("heading", { level: 2, name: "Чохол MagSafe" });
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.products.headerMoreAria }),
+    );
+    await screen.findByRole("menuitem", { name: dict.products.menuCard });
+    expect(
+      screen.queryByRole("menuitem", { name: dict.products.rowDelete }),
+    ).toBeNull();
+  });
+});
+
+describe("EditProductView — header (TASK-1050, Ф1)", () => {
+  it("names the product, its status and its SKU / update line", async () => {
+    await renderAndWaitForForm({ ...makeProduct(true), sku: "CASE-1" });
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Чохол MagSafe" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getAllByText(dict.products.statusShown).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByText(
+        dict.products.editMeta(
+          "CASE-1",
+          formatDate("2026-06-01T09:00:00.000Z"),
+        ),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.products.back }),
+    ).toHaveAttribute("href", "/products");
+  });
+
+  it("links «Подивитись на сайті» for a live product only", async () => {
+    await renderAndWaitForForm(makeProduct(true));
+    expect(
+      screen.getByRole("link", { name: new RegExp(dict.products.viewOnSite) }),
+    ).toHaveAttribute("href", `${STOREFRONT_URL}/products/chohol-magsafe`);
+  });
+
+  it("offers no storefront link for a hidden product", async () => {
+    await renderAndWaitForForm(makeProduct(false));
+    expect(
+      screen.queryByRole("link", {
+        name: new RegExp(dict.products.viewOnSite),
+      }),
+    ).toBeNull();
+  });
+
+  it("indexes the sections in the left column", async () => {
+    await renderAndWaitForForm(makeProduct(true));
+    const nav = screen.getByRole("navigation", {
+      name: dict.productForm.sectionsNav,
+    });
+    for (const label of [
+      dict.productForm.sectionMain,
+      dict.productForm.sectionPrice,
+      dict.productForm.sectionDescription,
+      dict.productForm.sectionSpecs,
+      dict.productForm.sectionPhotos,
+      dict.productForm.sectionCompat,
+      dict.productForm.sectionAddons,
+      dict.productForm.sectionSeo,
+    ]) {
+      expect(
+        within(nav).getByRole("link", { name: new RegExp(label) }),
+      ).toBeInTheDocument();
+    }
+  });
+});
+
+describe("EditProductView — one «Зберегти» for the whole page (TASK-1050)", () => {
+  const SPEC_DEF = {
+    id: "def-magsafe",
+    categoryId: "3f0e8f9a-1111-4222-8333-444455556666",
+    key: "magsafe",
+    label: "Підтримка MagSafe",
+    type: "BOOLEAN",
+    unit: null,
+    options: [],
+    isFilterable: true,
+    sortOrder: 0,
+  };
+
+  beforeEach(() => {
+    toastError.mockClear();
+    toastSuccess.mockClear();
+  });
+
+  /** Specs + compat that can be edited, and the order every write lands in. */
+  async function renderEditable(specsStatus = 200) {
+    const order: string[] = [];
+    const product = makeProduct(true);
+    stubProduct(product);
+    server.use(
+      http.get(
+        "*/api/categories/3f0e8f9a-1111-4222-8333-444455556666/effective-attribute-definitions",
+        () => HttpResponse.json({ data: [SPEC_DEF] }),
+      ),
+      http.get("*/api/device-brands", () =>
+        HttpResponse.json({
+          data: [{ id: "b-1", name: "Apple", slug: "apple" }],
+        }),
+      ),
+      http.get("*/api/device-models", () =>
+        HttpResponse.json({
+          data: [
+            { id: "m-1", name: "iPhone 15", slug: "i15", deviceBrandId: "b-1" },
+          ],
+        }),
+      ),
+      http.put(`*/api/products/${PRODUCT_ID}`, () => {
+        order.push("product");
+        return HttpResponse.json({ data: product });
+      }),
+      http.put(`*/api/products/${PRODUCT_ID}/specs`, () => {
+        order.push("specs");
+        return specsStatus === 200
+          ? HttpResponse.json({ data: {} })
+          : HttpResponse.json(
+              { message: "Значення не підходить" },
+              { status: specsStatus },
+            );
+      }),
+      http.put(`*/api/products/${PRODUCT_ID}/device-compat`, () => {
+        order.push("compat");
+        return HttpResponse.json({ data: { deviceModelIds: ["m-1"] } });
+      }),
+    );
+    renderWithProviders(
+      <WithAuth isOwner>
+        <EditProductView productId={PRODUCT_ID} />
+      </WithAuth>,
+    );
+    await screen.findByRole("group", { name: "Підтримка MagSafe" });
+    await screen.findByLabelText("iPhone 15");
+    return order;
+  }
+
+  async function editAllThree() {
+    const name = screen.getByLabelText(dict.productForm.name);
+    await userEvent.type(name, " New");
+    await userEvent.click(
+      within(
+        screen.getByRole("group", { name: "Підтримка MagSafe" }),
+      ).getByRole("button", { name: dict.productSpecs.booleanYes }),
+    );
+    await userEvent.click(screen.getByLabelText("iPhone 15"));
+  }
+
+  it("lists every section with unsaved edits in the sticky bar", async () => {
+    await renderEditable();
+    await editAllThree();
+
+    expect(
+      await screen.findByText(
+        dict.canon.unsavedChanges(
+          [
+            dict.productForm.sectionMain,
+            dict.productForm.sectionSpecs,
+            dict.productForm.sectionCompat,
+          ].join(", "),
+        ),
+      ),
+    ).toBeInTheDocument();
+    // Specs and compatibility have no save button of their own any more.
+    expect(
+      screen.queryByRole("button", { name: dict.productSpecs.save }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: dict.productCompat.save }),
+    ).toBeNull();
+  });
+
+  it("saves product → specs → compatibility, in that order, with one toast", async () => {
+    const order = await renderEditable();
+    await editAllThree();
+
+    await submit();
+
+    await waitFor(() => expect(order).toEqual(["product", "specs", "compat"]));
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(dict.products.toastUpdated),
+    );
+  });
+
+  it("stops at the failing section, says which, and that the rest is saved", async () => {
+    const order = await renderEditable(400);
+    await editAllThree();
+
+    await submit();
+
+    await waitFor(() => expect(order).toEqual(["product", "specs"]));
+    expect(
+      await screen.findByText(
+        dict.productForm.saveFailed(
+          dict.productForm.sectionSpecs,
+          "Значення не підходить",
+        ),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        dict.productForm.savedPartly(dict.productForm.sectionMain),
+      ),
+    ).toBeInTheDocument();
+    expect(toastSuccess).not.toHaveBeenCalled();
+  });
+
+  it("«Скасувати зміни» throws away the edits of every section", async () => {
+    await renderEditable();
+    await editAllThree();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.discardChanges }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText(dict.productForm.name)).toHaveValue(
+        "Чохол MagSafe",
+      ),
+    );
+    expect(screen.getByLabelText("iPhone 15")).not.toBeChecked();
+    expect(
+      within(
+        screen.getByRole("group", { name: "Підтримка MagSafe" }),
+      ).getByRole("button", { name: dict.productSpecs.booleanUnset }),
+    ).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: dict.canon.discardChanges }),
+      ).toBeNull(),
+    );
   });
 });

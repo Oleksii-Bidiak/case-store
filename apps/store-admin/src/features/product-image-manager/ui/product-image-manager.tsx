@@ -215,8 +215,13 @@ function ProductImageManagerView({
 
   const failedCount = queue.failedItems.length;
 
-  /** Persist a full ordering + primary flag for the current image set. */
-  const persistOrder = (ordered: ProductImageEntity[], primaryId: string) => {
+  /**
+   * Persist a full ordering. The FIRST photo is the cover (wave 198, TASK-1104):
+   * every write sends exactly one `isPrimary`, on index 0 — so a reorder can
+   * never leave the gallery with no cover or two, and «Перше — обкладинка» on
+   * screen is what the storefront shows.
+   */
+  const persistOrder = (ordered: ProductImageEntity[]) => {
     if (!productId) return;
     reorder.mutate(
       {
@@ -225,7 +230,7 @@ function ProductImageManagerView({
           items: ordered.map((img, index) => ({
             id: img.id,
             sortOrder: index,
-            isPrimary: img.id === primaryId,
+            isPrimary: index === 0,
           })),
         },
       },
@@ -236,6 +241,9 @@ function ProductImageManagerView({
     );
   };
 
+  // The cover as the storefront reads it: the primary flag, else the first.
+  // Data written before TASK-1104 may still flag a later photo — the badge
+  // follows the flag, and the next reorder normalises it onto index 0.
   const currentPrimaryId =
     images.find((img) => img.isPrimary)?.id ?? images[0]?.id ?? "";
 
@@ -244,10 +252,15 @@ function ProductImageManagerView({
     if (target < 0 || target >= images.length) return;
     const next = [...images];
     [next[index], next[target]] = [next[target], next[index]];
-    persistOrder(next, currentPrimaryId);
+    persistOrder(next);
   };
 
-  const setPrimary = (id: string) => persistOrder(images, id);
+  /** «Зробити обкладинкою» = move to the front. */
+  const setPrimary = (id: string) => {
+    const picked = images.find((img) => img.id === id);
+    if (!picked) return;
+    persistOrder([picked, ...images.filter((img) => img.id !== id)]);
+  };
 
   const confirmDelete = () => {
     if (!pendingDeleteId || !productId) return;
@@ -397,6 +410,11 @@ function ProductImageManagerView({
         <p className="text-xs text-muted-foreground">
           {dict.productImages.hint}
         </p>
+        {!isStaged && images.length > 1 && (
+          <p className="text-xs text-muted-foreground">
+            {dict.productImages.coverHint}
+          </p>
+        )}
         {isStaged && (
           <p className="text-xs text-muted-foreground">
             {dict.productImages.stagedHint}
@@ -588,75 +606,81 @@ function ProductImageManagerView({
         </p>
       ) : (
         <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {images.map((image, index) => (
-            <li
-              key={image.id}
-              className="group relative overflow-hidden rounded-lg border border-border bg-card"
-            >
-              <div className="aspect-square w-full overflow-hidden bg-muted">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={image.url}
-                  alt={image.alt ?? dict.productImages.alt}
-                  className="h-full w-full object-cover"
-                />
-              </div>
-
-              {image.isPrimary && (
-                <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded bg-primary px-1.5 py-0.5 text-xs font-medium text-primary-foreground">
-                  <Star className="size-3 fill-current" />{" "}
-                  {dict.productImages.primary}
-                </span>
-              )}
-
-              <div className="flex items-center justify-between gap-1 p-1.5">
-                <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={dict.productImages.moveLeft}
-                    disabled={busy || index === 0}
-                    onClick={() => move(index, -1)}
-                  >
-                    <ArrowLeft />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={dict.productImages.moveRight}
-                    disabled={busy || index === images.length - 1}
-                    onClick={() => move(index, 1)}
-                  >
-                    <ArrowRight />
-                  </Button>
+          {images.map((image, index) => {
+            const isCover = image.id === currentPrimaryId;
+            return (
+              <li
+                key={image.id}
+                className={cn(
+                  "group relative overflow-hidden rounded-lg border border-border bg-card",
+                  isCover && "border-primary ring-2 ring-primary/40",
+                )}
+              >
+                <div className="aspect-square w-full overflow-hidden bg-muted">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={image.url}
+                    alt={image.alt ?? dict.productImages.alt}
+                    className="h-full w-full object-cover"
+                  />
                 </div>
-                <div className="flex gap-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={dict.productImages.setPrimary}
-                    disabled={busy || image.isPrimary}
-                    onClick={() => setPrimary(image.id)}
-                  >
-                    <Star className={image.isPrimary ? "fill-current" : ""} />
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={dict.productImages.deleteImage}
-                    disabled={busy}
-                    onClick={() => setPendingDeleteId(image.id)}
-                  >
-                    <Trash2 className="text-destructive" />
-                  </Button>
+
+                {isCover && (
+                  <span className="absolute top-1.5 left-1.5 inline-flex items-center gap-1 rounded-full bg-primary px-2 py-0.5 text-xs font-medium text-primary-foreground">
+                    {dict.productImages.primary}
+                  </span>
+                )}
+
+                <div className="flex items-center justify-between gap-1 p-1.5">
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={dict.productImages.moveLeft}
+                      disabled={busy || index === 0}
+                      onClick={() => move(index, -1)}
+                    >
+                      <ArrowLeft />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={dict.productImages.moveRight}
+                      disabled={busy || index === images.length - 1}
+                      onClick={() => move(index, 1)}
+                    >
+                      <ArrowRight />
+                    </Button>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    {isCover ? null : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        disabled={busy}
+                        onClick={() => setPrimary(image.id)}
+                      >
+                        {dict.productImages.setPrimary}
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={dict.productImages.deleteImage}
+                      disabled={busy}
+                      onClick={() => setPendingDeleteId(image.id)}
+                    >
+                      <Trash2 className="text-destructive" />
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ul>
       )}
 

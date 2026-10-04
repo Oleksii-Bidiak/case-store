@@ -1,6 +1,7 @@
 import {
   buildReadinessChecks,
   canPublish,
+  missingSections,
   type ReadinessInput,
 } from "./readiness";
 
@@ -68,5 +69,36 @@ describe("buildReadinessChecks (TASK-361)", () => {
     expect(check({ ...READY, price: "" }, "price").done).toBe(false);
     expect(check({ ...READY, price: "-1" }, "price").done).toBe(false);
     expect(check({ ...READY, price: "0.01" }, "price").done).toBe(true);
+  });
+});
+
+describe("missingSections (wave 198, TASK-1050)", () => {
+  it("is empty for a fully filled product", () => {
+    expect(missingSections(buildReadinessChecks(READY))).toEqual([]);
+  });
+
+  it("names the form section each unmet check lives in, once", () => {
+    const checks = buildReadinessChecks({
+      ...READY,
+      price: "0",
+      stock: 0,
+      imageCount: 0,
+      compatCount: 0,
+    });
+    expect(missingSections(checks).sort()).toEqual(
+      ["compat", "photos", "price"].sort(),
+    );
+  });
+
+  it("puts name and category under «Основне», description and specs in their own", () => {
+    const checks = buildReadinessChecks({
+      ...READY,
+      name: "",
+      description: "<p></p>",
+      specCount: 0,
+    });
+    expect(missingSections(checks).sort()).toEqual(
+      ["description", "main", "specs"].sort(),
+    );
   });
 });

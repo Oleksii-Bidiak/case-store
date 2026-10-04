@@ -14,6 +14,11 @@ export interface ComboboxOption {
   description?: string;
   /** Tree level, 0-based — indents the option (wave 198, category trees). */
   depth?: number;
+  /**
+   * Shown but not pickable — a tree branch heading among selectable leaves
+   * (wave 198). Arrow keys skip it; click and Enter ignore it.
+   */
+  disabled?: boolean;
 }
 
 export interface ComboboxProps {
@@ -99,7 +104,16 @@ export function Combobox({
       ? optionId(activeIndex)
       : undefined;
 
+  /** The next pickable index from `from` in `step` direction, or `from`. */
+  function nextEnabled(from: number, step: 1 | -1): number {
+    for (let i = from + step; i >= 0 && i < options.length; i += step) {
+      if (!options[i].disabled) return i;
+    }
+    return from;
+  }
+
   function select(option: ComboboxOption) {
+    if (option.disabled) return;
     onSelect(option);
     setOpen(false);
     setActiveIndex(-1);
@@ -114,11 +128,11 @@ export function Combobox({
           setOpen(true);
           return;
         }
-        setActiveIndex((i) => Math.min(i + 1, options.length - 1));
+        setActiveIndex((i) => nextEnabled(i, 1));
         break;
       case "ArrowUp":
         e.preventDefault();
-        setActiveIndex((i) => Math.max(i - 1, 0));
+        setActiveIndex((i) => nextEnabled(i, -1));
         break;
       case "Enter":
         if (open && activeIndex >= 0 && options[activeIndex]) {
@@ -190,13 +204,19 @@ export function Combobox({
                 id={optionId(i)}
                 role="option"
                 aria-selected={i === activeIndex}
+                aria-disabled={option.disabled || undefined}
                 className={cn(
-                  "cursor-pointer px-3 py-2 text-sm",
+                  "px-3 py-2 text-sm",
+                  option.disabled
+                    ? "cursor-default font-medium text-muted-foreground"
+                    : "cursor-pointer",
                   i === activeIndex && "bg-accent text-accent-foreground",
                 )}
                 // Prevent the input's blur from firing before the click selects.
                 onMouseDown={(e) => e.preventDefault()}
-                onMouseEnter={() => setActiveIndex(i)}
+                onMouseEnter={() => {
+                  if (!option.disabled) setActiveIndex(i);
+                }}
                 onClick={() => select(option)}
                 style={
                   option.depth

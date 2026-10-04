@@ -17,6 +17,9 @@ import { formatCurrency, formatDateTime } from "@/shared/lib";
 
 const d = dict.products;
 
+/** Width the default-visible columns may share at 1440 (see `productColumns`). */
+export const DEFAULT_WIDTH_BUDGET = 1136 - 36 - 44 - 2;
+
 /** Free stock at or below this reads as «мало» (the artboard's orange). */
 export const LOW_STOCK = 5;
 
@@ -149,6 +152,11 @@ interface ColumnOptions {
  * `GET /products/admin/list` sorts: name, price, stock and creation date —
  * «Оновлено» is shown, not sorted (the API has no `updatedAt` sort), and
  * «Створено» keeps its sort behind «Колонки».
+ *
+ * Default widths are budgeted to fit the 1440 layout without a sideways
+ * scroll: content ≈ 1440 − 256 (sidebar) − 48 (padding) = 1136 px, of which
+ * the checkbox (36) and «⋯» (44) columns take 80 — so the default-visible
+ * columns share at most {@link DEFAULT_WIDTH_BUDGET}.
  */
 export function productColumns({
   isDeletedView,
@@ -159,7 +167,7 @@ export function productColumns({
       id: "photo",
       label: d.colPhoto,
       resizable: false,
-      defaultWidth: 64,
+      defaultWidth: 60,
       minWidth: 56,
       cell: (product) => <ProductThumb product={product} />,
     },
@@ -168,7 +176,7 @@ export function productColumns({
       label: d.colName,
       locked: true,
       sortField: "name",
-      defaultWidth: 340,
+      defaultWidth: 296,
       minWidth: 180,
       cell: (product) => (
         <span className="flex flex-col gap-0.5">
@@ -191,7 +199,7 @@ export function productColumns({
     {
       id: "category",
       label: d.colCategory,
-      defaultWidth: 170,
+      defaultWidth: 150,
       className: "text-muted-foreground",
       cell: (product) =>
         categoryNames.get(product.categoryId) ?? d.cardEmptyValue,
@@ -201,7 +209,7 @@ export function productColumns({
       label: d.colPrice,
       align: "end",
       sortField: "price",
-      defaultWidth: 120,
+      defaultWidth: 110,
       cell: (product) => <PriceCell product={product} />,
     },
     {
@@ -212,7 +220,7 @@ export function productColumns({
       sortField: "stock",
       sortHint: d.colStockHint,
       sortHintAsTitle: false,
-      defaultWidth: 180,
+      defaultWidth: 160,
       cell: (product) => <StockCell product={product} />,
       footer: (rows) =>
         d.totalsFree(
@@ -222,7 +230,7 @@ export function productColumns({
     {
       id: "status",
       label: d.colStatus,
-      defaultWidth: 140,
+      defaultWidth: 124,
       cell: (product) =>
         isDeletedView ? (
           <Badge variant="secondary">{d.deletedBadge}</Badge>
