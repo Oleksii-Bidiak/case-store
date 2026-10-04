@@ -4,6 +4,7 @@ import {
   fireEvent,
   renderWithProviders,
   screen,
+  userEvent,
   waitFor,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
@@ -90,7 +91,8 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
     expect(screen.getByText("Ivan Petrenko")).toBeInTheDocument();
     // Status badges render Ukrainian labels, not raw enums (TASK-129).
     expect(screen.getByText("Очікує підтвердження")).toBeInTheDocument();
-    expect(screen.getByText("Очікує оплати")).toBeInTheDocument();
+    // The payment badge stands in the header AND on the payment card (К1).
+    expect(screen.getAllByText("Очікує оплати").length).toBeGreaterThan(0);
     expect(screen.queryByText("PENDING")).not.toBeInTheDocument();
   });
 
@@ -104,7 +106,9 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
     // Wait for the order to load (Summary always renders), then assert no card.
-    expect(await screen.findByText(dict.orders.summary)).toBeInTheDocument();
+    expect(
+      await screen.findByText(dict.orders.itemsHeading),
+    ).toBeInTheDocument();
     expect(screen.queryByText(dict.orders.customer)).not.toBeInTheDocument();
   });
 
@@ -124,12 +128,10 @@ describe("OrderDetailView — customer section (TASK-125)", () => {
     // one waits on its own `allowed-transitions` read (TASK-332), so it is
     // awaited rather than asserted synchronously after the order lands.
     expect(
-      await screen.findByRole("combobox", {
-        name: dict.orderStatus.updateAria,
-      }),
+      await screen.findByRole("button", { name: dict.orders.updateStatus }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("combobox", {
+      await screen.findByRole("combobox", {
         name: dict.orderStatus.paymentUpdateAria,
       }),
     ).toBeInTheDocument();
@@ -196,7 +198,7 @@ describe("OrderDetailView — stock-hold badges (TASK-254)", () => {
 
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
-    await screen.findByText(dict.orders.summary);
+    await screen.findByText(dict.orders.itemsHeading);
     expect(screen.getByText(/Залишок повернуто/)).toBeInTheDocument();
     expect(screen.queryByText(/Тримає залишок/)).not.toBeInTheDocument();
   });
@@ -212,7 +214,7 @@ describe("OrderDetailView — stock-hold badges (TASK-254)", () => {
 
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
-    await screen.findByText(dict.orders.summary);
+    await screen.findByText(dict.orders.itemsHeading);
     expect(screen.queryByText(/Тримає залишок/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Залишок повернуто/)).not.toBeInTheDocument();
   });
@@ -293,7 +295,9 @@ describe("OrderDetailView — the summary adds up (TASK-425)", () => {
   it("renders an add-ons row, and the rows on screen sum to the total", async () => {
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
-    expect(await screen.findByText(dict.orders.summary)).toBeInTheDocument();
+    expect(
+      await screen.findByText(dict.orders.itemsHeading),
+    ).toBeInTheDocument();
 
     const subtotal = rowValue(dict.orders.subtotal);
     const addons = rowValue(dict.orders.addonsTotal);
@@ -340,7 +344,9 @@ describe("OrderDetailView — the summary adds up (TASK-425)", () => {
 
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
-    expect(await screen.findByText(dict.orders.summary)).toBeInTheDocument();
+    expect(
+      await screen.findByText(dict.orders.itemsHeading),
+    ).toBeInTheDocument();
     // Zero add-ons, zero row: such an order adds up without it, and a permanent
     // "0 ₴" line is noise on every order the shop has ever taken.
     expect(screen.queryByText(dict.orders.addonsTotal)).not.toBeInTheDocument();
@@ -374,7 +380,7 @@ describe("OrderDetailView — guest orders have a customer too (TASK-425)", () =
     expect(await screen.findByText(dict.orders.customer)).toBeInTheDocument();
     expect(screen.getByText("olena@example.com")).toBeInTheDocument();
     expect(screen.getByText("Олена Шевченко")).toBeInTheDocument();
-    expect(screen.getByText("+380501112233")).toBeInTheDocument();
+    expect(screen.getByText("+380 50 111 2233")).toBeInTheDocument();
     expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
     expect(
       screen.queryByText(dict.orders.customerTypeAccount),
@@ -406,7 +412,7 @@ describe("OrderDetailView — guest orders have a customer too (TASK-425)", () =
     renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
 
     expect(await screen.findByText(dict.orders.customer)).toBeInTheDocument();
-    const phone = screen.getByText("+380671112233");
+    const phone = screen.getByText("+380 67 111 2233");
     expect(phone).toBeInTheDocument();
     expect(screen.getByText("Олена Шевченко")).toBeInTheDocument();
     expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
@@ -748,7 +754,9 @@ describe("OrderDetailView — read-only without orders:write (TASK-715)", () => 
     expect(
       await screen.findByRole("button", { name: dict.orders.addressEdit }),
     ).toBeInTheDocument();
-    expect(screen.getByText(dict.orders.updateStatus)).toBeInTheDocument();
+    expect(
+      await screen.findByText(dict.orders.updateStatus),
+    ).toBeInTheDocument();
     expect(screen.queryByText(dict.common.viewOnly)).not.toBeInTheDocument();
   });
 
@@ -821,7 +829,7 @@ describe("OrderDetailView — returns on the card (TASK-724)", () => {
       auth: { permissions: ["orders:read"] },
     });
 
-    await screen.findByText(dict.orders.summary);
+    await screen.findByText(dict.orders.itemsHeading);
     expect(
       screen.queryByRole("heading", { name: dict.orders.returnsForOrder }),
     ).not.toBeInTheDocument();
@@ -928,5 +936,127 @@ describe("OrderDetailView — the awaiting-payment countdown (TASK-629)", () => 
     expect(screen.getByLabelText(dict.orders.trackingNumber)).toHaveValue(
       "20450000000000",
     );
+  });
+});
+
+/** Wave 198 (TASK-1046, OrdersProposal К1–К4): the card's new frame. */
+describe("OrderDetailView — the card by mockup (TASK-1046)", () => {
+  function serve(order: Record<string, unknown> = {}) {
+    server.use(
+      http.get("*/api/admin/orders/:orderId", () =>
+        HttpResponse.json({ data: { ...makeOrder(null), ...order } }),
+      ),
+    );
+  }
+
+  it("names the order «Замовлення #XXXXXXXX» with a copy button and the way back", async () => {
+    serve();
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Замовлення #ORDER-UU" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.orders.rowCopyNumber }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: dict.orders.back }),
+    ).toHaveAttribute("href", "/orders");
+  });
+
+  it("draws the order path with the current step and the time each was reached", async () => {
+    serve({ status: "CONFIRMED" });
+    server.use(
+      http.get("*/api/admin/orders/:orderId/history", () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: "h-1",
+              orderId: "order-uuid-12345678",
+              changeType: "STATUS",
+              fromStatus: "PENDING",
+              toStatus: "CONFIRMED",
+              fromPaymentStatus: null,
+              toPaymentStatus: null,
+              changedBy: null,
+              note: null,
+              rejectedPaymentStatus: null,
+              changedAt: "2026-06-01T10:31:00.000Z",
+            },
+          ],
+        }),
+      ),
+    );
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />);
+
+    const path = await screen.findByRole("list", {
+      name: dict.orders.stepsAria,
+    });
+    const states = () =>
+      Array.from(path.querySelectorAll("li")).map((step) =>
+        step.getAttribute("data-state"),
+      );
+    expect(states()).toEqual(["done", "now", "todo", "todo", "todo"]);
+    // 10:31 UTC is 13:31 in Kyiv.
+    await waitFor(() =>
+      expect(path.querySelectorAll("li")[1]).toHaveTextContent("13:31"),
+    );
+  });
+
+  it("leads unpaid cash on delivery with «Гроші від НП отримано» — the move to PAID", async () => {
+    serve({ paymentMethod: "ON_DELIVERY", paymentStatus: "PENDING" });
+    server.use(
+      http.get("*/api/admin/orders/:orderId/allowed-payment-transitions", () =>
+        HttpResponse.json({
+          data: { current: "PENDING", allowed: ["PAID", "FAILED"] },
+        }),
+      ),
+    );
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
+    });
+
+    expect(
+      await screen.findByRole("button", {
+        name: dict.orderStatus.codReceived,
+      }),
+    ).toBeInTheDocument();
+    // The full list stays, as «Інший статус оплати».
+    expect(
+      screen.getByText(dict.orderStatus.otherPaymentStatus),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", {
+        name: dict.orderStatus.paymentUpdateAria,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("offers the buyer-link shortcut in «⋯» on a guest order", async () => {
+    serve({
+      userId: null,
+      guest: { email: null, phone: "+380501112233", name: "Олена" },
+    });
+    renderWithProviders(<OrderDetailView orderId="order-uuid-12345678" />, {
+      auth: { permissions: ["orders:read"] },
+    });
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: dict.orders.moreActionsAria }),
+    );
+    expect(
+      await screen.findByRole("menuitem", {
+        name: dict.orders.accessLinkAction,
+      }),
+    ).toHaveAttribute("href", "#order-access-link");
+  });
+
+  it("is the anchor the list's «Змінити статус…» lands on", async () => {
+    serve();
+    const { container } = renderWithProviders(
+      <OrderDetailView orderId="order-uuid-12345678" />,
+    );
+    await screen.findByText(dict.orders.itemsHeading);
+    expect(container.querySelector("#order-status")).not.toBeNull();
   });
 });

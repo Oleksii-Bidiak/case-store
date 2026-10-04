@@ -2300,10 +2300,10 @@ export const dict = {
     colCreated: "Створено",
     // TASK-276: names the card-mode row group for screen readers.
     rowAria: (id: string) => `Замовлення ${id}`,
-    back: "← Назад до замовлень",
+    back: "← Замовлення",
     title: (id: string) => `Замовлення #${id}`,
     timeline: (created: string, updated: string) =>
-      `Створено ${created} · Оновлено ${updated}`,
+      `Створено ${created} · оновлено ${updated}`,
     updateStatus: "Змінити статус",
     itemProduct: "Товар",
     itemUnitPrice: "Ціна за од.",
@@ -2319,13 +2319,13 @@ export const dict = {
     total: "Разом",
     shippingAddress: "Адреса доставки",
     billingAddress: "Платіжна адреса",
-    notes: "Примітки",
+    notes: "Примітка клієнта",
     loadOneError: "Не вдалося завантажити замовлення. Спробуйте ще раз.",
     // TASK-254: stock-hold badges on the order detail page.
     holdsStock: (n: number) => `Тримає залишок: ${n} шт`,
     restockedAt: (time: string) => `Залишок повернуто ${time}`,
     // TASK-251: order status/payment history timeline.
-    timelineHeading: "Історія змін",
+    timelineHeading: "Історія",
     timelineLoadError: "Не вдалося завантажити історію змін.",
     timelineEmpty: "Історія змін порожня.",
 
@@ -2336,7 +2336,7 @@ export const dict = {
     searchAria: "Пошук замовлень",
 
     // --- Operator-editable fields (TASK-335 / TASK-336) -----------------------
-    detailsHeading: "Дані для оператора",
+    detailsHeading: "Доставка і дані для оператора",
     trackingNumber: "ТТН (Нова Пошта)",
     trackingNumberPlaceholder: "20450000000001",
     // Says out loud that we do NOT create the waybill: creating one needs a
@@ -2347,7 +2347,7 @@ export const dict = {
     // TASK-426: the rule is 14 DIGITS, not «до 64 символів» — and the operator
     // must read the real rule off the field, because saving a wrong ТТН on a
     // SHIPPED order emails the customer a tracking link that leads nowhere.
-    trackingNumberInvalid: "ТТН Нової Пошти — це рівно 14 цифр.",
+    trackingNumberInvalid: "ТТН Нової Пошти — рівно 14 цифр.",
     internalNotes: "Внутрішні примітки",
     internalNotesPlaceholder: "Нотатка для команди…",
     // The whole point of TASK-336: this field and `notes` are different things,
@@ -2623,6 +2623,21 @@ export const dict = {
     unpaidInTransitChip: "Неоплачені в роботі",
     unpaidInTransitChipAria:
       "Показати лише активні замовлення, гроші за які ще не надійшли",
+
+    // --- Картка замовлення (хвиля 198, TASK-1046, OrdersProposal К1–К4) -------
+    stepsAria: "Шлях замовлення",
+    itemsHeading: "Позиції",
+    moreActionsAria: "Інші дії",
+    accessLinkAction: "Посилання для покупця…",
+    deliveryMethodLabels: {
+      NOVA_POSHTA: "Нова Пошта",
+      PICKUP: "Самовивіз",
+      COURIER: "Кур'єр",
+      OTHER: "Інша доставка",
+    },
+    trackOnNp: "Відстежити на сайті НП ↗",
+    // Під полем ТТН, після правила: скільки цифр зараз.
+    trackingNumberDigitsNow: (count: number) => `Зараз ${count}.`,
   },
 
   reviews: {
@@ -2850,8 +2865,6 @@ export const dict = {
 
   orderStatus: {
     noTransitions: "Немає доступних переходів",
-    changeStatus: "Змінити статус…",
-    updateAria: "Оновити статус замовлення",
     toastUpdated: (s: string) => `Статус замовлення змінено на ${s}`,
     toastFailed: "Не вдалося оновити статус замовлення",
     updatePaymentStatus: "Статус оплати",
@@ -2995,6 +3008,29 @@ export const dict = {
       `Відхилено подію оплати (статус оплати лишився «${current}»)`,
     paymentEventRefusedHistoryNote:
       "Платіжна система повідомила про зміну, яку магазин не прийняв: такий перехід статусу оплати заборонений. Гроші й статус не змінились; подробиці — в журналі сервера.",
+
+    // --- «Змінити статус ▾» як меню (хвиля 198, TASK-1046, К2) ----------------
+    // Перелік дозволених — від сервера; причина «недоступно» лише пояснює,
+    // правило лишається на сервері.
+    menuCurrent: (status: string) => `Зараз: ${status}`,
+    menuAllowed: "Можна змінити на",
+    menuUnavailable: "Недоступно зараз",
+    menuAskPayment: "спитаємо про оплату",
+    reasonNoWayBack: "назад не можна",
+    reasonRefundAfterShipment: "лише після відправлення",
+    reasonRefundedFinal: "кошти вже повернено",
+    reasonReviveFirst: "спершу відновіть замовлення",
+    reasonOther: "не з поточного статусу",
+    // Головна кнопка — природний наступний крок.
+    nextConfirm: "Підтвердити",
+    nextShip: "Відправити",
+    nextDeliver: "Позначити доставленим",
+    // Післяплата (К1): той самий перехід оплати в «Оплачено», що й у списку.
+    codTitle: (amount: string) => `Післяплата · ${amount}`,
+    codHint:
+      "Гроші надійдуть від Нової Пошти після того, як покупець забере посилку. Коли переказ прийде — позначте оплату.",
+    codReceived: "Гроші від НП отримано",
+    otherPaymentStatus: "Інший статус оплати:",
   },
 
   // --- Посилання для покупця (TASK-484) ---------------------------------------
