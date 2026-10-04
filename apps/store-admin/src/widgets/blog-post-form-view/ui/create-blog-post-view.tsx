@@ -47,7 +47,7 @@ export function CreateBlogPostView() {
       <div className="flex flex-col gap-1">
         <Link
           href="/blog"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="w-fit text-sm text-muted-foreground hover:text-foreground"
         >
           {dict.blogPosts.back}
         </Link>

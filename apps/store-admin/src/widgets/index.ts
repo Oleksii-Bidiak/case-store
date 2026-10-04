@@ -38,16 +38,17 @@ export {
 export { CreateDiscountView, EditDiscountView } from "./discount-form-view";
 export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
-export { BlogPostTable, BlogPostTableSkeleton } from "./blog-post-list";
+export {
+  BlogPostTable,
+  BlogPostTableSkeleton,
+  BlogSectionTabs,
+} from "./blog-post-list";
 export { CreateBlogPostView, EditBlogPostView } from "./blog-post-form-view";
 export {
   BlogCategoryTable,
   BlogCategoryTableSkeleton,
 } from "./blog-category-list";
-export {
-  CreateBlogCategoryView,
-  EditBlogCategoryView,
-} from "./blog-category-form-view";
+export { BlogCategoryFormDialog } from "./blog-category-form-view";
 export { AdminBannerTable, AdminBannerTableSkeleton } from "./banner-list";
 export { CreateBannerView, EditBannerView } from "./banner-form-view";
 export { AdminBrandTable, AdminBrandTableSkeleton } from "./brand-list";

@@ -4,10 +4,13 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_URL } from "@/shared/config";
 import { EditBlogPostView } from "./edit-blog-post-view";
+
+const d = dict.blogPosts;
 
 // next/navigation is unavailable under jsdom — mock the router.
 jest.mock("next/navigation", () => ({
@@ -45,8 +48,10 @@ function makePost(status: "DRAFT" | "PUBLISHED") {
     coverImageUrl: null,
     coverBlurDataUrl: null,
     authorName: "Автор",
+    author: null,
     readingMinutes: 5,
     featured: false,
+    listed: true,
     categoryId: "cat-1",
     category: { id: "cat-1", slug: "guides", name: "Гайди" },
     status,
@@ -92,37 +97,68 @@ const submit = () =>
     screen.getByRole("button", { name: dict.common.saveChanges }),
   );
 
+async function renameSlug() {
+  const slugField = screen.getByLabelText(dict.blogPostForm.slug);
+  await userEvent.clear(slugField);
+  await userEvent.type(slugField, "nova-adresa");
+  await submit();
+}
+
+describe("EditBlogPostView — header (БЛ7)", () => {
+  it("names the post and links a published one to the site in a new tab", async () => {
+    await renderAndWaitForForm(makePost("PUBLISHED"));
+
+    const heading = screen.getByRole("heading", {
+      level: 2,
+      name: "Огляд iPhone 16",
+    });
+    expect(heading.parentElement).toHaveTextContent(d.statusPublished);
+    expect(heading.parentElement).toHaveTextContent(
+      "Гайди · Автор · /blog/iphone-16-oglyad",
+    );
+    const site = screen.getByRole("link", { name: d.rowOpenSite });
+    expect(site).toHaveAttribute(
+      "href",
+      `${STOREFRONT_URL}/blog/iphone-16-oglyad`,
+    );
+    expect(site).toHaveAttribute("target", "_blank");
+  });
+
+  it("does not link a draft to the site", async () => {
+    await renderAndWaitForForm(makePost("DRAFT"));
+
+    expect(
+      screen.queryByRole("link", { name: d.rowOpenSite }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+// TASK-285 + TASK-812: the published-slug guard is an AlertDialog now.
 describe("EditBlogPostView — slug-rename guard (TASK-285)", () => {
-  let confirmSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    confirmSpy = jest.spyOn(window, "confirm").mockReturnValue(true);
-  });
-
-  afterEach(() => {
-    confirmSpy.mockRestore();
-  });
-
   it("submits without any confirm when the slug is unchanged on a published post", async () => {
     const putCalls = await renderAndWaitForForm(makePost("PUBLISHED"));
 
     await submit();
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("blocks the update when the admin cancels the published-slug-change confirm", async () => {
-    confirmSpy.mockReturnValue(false);
     const putCalls = await renderAndWaitForForm(makePost("PUBLISHED"));
 
-    const slugField = screen.getByLabelText(dict.blogPostForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
-    await submit();
+    await renameSlug();
 
-    expect(confirmSpy).toHaveBeenCalledWith(
-      dict.blogPosts.slugChangeConfirm("iphone-16-oglyad", "nova-adresa"),
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(
+      d.slugChangeConfirm("iphone-16-oglyad", "nova-adresa"),
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
     );
     expect(putCalls).toHaveLength(0);
   });
@@ -130,24 +166,22 @@ describe("EditBlogPostView — slug-rename guard (TASK-285)", () => {
   it("fires the update after the admin accepts the confirm", async () => {
     const putCalls = await renderAndWaitForForm(makePost("PUBLISHED"));
 
-    const slugField = screen.getByLabelText(dict.blogPostForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
-    await submit();
+    await renameSlug();
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: d.slugChangeAction,
+      }),
+    );
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
   });
 
   it("never confirms a slug change on a DRAFT post", async () => {
     const putCalls = await renderAndWaitForForm(makePost("DRAFT"));
 
-    const slugField = screen.getByLabelText(dict.blogPostForm.slug);
-    await userEvent.clear(slugField);
-    await userEvent.type(slugField, "nova-adresa");
-    await submit();
+    await renameSlug();
 
     await waitFor(() => expect(putCalls).toHaveLength(1));
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });

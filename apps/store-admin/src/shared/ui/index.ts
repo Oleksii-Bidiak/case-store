@@ -222,3 +222,10 @@ export {
 
 // ── Wave 198: the ONE table registry for every admin list (TASK-1043) ────────
 export * from "./data-registry";
+
+// ── Wave 198, block «Контент»: route-level section tabs (BlogProposal БЛ1) ───
+export {
+  SectionTabs,
+  type SectionTab,
+  type SectionTabsProps,
+} from "./section-tabs";

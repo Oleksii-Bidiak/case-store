@@ -1767,25 +1767,22 @@ export const dict = {
     metaTitle: "Блог — Адмін",
     metaTitleNew: "Створення статті — Адмін",
     metaTitleEdit: "Редагування статті — Адмін",
-    heading: "Статті блогу",
+    // Wave 198 (BlogProposal БЛ1): the section's header; «Статті» is its tab.
+    heading: "Блог",
     add: "Додати статтю",
-    manageCategories: "Категорії",
     loadError: "Не вдалося завантажити статті. Спробуйте ще раз.",
     empty: "Статей ще немає. Створіть свою першу статтю.",
     // TASK-357: the table used to ask for `limit: 100` and show no page
     // controls — article 101 simply did not exist for the operator.
-    searchPlaceholder: "Пошук за заголовком або описом…",
+    // Wave 198: names only what the API searches (title + excerpt, not author).
+    searchPlaceholder: "Заголовок або опис…",
     searchAria: "Пошук статей",
-    emptyMatch: (q: string) => `Немає статей за запитом «${q}».`,
     colTitle: "Заголовок",
     colCategory: "Категорія",
     colStatus: "Статус",
-    colFeatured: "Головна",
-    featuredYes: "Так",
-    // TASK-436 — порожня клітинка означає звичайну статтю; бейдж зʼявляється
-    // лише коли стаття прибрана зі списків, бо саме це стан, якого не видно
-    // ніде інде (статус у неї лишається «Опубліковано»).
-    colListed: "У списках",
+    // TASK-436 — бейдж зʼявляється лише коли стаття прибрана зі списків, бо
+    // саме це стан, якого не видно ніде інде (статус лишається «Опубліковано»).
+    // Wave 198: a badge next to the status instead of its own column.
     unlistedBadge: "Не в списках",
     statusPublished: "Опубліковано",
     statusScheduled: "Заплановано",
@@ -1795,20 +1792,13 @@ export const dict = {
     statusDraft: "Чернетка",
     publish: "Опублікувати",
     unpublish: "Зняти з публікації",
-    // TASK-285: the published variant reminds the admin the URL may still be
-    // indexed by Google and deleting it leaves a 404 with NO redirect.
-    deleteConfirm: (title: string, isPublished: boolean) =>
-      `Видалити статтю «${title}»? Цю дію не можна скасувати.` +
-      (isPublished
-        ? " Стаття опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації."
-        : ""),
     // TASK-285: slug-rename guard on a publicly visible post.
     slugChangeConfirm: (oldSlug: string, newSlug: string) =>
       `Ви змінюєте адресу опублікованої статті з «${oldSlug}» на «${newSlug}». ` +
       `Стара адреса перестане працювати і випаде з результатів пошуку Google — ` +
       `але ми автоматично налаштуємо переадресацію зі старої адреси на нову. Продовжити?`,
-    back: "← Назад до статей",
-    createHeading: "Створення статті",
+    back: "← Блог",
+    createHeading: "Нова стаття",
     editHeading: "Редагування статті",
     createSubmit: "Створити статтю",
     loadOneError: "Не вдалося завантажити статтю. Спробуйте ще раз.",
@@ -1821,12 +1811,50 @@ export const dict = {
     toastStatusFailed: "Не вдалося змінити статус статті",
     toastDeleted: "Статтю видалено",
     toastDeleteFailed: "Не вдалося видалити статтю",
+    // --- Wave 198, BlogProposal БЛ1–БЛ6 (TASK-1070) --------------------------
+    sectionTabsAria: "Розділи блогу",
+    tabPosts: "Статті",
+    tabCategories: "Категорії",
+    viewAll: "Усі",
+    viewPublished: "Опубліковані",
+    viewScheduled: "Заплановані",
+    viewDrafts: "Чернетки",
+    viewDefault: "Усі статті",
+    colDate: "Дата",
+    featuredBadge: "Головна",
+    noCover: "без обкладинки",
+    minutes: (minutes: number) => `${minutes} хв`,
+    summaryFound: "Знайдено",
+    sortNewest: "спочатку нові",
+    itemForms: ["стаття", "статті", "статей"],
+    filtersApply: "Показати статті",
+    filterStatus: "Статус",
+    filterStatusAria: "Статус публікації",
+    filterCategory: "Категорія",
+    filterCategoryAria: "Категорія статті",
+    allCategories: "Усі категорії",
+    chipCategory: (name: string) => `Категорія: ${name}`,
+    rowActionsAria: (title: string) => `Дії зі статтею «${title}»`,
+    rowEdit: "Редагувати",
+    rowOpenSite: "Відкрити на сайті",
+    rowDelete: "Видалити…",
+    deleteTitle: (title: string) => `Видалити статтю «${title}»?`,
+    deleteIrreversible: "Цю дію не можна скасувати.",
+    // TASK-285: a published post may be in Google's index — deleting it leaves a
+    // 404 with NO redirect.
+    deleteIndexed:
+      "Стаття опублікована і може бути в пошуковому індексі Google — після видалення адреса поверне помилку 404 без переадресації.",
+    deleteListedHint:
+      "Якщо хочете лише прибрати її з блогу — вимкніть «Показувати у списках».",
+    deleteAction: "Видалити статтю",
+    slugChangeTitle: "Змінити адресу статті?",
+    slugChangeAction: "Змінити адресу",
   },
 
   blogPostForm: {
     title: "Заголовок",
-    slug: "Slug",
-    slugPlaceholder: "Залиште порожнім для авто-генерації із заголовка",
+    slug: "Адреса на сайті",
+    slugPlaceholder: "створимо із заголовка",
     slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
     category: "Категорія",
     categoryPlaceholder: "Оберіть категорію",
@@ -1835,7 +1863,7 @@ export const dict = {
     content: "Вміст",
     contentPlaceholder: "Почніть писати текст статті…",
     author: "Автор",
-    coverImageUrl: "Обкладинка (URL)",
+    coverImageUrl: "Або посилання на зображення",
     coverImageUrlPlaceholder: "https://…",
     readingMinutes: "Час читання (хв)",
     featured: "Головна стаття тижня",
@@ -1867,6 +1895,8 @@ export const dict = {
       coverUrl: "Вкажіть коректний URL обкладинки",
       readingInt: "Час читання має бути додатним цілим числом",
       scheduledAtRequired: "Вкажіть дату публікації для запланованої статті",
+      contentMax: (max: string) =>
+        `Текст задовгий — сайт приймає до ${max} символів розмітки`,
     },
     // TASK-424: the cover accepts a FILE as well as a link.
     coverUpload: {
@@ -1889,14 +1919,43 @@ export const dict = {
     // TASK-437 — у статті досі не було жодного керованого мета-тега: у видачу
     // йшли заголовок і короткий опис із картки. Підказки кажуть саме це, бо
     // інакше оператор не зрозуміє, навіщо заповнювати поле, яке «і так є».
-    metaTitle: "SEO-заголовок (meta title)",
+    metaTitle: "SEO-заголовок",
     metaTitlePlaceholder: "Залиште порожнім, щоб використати заголовок статті",
     metaTitleHint:
       "Заголовок статті у результатах пошуку. Порожнє поле — береться заголовок статті (обрізаний до ~60 символів і з назвою магазину).",
-    metaDescription: "SEO-опис (meta description)",
+    metaDescription: "SEO-опис",
     metaDescriptionPlaceholder: "Опис статті для результатів пошуку",
     metaDescriptionHint:
       "Текст під заголовком у Google. Порожнє поле — береться короткий опис, але він написаний для картки на сторінці блогу; окремий текст на ~155 символів зазвичай читається краще.",
+    // --- Wave 198, BlogProposal БЛ7–БЛ10 (TASK-1070) -------------------------
+    sectionsAria: "Розділи статті",
+    sectionMain: "Основне",
+    sectionContent: "Вміст",
+    sectionCover: "Обкладинка",
+    sectionShow: "Показ у блозі",
+    sectionSeo: "SEO і соцмережі",
+    sectionPublish: "Публікація",
+    sectionDirty: "є незбережені зміни",
+    sectionError: "є помилки",
+    slugPrefix: "/blog/",
+    slugHint:
+      "Залиште порожнім — адресу створимо із заголовка. Зміна адреси опублікованої статті спершу перепитає.",
+    excerptHint: "Показується в картці статті на сторінці блогу.",
+    contentStatsEmpty: "Час читання порахуємо з тексту",
+    contentStats: (minutes: number, words: string, images: string) =>
+      `≈ ${minutes} хв читання · ${words} · ${images} — рахуємо з тексту`,
+    wordForms: ["слово", "слова", "слів"],
+    imageForms: ["зображення", "зображення", "зображень"],
+    contentLength: (count: string, max: string) => `${count} з ${max} символів`,
+    // The API stores the minutes the operator enters and does not derive them
+    // (TASK-1177): the estimate is offered, never written behind their back.
+    readingHint: "Порожнє поле — на сайті час читання не показується.",
+    readingApply: (minutes: number) => `Підставити ≈ ${minutes} хв`,
+    statusHintPublished: "Статтю видно на сайті.",
+    statusHintDraft: "Чернетку видно лише тут, на сайті її немає.",
+    fieldForms: ["поле", "поля", "полів"],
+    errorsSummary: (count: string, fields: string) =>
+      `Перевірте ${count}: ${fields}. Статтю не збережено.`,
   },
 
   // --- Rich-text "edit / preview" tab pair (page + blog forms, TASK-266) ------
@@ -1914,22 +1973,15 @@ export const dict = {
 
   blogCategories: {
     metaTitle: "Категорії блогу — Адмін",
-    metaTitleNew: "Створення категорії — Адмін",
-    metaTitleEdit: "Редагування категорії — Адмін",
-    heading: "Категорії блогу",
     add: "Додати категорію",
-    backToPosts: "← Назад до статей",
     loadError: "Не вдалося завантажити категорії. Спробуйте ще раз.",
     empty: "Категорій ще немає. Створіть першу категорію.",
     colName: "Назва",
-    colSlug: "Slug",
     // TASK-295: no `colSort` — the order column is gone; order IS the row order.
     gridLabel: "Категорії блогу — порядок",
-    deleteConfirm: (name: string) =>
-      `Видалити категорію «${name}»? Цю дію не можна скасувати.`,
-    back: "← Назад до категорій",
-    createHeading: "Створення категорії",
-    editHeading: "Редагування категорії",
+    // Wave 198 (КБ4): the form is a dialog over the list.
+    createHeading: "Нова категорія",
+    editHeading: "Редагувати категорію",
     createSubmit: "Створити категорію",
     loadOneError: "Не вдалося завантажити категорію. Спробуйте ще раз.",
     toastCreated: "Категорію створено",
@@ -1937,23 +1989,49 @@ export const dict = {
     toastUpdated: "Категорію оновлено",
     toastUpdateFailed: "Не вдалося оновити категорію",
     toastDeleted: "Категорію видалено",
-    toastDeleteFailed:
-      "Не вдалося видалити категорію (можливо, у ній ще є статті)",
+    // A 409 «has posts» gets its own dialog now (КБ3); this is any other refusal.
+    toastDeleteFailed: "Не вдалося видалити категорію",
+    // --- Wave 198, BlogCategoriesProposal КБ1–КБ6 (TASK-1072) ----------------
+    searchPlaceholder: "Назва категорії…",
+    orderHint:
+      "Порядок рядків = порядок чипів категорій на сторінці «Блог». Перетягніть рядок за ⠿.",
+    colSite: "На сайті",
+    colPosts: "Статей",
+    postsLink: "Статті →",
+    postsLinkAria: (name: string) => `Статті категорії «${name}»`,
+    siteLinkAria: (name: string) => `Категорія «${name}» на сайті`,
+    rowActionsAria: (name: string) => `Дії з категорією «${name}»`,
+    rowEdit: "Редагувати",
+    rowShowPosts: "Показати статті",
+    rowOpenSite: "Відкрити на сайті",
+    rowDelete: "Видалити…",
+    deleteTitle: (name: string) => `Видалити категорію «${name}»?`,
+    deleteDescription: (slug: string) =>
+      `Цю дію не можна скасувати. Адреси статей не зміняться; фільтр /blog?category=${slug} перестане діяти й покаже весь блог.`,
+    deleteAction: "Видалити категорію",
+    hasPostsTitle: (name: string) => `Категорію «${name}» не видалено`,
+    hasPostsDescription:
+      "У категорії є статті. Стаття не може бути без категорії, тому спершу перенесіть їх в іншу.",
   },
 
   blogCategoryForm: {
     name: "Назва",
-    slug: "Slug",
-    slugPlaceholder: "Залиште порожнім для авто-генерації із назви",
+    slug: "Адреса фільтра на сайті",
+    slugPlaceholder: "створимо із назви",
     slugPreview: (slug: string) => `Буде згенеровано: ${slug}`,
     // TASK-295: no `sortOrder` label — the order field is gone from this form
     // (category order lives in the sortable categories grid).
-    submit: "Зберегти категорію",
+    submit: "Зберегти",
     errors: {
       nameRequired: "Вкажіть назву",
       nameMax: "Назва має містити не більше 120 символів",
-      slugMax: "Slug має містити не більше 255 символів",
+      slugMax: "Адреса має містити не більше 255 символів",
     },
+    // --- Wave 198, BlogCategoriesProposal КБ4 (TASK-1072) --------------------
+    slugPrefix: "/blog?category=",
+    slugHint:
+      "Порожньо — створимо із назви. Зміна зламає вже розіслані посилання на фільтр.",
+    chipHint: "Показується чипом на сторінці «Блог» у тому ж порядку, що тут.",
   },
 
   // --- Homepage banners (TASK-186) --------------------------------------------
