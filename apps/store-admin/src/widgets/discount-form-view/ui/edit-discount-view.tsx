@@ -8,33 +8,51 @@ import { toast } from "@/shared/ui/toast";
 import {
   DiscountForm,
   discountFormValuesToDto,
-  type DiscountFormInput,
+  discountToFormInput,
   type DiscountFormValues,
 } from "@/features/discount-form";
 import {
+  DiscountStatusBadge,
   getAdminListDiscountsQueryKey,
   getAdminGetDiscountQueryKey,
   useAdminGetDiscount,
   useAdminUpdateDiscount,
   type DiscountEntity,
 } from "@/entities/discount";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
+import { Callout } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { apiErrorMessage, toKyivDateInput } from "@/shared/lib";
+import { apiErrorMessage } from "@/shared/lib";
+import { DiscountFormSkeleton } from "./discount-form-skeleton";
+
+const d = dict.discounts;
 
 interface EditDiscountViewProps {
   discountId: string;
 }
 
 /**
- * Edit-discount page body: fetches the discount by UUID to pre-populate the
- * form, then wires the update mutation, cache invalidation, toasts, and
- * redirect. A missing discount (404) redirects back to the list.
+ * Edit-discount page body (DiscountsProposal ПК3, ПК5, ПК7): the code itself
+ * as the heading with its date-aware status, then the form with the usage
+ * card beside the cart preview. Fetches the discount by UUID to pre-populate
+ * the form; a missing discount (404) redirects back to the list.
+ *
+ * Without `discounts:write` (the key every admin discount route requires) the
+ * form is view-only — what a future `discounts:read` will get.
+ *
+ * Usage stats beyond the count — «Знижок надано», «Востаннє», «Замовлення з цим
+ * кодом →» — are not drawn: the API returns only `redeemedCount` (TASK-1085
+ * API tail).
  */
 export function EditDiscountView({ discountId }: EditDiscountViewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const canWrite = can(PERM.discountsWrite);
 
-  const { data, isLoading, isError, error } = useAdminGetDiscount(discountId);
+  const { data, dataUpdatedAt, isLoading, isError, error } =
+    useAdminGetDiscount(discountId);
   const update = useAdminUpdateDiscount();
 
   const isNotFound = error?.response?.status === 404;
@@ -61,19 +79,19 @@ export function EditDiscountView({ discountId }: EditDiscountViewProps) {
           void queryClient.invalidateQueries({
             queryKey: getAdminGetDiscountQueryKey(discountId),
           });
-          toast.success(dict.discounts.toastUpdated);
+          toast.success(d.toastUpdated);
           router.push("/discounts");
         },
         // The server's own words when it has them (TASK-796); the generic copy
         // is only the fallback.
         onError: (mutationError) => {
-          toast.error(
-            apiErrorMessage(mutationError) ?? dict.discounts.toastUpdateFailed,
-          );
+          toast.error(apiErrorMessage(mutationError) ?? d.toastUpdateFailed);
         },
       },
     );
   };
+
+  if (isLoading) return <DiscountFormSkeleton />;
 
   return (
     <div className="flex flex-col gap-6">
@@ -82,63 +100,48 @@ export function EditDiscountView({ discountId }: EditDiscountViewProps) {
           href="/discounts"
           className="text-sm text-muted-foreground hover:text-foreground"
         >
-          {dict.discounts.back}
+          {d.back}
         </Link>
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-          {dict.discounts.editHeading}
-        </h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="font-mono text-2xl font-semibold tracking-tight text-foreground">
+            {discount?.code ?? d.editHeading}
+          </h2>
+          {discount ? (
+            <DiscountStatusBadge discount={discount} now={dataUpdatedAt} />
+          ) : null}
+        </div>
       </div>
 
-      {isLoading ? (
-        <div className="flex max-w-2xl flex-col gap-5">
-          {Array.from({ length: 6 }).map((_, index) => (
-            <div
-              key={index}
-              className="h-10 w-full animate-pulse rounded bg-muted"
-            />
-          ))}
-        </div>
-      ) : isError && !isNotFound ? (
+      {canWrite ? null : <Callout variant="strip">{d.readOnlyNotice}</Callout>}
+
+      {isError && !isNotFound ? (
         <p role="alert" className="text-sm text-destructive">
-          {dict.discounts.loadOneError}
+          {d.loadOneError}
         </p>
       ) : discount ? (
         <DiscountForm
           id={discountId}
-          defaultValues={mapDiscountToFormValues(discount)}
+          defaultValues={discountToFormInput(discount)}
           lockCode
+          readOnly={!canWrite}
           onSubmit={handleSubmit}
           isPending={update.isPending}
-          submitLabel={dict.common.saveChanges}
+          submitLabel={dict.common.save}
+          aside={<UsageCard discount={discount} />}
         />
       ) : null}
     </div>
   );
 }
 
-/** Map a fetched discount entity onto the form's string-based input shape. */
-function mapDiscountToFormValues(
-  discount: DiscountEntity,
-): Partial<DiscountFormInput> {
-  // The KYIV calendar day (TASK-795). `iso.slice(0, 10)` was the UTC day: a
-  // window starting at 00:00 Kyiv on the 1st is 21:00 UTC on the 31st, so the
-  // form reopened a day early and re-saving it moved the start back a day.
-  const toDateInput = (iso: string | null): string =>
-    iso ? toKyivDateInput(iso) : "";
-
-  return {
-    code: discount.code,
-    type: discount.type,
-    value: String(Number(discount.value)),
-    minSpend:
-      discount.minSpend !== null ? String(Number(discount.minSpend)) : "",
-    maxRedemptions:
-      discount.maxRedemptions !== null ? String(discount.maxRedemptions) : "",
-    perUserLimit:
-      discount.perUserLimit !== null ? String(discount.perUserLimit) : "",
-    startsAt: toDateInput(discount.startsAt),
-    expiresAt: toDateInput(discount.expiresAt),
-    isActive: discount.isActive,
-    showOnPromoPage: discount.showOnPromoPage,
-  };
+/** «Використано — 12 разів» (ПК3): the usage figure the API returns. */
+function UsageCard({ discount }: { discount: DiscountEntity }) {
+  return (
+    <dl className="flex items-baseline justify-between gap-3 rounded-lg border bg-card p-4 text-sm shadow-card">
+      <dt className="text-muted-foreground">{d.statsUsed}</dt>
+      <dd className="font-medium tabular-nums text-foreground">
+        {d.statsTimes(discount.redeemedCount)}
+      </dd>
+    </dl>
+  );
 }

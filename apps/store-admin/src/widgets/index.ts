@@ -35,7 +35,11 @@ export {
   AdminDiscountTable,
   AdminDiscountTableSkeleton,
 } from "./discount-list";
-export { CreateDiscountView, EditDiscountView } from "./discount-form-view";
+export {
+  CreateDiscountView,
+  DiscountFormSkeleton,
+  EditDiscountView,
+} from "./discount-form-view";
 export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
 export {
