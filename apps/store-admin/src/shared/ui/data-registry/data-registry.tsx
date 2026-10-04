@@ -93,6 +93,8 @@ export interface DataRegistryProps<T> {
     /** Receives the selected ids — across pages. */
     onExportSelected?: (ids: string[]) => void;
     overflow?: readonly RowActionItem[];
+    /** Keep «⋯» on the idle bar (see `RegistryBulkBar.overflowWhenIdle`). */
+    overflowWhenIdle?: boolean;
     isPending?: boolean;
   };
 
@@ -247,6 +249,7 @@ export function DataRegistry<T>({
                 : undefined
             }
             overflow={bulk.overflow}
+            overflowWhenIdle={bulk.overflowWhenIdle}
             isPending={bulk.isPending}
             onClear={selection.clear}
           />

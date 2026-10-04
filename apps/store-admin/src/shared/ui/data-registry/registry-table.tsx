@@ -381,6 +381,7 @@ export function RegistryTable<T>({
                     label={column.label}
                     content={column.header}
                     hint={column.sortHint}
+                    hintAsTitle={column.sortHintAsTitle}
                     sortBy={sort.sortBy}
                     sortOrder={sort.sortOrder}
                     onSort={sort.onSort}
@@ -435,6 +436,7 @@ export function RegistryTable<T>({
                 {columns.map((column) => (
                   <TableCell
                     key={column.id}
+                    data-column-id={column.id}
                     hideOnMobile={column.hideOnMobile}
                     className={cn(
                       "overflow-hidden align-top break-words whitespace-normal",

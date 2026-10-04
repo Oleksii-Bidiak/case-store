@@ -36,6 +36,8 @@ export interface RegistryColumn<T> {
   sortField?: string;
   /** One sentence on what the column means — the sort button's description. */
   sortHint?: string;
+  /** `false` when `header` draws its own tooltip for the hint. Default `true`. */
+  sortHintAsTitle?: boolean;
   /** Default `true`. */
   resizable?: boolean;
   minWidth?: number;

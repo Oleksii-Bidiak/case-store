@@ -40,8 +40,8 @@ test.describe("admin product list — category column (TASK-717)", () => {
     const row = page.locator("tr", { hasText: CHAIN_PRODUCT_NAME });
     await expect(row).toHaveCount(1);
 
-    // «Категорія» is the column's `data-label` (dict.products.colCategory).
-    const categoryCell = row.locator('td[data-label="Категорія"]');
+    // Wave 198: the registry marks each body cell with its column id.
+    const categoryCell = row.locator('td[data-column-id="category"]');
     await expect(categoryCell).toContainText(CHAIN_LEAF.name);
     await expect(categoryCell).not.toContainText("—");
     // The leaf, not an ancestor: the lookup has to reach level 3 itself.

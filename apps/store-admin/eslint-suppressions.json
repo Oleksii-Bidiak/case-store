@@ -109,11 +109,6 @@
       "count": 1
     }
   },
-  "src/widgets/product-list/ui/admin-product-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/widgets/review-moderation/ui/admin-review-table-skeleton.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 1
