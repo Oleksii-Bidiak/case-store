@@ -19,6 +19,7 @@ import { RegistryBulkBar } from "./registry-bulk-bar";
 import {
   RegistryTable,
   type RegistryCardParts,
+  type RegistryRowGroup,
   type RegistrySort,
 } from "./registry-table";
 import { RegistryToolbar, type RegistrySearch } from "./registry-toolbar";
@@ -84,6 +85,11 @@ export interface DataRegistryProps<T> {
   sort?: RegistrySort;
   totals?: boolean;
   renderCard?: (row: T, parts: RegistryCardParts) => React.ReactNode;
+  /** Section headings between runs of rows — see `RegistryTable.groupBy`. */
+  groupBy?: (row: T) => RegistryRowGroup | null;
+  /** A row's detail panel — see `RegistryTable.renderExpanded`. */
+  renderExpanded?: (row: T) => React.ReactNode;
+  expandLabel?: (row: T) => string;
 
   /* selection + bulk */
   selectable?: boolean;
@@ -153,6 +159,9 @@ export function DataRegistry<T>({
   sort,
   totals,
   renderCard,
+  groupBy,
+  renderExpanded,
+  expandLabel,
   selectable = false,
   bulk,
   isLoading,
@@ -273,6 +282,9 @@ export function DataRegistry<T>({
         totals={totals}
         itemForms={itemForms}
         renderCard={renderCard}
+        groupBy={groupBy}
+        renderExpanded={renderExpanded}
+        expandLabel={expandLabel}
         isLoading={isLoading}
         isError={isError}
         errorMessage={errorMessage}

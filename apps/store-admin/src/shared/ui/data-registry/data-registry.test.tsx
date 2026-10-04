@@ -719,6 +719,78 @@ describe("DataRegistry — mobile cards and totals", () => {
   });
 });
 
+/**
+ * Wave 198, AuditLogProposal Ж1/Ж2: a feed grouped by day whose rows open a
+ * detail panel in place instead of navigating.
+ */
+describe("DataRegistry — row groups and detail panels", () => {
+  const ROWS: Order[] = [...PAGE_1, ...PAGE_2];
+  const byHalf = (o: Order) =>
+    o.id < "c"
+      ? { key: "first", label: "Сьогодні" }
+      : { key: "second", label: "Вчора" };
+
+  it("heads each run of rows with its group, once", () => {
+    renderWithProviders(<Harness rows={ROWS} groupBy={byHalf} />);
+    const heads = screen.getAllByRole("columnheader", {
+      name: /Сьогодні|Вчора/,
+    });
+    expect(heads.map((th) => th.textContent)).toEqual(["Сьогодні", "Вчора"]);
+    expect(heads[0]).toHaveAttribute("scope", "colgroup");
+  });
+
+  it("opens a row's panel from its toggle and from a click on the row", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Harness
+        rows={PAGE_1}
+        getRowHref={undefined}
+        renderExpanded={(o) => (o.id === "a" ? <p>Деталі {o.number}</p> : null)}
+      />,
+    );
+
+    const toggle = screen.getByRole("button", {
+      name: r.expandRowAria("#A0000001"),
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    // A row with nothing to open gets no toggle.
+    expect(
+      screen.queryByRole("button", { name: r.expandRowAria("#B0000002") }),
+    ).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const panel = screen.getByText("Деталі #A0000001");
+    expect(toggle).toHaveAttribute(
+      "aria-controls",
+      panel.closest("td")?.getAttribute("id"),
+    );
+
+    await user.click(screen.getByText("Оксана"));
+    expect(screen.queryByText("Деталі #A0000001")).not.toBeInTheDocument();
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it("groups the cards too, below md", () => {
+    setViewport(true);
+    renderWithProviders(
+      <Harness
+        rows={ROWS}
+        groupBy={byHalf}
+        renderCard={(o) => <span>{o.customer}</span>}
+      />,
+    );
+    expect(
+      screen.getAllByRole("heading", { level: 3 }).map((h) => h.textContent),
+    ).toEqual(["Сьогодні", "Вчора"]);
+    expect(
+      within(screen.getByRole("list", { name: "Замовлення" })).getAllByRole(
+        "listitem",
+      ),
+    ).toHaveLength(4);
+  });
+});
+
 describe("DataRegistry — states", () => {
   it("shows a skeleton in the table's own shape while loading", () => {
     renderWithProviders(<Harness rows={[]} isLoading />);

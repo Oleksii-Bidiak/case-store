@@ -61,6 +61,10 @@ const DYNAMIC_ACCESS: Record<string, string> = {
     "widgets/audit-log/model/action-label.ts, ui/AuditLogView.tsx — per entity type",
   "auditLog.actionVerbs":
     "widgets/audit-log/model/action-label.ts — verb per action",
+  "auditLog.entityNouns":
+    "widgets/audit-log/model/audit-sentence.ts — noun per entity type",
+  "auditLog.fieldLabels":
+    "widgets/audit-log/model/audit-sentence.ts — label per diff field",
   // Only the leaves the messenger fields read by computed key —
   // `siteContactForm[name]` and `[`${name}Placeholder`]` over LINK_FIELDS. The
   // rest of the block (email and phone since TASK-1053, working hours, submit,

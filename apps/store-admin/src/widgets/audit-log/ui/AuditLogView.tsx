@@ -1,243 +1,373 @@
 "use client";
 
-import { useState } from "react";
-import { Loader2 } from "lucide-react";
+import { useMemo, type ReactNode } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   toAuditEntry,
   useGetAuditLog,
   type AuditEntry,
-  type GetAuditLogParams,
 } from "@/entities/audit";
-import { ROLE_VALUES, roleLabel } from "@/entities/user";
+import { formatOrderNumber } from "@/entities/order";
+import { roleLabel } from "@/entities/user";
 import { useAuth } from "@/entities/session";
 import { PERM } from "@/entities/permission";
-import { staffDisplayName, useListStaff } from "@/entities/staff";
+import {
+  StaffLevelBadge,
+  staffDisplayName,
+  useListStaff,
+  type StaffUserEntity,
+} from "@/entities/staff";
 import {
   Badge,
-  Button,
+  CopyButton,
+  DataRegistry,
   LiveAnnouncer,
   Skeleton,
-  SortableColumnHeader,
-  Table,
-  TableBody,
-  TableCell,
-  TableFilters,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableToolbar,
+  SummaryValue,
   pageSizeFrom,
-  type TableFilterDef,
+  useDataRegistry,
+  type FilterChip,
+  type RegistryCardParts,
+  type RegistryColumn,
 } from "@/shared/ui";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
 import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
-import { formatDateTime } from "@/shared/lib";
+import { countLabel, formatDateTime, formatTime } from "@/shared/lib";
 import { dict } from "@/shared/config";
+import {
+  EMPTY_AUDIT_FILTERS,
+  auditFiltersToQuery,
+  auditFiltersToUrl,
+  dayGroup,
+  periodLabel,
+  readAuditFilters,
+  type AuditFilters,
+} from "../model/audit-filters";
+import {
+  auditChanges,
+  auditChangesLine,
+  auditSentence,
+  auditSentenceText,
+} from "../model/audit-sentence";
 import { auditActionLabel } from "../model/action-label";
+import { AuditFilterSheet } from "./AuditFilterSheet";
 
 const d = dict.auditLog;
 
 /**
  * The entity types the log can contain, in the order they are offered.
  *
- * They are DERIVED, not invented: `AuditInterceptor` writes
- * `entityTypeFromController(class.name)` — the controller's class name with
- * `Controller` and a leading `Admin` stripped, first letter lowercased — on
- * every mutating request that carries an RBAC annotation. This list is that
- * derivation applied to the annotated controllers, which is why the values look
- * like `seoSettings` and not like `SEO settings`.
- *
- * It is a hand-kept mirror of a server-side rule, so it can fall behind a newly
- * added module. That costs one missing OPTION and nothing else: a value typed
- * into the URL still filters, and `TableFilters` still shows (and clears) its
- * chip — the guarantee is that everything offered here exists, not that
- * everything that exists is offered.
+ * DERIVED, not invented: `AuditInterceptor` writes
+ * `entityTypeFromController(class.name)` on every mutating request that
+ * carries an RBAC annotation — which is why the values look like `seoSettings`.
+ * A hand-kept mirror of a server rule, so it can fall behind a new module: that
+ * costs one missing pill and nothing else — a value typed into the URL still
+ * filters, and its chip still names (raw) and clears it.
  */
-const ENTITY_TYPES = Object.keys(
-  d.entityLabels,
-) as (keyof typeof d.entityLabels)[];
+const ENTITY_LABELS: Record<string, string | undefined> = d.entityLabels;
+const ENTITY_OPTIONS = Object.entries(d.entityLabels).map(([value, label]) => ({
+  value,
+  label,
+}));
 
-/** Loading placeholder shaped like the table underneath. */
+/** Loading placeholder shaped like the registry underneath. */
 export function AuditLogSkeleton() {
   return (
-    <div className="flex flex-col gap-2">
-      {Array.from({ length: 8 }).map((_, index) => (
-        <Skeleton key={index} className="h-10 w-full rounded-md" />
-      ))}
-    </div>
-  );
-}
-
-/**
- * Render the actor of a log entry.
- *
- * `actorEmail` and `actorRole` are denormalised onto the row ON PURPOSE, and
- * `actorId` carries no foreign key: the log has to stay readable after the
- * account is deleted, and system actions (payment callbacks, cron) have no user
- * at all. So this shows the email, never a raw id — an audit trail of UUIDs is
- * an audit trail nobody reads.
- */
-function actorText(entry: AuditEntry): string {
-  if (!entry.actorEmail) {
-    return d.systemActor;
-  }
-  return entry.actorId === null
-    ? d.deletedActor(entry.actorEmail)
-    : entry.actorEmail;
-}
-
-/**
- * The «Дія» cell (TASK-430).
- *
- * Ukrainian first, raw key second — and the raw key STAYS for a reason beyond
- * nostalgia: the search box above filters on `action` with an EXACT match on the
- * server, so the key is the only thing an operator can type to narrow the log to
- * one kind of change. Hiding it would have made the panel readable and the filter
- * unusable in the same commit.
- *
- * An action the dictionary cannot name renders exactly as it did before labels
- * existed: the key alone, in the same `<code>`. See `auditActionLabel`.
- */
-function ActionCell({ action }: { action: string }) {
-  const label = auditActionLabel(action);
-
-  if (!label) {
-    return <code className="text-xs">{action}</code>;
-  }
-
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      <code className="text-xs text-muted-foreground">{action}</code>
-    </div>
-  );
-}
-
-function DiffCell({ entry }: { entry: AuditEntry }) {
-  const [open, setOpen] = useState(false);
-
-  const diff = entry.diff;
-  const fields = diff ? Object.keys(diff) : [];
-
-  if (fields.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mt-1">
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+    <div className="flex flex-col gap-4" aria-busy="true">
+      <span role="status" className="sr-only">
+        {dict.common.loading}
+      </span>
+      <Skeleton
+        aria-hidden="true"
+        className="h-10 w-full rounded-md md:max-w-150"
+      />
+      <div
+        aria-hidden="true"
+        className="flex flex-col gap-2 rounded-lg border p-4 shadow-card"
       >
-        {d.diffToggle}
-      </Button>
-      {open && (
-        <dl className="mt-1 flex flex-col gap-1 rounded-md border border-border p-2">
-          {fields.map((field) => (
-            <div key={field} className="flex flex-col gap-0.5">
-              <dt className="font-mono text-xs text-muted-foreground">
-                {field}
-              </dt>
-              <dd className="break-all font-mono text-xs text-foreground">
-                {d.diffFrom}: {JSON.stringify(diff?.[field]?.from ?? null)}
-                {" → "}
-                {d.diffTo}: {JSON.stringify(diff?.[field]?.to ?? null)}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      )}
+        {Array.from({ length: 8 }).map((_, index) => (
+          <Skeleton key={index} className="h-10 w-full rounded-md" />
+        ))}
+      </div>
     </div>
   );
 }
 
+/* ── Who ────────────────────────────────────────────────────────────────── */
+
+type StaffById = ReadonlyMap<string, StaffUserEntity>;
+
 /**
- * The owner's action log (TASK-318).
+ * The actor of an entry: a name from the staff register with their level badge
+ * («Власник», not «Адміністратор», for the owner), else the email the log
+ * kept. `actorEmail` and `actorRole` are denormalised onto the row on purpose
+ * and `actorId` has no foreign key: the log must stay readable after an
+ * account is deleted, and system actions have no user at all.
+ */
+function actorOf(
+  entry: AuditEntry,
+  staffById: StaffById,
+): { name: string; badge: ReactNode } {
+  if (!entry.actorEmail) {
+    return { name: d.systemActor, badge: null };
+  }
+  const person = entry.actorId ? staffById.get(entry.actorId) : undefined;
+  if (person) {
+    return {
+      name: staffDisplayName(person),
+      badge: <StaffLevelBadge level={person.level} />,
+    };
+  }
+  return {
+    name:
+      entry.actorId === null
+        ? d.deletedActor(entry.actorEmail)
+        : entry.actorEmail,
+    badge: entry.actorRole ? (
+      <Badge variant="secondary">{roleLabel(entry.actorRole)}</Badge>
+    ) : null,
+  };
+}
+
+function WhoCell({
+  entry,
+  staffById,
+}: {
+  entry: AuditEntry;
+  staffById: StaffById;
+}) {
+  const actor = actorOf(entry, staffById);
+  return (
+    <span className="flex items-start gap-2">
+      <span
+        aria-hidden="true"
+        className="inline-flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground"
+      >
+        {actor.name.charAt(0).toLocaleUpperCase("uk")}
+      </span>
+      <span className="flex min-w-0 flex-col items-start gap-1">
+        <span className="break-words text-foreground">{actor.name}</span>
+        {actor.badge}
+      </span>
+    </span>
+  );
+}
+
+/* ── What ───────────────────────────────────────────────────────────────── */
+
+function WhatCell({ entry }: { entry: AuditEntry }) {
+  const sentence = auditSentence(entry);
+  const line = auditChangesLine(auditChanges(entry));
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span className="break-words text-foreground">
+        {sentence.raw ? (
+          <code className="text-xs">{sentence.verb}</code>
+        ) : (
+          <span className="font-medium">{sentence.verb}</span>
+        )}
+        {sentence.object ? (
+          <>
+            {" "}
+            {sentence.object.href ? (
+              <Link
+                href={sentence.object.href}
+                className="rounded-xs text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+              >
+                {sentence.object.text}
+              </Link>
+            ) : (
+              <span className="text-foreground">{sentence.object.text}</span>
+            )}
+          </>
+        ) : null}
+      </span>
+      {line ? (
+        <span className="text-xs break-words text-muted-foreground">
+          {line}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/** «Поле · Було · Стало» and the collapsed technical details (Ж2). */
+function EntryDetails({ entry }: { entry: AuditEntry }) {
+  const changes = auditChanges(entry);
+  return (
+    <div className="flex flex-col gap-2 pt-1">
+      {changes.length > 0 ? (
+        <table
+          aria-label={d.diffCaption}
+          className="w-full max-w-160 overflow-hidden rounded-md border bg-card text-sm"
+        >
+          <thead className="bg-muted text-left text-xs text-muted-foreground">
+            <tr>
+              <th className="px-3 py-1.5 font-medium">{d.diffField}</th>
+              <th className="px-3 py-1.5 font-medium">{d.diffFrom}</th>
+              <th className="px-3 py-1.5 font-medium">{d.diffTo}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {changes.map((change) => (
+              <tr key={change.field} className="border-t align-top">
+                <td className="px-3 py-1.5 text-foreground">{change.label}</td>
+                <td className="px-3 py-1.5 break-words text-muted-foreground">
+                  {change.from === null ? (
+                    "—"
+                  ) : (
+                    <s className="decoration-muted-foreground">{change.from}</s>
+                  )}
+                </td>
+                <td className="px-3 py-1.5 break-words text-foreground">
+                  {change.to}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <p className="text-xs text-muted-foreground">{d.diffEmpty}</p>
+      )}
+      <details className="text-xs text-muted-foreground">
+        <summary className="w-fit cursor-pointer rounded-xs outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
+          {d.technicalDetails}
+        </summary>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <code className="text-foreground">{entry.action}</code>
+          {entry.summary ? (
+            <span className="break-all">{entry.summary}</span>
+          ) : null}
+          {entry.entityId ? (
+            <CopyButton
+              value={entry.entityId}
+              label={d.copyId}
+              copiedLabel={d.copiedId}
+              failedLabel={d.copyIdFailed}
+              ariaLabel={d.copyIdAria(formatOrderNumber(entry.entityId))}
+            />
+          ) : null}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+/* ── Columns ────────────────────────────────────────────────────────────── */
+
+/**
+ * Width the default-visible columns may share at 1440: content area 1136 minus
+ * the trailing column (the expand toggle) and the box border — no checkbox.
+ */
+export const AUDIT_COLUMNS_WIDTH_BUDGET = 1136 - 44 - 2;
+
+/**
+ * Columns (AuditLogProposal Ж1, Ж6). Sortable exactly where `AuditLogQueryDto`
+ * sorts: `createdAt`, `actorEmail`, `action`. «Об'єкт» (type + full id) stays
+ * one click away in «Колонки», unsorted — ordering by the type alone would
+ * sort half of a cell.
+ */
+export function buildAuditColumns(
+  grouped: boolean,
+  staffById: StaffById,
+): RegistryColumn<AuditEntry>[] {
+  return [
+    {
+      id: "when",
+      label: d.colWhen,
+      sortField: "createdAt",
+      defaultWidth: 104,
+      minWidth: 72,
+      className: "text-muted-foreground tabular-nums",
+      // Inside a day group the day is the heading; only the time is new.
+      cell: (entry) =>
+        grouped ? formatTime(entry.createdAt) : formatDateTime(entry.createdAt),
+    },
+    {
+      id: "who",
+      label: d.colWho,
+      sortField: "actorEmail",
+      defaultWidth: 240,
+      minWidth: 160,
+      cell: (entry) => <WhoCell entry={entry} staffById={staffById} />,
+    },
+    {
+      id: "what",
+      label: d.colAction,
+      sortField: "action",
+      defaultWidth: 720,
+      minWidth: 240,
+      cell: (entry) => <WhatCell entry={entry} />,
+    },
+    {
+      id: "object",
+      label: d.colEntity,
+      defaultVisible: false,
+      defaultWidth: 240,
+      cell: (entry) =>
+        entry.entityType ? (
+          <span className="flex flex-col text-muted-foreground">
+            <span>{ENTITY_LABELS[entry.entityType] ?? entry.entityType}</span>
+            {entry.entityId ? (
+              <code className="text-xs break-all">{entry.entityId}</code>
+            ) : null}
+          </span>
+        ) : (
+          d.noEntity
+        ),
+    },
+  ];
+}
+
+function sortLabel(sortBy: string, sortOrder: "asc" | "desc"): string {
+  const asc = sortOrder === "asc";
+  if (sortBy === "actorEmail") return asc ? d.sortActorAsc : d.sortActorDesc;
+  if (sortBy === "action") return asc ? d.sortActionAsc : d.sortActionDesc;
+  return asc ? d.sortCreatedAsc : d.sortCreatedDesc;
+}
+
+const getRowId = (entry: AuditEntry) => entry.id;
+
+/**
+ * The owner's action log (TASK-318) on the shared registry (wave 198,
+ * TASK-1068, AuditLogProposal Ж1–Ж6).
  *
  * Owner-only on the API: the log denormalises staff emails and carries diffs of
- * customer-facing records, so it is both a PII surface and the record of what
- * staff did — a manager who could read it could check whether their own actions
- * had been noticed. There is deliberately no delete or edit affordance here,
- * because the API has no such route: a log an actor can prune is not a log.
+ * customer-facing records. There is deliberately no delete or edit affordance —
+ * the API has no such route: a log an actor can prune is not a log.
  *
- * ── Why the state moved into the URL (TASK-356) ─────────────────────────────
- * Filters, page and sort used to be `useState`, which made this the one admin
- * table whose view could not be reloaded or pasted to anyone. That is backwards
- * for the screen you open precisely when you need to show a colleague what
- * happened: "sorted by actor, filtered to order.refund, page 3" is the whole
- * message. Everything is now in the query string, exactly like the user and
- * subscriber tables next door.
+ * ── What changed in wave 198, nothing removed ───────────────────────────────
+ * An entry reads as a sentence — «Змінено статус замовлення #7C1E4B2A» — with
+ * a link to the object where the panel has a page for it, and what changed in
+ * words under it; a click opens «Поле · Було · Стало» and, collapsed, the
+ * technical details (the raw action key, the request, «Скопіювати ID»). The
+ * actor reads as a name with a level badge. Rows group by day while the log is
+ * sorted by time. The three selects moved into «Фільтри» together with the
+ * period the API always accepted; applied filters are chips.
  *
- * ── Why this one list overrides `staleTime` ────────────────────────────────
- * `OPERATIONAL_LIST_QUERY` (30 s instead of the panel-wide five minutes). The
- * log is read while something is going wrong — an order changed hands, a
- * refund fired twice — and the entry you are waiting for is by definition the
- * one written seconds ago. A five-minute-old view of an append-only log looks
- * exactly like "it never happened".
+ * The state stays in the URL (TASK-356): `?action=` (the toolbar search — an
+ * EXACT match on the server, so the raw key in the details is what to type),
+ * `?actorId=`, `?actorRole=`, `?entityType=`, `?from=`/`?to=` (Kyiv days),
+ * sort, page and size — a pasted link shows the colleague the same view.
  *
- * ── Why the entity filter became a Select (TASK-423) ───────────────────────
- * Both filters used to be free-text boxes, and the repository matches them
- * EXACTLY (`where.entityType = entityType`, no `contains`). A free-text box over
- * an exact match is a trap: every near miss answers «Немає записів» — the same
- * thing an empty log says — and the placeholder here actively baited it, since
- * it suggested «Product» while the interceptor writes `product`. The entity axis
- * is a closed set, so it is now offered rather than typed, and cannot be
- * mistyped.
+ * `OPERATIONAL_LIST_QUERY` (30 s instead of the panel-wide five minutes): the
+ * log is read while something is going wrong, and the entry you wait for is
+ * the one written seconds ago.
  *
- * `action` stays a text field because it is NOT a closed set — it is
- * `entityType.handlerName`, one per guarded mutating route, and a list of
- * ninety-odd of them derived by hand in the frontend would be both unusable and
- * wrong within a release. It is the shared search box bound to the `action`
- * param rather than a `?search=` the API does not have.
+ * ── The actor list (TASK-430, TASK-843) ─────────────────────────────────────
+ * «Мої дії» writes the viewer's own uuid (never a server-resolved "mine", which
+ * would show a recipient of a pasted link their own actions), then every staff
+ * account from `GET /admin/staff`, deactivated ones included — they are exactly
+ * whose past actions get audited. Asked only with `staff:read`, which every
+ * holder of `audit:read` has; a deleted account or a foreign id still gets a
+ * readable chip.
  *
- * There is deliberately no page-size cap trick here: the DTO allows `limit` up
- * to 200, but the shared control offers 20 / 50 / 100 like every other table, so
- * "page 3" means the same thing on this screen as on the others. It used to
- * default to 50 with no control at all.
- *
- * ── Why the actions are readable now (TASK-430) ─────────────────────────────
- * The «Дія» column printed the raw machine key, which is the first thing the owner
- * sees here and the last thing they can read. `model/action-label.ts` composes a
- * Ukrainian label out of the two halves the key already has; an action it cannot
- * name still renders raw, so the map may be incomplete without the screen lying.
- *
- * ── Why there are two actor filters and not one (TASK-430) ──────────────────
- * The ask was «мої дії / інші співробітники», which is not one axis: "mine" is an
- * identity and "other staff" is a role. `TableFilters` owns exactly one query param
- * per control, so they are two controls — `actorId` (one option, the viewer's own
- * uuid) and `actorRole` (the new DTO filter). Neither is resolved server-side from
- * the caller: `?actor=mine` would show a colleague THEIR actions when this view is
- * pasted to them, and a pasteable view is the reason the state lives in the URL at
- * all. What the API still cannot express is "everyone except me" — for a shop with
- * one owner, «Менеджери» is that set, which is why no negative filter was invented.
- *
- * ── Why the actor filter lists every colleague now (TASK-843) ───────────────
- * «Мої дії» alone answered only half of the owner's question — «що робила
- * Олена?» needed a pasted uuid. The `actorId` control now offers «Мої дії» first
- * and then every staff account from `GET /admin/staff`, named the way the staff
- * register names them (`staffDisplayName`). Deactivated staff stay in that list
- * on purpose: they are exactly the people whose past actions get audited.
- *
- * Deleted accounts are NOT in it — the log keeps their rows (no FK on
- * `actorId`), the register does not — so `resolveLabel` still names a uuid the
- * list cannot, which is also what a link pasted from another shop's data or a
- * hand-edited URL gets.
- *
- * The list is read once, 100 accounts (the DTO's ceiling). A shop with more
- * staff than that loses nothing but options: the rest still filter via a pasted
- * link and still get a readable chip. Paging a Select was judged not worth it
- * for a register that is a handful of people.
- *
- * Asked only with `staff:read`, which every holder of `audit:read` has (both
- * are admin-only and not grantable) — the gate is belt and braces, so a future
- * split of the two cannot turn this screen into a 403 banner.
+ * Not drawn, because the API does not provide them (TASK-1068's API tails):
+ * quick views by area (one `entityType` per request), several people at once,
+ * the «Власник» level filter, a free-text search over names and objects, the
+ * object's name in the sentence, human «Було» for most entries, an export.
  */
 export function AuditLogView() {
   const searchParams = useSearchParams();
@@ -248,241 +378,214 @@ export function AuditLogView() {
     { limit: 100 },
     { query: { enabled: canReadStaff } },
   );
-  const colleagueOptions = (staffData?.data ?? [])
-    // The viewer is already «Мої дії»; a second option with the same value
-    // would be a duplicate SelectItem.
-    .filter((person) => person.id !== userId)
-    .map((person) => ({ value: person.id, label: staffDisplayName(person) }))
-    .sort((a, b) => a.label.localeCompare(b.label, "uk"));
-  const actorOptions = [
-    ...(userId ? [{ value: userId, label: d.filterActorMine }] : []),
-    ...colleagueOptions,
-  ];
+  const staffById = useMemo<StaffById>(
+    () => new Map((staffData?.data ?? []).map((person) => [person.id, person])),
+    [staffData],
+  );
+  const actorOptions = useMemo(
+    () => [
+      ...(userId ? [{ value: userId, label: d.filterActorMine }] : []),
+      ...(staffData?.data ?? [])
+        // The viewer is already «Мої дії».
+        .filter((person) => person.id !== userId)
+        .map((person) => ({
+          value: person.id,
+          label: staffDisplayName(person),
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label, "uk")),
+    ],
+    [staffData, userId],
+  );
 
   const action = searchParams.get("action") ?? "";
-  const entityType = searchParams.get("entityType") ?? "";
-  const actorId = searchParams.get("actorId") ?? "";
-  const actorRole = searchParams.get("actorRole") ?? "";
+  const filters = readAuditFilters(searchParams);
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
 
   const updateParams = useUrlParams();
-
   const { sortBy, sortOrder, onSort } = useTableSort(
     searchParams,
     updateParams,
   );
 
-  const { data, isLoading, isFetching, isError, refetch } = useGetAuditLog(
-    {
-      page,
-      limit: pageSize,
-      action: action || undefined,
-      entityType: entityType || undefined,
-      actorId: actorId || undefined,
-      // Cast: the generated param type is the API's `UserRole` union, and this
-      // value comes from the URL. An unknown role is refused by the DTO with a 400
-      // rather than silently widening the result, which is the honest outcome for a
-      // hand-edited link.
-      actorRole: (actorRole || undefined) as
-        GetAuditLogParams["actorRole"] | undefined,
-      sortBy,
-      sortOrder,
-    },
-    { query: OPERATIONAL_LIST_QUERY },
-  );
+  const { data, dataUpdatedAt, isLoading, isFetching, isError, refetch } =
+    useGetAuditLog(
+      {
+        ...auditFiltersToQuery(filters, action),
+        page,
+        limit: pageSize,
+        sortBy,
+        sortOrder,
+      },
+      { query: OPERATIONAL_LIST_QUERY },
+    );
 
-  const entries = (data?.data ?? []).map(toAuditEntry);
+  const entries = useMemo(() => (data?.data ?? []).map(toAuditEntry), [data]);
+  const total = data?.meta?.total ?? 0;
   const totalPages = data?.meta?.totalPages ?? 1;
-  const isFiltered =
-    action !== "" || entityType !== "" || actorId !== "" || actorRole !== "";
 
-  const filters: TableFilterDef[] = [
-    // ── «Мої дії» (TASK-430) + every colleague (TASK-843) ─────────────────────
-    // Each option writes a uuid into the existing `actorId` param. «Мої дії» is
-    // offered only once the session is known — Radix forbids an empty
-    // `SelectItem` value, and a filter that silently means "everyone" would be
-    // worse than an absent one. The control appears once it has any option.
-    ...(actorOptions.length > 0
-      ? [
-          {
-            param: "actorId",
-            label: d.filterActorAria,
-            allLabel: d.filterActorAll,
-            options: actorOptions,
-            // A deleted account (or a hand-edited link) is not in the staff list.
-            // The rows are narrowed by it, so the chip has to name it and clear
-            // it rather than show a blank.
-            resolveLabel: (value: string) => d.filterActorOther(value),
-            className: "w-56",
-          },
-        ]
-      : []),
-    // ── «Інші співробітники», as a role ───────────────────────────────────────
-    // CUSTOMER is deliberately not offered: the interceptor only records routes
-    // behind an admin permission, so the option would be a guaranteed «Немає
-    // записів» — and this screen must never make an empty result look like a
-    // missing entry.
-    {
-      param: "actorRole",
-      label: d.filterRoleAria,
-      allLabel: d.filterRoleAll,
-      options: [
-        { value: ROLE_VALUES.ADMIN, label: roleLabel(ROLE_VALUES.ADMIN) },
-        { value: ROLE_VALUES.MANAGER, label: roleLabel(ROLE_VALUES.MANAGER) },
-      ],
-      resolveLabel: (value: string) => roleLabel(value),
-      className: "w-44",
-    },
-    {
-      param: "entityType",
-      label: d.filterEntityAria,
-      allLabel: d.filterEntityAll,
-      options: ENTITY_TYPES.map((value) => ({
-        value,
-        label: d.entityLabels[value],
-      })),
-      // No `resolveLabel`: an entity type this list has not caught up with yet
-      // is shown raw by `TableFilters`, which is the right answer — the raw value
-      // IS what the URL says and what the rows were narrowed by, and the chip
-      // still clears it.
-      className: "w-56",
-    },
-  ];
+  // Day headings only make sense while the rows run in time order.
+  const grouped = sortBy === "createdAt";
+  const columns = useMemo(
+    () => buildAuditColumns(grouped, staffById),
+    [grouped, staffById],
+  );
+  const registry = useDataRegistry({
+    tableId: "audit-log",
+    columns,
+    rows: entries,
+    getRowId,
+  });
+
+  const actorName = (id: string) =>
+    id === userId
+      ? d.filterActorMine
+      : staffById.get(id)
+        ? staffDisplayName(staffById.get(id) as StaffUserEntity)
+        : d.filterActorOther(id);
+
+  const chips: FilterChip[] = [];
+  const clear = (patch: Partial<Record<keyof AuditFilters, undefined>>) =>
+    updateParams({ ...patch, page: undefined });
+  if (filters.actorId) {
+    chips.push({
+      key: "actorId",
+      label: d.chipActor(actorName(filters.actorId)),
+      onRemove: () => clear({ actorId: undefined }),
+    });
+  }
+  if (filters.from || filters.to) {
+    chips.push({
+      key: "period",
+      label: d.chipPeriod(periodLabel(filters.from, filters.to)),
+      onRemove: () => clear({ from: undefined, to: undefined }),
+    });
+  }
+  if (filters.actorRole) {
+    chips.push({
+      key: "actorRole",
+      label: d.chipLevel(roleLabel(filters.actorRole)),
+      onRemove: () => clear({ actorRole: undefined }),
+    });
+  }
+  if (filters.entityType) {
+    chips.push({
+      key: "entityType",
+      // An entity type this list has not caught up with yet is named raw —
+      // the raw value IS what the URL says and what the rows were narrowed by.
+      label: d.chipEntity(
+        ENTITY_LABELS[filters.entityType] ?? filters.entityType,
+      ),
+      onRemove: () => clear({ entityType: undefined }),
+    });
+  }
+
+  // Applied in «Фільтри» — the badge on the button counts these.
+  const sheetFilterCount = chips.length;
+  // The search is an EXACT action filter on the server, which a box with a
+  // code in it does not make obvious — so it gets a chip in words too.
+  if (action) {
+    chips.push({
+      key: "action",
+      label: d.chipAction(auditActionLabel(action) ?? action),
+      onRemove: () => updateParams({ action: undefined, page: undefined }),
+    });
+  }
+
+  const isFiltered = chips.length > 0;
+
+  const renderCard = (entry: AuditEntry, parts: RegistryCardParts) => {
+    const actor = actorOf(entry, staffById);
+    return (
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-start justify-between gap-2">
+          <span className="min-w-0 text-xs text-muted-foreground tabular-nums">
+            {grouped
+              ? formatTime(entry.createdAt)
+              : formatDateTime(entry.createdAt)}{" "}
+            · {actor.name}
+          </span>
+          {actor.badge}
+        </div>
+        <div className="flex items-start justify-between gap-2">
+          <WhatCell entry={entry} />
+          {parts.expand}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <LiveAnnouncer>
-      <div className="flex flex-col gap-4">
-        <TableToolbar
-          className="mb-0"
-          onRefresh={() => void refetch()}
-          isRefreshing={isFetching}
-          search={
-            // Bound to `action`, not to a `search` param: that IS the filter the
-            // API offers, and inventing a free-text one here would send a param
-            // the DTO drops on the floor.
-            <TableSearch
-              param="action"
-              value={action}
-              placeholder={d.filterActionPlaceholder}
-              label={d.filterActionAria}
+      <DataRegistry
+        registry={registry}
+        title={d.heading}
+        showHeader={false}
+        search={{
+          // Bound to `action`, not `search`: that IS the filter the API offers.
+          param: "action",
+          value: action,
+          placeholder: d.filterActionPlaceholder,
+          label: d.filterActionAria,
+        }}
+        filters={{
+          count: sheetFilterCount,
+          renderSheet: ({ open, onOpenChange }) => (
+            <AuditFilterSheet
+              open={open}
+              onOpenChange={onOpenChange}
+              applied={filters}
+              action={action}
+              actorOptions={actorOptions}
+              entityOptions={ENTITY_OPTIONS}
+              onApply={(next) =>
+                updateParams({ ...auditFiltersToUrl(next), page: undefined })
+              }
             />
-          }
-          filters={
-            <TableFilters
-              filters={filters}
-              values={{ actorId, actorRole, entityType }}
-            />
-          }
-        />
-
-        {isLoading ? (
-          <AuditLogSkeleton />
-        ) : isError ? (
-          <p role="alert" className="text-sm text-destructive">
-            {d.loadError}
-          </p>
-        ) : entries.length === 0 ? (
-          <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-            {isFiltered ? d.emptyFiltered : d.empty}
-          </div>
-        ) : (
-          <div className="relative overflow-hidden rounded-lg border border-border shadow-card">
-            {isFetching && !isLoading && (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
-              >
-                <Loader2 className="size-6 animate-spin text-primary" />
-              </div>
-            )}
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <SortableColumnHeader
-                    field="createdAt"
-                    label={d.colWhen}
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={onSort}
-                  />
-                  <SortableColumnHeader
-                    field="actorEmail"
-                    label={d.colWho}
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={onSort}
-                  />
-                  <SortableColumnHeader
-                    field="action"
-                    label={d.colAction}
-                    sortBy={sortBy}
-                    sortOrder={sortOrder}
-                    onSort={onSort}
-                  />
-                  {/* No sort on the entity column: the cell is a type/id pair,
-                      and ordering by the type alone would look like it sorted
-                      the column when it sorted half of it. The entityType
-                      filter above answers that question properly. */}
-                  <TableHead>{d.colEntity}</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {entries.map((entry) => (
-                  <TableRow key={entry.id}>
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      {formatDateTime(entry.createdAt)}
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col gap-1">
-                        <span className="font-medium text-foreground">
-                          {actorText(entry)}
-                        </span>
-                        {entry.actorRole && (
-                          <Badge variant="secondary" className="w-fit">
-                            {roleLabel(entry.actorRole)}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <ActionCell action={entry.action} />
-                      {entry.summary && (
-                        <p className="text-sm text-muted-foreground">
-                          {entry.summary}
-                        </p>
-                      )}
-                      <DiffCell entry={entry} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {entry.entityType ? (
-                        <span className="flex flex-col">
-                          <span>{entry.entityType}</span>
-                          {entry.entityId && (
-                            <code className="break-all text-xs">
-                              {entry.entityId}
-                            </code>
-                          )}
-                        </span>
-                      ) : (
-                        d.noEntity
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-
-        {!isLoading && !isError && entries.length > 0 && (
-          <TablePagination
-            page={page}
-            totalPages={totalPages}
-            pageSize={pageSize}
-          />
-        )}
-      </div>
+          ),
+        }}
+        views={{ defaultName: d.viewDefault }}
+        onRefresh={() => void refetch()}
+        isRefreshing={isFetching}
+        chips={chips}
+        onClearAllChips={() =>
+          updateParams({
+            ...auditFiltersToUrl(EMPTY_AUDIT_FILTERS),
+            action: undefined,
+            page: undefined,
+          })
+        }
+        summary={
+          data ? (
+            <>
+              {d.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, d.itemForms)}</SummaryValue>
+            </>
+          ) : null
+        }
+        sortLabel={sortLabel(sortBy, sortOrder)}
+        updatedAt={data ? dataUpdatedAt : undefined}
+        itemForms={d.itemForms}
+        getRowLabel={(entry) =>
+          `${auditSentenceText(entry)}, ${formatDateTime(entry.createdAt)}`
+        }
+        sort={{ sortBy, sortOrder, onSort }}
+        groupBy={
+          grouped
+            ? (entry) => dayGroup(entry.createdAt, dataUpdatedAt)
+            : undefined
+        }
+        renderExpanded={(entry) => <EntryDetails entry={entry} />}
+        renderCard={renderCard}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={d.loadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={isFiltered ? d.emptyFiltered : d.empty}
+        pagination={{ page, totalPages, pageSize }}
+      />
     </LiveAnnouncer>
   );
 }
