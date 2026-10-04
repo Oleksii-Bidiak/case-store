@@ -113,10 +113,5 @@
     "tailwindcss/no-arbitrary-value": {
       "count": 1
     }
-  },
-  "src/widgets/user-list/ui/AdminUserTableSkeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
   }
 }

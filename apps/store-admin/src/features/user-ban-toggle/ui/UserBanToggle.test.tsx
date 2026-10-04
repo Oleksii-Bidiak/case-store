@@ -4,6 +4,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
@@ -58,6 +59,43 @@ describe("UserBanToggle — customers:write gate (TASK-716)", () => {
 
     await userEvent.click(
       screen.getByRole("button", { name: dict.userBan.activateUserAria }),
+    );
+    await waitFor(() => expect(calls).toBe(1));
+  });
+
+  it("asks in an AlertDialog before deactivating, and only then calls the API (К6)", async () => {
+    let calls = 0;
+    server.use(
+      http.patch("*/api/users/:id/deactivate", () => {
+        calls += 1;
+        return HttpResponse.json({
+          data: { id: CUSTOMER_ID, isActive: false },
+        });
+      }),
+    );
+
+    renderWithProviders(
+      <UserBanToggle
+        userId={CUSTOMER_ID}
+        isActive
+        displayName="Олена Шевченко (olena@example.com)"
+      />,
+      { auth: { permissions: ["customers:write"] } },
+    );
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.userBan.deactivateUserAria }),
+    );
+    const dialog = await screen.findByRole("alertdialog");
+    expect(
+      within(dialog).getByText(
+        dict.userBan.confirmDescription("Олена Шевченко (olena@example.com)"),
+      ),
+    ).toBeInTheDocument();
+    expect(calls).toBe(0);
+
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.userBan.confirmAction }),
     );
     await waitFor(() => expect(calls).toBe(1));
   });

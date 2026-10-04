@@ -4,10 +4,11 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
-import { orderStatusLabel } from "@/entities/order";
+import { formatOrderNumber, orderStatusLabel } from "@/entities/order";
 import { PERM } from "@/entities/permission";
 import { UserDetailView } from "./UserDetailView";
 
@@ -235,9 +236,12 @@ describe("UserDetailView (customer card, TASK-252)", () => {
       await screen.findByText(dict.users.cardRecentOrders),
     ).toBeInTheDocument();
     expect(screen.getByText(orderStatusLabel("DELIVERED"))).toBeInTheDocument();
-    // Row action links to the order detail.
-    const viewLink = screen.getByRole("link", { name: dict.common.view });
-    expect(viewLink).toHaveAttribute("href", "/orders/order-aaaaaaaa");
+    // The number IS the link to the order (TASK-1038 format), replacing the
+    // separate «Переглянути» button.
+    const numberLinks = screen.getAllByRole("link", {
+      name: formatOrderNumber("order-aaaaaaaa"),
+    });
+    expect(numberLinks[0]).toHaveAttribute("href", "/orders/order-aaaaaaaa");
     // Header "view all" deep link into the filtered order list.
     const viewAll = screen.getByRole("link", {
       name: dict.users.cardViewAllOrders,
@@ -378,6 +382,13 @@ describe("UserDetailView (customer card, TASK-252)", () => {
 
     await userEvent.click(
       screen.getByRole("button", { name: dict.userBan.deactivateUserAria }),
+    );
+    // Wave 198 (К6): the switch-off is confirmed in an AlertDialog first.
+    const dialog = await screen.findByRole("alertdialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", {
+        name: dict.userBan.confirmAction,
+      }),
     );
 
     expect(
@@ -635,7 +646,8 @@ describe("UserDetailView (customer card, TASK-252)", () => {
 
       renderWithProviders(<UserDetailView userId={USER_ID} />);
 
-      expect(await screen.findByText(baseUser.phone)).toBeInTheDocument();
+      // In the +380 shape since wave 198 (К4) — the same number, readable.
+      expect(await screen.findByText("+380 50 123 4567")).toBeInTheDocument();
       expect(screen.getAllByText("Olena Shevchenko")).not.toHaveLength(0);
     });
 
@@ -705,6 +717,261 @@ describe("UserDetailView (customer card, TASK-252)", () => {
 
       expect(
         await screen.findByText(dict.users.cardPermissionRequired),
+      ).toBeInTheDocument();
+    });
+  });
+});
+
+// ─── Wave 198, UsersProposal К4–К7 (TASK-1058) ───────────────────────────────
+
+describe("UserDetailView — card by mockup (wave 198)", () => {
+  beforeEach(() => {
+    replaceMock.mockClear();
+    session.current = { ...OWNER_SESSION };
+    mockNotes();
+  });
+
+  it("heads the card with the name, then email, formatted phone and «клієнт з …» (К4)", async () => {
+    mockCard();
+    renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "Olena Shevchenko",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("customer@test.local")).toBeInTheDocument();
+    expect(screen.getByText("+380 50 123 4567")).toBeInTheDocument();
+    expect(
+      screen.getByText(dict.users.customerSince("01.01.2026"), {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+    // «Учасник з» repeated «Створено»; the name is no longer printed thrice.
+    expect(screen.queryByText("Учасник з")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Olena Shevchenko")).toHaveLength(1);
+  });
+
+  it("falls back to the address as the heading when there is no name", async () => {
+    server.use(
+      http.get("*/api/users/:id/admin-card", () =>
+        HttpResponse.json({
+          data: {
+            user: { ...baseUser, firstName: null, lastName: null },
+            ...FULL_CARD,
+          },
+        }),
+      ),
+    );
+    renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+    expect(
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "customer@test.local",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the KPI row from the card — sum, orders, reviews, last order", async () => {
+    mockCard();
+    renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+    expect(await screen.findByText(dict.users.cardLtv)).toBeInTheDocument();
+    expect(screen.getByText(dict.users.cardOrderCount)).toBeInTheDocument();
+    expect(screen.getByText(dict.users.cardReviewsCount)).toBeInTheDocument();
+    // The newest of the recent orders, as a date.
+    expect(
+      screen.getByText(dict.users.cardLastOrder).nextElementSibling,
+    ).toHaveTextContent("01.03.2026");
+    expect(
+      screen.getByText(dict.users.cardOrderCount).nextElementSibling,
+    ).toHaveTextContent("3");
+    expect(
+      screen.getByText(dict.users.cardReviewsCount).nextElementSibling,
+    ).toHaveTextContent("1");
+  });
+
+  it("links coupons to their order by the canonical number", async () => {
+    mockCard();
+    renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+    await screen.findByText("SUMMER20");
+    const links = screen.getAllByRole("link", {
+      name: formatOrderNumber("order-aaaaaaaa"),
+    });
+    expect(links).toHaveLength(2);
+    for (const link of links) {
+      expect(link).toHaveAttribute("href", "/orders/order-aaaaaaaa");
+    }
+  });
+
+  it("offers the ID with «Скопіювати»", async () => {
+    mockCard();
+    renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+    expect(
+      await screen.findByRole("button", { name: dict.users.copyIdAria }),
+    ).toBeInTheDocument();
+  });
+
+  describe("«Роль співробітника» is gone from the customer card (owner decision 2026-09-30)", () => {
+    it("renders no role control, and points at «Співробітники» instead", async () => {
+      mockCard();
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      await screen.findByText(dict.users.staffHeading);
+      expect(
+        screen.queryByText(dict.users.roleChangeLabel),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("combobox", { name: dict.users.roleChangeAria }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: dict.users.staffAccessHintLink }),
+      ).toHaveAttribute("href", "/staff");
+    });
+
+    it("keeps the hint behind staff:write — the same gate the role control had", async () => {
+      managerHolding(PERM.customersRead, PERM.customersCard);
+      mockCard();
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      await screen.findByText(dict.users.cardLtv);
+      expect(
+        screen.queryByRole("link", { name: dict.users.staffAccessHintLink }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("deactivation and deletion go through an AlertDialog (К6)", () => {
+    it("asks before switching the account off, naming the person", async () => {
+      let calls = 0;
+      mockCard();
+      server.use(
+        http.patch("*/api/users/:id/deactivate", () => {
+          calls += 1;
+          return HttpResponse.json({ data: { ...baseUser, isActive: false } });
+        }),
+      );
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      await userEvent.click(
+        await screen.findByRole("button", {
+          name: dict.userBan.deactivateUserAria,
+        }),
+      );
+      const dialog = await screen.findByRole("alertdialog");
+      expect(
+        within(dialog).getByText(dict.userBan.confirmTitle),
+      ).toBeInTheDocument();
+      expect(
+        within(dialog).getByText(
+          dict.userBan.confirmDescription(
+            "Olena Shevchenko (customer@test.local)",
+          ),
+        ),
+      ).toBeInTheDocument();
+
+      // Cancel sends nothing.
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: dict.common.cancel }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
+      );
+      expect(calls).toBe(0);
+    });
+
+    it("deletes only after the owner confirms in an AlertDialog", async () => {
+      let deleted = 0;
+      mockCard();
+      server.use(
+        http.delete("*/api/users/:id", () => {
+          deleted += 1;
+          return new HttpResponse(null, { status: 204 });
+        }),
+      );
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      await userEvent.click(
+        await screen.findByRole("button", { name: dict.users.deleteOpen }),
+      );
+      const dialog = await screen.findByRole("alertdialog");
+      expect(
+        within(dialog).getByText(dict.users.deleteHeading),
+      ).toBeInTheDocument();
+      expect(deleted).toBe(0);
+
+      await userEvent.click(
+        within(dialog).getByRole("button", { name: dict.users.deleteConfirm }),
+      );
+      await waitFor(() => expect(deleted).toBe(1));
+      await waitFor(() => expect(replaceMock).toHaveBeenCalledWith("/users"));
+    });
+
+    it("keeps «Змінити email для входу…» and «Видалити акаунт…» owner-only", async () => {
+      managerHolding(
+        PERM.customersRead,
+        PERM.customersCard,
+        PERM.customersWrite,
+        PERM.staffWrite,
+      );
+      mockCard();
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      await screen.findByText(dict.users.cardLtv);
+      expect(
+        screen.queryByRole("button", { name: dict.users.deleteOpen }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: dict.users.changeEmailOpen }),
+      ).not.toBeInTheDocument();
+      // …while the ban toggle stays with customers:write.
+      expect(
+        screen.getByRole("button", { name: dict.userBan.deactivateUserAria }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  describe("«Блокування входу» says what the API knows", () => {
+    it("says the sign-in is not locked right now", async () => {
+      mockCard();
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      expect(
+        await screen.findByText(dict.users.lockoutNone),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(dict.users.lockoutUnavailable),
+      ).toBeInTheDocument();
+    });
+
+    it("says until when the sign-in is locked, and how many attempts failed", async () => {
+      server.use(
+        http.get("*/api/users/:id/admin-card", () =>
+          HttpResponse.json({
+            data: {
+              user: {
+                ...baseUser,
+                lockedUntil: "2999-01-01T10:00:00.000Z",
+                failedLoginAttempts: 5,
+              },
+              ...FULL_CARD,
+            },
+          }),
+        ),
+      );
+      renderWithProviders(<UserDetailView userId={USER_ID} />);
+
+      expect(
+        await screen.findByText(
+          dict.users.lockoutLockedUntil("01.01.2999, 12:00"),
+        ),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText(dict.users.lockoutAttempts(5)),
       ).toBeInTheDocument();
     });
   });

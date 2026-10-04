@@ -30,7 +30,8 @@ import { loginAsAdmin } from "./fixtures/admin-session";
 
 // Renamed in wave 198 (TASK-1059, owner decision 2026-09-30).
 const NAV_STAFF = "Співробітники";
-const NAV_USERS = "Користувачі";
+// «Клієнти», not «Користувачі» — one name for the section (TASK-1058).
+const NAV_USERS = "Клієнти";
 const HEADING_TEMPLATES = "Шаблони прав";
 const CTA_HIRE = "Додати співробітника";
 const COL_LAST_SIGN_IN = "Останній вхід";
@@ -154,7 +155,7 @@ test.describe("admin «Співробітники» (TASK-480, TASK-1051, TASK-1
     await expect(page.getByText(E2E_ADMIN_EMAIL).first()).toBeVisible();
   });
 
-  test("«Користувачі» is the customer list and no longer offers hiring", async ({
+  test("«Клієнти» is the customer list and no longer offers hiring", async ({
     page,
   }) => {
     await page.goto("/users");

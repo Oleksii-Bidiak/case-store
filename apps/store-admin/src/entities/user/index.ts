@@ -55,3 +55,11 @@ export type {
 } from "@/shared/api";
 
 export { ROLE_VALUES, roleLabel, isStaffRole } from "./model/roles";
+// Wave 198 (TASK-1058): one way to name, call and badge a customer.
+export {
+  customerDisplayName,
+  customerInitial,
+  customerPhone,
+  type CustomerNameFields,
+} from "./model/customer-display";
+export { CustomerStatusBadge } from "./ui/CustomerStatusBadge";
