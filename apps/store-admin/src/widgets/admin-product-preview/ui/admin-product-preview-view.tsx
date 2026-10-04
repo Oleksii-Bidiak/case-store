@@ -537,10 +537,14 @@ function Facts({
 /** Structured specs, plus any legacy attribute the specs do not already say. */
 function Specs({ product }: { product: ProductEntity }) {
   const specs = product.specs ?? [];
-  const specKeys = new Set(specs.map((spec) => spec.key));
+  // A legacy attribute repeats a spec when it carries the spec's key («color»)
+  // OR its human label («Колір» — group axes are keyed by label).
+  const specNames = new Set(
+    specs.flatMap((spec) => [spec.key, spec.label].map((n) => n.toLowerCase())),
+  );
   const attributes = Object.entries(
     (product.attributes ?? {}) as Record<string, unknown>,
-  ).filter(([key]) => !specKeys.has(key));
+  ).filter(([key]) => !specNames.has(key.toLowerCase()));
   const rows: Array<[string, string]> = [
     ...specs.map(
       (spec) =>
@@ -558,9 +562,9 @@ function Specs({ product }: { product: ProductEntity }) {
       <h3 className="text-base font-semibold text-foreground">{o.specs}</h3>
       {rows.length > 0 ? (
         <dl className="grid grid-cols-1 gap-x-8 text-sm md:grid-cols-2">
-          {rows.map(([label, value]) => (
+          {rows.map(([label, value], index) => (
             <div
-              key={label}
+              key={`${index}-${label}`}
               className="flex justify-between gap-4 border-b border-border py-2"
             >
               <dt className="text-muted-foreground">{label}</dt>

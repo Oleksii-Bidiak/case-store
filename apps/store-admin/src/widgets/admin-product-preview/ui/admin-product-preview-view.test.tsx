@@ -401,6 +401,33 @@ describe("AdminProductPreviewView — empty sections explain the consequence (П
   });
 });
 
+describe("AdminProductPreviewView — specs", () => {
+  it("does not repeat a spec that a group axis also carries under its label", async () => {
+    // Group axes live in `attributes` keyed by the human label («Колір»),
+    // while the spec is keyed by `color` — once rendered twice, with a
+    // duplicate React key.
+    stub({
+      envelope: makeEnvelope({
+        specs: [
+          {
+            key: "color",
+            label: "Колір",
+            type: "SELECT",
+            unit: null,
+            value: "Чорний",
+            isFilterable: true,
+          },
+        ],
+        attributes: { Колір: "Чорний", Довжина: "1 м" },
+      }),
+    });
+    renderView();
+
+    expect(await screen.findAllByText("Довжина")).toHaveLength(1);
+    expect(screen.getAllByText("Колір")).toHaveLength(1);
+  });
+});
+
 describe("AdminProductPreviewView — photos", () => {
   it("switches the large photo from the thumbnails", async () => {
     stub();
