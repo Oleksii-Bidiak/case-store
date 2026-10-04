@@ -12,6 +12,8 @@ export interface ComboboxOption {
   label: string;
   /** Optional secondary line shown under the label. */
   description?: string;
+  /** Tree level, 0-based — indents the option (wave 198, category trees). */
+  depth?: number;
 }
 
 export interface ComboboxProps {
@@ -196,6 +198,11 @@ export function Combobox({
                 onMouseDown={(e) => e.preventDefault()}
                 onMouseEnter={() => setActiveIndex(i)}
                 onClick={() => select(option)}
+                style={
+                  option.depth
+                    ? { paddingInlineStart: 12 + option.depth * 16 }
+                    : undefined
+                }
               >
                 <span className="block">{option.label}</span>
                 {option.description && (

@@ -27,6 +27,12 @@ export interface RegistryBulkBarProps {
   showKeptHint?: boolean;
   /** Rarely used bulk actions behind «⋯». */
   overflow?: readonly RowActionItem[];
+  /**
+   * Keep «⋯» on the idle bar too — for an item that must outlive the selection
+   * it acted on, e.g. «Скасувати останню масову дію» (the selection is cleared
+   * once a bulk write lands). Default `false`.
+   */
+  overflowWhenIdle?: boolean;
   /** Disable the controls — pass the bulk mutation's `isPending`. */
   isPending?: boolean;
   className?: string;
@@ -51,6 +57,7 @@ export function RegistryBulkBar({
   onClear,
   showKeptHint = true,
   overflow,
+  overflowWhenIdle = false,
   isPending = false,
   className,
 }: RegistryBulkBarProps) {
@@ -112,6 +119,13 @@ export function RegistryBulkBar({
           {idleHint}
         </span>
       )}
+      {!active && overflowWhenIdle && overflow && overflow.length > 0 ? (
+        <RowActionsMenu
+          label={r.bulkMoreAria}
+          items={overflow}
+          className="ml-auto"
+        />
+      ) : null}
     </div>
   );
 }

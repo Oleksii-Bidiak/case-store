@@ -28,6 +28,12 @@ interface SortableColumnHeaderProps {
    * name, which has to stay "Сортувати за …".
    */
   hint?: string;
+  /**
+   * Also show `hint` as the native `title` tooltip. Default `true`; pass
+   * `false` when the header draws its own tooltip (wave 198), so two tooltips
+   * do not stack on hover. The description for assistive tech stays.
+   */
+  hintAsTitle?: boolean;
   /** Hide this column below `md` (forwarded to the underlying `TableHead`). */
   hideOnMobile?: boolean;
   className?: string;
@@ -58,6 +64,7 @@ export function SortableColumnHeader({
   sortOrder,
   onSort,
   hint,
+  hintAsTitle = true,
   hideOnMobile,
   className,
   content,
@@ -90,7 +97,7 @@ export function SortableColumnHeader({
         onClick={() => onSort(field)}
         aria-label={dict.common.sortByAria(label)}
         aria-describedby={hint ? hintId : undefined}
-        title={hint}
+        title={hintAsTitle ? hint : undefined}
         className={cn(
           "flex w-full items-center gap-1 px-4 py-2 text-left font-medium hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
           buttonClassName,

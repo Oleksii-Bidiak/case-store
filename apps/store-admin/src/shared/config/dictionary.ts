@@ -476,10 +476,10 @@ export const dict = {
     metaTitlePreview: "Перегляд товару — Адмін",
     heading: "Товари",
     add: "Додати товар",
-    searchPlaceholder: "Пошук товарів…",
+    // Wave 198: names the fields the admin search really reads (TASK-406 added SKU).
+    searchPlaceholder: "Назва, опис або артикул (SKU)…",
     searchAria: "Пошук товарів",
     loadError: "Не вдалося завантажити товари. Спробуйте ще раз.",
-    emptyMatch: (q: string) => `Немає товарів за запитом «${q}».`,
     empty: "Товарів ще немає. Створіть свій перший товар.",
     colName: "Назва",
     colCategory: "Категорія",
@@ -489,19 +489,19 @@ export const dict = {
     // TASK-254: composite stock column — available (free-to-sell) / reserved
     // (tied up in unshipped orders) / physical (on the shelf = available + reserved).
     // The sortable header uses the generic dict.common.sortByAria(label) helper.
-    colStock: "Вільно / Резерв / Фізично",
+    colStock: "Залишок",
     // TASK-408: three numbers in one column need the arithmetic spelled out, or
     // «Фізично» reads as a fourth independent figure the operator has to reconcile.
-    colStockHint: "Фізично = вільно + зарезервовано під незакриті замовлення",
+    colStockHint:
+      "Вільно — можна продати зараз. Резерв — уже в непідтверджених і необроблених замовленнях, чекає відправки. " +
+      "На складі — фізично є: вільно + резерв. Раніше колонка називалась «Вільно / Резерв / Фізично».",
     // Bulk activate / deactivate over the on-screen selection (TASK-355).
     bulk: {
-      activate: (count: number) => `Активувати (${count})`,
-      deactivate: (count: number) => `Деактивувати (${count})`,
-      selectRow: (name: string) => `Вибрати „${name}“`,
+      deactivate: (count: number) => `Приховати (${count})`,
       // Blast radius spelled out: deactivating hides the products from the
       // storefront, and the count is the reason this prompt exists.
       deactivateConfirm: (count: number) =>
-        `Деактивувати ${count} тов. — вони зникнуть із вітрини. Продовжити?`,
+        `Приховати ${countLabel(count, ["товар", "товари", "товарів"])}? Вони зникнуть із вітрини.`,
       announceSaving: (count: number) => `Збереження ${count} тов.…`,
       announceDone: (count: number, isActive: boolean) =>
         isActive
@@ -513,7 +513,6 @@ export const dict = {
       // missing. A variant group only means anything once EVERY position in it
       // points at the same group, so doing it one product at a time left the
       // family half-formed in between.
-      moveToGroup: (count: number) => `Перемістити до групи (${count})`,
       groupDialogTitle: "Перемістити до групи",
       groupDialogDescription: (count: number) =>
         `Обрані товари (${count}) буде додано до однієї групи варіантів. ` +
@@ -532,7 +531,6 @@ export const dict = {
       // вісь варіанта, а форма товару редагує одну позицію за раз. Пишеться
       // одразу у два місця — у вісь (звідки кружечки кольорів на картці) і в
       // характеристику «Колір» (звідки фільтр у каталозі).
-      setColor: (count: number) => `Задати колір (${count})`,
       colorDialogTitle: "Колір обраних товарів",
       colorDialogDescription: (count: number) =>
         `Колір буде записано для ${count} тов. — і як вісь варіанта, і як ` +
@@ -574,13 +572,13 @@ export const dict = {
     // TASK-362: photo column + status/stock filters for the restock worklist.
     colPhoto: "Фото",
     noPhoto: "без фото",
-    filterStatus: "Фільтр за статусом",
-    filterStatusAll: "Усі статуси",
-    filterStatusActive: "Лише активні",
-    filterStatusHidden: "Лише приховані",
-    filterStock: "Фільтр за залишком",
-    filterStockAll: "Будь-який залишок",
-    filterStockOut: "Немає в наявності",
+    filterStatus: "Статус",
+    filterStatusAll: "Будь-який",
+    filterStatusActive: "Показується",
+    filterStatusHidden: "Приховано",
+    filterStock: "Залишок",
+    filterStockAll: "Будь-який",
+    filterStockOut: "Немає",
     // TASK-361: creation now yields a hidden draft and lands on the edit page.
     // TASK-442: фото, характеристики, сумісність і послуги тепер заповнюються
     // ще до першого збереження, тож на редагуванні лишається сама публікація.
@@ -681,8 +679,6 @@ export const dict = {
     // tombstones INSTEAD of the live rows (the API has no mixed mode — the row
     // entity carries no per-product deleted marker to tell them apart).
     filterDeleted: "Видалені",
-    filterDeletedAll: "Без видалених",
-    filterDeletedOnly: "Лише видалені",
     deletedBadge: "видалено",
     deletedNotice:
       "Показано видалені товари. Вони лише для довідки: редагувати, відкрити картку " +
@@ -736,6 +732,77 @@ export const dict = {
     historyColWho: "Хто",
     historyColWhat: "Дія",
     historyUnknownActor: "невідомо",
+
+    // ── Реєстр товарів (хвиля 198, TASK-1048, ProductsProposal Т1–Т7) ───────
+    itemForms: ["товар", "товари", "товарів"],
+    summaryFound: "Знайдено",
+    viewDefault: "Усі товари",
+    viewAll: "Усі",
+    viewActive: "Показуються",
+    viewHidden: "Приховані",
+    viewOut: "Немає в наявності",
+    colUpdated: "Оновлено",
+    statusShown: "Показується",
+    statusHidden: "Приховано",
+    stockFree: (count: number) => `${count} вільно`,
+    stockNone: "Немає",
+    stockReserved: (reserved: number) => `резерв ${reserved}`,
+    stockPhysical: (physical: number) => `на складі ${physical}`,
+    stockHintFree: "Вільно",
+    stockHintFreeText: "— можна продати зараз.",
+    stockHintReserved: "Резерв",
+    stockHintReservedText:
+      "— уже в непідтверджених і необроблених замовленнях, чекає відправки.",
+    stockHintPhysical: "На складі",
+    stockHintPhysicalText: "— фізично є: вільно + резерв.",
+    stockHintRenamed: "Раніше колонка називалась «Вільно / Резерв / Фізично».",
+    oldPriceAria: (price: string) => `Стара ціна ${price}`,
+    sortNameAsc: "назва, А→Я",
+    sortNameDesc: "назва, Я→А",
+    sortPriceAsc: "ціна, дешевші спершу",
+    sortPriceDesc: "ціна, дорожчі спершу",
+    sortStockAsc: "залишок, менший спершу",
+    sortStockDesc: "залишок, більший спершу",
+    sortCreatedDesc: "створено, нові зверху",
+    sortCreatedAsc: "створено, старі зверху",
+    rowOpen: "Відкрити",
+    rowPreview: "Огляд",
+    rowDelete: "Видалити…",
+    rowStatusFailed: "Не вдалося змінити статус товару",
+    bulkIdleHint:
+      "Виберіть рядки, щоб показати чи приховати, перенести в групу або задати колір кількох товарів",
+    bulkShow: "Показувати на сайті",
+    bulkHide: "Приховати",
+    bulkGroup: "У групу…",
+    bulkColor: "Колір…",
+    toastHidden: (label: string) =>
+      `Приховано ${label}. Вони зникли з вітрини.`,
+    toastShown: (label: string) => `Показуються на сайті: ${label}.`,
+    toastGrouped: (label: string) => `Перенесено в групу: ${label}.`,
+    toastColored: (label: string) => `Змінено колір: ${label}.`,
+    filterCategory: "Категорія",
+    filterCategoryAny: "Будь-яка категорія",
+    filterCategoryPlaceholder: "Почніть вводити категорію…",
+    filterBrand: "Бренд",
+    filterPrice: "Ціна, ₴",
+    filterStockIn: "Є",
+    filterDevice: "Сумісний пристрій",
+    filterDeviceAny: "Будь-який пристрій",
+    filterDevicePlaceholder: "Почніть вводити модель…",
+    filterNothingFound: "Нічого не знайдено",
+    filtersApply: "Показати товари",
+    chipStatus: (label: string) => `Статус: ${label}`,
+    chipStock: (label: string) => `Залишок: ${label}`,
+    chipCategory: (label: string) => `Категорія: ${label}`,
+    chipBrand: (label: string) => `Бренд: ${label}`,
+    chipDevice: (label: string) => `Пристрій: ${label}`,
+    chipPrice: (from: string, to: string) =>
+      from && to
+        ? `Ціна: ${from}–${to} ₴`
+        : from
+          ? `Ціна: від ${from} ₴`
+          : `Ціна: до ${to} ₴`,
+    totalsFree: (count: number) => `${count} вільно`,
   },
 
   // TASK-360: supplier-catalogue import.
@@ -4035,8 +4102,8 @@ export const dict = {
   },
 
   statusToggle: {
-    productDeactivate: "Деактивувати товар",
-    productActivate: "Активувати товар",
+    productDeactivate: "Приховати",
+    productActivate: "Показати",
     categoryDeactivate: "Деактивувати категорію",
     categoryActivate: "Активувати категорію",
   },

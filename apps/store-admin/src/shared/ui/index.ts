@@ -114,6 +114,13 @@ export {
 } from "./data-table";
 export { Combobox, type ComboboxOption, type ComboboxProps } from "./combobox";
 export {
+  TreeCombobox,
+  treeComboboxItems,
+  type TreeComboboxItem,
+  type TreeComboboxNode,
+  type TreeComboboxProps,
+} from "./tree-combobox";
+export {
   BulkActionsBar,
   type BulkAction,
   type BulkActionsBarProps,
