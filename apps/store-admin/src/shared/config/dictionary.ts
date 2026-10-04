@@ -2550,8 +2550,6 @@ export const dict = {
     metaTitleNew: "Нове запитання — Адмін",
     metaTitleEdit: "Редагування запитання — Адмін",
     heading: "Часті запитання (FAQ)",
-    subheading:
-      "Ці запитання й відповіді показуються на сторінці «Інформація та підтримка» і допомагають клієнтам (та пошуковим системам) швидко знайти відповідь.",
     add: "Додати запитання",
     colQuestion: "Запитання",
     colStatus: "Статус",
@@ -2560,13 +2558,10 @@ export const dict = {
     activate: "Показати",
     deactivate: "Приховати",
     loadError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
-    loadOneError: "Не вдалося завантажити запитання. Спробуйте ще раз.",
     empty: "Запитань ще немає. Додайте перше запитання.",
-    back: "← Назад до FAQ",
     createHeading: "Нове запитання",
-    editHeading: "Редагування запитання",
+    editHeading: "Редагувати запитання",
     createSubmit: "Додати запитання",
-    deleteConfirm: "Видалити це запитання? Дію не можна скасувати.",
     toastCreated: "Запитання додано",
     toastCreateFailed: "Не вдалося додати запитання",
     toastUpdated: "Запитання оновлено",
@@ -2581,29 +2576,58 @@ export const dict = {
     // column and its form field are gone, so the grid needs its own accessible name.
     gridLabel: "Часті запитання — порядок",
     reorderHint:
-      "Порядок запитань на сайті = порядок рядків тут. Перетягніть рядок за значок ліворуч або скористайтеся клавіатурою.",
+      "Порядок рядків = порядок на сайті. Перетягніть рядок за ⠿; клік по рядку розгортає відповідь.",
+
+    // Wave 198 (FaqProposal ЧП1–ЧП8, TASK-1075): accordion rows, views, «⋯»,
+    // the form as a dialog over the list.
+    subheadingLead: "Показуються на сторінці",
+    subheadingTail:
+      "«Інформація та підтримка» в цьому порядку й допомагають клієнтам (та пошуковим системам) швидко знайти відповідь.",
+    infoLinkAria: "Відкрити /info на сайті (нова вкладка)",
+    viewAll: "Усі",
+    viewShown: "Показуються",
+    viewHidden: "Приховані",
+    viewLockedHint:
+      "Поки вибрано вид, порядок змінювати не можна: тут видно лише частину списку. Оберіть «Усі».",
+    searchPlaceholder: "Запитання або текст відповіді…",
+    searchLabel: "Пошук запитань",
+    answerToggleAria: (question: string) => `Відповідь на «${question}»`,
+    rowActionsAria: (question: string) => `Дії із запитанням «${question}»`,
+    deleteItem: "Видалити…",
+    deleteTitle: "Видалити запитання?",
+    deleteBody: (question: string) =>
+      `«${question}» зникне зі сторінки /info. Цю дію не можна скасувати — якщо запитання ще знадобиться, краще «Приховати».`,
+    deleteAction: "Видалити запитання",
+    notFound: "Запитання не знайдено — можливо, його вже видалили.",
   },
 
   faqForm: {
     question: "Запитання",
     questionPlaceholder: "Скільки коштує доставка?",
-    questionHint:
-      "Коротке запитання так, як його поставив би клієнт (одне речення).",
+    questionHint: "Одне речення — так, як його поставив би клієнт.",
     answer: "Відповідь",
     answerPlaceholder:
       "Доставка Новою Поштою — за тарифами перевізника, безкоштовно від 1 000 ₴…",
-    answerHint:
-      "Повна відповідь простою мовою. Її бачитиме клієнт, коли розгорне запитання.",
+    answerHint: "Простою мовою; клієнт побачить її, коли розгорне запитання.",
     isActive: "Показувати на сайті",
     isActiveHint:
-      "Приховані запитання не показуються клієнтам, але залишаються тут для повторного увімкнення.",
-    submit: "Зберегти запитання",
+      "Приховані запитання не видно клієнтам, але вони лишаються тут, щоб увімкнути знову.",
+    submit: "Зберегти",
     errors: {
       questionRequired: "Вкажіть запитання",
       questionMax: "Запитання має містити не більше 500 символів",
       answerRequired: "Вкажіть відповідь",
       answerMax: "Відповідь має містити не більше 5000 символів",
     },
+
+    // Wave 198 (FaqProposal ЧП4–ЧП8): counters against the API's own limits,
+    // the /info preview and the one-line summary of a refused submit.
+    counter: (count: number, max: number) => `${count} / ${max}`,
+    counterAria: (label: string, count: number, max: number) =>
+      `${label}: ${count} з ${max} символів`,
+    preview: "Так виглядатиме на /info",
+    formAlert:
+      "Заповніть запитання й відповідь — без них на сайті вийде порожній пункт.",
   },
 
   // --- Orders (TASK-115) ------------------------------------------------------
