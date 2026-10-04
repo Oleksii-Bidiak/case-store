@@ -1,6 +1,11 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { MediaLibraryView, MediaLibrarySkeleton } from "@/widgets";
+// From the slice, not the `@/widgets` barrel — the barrel is one file every
+// parallel lane appends to, and this page needs nothing else from it.
+import {
+  MediaLibraryPageSkeleton,
+  MediaLibraryView,
+} from "@/widgets/media-library-view";
 import { dict } from "@/shared/config";
 
 /**
@@ -17,22 +22,16 @@ export const metadata: Metadata = {
   title: dict.mediaLibrary.metaTitle,
 };
 
+/**
+ * The heading lives inside the view since wave 198: «Завантажити файли» sits
+ * next to it (МТ1) and needs the upload queue the view owns. The fallback
+ * draws the same heading, so nothing jumps.
+ */
 export default function MediaPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-          {dict.mediaLibrary.heading}
-        </h2>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          {dict.mediaLibrary.subheading}
-        </p>
-      </div>
-
-      {/* `useSearchParams()` inside the view needs a Suspense boundary. */}
-      <Suspense fallback={<MediaLibrarySkeleton />}>
-        <MediaLibraryView />
-      </Suspense>
-    </div>
+    // `useSearchParams()` inside the view needs a Suspense boundary.
+    <Suspense fallback={<MediaLibraryPageSkeleton />}>
+      <MediaLibraryView />
+    </Suspense>
   );
 }
