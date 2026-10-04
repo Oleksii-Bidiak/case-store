@@ -10,6 +10,9 @@ import { dict } from "@/shared/config";
  * followed by a query-only `router.replace` re-renders nothing and the controls
  * go dead. Rendering on request makes each of those a real navigation. Every
  * admin route sits behind auth, so there is no static payload worth keeping.
+ *
+ * Wave 198 (TASK-1057): the heading moved into the registry, as on «Замовлення»;
+ * the skeleton draws the same heading, so nothing jumps.
  */
 export const dynamic = "force-dynamic";
 
@@ -19,14 +22,8 @@ export const metadata: Metadata = {
 
 export default function ReviewsPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-        {dict.reviews.heading}
-      </h2>
-
-      <Suspense fallback={<AdminReviewTableSkeleton />}>
-        <AdminReviewTable />
-      </Suspense>
-    </div>
+    <Suspense fallback={<AdminReviewTableSkeleton />}>
+      <AdminReviewTable />
+    </Suspense>
   );
 }

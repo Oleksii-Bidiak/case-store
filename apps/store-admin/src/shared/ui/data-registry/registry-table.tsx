@@ -80,6 +80,15 @@ export interface RegistryTableProps<T> {
   getRowLabel: (row: T) => string;
   /** Makes the row open the record. Rendered as a real link (`rowLink`). */
   getRowHref?: (row: T) => string | undefined;
+  /**
+   * For a record that opens in place (a side sheet) rather than on its own
+   * page: a click on the row — outside its controls — calls this. Ignored for
+   * a row that has an href. The screen still gives the keyboard a control that
+   * opens the record (a button in the row or a «⋯» item).
+   */
+  onRowOpen?: (row: T) => void;
+  /** Extra classes for a row (table) / card — e.g. an unread tint. */
+  rowClassName?: (row: T) => string | undefined;
   /** Effective width per column id. */
   widths: Readonly<Record<string, number>>;
   onResize?: (id: string, width: number) => void;
@@ -153,6 +162,8 @@ export function RegistryTable<T>({
   getRowId,
   getRowLabel,
   getRowHref,
+  onRowOpen,
+  rowClassName,
   widths,
   onResize,
   density = "comfortable",
@@ -228,11 +239,20 @@ export function RegistryTable<T>({
     router.push(href);
   };
 
-  /** A row with a link opens it; one without opens its detail panel, if any. */
+  /**
+   * A row with a link opens it; one without opens in place (a sheet, via
+   * `onRowOpen`) or toggles its expanded panel, if any.
+   */
   const onRowClick = (event: React.MouseEvent<HTMLElement>, row: T) => {
     const href = getRowHref?.(row);
     if (href) {
       open(event, href);
+      return;
+    }
+    if (onRowOpen) {
+      // In place: no new tab to offer, so a middle click does nothing rather
+      // than something surprising.
+      if (event.button === 0 && isRowIntent(event)) onRowOpen(row);
       return;
     }
     if (renderExpanded && isRowIntent(event) && renderExpanded(row) !== null) {
@@ -399,7 +419,8 @@ export function RegistryTable<T>({
                   onAuxClick={(event) => onAux(event, href)}
                   className={cn(
                     "rounded-lg border bg-card p-3 shadow-card",
-                    href && "cursor-pointer",
+                    (href || onRowOpen) && "cursor-pointer",
+                    rowClassName?.(row),
                     selection?.isSelected(id) &&
                       "border-primary/40 bg-primary/7",
                   )}
@@ -569,7 +590,9 @@ export function RegistryTable<T>({
                   onAuxClick={(event) => onAux(event, href)}
                   className={cn(
                     "hover:bg-muted/50 data-[state=selected]:bg-primary/7",
-                    (href || expandControl(row)) && "cursor-pointer",
+                    (href || onRowOpen || expandControl(row)) &&
+                      "cursor-pointer",
+                    rowClassName?.(row),
                     isOpen && "border-b-0 bg-muted/40",
                   )}
                 >

@@ -329,12 +329,6 @@ export const dict = {
       selectAll: "Вибрати всі рядки на сторінці",
       selectedCount: (count: number) => `Вибрано: ${count}`,
       clearSelection: "Зняти вибір",
-      announceSelected: (name: string, count: number) =>
-        `„${name}“ вибрано. Усього вибрано: ${count}`,
-      announceDeselected: (name: string, count: number) =>
-        `„${name}“ знято. Усього вибрано: ${count}`,
-      announceSelectedAll: (count: number) => `Вибрано рядків: ${count}`,
-      announceCleared: "Вибір знято",
 
       // One search, one filter idiom, one page size (TASK-423). These strings
       // are the reason the shared controls can be dropped into a table without
@@ -2934,14 +2928,15 @@ export const dict = {
     colRating: "Оцінка",
     colComment: "Коментар",
     colDate: "Надіслано",
-    noComment: "—",
+    // Wave 198 (TASK-1057): a rating left without any text says so in words —
+    // a bare «—» read as a row that failed to load.
+    noComment: "Лише оцінка, без тексту",
     approve: "Схвалити",
     // TASK-446: the button says TEXT because only the text is withdrawn. The old
     // «Відхилити» described a hard delete that took the rating out of the
     // product's average with it — an operator who still reads it that way will
     // reject a one-star review believing the score recovers, and it will not.
     reject: "Відхилити текст",
-    emptyQueue: "Немає відгуків для модерації.",
     loadError: "Не вдалося завантажити відгуки. Спробуйте ще раз.",
     approveSuccess: "Відгук схвалено.",
     rejectSuccess: "Текст відгуку знято з сайту. Оцінка й далі враховується.",
@@ -2952,10 +2947,9 @@ export const dict = {
       `Відгук на «${product}» від ${author}`,
     // Bulk moderation over the on-screen selection (TASK-356).
     bulk: {
-      approve: (count: number) => `Схвалити (${count})`,
-      reject: (count: number) => `Відхилити текст (${count})`,
-      selectRow: (product: string, author: string) =>
-        `Вибрати відгук на «${product}» від ${author}`,
+      // «…» since wave 198: BOTH bulk verdicts now ask first (TASK-1057).
+      approve: (count: number) => `Схвалити (${count})…`,
+      reject: (count: number) => `Відхилити текст (${count})…`,
       // TASK-446: this prompt used to warn about a permanent loss. It no longer
       // happens — the row stays, the rating goes on counting, and the author can
       // rewrite the text from the storefront. The prompt still asks, because the
@@ -2968,6 +2962,19 @@ export const dict = {
       announceApproved: (count: number) => `Схвалено відгуків: ${count}`,
       announceRejected: (count: number) => `Відхилено текстів: ${count}`,
       announceFailed: "Не вдалося виконати масову дію",
+      // Wave 198 (TASK-1057, ReviewsProposal В6): approving publishes texts and
+      // lets ratings into the score, so it asks too — with its own words.
+      approveConfirmTitle: (countLabel: string) =>
+        `Опублікувати ${countLabel}?`,
+      approveConfirm:
+        "Тексти з’являться на сторінках товарів, а оцінки ввійдуть у рейтинг. Скасувати можна, відхиливши текст пізніше.",
+      approveConfirmLabel: (count: number) => `Опублікувати ${count}`,
+      // «Відхилити текст 3 відгуків?» — the noun in the genitive.
+      rejectConfirmTitle: (countLabel: string) =>
+        `Відхилити текст ${countLabel}?`,
+      genitiveForms: ["відгуку", "відгуків", "відгуків"],
+      idleHint:
+        "Виберіть відгуки, щоб схвалити чи відхилити текст кількох одразу",
     },
 
     // Free-text search (TASK-423). The queue had none at all, so triaging a
@@ -2975,13 +2982,11 @@ export const dict = {
     // that product?" was a question this screen could not answer.
     searchPlaceholder: "Пошук за текстом, автором або товаром…",
     searchAria: "Пошук відгуків",
-    emptyMatch: (q: string) => `Немає відгуків за запитом «${q}».`,
 
     // TASK-430: the queue showed a product NAME and nothing else, and this
     // catalogue has several positions per name (the same case in four colours), so
     // a moderator could not tell which one a complaint was about — nor look it up,
     // because the SKU is the key the catalogue is searched by.
-    colSku: "Артикул",
     noSku: "без артикулу",
     productLinkAria: (product: string) => `Відкрити картку товару «${product}»`,
 
@@ -2993,7 +2998,7 @@ export const dict = {
     // in as many words because nothing else on this screen is.
     replyAction: "Відповісти",
     replyEditAction: "Змінити відповідь",
-    replyBadge: "Є відповідь",
+    replyBadge: "Є відповідь магазину",
     replyTitle: "Відповідь магазину",
     replyDescription: (product: string) =>
       `Публічна відповідь під відгуком на «${product}». Її бачать усі відвідувачі сайту.`,
@@ -3059,21 +3064,68 @@ export const dict = {
     // Deep-link narrowing from the dashboard's rating-abuse card (TASK-601):
     // removable chips, since no control on this screen sets them.
     productChip: (product: string) => `Товар: ${product}`,
-    productChipAria: (product: string) =>
-      `Прибрати фільтр за товаром ${product}`,
     ipChip: (ip: string) => `IP: ${ip}`,
-    ipChipAria: (ip: string) => `Прибрати фільтр за IP-адресою ${ip}`,
+
+    // ── Wave 198 (TASK-1057, ReviewsProposal В1–В10) ─────────────────────────
+    // Quick views replace the two selects; the selects' labels live on as the
+    // filter sheet's pills.
+    viewAbuse: "Сигнали накрутки",
+    viewHiddenAuthors: "Приховані автори",
+    viewDefault: "Стандартний",
+    itemForms: ["відгук", "відгуки", "відгуків"],
+    summaryFound: "Знайдено",
+    // The API lists newest first, always (no sort parameter yet).
+    sortCreatedDesc: "надіслано, нові зверху",
+    colStatus: "Статус",
+    statusPending: "На розгляді",
+    statusApproved: "Опубліковано",
+    statusRejected: "Текст відхилено",
+    statusHidden: "Приховано",
+    bought: "купував",
+    notBought: "не купував",
+    hideAuthorMenu: "Приховати всі оцінки автора…",
+    unhideAuthorMenu: "Повернути оцінки автора…",
+    filtersApply: "Показати відгуки",
+    filterStatusTitle: "Статус тексту",
+    filterAuthorsTitle: "Автори",
+    chipStatus: (label: string) => `Статус: ${label}`,
+    chipAuthors: (label: string) => `Автори: ${label}`,
+    // The reply dialog (В8): the 1000-character limit, counted as you type.
+    replyHint: "Відповідь з'явиться під відгуком одразу після публікації.",
+    replyCounter: (length: number, max: number) => `${length} / ${max}`,
+    // «Сигнали накрутки» (В3, TASK-1004): the explanation card over the series
+    // the dashboard links to. Counted from the rows the API returned.
+    abuseTitleProduct: (count: string, span: string, product: string) =>
+      `Схоже на накрутку: ${count} за ${span} на «${product}»`,
+    abuseTitleIp: (count: string, span: string, ip: string) =>
+      `Схоже на накрутку: ${count} за ${span} з адреси ${ip}`,
+    abuseRatingForms: ["оцінка", "оцінки", "оцінок"],
+    abuseLowRatingForms: ["низька оцінка", "низькі оцінки", "низьких оцінок"],
+    dayForms: ["день", "дні", "днів"],
+    abuseSuspects: (count: number, total: number) =>
+      `${count} з ${total} — від акаунтів без покупки й без тексту.`,
+    abuseAdvice:
+      "Перевірте авторів і, якщо це накрутка, приховайте їхні оцінки через «⋯».",
+    abuseNext: (index: number, total: number) =>
+      `Наступний сигнал (${index} з ${total})`,
+    // Empty texts, one per view (В9).
+    emptyPendingTitle: "Усе розглянуто",
+    emptyPending:
+      "Нових відгуків на модерацію немає. Щойно покупець залишить відгук, він з'явиться тут, а в меню — лічильник.",
+    emptyApproved: "Опублікованих відгуків ще немає.",
+    emptyRejected: "Відхилених відгуків немає.",
+    emptyAbuse: "За цим сигналом відгуків не знайдено.",
+    emptyHiddenAuthors: "Прихованих авторів немає.",
+    emptyAll: "Відгуків ще немає.",
   },
 
   // --- Contact messages (TASK-177) --------------------------------------------
   messages: {
     metaTitle: "Повідомлення — Адмін",
     heading: "Вхідні повідомлення",
-    filterStatusAria: "Фільтр за статусом",
     filterAll: "Усі",
     filterNew: "Нові",
     filterRead: "Прочитані",
-    filterArchived: "В архіві",
     colName: "Відправник",
     colTopic: "Тема",
     colMessage: "Повідомлення",
@@ -3091,19 +3143,14 @@ export const dict = {
     // Detail dialog
     open: "Відкрити",
     detailTitle: "Повідомлення",
-    fieldName: "Імʼя",
-    fieldPhone: "Телефон",
     fieldEmail: "Email",
-    fieldTopic: "Тема",
     fieldOrderRef: "Замовлення",
-    fieldMessage: "Повідомлення",
     fieldAdminNote: "Внутрішня примітка",
     adminNotePlaceholder: "Примітка для команди (не бачить клієнт)…",
     markRead: "Позначити прочитаним",
     markArchived: "В архів",
     markNew: "Повернути в нові",
     saveNote: "Зберегти примітку",
-    receivedAt: (date: string) => `Отримано ${date}`,
     updateSuccess: "Повідомлення оновлено.",
     updateError: "Не вдалося оновити повідомлення. Спробуйте ще раз.",
     // IN_PROGRESS status + inbox→profile link (TASK-256)
@@ -3121,7 +3168,6 @@ export const dict = {
       markInProgress: (count: number) => `В роботу (${count})`,
       markRead: (count: number) => `Прочитано (${count})`,
       markArchived: (count: number) => `В архів (${count})`,
-      selectRow: (name: string) => `Вибрати повідомлення від ${name}`,
       announceSaving: (count: number) => `Оновлення ${count} повідомл.…`,
       announceDone: (count: number) => `Оновлено повідомлень: ${count}`,
       announceFailed: "Не вдалося виконати масову дію",
@@ -3132,13 +3178,55 @@ export const dict = {
     // was to page through the archive.
     searchPlaceholder: "Імʼя, пошта, телефон, тема або текст…",
     searchAria: "Пошук повідомлень",
-    emptyMatch: (q: string) => `Немає повідомлень за запитом «${q}».`,
 
     // TASK-761: звернення, що спрацювали на поле-пастку для ботів. Не входять
     // у «Усі» й у лічильник непрочитаних; видно лише за цим фільтром — щоб
     // хибне спрацювання (менеджер паролів заповнив пастку) можна було помітити.
     filterSpam: "Спам",
     statusSpam: "Спам",
+
+    // ── Wave 198 (TASK-1060, TASK-734, MessagesProposal З1–З9) ───────────────
+    // The registry: views over the same `?status=`, the summary, the sort line.
+    viewArchived: "Архів",
+    viewDefault: "Стандартний",
+    itemForms: ["повідомлення", "повідомлення", "повідомлень"],
+    summaryFound: "Знайдено",
+    summaryNew: "нове",
+    sortCreatedDesc: "отримано, нові зверху",
+    sortCreatedAsc: "отримано, старі зверху",
+    sortNameAsc: "відправник, А→Я",
+    sortNameDesc: "відправник, Я→А",
+    sortStatusAsc: "статус, нові спершу",
+    sortStatusDesc: "статус, архів спершу",
+    colOrder: "Замовлення",
+    orderLinkAria: (number: string) => `Знайти замовлення ${number}`,
+    // Topic keys of the storefront's contact form, in words.
+    topicOrder: "Замовлення",
+    topicDelivery: "Доставка",
+    topicWarranty: "Гарантія та сервіс",
+    topicReturn: "Повернення",
+    topicOther: "Інше",
+    bulkIdleHint:
+      "Виберіть повідомлення, щоб узяти в роботу, позначити прочитаними чи перенести в архів кілька одразу",
+    // TASK-1011: without `messages:write` the inbox is read-only, and says so.
+    readOnly:
+      "Лише перегляд. Брати в роботу, змінювати статус і писати примітки може співробітник із правом «Опрацьовувати звернення».",
+    // TASK-761: the «Спам» view explains itself (З4).
+    spamTitle: "Сюди потрапляє те, що форма визнала ботом",
+    spamText:
+      "Спрацювало приховане поле-пастка. Інколи його заповнює менеджер паролів справжнього клієнта — прочитайте й, якщо це людина, поверніть звернення в нові.",
+    // Empty texts, one per view.
+    emptyNew: "Нових повідомлень немає.",
+    emptyInProgress: "У роботі нічого немає.",
+    emptyRead: "Прочитаних повідомлень немає.",
+    emptyArchived: "В архіві порожньо.",
+    emptySpam: "У спамі порожньо.",
+    // The side panel (З5–З8) — what exists today: the customer's message, its
+    // source, the status and the one internal note.
+    statusMenu: (label: string) => `Статус: ${label}`,
+    sourceForm: "форма на сайті",
+    noteHidden: "клієнт не бачить",
+    noteHint: "Бачить лише команда. Клієнту не надсилається.",
   },
 
   orderStatus: {

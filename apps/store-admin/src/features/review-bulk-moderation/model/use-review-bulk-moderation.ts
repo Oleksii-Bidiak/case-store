@@ -8,6 +8,7 @@ import {
 } from "@/entities/review";
 import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
 import { useBulkStatus } from "@/features/bulk-status";
+import { countLabel } from "@/shared/lib";
 import { dict } from "@/shared/config";
 
 const t = dict.reviews.bulk;
@@ -49,9 +50,12 @@ export interface ReviewBulkModerationApi {
  * loss. It says the two things that are actually at stake: the texts disappear
  * from the site, and the ratings do not.
  *
- * Approving does not ask at all — publishing a review is reversible by rejecting
- * it, and prompting on every safe action is how operators learn to dismiss
- * prompts unread.
+ * ── Approving asks too, since wave 198 (TASK-1057) ───────────────────────────
+ * It used to go out on the click, on the grounds that publishing is reversible.
+ * The owner's artboard (ReviewsProposal В6) asks: a bulk approve puts N texts
+ * on product pages and N ratings into the score in one go, which is not a safe
+ * action at the scale a selection makes it. The prompt says exactly that, and
+ * how to undo it — not a generic «are you sure».
  */
 export function useReviewBulkModeration({
   onSuccess,
@@ -62,14 +66,25 @@ export function useReviewBulkModeration({
   const { run, isPending, confirmDialog } = useBulkStatus({
     mutation,
     toVariables: (ids, action: ReviewBulkAction) => ({ data: { ids, action } }),
+    // Both directions ask since wave 198 (TASK-1057, ReviewsProposal В6) — see
+    // the header note.
     confirmFor: (ids, action) =>
       action === "reject"
         ? {
+            title: t.rejectConfirmTitle(
+              countLabel(ids.length, t.genitiveForms),
+            ),
             description: t.rejectConfirm(ids.length),
-            confirmLabel: t.reject(ids.length),
+            confirmLabel: dict.reviews.reject,
             destructive: true,
           }
-        : null,
+        : {
+            title: t.approveConfirmTitle(
+              countLabel(ids.length, dict.reviews.itemForms),
+            ),
+            description: t.approveConfirm,
+            confirmLabel: t.approveConfirmLabel(ids.length),
+          },
     announceSaving: (count) => t.announceSaving(count),
     announceDone: (response, _ids, action) =>
       action === "reject"

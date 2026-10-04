@@ -1,48 +1,87 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/shared/ui";
+import { RegistryHeader } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
-const SKELETON_ROWS = 3;
-// Seven since TASK-430 added the SKU column. A skeleton that is a column short
-// makes the table jump sideways the moment the rows arrive.
-const COLUMN_COUNT = 7;
+const d = dict.reviews;
+
+const SKELETON_ROWS = 5;
+
+/** The registry's default columns, in order; the narrow ones hide below md. */
+const COLUMNS: ReadonlyArray<{ label: string; mobile: boolean }> = [
+  { label: d.colProduct, mobile: true },
+  { label: d.colAuthor, mobile: false },
+  { label: d.colRating, mobile: true },
+  { label: d.colComment, mobile: true },
+  { label: d.colStatus, mobile: false },
+  { label: d.colDate, mobile: false },
+];
+
+const bar = "h-4 animate-pulse rounded-sm bg-muted motion-reduce:animate-none";
 
 /**
- * Loading placeholder matching the AdminReviewTable column structure.
+ * Route / Suspense placeholder for `/reviews` (wave 198, canon §1.7): the
+ * header, the quick views, the toolbar's height and the registry's columns —
+ * so the page does not jump when the queue lands.
  */
 export function AdminReviewTableSkeleton() {
   return (
-    <div className="rounded-lg border border-border shadow-card overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>{dict.reviews.colProduct}</TableHead>
-            <TableHead>{dict.reviews.colSku}</TableHead>
-            <TableHead>{dict.reviews.colAuthor}</TableHead>
-            <TableHead>{dict.reviews.colRating}</TableHead>
-            <TableHead>{dict.reviews.colComment}</TableHead>
-            <TableHead>{dict.reviews.colDate}</TableHead>
-            <TableHead className="text-right">{dict.common.actions}</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {Array.from({ length: SKELETON_ROWS }).map((_, index) => (
-            <TableRow key={index}>
-              {Array.from({ length: COLUMN_COUNT }).map((__, cell) => (
-                <TableCell key={cell}>
-                  <div className="h-4 w-full max-w-[8rem] animate-pulse rounded bg-muted" />
-                </TableCell>
+    <div className="flex flex-col gap-4" aria-busy="true">
+      <RegistryHeader title={d.heading} />
+      <span role="status" className="sr-only">
+        {dict.common.loading}
+      </span>
+      <div className="flex gap-2" aria-hidden="true">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div
+            key={index}
+            className="h-8 w-24 animate-pulse rounded-full bg-muted motion-reduce:animate-none"
+          />
+        ))}
+      </div>
+      <div
+        aria-hidden="true"
+        className="h-10 w-full animate-pulse rounded-md bg-muted motion-reduce:animate-none md:max-w-150"
+      />
+      <div
+        aria-hidden="true"
+        className="overflow-hidden rounded-lg border shadow-card"
+      >
+        <table className="w-full table-fixed text-sm">
+          <thead className="bg-muted">
+            <tr className="border-b">
+              {COLUMNS.map((column) => (
+                <th
+                  key={column.label}
+                  className={
+                    column.mobile
+                      ? "h-10 px-2 text-left font-medium"
+                      : "hidden h-10 px-2 text-left font-medium md:table-cell"
+                  }
+                >
+                  {column.label}
+                </th>
               ))}
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+            </tr>
+          </thead>
+          <tbody>
+            {Array.from({ length: SKELETON_ROWS }, (_, row) => (
+              <tr key={row} className="border-b last:border-0">
+                {COLUMNS.map((column) => (
+                  <td
+                    key={column.label}
+                    className={
+                      column.mobile
+                        ? "px-2 py-3"
+                        : "hidden px-2 py-3 md:table-cell"
+                    }
+                  >
+                    <div className={bar} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

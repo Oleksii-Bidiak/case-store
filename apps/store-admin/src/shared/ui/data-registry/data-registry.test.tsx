@@ -672,6 +672,34 @@ describe("DataRegistry — row navigation", () => {
     expect(onSelect).toHaveBeenCalledWith("a");
     expect(mockPush).not.toHaveBeenCalled();
   });
+
+  // Wave 198 (MessagesProposal З5): a record that opens in a side sheet.
+  it("opens in place with onRowOpen — not from its controls — and tints rows", async () => {
+    const onRowOpen = jest.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <Harness
+        getRowHref={undefined}
+        onRowOpen={onRowOpen}
+        rowClassName={(o) => (o.id === "a" ? "bg-primary/6" : undefined)}
+        selectable
+        bulk={{ idleHint: "—" }}
+      />,
+    );
+    await user.click(screen.getByText("Оксана"));
+    expect(onRowOpen).toHaveBeenCalledWith(PAGE_1[0]);
+    await user.click(
+      screen.getByRole("checkbox", { name: r.selectRowAria("#B0000002") }),
+    );
+    expect(onRowOpen).toHaveBeenCalledTimes(1);
+    expect(mockPush).not.toHaveBeenCalled();
+    expect(screen.getByText("Оксана").closest("tr")).toHaveClass(
+      "bg-primary/6",
+    );
+    expect(screen.getByText("Ірина").closest("tr")).not.toHaveClass(
+      "bg-primary/6",
+    );
+  });
 });
 
 describe("DataRegistry — mobile cards and totals", () => {

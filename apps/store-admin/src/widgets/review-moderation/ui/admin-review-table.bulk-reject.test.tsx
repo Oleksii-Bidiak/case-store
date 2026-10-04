@@ -78,7 +78,10 @@ function renderTable() {
 
 function rowCheckbox() {
   return screen.getByRole("checkbox", {
-    name: dict.reviews.bulk.selectRow("iPhone 15 Pro Case", "olena"),
+    // Wave 198: the registry's own checkbox, named after the row.
+    name: dict.common.registry.selectRowAria(
+      dict.reviews.rowAria("iPhone 15 Pro Case", "olena"),
+    ),
   });
 }
 
@@ -133,7 +136,7 @@ describe("AdminReviewTable — bulk reject prompt (TASK-812)", () => {
     );
     await user.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
-        name: dict.reviews.bulk.reject(1),
+        name: dict.reviews.reject,
       }),
     );
 
@@ -167,6 +170,13 @@ describe("AdminReviewTable — bulk reject prompt (TASK-812)", () => {
 
     await user.click(
       screen.getByRole("button", { name: dict.reviews.bulk.approve(1) }),
+    );
+    // Wave 198 (В6): approving asks too — its own prompt opens, which is
+    // itself the proof the engine is not latched.
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: dict.reviews.bulk.approveConfirmLabel(1),
+      }),
     );
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toEqual({ ids: ["review-uuid-1"], action: "approve" });

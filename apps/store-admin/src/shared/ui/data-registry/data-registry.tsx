@@ -69,6 +69,12 @@ export interface DataRegistryProps<T> {
   isRefreshing?: boolean;
 
   /* chips + summary */
+  /**
+   * A standing explanation between the toolbar and the chips — e.g. the
+   * «Схоже на накрутку…» card over a flagged series (ReviewsProposal В3) or the
+   * «Спам» explanation (MessagesProposal З4). Usually a `Callout`.
+   */
+  notice?: React.ReactNode;
   chips?: readonly FilterChip[];
   onClearAllChips?: () => void;
   summary?: React.ReactNode;
@@ -80,6 +86,10 @@ export interface DataRegistryProps<T> {
   itemForms: PluralForms;
   getRowLabel: (row: T) => string;
   getRowHref?: (row: T) => string | undefined;
+  /** Opens the record in place (a sheet) on a row click — see RegistryTable. */
+  onRowOpen?: (row: T) => void;
+  /** Extra classes per row / card (an unread tint). */
+  rowClassName?: (row: T) => string | undefined;
   rowActions?: (row: T) => readonly RowActionItem[];
   rowActionsLabel?: (row: T) => string;
   sort?: RegistrySort;
@@ -146,6 +156,7 @@ export function DataRegistry<T>({
   columnsMenu = true,
   onRefresh,
   isRefreshing,
+  notice,
   chips = [],
   onClearAllChips,
   summary,
@@ -154,6 +165,8 @@ export function DataRegistry<T>({
   itemForms,
   getRowLabel,
   getRowHref,
+  onRowOpen,
+  rowClassName,
   rowActions,
   rowActionsLabel,
   sort,
@@ -242,6 +255,7 @@ export function DataRegistry<T>({
           onRefresh={onRefresh}
           isRefreshing={isRefreshing}
         />
+        {notice}
         <FilterChips chips={chips} onClearAll={onClearAllChips} />
         <RegistrySummary sortLabel={sortLabel} updatedAt={updatedAt}>
           {summary}
@@ -272,6 +286,8 @@ export function DataRegistry<T>({
         getRowId={registry.getRowId}
         getRowLabel={getRowLabel}
         getRowHref={getRowHref}
+        onRowOpen={onRowOpen}
+        rowClassName={rowClassName}
         widths={registry.widths}
         onResize={settings.setWidth}
         density={settings.settings.density}
