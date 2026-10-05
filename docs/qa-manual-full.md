@@ -1973,14 +1973,19 @@
 | `messages:read`  | читання інбоксу           | AD-CRM-13, AD-CRM-16 |
 | `messages:write` | «взяти в роботу», нотатки | AD-CRM-14, AD-CRM-15 |
 
-### Налаштування сайту (4)
+### Налаштування сайту (5)
 
-| Право               | Що стереже               | Перевірки                       |
-| ------------------- | ------------------------ | ------------------------------- |
-| `settings:seo`      | SEO-налаштування         | AD-SET-05, AD-SET-08, AD-SET-12 |
-| `settings:contacts` | контакти й графік        | AD-SET-01, AD-SET-12            |
-| `settings:delivery` | параметри доставки (API) | AD-SET-11 ⚠️                    |
-| `settings:search`   | переіндексація пошуку    | AD-SET-10                       |
+| Право                    | Що стереже                                         | Перевірки                       |
+| ------------------------ | -------------------------------------------------- | ------------------------------- |
+| `settings:seo`           | SEO-налаштування                                   | AD-SET-05, AD-SET-08, AD-SET-12 |
+| `settings:contacts`      | контакти й графік                                  | AD-SET-01, AD-SET-12            |
+| `settings:delivery`      | параметри доставки (API)                           | AD-SET-11 ⚠️                    |
+| `settings:search`        | переіндексація пошуку                              | AD-SET-10                       |
+| `settings:notifications` | Telegram-чати магазину, тестове повідомлення (API) | SYS-48 (у `qa-recheck.md`) ⚠️   |
+
+> ⚠️ `settings:notifications` (TASK-675, рішення власника 2026-10-01) поки стереже лише API
+> `/admin/notifications/*` — екран `/settings/notifications` з'явиться в TASK-676, і тоді
+> його перевірки замінять SYS-48 у цьому рядку.
 
 > ⚠️ `settings:delivery` — єдине право **без власного екрана** в адмінці. Воно стереже
 > `admin-delivery.controller.ts`, але сторінки `/settings/delivery` не існує, тож видане

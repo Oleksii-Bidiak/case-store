@@ -143,7 +143,7 @@ export interface NeedsAction {
   pendingReviews: number;
   /** Active orders not yet paid (`paymentStatus != PAID` AND `status NOT IN (CANCELLED, REFUNDED)`). */
   unpaidInTransit: number;
-  /** Outbound emails permanently failed (`MailOutbox.status = FAILED`). */
+  /** Outbound emails permanently failed (`NotificationOutbox.status = FAILED`). */
   failedMails: number;
   /**
    * Orders sitting in PENDING for more than {@link PENDING_STALE_HOURS} hours

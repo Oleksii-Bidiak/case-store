@@ -10,7 +10,7 @@
 import type { MailTemplate } from './order-confirmation.template';
 
 /**
- * JSON-safe payload for a password-reset email, as stored in a `MailOutbox` row.
+ * JSON-safe payload for a password-reset email, as stored in a `NotificationOutbox` row.
  * No `Date` — the pre-built link and a human-readable expiry string are all the
  * renderer needs, so nothing has to be re-derived at send time.
  */

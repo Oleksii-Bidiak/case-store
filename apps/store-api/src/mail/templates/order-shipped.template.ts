@@ -38,7 +38,7 @@ export interface OrderShippedParams {
 }
 
 /**
- * Fully-serialized shipped-notice payload as stored in a `MailOutbox` row. Already
+ * Fully-serialized shipped-notice payload as stored in a `NotificationOutbox` row. Already
  * JSON-safe (no `Date` fields), so it is the params object plus a recipient.
  */
 export interface OrderShippedMailPayload extends OrderShippedParams {

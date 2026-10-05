@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { RetryAfterException } from '../src/common/filters/retry-after.exception';
 import { ContactRepository } from '../src/contact/contact.repository';
 import { CONTACT_EMAIL_COOLDOWN_MS, ContactService } from '../src/contact/contact.service';
+import { ShopNotifier } from '../src/notification/shop-notifier.service';
 import { PrismaService } from '../src/prisma';
 
 /**
@@ -64,6 +65,11 @@ describe('Contact cooldown on Postgres (integration)', () => {
         PrismaService,
         ContactRepository,
         ContactService,
+        // TASK-677: the shop ping is not what this suite tests.
+        {
+          provide: ShopNotifier,
+          useValue: { enqueueContactMessage: jest.fn().mockResolvedValue(0) },
+        },
         {
           provide: PinoLogger,
           useValue: { setContext: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },

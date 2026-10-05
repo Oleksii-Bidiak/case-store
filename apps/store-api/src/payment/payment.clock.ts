@@ -1,6 +1,6 @@
 /**
  * Injectable clock for the payment subsystem — same pattern, same reason as
- * {@link MAIL_OUTBOX_CLOCK} (`mail-outbox/mail-outbox.clock.ts`).
+ * {@link NOTIFICATION_OUTBOX_CLOCK} (`notification-outbox/notification-outbox.clock.ts`).
  *
  * The reconcile worker's whole job is time arithmetic: "PENDING for longer than
  * the grace period", "reservation deadline already passed". Injecting the clock

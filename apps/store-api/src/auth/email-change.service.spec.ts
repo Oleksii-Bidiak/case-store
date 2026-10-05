@@ -6,7 +6,7 @@ import { EmailChangeService } from './email-change.service';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
 import { EmailVerificationService } from './email-verification.service';
-import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
 
 /**
  * TASK-396 — the owner's decision of 2026-08-27, point by point: password
@@ -82,7 +82,7 @@ describe('EmailChangeService (TASK-396)', () => {
       repo as unknown as AuthRepository,
       authService as unknown as AuthService,
       verification as unknown as EmailVerificationService,
-      outbox as unknown as MailOutboxService,
+      outbox as unknown as NotificationOutboxService,
       config,
       logger,
     );

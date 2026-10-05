@@ -119,10 +119,14 @@ export class ReturnRepository {
    *
    * @param assertClaimable the service's rule, run against the locked ledger;
    *   throwing rolls the transaction back before anything is written.
+   * @param afterCreate optional hook run in the SAME transaction right after the
+   *   insert, with the inserted return (TASK-677: the shop's Telegram ping for a
+   *   customer's request). Throwing rolls the return back with it.
    */
   async create(
     params: CreateReturnParams,
     assertClaimable: AssertReturnClaimable,
+    afterCreate?: (tx: Prisma.TransactionClient, created: ReturnWithItems) => Promise<void>,
   ): Promise<ReturnWithItems> {
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM orders WHERE id = ${params.orderId} FOR UPDATE`;
@@ -133,7 +137,11 @@ export class ReturnRepository {
       });
       assertClaimable(ledger);
 
-      return this.insertReturn(tx, params);
+      const created = await this.insertReturn(tx, params);
+      if (afterCreate) {
+        await afterCreate(tx, created);
+      }
+      return created;
     });
   }
 

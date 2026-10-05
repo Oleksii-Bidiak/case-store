@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
-  MailOutboxStatus,
+  NotificationOutboxStatus,
   OrderHistoryNote,
   OrderStatus,
   PaymentStatus,
@@ -392,7 +392,7 @@ export class DashboardRepository {
       this.prisma.order.count({ where: { status: OrderStatus.PENDING, deletedAt: null } }),
       this.prisma.review.count({ where: moderationQueueWhere(ReviewTextStatus.PENDING) }),
       this.prisma.order.count({ where: this.unrealizedOrderWhere() }),
-      this.prisma.mailOutbox.count({ where: { status: MailOutboxStatus.FAILED } }),
+      this.prisma.notificationOutbox.count({ where: { status: NotificationOutboxStatus.FAILED } }),
       this.prisma.order.count({ where: this.pendingOver48hWhere() }),
       this.getRatingAbuseSignals(),
       this.prisma.order.count({ where: this.unavailableItemsOrderWhere() }),

@@ -4,7 +4,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
 import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
-import { MailOutboxService } from './mail-outbox.service';
+import { NotificationOutboxService } from './notification-outbox.service';
 
 /** Registered name of the cron job — used to look it up via SchedulerRegistry. */
 const DISPATCH_JOB_NAME = 'mail-outbox-dispatch';
@@ -13,25 +13,25 @@ const DISPATCH_JOB_NAME = 'mail-outbox-dispatch';
 const DEFAULT_CRON = '* * * * *';
 
 /**
- * MailOutboxWorker — cron-driven dispatcher for the transactional outbox
+ * NotificationOutboxWorker — cron-driven dispatcher for the transactional outbox
  * (TASK-103). Mirrors {@link RefreshTokenCleanupService}: the job is registered
  * in `onModuleInit` via {@link SchedulerRegistry} (not the `@Cron` decorator) so
  * the schedule is read from config at runtime — `MAIL_OUTBOX_CRON`, default
- * `* * * * *`. Each tick delegates to {@link MailOutboxService.dispatchDue};
+ * `* * * * *`. Each tick delegates to {@link NotificationOutboxService.dispatchDue};
  * tick errors are caught and logged so a transient failure never crashes the
  * scheduler.
  */
 @Injectable()
-export class MailOutboxWorker implements OnModuleInit, OnModuleDestroy {
+export class NotificationOutboxWorker implements OnModuleInit, OnModuleDestroy {
   private readonly cronExpression: string;
 
   constructor(
-    private readonly outboxService: MailOutboxService,
+    private readonly outboxService: NotificationOutboxService,
     private readonly config: ConfigService,
     private readonly schedulerRegistry: SchedulerRegistry,
     private readonly logger: PinoLogger,
   ) {
-    this.logger.setContext(MailOutboxWorker.name);
+    this.logger.setContext(NotificationOutboxWorker.name);
     this.cronExpression = this.config.get<string>('MAIL_OUTBOX_CRON', DEFAULT_CRON);
   }
 

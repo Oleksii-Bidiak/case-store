@@ -1,10 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
-import { Prisma, MailOutbox } from '@prisma/client';
-import { MailOutboxRepository } from './mail-outbox.repository';
+import { Prisma, NotificationChannel, NotificationOutbox } from '@prisma/client';
+import { NotificationOutboxRepository } from './notification-outbox.repository';
 import { MailService, type SendOrderConfirmationParams } from '../mail/mail.service';
-import type { OrderConfirmationMailPayload } from '../mail/templates/order-confirmation.template';
 import type { PasswordResetMailPayload } from '../mail/templates/password-reset.template';
 import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
 import type { EmailVerificationMailPayload } from '../mail/templates/email-verification.template';
@@ -14,7 +13,7 @@ import type {
   EmailChangeConfirmMailPayload,
   EmailChangeNoticeMailPayload,
 } from '../mail/templates/email-change.template';
-import { Clock, MAIL_OUTBOX_CLOCK } from './mail-outbox.clock';
+import { Clock, NOTIFICATION_OUTBOX_CLOCK } from './notification-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
   EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
@@ -25,7 +24,12 @@ import {
   ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
   PASSWORD_RESET_MAIL_TYPE,
   type DispatchResult,
-} from './mail-outbox.types';
+} from './notification-outbox.types';
+import {
+  NOTIFICATION_CHANNEL_ADAPTERS,
+  PermanentDeliveryError,
+  type NotificationChannelAdapter,
+} from './channels/notification-channel-adapter';
 
 /** Default backoff base: first retry waits ~1 minute. */
 const DEFAULT_BACKOFF_BASE_MS = 60_000;
@@ -35,31 +39,42 @@ const DEFAULT_BACKOFF_MAX_MS = 3_600_000;
 const DEFAULT_BATCH_SIZE = 20;
 
 /**
- * MailOutboxService — business logic for the transactional-outbox dispatch loop
+ * NotificationOutboxService — business logic for the transactional-outbox dispatch loop
  * (TASK-103).
  *
  * {@link enqueueOrderConfirmation} writes a row (atomic with the order when a tx
  * is passed); {@link dispatchDue} is the public, scheduler-independent state
- * machine the worker ticks: claim due rows → render+send → SENT, or on a
- * transient failure reschedule with exponential backoff until `maxAttempts` is
- * reached, then mark terminally FAILED. "Now" comes from an injected
- * {@link Clock} so backoff windows are deterministic under test.
+ * machine the worker ticks: claim due rows → hand each to the adapter of its
+ * `channel` (TASK-673) → SENT, or on a transient failure reschedule with
+ * exponential backoff until `maxAttempts` is reached, then mark terminally
+ * FAILED. "Now" comes from an injected {@link Clock} so backoff windows are
+ * deterministic under test.
  */
 @Injectable()
-export class MailOutboxService {
+export class NotificationOutboxService {
   private readonly backoffBaseMs: number;
   private readonly backoffMaxMs: number;
   private readonly batchSize: number;
   private readonly isProduction: boolean;
+  private readonly adapters: ReadonlyMap<NotificationChannel, NotificationChannelAdapter>;
 
   constructor(
-    private readonly repository: MailOutboxRepository,
-    private readonly mailService: MailService,
+    private readonly repository: NotificationOutboxRepository,
+    @Inject(NOTIFICATION_CHANNEL_ADAPTERS) adapters: NotificationChannelAdapter[],
     private readonly config: ConfigService,
     private readonly logger: PinoLogger,
-    @Inject(MAIL_OUTBOX_CLOCK) private readonly clock: Clock,
+    @Inject(NOTIFICATION_OUTBOX_CLOCK) private readonly clock: Clock,
   ) {
-    this.logger.setContext(MailOutboxService.name);
+    this.logger.setContext(NotificationOutboxService.name);
+    const byChannel = new Map<NotificationChannel, NotificationChannelAdapter>();
+    for (const adapter of adapters) {
+      if (byChannel.has(adapter.channel)) {
+        // Two adapters for one channel would make delivery depend on list order.
+        throw new Error(`Duplicate notification channel adapter: ${adapter.channel}`);
+      }
+      byChannel.set(adapter.channel, adapter);
+    }
+    this.adapters = byChannel;
     this.backoffBaseMs = this.config.get<number>(
       'MAIL_OUTBOX_BACKOFF_BASE_MS',
       DEFAULT_BACKOFF_BASE_MS,
@@ -86,7 +101,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ORDER_CONFIRMATION_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -106,7 +121,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: PASSWORD_RESET_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -125,7 +140,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ACCOUNT_LOCKED_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -148,7 +163,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: EMAIL_VERIFICATION_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -167,7 +182,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: EMAIL_CHANGE_CONFIRM_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -184,7 +199,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: EMAIL_CHANGE_NOTICE_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -205,7 +220,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ORDER_SHIPPED_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -224,7 +239,7 @@ export class MailOutboxService {
     await this.repository.enqueue(
       {
         type: ORDER_PAYMENT_EXPIRED_MAIL_TYPE,
-        recipient: payload.to,
+        recipientAddress: payload.to,
         payload: payload as unknown as Prisma.InputJsonValue,
       },
       tx,
@@ -245,67 +260,163 @@ export class MailOutboxService {
   /**
    * Dispatch every currently-due outbox row. Public (not tied to the scheduler)
    * so it is unit-testable directly. Returns per-run counters for logging/metrics.
+   *
+   * Each channel claims its own batch (up to `batchSize`) and goes to the adapter
+   * of that channel (TASK-673). Claiming and the "transport disabled" branch are
+   * both per channel, so a blocked channel — whose rows stay PENDING and due —
+   * never holds back another channel's rows, and vice versa.
    */
   async dispatchDue(): Promise<DispatchResult> {
     const now = this.clock.now();
-    const due = await this.repository.claimDue(now, this.batchSize);
     const result: DispatchResult = { sent: 0, retried: 0, failed: 0 };
 
-    if (due.length === 0) {
-      return result;
-    }
+    // Only a batch that actually reached a transport earns the summary line — a
+    // batch that was entirely blocked or drained has already logged its own.
+    let attempted = false;
 
-    if (!this.mailService.isEnabled()) {
-      if (this.isProduction) {
-        // NEVER no-op-drain in production. Marking rows SENT without a transport
-        // call is indistinguishable, from the outside, from actually delivering
-        // them: the order looks confirmed, the outbox looks clean, and the
-        // customer receives nothing — with no failure anywhere to notice.
-        // Leaving them PENDING is both the honest state and the recoverable one:
-        // `claimDue` is a pure read, so once SMTP is configured these very rows
-        // are picked up and genuinely delivered. Logged at error level because a
-        // production store that cannot email its customers is an incident, not a
-        // configuration preference.
+    // Every channel the schema knows, not just the registered adapters: a row of
+    // a channel nobody delivers must surface through the "no adapter" branch.
+    for (const channel of Object.values(NotificationChannel)) {
+      const rows = await this.repository.claimDue(now, this.batchSize, channel);
+      if (rows.length === 0) {
+        continue;
+      }
+      const adapter = this.adapters.get(channel);
+
+      if (!adapter) {
+        // Same treatment as an unknown `type`: a transient failure, so the rows
+        // stay visible (`lastError`, backoff, FAILED at `maxAttempts`) instead of
+        // vanishing — a row nobody can deliver is a deploy/config bug to see.
         this.logger.error(
-          { event: 'mailOutbox.dispatch.blocked', pending: due.length },
-          `MAIL_ENABLED is false in production — ${due.length} outbox row(s) left PENDING and NOT delivered. Configure SMTP.`,
+          { event: 'mailOutbox.dispatch.noAdapter', channel, count: rows.length },
+          `No adapter registered for notification channel ${channel} — ${rows.length} outbox row(s) will be retried`,
         );
-        return result;
+        const send = (): Promise<void> =>
+          Promise.reject(new Error(`No adapter registered for notification channel: ${channel}`));
+        for (const row of rows) {
+          await this.dispatchRow(row, now, result, send);
+        }
+        attempted = true;
+        continue;
       }
 
-      // Dev/CI only: drain as a no-op so the table does not grow unboundedly on
-      // a machine that has no SMTP transport and never will.
-      for (const row of due) {
-        await this.repository.markSent(row.id, now);
-        result.sent += 1;
+      if (!adapter.isEnabled()) {
+        await this.handleDisabledChannel(adapter, rows, now, result);
+        continue;
       }
+
+      for (const row of rows) {
+        await this.dispatchRow(row, now, result, (r) => adapter.send(r));
+      }
+      attempted = true;
+    }
+
+    if (attempted) {
       this.logger.info(
-        { event: 'mailOutbox.dispatch.drained', count: result.sent },
-        `Mail disabled — drained ${result.sent} outbox row(s) as no-op`,
+        { event: 'mailOutbox.dispatch', ...result },
+        `Outbox dispatch: ${result.sent} sent, ${result.retried} retried, ${result.failed} failed`,
       );
-      return result;
     }
-
-    for (const row of due) {
-      await this.dispatchRow(row, now, result);
-    }
-
-    this.logger.info(
-      { event: 'mailOutbox.dispatch', ...result },
-      `Outbox dispatch: ${result.sent} sent, ${result.retried} retried, ${result.failed} failed`,
-    );
     return result;
   }
 
-  /** Attempt to deliver a single row and apply the resulting state transition. */
-  private async dispatchRow(row: MailOutbox, now: Date, result: DispatchResult): Promise<void> {
+  /**
+   * The "transport disabled" branch for one channel's batch — the mail-only
+   * outbox's behaviour, now applied per channel, plus one case mail never had:
+   * a channel that is configured but not working (Telegram before `getMe`
+   * answers, or after it failed) keeps its rows PENDING outside production too.
+   */
+  private async handleDisabledChannel(
+    adapter: NotificationChannelAdapter,
+    rows: NotificationOutbox[],
+    now: Date,
+    result: DispatchResult,
+  ): Promise<void> {
+    const channel = adapter.channel;
+    const isEmail = channel === NotificationChannel.EMAIL;
+
+    if (this.isProduction) {
+      // NEVER no-op-drain in production. Marking rows SENT without a transport
+      // call is indistinguishable, from the outside, from actually delivering
+      // them: the order looks confirmed, the outbox looks clean, and the
+      // customer receives nothing — with no failure anywhere to notice.
+      // Leaving them PENDING is both the honest state and the recoverable one:
+      // `claimDue` is a pure read, so once the transport is configured these
+      // very rows are picked up and genuinely delivered. Logged at error level
+      // because a production store that cannot reach its customers is an
+      // incident, not a configuration preference.
+      this.logger.error(
+        { event: 'mailOutbox.dispatch.blocked', channel, pending: rows.length },
+        isEmail
+          ? `MAIL_ENABLED is false in production — ${rows.length} outbox row(s) left PENDING and NOT delivered. Configure SMTP.`
+          : `${channel} channel is not configured in production — ${rows.length} outbox row(s) left PENDING and NOT delivered.`,
+      );
+      return;
+    }
+
+    if (adapter.isConfigured()) {
+      // Configured but down, or not verified yet: these rows are real messages a
+      // working transport will deliver in a moment. Draining them here would mark
+      // SENT what nobody received — the very failure the production branch exists
+      // to prevent — on any non-production stand that does have a token.
+      this.logger.warn(
+        { event: 'mailOutbox.dispatch.blocked', channel, pending: rows.length },
+        `${channel} channel is configured but not available — ${rows.length} outbox row(s) left PENDING`,
+      );
+      return;
+    }
+
+    // Dev/CI only: drain as a no-op so the table does not grow unboundedly on
+    // a machine that has no transport for this channel and never will.
+    let drained = 0;
+    for (const row of rows) {
+      await this.repository.markSent(row.id, now);
+      result.sent += 1;
+      drained += 1;
+    }
+    this.logger.info(
+      { event: 'mailOutbox.dispatch.drained', channel, count: drained },
+      isEmail
+        ? `Mail disabled — drained ${drained} outbox row(s) as no-op`
+        : `${channel} disabled — drained ${drained} outbox row(s) as no-op`,
+    );
+  }
+
+  /**
+   * Attempt to deliver a single row through `send` and apply the resulting state
+   * transition. A {@link PermanentDeliveryError} fails the row at once; any other
+   * error is transient (backoff until `maxAttempts`).
+   */
+  private async dispatchRow(
+    row: NotificationOutbox,
+    now: Date,
+    result: DispatchResult,
+    send: (row: NotificationOutbox) => Promise<void>,
+  ): Promise<void> {
     try {
-      await this.deliver(row);
+      await send(row);
       await this.repository.markSent(row.id, now);
       result.sent += 1;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const attempts = row.attempts + 1;
+
+      if (err instanceof PermanentDeliveryError) {
+        await this.repository.markFailed(row.id, message, attempts);
+        result.failed += 1;
+        this.logger.error(
+          {
+            event: 'mailOutbox.dispatch.failed',
+            id: row.id,
+            channel: row.channel,
+            attempts,
+            permanent: true,
+            error: message,
+          },
+          `Outbox row ${row.id} failed permanently: ${message}`,
+        );
+        return;
+      }
 
       if (attempts >= row.maxAttempts) {
         await this.repository.markFailed(row.id, message, attempts);
@@ -330,58 +441,6 @@ export class MailOutboxService {
         },
         `Outbox row ${row.id} send failed; retry ${attempts} scheduled`,
       );
-    }
-  }
-
-  /**
-   * Render and send a row by its `type`. An unknown type throws — caught by
-   * {@link dispatchRow} and treated as a transient failure so the row is
-   * rescheduled (visible via `lastError`) rather than silently lost.
-   */
-  private async deliver(row: MailOutbox): Promise<void> {
-    switch (row.type) {
-      case ORDER_CONFIRMATION_MAIL_TYPE:
-        await this.mailService.sendOrderConfirmationPayload(
-          row.payload as unknown as OrderConfirmationMailPayload,
-        );
-        return;
-      case PASSWORD_RESET_MAIL_TYPE:
-        await this.mailService.sendPasswordResetPayload(
-          row.payload as unknown as PasswordResetMailPayload,
-        );
-        return;
-      case ORDER_SHIPPED_MAIL_TYPE:
-        await this.mailService.sendOrderShippedPayload(
-          row.payload as unknown as OrderShippedMailPayload,
-        );
-        return;
-      case ORDER_PAYMENT_EXPIRED_MAIL_TYPE:
-        await this.mailService.sendOrderPaymentExpiredPayload(
-          row.payload as unknown as OrderPaymentExpiredMailPayload,
-        );
-        return;
-      case ACCOUNT_LOCKED_MAIL_TYPE:
-        await this.mailService.sendAccountLockedPayload(
-          row.payload as unknown as AccountLockedMailPayload,
-        );
-        return;
-      case EMAIL_VERIFICATION_MAIL_TYPE:
-        await this.mailService.sendEmailVerificationPayload(
-          row.payload as unknown as EmailVerificationMailPayload,
-        );
-        return;
-      case EMAIL_CHANGE_CONFIRM_MAIL_TYPE:
-        await this.mailService.sendEmailChangeConfirmPayload(
-          row.payload as unknown as EmailChangeConfirmMailPayload,
-        );
-        return;
-      case EMAIL_CHANGE_NOTICE_MAIL_TYPE:
-        await this.mailService.sendEmailChangeNoticePayload(
-          row.payload as unknown as EmailChangeNoticeMailPayload,
-        );
-        return;
-      default:
-        throw new Error(`Unknown mail outbox type: ${row.type}`);
     }
   }
 

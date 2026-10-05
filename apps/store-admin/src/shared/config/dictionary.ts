@@ -3640,6 +3640,8 @@ export const dict = {
       seoSettings: "SEO-налаштування",
       // TASK-559: PUT /admin/search/synonyms → `searchSynonyms.update`.
       searchSynonyms: "Синоніми пошуку",
+      // TASK-675: /admin/notifications/telegram/* → `notification.*`.
+      notification: "Сповіщення",
     },
 
     // ── TASK-430: the log in Ukrainian ────────────────────────────────────────
@@ -3686,6 +3688,9 @@ export const dict = {
       createBrand: "створено бренд",
       createCategory: "створено категорію",
       createModel: "створено модель",
+      // TASK-675: POST /admin/notifications/telegram/link — одноразове посилання,
+      // за яким чат підключається до сповіщень магазину.
+      createTelegramLink: "створено посилання для підключення Telegram",
       deactivate: "деактивовано",
       deactivateBrand: "деактивовано бренд",
       deactivateModel: "деактивовано модель",
@@ -3719,6 +3724,10 @@ export const dict = {
       // the raw key. One label, no UI: the reply screen itself is TASK-591.
       reply: "надано відповідь",
       resolve: "закрито",
+      // TASK-675: DELETE /admin/notifications/telegram/bindings/:id.
+      revokeTelegramBinding: "відключено Telegram-чат",
+      // TASK-675: POST /admin/notifications/telegram/test.
+      sendTelegramTest: "надіслано тестове повідомлення в Telegram",
       setCategoryTemplate: "налаштовано шаблон категорії",
       setColorMany: "задано колір (масово)",
       setGroupMany: "призначено групу (масово)",

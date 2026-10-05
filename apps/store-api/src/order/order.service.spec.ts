@@ -18,12 +18,14 @@ import {
 import { OrderRepository } from './order.repository';
 import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
+import { confirmsPaymentOfLiveOrder } from './shop-order-ping';
 import { OrderEntity, PublicOrderEntity, type PublicOrderRow } from './entities';
 import { CartRepository, CartWithItems } from '../cart/cart.repository';
 import { createCartRepositoryMock } from '../../test/cart-repository.mock';
 import { CartEntity } from '../cart/entities/cart.entity';
 import { UserRepository } from '../user/user.repository';
-import { MailOutboxService } from '../mail-outbox';
+import { NotificationOutboxService } from '../notification-outbox';
+import { ShopNotifier } from '../notification/shop-notifier.service';
 import {
   DeliveryService,
   DeliveryNotConfiguredException,
@@ -240,7 +242,14 @@ const mailOutboxServiceMock = {
 };
 
 /** Fake transaction client handed to the createFromCart afterCreate hook. */
-const txMock = { mailOutbox: { create: jest.fn() } };
+const txMock = { notificationOutbox: { create: jest.fn() } };
+
+// TASK-677: the shop's Telegram ping, queued in the same hook.
+const shopNotifierMock = {
+  enqueueNewOrder: jest.fn(),
+  enqueueContactMessage: jest.fn(),
+  enqueueReturnRequested: jest.fn(),
+};
 
 /**
  * Default createFromCart behaviour: resolve to a created order AND drive the
@@ -327,12 +336,13 @@ describe('OrderService', () => {
         { provide: OrderLookupRepository, useValue: orderLookupRepositoryMock },
         { provide: CartRepository, useValue: cartRepositoryMock },
         { provide: UserRepository, useValue: userRepositoryMock },
-        { provide: MailOutboxService, useValue: mailOutboxServiceMock },
+        { provide: NotificationOutboxService, useValue: mailOutboxServiceMock },
         { provide: AddonApplicabilityResolver, useValue: addonResolverMock },
         { provide: DeliveryService, useValue: deliveryServiceMock },
         { provide: DiscountService, useValue: discountServiceMock },
         { provide: ConfigService, useValue: configServiceMock },
         { provide: PinoLogger, useValue: pinoLoggerMock },
+        { provide: ShopNotifier, useValue: shopNotifierMock },
       ],
     }).compile();
 
@@ -1255,6 +1265,95 @@ describe('OrderService', () => {
 
       expect(userRepositoryMock.findById).toHaveBeenCalledTimes(1);
       expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // ─── TASK-677: the shop's Telegram ping ─────────────────────────────────────
+
+  describe('createOrder — shop ping (TASK-677)', () => {
+    beforeEach(() => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(cartWithItems);
+      userRepositoryMock.findById.mockResolvedValue(recipient);
+      shopNotifierMock.enqueueNewOrder.mockResolvedValue(1);
+    });
+
+    it('queues the ping through the order transaction, next to the confirmation letter', async () => {
+      resolveCreateWithHook(
+        makeOrder({ paymentMethod: 'ON_DELIVERY', deliveryMethod: 'NOVA_POSHTA' } as never),
+      );
+
+      await service.createOrder(userActor, createDto);
+
+      expect(shopNotifierMock.enqueueNewOrder).toHaveBeenCalledTimes(1);
+      const [payload, tx] = shopNotifierMock.enqueueNewOrder.mock.calls[0];
+      // The order's tx, not the base client: the ping commits with the order.
+      expect(tx).toBe(txMock);
+      expect(payload).toEqual({
+        orderId: 'order-uuid-1',
+        total: '69.97',
+        paymentMethod: 'ON_DELIVERY',
+        deliveryMethod: 'NOVA_POSHTA',
+        itemsCount: 2,
+        // The account's name — the buyer, not the parcel's recipient.
+        customerName: 'Olena Shevchenko',
+        city: 'Kyiv',
+      });
+      // Both in-transaction writes ran.
+      expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+    });
+
+    // TASK-678 (owner decision B-7 №7): an online order is not a sale until it
+    // is paid — it is announced from applyPaymentEvent, not here.
+    it.each(['ONLINE', 'INSTALLMENTS'] as const)(
+      'does NOT ping at creation for a %s order — the letter is still queued',
+      async (paymentMethod) => {
+        resolveCreateWithHook(makeOrder({ paymentMethod } as never));
+        // NP-routed: a free-text (OTHER) order may not be paid online at all.
+        deliveryServiceMock.estimateShipping.mockResolvedValue({ cost: '60.00', etaDays: 2 });
+
+        await service.createOrder(userActor, {
+          shippingAddress: { ...address, npCityRef: 'city-ref-1' },
+          paymentMethod,
+        });
+
+        expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
+        expect(mailOutboxServiceMock.enqueueOrderConfirmation).toHaveBeenCalledTimes(1);
+      },
+    );
+
+    it('pings at creation for an explicit ON_DELIVERY order', async () => {
+      resolveCreateWithHook(makeOrder({ paymentMethod: 'ON_DELIVERY' } as never));
+
+      await service.createOrder(userActor, { ...createDto, paymentMethod: 'ON_DELIVERY' });
+
+      expect(shopNotifierMock.enqueueNewOrder).toHaveBeenCalledTimes(1);
+    });
+
+    it('names a guest buyer by the name typed at checkout', async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue({
+        ...cartWithItems,
+        userId: null,
+        token: GUEST_CART_TOKEN,
+      });
+      resolveCreateWithHook(makeOrder({ userId: null, guestName: guestContact.name }));
+
+      await service.createOrder(guestActor, createDto);
+
+      expect(shopNotifierMock.enqueueNewOrder).toHaveBeenCalledWith(
+        expect.objectContaining({ customerName: guestContact.name }),
+        txMock,
+      );
+    });
+
+    it('fails the whole checkout when the ping cannot be queued (the hook error propagates)', async () => {
+      resolveCreateWithHook();
+      shopNotifierMock.enqueueNewOrder.mockRejectedValueOnce(new Error('outbox insert failed'));
+
+      // The real repository runs the hook inside its $transaction, so this
+      // rejection is what rolls the order back.
+      await expect(service.createOrder(userActor, createDto)).rejects.toThrow(
+        'outbox insert failed',
+      );
     });
   });
 
@@ -2545,6 +2644,12 @@ describe('OrderService', () => {
       orderRepositoryMock.createManual.mockResolvedValue(makeOrder());
     });
 
+    it('never pings the shop — staff took this order (TASK-677)', async () => {
+      await service.adminCreateOrder(dto, ADMIN_ID);
+
+      expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
+    });
+
     it('prices the order from the catalogue, never from the request', async () => {
       await service.adminCreateOrder(dto, ADMIN_ID);
 
@@ -3733,6 +3838,9 @@ describe('OrderService', () => {
         paidAt: null,
         reservationExpiresAt: new Date('2026-07-28T10:45:00.000Z'),
         restockedAt: null,
+        // TASK-678: a provider event is an online order's normal life.
+        paymentMethod: PaymentMethod.ONLINE,
+        userId: USER_ID,
         ...order,
       },
     });
@@ -4447,6 +4555,164 @@ describe('OrderService', () => {
         expect(plan.attemptStatus).toBe(PaymentAttemptStatus.FAILED);
         expect(plan.paymentStatusChange).toBeUndefined();
         expect(plan.refusedPaymentStatusChange).toBeUndefined();
+      });
+    });
+
+    // ── TASK-678: an online order is announced when its payment is confirmed ──
+    // The repository is mocked, so these drive the `onPaid` hook the way the real
+    // one does — with ITS transaction client and the order it re-read — and only
+    // where the real one would (it checks the same plan, see shop-order-ping).
+    describe('the shop ping on a confirmed payment (TASK-678)', () => {
+      const repoTx = { notificationOutbox: { create: jest.fn() } };
+
+      type OnPaid = (tx: unknown, order: OrderWithItems) => Promise<void>;
+      const runHookLikeTheRepository = (paid: OrderWithItems = makeOrder()) =>
+        orderRepositoryMock.applyPaymentOutcome.mockImplementation(
+          async (plan: PaymentApplyPlan, onPaid?: OnPaid) => {
+            if (onPaid && confirmsPaymentOfLiveOrder(plan)) await onPaid(repoTx, paid);
+            return paid;
+          },
+        );
+
+      /** The hook handed to the repository by the last call, if any. */
+      const lastHook = () =>
+        orderRepositoryMock.applyPaymentOutcome.mock.calls[0]?.[1] as OnPaid | undefined;
+
+      beforeEach(() => {
+        userRepositoryMock.findById.mockResolvedValue(recipient);
+        shopNotifierMock.enqueueNewOrder.mockResolvedValue(1);
+      });
+
+      // clearAllMocks keeps implementations; this one must not leak further.
+      afterEach(() => orderRepositoryMock.applyPaymentOutcome.mockReset());
+
+      it('queues the ping for an ONLINE order through the repository transaction', async () => {
+        orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(makePayment());
+        runHookLikeTheRepository(
+          makeOrder({
+            status: OrderStatus.CONFIRMED,
+            paymentStatus: PaymentStatus.PAID,
+            paymentMethod: PaymentMethod.ONLINE,
+            deliveryMethod: 'NOVA_POSHTA',
+          } as never),
+        );
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(shopNotifierMock.enqueueNewOrder).toHaveBeenCalledTimes(1);
+        const [payload, tx] = shopNotifierMock.enqueueNewOrder.mock.calls[0];
+        // The repository's tx — the ping commits with the payment or not at all.
+        expect(tx).toBe(repoTx);
+        expect(payload).toEqual({
+          orderId: 'order-uuid-1',
+          total: '69.97',
+          paymentMethod: PaymentMethod.ONLINE,
+          deliveryMethod: 'NOVA_POSHTA',
+          itemsCount: 2,
+          // The same name the checkout ping would have printed for this account.
+          customerName: 'Olena Shevchenko',
+          city: 'Kyiv',
+        });
+        expect(userRepositoryMock.findById).toHaveBeenCalledWith(USER_ID);
+      });
+
+      it('queues it for INSTALLMENTS too, and names a guest from the order row', async () => {
+        orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(
+          makePayment({ paymentMethod: PaymentMethod.INSTALLMENTS, userId: null }),
+        );
+        runHookLikeTheRepository(
+          makeOrder({
+            userId: null,
+            guestName: 'Гість Покупець',
+            paymentMethod: PaymentMethod.INSTALLMENTS,
+          } as never),
+        );
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(userRepositoryMock.findById).not.toHaveBeenCalled();
+        expect(shopNotifierMock.enqueueNewOrder).toHaveBeenCalledWith(
+          expect.objectContaining({
+            paymentMethod: PaymentMethod.INSTALLMENTS,
+            customerName: 'Гість Покупець',
+          }),
+          repoTx,
+        );
+      });
+
+      it('passes NO hook for an ON_DELIVERY order paid online — it was announced at creation', async () => {
+        orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(
+          makePayment({ paymentMethod: PaymentMethod.ON_DELIVERY }),
+        );
+        runHookLikeTheRepository();
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(orderRepositoryMock.applyPaymentOutcome).toHaveBeenCalledTimes(1);
+        expect(lastHook()).toBeUndefined();
+        expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
+      });
+
+      it('does not ping for a success on a CANCELLED order (PAID_AFTER_CANCEL)', async () => {
+        orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(
+          makePayment({ status: OrderStatus.CANCELLED }),
+        );
+        runHookLikeTheRepository();
+
+        await service.applyPaymentEvent(makeEvent());
+
+        expect(lastPlan().paymentStatusChange?.note).toBe(OrderHistoryNote.PAID_AFTER_CANCEL);
+        expect(lastHook()).toBeUndefined();
+        expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
+      });
+
+      it('does not ping again for a second SUCCEEDED on an order that is already PAID', async () => {
+        orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(
+          makePayment({ paymentStatus: PaymentStatus.PAID }),
+        );
+        runHookLikeTheRepository();
+
+        const result = await service.applyPaymentEvent(makeEvent());
+
+        expect(result.applied).toBe(false);
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+        expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
+      });
+
+      it('passes no hook for a FAILED event', async () => {
+        orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(makePayment());
+        runHookLikeTheRepository();
+
+        await service.applyPaymentEvent(
+          makeEvent({ outcome: PaymentOutcome.FAILED, providerStatus: 'failure' }),
+        );
+
+        expect(lastHook()).toBeUndefined();
+        expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
+      });
+
+      it('lets a failing ping reject the event, so the payment is re-applied on retry', async () => {
+        orderRepositoryMock.findPaymentWithOrder.mockResolvedValue(makePayment());
+        runHookLikeTheRepository();
+        shopNotifierMock.enqueueNewOrder.mockRejectedValueOnce(new Error('outbox insert failed'));
+
+        await expect(service.applyPaymentEvent(makeEvent())).rejects.toThrow(
+          'outbox insert failed',
+        );
+      });
+
+      it('never pings for the admin manual «оплачено» — staff are the trigger', async () => {
+        orderRepositoryMock.findById.mockResolvedValue(
+          makeOrder({ paymentStatus: PaymentStatus.PENDING, paymentMethod: 'ONLINE' } as never),
+        );
+        orderRepositoryMock.updatePaymentStatus.mockResolvedValue(
+          makeOrder({ paymentStatus: PaymentStatus.PAID, paymentMethod: 'ONLINE' } as never),
+        );
+
+        await service.adminUpdatePaymentStatus('order-uuid-1', PaymentStatus.PAID, ADMIN_ID);
+
+        expect(orderRepositoryMock.applyPaymentOutcome).not.toHaveBeenCalled();
+        expect(shopNotifierMock.enqueueNewOrder).not.toHaveBeenCalled();
       });
     });
   });

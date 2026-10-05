@@ -12,7 +12,7 @@ import { AuthRepository, type EmailVerificationTokenWithUser } from './auth.repo
 import { AuthService } from './auth.service';
 import { EmailVerificationService } from './email-verification.service';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
-import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
 
 /** Bytes of entropy for each opaque link (→ 64 hex chars), as for every other link. */
 const TOKEN_BYTES = 32;
@@ -66,7 +66,7 @@ export class EmailChangeService {
     private readonly authRepository: AuthRepository,
     private readonly authService: AuthService,
     private readonly emailVerificationService: EmailVerificationService,
-    private readonly mailOutboxService: MailOutboxService,
+    private readonly mailOutboxService: NotificationOutboxService,
     private readonly config: ConfigService,
     private readonly logger: PinoLogger,
   ) {

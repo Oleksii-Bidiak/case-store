@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { EmailVerificationService } from './email-verification.service';
 import { AuthRepository } from './auth.repository';
-import { MailOutboxService } from '../mail-outbox/mail-outbox.service';
+import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
 import { GUEST_ORDER_CLAIM_PORT } from '../common/ports/guest-order-claim.port';
 
 const authRepositoryMock = {
@@ -90,7 +90,7 @@ describe('EmailVerificationService (TASK-342)', () => {
       providers: [
         EmailVerificationService,
         { provide: AuthRepository, useValue: authRepositoryMock },
-        { provide: MailOutboxService, useValue: mailOutboxMock },
+        { provide: NotificationOutboxService, useValue: mailOutboxMock },
         { provide: ConfigService, useValue: configMock },
         { provide: PinoLogger, useValue: loggerMock },
         { provide: ModuleRef, useValue: moduleRefMock },

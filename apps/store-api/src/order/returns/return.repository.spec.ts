@@ -371,6 +371,40 @@ describe('ReturnRepository.create — the quantity cap is checked under a lock (
     ).rejects.toBe(refusal);
     expect(txMock.return.create).not.toHaveBeenCalled();
   });
+
+  // TASK-677: the customer door's shop ping rides the same transaction.
+  it('runs afterCreate inside the transaction, after the insert, with the tx and the new return', async () => {
+    const afterCreate = jest.fn(async () => {
+      issued.push('hook');
+    });
+
+    const created = await repository.create(params, jest.fn(), afterCreate);
+
+    expect(txPrismaMock.$transaction).toHaveBeenCalledTimes(1);
+    expect(issued).toEqual(['lock', 'ledger', 'insert', 'hook']);
+    expect(afterCreate).toHaveBeenCalledWith(txMock, created);
+  });
+
+  it('rejects when afterCreate throws, so the return is rolled back with it', async () => {
+    await expect(
+      repository.create(params, jest.fn(), jest.fn().mockRejectedValue(new Error('outbox down'))),
+    ).rejects.toThrow('outbox down');
+  });
+
+  it('never calls a hook when the check refuses', async () => {
+    const afterCreate = jest.fn();
+
+    await expect(
+      repository.create(
+        params,
+        () => {
+          throw new Error('over the cap');
+        },
+        afterCreate,
+      ),
+    ).rejects.toThrow('over the cap');
+    expect(afterCreate).not.toHaveBeenCalled();
+  });
 });
 
 describe('ReturnRepository.resolve — the refund ceilings are checked under a lock (TASK-785)', () => {

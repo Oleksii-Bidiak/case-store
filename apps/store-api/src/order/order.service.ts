@@ -15,6 +15,7 @@ import {
   PaymentStatus,
   PaymentAttemptStatus,
   PaymentMethod,
+  type Prisma,
 } from '@prisma/client';
 import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 // TASK-483: the public lookup has its own repository — see its docblock for why
@@ -22,7 +23,9 @@ import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 import { OrderLookupRepository } from './order-lookup.repository';
 import { CartRepository, type CartWithItems } from '../cart/cart.repository';
 import { UserRepository } from '../user/user.repository';
-import { MailOutboxService } from '../mail-outbox';
+import { NotificationOutboxService } from '../notification-outbox';
+// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
+import { ShopNotifier } from '../notification/shop-notifier.service';
 import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
@@ -36,6 +39,11 @@ import {
 } from './order-state-machine';
 // TASK-643: the delivery × payment matrix and the non-NP pricing rules.
 import { isPaymentAllowedForDelivery } from './delivery-payment-matrix';
+import {
+  confirmsPaymentOfLiveOrder,
+  shopPingAtCreation,
+  shopPingOnPaymentConfirmed,
+} from './shop-order-ping';
 import { flatShippingCost, resolveDeliveryMethod } from './shipping-cost';
 import {
   deliveryMethodUnavailableError,
@@ -259,7 +267,7 @@ export class OrderService {
     private readonly orderLookupRepository: OrderLookupRepository,
     private readonly cartRepository: CartRepository,
     private readonly userRepository: UserRepository,
-    private readonly mailOutbox: MailOutboxService,
+    private readonly mailOutbox: NotificationOutboxService,
     private readonly deliveryService: DeliveryService,
     private readonly discountService: DiscountService,
     private readonly addonResolver: AddonApplicabilityResolver,
@@ -267,6 +275,8 @@ export class OrderService {
     // status link stays usable.
     private readonly configService: ConfigService,
     private readonly logger: PinoLogger,
+    // TASK-677: the shop's Telegram ping for a storefront order.
+    private readonly shopNotifier: ShopNotifier,
   ) {
     this.logger.setContext(OrderService.name);
   }
@@ -417,6 +427,12 @@ export class OrderService {
         ? { email: actor.contact.email, name: actor.contact.name }
         : { email: user!.email, name: user!.firstName ?? undefined };
 
+    // TASK-677: who the shop's ping names — the buyer, not the parcel's recipient.
+    const customerName =
+      actor.type === 'guest'
+        ? actor.contact.name
+        : [user!.firstName, user!.lastName].filter(Boolean).join(' ') || null;
+
     const order = await this.orderRepository.createFromCart(
       {
         userId,
@@ -457,7 +473,7 @@ export class OrderService {
       // ── TASK-103-F: transactional outbox ──────────────────────────────────
       // Enqueue the order-confirmation email INSIDE the order's transaction so
       // the outbox row and the order commit atomically. The background
-      // MailOutboxWorker renders + sends it later, so the HTTP response no
+      // NotificationOutboxWorker renders + sends it later, so the HTTP response no
       // longer blocks on SMTP and a transient mail failure can never be lost.
       // Runs alongside the TASK-079 discount redeem (same transaction).
       //
@@ -478,6 +494,14 @@ export class OrderService {
           },
           tx,
         );
+        // TASK-677: tell the shop, in the same transaction. TASK-678: only an
+        // ON_DELIVERY order is real the moment it is placed — an online one is
+        // announced when the provider confirms the money (applyPaymentEvent).
+        // The method this checkout decided (absent → ON_DELIVERY, above) — the
+        // same value the row was written with.
+        if (shopPingAtCreation(paymentMethod)) {
+          await this.enqueueShopNewOrder(created, tx, customerName);
+        }
       },
     );
 
@@ -651,6 +675,89 @@ export class OrderService {
   private buildOrderLookupUrl(): string | null {
     const storeUrl = this.configService.get<string>('STORE_CLIENT_URL');
     return storeUrl ? `${storeUrl.replace(/\/+$/, '')}/orders/status` : null;
+  }
+
+  /**
+   * Queue the shop's «нове замовлення» Telegram ping (TASK-677) inside the
+   * order's transaction `tx` — never on the base client, so the ping and the
+   * order commit together or not at all (plan 187, constraint #2).
+   *
+   * Built from the order row alone, plus the buyer's name when the caller has
+   * it (an account's name is not on the row): TASK-678 calls this from the
+   * payment path too ({@link shopPingOnPaid}, which reads the account's name
+   * before its transaction). Without a name it falls back to the guest contact,
+   * then to the recipient on the shipping address.
+   */
+  private enqueueShopNewOrder(
+    order: OrderWithItems,
+    tx: Prisma.TransactionClient,
+    customerName?: string | null,
+  ): Promise<number> {
+    const address = (order.shippingAddress ?? null) as Partial<ShippingAddressData> | null;
+    const recipientName = [address?.firstName, address?.lastName].filter(Boolean).join(' ');
+    return this.shopNotifier.enqueueNewOrder(
+      {
+        orderId: order.id,
+        total: order.total.toString(),
+        paymentMethod: order.paymentMethod ?? null,
+        deliveryMethod: order.deliveryMethod ?? null,
+        itemsCount: order.items.reduce((sum, item) => sum + item.quantity, 0),
+        customerName: customerName || order.guestName || recipientName || null,
+        city: typeof address?.city === 'string' ? address.city : null,
+      },
+      tx,
+    );
+  }
+
+  /**
+   * The in-transaction hook that announces an ONLINE/INSTALLMENTS order once the
+   * provider confirms its payment (TASK-678) — or `undefined` when this event
+   * must not ping.
+   *
+   * Decided here, before the transaction, so the buyer's name is read up front
+   * and the payment transaction never waits on a second connection:
+   *
+   * - only a plan that makes a LIVE order paid ({@link confirmsPaymentOfLiveOrder}).
+   *   A success on a CANCELLED order (`PAID_AFTER_CANCEL`) is not a new order:
+   *   the money has to go back or the order be revived, and nobody is told about
+   *   it yet — that event was not among the three the owner agreed (B-7 №6) and
+   *   is filed as its own gap (TASK-1089), not folded in here;
+   * - only a method that pings on payment ({@link shopPingOnPaymentConfirmed}).
+   *   An ON_DELIVERY order the customer later paid online was announced when it
+   *   was placed, and must not be announced twice.
+   *
+   * The repository re-checks the first condition against the same plan and runs
+   * the hook only after its conditional write landed; the hook itself builds the
+   * ping from the order it re-read inside that transaction. Idempotency needs
+   * nothing extra: a repeat callback is stopped by the PaymentEvent unique
+   * index, and a repeat SUCCEEDED on a paid order has no plan at all.
+   *
+   * The admin's manual «оплачено» (`adminUpdatePaymentStatus`) never comes
+   * through here — staff are the trigger there, so the shop is not told.
+   */
+  private async shopPingOnPaid(
+    order: PaymentWithOrderRow['order'],
+    plan: PaymentApplyPlan,
+  ): Promise<((tx: Prisma.TransactionClient, paid: OrderWithItems) => Promise<void>) | undefined> {
+    if (!confirmsPaymentOfLiveOrder(plan) || !shopPingOnPaymentConfirmed(order.paymentMethod)) {
+      return undefined;
+    }
+    const customerName = await this.accountDisplayName(order.userId);
+    return async (tx, paid) => {
+      await this.enqueueShopNewOrder(paid, tx, customerName);
+    };
+  }
+
+  /**
+   * The buyer's name as the checkout ping prints it for an account order (first
+   * and last name), so an online order is announced under the same name it would
+   * have been at creation. A guest order has no account: `null`, and
+   * {@link enqueueShopNewOrder} falls back to the guest contact on the row.
+   */
+  private async accountDisplayName(userId: string | null | undefined): Promise<string | null> {
+    if (!userId) return null;
+    const user = await this.userRepository.findById(userId);
+    return user ? [user.firstName, user.lastName].filter(Boolean).join(' ') || null : null;
   }
 
   /**
@@ -2005,6 +2112,7 @@ export class OrderService {
     if (plan.paymentStatusChange?.note === OrderHistoryNote.PAID_AFTER_CANCEL) {
       // WARN: money arrived for an order the shop no longer holds stock for.
       // Nothing is broken, but a person has to revive or refund it (TASK-619).
+      // TASK-678: and it is NOT announced as a new order — see shopPingOnPaid.
       this.logger.warn(
         {
           event: 'order.payment_after_cancel',
@@ -2016,7 +2124,7 @@ export class OrderService {
       );
     }
 
-    await this.orderRepository.applyPaymentOutcome(plan);
+    await this.orderRepository.applyPaymentOutcome(plan, await this.shopPingOnPaid(order, plan));
 
     this.logger.info(
       {
