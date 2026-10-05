@@ -91,7 +91,7 @@ var(--color-card))`. Decoration with no meaning (the hero category-rail dots, an
   `bg-clip-text text-transparent`) is `bg-brand-gradient`. `shared/config/color-tokens.test.ts`
   fails on any palette utility, `color-mix(` or `oklch(` in `src` outside the files it tracks by
   backlog row.
-- **Order & payment status colours** — one map, rendered with `Badge` everywhere (`/orders`,
+- **Order & payment status colours** — one map, rendered with `Badge` everywhere (`/account/orders`,
   order confirmation, `/orders/status`, guest order view):
 
   | Status group                                          | Colour                       |
@@ -178,14 +178,14 @@ Stick to the Tailwind 4px scale — **no arbitrary values**. Allowed rhythm:
 - **Inner widths** are not containers. They sit inside the page container, centred with
   `mx-auto`, so the outer gutter stays the same on every page:
 
-  | Content                            | Width       |
-  | ---------------------------------- | ----------- |
-  | Article prose                      | 760px       |
-  | Legal / info document (TOC + text) | `max-w-6xl` |
-  | Legal hub (`/legal`)               | `max-w-5xl` |
-  | Auth forms                         | `max-w-md`  |
-  | Order lists (`/orders`, …)         | `max-w-3xl` |
-  | 404 block                          | 560px       |
+  | Content                            | Width                                                       |
+  | ---------------------------------- | ----------------------------------------------------------- |
+  | Article prose                      | 760px                                                       |
+  | Legal / info document (TOC + text) | `max-w-6xl`                                                 |
+  | Legal hub (`/legal`)               | `max-w-5xl`                                                 |
+  | Auth forms                         | `max-w-md`                                                  |
+  | Account sections (`/account/*`)    | the shell’s content column (264px menu beside it from `lg`) |
+  | 404 block                          | 560px                                                       |
 
 - **Section vertical rhythm:** `py-12 md:py-16` (hero may go `py-20 md:py-28`).
 - **Grid gaps:** cards `gap-4 md:gap-6`; form fields `gap-4`.
@@ -393,7 +393,7 @@ type="radio|checkbox">` elements styled with tokens where they are used (checkou
   (TASK-870): `rounded-card` + `shadow-card`, a `size-18` `bg-muted` disc with the glyph
   (`aria-hidden`), a `text-xl` display line, one muted helper line, a 44 px primary
   (`features/product-filters` `ListingEmptyState` for product listings; the content hubs
-  `/blog`, `/legal`, `/categories` and `/orders` draw the same card locally). The action is the
+  `/blog`, `/legal`, `/categories` and `/account/orders` draw the same card locally). The action is the
   way on from _this_ emptiness: a reset only when a filter or a query narrowed the list,
   otherwise a link out (the catalogue, page 1, support). The page keeps its crumbs and H1 above
   the card. If the page already has a primary with the same job (the `/legal` support card),
