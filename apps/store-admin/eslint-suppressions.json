@@ -1,14 +1,4 @@
 {
-  "src/app/(dashboard)/dashboard-view.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/app/(dashboard)/loading.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
   "src/shared/ui/badge.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2
@@ -67,76 +57,6 @@
   "src/shared/ui/textarea.tsx": {
     "tailwindcss/no-arbitrary-value": {
       "count": 2
-    }
-  },
-  "src/widgets/banner-list/ui/admin-banner-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/blog-category-list/ui/blog-category-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/blog-post-list/ui/blog-post-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/brand-list/ui/admin-brand-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/discount-list/ui/admin-discount-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/faq-list/ui/faq-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/message-inbox/ui/message-inbox-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/order-list/ui/admin-order-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/page-list/ui/admin-page-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/product-group-list/ui/admin-product-group-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/product-list/ui/admin-product-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/review-moderation/ui/admin-review-table-skeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/subscriber-list/ui/AdminSubscriberTableSkeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
-    }
-  },
-  "src/widgets/user-list/ui/AdminUserTableSkeleton.tsx": {
-    "tailwindcss/no-arbitrary-value": {
-      "count": 1
     }
   }
 }

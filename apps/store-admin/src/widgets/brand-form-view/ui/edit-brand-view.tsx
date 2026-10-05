@@ -18,25 +18,48 @@ import {
   useAdminBrandControllerUpdate,
   type BrandEntity,
 } from "@/entities/brand";
+import { PERM } from "@/entities/permission";
+import { useProductControllerAdminFindAll } from "@/entities/product";
+import { useAuth } from "@/entities/session";
 import { dict } from "@/shared/config";
-import { CopyButton } from "@/shared/ui";
+import { formatDateTime } from "@/shared/lib/format/formatDate";
+import { Badge, CollapsibleSection, CopyButton } from "@/shared/ui";
+import { BrandFormSkeleton } from "./brand-form-skeleton";
+
+const d = dict.brands;
 
 interface EditBrandViewProps {
   brandId: string;
 }
 
 /**
- * Edit-brand body: fetches the brand by UUID to pre-populate the form, then
- * wires the update mutation, cache invalidation, toasts, and redirect. A missing
- * brand (404) redirects back to the list.
+ * Edit-brand page (wave 198, BrandsProposal БР5, БР9, TASK-1078).
+ *
+ * Header: «← Бренди», the brand's name and its site status. Body: the
+ * sectioned form, and beside it the side panel — the product count (a link
+ * into «Товари» filtered by the brand), «Змінено», and the uuid folded under
+ * «Технічне» (TASK-831). Without `brands:write` the same page is view-only.
+ *
+ * The count comes from the products registry's own `meta.total` — the single
+ * brand endpoint carries no `productCount` — and only for a session that may
+ * open «Товари». «На сайті» (a `/brands/<slug>` page) is TASK-1080.
+ *
+ * A missing brand (404) redirects back to the list.
  */
 export function EditBrandView({ brandId }: EditBrandViewProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const canWrite = can(PERM.brandsWrite);
+  const canOpenProducts = can(PERM.productsRead);
 
   const { data, isLoading, isError, error } =
     useBrandControllerFindById(brandId);
   const update = useAdminBrandControllerUpdate();
+  const productCount = useProductControllerAdminFindAll(
+    { brandId, page: 1, limit: 1 },
+    { query: { enabled: canOpenProducts } },
+  );
 
   const isNotFound = error?.response?.status === 404;
 
@@ -59,44 +82,44 @@ export function EditBrandView({ brandId }: EditBrandViewProps) {
           void queryClient.invalidateQueries({
             queryKey: getBrandControllerFindByIdQueryKey(brandId),
           });
-          toast.success(dict.brands.toastUpdated);
+          toast.success(d.toastUpdated);
           router.push("/brands");
         },
         onError: () => {
-          toast.error(dict.brands.toastUpdateFailed);
+          toast.error(d.toastUpdateFailed);
         },
       },
     );
   };
 
+  if (isLoading) return <BrandFormSkeleton withAside />;
+
+  const productsTotal = productCount.data?.meta?.total;
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
         <Link
           href="/brands"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="w-fit text-sm text-muted-foreground hover:text-foreground"
         >
-          {dict.brands.back}
+          {d.back}
         </Link>
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-          {dict.brands.editHeading}
-        </h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
+            {brand?.name ?? d.editHeading}
+          </h2>
+          {brand ? (
+            <Badge variant={brand.isActive ? "default" : "secondary"}>
+              {brand.isActive ? d.statusActive : d.statusInactive}
+            </Badge>
+          ) : null}
+        </div>
       </div>
 
-      {brand ? <BrandIdRow id={brand.id} /> : null}
-
-      {isLoading ? (
-        <div className="flex max-w-2xl flex-col gap-5">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div
-              key={index}
-              className="h-10 w-full animate-pulse rounded bg-muted"
-            />
-          ))}
-        </div>
-      ) : isError && !isNotFound ? (
+      {isError && !isNotFound ? (
         <p role="alert" className="text-sm text-destructive">
-          {dict.brands.loadOneError}
+          {d.loadOneError}
         </p>
       ) : brand ? (
         <BrandForm
@@ -104,9 +127,54 @@ export function EditBrandView({ brandId }: EditBrandViewProps) {
           defaultValues={mapBrandToFormValues(brand)}
           onSubmit={handleSubmit}
           isPending={update.isPending}
-          submitLabel={dict.common.saveChanges}
+          submitLabel={dict.common.save}
+          readOnly={!canWrite}
+          aside={
+            <>
+              <div className="flex flex-col gap-2 rounded-lg border bg-card p-4 text-sm shadow-card">
+                {canOpenProducts ? (
+                  <Fact label={d.asideProducts}>
+                    {productsTotal === undefined ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <Link
+                        href={`/products?brandId=${encodeURIComponent(brand.id)}`}
+                        className="rounded-xs font-medium text-primary tabular-nums outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+                      >
+                        {productsTotal} →
+                      </Link>
+                    )}
+                  </Fact>
+                ) : null}
+                <Fact label={d.asideUpdated}>
+                  <span className="tabular-nums">
+                    {formatDateTime(brand.updatedAt)}
+                  </span>
+                </Fact>
+              </div>
+              <CollapsibleSection title={d.technicalTitle}>
+                <BrandIdRow id={brand.id} />
+              </CollapsibleSection>
+            </>
+          }
         />
       ) : null}
+    </div>
+  );
+}
+
+/** One «label … value» line of the side panel. */
+function Fact({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      {children}
     </div>
   );
 }
@@ -121,7 +189,6 @@ export function EditBrandView({ brandId }: EditBrandViewProps) {
  * selection is the fallback it tells the operator to use.
  */
 function BrandIdRow({ id }: { id: string }) {
-  const d = dict.brands;
   return (
     // The label names the GROUP, not the <code>: `code` has an implicit role
     // that takes no accessible name, so `aria-labelledby` on it was dropped by
@@ -129,15 +196,15 @@ function BrandIdRow({ id }: { id: string }) {
     <div
       role="group"
       aria-labelledby="brand-id-label"
-      className="flex max-w-2xl flex-col gap-2 rounded-md border border-border p-3"
+      className="flex flex-col gap-2"
     >
-      <p id="brand-id-label" className="text-xs font-medium text-foreground">
+      <p id="brand-id-label" className="sr-only">
         {d.idLabel}
       </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <code className="rounded-md bg-muted px-2 py-1.5 font-mono text-xs break-all text-foreground select-all">
-          {id}
-        </code>
+      <code className="rounded-md bg-muted px-2 py-1.5 font-mono text-xs break-all text-foreground select-all">
+        {id}
+      </code>
+      <div>
         <CopyButton
           value={id}
           label={d.copyId}

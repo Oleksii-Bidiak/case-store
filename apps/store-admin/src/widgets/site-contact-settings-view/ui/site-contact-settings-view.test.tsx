@@ -1,5 +1,5 @@
 import { http, HttpResponse, delay } from "msw";
-import { renderWithProviders, screen } from "@/shared/test/render";
+import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { SiteContactSettingsView } from "./site-contact-settings-view";
@@ -57,5 +57,47 @@ describe("SiteContactSettingsView (TASK-154)", () => {
     expect(
       screen.queryByRole("button", { name: dict.siteContactForm.submit }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("SiteContactSettingsView — by mockup Н1 (TASK-1053)", () => {
+  it("is titled «Контакти» and says where the contacts show up", () => {
+    server.use(
+      http.get("*/api/site-contact", async () => {
+        await delay("infinite");
+        return HttpResponse.json(siteContactResponse());
+      }),
+    );
+
+    renderWithProviders(<SiteContactSettingsView />);
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Контакти" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(dict.siteContact.subheading)).toBeInTheDocument();
+  });
+
+  it("offers «Повторити» when the settings fail to load, and refetches", async () => {
+    let calls = 0;
+    server.use(
+      http.get("*/api/site-contact", () => {
+        calls += 1;
+        return calls === 1
+          ? HttpResponse.json({ message: "boom" }, { status: 500 })
+          : HttpResponse.json(siteContactResponse());
+      }),
+    );
+
+    renderWithProviders(<SiteContactSettingsView />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(dict.siteContact.loadError);
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.retry }),
+    );
+
+    expect(
+      await screen.findByDisplayValue("test@store.ua"),
+    ).toBeInTheDocument();
   });
 });

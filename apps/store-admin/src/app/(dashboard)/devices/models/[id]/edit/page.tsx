@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { EditDeviceModelView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
+import { DeviceModelFormSkeleton, EditDeviceModelView } from "@/widgets";
+
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -18,7 +18,7 @@ export default async function EditDeviceModelPage({
   const { id } = await params;
 
   return (
-    <Suspense fallback={<AdminFormSkeleton />}>
+    <Suspense fallback={<DeviceModelFormSkeleton withAside />}>
       <EditDeviceModelView modelId={id} />
     </Suspense>
   );

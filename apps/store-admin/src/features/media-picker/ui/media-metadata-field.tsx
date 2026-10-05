@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Input, Label } from "@/shared/ui";
 import { useDebouncedCallback } from "@/shared/lib/use-debounced-callback";
 
@@ -38,6 +38,12 @@ export interface MediaMetadataFieldProps {
   normalise: (raw: string) => string;
   /** Receives the debounced, normalised text. Fires only on a real change. */
   onCommit: (next: string) => void;
+  /**
+   * Rendered at the end of the label row — the «Збережено ✓» marker of wave
+   * 198 (МТ5), which belongs next to the field it is about, not in a line
+   * under the whole form.
+   */
+  status?: ReactNode;
 }
 
 /**
@@ -72,6 +78,7 @@ export function MediaMetadataField({
   value,
   normalise,
   onCommit,
+  status,
 }: MediaMetadataFieldProps) {
   const [text, setText] = useState(value);
 
@@ -106,7 +113,10 @@ export function MediaMetadataField({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <Label htmlFor={id}>{label}</Label>
+      <div className="flex items-center justify-between gap-2">
+        <Label htmlFor={id}>{label}</Label>
+        {status}
+      </div>
       <Input
         id={id}
         value={text}

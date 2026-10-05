@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  StaffLevelBadge,
+  StaffStatusBadge,
   actorLevel,
-  levelBadgeVariant,
-  levelLabel,
   staffDisplayName,
   useGetStaff,
 } from "@/entities/staff";
@@ -18,14 +18,15 @@ import {
   DeleteStaffDialog,
   StaffStatusToggle,
   TransferOwnershipDialog,
+  useStaffStatusToggle,
 } from "@/features/staff-account-actions";
 import {
   UserPasswordResetDialog,
   UserRoleChange,
 } from "@/features/user-account-actions";
 import {
-  Badge,
   Button,
+  RowActionsMenu,
   Separator,
   Tabs,
   TabsContent,
@@ -83,6 +84,9 @@ export function StaffDetailView({ userId }: StaffDetailViewProps) {
 
   const { data, isLoading, isError, error } = useGetStaff(userId);
   const person = data?.data;
+  // Called before the early returns (rules of hooks); only offered once the
+  // person is loaded and `canWrite` says the server would accept it.
+  const statusToggle = useStaffStatusToggle(userId, person?.isActive ?? true);
 
   const isNotFound = error?.response?.status === 404;
 
@@ -123,26 +127,64 @@ export function StaffDetailView({ userId }: StaffDetailViewProps) {
 
   const name = staffDisplayName(person);
 
+  // «⋯» in the header (StaffProposal С3): shortcuts to the same account actions
+  // the «Акаунт» tab carries, behind the same two gates — `canWrite` (staff:write
+  // plus the level rule) and `canTransfer` (the owner only). Nothing new is
+  // offered here; it is the same door, one click closer.
+  const headerActions = [
+    ...(canWrite
+      ? [
+          {
+            label: statusToggle.label,
+            onSelect: statusToggle.toggle,
+            disabled: statusToggle.isPending,
+          },
+          {
+            label: d.passwordResetOpen,
+            onSelect: () => setPasswordOpen(true),
+          },
+        ]
+      : []),
+    ...(canTransfer
+      ? [{ label: d.transferOpen, onSelect: () => setTransferOpen(true) }]
+      : []),
+    ...(canWrite
+      ? [
+          {
+            label: d.deleteHeading,
+            onSelect: () => setDeleteOpen(true),
+            destructive: true,
+            separatorBefore: true,
+          },
+        ]
+      : []),
+  ];
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
         <Link
           href="/staff"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="w-fit rounded-xs text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           {d.back}
         </Link>
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-          {name}
-        </h2>
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="min-w-0 font-display text-2xl font-semibold tracking-tight break-words text-foreground">
+            {name}
+          </h2>
+          <RowActionsMenu
+            label={dict.common.registry.rowActionsAria(name)}
+            items={headerActions}
+            className="size-9 border border-border"
+          />
+        </div>
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-muted-foreground">{person.email}</span>
-          <Badge variant={levelBadgeVariant(person.level)}>
-            {levelLabel(person.level)}
-          </Badge>
-          <Badge variant={person.isActive ? "default" : "destructive"}>
-            {person.isActive ? dict.common.active : dict.common.inactive}
-          </Badge>
+          <span className="text-sm break-all text-muted-foreground">
+            {person.email}
+          </span>
+          <StaffLevelBadge level={person.level} />
+          <StaffStatusBadge isActive={person.isActive} />
         </div>
       </div>
 

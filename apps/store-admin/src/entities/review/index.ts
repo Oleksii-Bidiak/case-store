@@ -27,6 +27,9 @@ export {
   ReviewAuthorVisibility,
 } from "@/shared/api";
 
+// Wave 198 (TASK-1057): the star row the queue and the reply dialog share.
+export { ReviewStars } from "./ui/review-stars";
+
 export type {
   AdminReviewEntity,
   ReviewAggregateEntity,

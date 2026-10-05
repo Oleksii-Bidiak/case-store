@@ -218,3 +218,52 @@ describe("BannerPlacementPreview — real placement shapes (TASK-429)", () => {
     expect(screen.getByText(d.scaleNote)).toBeInTheDocument();
   });
 });
+
+/**
+ * Wave 198 (TASK-1073): the storefront draws the picture since TASK-740, so the
+ * preview does too — on the three homepage placements, never on the bar.
+ */
+describe("BannerPlacementPreview — the picture", () => {
+  const SRC = "/uploads/banners/hero.webp";
+
+  it.each(["HERO_SLIDE", "PROMO_TILE", "PROMO_BANNER"] as const)(
+    "draws the picture behind the copy on %s",
+    (placement) => {
+      render(
+        <BannerPlacementPreview
+          placement={placement}
+          title="Акція"
+          imageUrl={SRC}
+        />,
+      );
+      expect(screen.getByTestId("banner-preview-image")).toHaveAttribute(
+        "src",
+        SRC,
+      );
+    },
+  );
+
+  it("draws no picture on the announcement bar, nor without a URL", () => {
+    const { rerender } = render(
+      <BannerPlacementPreview
+        placement="ANNOUNCEMENT_BAR"
+        title="Акція"
+        imageUrl={SRC}
+      />,
+    );
+    expect(
+      screen.queryByTestId("banner-preview-image"),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <BannerPlacementPreview
+        placement="HERO_SLIDE"
+        title="Акція"
+        imageUrl=""
+      />,
+    );
+    expect(
+      screen.queryByTestId("banner-preview-image"),
+    ).not.toBeInTheDocument();
+  });
+});

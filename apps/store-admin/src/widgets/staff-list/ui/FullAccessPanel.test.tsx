@@ -65,10 +65,44 @@ describe("FullAccessPanel", () => {
     expect(
       await screen.findByText(dict.staff.fullAccessHeading(2)),
     ).toBeInTheDocument();
-    expect(screen.getByText("Ірина Мельник")).toBeInTheDocument();
+    // Names, linked to the card — the strip answers «who», not «how many».
+    expect(screen.getByRole("link", { name: "Ірина Мельник" })).toHaveAttribute(
+      "href",
+      "/staff/deputy-1",
+    );
+    // Each name carries its level in words, as on the artboard:
+    // «Олексій Бідяк (власник), Ірина Мельник (адміністратор).»
     expect(
-      screen.getByText(dict.staff.fullAccessOwnerBadge),
+      screen.getByText("(" + dict.staff.fullAccessOwner + ")", {
+        exact: false,
+      }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText("(" + dict.staff.fullAccessAdmin + ")", {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  /**
+   * One muted line, not a panel: the strip is a standing fact above the list,
+   * and the hint paragraph that used to sit under it repeated the intro.
+   */
+  it("is one line under a shield icon, not a bordered panel with a paragraph", async () => {
+    stubAdmins([admin({ id: "owner-1", isOwner: true, level: 3 })]);
+
+    const { container } = renderWithProviders(
+      <WithAuth isOwner>
+        <FullAccessPanel />
+      </WithAuth>,
+    );
+
+    await screen.findByText(dict.staff.fullAccessHeading(1));
+    expect(container.querySelectorAll("p")).toHaveLength(1);
+    expect(container.querySelector("svg")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
   });
 
   /**
@@ -97,7 +131,12 @@ describe("FullAccessPanel", () => {
     expect(
       await screen.findByText(dict.staff.fullAccessHeading(2)),
     ).toBeInTheDocument();
-    expect(screen.getByText(dict.common.inactive)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `(${dict.staff.fullAccessAdmin}, ${dict.staff.fullAccessOff})`,
+        { exact: false },
+      ),
+    ).toBeInTheDocument();
   });
 
   /**

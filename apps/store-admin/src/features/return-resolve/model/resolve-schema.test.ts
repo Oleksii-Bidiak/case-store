@@ -4,6 +4,7 @@ import {
   OPERATOR_NOTES_MAX_LENGTH,
   createResolveReturnSchema,
   orderBalanceOf,
+  refundCapOf,
   returnedValueOf,
   type RefundCeilings,
   type ResolveReturnFormValues,
@@ -153,5 +154,21 @@ describe("createResolveReturnSchema — operator notes (TASK-794)", () => {
     expect(notesIssue("н".repeat(OPERATOR_NOTES_MAX_LENGTH + 1))).toBe(
       t.operatorNotesTooLong,
     );
+  });
+});
+
+describe("refundCapOf — «Можна повернути максимум» (TASK-959)", () => {
+  it("is the lower of the two ceilings", () => {
+    expect(
+      refundCapOf({ returnedValue: "1299.00", orderBalance: "1099.00" }),
+    ).toBe("1099.00");
+    expect(
+      refundCapOf({ returnedValue: "499.00", orderBalance: "1000.00" }),
+    ).toBe("499.00");
+  });
+
+  it("is the one it knows, or nothing", () => {
+    expect(refundCapOf({ returnedValue: "499.00" })).toBe("499.00");
+    expect(refundCapOf({ returnedValue: null, orderBalance: null })).toBeNull();
   });
 });

@@ -5,11 +5,13 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import {
   clearSessionMarker,
+  onSessionExpired,
   refreshSession,
   setAccessToken,
   shouldAttemptSessionRefresh,
@@ -20,6 +22,8 @@ import {
   ADMIN_UI_SESSION_COOKIE,
   ADMIN_UI_SESSION_MAX_AGE_SECONDS,
 } from "@/shared/config/admin-ui-session";
+// The file, not the barrel: the session must not pull the registry's UI in.
+import { clearRegistrySettings } from "@/shared/ui/data-registry/registry-settings-store";
 import { MY_PERMISSIONS_QUERY } from "./my-permissions-query";
 
 /**
@@ -80,6 +84,27 @@ export interface AuthContextValue {
   permissions: string[];
   /** True until the first effective-permission answer has arrived. */
   arePermissionsLoading: boolean;
+  /**
+   * TASK-1014: `GET /auth/me/permissions` FAILED and there is no earlier answer
+   * to fall back on, so `can()` answers false for everything — the owner's too.
+   * The shell shows why instead of a silently empty panel. Not set for a 401:
+   * that is the session ending, which {@link isSessionExpired} reports.
+   */
+  permissionsFailed: boolean;
+  /** True while {@link retryPermissions} is in flight. */
+  isRetryingPermissions: boolean;
+  /** Ask for the effective permissions again («Повторити»). */
+  retryPermissions: () => void;
+  /**
+   * TASK-528 + TASK-974: the session ended while the person was inside the
+   * panel — a request answered 401 and so did the refresh it triggered. Cleared
+   * by the next {@link setTokens}. Kept through {@link clearTokens} on purpose:
+   * the shell clears the dead session on the way to /login and must not then
+   * read "signed out" as "never signed in" and redirect a second time.
+   */
+  isSessionExpired: boolean;
+  /** The email the expired session belonged to — prefilled on /login. */
+  expiredSessionEmail: string | null;
   /**
    * UI-only convenience: may this session see the control for `permission`?
    *
@@ -210,6 +235,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [tokenRole, setTokenRole] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
+  const [isSessionExpired, setSessionExpired] = useState(false);
+  const [expiredSessionEmail, setExpiredSessionEmail] = useState<string | null>(
+    null,
+  );
 
   // Null this tab's copy of the session. Shared by an explicit sign-out and by a
   // bootstrap that could not restore one — which differ only in the marker below.
@@ -228,6 +257,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // token). Forget the session marker too, so the next page load — /login
     // included — makes no doomed refresh and logs no 401 (TASK-528).
     clearSessionMarker();
+    // Saved list views keep their search text and are not per user.
+    clearRegistrySettings();
   }, [dropSessionState]);
 
   const setTokens = useCallback(
@@ -245,9 +276,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setToken(token);
       setUserId(claims.sub ?? null);
       setTokenRole(claims.role);
+      setSessionExpired(false);
+      setExpiredSessionEmail(null);
       writeAdminUiSessionMarker(true);
     },
     [clearTokens],
+  );
+
+  // TASK-528 + TASK-974: the interceptor reports a session that could not be
+  // refreshed. Only a session this tab actually HOLDS can expire — a 401 on the
+  // login page, or before the bootstrap restored anything, is not an expiry.
+  // Read through a ref so the subscription is made once, not per token change.
+  const liveSessionRef = useRef<{ token: string | null; email: string | null }>(
+    { token: null, email: null },
+  );
+  useEffect(() => {
+    liveSessionRef.current = { token: accessToken, email };
+  }, [accessToken, email]);
+
+  useEffect(
+    () =>
+      onSessionExpired(() => {
+        const live = liveSessionRef.current;
+        if (live.token === null) {
+          return;
+        }
+        setExpiredSessionEmail(live.email);
+        setSessionExpired(true);
+      }),
+    [],
   );
 
   // Restore the session once on mount via the refresh cookie.
@@ -317,12 +374,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // TASK-334: the frontend's single source of truth for what this session may
   // do. The observer options are shared with every other reader of this key
   // (see `my-permissions-query.ts` for why they must match).
-  const { data: permissionsData, isPending: permissionsPending } =
-    useGetMyPermissions({
-      query: { ...MY_PERMISSIONS_QUERY, enabled: accessToken !== null },
-    });
+  const {
+    data: permissionsData,
+    isPending: permissionsPending,
+    isError: permissionsErrored,
+    error: permissionsError,
+    isFetching: permissionsFetching,
+    refetch: refetchPermissions,
+  } = useGetMyPermissions({
+    query: { ...MY_PERMISSIONS_QUERY, enabled: accessToken !== null },
+  });
 
   const effective = permissionsData?.data;
+
+  // TASK-1014. Only when there is NO answer to fall back on: a failed
+  // background refetch keeps the last good permissions in the cache, and
+  // blanking a working panel over a focus-refetch blip would be the very
+  // silence this flag exists to explain, the other way round.
+  const permissionsFailed =
+    accessToken !== null &&
+    permissionsErrored &&
+    effective === undefined &&
+    permissionsError?.response?.status !== 401;
+
+  const retryPermissions = useCallback(() => {
+    void refetchPermissions();
+  }, [refetchPermissions]);
   const permissions = useMemo(
     () => effective?.permissions ?? [],
     [effective?.permissions],
@@ -370,6 +447,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isInitializing,
       permissions,
       arePermissionsLoading: accessToken !== null && permissionsPending,
+      permissionsFailed,
+      isRetryingPermissions: permissionsFailed && permissionsFetching,
+      retryPermissions,
+      isSessionExpired,
+      expiredSessionEmail,
       can,
       canAll,
       setTokens,
@@ -386,6 +468,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isInitializing,
       permissions,
       permissionsPending,
+      permissionsFailed,
+      permissionsFetching,
+      retryPermissions,
+      isSessionExpired,
+      expiredSessionEmail,
       can,
       canAll,
       setTokens,

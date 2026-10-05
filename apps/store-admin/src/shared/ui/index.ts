@@ -114,6 +114,13 @@ export {
 } from "./data-table";
 export { Combobox, type ComboboxOption, type ComboboxProps } from "./combobox";
 export {
+  TreeCombobox,
+  treeComboboxItems,
+  type TreeComboboxItem,
+  type TreeComboboxNode,
+  type TreeComboboxProps,
+} from "./tree-combobox";
+export {
   BulkActionsBar,
   type BulkAction,
   type BulkActionsBarProps,
@@ -169,6 +176,7 @@ export {
 export {
   DEFAULT_INDENTATION_WIDTH,
   DISABLED_DND_ANNOUNCEMENTS,
+  DropHintPill,
   POINTER_ACTIVATION_CONSTRAINT,
   SortableTree,
   resolveModifiers,
@@ -178,3 +186,57 @@ export {
   type SortableTreeProps,
   type SortableTreeRowRenderProps,
 } from "./sortable-tree";
+
+// ── Wave 198: canon primitives ───────────────────────────────────────────────
+export { Popover, PopoverContent, PopoverTrigger } from "./popover";
+export { FieldError } from "./field-error";
+export { FormAlert } from "./form-alert";
+export { Callout, calloutVariants, type CalloutProps } from "./callout";
+export { ErrorState, type ErrorStateProps } from "./error-state";
+export { PasswordInput } from "./password-input";
+export {
+  PasswordRequirements,
+  type PasswordRequirementsProps,
+} from "./password-requirements";
+export {
+  Stepper,
+  type StepState,
+  type StepperProps,
+  type StepperStep,
+} from "./stepper";
+export { RadioCard, RadioCardGroup, type RadioCardProps } from "./radio-card";
+export {
+  SegmentedControl,
+  type SegmentedControlProps,
+  type SegmentedOption,
+} from "./segmented-control";
+export { NumberStepper, type NumberStepperProps } from "./number-stepper";
+export {
+  SwatchPicker,
+  type SwatchOption,
+  type SwatchPickerProps,
+} from "./swatch-picker";
+export {
+  StatusDot,
+  type StatusDotProps,
+  type StatusDotTone,
+} from "./status-dot";
+export {
+  FormSectionNav,
+  type FormSection,
+  type FormSectionNavProps,
+} from "./form-section-nav";
+export {
+  CollapsibleSection,
+  type CollapsibleSectionProps,
+} from "./collapsible-section";
+
+// ── Wave 198: the ONE table registry for every admin list (TASK-1043) ────────
+export * from "./data-registry";
+
+// ── Wave 198, block «Контент»: route-level section tabs (BlogProposal БЛ1) ───
+export {
+  SectionTabs,
+  type SectionTab,
+  type SectionTabsProps,
+} from "./section-tabs";

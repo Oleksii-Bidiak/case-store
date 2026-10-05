@@ -103,12 +103,23 @@ export const PERM = {
   customersCard: "customers:card",
 
   messagesRead: "messages:read",
+  // TASK-1011 (wave 198, TASK-1060): every write on an inbox message — a
+  // status change (one or many) and the internal note. The API has guarded
+  // `PATCH /contact/admin/:id` and `PATCH /contact/admin/status` with it since
+  // plan 181; the UI asked for nothing, so a read-only manager saw the buttons
+  // and got a 403.
+  messagesWrite: "messages:write",
 
   settingsSeo: "settings:seo",
   settingsContacts: "settings:contacts",
   settingsSearch: "settings:search",
 
   analyticsRead: "analytics:read",
+  // TASK-684: the money on the dashboard and in the reports. The API cuts the
+  // sums for a caller without it and the UI follows the data; the key is named
+  // here only so the dashboard's loading skeleton (TASK-1037) can draw the same
+  // number of cards the page will.
+  analyticsRevenue: "analytics:revenue",
 
   // TASK-475 — the staff register and the action log. Real, enforced keys that
   // are NEVER OFFERED on any granting screen (`grantable: false` in the backend

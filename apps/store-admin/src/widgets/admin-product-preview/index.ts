@@ -1,3 +1,4 @@
-// Admin product preview widget — staff-only live preview of a product by slug,
-// including deactivated products (TASK-155).
+// Admin product overview widget — «Огляд товару» by slug, including deactivated
+// products (TASK-155, wave 198 TASK-1087).
 export { AdminProductPreviewView } from "./ui/admin-product-preview-view";
+export { AdminProductPreviewSkeleton } from "./ui/admin-product-preview-skeleton";

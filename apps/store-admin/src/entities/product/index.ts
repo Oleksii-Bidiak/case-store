@@ -7,6 +7,10 @@ export {
   // TASK-230: the admin panel lists via the guarded admin endpoint (all
   // statuses, no cache) — the public list is active-only and not used here.
   useProductControllerAdminFindAll,
+  // Wave 198 (TASK-1073): the PUBLIC, active-only list — on purpose, for the
+  // banner LinkPicker. A link may only point at a product the shop shows, and
+  // the endpoint needs no `products:read`, which a content manager lacks.
+  useProductControllerFindAll,
   useProductControllerFindById,
   useProductControllerCreate,
   useProductControllerUpdate,

@@ -18,15 +18,22 @@ const e = dict.discountForm.errors;
  * An optional positive-integer cap. `0` is rejected here (TASK-796): the API's
  * `@Min(1)` refuses it, and a form that lets it through only earns the operator
  * a generic "could not save" with no hint which field was wrong. Blank means
- * "no cap".
+ * "no cap". A `0` gets its own words (DiscountsProposal ПК4): it reads like
+ * "no limit" and means "nobody".
  */
+const isZero = (v: string) => /^0+$/.test(v);
 const optionalIntString = (message: string) =>
   z
     .string()
     .trim()
     .optional()
+    .refine((v) => v === undefined || v === "" || !isZero(v), e.capZero)
     .refine(
-      (v) => v === undefined || v === "" || (/^\d+$/.test(v) && Number(v) >= 1),
+      (v) =>
+        v === undefined ||
+        v === "" ||
+        isZero(v) ||
+        (/^\d+$/.test(v) && Number(v) >= 1),
       message,
     )
     .transform((v) => (v === undefined || v === "" ? undefined : Number(v)));
@@ -37,6 +44,10 @@ const optionalIntString = (message: string) =>
  */
 const hasAtMostTwoDecimals = (v: string | undefined) =>
   v === undefined || !/[.,]\d{3,}/.test(v);
+
+/** Both are `YYYY-MM-DD`, which orders lexicographically — no zone needed. */
+const windowInOrder = (data: { startsAt?: string; expiresAt?: string }) =>
+  !data.startsAt || !data.expiresAt || data.startsAt <= data.expiresAt;
 
 export const discountSchema = z
   .object({
@@ -81,14 +92,10 @@ export const discountSchema = z
     (data) => data.type !== "PERCENT" || (data.value >= 1 && data.value <= 100),
     { path: ["value"], message: e.percentRange },
   )
-  .refine(
-    (data) =>
-      !data.startsAt ||
-      !data.expiresAt ||
-      // Both are `YYYY-MM-DD`, which orders lexicographically — no zone needed.
-      data.startsAt <= data.expiresAt,
-    { path: ["expiresAt"], message: e.dateOrder },
-  );
+  // A reversed window is wrong at BOTH ends (ПК4): both fields are marked, the
+  // form says the reason once under the pair.
+  .refine(windowInOrder, { path: ["startsAt"], message: e.dateOrder })
+  .refine(windowInOrder, { path: ["expiresAt"], message: e.dateOrder });
 
 export type DiscountFormInput = z.input<typeof discountSchema>;
 export type DiscountFormValues = z.output<typeof discountSchema>;

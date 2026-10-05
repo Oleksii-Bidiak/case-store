@@ -28,10 +28,10 @@ import {
   flatReorderStrings,
   isFlatReorderConflict,
   orderedIdsIfChanged,
-  useReorderLifecycle,
   type ReorderLifecycleApi,
 } from "@/shared/lib/list-reorder";
 import type { TreeItem } from "@/shared/lib/sortable-tree";
+import { useUndoToastReorder } from "./use-undo-toast-reorder";
 
 /**
  * The key of the UNPARAMETERISED list read — the one the grid renders and the one the
@@ -98,7 +98,7 @@ export function usePageReorder({
 
   const strings = useMemo(() => flatReorderStrings, []);
 
-  return useReorderLifecycle<ReorderPagesDto, AdminPageListResponse>({
+  return useUndoToastReorder<ReorderPagesDto, AdminPageListResponse>({
     resource: "pages",
     items,
     toPayload,

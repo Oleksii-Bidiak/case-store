@@ -6,6 +6,7 @@ import {
   type BannerFormValues,
 } from "./banner-schema";
 import { formatDateTime } from "@/shared/lib";
+import { dict } from "@/shared/config";
 
 /**
  * Normalise ICU's space variants (NBSP / narrow NBSP turn up inside date-time
@@ -148,6 +149,29 @@ describe("bannerSchema validation", () => {
   it("accepts a valid banner", () => {
     const result = bannerSchema.safeParse(baseInput);
     expect(result.success).toBe(true);
+  });
+
+  // Wave 198 (БН8): a button with words and nowhere to go is a dead button.
+  it("rejects a button label without an address, on the address", () => {
+    const result = bannerSchema.safeParse({
+      ...baseInput,
+      ctaLabel: "Купити",
+      ctaHref: "  ",
+    });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].path).toEqual(["ctaHref"]);
+      expect(result.error.issues[0].message).toBe(
+        dict.bannerForm.errors.ctaHrefRequired,
+      );
+    }
+  });
+
+  it("accepts an address without a label, and neither", () => {
+    expect(
+      bannerSchema.safeParse({ ...baseInput, ctaHref: "/promo" }).success,
+    ).toBe(true);
+    expect(bannerSchema.safeParse(baseInput).success).toBe(true);
   });
 
   it("requires scheduledAt when status is SCHEDULED", () => {

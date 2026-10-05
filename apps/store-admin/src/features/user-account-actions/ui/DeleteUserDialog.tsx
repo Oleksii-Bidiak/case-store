@@ -11,13 +11,14 @@ import {
 } from "@/entities/user";
 import { useAuth } from "@/entities/session";
 import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
   Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from "@/shared/ui";
 import { apiErrorMessage } from "@/shared/lib";
 import { dict } from "@/shared/config";
@@ -88,25 +89,24 @@ export function DeleteUserDialog({
     );
   };
 
+  // Wave 198 (UsersProposal К6, TASK-812): an AlertDialog, not a Dialog — an
+  // irreversible step is a question, and the overlay must not dismiss it by a
+  // stray click. The confirm is a plain Button rather than `AlertDialogAction`
+  // so the dialog stays open, with its spinner, until the DELETE answers.
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{d.deleteHeading}</DialogTitle>
-          <DialogDescription>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{d.deleteHeading}</AlertDialogTitle>
+          <AlertDialogDescription>
             {isSelf ? d.deleteSelf : d.deleteDescription(email)}
-          </DialogDescription>
-        </DialogHeader>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
 
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={deleteUser.isPending}
-          >
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleteUser.isPending}>
             {dict.common.cancel}
-          </Button>
+          </AlertDialogCancel>
           <Button
             type="button"
             variant="destructive"
@@ -115,8 +115,8 @@ export function DeleteUserDialog({
           >
             {deleteUser.isPending ? dict.common.saving : d.deleteConfirm}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }

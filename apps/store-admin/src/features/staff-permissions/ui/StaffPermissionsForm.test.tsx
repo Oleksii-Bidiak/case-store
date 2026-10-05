@@ -133,12 +133,7 @@ describe("StaffPermissionsForm — a manager's grid", () => {
     render();
     await screen.findByText("Замовлення");
 
-    // Expand the zone, then tick the second permission.
-    await userEvent.click(
-      screen.getByRole("button", {
-        name: dict.staff.zoneExpandAria("Замовлення"),
-      }),
-    );
+    // The zone holds a right, so it is already open: tick the second one.
     await userEvent.click(
       await screen.findByLabelText("Змінювати статуси та ТТН"),
     );
@@ -186,11 +181,6 @@ describe("StaffPermissionsForm — a manager's grid", () => {
     await screen.findByText(dict.staff.templateMatch("Оператор замовлень"));
 
     await userEvent.click(
-      screen.getByRole("button", {
-        name: dict.staff.zoneExpandAria("Замовлення"),
-      }),
-    );
-    await userEvent.click(
       await screen.findByLabelText("Змінювати статуси та ТТН"),
     );
 
@@ -217,5 +207,112 @@ describe("StaffPermissionsForm — a manager's grid", () => {
     expect(
       screen.queryByRole("combobox", { name: dict.staff.templateApplyAria }),
     ).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Д-ж2 (StaffProposal С3): the save row is the sticky bar every long admin form
+ * uses, and it SAYS what is about to change — «Змінено 2 права: + …, − …» — so
+ * a revocation is never one unnoticed untick away from being saved.
+ */
+describe("StaffPermissionsForm — sticky save bar", () => {
+  it("lists the pending changes by name, and «Скасувати зміни» puts the boxes back", async () => {
+    stubPermissions({ permissions: ["orders:read"] });
+    stubTemplates();
+    const { container } = render();
+    await screen.findByText("Замовлення");
+
+    expect(container.querySelector('[data-variant="sticky"]')).not.toBeNull();
+    // Nothing to save yet.
+    expect(
+      screen.getByRole("button", { name: dict.staff.permissionsSave }),
+    ).toBeDisabled();
+
+    await userEvent.click(screen.getByLabelText("Змінювати статуси та ТТН"));
+    await userEvent.click(screen.getByLabelText("Переглядати замовлення"));
+
+    expect(
+      screen.getByText(
+        dict.staff.permissionsChanged(
+          2,
+          "+ Змінювати статуси та ТТН, − Переглядати замовлення",
+        ),
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.staff.permissionsSave }),
+    ).toBeEnabled();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.discardChanges }),
+    );
+    expect(screen.getByLabelText("Переглядати замовлення")).toBeChecked();
+    expect(screen.getByLabelText("Змінювати статуси та ТТН")).not.toBeChecked();
+    expect(screen.queryByText(/^Змінено/)).not.toBeInTheDocument();
+  });
+
+  it("agrees the count with its noun — «Змінено 1 право», «5 прав»", () => {
+    expect(dict.staff.permissionsChanged(1, "+ A")).toBe(
+      "Змінено 1 право: + A",
+    );
+    expect(dict.staff.permissionsChanged(5, "x")).toBe("Змінено 5 прав: x");
+  });
+
+  /**
+   * The template applier must not disappear with the redesign: the API does not
+   * say which template a person was given (TASK-445 stores no link), so the
+   * artboard's «Шаблон … · змінено» banner cannot be drawn honestly yet — the
+   * existing «Застосувати шаблон» control stays, and still uses the apply route.
+   */
+  it("still applies a template through the apply route", async () => {
+    stubPermissions({ permissions: ["orders:read"] });
+    stubTemplates([
+      {
+        id: "t1",
+        name: "Оператор замовлень",
+        permissions: ["orders:read", "orders:write"],
+      },
+    ]);
+    const applied: string[] = [];
+    server.use(
+      http.post(
+        "*/api/admin/permission-templates/:id/apply",
+        async ({ params }) => {
+          applied.push(String(params.id));
+          return HttpResponse.json({
+            data: {
+              template: { id: "t1", name: "Оператор замовлень" },
+              userId: "manager-1",
+              before: ["orders:read"],
+              after: ["orders:read", "orders:write"],
+            },
+          });
+        },
+      ),
+    );
+    render();
+
+    await userEvent.click(
+      await screen.findByRole("combobox", {
+        name: dict.staff.templateApplyAria,
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("option", { name: "Оператор замовлень" }),
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.staff.templateApplySubmit }),
+    );
+
+    await waitFor(() => expect(applied).toEqual(["t1"]));
+  });
+
+  it("draws no save bar for a reader who may not write", async () => {
+    stubPermissions({ permissions: ["orders:read"] });
+    stubTemplates();
+    const { container } = render(false);
+
+    await screen.findByText(dict.staff.permissionsReadOnly);
+    expect(container.querySelector('[data-variant="sticky"]')).toBeNull();
   });
 });

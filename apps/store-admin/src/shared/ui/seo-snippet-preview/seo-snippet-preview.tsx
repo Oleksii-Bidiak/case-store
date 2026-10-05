@@ -29,6 +29,11 @@ export interface SeoSnippetPreviewProps {
   /** Raw length of the entity's own metaTitle field (0 if blank) — counter only. */
   rawTitleLength: number;
   rawDescriptionLength: number;
+  /**
+   * Just the snippet — no heading, counters or hint (wave 198, the product
+   * overview ПП1 draws its own card title and reads, not edits). Default false.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -49,6 +54,7 @@ export function SeoSnippetPreview({
   url,
   rawTitleLength,
   rawDescriptionLength,
+  compact = false,
 }: SeoSnippetPreviewProps) {
   const titleOver = rawTitleLength > SEO_TITLE_MAX;
   const descriptionOver = rawDescriptionLength > SEO_DESCRIPTION_MAX;
@@ -59,9 +65,11 @@ export function SeoSnippetPreview({
       data-testid="seo-snippet-preview"
       className="flex flex-col gap-2 rounded-md border border-border bg-card p-4"
     >
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {d.heading}
-      </p>
+      {compact ? null : (
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {d.heading}
+        </p>
+      )}
 
       <div className="flex flex-col gap-0.5">
         <p
@@ -88,34 +96,38 @@ export function SeoSnippetPreview({
         ) : null}
       </div>
 
-      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
-        <span
-          data-testid="seo-snippet-title-counter"
-          aria-label={d.titleCounterAria(rawTitleLength, SEO_TITLE_MAX)}
-          className={titleOver ? "text-destructive" : "text-muted-foreground"}
-        >
-          {d.counter(rawTitleLength, SEO_TITLE_MAX)}
-        </span>
-        <span
-          data-testid="seo-snippet-description-counter"
-          aria-label={d.descriptionCounterAria(
-            rawDescriptionLength,
-            SEO_DESCRIPTION_MAX,
-          )}
-          className={
-            descriptionOver ? "text-destructive" : "text-muted-foreground"
-          }
-        >
-          {d.counter(rawDescriptionLength, SEO_DESCRIPTION_MAX)}
-        </span>
-      </div>
+      {compact ? null : (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+          <span
+            data-testid="seo-snippet-title-counter"
+            aria-label={d.titleCounterAria(rawTitleLength, SEO_TITLE_MAX)}
+            className={titleOver ? "text-destructive" : "text-muted-foreground"}
+          >
+            {d.counter(rawTitleLength, SEO_TITLE_MAX)}
+          </span>
+          <span
+            data-testid="seo-snippet-description-counter"
+            aria-label={d.descriptionCounterAria(
+              rawDescriptionLength,
+              SEO_DESCRIPTION_MAX,
+            )}
+            className={
+              descriptionOver ? "text-destructive" : "text-muted-foreground"
+            }
+          >
+            {d.counter(rawDescriptionLength, SEO_DESCRIPTION_MAX)}
+          </span>
+        </div>
+      )}
 
-      <p
-        data-testid="seo-snippet-hint"
-        className="text-xs text-muted-foreground"
-      >
-        {HINT_BY_TIER[titleTier]}
-      </p>
+      {compact ? null : (
+        <p
+          data-testid="seo-snippet-hint"
+          className="text-xs text-muted-foreground"
+        >
+          {HINT_BY_TIER[titleTier]}
+        </p>
+      )}
     </section>
   );
 }

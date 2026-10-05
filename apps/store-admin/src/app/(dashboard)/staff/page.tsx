@@ -5,11 +5,16 @@ import { FullAccessPanel, StaffTable, StaffTableSkeleton } from "@/widgets";
 import { CreateStaffButton } from "@/features/staff-create";
 import { PERM } from "@/entities/permission";
 import { PermissionGate } from "@/entities/session";
-import { Button } from "@/shared/ui";
+import { Button, RegistryHeader } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 /**
- * «Персонал» — the register of service accounts (TASK-480, plan 181).
+ * «Співробітники» (до хвилі 198 — «Персонал») — the register of service
+ * accounts (TASK-480, plan 181; StaffProposal С1).
+ *
+ * The page draws the header itself rather than letting the registry do it: the
+ * title must stay on screen above the one refusal a manager gets (TASK-639),
+ * and the full-access strip sits between the header and the toolbar.
  *
  * `force-dynamic` for the same reason every admin list carries it (TASK-405):
  * this table keeps its view state in the query string, and a statically
@@ -26,26 +31,21 @@ export const metadata: Metadata = {
 
 export default function StaffPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex flex-col gap-2">
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-            {dict.staff.heading}
-          </h2>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            {dict.staff.intro}
-          </p>
-        </div>
-        {/* TASK-639: silent — the section below refuses once, for both. */}
-        <PermissionGate permission={PERM.staffRead} fallback={null}>
-          <div className="flex flex-wrap items-center gap-2">
+    <div className="flex flex-col gap-4">
+      <RegistryHeader
+        title={dict.staff.heading}
+        description={dict.staff.intro}
+        actions={
+          // TASK-639: silent — the section below refuses once, for both.
+          // No «Експорт»: the API has no staff export (an API tail).
+          <PermissionGate permission={PERM.staffRead} fallback={null}>
             <Button asChild variant="outline">
               <Link href="/staff/templates">{dict.staff.templatesNav}</Link>
             </Button>
             <CreateStaffButton />
-          </div>
-        </PermissionGate>
-      </div>
+          </PermissionGate>
+        }
+      />
 
       {/* TASK-639: `staff:read`, not merely `isStaff`. Without it a manager who
           typed the URL got the page with a red «не вдалося завантажити» from

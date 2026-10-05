@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import {
   categoryNamesById,
@@ -10,10 +9,13 @@ import {
   useCategoryControllerGetCategoryTree,
 } from "@/entities/category";
 import { PERM } from "@/entities/permission";
-import { useProductControllerAdminFindAll } from "@/entities/product";
+import {
+  useProductControllerAdminFindAll,
+  type ProductEntity,
+} from "@/entities/product";
 import { useProductGroupControllerFindAll } from "@/entities/product-group";
 import { useAuth } from "@/entities/session";
-import { ProductStatusToggle } from "@/features/product-status-toggle";
+import { useProductStatusSetter } from "@/features/product-status-toggle";
 import { useProductBulkStatus } from "@/features/product-bulk-status";
 import { useProductBulkColor } from "@/features/product-bulk-color";
 import { useProductBulkGroup } from "@/features/product-bulk-group";
@@ -21,71 +23,145 @@ import { useProductBulkUndo } from "@/features/product-bulk-undo";
 import { ProductDeleteAction } from "@/features/product-delete";
 import { useUrlParams } from "@/shared/lib/use-url-params";
 import { useTableSort } from "@/shared/lib/use-table-sort";
-import { useRowSelection } from "@/shared/lib/use-row-selection";
+import { toast } from "@/shared/ui/toast";
 import {
-  Badge,
-  BulkActionsBar,
   Button,
-  Checkbox,
+  DataRegistry,
   LiveAnnouncer,
-  ReorderUndoButton,
-  SortableColumnHeader,
-  Table,
-  TableBody,
-  TableCell,
-  TableFilters,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableSelectCell,
-  TableSelectHead,
-  TableToolbar,
+  SummaryValue,
   pageSizeFrom,
-  type TableFilterDef,
+  treeComboboxItems,
+  useDataRegistry,
+  type FilterChip,
+  type RowActionItem,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { colorsInUse, formatCurrency, formatDate } from "@/shared/lib";
-import { AdminProductTableSkeleton } from "./admin-product-table-skeleton";
+import { colorsInUse, countLabel } from "@/shared/lib";
 import { MoveToGroupDialog } from "./move-to-group-dialog";
 import { SetColorDialog } from "./set-color-dialog";
+import {
+  EMPTY_PRODUCT_FILTERS,
+  ProductFilterSheet,
+  useProductFilterBrands,
+  useProductFilterDevices,
+  type ProductFilters,
+} from "./product-filter-sheet";
+import { productColumns, renderProductCard } from "./product-registry-columns";
+
+const d = dict.products;
+const t = d.bulk;
+
+/* ── quick views ────────────────────────────────────────────────────────── */
+
+type ViewId = "all" | "active" | "hidden" | "out" | "deleted";
 
 /**
- * Paginated, searchable, sortable product table for the admin panel.
+ * Each quick view is a PRESET of the three URL params the old selects wrote
+ * (`status`, `stock`, `deleted`), so every link shared before wave 198 —
+ * `?status=hidden`, `?stock=out`, `?deleted=only` — still opens the same list,
+ * now with its view highlighted.
+ */
+const VIEW_PARAMS: Record<
+  ViewId,
+  { status?: string; stock?: string; deleted?: string }
+> = {
+  all: {},
+  active: { status: "active" },
+  hidden: { status: "hidden" },
+  out: { stock: "out" },
+  deleted: { deleted: "only" },
+};
+
+const VIEW_ORDER: readonly ViewId[] = [
+  "all",
+  "active",
+  "hidden",
+  "out",
+  "deleted",
+];
+
+function viewOf(status: string, stock: string, deleted: string): ViewId | "" {
+  for (const id of VIEW_ORDER) {
+    const preset = VIEW_PARAMS[id];
+    if (
+      (preset.status ?? "") === status &&
+      (preset.stock ?? "") === stock &&
+      (preset.deleted ?? "") === deleted
+    ) {
+      return id;
+    }
+  }
+  return "";
+}
+
+/** The listing filter each quick view stands for — for its counter. */
+const VIEW_QUERY: Record<
+  ViewId,
+  { isActive?: boolean; outOfStock?: boolean; deleted?: boolean }
+> = {
+  all: {},
+  active: { isActive: true },
+  hidden: { isActive: false },
+  out: { outOfStock: true },
+  deleted: { deleted: true },
+};
+
+/**
+ * The counters on the quick views: the API's own `meta.total` of a one-row
+ * request per view — never a number derived from the page on screen. They
+ * count the whole catalogue (like the artboard's «Усі 178» next to «Знайдено
+ * 12»), so they answer "how big is each worklist", not "how many match".
+ */
+function useViewCount(view: ViewId) {
+  return useProductControllerAdminFindAll({
+    page: 1,
+    limit: 1,
+    ...VIEW_QUERY[view],
+  });
+}
+
+function sortLabel(sortBy: string, sortOrder: "asc" | "desc"): string {
+  const asc = sortOrder === "asc";
+  switch (sortBy) {
+    case "name":
+      return asc ? d.sortNameAsc : d.sortNameDesc;
+    case "price":
+      return asc ? d.sortPriceAsc : d.sortPriceDesc;
+    case "stock":
+      return asc ? d.sortStockAsc : d.sortStockDesc;
+    default:
+      return asc ? d.sortCreatedAsc : d.sortCreatedDesc;
+  }
+}
+
+const digitsOnly = (value: string | null) =>
+  value && /^\d+$/.test(value) ? value : "";
+
+/**
+ * The product list on the shared registry (wave 198, TASK-1048,
+ * ProductsProposal Т1–Т7). What moved where, so nothing the old table did is
+ * lost:
  *
- * Search, page and sort state live in the URL (`?search=`, `?page=`,
- * `?sortBy=&sortOrder=`) so the view is shareable and survives refreshes. Unlike
- * the public storefront, the admin list omits the `isActive` filter so both
- * active and inactive products show.
+ * - the three selects (status, stock, deleted) → the quick views AND the
+ *   «Фільтри» sheet, writing the very same URL params;
+ * - the per-row status toggle → a read-only «Показується / Приховано» badge and
+ *   «⋯ → Показати / Приховати» (`products:write`, TASK-1323);
+ * - «Редагувати» and «Видалити» → «⋯» (`products:write` / `products:delete`);
+ * - the bulk bar → the registry's permanent bar (TASK-838) with the same four
+ *   actions; the persistent «Скасувати останню масову дію» (TASK-837) → the
+ *   bar's «⋯», plus a «Скасувати» toast after every bulk write;
+ * - «Створено» and its sort → «Колонки» (hidden by default; «Оновлено» shows).
  *
- * TASK-355 added the toolbar (with a real refresh control), multi-select and
- * bulk activate/deactivate. The selection is scoped to the page on screen — see
- * `useRowSelection`; rows picked on another page are remembered but never acted
- * on, so the count in the bulk bar is always something the operator can see.
+ * Every bulk endpoint — and so the undo — needs `products:write`. Without it
+ * there is no checkbox column, no bulk bar and no «Додати товар» (Т6).
  *
- * TASK-423 took this table's three hand-rolled controls — a search FORM with a
- * «Пошук» button, two bare native `<select>`s, and a page size of 10 — and
- * replaced them with the shared search-as-you-type box, `TableFilters` and
- * `TablePagination`. It also added the third bulk action, «Перемістити до групи»:
- * a variant group means nothing until every position in it points at the same
- * group, so nine positions used to cost nine full form saves with the family
- * half-formed in between.
+ * The selection survives paging (registry rule). The undo snapshot therefore
+ * reads every row the operator has SEEN this visit, not just the page on
+ * screen — a product picked on page 1 and acted on from page 2 still gets its
+ * previous value back.
  *
- * TASK-427 added the three things a catalogue list could not do: open a product
- * without opening its form (the name links to the read-only card), remove one
- * (the row's delete action, behind `products:delete`), and find one that was
- * removed (the «Видалені» filter). The deleted view is read-only by
- * construction — a tombstoned product accepts no write, so its row carries no
- * link, no status toggle, no checkbox and no actions.
- *
- * `LiveAnnouncer` MUST wrap the table rather than sit inside it — the same split
- * `AdminCategoryTree` and `MessageInbox` make, for the same reason.
- * `useRowSelection` and `useProductBulkStatus` both call `useAnnouncer()`, and a
- * hook called in the very component that renders the provider reads the context
- * from ABOVE it, which is the default no-op. Every selection and bulk-status
- * announcement would be silently dropped, and nothing on screen would look
- * wrong.
+ * `LiveAnnouncer` wraps the view: the bulk hooks announce through
+ * `useAnnouncer()`, which must run BELOW the provider.
  */
 export function AdminProductTable() {
   return (
@@ -97,38 +173,29 @@ export function AdminProductTable() {
 
 function AdminProductTableView() {
   const searchParams = useSearchParams();
-
-  const searchParam = searchParams.get("search") ?? "";
-  const page = Math.max(1, Number(searchParams.get("page")) || 1);
-  // TASK-423: 10 was the lowest page size in the panel and the reason the product
-  // list felt like the slowest screen in it. 20 is the one default everywhere now,
-  // and `?limit=` lets the operator ask for 50 or 100 when reconciling an import.
-  const pageSize = pageSizeFrom(searchParams);
-
   const updateParams = useUrlParams();
-
-  // Column sort lives in the URL (TASK-147); replaces the previously hardcoded
-  // createdAt/desc.
   const { sortBy, sortOrder, onSort } = useTableSort(
     searchParams,
     updateParams,
   );
+  const { can } = useAuth();
+  const canWrite = can(PERM.productsWrite);
+  const canDelete = can(PERM.productsDelete);
 
-  // TASK-230: the guarded admin listing — includes deactivated products (the
-  // public GET /products is active-only now) and bypasses the server cache.
-  // TASK-362: status and stock filters live in the URL alongside search/sort, so
-  // a restock worklist («приховані», «немає в наявності») is a shareable link
-  // rather than a set of clicks the operator repeats every morning.
+  const searchParam = searchParams.get("search") ?? "";
+  const page = Math.max(1, Number(searchParams.get("page")) || 1);
+  const pageSize = pageSizeFrom(searchParams);
   const statusParam = searchParams.get("status") ?? "";
   const stockParam = searchParams.get("stock") ?? "";
-  // TASK-427: soft-deleted products were unreachable from every admin read —
-  // `DELETE` was an action with no way back to its own result. `?deleted=only`
-  // swaps the listing over to the tombstones; anything else lists the live
-  // products, which is what the operator wants 99 visits out of 100.
   const deletedParam = searchParams.get("deleted") ?? "";
   const isDeletedView = deletedParam === "only";
+  const categoryParam = searchParams.get("categoryId") ?? "";
+  const brandParam = searchParams.get("brandId") ?? "";
+  const deviceParam = searchParams.get("deviceModelId") ?? "";
+  const minPriceParam = digitsOnly(searchParams.get("minPrice"));
+  const maxPriceParam = digitsOnly(searchParams.get("maxPrice"));
 
-  const { data, isLoading, isFetching, isError, refetch } =
+  const { data, isLoading, isFetching, isError, refetch, dataUpdatedAt } =
     useProductControllerAdminFindAll({
       page,
       limit: pageSize,
@@ -142,24 +209,27 @@ function AdminProductTableView() {
             ? false
             : undefined,
       outOfStock: stockParam === "out" ? true : undefined,
-      // Sent only when asked for: the API treats an absent flag as "live
-      // products", and the storefront listing ignores it entirely.
+      inStock: stockParam === "in" ? true : undefined,
+      // Sent only when asked for: an absent flag means "live products".
       deleted: isDeletedView ? true : undefined,
+      categoryId: categoryParam || undefined,
+      brandId: brandParam || undefined,
+      deviceModelId: deviceParam || undefined,
+      minPrice: minPriceParam ? Number(minPriceParam) : undefined,
+      maxPrice: maxPriceParam ? Number(maxPriceParam) : undefined,
     });
 
-  // TASK-717: a product is filed on a LEAF category, usually two or three levels
-  // down, so the name lookup has to cover the whole tree — the root list this
-  // used to read answered «—» for nearly every row. The admin tree (all
-  // statuses, the same cache entry the product form and card read) needs
-  // `categories:write`; a manager without it reads the public tree instead.
-  // That one is a nested read of the root plus three levels below it
-  // (`findCategoryTree` in store-api's category.repository.ts) — levels 1–4,
-  // which is exactly the structural cap (`MAX_CATEGORY_TREE_LEVELS = 4`), so
-  // every category the tree editor can produce is in it. Only a pre-cap
-  // level-5 leftover would be missing and show «—». It also holds only ACTIVE
-  // categories — a product on a hidden category shows «—» for such a manager,
-  // which is also what the storefront sees.
-  const { can } = useAuth();
+  const viewCounts = {
+    all: useViewCount("all"),
+    active: useViewCount("active"),
+    hidden: useViewCount("hidden"),
+    out: useViewCount("out"),
+    deleted: useViewCount("deleted"),
+  };
+
+  // TASK-717: the category of a product is a LEAF, often three levels down, so
+  // names come from the whole tree — the admin tree for a `categories:write`
+  // holder, the public (active-only, levels 1–4) tree otherwise.
   const canReadAdminTree = can(PERM.categoriesWrite);
   const adminTreeQuery = useCategoryControllerGetAdminTree({
     query: { enabled: canReadAdminTree },
@@ -167,81 +237,83 @@ function AdminProductTableView() {
   const publicTreeQuery = useCategoryControllerGetCategoryTree({
     query: { enabled: !canReadAdminTree },
   });
-  const categoryNames = categoryNamesById(
-    canReadAdminTree ? adminTreeQuery.data?.data : publicTreeQuery.data?.data,
-  );
+  const tree = canReadAdminTree
+    ? adminTreeQuery.data?.data
+    : publicTreeQuery.data?.data;
+  const categoryNames = useMemo(() => categoryNamesById(tree), [tree]);
+  const categoryItems = useMemo(() => treeComboboxItems(tree), [tree]);
 
-  // TASK-837/838: all three bulk endpoints (status, group, colour) — and so the
-  // undo, which replays them — need `products:write`. Without it a selection
-  // has nothing to act on, so the checkbox column, the bulk bar and the undo
-  // are not rendered at all. The server guard is the real boundary; this only
-  // keeps a manager from meeting a 403 they cannot act on.
-  const canWrite = can(PERM.productsWrite);
+  // Names for the brand / device chips — asked only while such a filter is
+  // applied. The sheet reads the same two lists (same cache entries) on open.
+  const brandsQuery = useProductFilterBrands(Boolean(brandParam));
+  const devicesQuery = useProductFilterDevices(Boolean(deviceParam));
 
-  // TASK-423: the same two filters, declared as data so the chips, the clear-all
-  // and the page reset come from the shared control rather than from two
-  // hand-rolled native <select>s that had none of them.
-  const filters: TableFilterDef[] = [
-    {
-      param: "status",
-      label: dict.products.filterStatus,
-      allLabel: dict.products.filterStatusAll,
-      options: [
-        { value: "active", label: dict.products.filterStatusActive },
-        { value: "hidden", label: dict.products.filterStatusHidden },
-      ],
-    },
-    {
-      param: "stock",
-      label: dict.products.filterStock,
-      allLabel: dict.products.filterStockAll,
-      options: [{ value: "out", label: dict.products.filterStockOut }],
-    },
-    // TASK-427. Two values, not three: the API returns the live rows or the
-    // tombstones, never a mixed page — `ProductEntity` carries no per-row
-    // deleted marker, so a mixed listing could not be read.
-    {
-      param: "deleted",
-      label: dict.products.filterDeleted,
-      allLabel: dict.products.filterDeletedAll,
-      options: [{ value: "only", label: dict.products.filterDeletedOnly }],
-    },
-  ];
-
-  const products = data?.data ?? [];
+  const products = useMemo(() => data?.data ?? [], [data]);
+  const total = data?.meta?.total;
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  const productNames = new Map(products.map((p) => [p.id, p.name]));
-  const selection = useRowSelection({
-    rowIds: products.map((product) => product.id),
-    getLabel: (id) => productNames.get(id) ?? id,
-    messages: {
-      selected: dict.common.table.announceSelected,
-      deselected: dict.common.table.announceDeselected,
-      selectedAll: dict.common.table.announceSelectedAll,
-      cleared: dict.common.table.announceCleared,
-    },
-  });
+  const columns = useMemo(
+    () => productColumns({ isDeletedView, categoryNames }),
+    [categoryNames, isDeletedView],
+  );
 
-  // ── «Скасувати» for the last bulk action (TASK-837 / AD-PROD-33) ─────────
-  // Each action snapshots the selected rows right before it writes (`prepare`)
-  // and offers the undo only once the server has confirmed (`commit`). The undo
-  // replays the forward endpoints per previous value — see the hook for what
-  // that does not promise (atomicity, a lossless colour restore).
+  const filterKey = [
+    searchParam,
+    statusParam,
+    stockParam,
+    deletedParam,
+    categoryParam,
+    brandParam,
+    deviceParam,
+    minPriceParam,
+    maxPriceParam,
+  ].join("|");
+
+  const registry = useDataRegistry({
+    tableId: "products",
+    columns,
+    rows: products,
+    getRowId: getProductId,
+    selectionResetKey: filterKey,
+  });
+  const { selection } = registry;
+
+  // Every row seen this visit, for the undo snapshot (see the doc comment).
+  const seenRows = useRef(new Map<string, ProductEntity>());
+  useEffect(() => {
+    for (const product of products) seenRows.current.set(product.id, product);
+  }, [products]);
+
+  /* ── bulk writes + undo ────────────────────────────────────────────── */
+
   const bulkUndo = useProductBulkUndo();
+  const undoToastId = useRef<string | number | null>(null);
+  const pendingStatus = useRef<boolean>(true);
+  const latestUndo = useRef({ run: bulkUndo.undo, available: false });
+
+  /** Commit the prepared undo and offer it in a toast, naming what changed. */
+  const offerUndo = (message: (label: string) => string) => {
+    const count = bulkUndo.commit();
+    if (count === null) return;
+    undoToastId.current = toast.undo(message(countLabel(count, d.itemForms)), {
+      onUndo: () => {
+        // Read at CLICK time: the toast outlives renders, and a used-up or
+        // superseded offer must not replay a stale snapshot.
+        const latest = latestUndo.current;
+        if (latest.available) latest.run();
+      },
+    });
+  };
 
   const bulk = useProductBulkStatus({
     onSuccess: () => {
       selection.clear();
-      bulkUndo.commit();
+      offerUndo(pendingStatus.current ? d.toastShown : d.toastHidden);
     },
   });
 
-  // ── bulk «Перемістити до групи» (TASK-423 / AD-PROD-33) ───────────────────
   const [isGroupDialogOpen, setGroupDialogOpen] = useState(false);
-  // Fetched only once the dialog is open: the group list is of no use to anyone
-  // reading the table, and loading it on every visit to /products would be a
-  // request per page view for a control most visits never touch.
+  // Fetched only once the dialog is open (TASK-423).
   const groupsQuery = useProductGroupControllerFindAll(undefined, {
     query: { enabled: isGroupDialogOpen },
   });
@@ -249,135 +321,376 @@ function AdminProductTableView() {
     onSuccess: () => {
       selection.clear();
       setGroupDialogOpen(false);
-      bulkUndo.commit();
+      offerUndo(d.toastGrouped);
     },
   });
 
-  // ── bulk «Задати колір» (TASK-487 / owner decision B-10) ──────────────────
-  // Colour is the strongest facet in accessories and the one nobody filled in:
-  // it arrives as a variant axis, and the product form edits one position at a
-  // time. The endpoint writes both halves — the axis JSON and the `Колір`
-  // characteristic the catalogue filters on.
   const [isColorDialogOpen, setColorDialogOpen] = useState(false);
   const bulkColor = useProductBulkColor({
     onSuccess: () => {
       selection.clear();
       setColorDialogOpen(false);
-      bulkUndo.commit();
+      offerUndo(d.toastColored);
     },
   });
 
-  const selectedIds = [...selection.selectedIds];
   const isMutating =
     bulk.isPending ||
     bulkGroup.isPending ||
     bulkColor.isPending ||
     bulkUndo.isPending;
+  // An undo replayed while a newer forward write is in flight would land first
+  // and let that write commit an offer that can never be reached (TASK-837).
+  const undoAvailable = bulkUndo.canUndo && !isMutating;
+  useEffect(() => {
+    latestUndo.current = { run: bulkUndo.undo, available: undoAvailable };
+  });
+
+  const runUndo = useCallback(() => {
+    if (undoToastId.current !== null) toast.dismiss(undoToastId.current);
+    bulkUndo.undo();
+  }, [bulkUndo]);
+
+  const selectedIds = () => [...selection.selectedIds];
+  const snapshotRows = (ids: readonly string[]) =>
+    ids
+      .map((id) => seenRows.current.get(id))
+      .filter((row): row is ProductEntity => row !== undefined);
 
   const setStatus = (isActive: boolean) => {
-    bulkUndo.prepare("status", selectedIds, products, isActive);
-    bulk.setStatus(selectedIds, isActive);
+    const ids = selectedIds();
+    pendingStatus.current = isActive;
+    bulkUndo.prepare("status", ids, snapshotRows(ids), isActive);
+    bulk.setStatus(ids, isActive);
   };
 
+  /* ── row actions ───────────────────────────────────────────────────── */
+
+  const statusSetter = useProductStatusSetter();
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: string;
+    name: string;
+  } | null>(null);
+
+  const rowActions = (product: ProductEntity): RowActionItem[] => {
+    const items: RowActionItem[] = [
+      { label: d.rowOpen, href: `/products/${product.id}` },
+    ];
+    if (canWrite) {
+      items.push({
+        label: dict.common.edit,
+        href: `/products/${product.id}/edit`,
+      });
+    }
+    items.push({
+      label: d.rowPreview,
+      href: `/products/preview/${product.slug}`,
+      newTab: true,
+    });
+    if (canWrite) {
+      items.push({
+        label: product.isActive
+          ? dict.statusToggle.productDeactivate
+          : dict.statusToggle.productActivate,
+        onSelect: () => statusSetter.setActive(product.id, !product.isActive),
+        disabled: statusSetter.isPending,
+        separatorBefore: true,
+      });
+    }
+    if (canDelete) {
+      items.push({
+        label: d.rowDelete,
+        onSelect: () => setDeleteTarget({ id: product.id, name: product.name }),
+        destructive: true,
+        separatorBefore: !canWrite,
+      });
+    }
+    return items;
+  };
+
+  /* ── filters, chips ────────────────────────────────────────────────── */
+
+  const activeView = viewOf(statusParam, stockParam, deletedParam);
+
+  const applied: ProductFilters = {
+    status: isDeletedView
+      ? "deleted"
+      : statusParam === "active" || statusParam === "hidden"
+        ? statusParam
+        : "",
+    stock: stockParam === "in" || stockParam === "out" ? stockParam : "",
+    categoryId: categoryParam,
+    brandId: brandParam,
+    minPrice: minPriceParam,
+    maxPrice: maxPriceParam,
+    deviceModelId: deviceParam,
+  };
+
+  const clear = (...keys: string[]) =>
+    updateParams(
+      Object.fromEntries([...keys, "page"].map((key) => [key, undefined])),
+    );
+
+  const chips: FilterChip[] = [];
+  // A combination a quick view already shows needs no chip as well.
+  if (!activeView) {
+    if (applied.status && applied.status !== "deleted") {
+      chips.push({
+        key: "status",
+        label: d.chipStatus(
+          applied.status === "active"
+            ? d.filterStatusActive
+            : d.filterStatusHidden,
+        ),
+        onRemove: () => clear("status"),
+      });
+    }
+    if (isDeletedView) {
+      chips.push({
+        key: "deleted",
+        label: d.chipStatus(d.filterDeleted),
+        onRemove: () => clear("deleted"),
+      });
+    }
+    if (applied.stock) {
+      chips.push({
+        key: "stock",
+        label: d.chipStock(
+          applied.stock === "in" ? d.filterStockIn : d.filterStockOut,
+        ),
+        onRemove: () => clear("stock"),
+      });
+    }
+  }
+  if (categoryParam) {
+    chips.push({
+      key: "category",
+      label: d.chipCategory(
+        categoryNames.get(categoryParam) ?? d.cardEmptyValue,
+      ),
+      onRemove: () => clear("categoryId"),
+    });
+  }
+  if (brandParam) {
+    chips.push({
+      key: "brand",
+      label: d.chipBrand(
+        brandsQuery.brands.find((brand) => brand.id === brandParam)?.name ??
+          d.cardEmptyValue,
+      ),
+      onRemove: () => clear("brandId"),
+    });
+  }
+  if (minPriceParam || maxPriceParam) {
+    chips.push({
+      key: "price",
+      label: d.chipPrice(minPriceParam, maxPriceParam),
+      onRemove: () => clear("minPrice", "maxPrice"),
+    });
+  }
+  if (deviceParam) {
+    chips.push({
+      key: "device",
+      label: d.chipDevice(
+        devicesQuery.items.find((item) => item.value === deviceParam)?.label ??
+          d.cardEmptyValue,
+      ),
+      onRemove: () => clear("deviceModelId"),
+    });
+  }
+
+  const isFiltered = Boolean(
+    statusParam ||
+    stockParam ||
+    categoryParam ||
+    brandParam ||
+    deviceParam ||
+    minPriceParam ||
+    maxPriceParam,
+  );
+
+  const viewItems = VIEW_ORDER.map((id) => ({
+    id,
+    label:
+      id === "all"
+        ? d.viewAll
+        : id === "active"
+          ? d.viewActive
+          : id === "hidden"
+            ? d.viewHidden
+            : id === "out"
+              ? d.viewOut
+              : d.filterDeleted,
+    count: viewCounts[id].data?.meta?.total,
+  }));
+
+  const refreshAll = () => {
+    void refetch();
+    for (const id of VIEW_ORDER) void viewCounts[id].refetch();
+  };
+
+  const selectable = canWrite && !isDeletedView;
+
   return (
-    <div className="flex flex-col gap-4">
-      <TableToolbar
-        className="mb-0"
-        onRefresh={() => void refetch()}
-        isRefreshing={isFetching}
-        search={
-          <TableSearch
-            value={searchParam}
-            placeholder={dict.products.searchPlaceholder}
-            label={dict.products.searchAria}
-          />
-        }
-        filters={
-          <TableFilters
-            filters={filters}
-            values={{
-              status: statusParam,
-              stock: stockParam,
-              deleted: deletedParam,
-            }}
-          />
-        }
-        selectAll={
-          canWrite && products.length > 0 && !isDeletedView ? (
-            <Checkbox
-              checked={selection.headerChecked}
-              onCheckedChange={selection.toggleAll}
-              disabled={isMutating}
-              aria-label={dict.common.table.selectAll}
-            />
+    <>
+      <DataRegistry
+        registry={registry}
+        title={d.heading}
+        description={isDeletedView ? d.deletedNotice : undefined}
+        headerActions={
+          canWrite ? (
+            <Button asChild>
+              <Link href="/products/new">{d.add}</Link>
+            </Button>
           ) : null
         }
+        quickViews={{
+          items: viewItems,
+          activeId: activeView,
+          onChange: (id) => {
+            const preset = VIEW_PARAMS[id as ViewId];
+            updateParams({
+              status: preset.status,
+              stock: preset.stock,
+              deleted: preset.deleted,
+              page: undefined,
+            });
+          },
+        }}
+        search={{
+          value: searchParam,
+          placeholder: d.searchPlaceholder,
+          label: d.searchAria,
+        }}
+        filters={{
+          count: chips.length,
+          renderSheet: ({ open, onOpenChange }) => (
+            <ProductFilterSheet
+              open={open}
+              onOpenChange={onOpenChange}
+              applied={applied}
+              categories={categoryItems}
+              onApply={(next) =>
+                updateParams({
+                  status:
+                    next.status === "active" || next.status === "hidden"
+                      ? next.status
+                      : undefined,
+                  deleted: next.status === "deleted" ? "only" : undefined,
+                  stock: next.stock || undefined,
+                  categoryId: next.categoryId || undefined,
+                  brandId: next.brandId || undefined,
+                  deviceModelId: next.deviceModelId || undefined,
+                  minPrice: next.minPrice || undefined,
+                  maxPrice: next.maxPrice || undefined,
+                  page: undefined,
+                })
+              }
+            />
+          ),
+        }}
+        views={{ defaultName: d.viewDefault }}
+        onRefresh={refreshAll}
+        isRefreshing={isFetching}
+        chips={chips}
+        onClearAllChips={() =>
+          updateParams({
+            ...Object.fromEntries(
+              Object.keys(EMPTY_PRODUCT_FILTERS).map((key) => [key, undefined]),
+            ),
+            status: undefined,
+            stock: undefined,
+            deleted: undefined,
+            page: undefined,
+          })
+        }
+        summary={
+          total === undefined ? null : (
+            <>
+              {d.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, d.itemForms)}</SummaryValue>
+            </>
+          )
+        }
+        sortLabel={sortLabel(sortBy, sortOrder)}
+        updatedAt={dataUpdatedAt || undefined}
+        itemForms={d.itemForms}
+        getRowLabel={getProductName}
+        getRowHref={
+          isDeletedView ? undefined : (product) => `/products/${product.id}`
+        }
+        rowActions={isDeletedView ? undefined : rowActions}
+        sort={{ sortBy, sortOrder, onSort }}
+        totals
+        renderCard={renderProductCard}
+        selectable={selectable}
+        bulk={{
+          idleHint: d.bulkIdleHint,
+          isPending: isMutating,
+          overflowWhenIdle: true,
+          overflow: [
+            {
+              label: t.undo,
+              onSelect: runUndo,
+              disabled: !undoAvailable,
+            },
+          ],
+          actions: (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isMutating}
+                onClick={() => setStatus(true)}
+              >
+                {d.bulkShow}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isMutating}
+                onClick={() => setStatus(false)}
+              >
+                {d.bulkHide}
+              </Button>
+              {/* No bulk delete, on purpose: a soft delete frees slug and
+                  артикул, and the API has no bulk form of it either. */}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isMutating}
+                onClick={() => setGroupDialogOpen(true)}
+              >
+                {d.bulkGroup}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isMutating}
+                onClick={() => setColorDialogOpen(true)}
+              >
+                {d.bulkColor}
+              </Button>
+            </>
+          ),
+        }}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={d.loadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={d.empty}
+        searchQuery={searchParam || undefined}
+        isFiltered={isFiltered}
+        pagination={{ page, totalPages, pageSize }}
       />
 
-      {/* Every bulk action and every row action writes to a product, and a
-          tombstoned product accepts no writes at all (`findById` excludes it, so
-          activate / move-to-group / edit all 404). The banner says why the row
-          actions are missing rather than leaving an operator clicking at
-          nothing. */}
-      {isDeletedView && (
-        <p className="rounded-md border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-          {dict.products.deletedNotice}
-        </p>
-      )}
-
-      {canWrite && (
-        <BulkActionsBar
-          selectedCount={selection.selectedCount}
-          isPending={isMutating}
-          onClear={selection.clear}
-          actions={[
-            {
-              label: dict.products.bulk.activate(selection.selectedCount),
-              onClick: () => setStatus(true),
-            },
-            {
-              label: dict.products.bulk.deactivate(selection.selectedCount),
-              onClick: () => setStatus(false),
-            },
-            // TASK-423 / AD-PROD-33. Note what is NOT here: a bulk delete.
-            // Product deletion is a soft delete that mangles slug and sku, and
-            // is not something to hand an operator behind a checkbox column —
-            // the API has no bulk form of it for the same reason.
-            {
-              label: dict.products.bulk.moveToGroup(selection.selectedCount),
-              onClick: () => setGroupDialogOpen(true),
-            },
-            // TASK-487. Sits beside «Перемістити до групи» on purpose:
-            // assembling a colour family and giving its positions their colours
-            // is one job, and doing the second half one product at a time is
-            // why the colour facet was empty everywhere before this.
-            {
-              label: dict.products.bulk.setColor(selection.selectedCount),
-              onClick: () => setColorDialogOpen(true),
-            },
-          ]}
-        />
-      )}
-
-      {/* Mounted for good, like every other ReorderUndoButton: outside the
-          window it goes aria-disabled instead of unmounting, so a keyboard or
-          screen-reader user who pressed it (or sat on it while the offer
-          lapsed) keeps their focus. Gated on EVERY write in flight, not only
-          the undo's own: replaying while a newer forward write is pending would
-          let that write land last and commit an offer that can never reach the
-          value before both. The deleted view accepts no writes at all, and a
-          session without `products:write` has made no bulk write to undo. */}
-      {canWrite && !isDeletedView && (
-        <div className="flex">
-          <ReorderUndoButton
-            canUndo={bulkUndo.canUndo && !isMutating}
-            onUndo={bulkUndo.undo}
-            label={dict.products.bulk.undo}
-          />
-        </div>
-      )}
-
-      {/* TASK-812: the deactivate / clear-colour AlertDialogs (portalled). */}
+      {/* TASK-812: the hide / clear-colour AlertDialogs (portalled). */}
       {bulk.confirmDialog}
       {bulkColor.confirmDialog}
 
@@ -389,8 +702,9 @@ function AdminProductTableView() {
         isLoadingGroups={groupsQuery.isLoading}
         isPending={bulkGroup.isPending}
         onConfirm={(groupId) => {
-          bulkUndo.prepare("group", selectedIds, products, groupId);
-          bulkGroup.setGroup(selectedIds, groupId);
+          const ids = selectedIds();
+          bulkUndo.prepare("group", ids, snapshotRows(ids), groupId);
+          bulkGroup.setGroup(ids, groupId);
         }}
       />
 
@@ -398,238 +712,35 @@ function AdminProductTableView() {
         open={isColorDialogOpen}
         onOpenChange={setColorDialogOpen}
         selectedCount={selection.selectedCount}
-        // Suggestions come from the rows already on screen — no second
-        // round-trip, and the page the operator is looking at is exactly the
-        // neighbourhood whose spelling they should match.
+        // Suggestions come from the rows on screen — the neighbourhood whose
+        // spelling the operator should match.
         suggestions={colorsInUse(products)}
         isPending={bulkColor.isPending}
         onConfirm={(color) => {
-          bulkUndo.prepare("color", selectedIds, products, color);
-          bulkColor.setColor(selectedIds, color);
+          const ids = selectedIds();
+          bulkUndo.prepare("color", ids, snapshotRows(ids), color);
+          bulkColor.setColor(ids, color);
         }}
       />
 
-      {isLoading ? (
-        <AdminProductTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.products.loadError}
-        </p>
-      ) : products.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {searchParam
-            ? dict.products.emptyMatch(searchParam)
-            : dict.products.empty}
-        </div>
-      ) : (
-        <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
-          {isFetching && !isLoading && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
-            >
-              <Loader2 className="size-6 animate-spin text-primary" />
-            </div>
-          )}
-          <Table layout="card">
-            <TableHeader>
-              <TableRow>
-                {canWrite && (
-                  <TableSelectHead
-                    checked={selection.headerChecked}
-                    onCheckedChange={selection.toggleAll}
-                    disabled={isMutating || isDeletedView}
-                    label={dict.common.table.selectAll}
-                  />
-                )}
-                <TableHead className="w-16">{dict.products.colPhoto}</TableHead>
-                <SortableColumnHeader
-                  field="name"
-                  label={dict.products.colName}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <TableHead>{dict.products.colCategory}</TableHead>
-                <SortableColumnHeader
-                  field="price"
-                  label={dict.products.colPrice}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <TableHead>{dict.products.colStatus}</TableHead>
-                <SortableColumnHeader
-                  field="stock"
-                  label={dict.products.colStock}
-                  hint={dict.products.colStockHint}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <SortableColumnHeader
-                  field="createdAt"
-                  label={dict.products.colCreated}
-                  sortBy={sortBy}
-                  sortOrder={sortOrder}
-                  onSort={onSort}
-                />
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.map((product) => (
-                <TableRow
-                  key={product.id}
-                  rowLabel={product.name}
-                  data-state={
-                    selection.isSelected(product.id) ? "selected" : undefined
-                  }
-                >
-                  {canWrite && (
-                    <TableSelectCell
-                      checked={selection.isSelected(product.id)}
-                      onSelect={({ shiftKey }) =>
-                        shiftKey
-                          ? selection.extendTo(product.id)
-                          : selection.toggle(product.id)
-                      }
-                      disabled={isMutating || isDeletedView}
-                      label={dict.products.bulk.selectRow(product.name)}
-                    />
-                  )}
-                  {/* Thumbnail + a «без фото» chip (TASK-362). `primaryImage`
-                      is already hydrated by the list query's enrichment step, so
-                      this costs no extra request — and after a catalogue import,
-                      which deliberately brings no photos, this column IS the
-                      operator's worklist. */}
-                  <TableCell label={dict.products.colPhoto}>
-                    {product.primaryImage?.url ? (
-                      // eslint-disable-next-line @next/next/no-img-element -- admin thumbnail off arbitrary upload hosts; next/image would need every one allowlisted
-                      <img
-                        src={product.primaryImage.url}
-                        alt=""
-                        loading="lazy"
-                        className="size-10 rounded border border-border object-cover"
-                      />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">
-                        {dict.products.noPhoto}
-                      </span>
-                    )}
-                  </TableCell>
-                  <TableCell
-                    label={dict.products.colName}
-                    className="font-medium"
-                  >
-                    {/* TASK-427: the name is the way into the read-only card —
-                        the one place an operator can LOOK at a product without
-                        opening a form full of inputs. A tombstoned product has
-                        no card (every by-id read excludes it), so its name is
-                        plain text rather than a link to a 404. */}
-                    {isDeletedView ? (
-                      <span className="block">{product.name}</span>
-                    ) : (
-                      <Link
-                        href={`/products/${product.id}`}
-                        className="block hover:text-primary hover:underline"
-                      >
-                        {product.name}
-                      </Link>
-                    )}
-                    <span className="text-xs text-muted-foreground">
-                      {[product.sku, product.brand?.name]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                    </span>
-                  </TableCell>
-                  <TableCell
-                    label={dict.products.colCategory}
-                    className="text-muted-foreground"
-                  >
-                    {categoryNames.get(product.categoryId) ?? "—"}
-                  </TableCell>
-                  <TableCell label={dict.products.colPrice}>
-                    {formatCurrency(product.price)}
-                  </TableCell>
-                  <TableCell label={dict.products.colStatus}>
-                    {isDeletedView ? (
-                      <Badge variant="secondary">
-                        {dict.products.deletedBadge}
-                      </Badge>
-                    ) : (
-                      <ProductStatusToggle
-                        productId={product.id}
-                        isActive={product.isActive}
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell
-                    label={dict.products.colStock}
-                    className="tabular-nums"
-                  >
-                    {/* Single wrapper keeps the compound "free / reserved /
-                        physical" display (TASK-254) as one flex item in the
-                        card cell's justify-between row. */}
-                    <span>
-                      <span className="font-medium text-foreground">
-                        {product.stock}
-                      </span>
-                      <span className="text-muted-foreground">
-                        {" / "}
-                        {product.reservedQty}
-                        {" / "}
-                        {product.physicalQty}
-                      </span>
-                    </span>
-                  </TableCell>
-                  <TableCell
-                    label={dict.products.colCreated}
-                    className="text-muted-foreground"
-                  >
-                    {formatDate(product.createdAt)}
-                  </TableCell>
-                  <TableCell
-                    label={dict.common.actions}
-                    className="text-right max-md:text-left"
-                  >
-                    {isDeletedView ? (
-                      <span className="text-sm text-muted-foreground">
-                        {dict.products.cardEmptyValue}
-                      </span>
-                    ) : (
-                      <span className="inline-flex flex-wrap justify-end gap-2 max-md:justify-start">
-                        <Button asChild variant="outline" size="sm">
-                          <Link href={`/products/${product.id}/edit`}>
-                            {dict.common.edit}
-                          </Link>
-                        </Button>
-                        {/* Renders nothing without `products:delete` — the
-                            server guard is the real boundary, this only keeps a
-                            manager from meeting a 403 they cannot act on. */}
-                        <ProductDeleteAction
-                          productId={product.id}
-                          name={product.name}
-                        />
-                      </span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!isLoading && !isError && products.length > 0 && (
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
+      {deleteTarget ? (
+        <ProductDeleteAction
+          productId={deleteTarget.id}
+          name={deleteTarget.name}
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleteTarget(null);
+          }}
         />
-      )}
-    </div>
+      ) : null}
+    </>
   );
+}
+
+function getProductId(product: ProductEntity): string {
+  return product.id;
+}
+
+function getProductName(product: ProductEntity): string {
+  return product.name;
 }

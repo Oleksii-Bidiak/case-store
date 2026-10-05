@@ -10,7 +10,7 @@ import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { PERM } from "@/entities/permission";
 import type { AdminReviewEntity } from "@/entities/review";
 import { dict } from "@/shared/config";
-import { ReviewReplyAction } from "./review-reply-action";
+import { ReviewReplyAction, ReviewReplyDialog } from "./review-reply-action";
 
 const d = dict.reviews;
 
@@ -219,5 +219,83 @@ describe("ReviewReplyAction (TASK-446)", () => {
     // The DTO's `@MinLength(1)` would reject it anyway; the point is not to
     // spend a round trip discovering that, and not to publish an empty answer.
     await waitFor(() => expect(posted).toBe(false));
+  });
+});
+
+/**
+ * Wave 198 (TASK-1057, ReviewsProposal В8): the dialog opens from the row's
+ * «⋯» menu, quotes the review it answers (stars, text, author, purchase mark)
+ * and counts the answer against the API's 1000-character limit as it is typed.
+ */
+describe("ReviewReplyDialog (wave 198)", () => {
+  function renderDialog(
+    review: AdminReviewEntity,
+    onOpenChange: (open: boolean) => void = jest.fn(),
+  ) {
+    return renderWithProviders(
+      <WithAuth isOwner={false} permissions={[PERM.reviewsWrite]}>
+        <ReviewReplyDialog review={review} open onOpenChange={onOpenChange} />
+      </WithAuth>,
+    );
+  }
+
+  it("quotes the review with its stars, author and purchase mark", async () => {
+    renderDialog(makeReview());
+
+    const quote = await screen.findByRole("figure", {
+      name: d.replyReviewLabel,
+    });
+    expect(quote).toHaveTextContent("Прийшов подряпаний.");
+    expect(quote).toHaveTextContent(`olena@example.com · ${d.bought}`);
+    expect(
+      screen.getByRole("img", { name: d.ratingAria(2) }),
+    ).toBeInTheDocument();
+  });
+
+  it("counts the answer against the 1000-character limit as it is typed", async () => {
+    const user = userEvent.setup();
+    renderDialog(makeReview());
+
+    expect(await screen.findByText(d.replyCounter(0, 1000))).toBeVisible();
+    await user.type(screen.getByLabelText(d.replyLabel), "Дякуємо");
+    expect(screen.getByText(d.replyCounter(7, 1000))).toBeVisible();
+    expect(screen.getByText(d.replyHint)).toBeVisible();
+    // The counter is read out with the field, not as a stray number.
+    expect(screen.getByLabelText(d.replyLabel)).toHaveAccessibleDescription(
+      expect.stringContaining(d.replyCounter(7, 1000)),
+    );
+  });
+
+  it("closes through onOpenChange after a successful publish", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = jest.fn();
+    server.use(
+      http.post("*/api/admin/reviews/:id/reply", async ({ request }) => {
+        const payload = (await request.json()) as { body: string };
+        return HttpResponse.json({
+          data: { body: payload.body, createdAt: "2026-06-02T10:00:00.000Z" },
+        });
+      }),
+    );
+    renderDialog(makeReview(), onOpenChange);
+
+    await user.type(await screen.findByLabelText(d.replyLabel), "Дякуємо!");
+    await user.click(screen.getByRole("button", { name: d.replySubmit }));
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+
+  it("renders nothing without reviews:write, even when asked to open", () => {
+    renderWithProviders(
+      <WithAuth isOwner={false} permissions={[PERM.reviewsModerate]}>
+        <ReviewReplyDialog
+          review={makeReview()}
+          open
+          onOpenChange={jest.fn()}
+        />
+      </WithAuth>,
+    );
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

@@ -1,5 +1,6 @@
 import { http, HttpResponse } from "msw";
 import {
+  fireEvent,
   renderWithProviders,
   screen,
   userEvent,
@@ -9,7 +10,7 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict, STOREFRONT_HOST } from "@/shared/config";
 import type { SeoSettingsEntity } from "@/entities/seo-settings";
-import { SeoSettingsForm } from "./seo-settings-form";
+import { SEO_SECTION_IDS, SeoSettingsForm } from "./seo-settings-form";
 
 jest.mock("sonner", () => ({
   toast: { success: jest.fn(), error: jest.fn() },
@@ -49,10 +50,22 @@ function stubUpdate() {
   return bodies;
 }
 
-// TASK-552: two previews — a page WITH a name (tier "derived", the defaults
-// lose) and one WITHOUT (the only place the defaults surface).
-const named = () => within(screen.getByTestId("seo-preview-named"));
-const unnamed = () => within(screen.getByTestId("seo-preview-unnamed"));
+// TASK-552: two samples — a page WITH a name (tier "derived", the defaults
+// lose) and one WITHOUT (the only place the defaults surface). TASK-1053 (Н2)
+// shows ONE preview at a time with a switch between the two samples, so each
+// helper first switches to its sample (a no-op when it is already shown).
+const showSample = (label: string) => {
+  const toggle = screen.getByRole("button", { name: label });
+  if (toggle.getAttribute("aria-pressed") !== "true") fireEvent.click(toggle);
+};
+const named = () => {
+  showSample(dict.seoSettingsForm.previewNamedHeading);
+  return within(screen.getByTestId("seo-preview-named"));
+};
+const unnamed = () => {
+  showSample(dict.seoSettingsForm.previewUnnamedHeading);
+  return within(screen.getByTestId("seo-preview-unnamed"));
+};
 const previewTitle = () => named().getByTestId("seo-snippet-title");
 const previewHint = () => named().getByTestId("seo-snippet-hint");
 const unnamedTitle = () => unnamed().getByTestId("seo-snippet-title");
@@ -68,18 +81,36 @@ describe("SeoSettingsForm — self-referential SERP preview (TASK-268)", () => {
   it("labels both sample pages", () => {
     renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
     expect(
-      screen.getByText(dict.seoSettingsForm.previewNamedHeading),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
+      named().getByText(
         dict.seoSettingsForm.previewNamedNote(
           dict.seoSnippetPreview.samplePageName,
         ),
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(dict.seoSettingsForm.previewUnnamedNote),
+      unnamed().getByText(dict.seoSettingsForm.previewUnnamedNote),
     ).toBeInTheDocument();
+  });
+
+  it("shows ONE preview at a time, the named page first (TASK-1053)", async () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    expect(screen.getByTestId("seo-preview-named")).toBeInTheDocument();
+    expect(screen.queryByTestId("seo-preview-unnamed")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: dict.seoSettingsForm.previewNamedHeading,
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: dict.seoSettingsForm.previewUnnamedHeading,
+      }),
+    );
+
+    expect(screen.getByTestId("seo-preview-unnamed")).toBeInTheDocument();
+    expect(screen.queryByTestId("seo-preview-named")).not.toBeInTheDocument();
   });
 
   it("blank default title → previews the template applied to a sample page (derived)", () => {
@@ -228,9 +259,21 @@ describe("SeoSettingsForm — store name (TASK-433)", () => {
   });
 });
 
+/** Unfold a collapsed section (TASK-1053) — a no-op when it is open. */
+const expand = (title: string) => {
+  const region = screen.getByRole("region", { name: title });
+  const toggle = within(region).queryByRole("button", {
+    name: dict.canon.expand,
+  });
+  if (toggle) fireEvent.click(toggle);
+};
+
 describe("SeoSettingsForm — search-console verification fields (TASK-280)", () => {
   const f = dict.seoSettingsForm;
-  const googleField = () => screen.getByLabelText(f.googleSiteVerification);
+  const googleField = () => {
+    expand(f.sectionVerification);
+    return screen.getByLabelText(f.googleSiteVerification);
+  };
   const submit = () =>
     userEvent.click(screen.getByRole("button", { name: f.submit }));
 
@@ -267,5 +310,145 @@ describe("SeoSettingsForm — search-console verification fields (TASK-280)", ()
     const body = bodies[0] as Record<string, unknown>;
     expect(body).not.toHaveProperty("googleSiteVerification");
     expect(body).not.toHaveProperty("bingSiteVerification");
+  });
+});
+
+describe("SeoSettingsForm — by mockup Н2/Н5 (TASK-1053)", () => {
+  const f = dict.seoSettingsForm;
+
+  it("splits the form into the anchored sections the nav points at", () => {
+    renderWithProviders(
+      <SeoSettingsForm settings={makeSettings()} logoSlot={<p>logo-slot</p>} />,
+    );
+
+    const ids = {
+      [f.sectionStore]: SEO_SECTION_IDS.store,
+      [f.sectionDefaults]: SEO_SECTION_IDS.defaults,
+      [f.sectionSocial]: SEO_SECTION_IDS.social,
+      [f.sectionVerification]: SEO_SECTION_IDS.verification,
+      [f.sectionAi]: SEO_SECTION_IDS.ai,
+    };
+    for (const [title, id] of Object.entries(ids)) {
+      expect(screen.getByRole("region", { name: title })).toHaveAttribute(
+        "id",
+        id,
+      );
+    }
+    // The logo upload sits in «Магазин і логотип», beside the store name.
+    expect(
+      within(screen.getByRole("region", { name: f.sectionStore })).getByText(
+        "logo-slot",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("warns about an empty default title — a recommendation, not a blocker (TASK-1175)", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    expect(screen.getByText(f.emptyTitleWarning)).toBeInTheDocument();
+    expect(defaultTitleField()).toHaveAttribute("aria-invalid", "true");
+    expect(defaultTitleField()).toHaveAccessibleDescription(
+      expect.stringContaining(f.emptyTitleRecommendation),
+    );
+
+    // Saving is still allowed.
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+    await waitFor(() => expect(bodies).toHaveLength(1));
+  });
+
+  it("drops the warning once a default title is typed", async () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    await userEvent.type(defaultTitleField(), "Мій магазин аксесуарів");
+
+    expect(screen.queryByText(f.emptyTitleWarning)).not.toBeInTheDocument();
+    expect(defaultTitleField()).not.toHaveAttribute("aria-invalid");
+  });
+
+  it("folds social, verification and AI to one-line summaries", async () => {
+    renderWithProviders(
+      <SeoSettingsForm
+        settings={makeSettings({
+          defaultOgImage: "https://shop.ua/og.jpg",
+          googleSiteVerification: "G-1",
+        })}
+      />,
+    );
+
+    expect(screen.queryByLabelText(f.defaultOgImage)).not.toBeInTheDocument();
+    expect(screen.getByText(f.summaryOgSet)).toBeInTheDocument();
+    expect(screen.getByText(f.summaryGoogleSet)).toBeInTheDocument();
+    expect(screen.getByText(f.summaryBingUnset)).toBeInTheDocument();
+    expect(screen.getByText(f.summaryLlmsDefault)).toBeInTheDocument();
+
+    expand(f.sectionSocial);
+    expect(screen.getByLabelText(f.defaultOgImage)).toHaveValue(
+      "https://shop.ua/og.jpg",
+    );
+  });
+
+  it("keeps folded values in the save", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(
+      <SeoSettingsForm
+        settings={makeSettings({ llmsTxtSummary: "Про нас" })}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({ llmsTxtSummary: "Про нас" });
+  });
+
+  it("unfolds a section whose field has an error, so the error is seen", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    expand(f.sectionSocial);
+    await userEvent.type(screen.getByLabelText(f.defaultOgImage), "not a url");
+    await userEvent.click(
+      within(screen.getByRole("region", { name: f.sectionSocial })).getByRole(
+        "button",
+        { name: dict.canon.collapse },
+      ),
+    );
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    expect(await screen.findByText(f.errors.urlInvalid)).toBeInTheDocument();
+    expect(screen.getByLabelText(f.defaultOgImage)).toBeInTheDocument();
+    expect(bodies).toHaveLength(0);
+  });
+
+  it("lists the edited sections in the sticky bar and discards them", async () => {
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    await userEvent.type(defaultTitleField(), "Мій магазин");
+
+    expect(
+      screen.getByText(dict.canon.unsavedChanges(f.sectionDefaults)),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.discardChanges }),
+    );
+
+    expect(defaultTitleField()).toHaveValue("");
+    expect(screen.queryByText(/Незбережені зміни/)).not.toBeInTheDocument();
+  });
+
+  it("is clean again after a successful save", async () => {
+    const bodies = stubUpdate();
+    renderWithProviders(<SeoSettingsForm settings={makeSettings()} />);
+
+    await userEvent.type(defaultTitleField(), "Мій магазин");
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.queryByText(/Незбережені зміни/)).not.toBeInTheDocument(),
+    );
+    expect(defaultTitleField()).toHaveValue("Мій магазин");
   });
 });

@@ -6,11 +6,10 @@ import { PERM } from "@/entities/permission";
 import { useAuth } from "@/entities/session";
 import {
   AdminDashboardStats,
-  AdminDashboardStatsSkeleton,
+  AdminDashboardStatsError,
   DashboardCharts,
   DashboardLastOrdersTable,
   DashboardLowStockTable,
-  DashboardSectionSkeleton,
   DashboardTopProductsTable,
   DashboardTrafficCard,
   NeedsActionWidget,
@@ -18,6 +17,10 @@ import {
 import { Button, Separator } from "@/shared/ui";
 import { dict } from "@/shared/config";
 import { formatTime } from "@/shared/lib";
+import {
+  DashboardHeading,
+  DashboardSummarySkeleton,
+} from "./dashboard-layout-parts";
 
 /**
  * Client orchestrator for the admin dashboard. Lives in the app layer (not a
@@ -35,6 +38,9 @@ import { formatTime } from "@/shared/lib";
  * The gating here is presentation only. `analytics:read` is enforced by
  * PermissionGuard on the endpoint; if this component were wrong, the data would
  * still be refused.
+ *
+ * Wave 198 (TASK-1037): every block that fails says so with «Повторити» that
+ * re-asks its own request; the loading placeholders have the loaded layout.
  */
 export function DashboardView() {
   const { can } = useAuth();
@@ -43,8 +49,10 @@ export function DashboardView() {
   const canSeeOrders = can(PERM.ordersRead);
   const canSeeCustomers = can(PERM.customersRead);
   const canWriteProducts = can(PERM.productsWrite);
+  // «Усі з низьким залишком →» opens the product list, which needs its own right.
+  const canReadProducts = can(PERM.productsRead);
 
-  const { data, isLoading, isError, dataUpdatedAt } =
+  const { data, isLoading, isError, isFetching, refetch, dataUpdatedAt } =
     useAdminDashboardControllerGetSummary({
       query: { enabled: canSeeAnalytics },
     });
@@ -53,16 +61,11 @@ export function DashboardView() {
 
   return (
     <div>
-      <section className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-          {dict.dashboard.heading}
-        </h2>
-        {canSeeAnalytics && data ? (
-          <p className="text-xs text-muted-foreground">
-            {dict.dashboard.updatedAt(formatTime(dataUpdatedAt))}
-          </p>
-        ) : null}
-      </section>
+      <DashboardHeading
+        updatedAt={
+          canSeeAnalytics && data ? formatTime(dataUpdatedAt) : undefined
+        }
+      />
 
       {canSeeAnalytics && (
         <>
@@ -75,25 +78,14 @@ export function DashboardView() {
           <Separator className="my-6" />
 
           {isLoading ? (
-            <>
-              <AdminDashboardStatsSkeleton />
-
-              <Separator className="my-6" />
-
-              <DashboardSectionSkeleton className="min-h-[300px]" />
-
-              <Separator className="my-6" />
-
-              <DashboardSectionSkeleton />
-
-              <Separator className="my-6" />
-
-              <DashboardSectionSkeleton />
-            </>
+            <DashboardSummarySkeleton
+              withRevenue={can(PERM.analyticsRevenue)}
+            />
           ) : isError || !data ? (
-            <p role="alert" className="text-sm text-destructive">
-              {dict.dashboard.loadError}
-            </p>
+            <AdminDashboardStatsError
+              onRetry={() => void refetch()}
+              isRetrying={isFetching}
+            />
           ) : (
             <>
               <AdminDashboardStats summary={data} />
@@ -113,6 +105,7 @@ export function DashboardView() {
 
               <DashboardLowStockTable
                 products={data.inventory.lowStockProducts}
+                showAllLink={canReadProducts}
               />
             </>
           )}

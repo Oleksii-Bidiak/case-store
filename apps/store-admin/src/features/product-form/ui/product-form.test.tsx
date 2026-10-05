@@ -84,6 +84,15 @@ const preview = () => screen.queryByTestId("slug-preview");
 
 const noop = () => {};
 
+/**
+ * Wave 198: the SEO block is folded to a summary on an EDIT form (Ф1). Open
+ * it the way the operator does; a create form starts open, so this no-ops.
+ */
+async function expandSeo() {
+  const toggle = screen.queryByRole("button", { name: dict.canon.expand });
+  if (toggle) await userEvent.click(toggle);
+}
+
 beforeEach(() => {
   stubFormQueries();
 });
@@ -538,6 +547,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
         isPending={false}
       />,
     );
+    await expandSeo();
 
     await userEvent.type(metaTitleField(), "Best Clear Case");
     await userEvent.type(metaDescriptionField(), "Shop the best clear case");
@@ -567,6 +577,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
         isPending={false}
       />,
     );
+    await expandSeo();
 
     await waitFor(() => expect(metaTitleField()).toHaveValue("Seeded Title"));
     expect(metaDescriptionField()).toHaveValue("Seeded description");
@@ -595,6 +606,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
         isPending={false}
       />,
     );
+    await expandSeo();
 
     await waitFor(() =>
       expect(screen.getByLabelText(dict.seoFields.keywords)).toHaveValue(
@@ -613,6 +625,7 @@ describe("ProductForm — SEO meta fields (TASK-241)", () => {
         isPending={false}
       />,
     );
+    await expandSeo();
 
     await userEvent.type(
       screen.getByLabelText(dict.seoFields.ogImage),
@@ -666,7 +679,7 @@ describe("ProductForm — stock hint & breakdown (TASK-253 / TASK-254)", () => {
     );
 
     // The breakdown text (with any numbers) must not appear without stockInfo.
-    expect(screen.queryByText(/Фізично на складі:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Резерв \d/)).not.toBeInTheDocument();
   });
 });
 
@@ -694,6 +707,7 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
         isPending={false}
       />,
     );
+    await expandSeo();
 
     await waitFor(() =>
       expect(previewTitle()).toHaveTextContent("Clear Case | CaseStore"),
@@ -710,6 +724,7 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
         isPending={false}
       />,
     );
+    await expandSeo();
 
     await userEvent.type(metaTitleField(), "Best Clear Case");
 
@@ -732,6 +747,7 @@ describe("ProductForm — SERP snippet preview (TASK-268)", () => {
         isPending={false}
       />,
     );
+    await expandSeo();
 
     await waitFor(() =>
       expect(previewTitle()).toHaveTextContent("Typed Title"),
@@ -784,18 +800,19 @@ describe("ProductForm — leaf-only category picker (TASK-236)", () => {
 
     await userEvent.click(categoryTrigger());
 
-    // The leaf child is selectable, indented to show its ancestry.
+    // The leaf child is selectable — indented by padding, no «— » prefix.
     expect(
-      await screen.findByRole("option", { name: "— iPhone Cases" }),
-    ).toBeInTheDocument();
+      await screen.findByRole("option", { name: "iPhone Cases" }),
+    ).not.toHaveAttribute("aria-disabled");
     // A standalone root with no children is itself a leaf → selectable.
     expect(
       screen.getByRole("option", { name: "Chargers" }),
     ).toBeInTheDocument();
-    // The branch category "Cases" (has children) must NOT be offered.
-    expect(
-      screen.queryByRole("option", { name: "Cases" }),
-    ).not.toBeInTheDocument();
+    // The branch category "Cases" (has children) is a heading, not a choice.
+    expect(screen.getByRole("option", { name: "Cases" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("writes the chosen leaf category id on submit", async () => {
@@ -817,7 +834,7 @@ describe("ProductForm — leaf-only category picker (TASK-236)", () => {
 
     await userEvent.click(categoryTrigger());
     await userEvent.click(
-      await screen.findByRole("option", { name: "— iPhone Cases" }),
+      await screen.findByRole("option", { name: "iPhone Cases" }),
     );
     await userEvent.click(screen.getByRole("button", { name: SUBMIT }));
 
@@ -860,6 +877,7 @@ describe("ProductForm — OG image upload and library pick (TASK-728)", () => {
       />,
       { auth: { permissions: [PERM.mediaWrite] } },
     );
+    await expandSeo();
 
     await userEvent.upload(
       ogScope().getByTestId("single-image-upload-input"),
@@ -892,12 +910,17 @@ describe("ProductForm — OG image upload and library pick (TASK-728)", () => {
       />,
       { auth: { permissions: MEDIA_PERMISSIONS } },
     );
+    await expandSeo();
 
     await userEvent.click(ogPicker() as HTMLElement);
     await userEvent.click(
       await screen.findByRole("button", {
         name: dict.mediaPicker.pickCardAria("Картка для соцмереж"),
       }),
+    );
+    // Wave 198 (БЛ11): a tile is selected, then the choice is confirmed.
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.mediaPicker.useSelected }),
     );
     await waitFor(() => expect(ogField()).toHaveValue(OG_URL));
 
@@ -945,6 +968,7 @@ describe("ProductForm — OG image upload and library pick (TASK-728)", () => {
         submitLabel={SUBMIT}
       />,
     );
+    await expandSeo();
 
     expect(ogPicker()).not.toBeInTheDocument();
     expect(
@@ -955,5 +979,133 @@ describe("ProductForm — OG image upload and library pick (TASK-728)", () => {
 
     await userEvent.type(ogField(), "https://cdn.example.com/og.jpg");
     expect(ogField()).toHaveValue("https://cdn.example.com/og.jpg");
+  });
+});
+
+describe("ProductForm — sections, dots and the one sticky bar (TASK-1050)", () => {
+  const EDIT: Partial<ProductFormInput> = {
+    name: "Clear Case",
+    slug: "clear-case",
+    price: "749",
+    compareAtPrice: "999",
+    stock: "5",
+    categoryId: CATEGORY_UUID,
+  };
+
+  const renderEdit = (props: Partial<Parameters<typeof ProductForm>[0]> = {}) =>
+    renderWithProviders(
+      <ProductForm
+        submitLabel={SUBMIT}
+        defaultValues={EDIT}
+        onSubmit={noop}
+        isPending={false}
+        {...props}
+      />,
+    );
+
+  it("lists the sections with a state dot each", async () => {
+    renderEdit({ missingSections: ["price"] });
+    const nav = screen.getByRole("navigation", {
+      name: dict.productForm.sectionsNav,
+    });
+    expect(
+      within(nav).getByRole("link", {
+        name: new RegExp(dict.productForm.sectionMain),
+      }),
+    ).toHaveTextContent(dict.productForm.statusDone);
+    expect(
+      within(nav).getByRole("link", {
+        name: new RegExp(dict.productForm.sectionPrice),
+      }),
+    ).toHaveTextContent(dict.productForm.statusMissing);
+  });
+
+  it("names the edited sections in the bar, marks them dirty, and discards", async () => {
+    renderEdit({
+      externalDirty: { specs: true },
+      renderSpecsSection: () => null,
+    });
+    const name = nameField();
+    await waitFor(() => expect(name).toHaveValue("Clear Case"));
+
+    await userEvent.type(name, " X");
+
+    expect(
+      await screen.findByText(
+        dict.canon.unsavedChanges(
+          [dict.productForm.sectionMain, dict.productForm.sectionSpecs].join(
+            ", ",
+          ),
+        ),
+      ),
+    ).toBeInTheDocument();
+    const nav = screen.getByRole("navigation", {
+      name: dict.productForm.sectionsNav,
+    });
+    expect(
+      within(nav).getByRole("link", {
+        name: new RegExp(dict.productForm.sectionMain),
+      }),
+    ).toHaveTextContent(dict.productForm.statusDirty);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.discardChanges }),
+    );
+    await waitFor(() => expect(nameField()).toHaveValue("Clear Case"));
+  });
+
+  it("tells the page which form sections changed, and is pristine once they are saved", async () => {
+    const onSubmit = jest.fn().mockResolvedValue({ mainSaved: true });
+    renderEdit({ onSubmit });
+    await waitFor(() => expect(nameField()).toHaveValue("Clear Case"));
+
+    await userEvent.type(nameField(), " X");
+    await userEvent.click(screen.getByRole("button", { name: SUBMIT }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][1]).toEqual({
+      mainDirty: true,
+      mainSections: [dict.productForm.sectionMain],
+    });
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: dict.canon.discardChanges }),
+      ).toBeNull(),
+    );
+    expect(nameField()).toHaveValue("Clear Case X");
+  });
+
+  it("states the discount the old price gives", () => {
+    renderEdit();
+    expect(
+      screen.getByText(dict.productForm.compareAtHint(25)),
+    ).toBeInTheDocument();
+  });
+
+  it("folds SEO to a one-line summary on an edit form", () => {
+    renderEdit();
+    expect(screen.queryByLabelText(dict.productForm.metaTitle)).toBeNull();
+    expect(
+      screen.getByText(
+        [
+          dict.productForm.seoSummaryMeta(false),
+          dict.productForm.seoSummaryOg(false),
+          dict.productForm.seoSummaryTags(0),
+        ].join(", "),
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the SEO block by itself when a field in it is invalid", async () => {
+    const onSubmit = jest.fn();
+    renderEdit({ onSubmit, defaultValues: { ...EDIT, ogImage: "not a url" } });
+    await waitFor(() => expect(nameField()).toHaveValue("Clear Case"));
+
+    await userEvent.click(screen.getByRole("button", { name: SUBMIT }));
+
+    expect(
+      await screen.findByLabelText(dict.productForm.metaTitle),
+    ).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
   });
 });

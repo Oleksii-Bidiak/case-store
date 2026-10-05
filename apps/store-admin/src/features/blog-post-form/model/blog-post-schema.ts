@@ -9,6 +9,7 @@ import {
   KEYWORD_MAX_LENGTH,
   parseKeywords,
 } from "@/shared/lib/seo";
+import { BLOG_CONTENT_MAX_LENGTH } from "./content-stats";
 
 const e = dict.blogPostForm.errors;
 const seoErrors = dict.seoFields.errors;
@@ -45,6 +46,12 @@ export const blogPostSchema = z
       .refine(
         (html) => html.replace(/<[^>]*>/g, "").trim().length > 0,
         e.contentRequired,
+      )
+      // TASK-1154 — the API's `@MaxLength` on the HTML; said here, under the
+      // counter, instead of as a 400 after the click.
+      .refine(
+        (html) => html.length <= BLOG_CONTENT_MAX_LENGTH,
+        e.contentMax(BLOG_CONTENT_MAX_LENGTH.toLocaleString("uk-UA")),
       ),
 
     categoryId: z.string().min(1, e.categoryRequired),

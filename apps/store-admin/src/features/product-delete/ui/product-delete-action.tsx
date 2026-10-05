@@ -37,6 +37,13 @@ interface ProductDeleteActionProps {
   onDeleted?: () => void;
   /** Trigger size — `sm` in a table row, the default on a page header. */
   size?: "sm" | "default";
+  /**
+   * Controlled mode (wave 198): the dialog is opened from somewhere else — a
+   * row «⋯» menu item «Видалити…» — so no trigger button is rendered. The
+   * permission gate, the copy and the request stay exactly the same.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 /**
@@ -66,10 +73,18 @@ export function ProductDeleteAction({
   name,
   onDeleted,
   size = "sm",
+  open,
+  onOpenChange,
 }: ProductDeleteActionProps) {
   const queryClient = useQueryClient();
   const { can } = useAuth();
-  const [isOpen, setOpen] = useState(false);
+  const [ownOpen, setOwnOpen] = useState(false);
+  const isControlled = open !== undefined;
+  const isOpen = isControlled ? open : ownOpen;
+  const setOpen = (next: boolean) => {
+    if (!isControlled) setOwnOpen(next);
+    onOpenChange?.(next);
+  };
   const deleteProduct = useDeleteProduct();
 
   if (!can(PERM.productsDelete)) {
@@ -106,15 +121,17 @@ export function ProductDeleteAction({
 
   return (
     <>
-      <Button
-        type="button"
-        variant="outline"
-        size={size}
-        className="text-destructive hover:text-destructive"
-        onClick={() => setOpen(true)}
-      >
-        {d.deleteAction}
-      </Button>
+      {isControlled ? null : (
+        <Button
+          type="button"
+          variant="outline"
+          size={size}
+          className="text-destructive hover:text-destructive"
+          onClick={() => setOpen(true)}
+        >
+          {d.deleteAction}
+        </Button>
+      )}
 
       <Dialog open={isOpen} onOpenChange={setOpen}>
         <DialogContent>

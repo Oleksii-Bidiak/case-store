@@ -1,9 +1,10 @@
-import { AdminFormSkeleton } from "@/shared/ui";
+import { BannerFormSkeleton } from "@/widgets";
+import { dict } from "@/shared/config";
 
 /**
- * Route-level loading UI for `/banners/new`; mirrors the page's `<Suspense>`
- * fallback so there is no visual jump on navigation.
+ * Route-level loading UI for `/banners/new` — the page heading over the
+ * form-shaped skeleton (canon 1.7), same as the page's `<Suspense>` fallback.
  */
 export default function Loading() {
-  return <AdminFormSkeleton />;
+  return <BannerFormSkeleton heading={dict.banners.createHeading} />;
 }

@@ -27,3 +27,13 @@ export type {
 } from "@/shared/api";
 
 export { BannerEntityPlacement } from "@/shared/api";
+
+// Wave 198 (TASK-1073): what a banner is doing on the site right now, derived
+// from `status` + its publication window.
+export {
+  BANNER_DISPLAY_STATES,
+  bannerDisplayState,
+  bannerWindowLines,
+  type BannerDisplayState,
+} from "./lib/display-state";
+export { duplicateBannerPayload } from "./lib/duplicate";

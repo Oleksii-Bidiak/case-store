@@ -12,11 +12,28 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/shared/ui";
+import { CardHeaderLink } from "@/shared/ui/card-header-link";
 import { dict } from "@/shared/config";
 
 interface DashboardLowStockTableProps {
   products: LowStockProductDto[];
+  /**
+   * Show «Усі з низьким залишком →» (TASK-1037). The caller passes it only for
+   * a session that may open the product list (`products:read`).
+   */
+  showAllLink?: boolean;
 }
+
+/**
+ * Where «Усі з низьким залишком →» leads. The product list has no low-stock
+ * FILTER (a `lowStock` param is the API tail of TASK-1041), but it filters to
+ * active products and sorts by the same `stock` this widget reads — and the
+ * widget's own query is `isActive && stock <= 5 ORDER BY stock`. So the list
+ * opens with exactly these rows on top, followed by the rest in stock order: no
+ * «3 here, 27 there» mismatch (TASK-607).
+ */
+export const LOW_STOCK_LIST_HREF =
+  "/products?status=active&sortBy=stock&sortOrder=asc";
 
 /**
  * Low-stock alert table. Pure presentational — receives the already-fetched
@@ -27,12 +44,20 @@ interface DashboardLowStockTableProps {
  */
 export function DashboardLowStockTable({
   products,
+  showAllLink = false,
 }: DashboardLowStockTableProps) {
   return (
     <div className="rounded-lg border border-border bg-card p-6 shadow-card">
-      <h3 className="mb-4 text-sm font-medium text-muted-foreground">
-        {dict.dashboard.lowStock}
-      </h3>
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h3 className="text-sm font-medium text-muted-foreground">
+          {dict.dashboard.lowStock}
+        </h3>
+        {showAllLink ? (
+          <CardHeaderLink href={LOW_STOCK_LIST_HREF}>
+            {dict.dashboard.allLowStockLink}
+          </CardHeaderLink>
+        ) : null}
+      </div>
       <Table>
         <TableHeader>
           <TableRow>

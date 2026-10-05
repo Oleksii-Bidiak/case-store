@@ -1,71 +1,108 @@
 "use client";
 
-import Link from "next/link";
-import { Loader2 } from "lucide-react";
-import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
+import { PlusIcon } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
   getAddonServiceControllerAdminFindAllQueryKey,
   useAddonServiceControllerAdminFindAll,
+  useAddonServiceControllerFindById,
   useAdminAddonServiceControllerSetStatus,
   type AddonServiceEntity,
 } from "@/entities/addon-service";
+import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
+import { AddonServiceFormDialog } from "@/features/addon-service-form";
 import {
-  Badge,
   Button,
+  Callout,
+  DataRegistry,
   LiveAnnouncer,
-  Table,
-  TableBody,
-  TableCell,
-  TableFilters,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableToolbar,
+  RegistryHeader,
+  SummaryValue,
   pageSizeFrom,
-  type TableFilterDef,
+  useConfirmDialog,
+  useDataRegistry,
+  type QuickView,
+  type RegistryCardParts,
+  type RowActionItem,
 } from "@/shared/ui";
+import { countLabel } from "@/shared/lib";
+import { useUrlParams } from "@/shared/lib/use-url-params";
 import { dict } from "@/shared/config";
-import { AddonServiceTableSkeleton } from "./addon-service-table-skeleton";
+import {
+  AddonServiceStatusBadge,
+  addonServicePrice,
+  buildAddonServiceColumns,
+  firstLine,
+} from "./addon-service-registry-columns";
 
+const d = dict.addonServices;
+
+const ALL_VIEW = "all";
 const ACTIVE_OPTION = "active";
 const INACTIVE_OPTION = "inactive";
 
+const LIST_PATH = "/addon-services";
+
+/** Which dialog a deep link (`/new`, `/[id]/edit`) opens over the list. */
+export type AddonServiceDialogRequest =
+  { mode: "create" } | { mode: "edit"; id: string };
+
+interface AddonServiceTableProps {
+  /** Deep link: open the form dialog on mount; closing it returns to the list. */
+  dialog?: AddonServiceDialogRequest;
+}
+
+const getRowId = (service: AddonServiceEntity) => service.id;
+
 /**
- * Paginated, searchable admin table of add-on services (TASK-174) with a per-row
- * active/inactive toggle. Search, status filter, and page live in the URL so the
- * view is shareable and refresh-safe; the search input is debounced before it
- * touches the URL. Mirrors AdminBrandTable.
+ * The add-on services registry (TASK-174; toolbar TASK-357; wave 198 —
+ * AddonServicesProposal ДП1–ДП10, TASK-1083) on the shared `DataRegistry`.
  *
- * Status is a reversible visibility toggle — there is NO delete: a deactivated
- * service disappears from every template and delta at once, but the orders that
- * already bought it keep their frozen snapshots.
+ * ## What moved, nothing went
  *
- * TASK-357 moved the existing search + status filter into the shared
- * `TableToolbar` and added the refresh control this table never had. Plan 168 §5
- * split 21 list tables across four branches and this one fell through the gap —
- * it was not named in any group, which is an accounting slip rather than a
- * decision, so it gets the same treatment as the other reference tables. Nothing
- * about the query changed; the toolbar is a container, not a rewrite.
+ * - The status select became the quick views «Усі · Показуються · Приховані» —
+ *   the same `?status=active|inactive` param, so old links keep working. Their
+ *   counters are the API's own `meta.total` (one-row requests); «Приховані» is
+ *   the difference, exact because status is the only split.
+ * - «Редагувати» and the toggle moved into «⋯»; the name opens the service.
+ *   Hiding asks first (AlertDialog with its consequences); showing again does
+ *   not — it takes nothing away from anyone.
+ * - The form is a dialog over the list. `/addon-services/new` and
+ *   `/addon-services/[id]/edit` still work: they render this list with that
+ *   dialog open, and closing it returns to `/addon-services`.
  *
- * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
- * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
- * component that renders the provider would read the default no-op context.
+ * ## Pending is per row (ДП2)
+ *
+ * One toggle in flight used to disable every row's toggle. Each request now
+ * carries its own promise (`mutateAsync`) and only its row waits.
+ *
+ * ## Permissions
+ *
+ * Every write here is `addons:write` — the API's class guard. Without it the
+ * CTA and the toggles are gone and «⋯» offers «Переглянути» (the dialog,
+ * read-only). Today the API guards the READS with `addons:write` too, so this
+ * state is defensive until an `addons:read` key exists (API tail).
  */
-export function AddonServiceTable() {
+export function AddonServiceTable({ dialog }: AddonServiceTableProps = {}) {
   return (
     <LiveAnnouncer>
-      <AddonServiceView />
+      <AddonServiceView dialog={dialog} />
     </LiveAnnouncer>
   );
 }
 
-function AddonServiceView() {
+function AddonServiceView({ dialog }: AddonServiceTableProps) {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const updateParams = useUrlParams();
   const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const canWrite = can(PERM.addonsWrite);
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const searchParam = searchParams.get("search") ?? "";
   const statusParam = searchParams.get("status") ?? "";
@@ -79,162 +116,299 @@ function AddonServiceView() {
         ? false
         : undefined;
 
+  const search = searchParam || undefined;
   const { data, isLoading, isFetching, isError, refetch } =
     useAddonServiceControllerAdminFindAll({
       page,
       limit: pageSize,
-      search: searchParam || undefined,
+      search,
       isActive: isActiveFilter,
     });
+  const allQuery = useAddonServiceControllerAdminFindAll({
+    page: 1,
+    limit: 1,
+    search,
+  });
+  const activeQuery = useAddonServiceControllerAdminFindAll({
+    page: 1,
+    limit: 1,
+    search,
+    isActive: true,
+  });
+
+  const services = useMemo(() => data?.data ?? [], [data]);
+  const total = data?.meta?.total;
+  const totalPages = data?.meta?.totalPages ?? 1;
+  const allTotal = allQuery.data?.meta?.total;
+  const activeTotal = activeQuery.data?.meta?.total;
+  const inactiveTotal =
+    allTotal !== undefined && activeTotal !== undefined
+      ? Math.max(0, allTotal - activeTotal)
+      : undefined;
+
+  /* ── per-row status toggle (ДП2) ─────────────────────────────────────── */
 
   const setStatus = useAdminAddonServiceControllerSetStatus();
+  const [pendingIds, setPendingIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
 
-  const services = data?.data ?? [];
-  const totalPages = data?.meta?.totalPages ?? 1;
+  const markPending = (id: string, pending: boolean) =>
+    setPendingIds((current) => {
+      const next = new Set(current);
+      if (pending) next.add(id);
+      else next.delete(id);
+      return next;
+    });
 
   const invalidateList = () =>
     queryClient.invalidateQueries({
       queryKey: getAddonServiceControllerAdminFindAllQueryKey(),
     });
 
-  const handleToggle = (service: AddonServiceEntity) => {
-    setStatus.mutate(
-      { id: service.id, data: { isActive: !service.isActive } },
-      {
-        onSuccess: () => {
-          void invalidateList();
-          toast.success(
-            service.isActive
-              ? dict.addonServices.toastDeactivated
-              : dict.addonServices.toastActivated,
-          );
-        },
-        onError: () => toast.error(dict.addonServices.toastStatusFailed),
-      },
+  const toggle = async (service: AddonServiceEntity) => {
+    markPending(service.id, true);
+    try {
+      await setStatus.mutateAsync({
+        id: service.id,
+        data: { isActive: !service.isActive },
+      });
+      await invalidateList();
+      toast.success(service.isActive ? d.toastDeactivated : d.toastActivated);
+    } catch {
+      toast.error(d.toastStatusFailed);
+    } finally {
+      markPending(service.id, false);
+    }
+  };
+
+  const handleHide = async (service: AddonServiceEntity) => {
+    const confirmed = await confirm({
+      title: d.hideTitle(service.name),
+      description: d.hideBody,
+      confirmLabel: d.deactivate,
+    });
+    if (confirmed) await toggle(service);
+  };
+
+  /* ── the form dialog ─────────────────────────────────────────────────── */
+
+  const [dialogState, setDialogState] =
+    useState<AddonServiceDialogRequest | null>(dialog ?? null);
+
+  const byId = useMemo(
+    () => new Map(services.map((service) => [service.id, service])),
+    [services],
+  );
+  const editId = dialogState?.mode === "edit" ? dialogState.id : undefined;
+  const fromList = editId ? byId.get(editId) : undefined;
+  // A deep link may name a service that is not on this page — fetch it.
+  const one = useAddonServiceControllerFindById(editId ?? "", {
+    query: { enabled: Boolean(editId) && !fromList && !isLoading },
+  });
+  const editService = fromList ?? one.data?.data ?? null;
+  const editMissing = Boolean(editId) && !fromList && one.isError;
+
+  const closeDialog = () => {
+    setDialogState(null);
+    // A deep link's URL would reopen the dialog on refresh — leave it.
+    if (dialog) router.replace(LIST_PATH);
+  };
+
+  const notifiedRef = useRef(false);
+  useEffect(() => {
+    if (!editMissing || notifiedRef.current) return;
+    notifiedRef.current = true;
+    toast.error(
+      one.error?.response?.status === 404 ? d.notFound : d.loadOneError,
+    );
+    setDialogState(null);
+    if (dialog) router.replace(LIST_PATH);
+  }, [dialog, editMissing, one.error, router]);
+
+  const openService = useCallback(
+    (service: AddonServiceEntity) =>
+      setDialogState({ mode: "edit", id: service.id }),
+    [],
+  );
+
+  /* ── registry ────────────────────────────────────────────────────────── */
+
+  const columns = useMemo(
+    () => buildAddonServiceColumns({ pendingIds, onOpen: openService }),
+    [pendingIds, openService],
+  );
+  const registry = useDataRegistry({
+    tableId: "addon-services",
+    columns,
+    rows: services,
+    getRowId,
+  });
+
+  const rowActions = (service: AddonServiceEntity): RowActionItem[] => {
+    if (!canWrite) {
+      return [
+        { label: dict.common.view, onSelect: () => openService(service) },
+      ];
+    }
+    const pending = pendingIds.has(service.id);
+    return [
+      { label: dict.common.edit, onSelect: () => openService(service) },
+      service.isActive
+        ? {
+            label: d.hideFromCart,
+            onSelect: () => void handleHide(service),
+            disabled: pending,
+          }
+        : {
+            label: d.activate,
+            onSelect: () => void toggle(service),
+            disabled: pending,
+          },
+    ];
+  };
+
+  const quickViews: QuickView[] = [
+    { id: ALL_VIEW, label: d.viewAll, count: allTotal },
+    { id: ACTIVE_OPTION, label: d.viewShown, count: activeTotal },
+    { id: INACTIVE_OPTION, label: d.viewHidden, count: inactiveTotal },
+  ];
+  const activeView =
+    statusParam === ACTIVE_OPTION || statusParam === INACTIVE_OPTION
+      ? statusParam
+      : ALL_VIEW;
+
+  const clearStatus = () =>
+    updateParams({ status: undefined, page: undefined });
+
+  const emptyState =
+    isActiveFilter !== undefined ? (
+      <span className="flex flex-col items-center gap-3">
+        <span className="font-semibold text-foreground">
+          {d.emptyStatusTitle(isActiveFilter)}
+        </span>
+        <Button type="button" variant="outline" size="sm" onClick={clearStatus}>
+          {d.emptyReset}
+        </Button>
+      </span>
+    ) : (
+      d.empty
+    );
+
+  const renderCard = (
+    service: AddonServiceEntity,
+    parts: RegistryCardParts,
+  ) => {
+    const line = firstLine(service.description);
+    return (
+      <div className="flex items-start gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex items-start justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => openService(service)}
+              className="min-w-0 rounded-xs text-left font-medium break-words text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              {service.name}
+            </button>
+            <span className="shrink-0 font-medium text-foreground tabular-nums">
+              {addonServicePrice(service.price)}
+            </span>
+          </div>
+          {line ? (
+            <span className="line-clamp-2 text-xs text-muted-foreground">
+              {line}
+            </span>
+          ) : null}
+          <AddonServiceStatusBadge
+            service={service}
+            pending={pendingIds.has(service.id)}
+          />
+        </div>
+        {parts.actions}
+      </div>
     );
   };
 
-  const filters: TableFilterDef[] = [
-    {
-      param: "status",
-      label: dict.addonServices.filterStatusAria,
-      allLabel: dict.addonServices.allStatuses,
-      options: [
-        { value: ACTIVE_OPTION, label: dict.addonServices.statusActive },
-        { value: INACTIVE_OPTION, label: dict.addonServices.statusInactive },
-      ],
-    },
-  ];
-
   return (
     <div className="flex flex-col gap-4">
-      <TableToolbar
-        className="mb-0"
-        onRefresh={() => void refetch()}
-        isRefreshing={isFetching}
-        search={
-          <TableSearch
-            value={searchParam}
-            placeholder={dict.addonServices.searchPlaceholder}
-            label={dict.addonServices.searchAria}
-          />
-        }
-        filters={
-          <TableFilters filters={filters} values={{ status: statusParam }} />
+      <RegistryHeader
+        title={d.heading}
+        description={d.intro}
+        actions={
+          canWrite ? (
+            <Button
+              type="button"
+              className="max-md:h-11"
+              onClick={() => setDialogState({ mode: "create" })}
+            >
+              <PlusIcon aria-hidden="true" />
+              {d.add}
+            </Button>
+          ) : null
         }
       />
+      {canWrite ? null : <Callout variant="strip">{d.viewOnly}</Callout>}
 
-      {isLoading ? (
-        <AddonServiceTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.addonServices.loadError}
-        </p>
-      ) : services.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {/* "No services yet" and "your filters matched nothing" are different
-              answers, and only the first has an obvious next step (TASK-423). */}
-          {searchParam || statusParam
-            ? dict.common.table.emptyFiltered
-            : dict.addonServices.empty}
-        </div>
-      ) : (
-        <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
-          {isFetching && !isLoading && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
-            >
-              <Loader2 className="size-6 animate-spin text-primary" />
-            </div>
-          )}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{dict.addonServices.colName}</TableHead>
-                <TableHead hideOnMobile>
-                  {dict.addonServices.colPrice}
-                </TableHead>
-                <TableHead>{dict.addonServices.colStatus}</TableHead>
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {services.map((service) => (
-                <TableRow key={service.id}>
-                  <TableCell className="font-medium">
-                    <Link
-                      href={`/addon-services/${service.id}/edit`}
-                      className="hover:underline"
-                    >
-                      {service.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell hideOnMobile className="text-muted-foreground">
-                    {service.price}
-                  </TableCell>
-                  <TableCell>
-                    <Badge variant={service.isActive ? "default" : "secondary"}>
-                      {service.isActive
-                        ? dict.addonServices.statusActive
-                        : dict.addonServices.statusInactive}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button asChild variant="outline" size="sm">
-                        <Link href={`/addon-services/${service.id}/edit`}>
-                          {dict.common.edit}
-                        </Link>
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        disabled={setStatus.isPending}
-                        onClick={() => handleToggle(service)}
-                      >
-                        {service.isActive
-                          ? dict.addonServices.deactivate
-                          : dict.addonServices.activate}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+      <DataRegistry
+        registry={registry}
+        title={d.heading}
+        showHeader={false}
+        quickViews={{
+          items: quickViews,
+          activeId: activeView,
+          onChange: (id) =>
+            updateParams({
+              status: id === ALL_VIEW ? undefined : id,
+              page: undefined,
+            }),
+        }}
+        search={{
+          value: searchParam,
+          placeholder: d.searchPlaceholder,
+          label: d.searchAria,
+        }}
+        columnsMenu={false}
+        onRefresh={() => {
+          void refetch();
+          void allQuery.refetch();
+          void activeQuery.refetch();
+        }}
+        isRefreshing={isFetching}
+        summary={
+          total === undefined ? null : (
+            <>
+              {d.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, d.itemForms)}</SummaryValue>
+            </>
+          )
+        }
+        itemForms={d.itemForms}
+        getRowLabel={(service) => service.name}
+        onRowOpen={openService}
+        rowActions={rowActions}
+        renderCard={renderCard}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={d.loadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={emptyState}
+        searchQuery={search}
+        pagination={{ page, totalPages, pageSize }}
+      />
 
-      {!isLoading && !isError && services.length > 0 && (
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
-        />
-      )}
+      <AddonServiceFormDialog
+        open={dialogState !== null && !editMissing}
+        onOpenChange={(open) => {
+          if (!open) closeDialog();
+        }}
+        isEdit={dialogState?.mode === "edit"}
+        service={dialogState?.mode === "edit" ? editService : null}
+        readOnly={!canWrite}
+      />
+      {confirmDialog}
     </div>
   );
 }

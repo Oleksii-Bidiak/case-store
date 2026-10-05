@@ -9,6 +9,8 @@ export {
   markSessionActive,
   clearSessionMarker,
   shouldAttemptSessionRefresh,
+  // Wave 198 (TASK-528/974) — "the session could not be refreshed" for the UI.
+  onSessionExpired,
 } from "./instance";
 export type { ErrorType, BodyType, RefreshOutcome } from "./instance";
 
@@ -65,6 +67,13 @@ export {
   getAdminListOrderPaymentsQueryKey,
   useAdminRefundPayment,
 } from "./generated/payments/payments";
+// Wave 198 (TASK-1082) — which compatibility landing pages are live right now:
+// the «Сторінок на сайті» column and the model form's page list. Named, not
+// `*`: the single-page read is the storefront's, not the panel's.
+export {
+  useCatalogLandingControllerFindCompatPages,
+  getCatalogLandingControllerFindCompatPagesQueryKey,
+} from "./generated/catalog/catalog";
 
 // Generated DTO / entity types
 export * from "./generated/models";

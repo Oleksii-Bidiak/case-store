@@ -1,17 +1,10 @@
-import { Suspense } from "react";
-import type { Metadata } from "next";
-import { CreateBlogCategoryView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: dict.blogCategories.metaTitleNew,
-};
-
+/**
+ * Wave 198 (BlogCategoriesProposal КБ4, owner decision 2026-10-01): the
+ * category form is a dialog over the list now. This address keeps working —
+ * it opens that dialog.
+ */
 export default function NewBlogCategoryPage() {
-  return (
-    <Suspense fallback={<AdminFormSkeleton />}>
-      <CreateBlogCategoryView />
-    </Suspense>
-  );
+  redirect("/blog/categories?new=1");
 }

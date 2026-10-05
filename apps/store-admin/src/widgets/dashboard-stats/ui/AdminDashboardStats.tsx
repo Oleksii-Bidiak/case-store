@@ -6,7 +6,12 @@ import {
   formatPercent,
   formatDurationHours,
 } from "@/shared/lib";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui";
+import {
+  ErrorState,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/shared/ui";
 
 interface AdminDashboardStatsProps {
   summary: DashboardSummaryResponse;
@@ -168,5 +173,30 @@ export function AdminDashboardStats({ summary }: AdminDashboardStatsProps) {
         tooltip={dict.dashboard.averageProcessingTimeTooltip}
       />
     </div>
+  );
+}
+
+interface AdminDashboardStatsErrorProps {
+  onRetry: () => void;
+  /** The retry is in flight — the button is disabled meanwhile. */
+  isRetrying?: boolean;
+}
+
+/**
+ * The summary failed (TASK-1037, П4). It feeds the stat cards, both charts, the
+ * top products and the low-stock list, so one bar stands in for all of them —
+ * with «Повторити», which re-asks the summary only; the needs-action list and
+ * the last orders fetch on their own and stay where they are.
+ */
+export function AdminDashboardStatsError({
+  onRetry,
+  isRetrying = false,
+}: AdminDashboardStatsErrorProps) {
+  return (
+    <ErrorState
+      message={dict.dashboard.loadError}
+      onRetry={onRetry}
+      isRetrying={isRetrying}
+    />
   );
 }

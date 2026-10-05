@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
-import { EditBannerView } from "@/widgets";
-import { AdminFormSkeleton } from "@/shared/ui";
+import { BannerFormSkeleton, EditBannerView } from "@/widgets";
 import { dict } from "@/shared/config";
 
 export const metadata: Metadata = {
@@ -16,7 +15,7 @@ export default async function EditBannerPage({ params }: EditBannerPageProps) {
   const { id } = await params;
 
   return (
-    <Suspense fallback={<AdminFormSkeleton />}>
+    <Suspense fallback={<BannerFormSkeleton />}>
       <EditBannerView bannerId={id} />
     </Suspense>
   );

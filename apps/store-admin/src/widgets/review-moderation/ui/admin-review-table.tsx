@@ -1,8 +1,9 @@
 "use client";
 
-import { Loader2, Star, XIcon } from "lucide-react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { CircleCheckIcon, CornerDownRightIcon, Loader2 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
@@ -10,214 +11,446 @@ import {
   AdminReviewEntityTextStatus,
   ReviewAuthorVisibility,
   ReviewHiddenReason,
+  ReviewStars,
   getAdminReviewControllerListQueryKey,
   useAdminReviewControllerApprove,
   useAdminReviewControllerList,
   useAdminReviewControllerReject,
   type AdminReviewEntity,
 } from "@/entities/review";
-import { getAdminDashboardControllerGetNeedsActionQueryKey } from "@/entities/dashboard";
+import {
+  getAdminDashboardControllerGetNeedsActionQueryKey,
+  useAdminDashboardControllerGetNeedsAction,
+} from "@/entities/dashboard";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import { useReviewBulkModeration } from "@/features/review-bulk-moderation";
-import { ReviewReplyAction } from "@/features/review-reply";
-import { ReviewAuthorModerationAction } from "@/features/review-author-moderation";
-import { useRowSelection } from "@/shared/lib/use-row-selection";
+import { ReviewReplyDialog } from "@/features/review-reply";
+import {
+  ReviewAuthorModerationDialog,
+  authorModerationMode,
+} from "@/features/review-author-moderation";
 import { useUrlParams } from "@/shared/lib/use-url-params";
-import { formatDate } from "@/shared/lib";
+import { OPERATIONAL_LIST_QUERY } from "@/shared/lib/query-freshness";
+import { countLabel, formatDate } from "@/shared/lib";
+import { cn } from "@/shared/lib/utils";
 import {
   Badge,
-  BulkActionsBar,
   Button,
-  Checkbox,
+  Callout,
+  DataRegistry,
   LiveAnnouncer,
-  Table,
-  TableBody,
-  TableCell,
-  TableFilters,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableSelectCell,
-  TableSelectHead,
-  TableToolbar,
+  SummaryValue,
   pageSizeFrom,
-  type TableFilterDef,
+  useDataRegistry,
+  type FilterChip,
+  type QuickView,
+  type RegistryCardParts,
+  type RegistryColumn,
+  type RowActionItem,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { AdminReviewTableSkeleton } from "./admin-review-table-skeleton";
+import {
+  REVIEW_VIEW_COUNT_QUERY,
+  REVIEW_VIEW_ORDER,
+  REVIEW_VIEW_PARAMS,
+  abuseFacts,
+  abuseSignalIndex,
+  abuseSignalList,
+  activeReviewView,
+  readReviewUrl,
+  type AbuseSignal,
+  type ReviewViewId,
+} from "../model/review-views";
+import {
+  ReviewFilterSheet,
+  STATUS_LABELS,
+  VISIBILITY_LABELS,
+} from "./review-filter-sheet";
 
-const COMMENT_MAX = 80;
-
-/** Non-interactive star row for a single review's rating (1–5). */
-function ReviewStars({ rating }: { rating: number }) {
-  return (
-    <span
-      className="inline-flex"
-      role="img"
-      aria-label={dict.reviews.ratingAria(rating)}
-    >
-      {[1, 2, 3, 4, 5].map((i) => (
-        <Star
-          key={i}
-          className={
-            i <= rating
-              ? "size-3.5 text-amber-400"
-              : "size-3.5 text-muted-foreground/30"
-          }
-          fill="currentColor"
-          stroke="none"
-          aria-hidden="true"
-        />
-      ))}
-    </span>
-  );
-}
-
-/** Truncate a comment to a fixed length for the table cell. */
-function truncate(value: string | null | undefined): string {
-  if (!value) return dict.reviews.noComment;
-  return value.length > COMMENT_MAX ? `${value.slice(0, COMMENT_MAX)}…` : value;
-}
+const d = dict.reviews;
 
 /**
- * How the queue names a reviewer: the email's local-part, never the address.
- *
- * Module-level and used by every call site, because the queue names the same
- * person in five places — the row label, the selection checkbox, the author
- * cell, the live-region announcement and the author-moderation confirm — and
- * four of them used to inline `split("@")[0]` themselves. A confirm dialog that
- * asks about «olena» while the row above it reads «olena@example.com» is a
- * dialog the operator has to stop and reconcile before they can answer it.
+ * How dialogs and labels name a reviewer: the email's local-part. The row
+ * itself shows the full address (ReviewsProposal В1); the confirm copy keeps
+ * the short name the artboard's В7 asks with («акаунта pending-reviewer1»).
  */
 function authorOf(email: string): string {
   return email.split("@")[0];
 }
 
-/**
- * The queue the URL asks for, defaulting to the one an absent param returns.
- *
- * Reads the generated enum instead of listing the values here: the filter is
- * built from the same source below, so a fourth verdict added by the API becomes
- * a tab that WORKS the moment someone adds its label, rather than one that
- * silently serves the pending queue under a rejected chip.
- */
-function resolveStatus(raw: string | null): AdminReviewControllerListStatus {
-  const known = Object.values(AdminReviewControllerListStatus);
-  return known.includes(raw as AdminReviewControllerListStatus)
-    ? (raw as AdminReviewControllerListStatus)
-    : AdminReviewControllerListStatus.pending;
-}
+const rowLabel = (review: AdminReviewEntity) =>
+  d.rowAria(review.productName, authorOf(review.userEmail));
+const getRowId = (review: AdminReviewEntity) => review.id;
 
 /**
- * The author-visibility slice the URL asks for (TASK-1004), defaulting to the
- * API's own default, `visible`. An unknown value falls back there too. The
- * filter control is fed this RESOLVED value, never the raw param (see
- * `filterValues` below) — that is what keeps the chip and the rows in step.
- */
-function resolveVisibility(raw: string | null): ReviewAuthorVisibility {
-  const known = Object.values(ReviewAuthorVisibility);
-  return known.includes(raw as ReviewAuthorVisibility)
-    ? (raw as ReviewAuthorVisibility)
-    : ReviewAuthorVisibility.visible;
-}
-
-/**
- * Why a row's author contribution is withdrawn, in words (TASK-1004).
- *
- * Read from the server's `hiddenReason`, not inferred: before TASK-596 the row
- * carried only `ratingVisible`, which folds a moderator's hide and an
- * unconfirmed email into one boolean, so the badge could report the effect and
- * never the cause. The cause matters because each lever is lifted by a
- * different hand — a moderator's «повернути», an un-ban, or nobody.
+ * Why a row's author contribution is withdrawn, in words (TASK-1004) — read
+ * from the server's `hiddenReason`, not inferred: each lever is lifted by a
+ * different hand (a moderator's «повернути», an un-ban, or nobody).
  */
 const HIDDEN_REASON_LABELS: Record<ReviewHiddenReason, string> = {
-  [ReviewHiddenReason.MODERATOR]: dict.reviews.hiddenByModerator,
-  [ReviewHiddenReason.BAN]: dict.reviews.hiddenByBan,
-  [ReviewHiddenReason.DELETED]: dict.reviews.hiddenByDeletion,
+  [ReviewHiddenReason.MODERATOR]: d.hiddenByModerator,
+  [ReviewHiddenReason.BAN]: d.hiddenByBan,
+  [ReviewHiddenReason.DELETED]: d.hiddenByDeletion,
+};
+
+const TEXT_STATUS: Record<
+  AdminReviewEntityTextStatus,
+  { label: string; variant: "warning" | "success" | "secondary" }
+> = {
+  [AdminReviewEntityTextStatus.PENDING]: {
+    label: d.statusPending,
+    variant: "warning",
+  },
+  [AdminReviewEntityTextStatus.APPROVED]: {
+    label: d.statusApproved,
+    variant: "success",
+  },
+  [AdminReviewEntityTextStatus.REJECTED]: {
+    label: d.statusRejected,
+    variant: "secondary",
+  },
 };
 
 /**
- * The rating cell's status badge (TASK-1004).
- *
- * A withdrawn row names its reason. A row that is NOT withdrawn but whose
- * rating still does not count is the other gate `ratingVisible` folds in — an
- * unconfirmed email — and keeps the old effect-only «Оцінка не враховується»,
- * which is exactly true there and needs no cause the row does not carry.
+ * What each ROW offers. Approving an already approved text, or re-rejecting a
+ * rejected one, is a button that changes nothing visible — which reads as a
+ * broken button. A rating left without any text has no text to judge at all.
  */
-function RatingStatusBadge({ review }: { review: AdminReviewEntity }) {
+const canApprove = (review: AdminReviewEntity) =>
+  Boolean(review.comment) &&
+  review.textStatus !== AdminReviewEntityTextStatus.APPROVED;
+const canReject = (review: AdminReviewEntity) =>
+  Boolean(review.comment) &&
+  review.textStatus !== AdminReviewEntityTextStatus.REJECTED;
+
+/* ── Cells ──────────────────────────────────────────────────────────────── */
+
+/**
+ * The status badge (§1.6 canon): a withdrawn row is «Приховано» with its
+ * reason under it; otherwise the text verdict. A row that is not withdrawn but
+ * whose rating does not count is held by the remaining gate, an unconfirmed
+ * email, and says the effect — the one thing that is true there.
+ */
+function StatusCell({ review }: { review: AdminReviewEntity }) {
   if (review.hiddenReason) {
     return (
-      <Badge variant="outline">
-        {HIDDEN_REASON_LABELS[review.hiddenReason]}
-      </Badge>
+      <span className="flex flex-col items-start gap-1">
+        <Badge variant="secondary">{d.statusHidden}</Badge>
+        <span className="text-xs text-muted-foreground">
+          {HIDDEN_REASON_LABELS[review.hiddenReason]}
+        </span>
+      </span>
     );
   }
-  if (!review.ratingVisible) {
-    return <Badge variant="secondary">{dict.reviews.ratingNotCounted}</Badge>;
-  }
-  return null;
+  const status = TEXT_STATUS[review.textStatus];
+  return (
+    <span className="flex flex-col items-start gap-1">
+      <Badge variant={status.variant}>{status.label}</Badge>
+      {!review.ratingVisible ? (
+        <span className="text-xs text-muted-foreground">
+          {d.ratingNotCounted}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function PurchaseMark({ review }: { review: AdminReviewEntity }) {
+  return review.verifiedPurchase ? (
+    <span className="text-xs text-success">{d.bought}</span>
+  ) : (
+    <span className="text-xs text-muted-foreground">{d.notBought}</span>
+  );
 }
 
 /**
- * AdminReviewTable — moderation queue for product reviews. The status filter
- * (`?status=pending|approved|rejected|all`, default `pending`), the author
- * visibility (`?visibility=visible|hidden|all`, default `visible`), the
- * deep-link narrowing (`?productId=`, `?createdIp=`), the search (`?search=`),
- * the page (`?page=`) and the page size (`?limit=`) live in the URL. Mutations
- * invalidate the list so the queue refreshes in place.
+ * Two lines and no more (TASK-734's twin here): the column has a fixed width
+ * and the text wraps inside it, so a long review can never push «Статус» and
+ * «Надіслано» out of their columns. The whole text is the `title`.
+ */
+function CommentText({ review }: { review: AdminReviewEntity }) {
+  const text = review.comment || d.noComment;
+  return (
+    <span className="flex flex-col gap-0.5">
+      <span
+        title={review.comment ?? undefined}
+        className={cn(
+          "line-clamp-2",
+          review.comment ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        {text}
+      </span>
+      {/* The reply is an UPSERT — answering again replaces what is
+          published. A row that was already answered has to say so, or a
+          second operator overwrites the first without ever seeing it. */}
+      {review.reply ? (
+        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+          <CornerDownRightIcon aria-hidden="true" className="size-3" />
+          {d.replyBadge}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function ProductLink({ review }: { review: AdminReviewEntity }) {
+  return (
+    <Link
+      href={`/products/${review.productId}`}
+      aria-label={d.productLinkAria(review.productName)}
+      className="line-clamp-2 rounded-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+    >
+      {review.productName}
+    </Link>
+  );
+}
+
+interface ApproveContext {
+  onApprove: (id: string) => void;
+  /** The row whose approve is in flight — its button spins. */
+  approvingId: string | null;
+  /** The row with any single-row write in flight — its button is disabled. */
+  busyId: string | null;
+}
+
+function ApproveButton({
+  review,
+  ctx,
+}: {
+  review: AdminReviewEntity;
+  ctx: ApproveContext;
+}) {
+  if (!canApprove(review)) return null;
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      disabled={ctx.busyId === review.id}
+      onClick={() => ctx.onApprove(review.id)}
+    >
+      {ctx.approvingId === review.id ? (
+        <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+      ) : null}
+      {d.approve}
+    </Button>
+  );
+}
+
+/**
+ * Width the default-visible columns may share at 1440: content area 1136 minus
+ * the checkbox column (the pending queue is selectable), the «⋯» column and
+ * the box border.
+ */
+export const REVIEW_COLUMNS_WIDTH_BUDGET = 1136 - 36 - 44 - 2;
+
+/**
+ * Columns of the queue (ReviewsProposal В1). No sort buttons: the API lists
+ * newest first and takes no sort parameter (an API tail). The SKU rides under
+ * the product name (TASK-430) instead of taking a column of its own.
+ */
+export function buildReviewColumns(
+  ctx: ApproveContext,
+): RegistryColumn<AdminReviewEntity>[] {
+  return [
+    {
+      id: "product",
+      label: d.colProduct,
+      locked: true,
+      defaultWidth: 196,
+      minWidth: 140,
+      cell: (review) => (
+        <span className="flex flex-col gap-0.5">
+          <ProductLink review={review} />
+          <span className="text-xs text-muted-foreground">
+            {review.productSku ?? d.noSku}
+          </span>
+        </span>
+      ),
+    },
+    {
+      id: "author",
+      label: d.colAuthor,
+      defaultWidth: 196,
+      minWidth: 140,
+      cell: (review) => (
+        <span className="flex flex-col gap-0.5">
+          <span className="break-all text-foreground">{review.userEmail}</span>
+          <PurchaseMark review={review} />
+        </span>
+      ),
+    },
+    {
+      id: "rating",
+      label: d.colRating,
+      defaultWidth: 84,
+      minWidth: 84,
+      cell: (review) => <ReviewStars rating={review.rating} />,
+    },
+    {
+      id: "comment",
+      label: d.colComment,
+      defaultWidth: 236,
+      minWidth: 160,
+      cell: (review) => <CommentText review={review} />,
+    },
+    {
+      id: "status",
+      label: d.colStatus,
+      defaultWidth: 140,
+      minWidth: 120,
+      cell: (review) => <StatusCell review={review} />,
+    },
+    {
+      id: "date",
+      label: d.colDate,
+      defaultWidth: 100,
+      minWidth: 96,
+      cell: (review) => (
+        <span className="text-muted-foreground tabular-nums">
+          {formatDate(review.createdAt)}
+        </span>
+      ),
+    },
+    {
+      // «Схвалити» is the queue's one primary action and stays in the row;
+      // everything else is in «⋯» (В1/В2). Locked: hiding it would leave no
+      // way to approve a single review outside the «На розгляді» bulk bar.
+      id: "approve",
+      locked: true,
+      label: dict.common.actions,
+      header: <span className="sr-only">{dict.common.actions}</span>,
+      resizable: false,
+      defaultWidth: 100,
+      minWidth: 100,
+      align: "end",
+      cell: (review) => <ApproveButton review={review} ctx={ctx} />,
+    },
+  ];
+}
+
+/** One review below md (ReviewsProposal В5). */
+function renderCard(
+  review: AdminReviewEntity,
+  parts: RegistryCardParts,
+  ctx: ApproveContext,
+) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex items-center gap-2">
+          {parts.select}
+          <ReviewStars rating={review.rating} />
+        </span>
+        <StatusCell review={review} />
+      </div>
+      <ProductLink review={review} />
+      <CommentText review={review} />
+      <span className="text-xs text-muted-foreground">
+        <span className="break-all">{review.userEmail}</span> ·{" "}
+        {review.verifiedPurchase ? d.bought : d.notBought} ·{" "}
+        <span className="tabular-nums">{formatDate(review.createdAt)}</span>
+      </span>
+      <div className="flex items-center justify-between gap-2">
+        <ApproveButton review={review} ctx={ctx} />
+        <span className="ml-auto">{parts.actions}</span>
+      </div>
+    </div>
+  );
+}
+
+const VIEW_LABELS: Record<ReviewViewId, string> = {
+  pending: d.filterPending,
+  approved: d.filterApproved,
+  rejected: d.filterRejected,
+  abuse: d.viewAbuse,
+  hidden: d.viewHiddenAuthors,
+  all: d.filterAll,
+};
+
+const VIEW_EMPTY: Record<ReviewViewId, ReactNode> = {
+  pending: (
+    <span className="flex flex-col items-center gap-1.5">
+      <CircleCheckIcon aria-hidden="true" className="size-4 text-success" />
+      <b className="font-semibold text-foreground">{d.emptyPendingTitle}</b>
+      <span>{d.emptyPending}</span>
+    </span>
+  ),
+  approved: d.emptyApproved,
+  rejected: d.emptyRejected,
+  abuse: d.emptyAbuse,
+  hidden: d.emptyHiddenAuthors,
+  all: d.emptyAll,
+};
+
+/**
+ * The view counters: one-row requests, the API's own `meta.total`. Hooks in a
+ * fixed order, one per preset view («Сигнали накрутки» is counted by the
+ * dashboard's needs-action payload instead).
+ */
+function useViewCounts() {
+  const options = { query: OPERATIONAL_LIST_QUERY };
+  const counts = {
+    pending: useAdminReviewControllerList(
+      REVIEW_VIEW_COUNT_QUERY.pending,
+      options,
+    ),
+    approved: useAdminReviewControllerList(
+      REVIEW_VIEW_COUNT_QUERY.approved,
+      options,
+    ),
+    rejected: useAdminReviewControllerList(
+      REVIEW_VIEW_COUNT_QUERY.rejected,
+      options,
+    ),
+    hidden: useAdminReviewControllerList(
+      REVIEW_VIEW_COUNT_QUERY.hidden,
+      options,
+    ),
+    all: useAdminReviewControllerList(REVIEW_VIEW_COUNT_QUERY.all, options),
+  };
+  return counts;
+}
+
+/**
+ * AdminReviewTable — the moderation queue on the shared registry (wave 198,
+ * TASK-1057, ReviewsProposal В1–В10).
  *
- * ── TASK-446: three queues, and rejecting is no longer a delete ──────────────
- * `Review.isActive` is gone. The TEXT now carries a three-value `textStatus` and
- * the RATING carries its own `ratingVisible`, and the two are independent.
- * «Відхилити» used to call `DELETE /admin/reviews/:id`, which hard-deleted the
- * row — taking the rating out of the product's average and freeing the author's
- * `(userId, productId)` slot. It now calls `PATCH …/:id/reject`, which marks the
- * text REJECTED and leaves the rating counting; the author rewrites their own
- * text from the storefront rather than re-submitting a fresh review.
+ * ── The URL contract, unchanged ─────────────────────────────────────────────
+ * `?status=pending|approved|rejected|all` (default `pending`),
+ * `?visibility=visible|hidden|all` (default `visible`), the dashboard's
+ * deep-link narrowing `?productId=` / `?createdIp=` (TASK-601), `?search=`,
+ * `?page=`, `?limit=`. The quick views write those same params, so every link
+ * shared before the redesign opens the same rows with its view highlighted.
  *
- * That makes REJECTED a state a row KEEPS, so there are three queues where there
- * were two — and the per-row actions can no longer be hard-coded to `pending`.
- * Each tab offers what is actually useful on it: approve on `rejected` (a
- * moderator changing their mind — the case the hard delete made impossible),
- * reject on `approved`, both on `pending`. An action that is already the row's
- * state is not offered, because clicking it changes nothing the operator can
- * see and reads as a broken button.
+ * ── What moved, nothing removed ─────────────────────────────────────────────
+ * The two selects became six views plus «Фільтри» (for the combinations no
+ * view stands for); «Відхилити текст», «Відповісти» / «Змінити відповідь» and
+ * «Приховати всі оцінки автора…» / «Повернути оцінки автора…» moved into the
+ * row's «⋯», «Схвалити» stayed in the row as its primary action. The deep-link
+ * chips and «Скинути все» are the registry's own chips now. The bulk bar is
+ * always there on the pending queue, and both bulk verdicts ask first.
  *
- * Row SELECTION stays on `pending` alone. Bulk is a triage tool for the queue
- * that accumulates; on the settled tabs the useful action is per-row and a
- * checkbox column whose bar offers the one verdict the tab already has would be
- * noise.
+ * ── TASK-446: three queues, and rejecting is not a delete ───────────────────
+ * «Відхилити текст» is `PATCH …/:id/reject`: the text leaves the site, the
+ * RATING keeps counting, the author rewrites it from the storefront. A moderator
+ * can approve from «Відхилені» later. Each row offers what is actually useful on
+ * it — see `canApprove` / `canReject`.
  *
- * ── TASK-423: the queue had no search at all ────────────────────────────────
- * Triaging a backlog meant paging through it, and "what did this customer write
- * about that product?" was a question this screen could not answer — the
- * operator had to go to the product page and read the storefront. The box is the
- * shared one, and it searches what the queue shows: the review text, the author's
- * email and the product name.
+ * Selection stays on the PENDING queue alone: bulk is a triage tool for the
+ * queue that accumulates; on the settled views the useful action is per row.
  *
- * The status control's "no filter" option is «На розгляді», because that is what
- * an absent `status` returns: the API treats it as `pending`. «Усі» is a real
- * option of its own since TASK-601 added `status=all` to the API — every text
- * verdict plus ratings left without any text — and it is offered as a value,
- * never as the "no filter" slot, so it cannot silently mean the pending queue.
+ * Gates: the whole controller is `reviews:moderate` (the list included), the
+ * reply is `reviews:write`, the author action `reviews:moderate` — each item is
+ * drawn under the same `can()` as the button it replaced. The abuse signals come
+ * from the dashboard's needs-action endpoint (`analytics:read`), so a session
+ * without it reaches «Сигнали накрутки» only through the dashboard's link.
  *
- * ── TASK-1004: the withdrawn pile, and the series behind a dashboard card ────
- * The API has filtered on the author's visibility since TASK-596 and defaults
- * to `visible`, so a withdrawn author's rows — and with them the «повернути»
- * button — were unreachable from this screen. The visibility control opens
- * them. `productId` and `createdIp` arrive only from the dashboard's
- * rating-abuse card (TASK-601), so they have no control here, just a removable
- * chip each: the rows ARE narrowed by them, and a narrowing the operator cannot
- * see or undo reads as missing data.
- *
- * `LiveAnnouncer` MUST wrap the queue rather than sit inside it — the same split
- * `AdminCategoryTree` and `MessageInbox` make, for the same reason.
- * `useRowSelection` and `useReviewBulkModeration` both call `useAnnouncer()`,
- * and a hook called in the very component that renders the provider reads the
- * context from ABOVE it, which is the default no-op. Every selection and
- * bulk-moderation announcement would be silently dropped, and nothing on screen
- * would look wrong.
+ * `LiveAnnouncer` wraps the view: `useReviewBulkModeration` and the toolbar
+ * call `useAnnouncer()`, and a hook in the component that renders the provider
+ * reads the no-op default from above it.
  */
 export function AdminReviewTable() {
   return (
@@ -230,50 +463,42 @@ export function AdminReviewTable() {
 function AdminReviewTableView() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const updateParams = useUrlParams();
+  const { can } = useAuth();
+  const canReply = can(PERM.reviewsWrite);
+  const canModerateAuthors = can(PERM.reviewsModerate);
+  const canReadSignals = can(PERM.analyticsRead);
 
-  // Three values now, so this reads the enum rather than testing for one of
-  // them. An unrecognised `?status=` still falls back to `pending` — the queue
-  // an absent param really returns — but «rejected» must NOT land there, or the
-  // chip would say one queue while the rows came from another.
-  const statusParam = resolveStatus(searchParams.get("status"));
-  const visibilityParam = resolveVisibility(searchParams.get("visibility"));
-  const productIdParam = searchParams.get("productId") ?? "";
-  const createdIpParam = searchParams.get("createdIp") ?? "";
+  const url = readReviewUrl(searchParams);
   const searchParam = searchParams.get("search") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
-
-  const updateParams = useUrlParams();
+  const activeView = activeReviewView(url);
 
   const { data, isLoading, isFetching, isError, refetch } =
     useAdminReviewControllerList({
-      status: statusParam,
-      visibility: visibilityParam,
-      productId: productIdParam || undefined,
-      createdIp: createdIpParam || undefined,
+      status: url.status,
+      visibility: url.visibility,
+      productId: url.productId || undefined,
+      createdIp: url.createdIp || undefined,
       search: searchParam || undefined,
       page,
       limit: pageSize,
     });
 
+  const viewCounts = useViewCounts();
+  const needsAction = useAdminDashboardControllerGetNeedsAction({
+    query: { ...OPERATIONAL_LIST_QUERY, enabled: canReadSignals },
+  });
+  const signals = abuseSignalList(needsAction.data?.data.ratingAbuseSignals);
+
   const approve = useAdminReviewControllerApprove();
   const reject = useAdminReviewControllerReject();
 
-  const reviews = data?.data ?? [];
+  const reviews = useMemo(() => data?.data ?? [], [data]);
+  const total = data?.meta?.total ?? 0;
   const totalPages = data?.meta?.totalPages ?? 1;
-  const isPending = statusParam === AdminReviewControllerListStatus.pending;
-  // What each ROW is for, rather than one hard-coded queue. Approving an already
-  // approved text, or re-rejecting a rejected one, is a button that changes
-  // nothing visible — which reads as a broken button, not as a no-op. Decided
-  // per row since TASK-1004: on the verdict tabs every row shares the verdict,
-  // so this is what the tab rule used to say; on «Усі» the rows are mixed, and
-  // a rating left without any text has no text to approve or reject at all.
-  const canApprove = (review: AdminReviewEntity) =>
-    Boolean(review.comment) &&
-    review.textStatus !== AdminReviewEntityTextStatus.APPROVED;
-  const canReject = (review: AdminReviewEntity) =>
-    Boolean(review.comment) &&
-    review.textStatus !== AdminReviewEntityTextStatus.REJECTED;
+  const selectable = url.status === AdminReviewControllerListStatus.pending;
 
   const invalidateList = () => {
     void queryClient.invalidateQueries({
@@ -291,10 +516,10 @@ function AdminReviewTableView() {
       { id },
       {
         onSuccess: () => {
-          void invalidateList();
-          toast.success(dict.reviews.approveSuccess);
+          invalidateList();
+          toast.success(d.approveSuccess);
         },
-        onError: () => toast.error(dict.reviews.actionError),
+        onError: () => toast.error(d.actionError),
       },
     );
   };
@@ -304,134 +529,39 @@ function AdminReviewTableView() {
       { id },
       {
         onSuccess: () => {
-          void invalidateList();
-          toast.success(dict.reviews.rejectSuccess);
+          invalidateList();
+          toast.success(d.rejectSuccess);
         },
-        onError: () => toast.error(dict.reviews.actionError),
+        onError: () => toast.error(d.actionError),
       },
     );
   };
 
-  const filters: TableFilterDef[] = [
-    {
-      param: "status",
-      label: dict.reviews.filterStatusAria,
-      // The URL-absent shape IS the pending queue — see the component header.
-      allLabel: dict.reviews.filterPending,
-      options: [
-        {
-          value: AdminReviewControllerListStatus.approved,
-          label: dict.reviews.filterApproved,
-        },
-        // TASK-446: a queue that could not exist while rejecting was a delete.
-        {
-          value: AdminReviewControllerListStatus.rejected,
-          label: dict.reviews.filterRejected,
-        },
-        // TASK-601/1004: every verdict plus ratings without text — where the
-        // dashboard's rating-abuse card sends the operator.
-        {
-          value: AdminReviewControllerListStatus.all,
-          label: dict.reviews.filterAll,
-        },
-      ],
-      className: "w-48",
-    },
-    {
-      param: "visibility",
-      label: dict.reviews.filterVisibilityAria,
-      // URL-absent is the API's own default, `visible` — the queue as it was.
-      allLabel: dict.reviews.filterVisibilityVisible,
-      options: [
-        {
-          value: ReviewAuthorVisibility.hidden,
-          label: dict.reviews.filterVisibilityHidden,
-        },
-        {
-          value: ReviewAuthorVisibility.all,
-          label: dict.reviews.filterVisibilityAll,
-        },
-      ],
-      className: "w-48",
-    },
-  ];
-
-  // What the controls show: the RESOLVED queue and slice, with each default
-  // spelled as "no filter". Feeding the raw params instead made `?visibility=foo`
-  // query `visible` while the chip read «…: foo» and the Select went blank, and
-  // `?status=pending` show a chip for the queue an absent param returns anyway.
-  const filterValues: Record<string, string> = {
-    status:
-      statusParam === AdminReviewControllerListStatus.pending
-        ? ""
-        : statusParam,
-    visibility:
-      visibilityParam === ReviewAuthorVisibility.visible ? "" : visibilityParam,
+  const approvingId = approve.isPending
+    ? (approve.variables?.id ?? null)
+    : null;
+  const rejectingId = reject.isPending ? (reject.variables?.id ?? null) : null;
+  const ctx: ApproveContext = {
+    onApprove: handleApprove,
+    approvingId,
+    busyId: approvingId ?? rejectingId,
   };
+  const columns = buildReviewColumns(ctx);
 
-  // The deep-link narrowing from the dashboard (TASK-601). The product is named
-  // from the rows once they arrive — they all belong to it — and by its id
-  // until then (or when the series is empty).
-  const productChipName = reviews[0]?.productName ?? productIdParam;
-  const linkChips = [
-    ...(productIdParam
-      ? [
-          {
-            param: "productId",
-            text: dict.reviews.productChip(productChipName),
-            aria: dict.reviews.productChipAria(productChipName),
-          },
-        ]
-      : []),
-    ...(createdIpParam
-      ? [
-          {
-            param: "createdIp",
-            text: dict.reviews.ipChip(createdIpParam),
-            aria: dict.reviews.ipChipAria(createdIpParam),
-          },
-        ]
-      : []),
-  ];
-
-  // «Скинути все» has to clear EVERY narrowing on screen, the deep-link chips
-  // included. `TableFilters` only knows its own params, so its built-in button
-  // would leave `productId`/`createdIp` behind; the table therefore renders one
-  // `TableFilters` per filter (each alone never shows its own clear-all) and
-  // owns the single clear-all below. Search is not a filter chip and stays, as
-  // it does under `TableFilters`' own button.
-  const activeFilterCount =
-    Object.values(filterValues).filter(Boolean).length + linkChips.length;
-  const clearAllFilters = () =>
-    updateParams({
-      status: undefined,
-      visibility: undefined,
-      productId: undefined,
-      createdIp: undefined,
-      page: undefined,
-    });
-
-  // Selection is offered only on the PENDING queue, matching the per-row
-  // buttons: approved rows are read-only here, and a checkbox column with
-  // nothing to apply to it is worse than no column.
-  const selectableIds = isPending ? reviews.map((review) => review.id) : [];
-  const reviewById = new Map(reviews.map((review) => [review.id, review]));
-
-  const selection = useRowSelection({
-    rowIds: selectableIds,
-    getLabel: (id) => {
-      const review = reviewById.get(id);
-      return review
-        ? dict.reviews.rowAria(review.productName, authorOf(review.userEmail))
-        : id;
-    },
-    messages: {
-      selected: dict.common.table.announceSelected,
-      deselected: dict.common.table.announceDeselected,
-      selectedAll: dict.common.table.announceSelectedAll,
-      cleared: dict.common.table.announceCleared,
-    },
+  const registry = useDataRegistry({
+    tableId: "reviews",
+    columns,
+    rows: reviews,
+    getRowId,
+    selectionResetKey: [
+      url.status,
+      url.visibility,
+      url.productId,
+      url.createdIp,
+      searchParam,
+    ].join("|"),
   });
+  const { selection } = registry;
 
   const bulk = useReviewBulkModeration({
     onSuccess: () => {
@@ -440,296 +570,331 @@ function AdminReviewTableView() {
     },
   });
 
+  // The row's dialogs, opened from «⋯». Held by id and read off the CURRENT
+  // rows, so a refetch under the open dialog shows the fresh row (forms.md
+  // Rule 2a — the reply form keeps a dirty draft); the snapshot covers a row
+  // that left the page meanwhile.
+  const [replyTarget, setReplyTarget] = useState<AdminReviewEntity | null>(
+    null,
+  );
+  const [authorTarget, setAuthorTarget] = useState<AdminReviewEntity | null>(
+    null,
+  );
+  const current = (target: AdminReviewEntity | null) =>
+    target
+      ? (reviews.find((review) => review.id === target.id) ?? target)
+      : null;
+  const replyReview = current(replyTarget);
+  // The author dialog keeps its SNAPSHOT: once the hide lands the refetched
+  // row reads «restore», and the open confirm must not flip under the click.
+  const authorReview = authorTarget;
+
+  const rowActions = (review: AdminReviewEntity): RowActionItem[] => {
+    const busy = ctx.busyId === review.id;
+    const items: RowActionItem[] = [];
+    if (canReject(review)) {
+      items.push({
+        label: d.reject,
+        onSelect: () => handleReject(review.id),
+        disabled: busy,
+      });
+    }
+    if (canReply) {
+      items.push({
+        label: review.reply?.body ? d.replyEditAction : d.replyAction,
+        onSelect: () => setReplyTarget(review),
+      });
+    }
+    const mode = canModerateAuthors
+      ? authorModerationMode(review.hiddenReason)
+      : null;
+    if (mode) {
+      items.push({
+        label: mode === "hide" ? d.hideAuthorMenu : d.unhideAuthorMenu,
+        onSelect: () => setAuthorTarget(review),
+        destructive: mode === "hide",
+        separatorBefore: items.length > 0,
+      });
+    }
+    return items;
+  };
+
+  /* ── views ──────────────────────────────────────────────────────────── */
+
+  const goToSignal = (signal: AbuseSignal) =>
+    updateParams({
+      status: AdminReviewControllerListStatus.all,
+      visibility: undefined,
+      productId: signal.productId,
+      createdIp: signal.createdIp,
+      page: undefined,
+    });
+
+  const viewItems: QuickView[] = REVIEW_VIEW_ORDER.flatMap(
+    (id): QuickView[] => {
+      if (id === "abuse") {
+        // Offered when the dashboard flags something, or when a deep link
+        // already narrowed to a series — never as a view with nothing in it.
+        if (signals.length === 0 && activeView !== "abuse") return [];
+        return [
+          {
+            id,
+            label: VIEW_LABELS.abuse,
+            count: needsAction.data?.data.ratingAbuse,
+          },
+        ];
+      }
+      return [
+        {
+          id,
+          label: VIEW_LABELS[id],
+          count: viewCounts[id].data?.meta?.total,
+        },
+      ];
+    },
+  );
+
+  const onViewChange = (id: string) => {
+    if (id === "abuse") {
+      if (activeView !== "abuse" && signals[0]) goToSignal(signals[0]);
+      return;
+    }
+    const preset = REVIEW_VIEW_PARAMS[id as Exclude<ReviewViewId, "abuse">];
+    updateParams({
+      status: preset.status,
+      visibility: preset.visibility,
+      productId: undefined,
+      createdIp: undefined,
+      page: undefined,
+    });
+  };
+
+  /* ── chips ──────────────────────────────────────────────────────────── */
+
+  // The deep-link narrowing is named from the rows once they arrive — they
+  // all belong to it — and by its id until then (or when the series is empty).
+  const productName = reviews[0]?.productName ?? url.productId;
+  const chips: FilterChip[] = [];
+  // The verdict and the author slice get a chip only when no view says them.
+  if (activeView === "") {
+    if (url.status !== AdminReviewControllerListStatus.pending) {
+      chips.push({
+        key: "status",
+        label: d.chipStatus(STATUS_LABELS[url.status]),
+        onRemove: () => updateParams({ status: undefined, page: undefined }),
+      });
+    }
+    if (url.visibility !== ReviewAuthorVisibility.visible) {
+      chips.push({
+        key: "visibility",
+        label: d.chipAuthors(VISIBILITY_LABELS[url.visibility]),
+        onRemove: () =>
+          updateParams({ visibility: undefined, page: undefined }),
+      });
+    }
+  }
+  const sheetChipCount = chips.length;
+  if (url.productId) {
+    chips.push({
+      key: "productId",
+      label: d.productChip(productName),
+      onRemove: () => updateParams({ productId: undefined, page: undefined }),
+    });
+  }
+  if (url.createdIp) {
+    chips.push({
+      key: "createdIp",
+      label: d.ipChip(url.createdIp),
+      onRemove: () => updateParams({ createdIp: undefined, page: undefined }),
+    });
+  }
+
+  /* ── «Сигнали накрутки» card (В3) ───────────────────────────────────── */
+
+  const signalIndex = abuseSignalIndex(signals, url);
+  const nextSignal =
+    signals.length > 1
+      ? signals[(signalIndex + 1) % signals.length]
+      : undefined;
+  const nextPosition =
+    signals.length > 1 ? ((signalIndex + 1) % signals.length) + 1 : 0;
+
+  let notice: ReactNode = null;
+  if (activeView === "abuse" && reviews.length > 0) {
+    const facts = abuseFacts(reviews);
+    const count = countLabel(
+      total,
+      facts.lowOnly ? d.abuseLowRatingForms : d.abuseRatingForms,
+    );
+    const span = countLabel(facts.days, d.dayForms);
+    notice = (
+      <Callout
+        variant="warning"
+        title={
+          url.productId
+            ? d.abuseTitleProduct(count, span, productName)
+            : d.abuseTitleIp(count, span, url.createdIp)
+        }
+        actions={
+          nextSignal ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => goToSignal(nextSignal)}
+            >
+              {d.abuseNext(nextPosition, signals.length)}
+            </Button>
+          ) : undefined
+        }
+      >
+        {facts.suspects > 0
+          ? `${d.abuseSuspects(facts.suspects, reviews.length)} ${d.abuseAdvice}`
+          : d.abuseAdvice}
+      </Callout>
+    );
+  }
+
   const selectedIds = [...selection.selectedIds];
+  const selectedCount = selection.selectedCount;
 
   return (
-    <div className="flex flex-col gap-4">
-      <TableToolbar
-        className="mb-0"
-        onRefresh={() => void refetch()}
-        isRefreshing={isFetching}
-        search={
-          <TableSearch
-            value={searchParam}
-            placeholder={dict.reviews.searchPlaceholder}
-            label={dict.reviews.searchAria}
-          />
-        }
-        filters={
-          <div className="flex flex-wrap items-center gap-2">
-            {filters.map((filter) => (
-              <TableFilters
-                key={filter.param}
-                filters={[filter]}
-                values={filterValues}
-              />
-            ))}
-            {/* TASK-1004: removable chips for the dashboard deep link — the
-                same shape `TableFilters` gives its own chips. */}
-            {linkChips.map((chip) => (
-              <Button
-                key={chip.param}
-                type="button"
-                variant="secondary"
-                size="sm"
-                aria-label={chip.aria}
-                onClick={() =>
-                  updateParams({ [chip.param]: undefined, page: undefined })
-                }
-              >
-                <span>{chip.text}</span>
-                <XIcon aria-hidden="true" className="size-3.5" />
-              </Button>
-            ))}
-            {activeFilterCount > 1 && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={clearAllFilters}
-              >
-                {dict.common.table.clearAllFilters}
-              </Button>
-            )}
-          </div>
-        }
-        selectAll={
-          selectableIds.length > 0 ? (
-            <Checkbox
-              checked={selection.headerChecked}
-              onCheckedChange={selection.toggleAll}
-              disabled={bulk.isPending}
-              aria-label={dict.common.table.selectAll}
+    <>
+      <DataRegistry
+        registry={registry}
+        title={d.heading}
+        quickViews={{
+          items: viewItems,
+          activeId: activeView,
+          onChange: onViewChange,
+        }}
+        search={{
+          value: searchParam,
+          placeholder: d.searchPlaceholder,
+          label: d.searchAria,
+        }}
+        filters={{
+          // Deep-link chips (product, IP) are not in the sheet — counting them
+          // would badge «Фільтри» with something the sheet cannot show.
+          count: sheetChipCount,
+          renderSheet: ({ open, onOpenChange }) => (
+            <ReviewFilterSheet
+              open={open}
+              onOpenChange={onOpenChange}
+              applied={{
+                status:
+                  url.status === AdminReviewControllerListStatus.pending
+                    ? ""
+                    : url.status,
+                visibility:
+                  url.visibility === ReviewAuthorVisibility.visible
+                    ? ""
+                    : url.visibility,
+              }}
+              onApply={(next) =>
+                updateParams({
+                  status: next.status || undefined,
+                  visibility: next.visibility || undefined,
+                  page: undefined,
+                })
+              }
             />
+          ),
+        }}
+        views={{ defaultName: d.viewDefault }}
+        onRefresh={() => {
+          void refetch();
+          for (const query of Object.values(viewCounts)) void query.refetch();
+          if (canReadSignals) void needsAction.refetch();
+        }}
+        isRefreshing={isFetching}
+        notice={notice}
+        chips={chips}
+        onClearAllChips={() =>
+          updateParams({
+            status: undefined,
+            visibility: undefined,
+            productId: undefined,
+            createdIp: undefined,
+            page: undefined,
+          })
+        }
+        summary={
+          data ? (
+            <>
+              {d.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, d.itemForms)}</SummaryValue>
+            </>
           ) : null
         }
+        sortLabel={d.sortCreatedDesc}
+        itemForms={d.itemForms}
+        getRowLabel={rowLabel}
+        rowActions={rowActions}
+        renderCard={(review, parts) => renderCard(review, parts, ctx)}
+        selectable={selectable}
+        bulk={{
+          idleHint: d.bulk.idleHint,
+          isPending: bulk.isPending,
+          actions: (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={bulk.isPending}
+                onClick={() => bulk.moderate(selectedIds, "approve")}
+              >
+                {d.bulk.approve(selectedCount)}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={bulk.isPending}
+                className="text-destructive hover:text-destructive"
+                onClick={() => bulk.moderate(selectedIds, "reject")}
+              >
+                {d.bulk.reject(selectedCount)}
+              </Button>
+            </>
+          ),
+        }}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={d.loadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={activeView ? VIEW_EMPTY[activeView] : d.emptyAll}
+        searchQuery={searchParam || undefined}
+        isFiltered={sheetChipCount > 0}
+        pagination={{ page, totalPages, pageSize }}
       />
 
-      <BulkActionsBar
-        selectedCount={selection.selectedCount}
-        isPending={bulk.isPending}
-        onClear={selection.clear}
-        actions={[
-          {
-            label: dict.reviews.bulk.approve(selection.selectedCount),
-            onClick: () => bulk.moderate(selectedIds, "approve"),
-          },
-          {
-            label: dict.reviews.bulk.reject(selection.selectedCount),
-            variant: "destructive",
-            onClick: () => bulk.moderate(selectedIds, "reject"),
-          },
-        ]}
-      />
-      {/* TASK-812: the bulk-reject AlertDialog (portalled). */}
+      {/* TASK-812: the bulk prompts (portalled). */}
       {bulk.confirmDialog}
 
-      {isLoading ? (
-        <AdminReviewTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.reviews.loadError}
-        </p>
-      ) : reviews.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {searchParam
-            ? dict.reviews.emptyMatch(searchParam)
-            : dict.reviews.emptyQueue}
-        </div>
-      ) : (
-        <div className="relative rounded-lg border border-border shadow-card overflow-hidden">
-          {isFetching && !isLoading && (
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md bg-background/60"
-            >
-              <Loader2 className="size-6 animate-spin text-primary" />
-            </div>
-          )}
-          <Table layout="card">
-            <TableHeader>
-              <TableRow>
-                {isPending && (
-                  <TableSelectHead
-                    checked={selection.headerChecked}
-                    onCheckedChange={selection.toggleAll}
-                    disabled={bulk.isPending}
-                    label={dict.common.table.selectAll}
-                  />
-                )}
-                <TableHead>{dict.reviews.colProduct}</TableHead>
-                <TableHead>{dict.reviews.colSku}</TableHead>
-                <TableHead>{dict.reviews.colAuthor}</TableHead>
-                <TableHead>{dict.reviews.colRating}</TableHead>
-                <TableHead>{dict.reviews.colComment}</TableHead>
-                <TableHead>{dict.reviews.colDate}</TableHead>
-                {/* Always present since TASK-446: reply and author-moderation
-                    live here on every tab, and the verdict buttons vary by tab
-                    rather than by queue membership. */}
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {reviews.map((review) => {
-                const approving =
-                  approve.isPending && approve.variables?.id === review.id;
-                const rejecting =
-                  reject.isPending && reject.variables?.id === review.id;
-                const busy = approving || rejecting;
-                return (
-                  <TableRow
-                    key={review.id}
-                    rowLabel={dict.reviews.rowAria(
-                      review.productName,
-                      authorOf(review.userEmail),
-                    )}
-                    data-state={
-                      selection.isSelected(review.id) ? "selected" : undefined
-                    }
-                  >
-                    {isPending && (
-                      <TableSelectCell
-                        checked={selection.isSelected(review.id)}
-                        onSelect={({ shiftKey }) =>
-                          shiftKey
-                            ? selection.extendTo(review.id)
-                            : selection.toggle(review.id)
-                        }
-                        disabled={bulk.isPending || busy}
-                        label={dict.reviews.bulk.selectRow(
-                          review.productName,
-                          authorOf(review.userEmail),
-                        )}
-                      />
-                    )}
-                    {/* TASK-430: the product is a LINK to its read-only card, and
-                        the SKU rides next to it. Moderating «Чохол силіконовий»
-                        used to mean guessing which of four colour variants the
-                        complaint was about, then searching the catalogue by hand —
-                        and the name is not even a key you can search by. */}
-                    <TableCell
-                      label={dict.reviews.colProduct}
-                      className="font-medium"
-                    >
-                      <Link
-                        href={`/products/${review.productId}`}
-                        aria-label={dict.reviews.productLinkAria(
-                          review.productName,
-                        )}
-                        className="hover:underline"
-                      >
-                        {review.productName}
-                      </Link>
-                    </TableCell>
-                    <TableCell
-                      label={dict.reviews.colSku}
-                      className="font-mono text-xs text-muted-foreground"
-                    >
-                      {/* `Product.sku` is nullable — a position can exist before an
-                          article number is assigned. Say so in words; an empty cell
-                          reads as a rendering bug. */}
-                      {review.productSku ?? dict.reviews.noSku}
-                    </TableCell>
-                    <TableCell
-                      label={dict.reviews.colAuthor}
-                      className="text-sm text-muted-foreground"
-                    >
-                      {authorOf(review.userEmail)}
-                    </TableCell>
-                    <TableCell label={dict.reviews.colRating}>
-                      <div className="flex flex-col items-start gap-1">
-                        <ReviewStars rating={review.rating} />
-                        {/* TASK-1004: the cause from `hiddenReason` when the
-                            author's contribution is withdrawn; the effect-only
-                            «Оцінка не враховується» for the remaining gate, an
-                            unconfirmed email. Without either a moderator reads
-                            a 1★ and assumes it drags the average down when it
-                            may not count at all. */}
-                        <RatingStatusBadge review={review} />
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      label={dict.reviews.colComment}
-                      className="max-w-xs text-sm text-muted-foreground max-md:max-w-none"
-                    >
-                      <div className="flex flex-col items-start gap-1">
-                        <span>{truncate(review.comment)}</span>
-                        {/* The reply is an UPSERT — answering again replaces what
-                            is published. A row that was already answered has to
-                            say so here, or a second operator overwrites the first
-                            without ever seeing there was one. */}
-                        {review.reply && (
-                          <Badge variant="secondary">
-                            {dict.reviews.replyBadge}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell
-                      label={dict.reviews.colDate}
-                      className="text-sm text-muted-foreground"
-                    >
-                      {formatDate(review.createdAt)}
-                    </TableCell>
-                    <TableCell
-                      label={dict.common.actions}
-                      className="text-right max-md:text-left"
-                    >
-                      <div className="flex flex-wrap justify-end gap-2 max-md:justify-start">
-                        {canApprove(review) && (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => handleApprove(review.id)}
-                          >
-                            {approving && (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            )}
-                            {dict.reviews.approve}
-                          </Button>
-                        )}
-                        {canReject(review) && (
-                          <Button
-                            variant="destructive"
-                            size="sm"
-                            disabled={busy}
-                            onClick={() => handleReject(review.id)}
-                          >
-                            {rejecting && (
-                              <Loader2 className="size-3.5 animate-spin" />
-                            )}
-                            {dict.reviews.reject}
-                          </Button>
-                        )}
-                        {/* Both render nothing without their own permission —
-                            `reviews:write` for the reply, `reviews:moderate` for
-                            the author action. */}
-                        <ReviewReplyAction review={review} />
-                        <ReviewAuthorModerationAction
-                          userId={review.userId}
-                          author={authorOf(review.userEmail)}
-                          hiddenReason={review.hiddenReason}
-                        />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!isLoading && !isError && reviews.length > 0 && (
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
+      {replyReview ? (
+        <ReviewReplyDialog
+          review={replyReview}
+          open
+          onOpenChange={(open) => {
+            if (!open) setReplyTarget(null);
+          }}
         />
-      )}
-    </div>
+      ) : null}
+      {authorReview ? (
+        <ReviewAuthorModerationDialog
+          userId={authorReview.userId}
+          author={authorOf(authorReview.userEmail)}
+          hiddenReason={authorReview.hiddenReason}
+          open
+          onOpenChange={(open) => {
+            if (!open) setAuthorTarget(null);
+          }}
+        />
+      ) : null}
+    </>
   );
 }

@@ -93,10 +93,20 @@ export function OptionCombobox({
   // While the box still shows the selection verbatim, show the WHOLE list: the
   // operator opening a picker to change their mind must not be handed a
   // one-entry list filtered by what is already chosen.
-  const matches =
-    needle === "" || text === selectedLabel
-      ? options
-      : options.filter((option) => option.label.toLowerCase().includes(needle));
+  //
+  // Tree options (wave 198, the category picker): unfiltered, the list is the
+  // tree with its indentation and its branch headings (`disabled`); filtered,
+  // only pickable matches remain, flat, each with its ancestor path
+  // (`description`) so two «Чохли для iPhone» under different parents differ.
+  const filtering = !(needle === "" || text === selectedLabel);
+  const matches = filtering
+    ? options
+        .filter(
+          (option) =>
+            !option.disabled && option.label.toLowerCase().includes(needle),
+        )
+        .map((option) => ({ ...option, depth: undefined }))
+    : options.map((option) => ({ ...option, description: undefined }));
 
   const visible: ComboboxOption[] =
     clearLabel !== undefined

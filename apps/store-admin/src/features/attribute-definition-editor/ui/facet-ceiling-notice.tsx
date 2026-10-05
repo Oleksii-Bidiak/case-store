@@ -1,9 +1,57 @@
 "use client";
 
 import { dict } from "@/shared/config";
-import { useAttributeDefinitionControllerFacetCeiling } from "@/entities/attribute-definition";
+import { cn } from "@/shared/lib/utils";
+import {
+  AttributeDefinitionEntityType,
+  useAttributeDefinitionControllerFacetCeiling,
+  useAttributeDefinitionControllerFindEffective,
+} from "@/entities/attribute-definition";
 
 const d = dict.attributeDefinitions;
+
+/** Mirrors the API's `FACETABLE_TYPES` — only these can be a facet. */
+const FACETABLE = new Set<string>([
+  AttributeDefinitionEntityType.SELECT,
+  AttributeDefinitionEntityType.BOOLEAN,
+]);
+
+/**
+ * «Вітрина показує у фільтрах не більше 6 — зараз N з 6.» (wave 198, КТ5).
+ *
+ * The limit comes from the same facet-ceiling report the notice below reads;
+ * N is THIS category's effective (own + inherited) facets — a filterable
+ * SELECT or BOOLEAN, the rule the storefront applies. Renders nothing until
+ * both are known: a guessed number would be worse than none.
+ */
+export function FacetCountInline({ categoryId }: FacetCeilingNoticeProps) {
+  const ceiling = useAttributeDefinitionControllerFacetCeiling(categoryId);
+  const effective = useAttributeDefinitionControllerFindEffective(categoryId);
+
+  const limit = ceiling.data?.data.limit;
+  const definitions = effective.data?.data;
+  if (limit === undefined || !definitions) return null;
+
+  const count = definitions.filter(
+    (def) => def.isFilterable && FACETABLE.has(def.type),
+  ).length;
+
+  return (
+    <>
+      {" "}
+      {d.facetNowLead(limit)}
+      <span
+        className={cn(
+          "font-semibold",
+          count > limit ? "text-warning" : "text-foreground",
+        )}
+      >
+        {d.facetNow(count, limit)}
+      </span>
+      .
+    </>
+  );
+}
 
 interface FacetCeilingNoticeProps {
   categoryId: string;

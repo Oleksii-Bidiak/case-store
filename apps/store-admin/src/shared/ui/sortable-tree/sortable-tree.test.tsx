@@ -1,4 +1,5 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { dict } from "@/shared/config";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import type { TreeItem } from "@/shared/lib/sortable-tree";
 import { fixtureTree } from "@/shared/lib/sortable-tree/fixtures";
@@ -8,8 +9,10 @@ import { LiveAnnouncer } from "@/shared/ui/live-announcer";
 import { removeChildrenOf } from "@/shared/lib/sortable-tree";
 import {
   DISABLED_DND_ANNOUNCEMENTS,
+  DropHintPill,
   POINTER_ACTIVATION_CONSTRAINT,
   SortableTree,
+  type SortableTreeRowRenderProps,
   dropHintStyle,
   resolveDropHint,
   resolveModifiers,
@@ -375,5 +378,144 @@ describe("SortableTree — where it hinted is where it landed (TASK-578)", () =>
     const [, next] = onMove.mock.calls[0];
     // offset 0 over b1 ⇒ the same answer the AFTER hint above gives.
     expect(parentOf(next, "a1")).toBe("b");
+  });
+});
+
+/**
+ * Wave 198 — the drop indicators the owner signed off on (Categories КТ2):
+ * «inside» tints and rings the future parent and names it in a pill; «beside»
+ * is a line that starts AFTER the checkbox column; the dragged row fades; and a
+ * screen reader hears which of the two a release would do.
+ */
+describe("SortableTree — drop indicators (wave 198)", () => {
+  const seen: Record<string, SortableTreeRowRenderProps["dropHint"]> = {};
+  // jsdom's CSS parser drops `var()` / `color-mix()` in background-* values,
+  // so — like the `dropHintStyle` cases above — assert on the style object the
+  // row is HANDED, which is the part this component owns.
+  const styles: Record<string, SortableTreeRowRenderProps["style"]> = {};
+
+  const renderIndicators = (lineInset?: number) =>
+    render(
+      <LiveAnnouncer>
+        <SortableTree
+          items={fixtureTree}
+          maxDepth={4}
+          onMove={() => {}}
+          lineInset={lineInset}
+          renderRow={({ item, setNodeRef, style, handleProps, dropHint }) => {
+            seen[item.id] = dropHint;
+            styles[item.id] = style;
+            return (
+              <div
+                key={item.id}
+                ref={setNodeRef}
+                style={style}
+                data-testid={`row-${item.id}`}
+              >
+                <button type="button" {...handleProps}>
+                  grip {item.id}
+                </button>
+                {dropHint?.mode === "nest" ? (
+                  <DropHintPill>{dropHint.label}</DropHintPill>
+                ) : null}
+              </div>
+            );
+          }}
+        />
+      </LiveAnnouncer>,
+    );
+
+  const handlers = () => {
+    const current = mockDndProps.current;
+    if (!current) throw new Error("DndContext was not rendered");
+    return current;
+  };
+
+  it("tints the future parent, names it in a pill and announces it", async () => {
+    renderIndicators();
+    act(() => handlers().onDragStart?.({ active: { id: "a1" } }));
+    act(() =>
+      handlers().onDragMove?.({
+        active: { id: "a1" },
+        over: { id: "b1" },
+        delta: { x: 24, y: 0 },
+      }),
+    );
+    expect(styles.b1?.backgroundColor).toBe(
+      "color-mix(in oklab, var(--color-primary) 10%, transparent)",
+    );
+    expect(screen.getByTestId("row-b1").style.outline).toBe(
+      "2px solid var(--color-primary)",
+    );
+    expect(seen.b1).toEqual({
+      mode: "nest",
+      label: dict.canon.treeNestInto("B1"),
+    });
+    expect(screen.getByText(dict.canon.treeNestInto("B1"))).toHaveClass(
+      "bg-primary",
+      "text-primary-foreground",
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+        dict.canon.treeNestInto("B1"),
+      ),
+    );
+  });
+
+  it("announces «Поставити після» for a line, and starts the line after the inset", async () => {
+    renderIndicators(40);
+    act(() => handlers().onDragStart?.({ active: { id: "a1" } }));
+    act(() =>
+      handlers().onDragMove?.({
+        active: { id: "a1" },
+        over: { id: "b1" },
+        delta: { x: 0, y: 0 },
+      }),
+    );
+    expect(seen.b1).toEqual({
+      mode: "after",
+      label: dict.canon.treePlaceAfter("B1"),
+    });
+    // depth 1 × 24 px indent + the 40 px inset.
+    expect(styles.b1?.backgroundImage).toContain("transparent 64px");
+    await waitFor(() =>
+      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+        dict.canon.treePlaceAfter("B1"),
+      ),
+    );
+  });
+
+  it("fades the dragged row on a muted ground, and restores it after the drop", () => {
+    renderIndicators();
+    act(() => handlers().onDragStart?.({ active: { id: "a1" } }));
+    const dragged = screen.getByTestId("row-a1");
+    expect(dragged.style.opacity).toBe("0.45");
+    expect(styles.a1?.backgroundColor).toBe("var(--color-muted)");
+    act(() => handlers().onDragEnd?.({ active: { id: "a1" }, over: null }));
+    expect(screen.getByTestId("row-a1").style.opacity).toBe("");
+  });
+
+  it("gives every other row no hint", () => {
+    renderIndicators();
+    expect(seen.a).toBeNull();
+    expect(seen.b1).toBeNull();
+  });
+});
+
+describe("dropHintStyle — inset", () => {
+  it("adds the inset to the projected indent of a line", () => {
+    const style = dropHintStyle(
+      { anchorId: "a", mode: "before", depth: 0 },
+      24,
+      40,
+    );
+    expect(style.backgroundImage).toContain("transparent 40px");
+  });
+
+  it("tints a nest target with 10% primary", () => {
+    const style = dropHintStyle({ anchorId: "a", mode: "nest", depth: 1 }, 24);
+    expect(style.backgroundColor).toBe(
+      "color-mix(in oklab, var(--color-primary) 10%, transparent)",
+    );
   });
 });

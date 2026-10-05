@@ -6,6 +6,7 @@ import {
   screen,
   userEvent,
   waitFor,
+  within,
 } from "@/shared/test/render";
 import { dict } from "@/shared/config";
 import { SearchIndexView } from "./search-index-view";
@@ -36,6 +37,19 @@ describe("SearchIndexView (TASK-377)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     stubSynonyms();
+  });
+
+  it("is titled «Пошук на сайті» with the index card first (TASK-1053)", () => {
+    renderWithProviders(<SearchIndexView />);
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: "Пошук на сайті" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(d.subheading)).toBeInTheDocument();
+    const card = screen.getByRole("region", { name: d.indexHeading });
+    expect(
+      within(card).getByRole("button", { name: d.button }),
+    ).toBeInTheDocument();
   });
 
   it("explains when a rebuild is needed and offers the action", () => {
@@ -87,7 +101,7 @@ describe("SearchIndexView — synonyms section (TASK-559)", () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  it("loads the list into the form, one row per group", async () => {
+  it("loads the list into the form, one group per saved group", async () => {
     stubSynonyms({
       data: {
         isDefault: false,
@@ -99,10 +113,15 @@ describe("SearchIndexView — synonyms section (TASK-559)", () => {
     expect(
       screen.getByRole("heading", { name: s.heading }),
     ).toBeInTheDocument();
-    expect(await screen.findByLabelText(s.termsLabel(1))).toHaveValue(
-      "чохол, case",
-    );
-    expect(screen.getByLabelText(s.termsLabel(2))).toHaveValue("айфон, iphone");
+    const list = await screen.findByRole("list", { name: s.heading });
+    const groups = within(list).getAllByRole("listitem");
+    expect(groups).toHaveLength(2);
+    expect(within(groups[0]).getByText("чохол")).toBeInTheDocument();
+    expect(within(groups[1]).getByText("iphone")).toBeInTheDocument();
+    // The restore action lives in the section's «⋯» menu (TASK-1053).
+    expect(
+      screen.getByRole("button", { name: s.sectionMenuAria }),
+    ).toBeInTheDocument();
   });
 
   it("says when the built-in list is in force", async () => {
@@ -112,7 +131,7 @@ describe("SearchIndexView — synonyms section (TASK-559)", () => {
     expect(await screen.findByText(s.defaultNote)).toBeInTheDocument();
     // Nothing to restore while the defaults ARE the list.
     expect(
-      screen.queryByRole("button", { name: s.restoreDefaults }),
+      screen.queryByRole("button", { name: s.sectionMenuAria }),
     ).not.toBeInTheDocument();
   });
 

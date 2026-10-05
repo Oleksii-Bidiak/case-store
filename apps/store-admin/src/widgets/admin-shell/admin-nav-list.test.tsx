@@ -7,9 +7,14 @@ import { AdminNavList } from "./admin-nav-list";
 
 // usePathname is unavailable under jsdom — pin the active route to the dashboard
 // so no nav item is highlighted as the current page.
+let mockPathname = "/";
 jest.mock("next/navigation", () => ({
-  usePathname: () => "/",
+  usePathname: () => mockPathname,
 }));
+
+afterEach(() => {
+  mockPathname = "/";
+});
 
 /**
  * Mock the nav counters: contact unread, and — since TASK-722 — the two section
@@ -21,6 +26,8 @@ function mockCounters(counts: {
   newOrders: number;
   pendingReviews: number;
   unread?: number;
+  /** Wave 198 (TASK-1034): requests still REQUESTED, for «Повернення». */
+  newReturns?: number;
 }) {
   const page = (total: number) => ({
     data: [],
@@ -43,6 +50,13 @@ function mockCounters(counts: {
         url.searchParams.get("status") === "pending" &&
         url.searchParams.get("limit") === "1";
       return HttpResponse.json(page(isQueue ? counts.pendingReviews : 0));
+    }),
+    http.get("*/api/admin/returns", ({ request }) => {
+      const url = new URL(request.url);
+      const isQueue =
+        url.searchParams.get("status") === "REQUESTED" &&
+        url.searchParams.get("limit") === "1";
+      return HttpResponse.json(page(isQueue ? (counts.newReturns ?? 0) : 0));
     }),
   );
 }
@@ -453,5 +467,99 @@ describe("AdminNavList — permission filtering (TASK-334)", () => {
       await screen.findByLabelText(dict.dashboard.newOrdersBadgeAria(2)),
     ).toBeInTheDocument();
     expect(reviewsCalls).toBe(0);
+  });
+});
+
+/**
+ * Wave 198 (TASK-1034) — the shell by the AdminShell artboard (П1, П4, П5).
+ */
+describe("AdminNavList — wave 198 shell", () => {
+  it("counts new return requests next to «Повернення», from the queue's own list", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, newReturns: 2 });
+
+    renderNav();
+
+    const badge = await screen.findByLabelText(
+      dict.header.newReturnsBadgeAria(2),
+    );
+    expect(badge).toHaveTextContent("2");
+    expect(badge.closest("a")).toHaveAttribute("href", "/returns");
+  });
+
+  it("shows no returns counter when nothing waits", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0, newReturns: 0 });
+
+    renderNav();
+
+    await screen.findByRole("link", { name: dict.nav.returns });
+    expect(screen.queryByLabelText(/на повернення/)).not.toBeInTheDocument();
+  });
+
+  it("never asks for the returns count without returns:read", async () => {
+    let returnsCalls = 0;
+    mockCounters({ newOrders: 0, pendingReviews: 0 });
+    server.use(
+      http.get("*/api/admin/returns", () => {
+        returnsCalls += 1;
+        return HttpResponse.json({ data: {} }, { status: 403 });
+      }),
+    );
+
+    renderNav({ isOwner: false, permissions: ["orders:read"] });
+
+    await screen.findByRole("link", { name: dict.nav.orders });
+    expect(returnsCalls).toBe(0);
+  });
+
+  it.each(["/devices/brands", "/devices/models", "/devices/models/m-1"])(
+    "lights «Пристрої» on %s",
+    async (path) => {
+      mockPathname = path;
+      mockCounters({ newOrders: 0, pendingReviews: 0 });
+
+      renderNav();
+
+      expect(
+        await screen.findByRole("link", { name: dict.nav.devices }),
+      ).toHaveAttribute("aria-current", "page");
+    },
+  );
+
+  // TASK-666 (part): every section that HAS a read key is gated on it, so a
+  // manager who may only look sees the section. Sections whose only key is
+  // `:write` (categories, brands, devices, …) wait for the API's new keys.
+  it("shows the read-only sections to a manager holding only the :read keys", async () => {
+    mockCounters({ newOrders: 0, pendingReviews: 0 });
+
+    renderNav({
+      isOwner: false,
+      permissions: [
+        "products:read",
+        "orders:read",
+        "returns:read",
+        "media:read",
+        "messages:read",
+        "customers:read",
+        "newsletter:read",
+      ],
+    });
+
+    for (const label of [
+      dict.nav.products,
+      dict.nav.productGroups,
+      dict.nav.orders,
+      dict.nav.returns,
+      dict.nav.media,
+      dict.nav.messages,
+      dict.nav.users,
+      dict.nav.subscribers,
+    ]) {
+      expect(
+        await screen.findByRole("link", { name: label }),
+      ).toBeInTheDocument();
+    }
+    expect(
+      screen.queryByRole("link", { name: dict.nav.categories }),
+    ).not.toBeInTheDocument();
   });
 });

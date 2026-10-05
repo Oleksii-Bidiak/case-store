@@ -24,14 +24,38 @@ import {
   Table as TableIcon,
   Trash2,
   RemoveFormatting,
+  Upload,
   type LucideIcon,
 } from "lucide-react";
+import { Fragment, Slice } from "@tiptap/pm/model";
+import { dropPoint } from "@tiptap/pm/transform";
 
 import { cn } from "@/shared/lib/utils";
+import { formatFileSize } from "@/shared/lib/format";
+import { CONTENT_IMAGE_ACCEPT } from "@/shared/lib/image-upload-error";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
+import { toast } from "@/shared/ui/toast";
+import { dict } from "@/shared/config";
 import { CaptionedTable } from "./captioned-table";
 import { ImageNode } from "./image-node";
+import {
+  RichTextImageActionsContext,
+  type RichTextImageActions,
+  type RichTextImageTarget,
+} from "./image-actions";
+import {
+  RichTextImageSourcesContext,
+  type RichTextImageSources,
+} from "./image-sources";
+import {
+  ImageUploadPlaceholder,
+  createPlaceholderElement,
+  findPlaceholder,
+  imageUploadPlaceholderKey,
+} from "./image-upload-placeholder";
+
+const ti = dict.richTextEditor;
 
 /** One image, as the editor stores it — exactly the server's `img` allow-list. */
 export interface RichTextImage {
@@ -67,6 +91,12 @@ export interface RichTextEditorProps {
    * Omit it and the editor simply has no insert button. It still RENDERS and
    * round-trips `<img>` either way, which is the part that matters for content
    * that arrived from the catalogue import.
+   *
+   * Wave 198 (РЕ1): with the slot present the toolbar shows «Зображення ▾».
+   * Whatever the slot renders may register a library and an uploader through
+   * `useRichTextImageSources` (`./image-sources`); the menu offers those, plus
+   * «За посиланням…», which is the editor's own. Dropping or pasting a file
+   * into the text uploads it through the registered uploader.
    */
   imagePicker?: (insert: (image: RichTextImage) => void) => React.ReactNode;
 }
@@ -115,6 +145,26 @@ function isServerSafeHref(url: string): boolean {
   }
   return (SERVER_ALLOWED_SCHEMES as readonly string[]).includes(scheme);
 }
+
+/**
+ * Would the server's `sanitizeRichText()` keep this TYPED image address
+ * («За посиланням…», wave 198)?
+ *
+ * The scheme half only: `img` keeps `http`/`https` (and raster `data:`, which
+ * nobody types), plus same-site relative paths; protocol-relative is refused as
+ * for links. The HOST half — only the API's own uploads and `IMAGE_HOSTS` —
+ * cannot be checked here, because the admin is not told that list (TASK-745
+ * tail); the hint under the field says so instead of pretending.
+ */
+function isServerSafeImageSrc(url: string): boolean {
+  const normalized = url.replace(URI_IGNORED_CHARS, "");
+  if (!normalized) return false;
+  const scheme = URI_SCHEME.exec(normalized)?.[1]?.toLowerCase();
+  if (!scheme) return !/^[/\\]{2}/.test(normalized);
+  return scheme === "http" || scheme === "https";
+}
+
+let uploadSeq = 0;
 
 /** Non-command toolbar actions, i.e. the ones that open UI instead of editing. */
 interface ToolbarActions {
@@ -544,6 +594,9 @@ export function RichTextEditor({
       // `src` + `alt`, matching the server's `allowedAttributes.img` exactly —
       // see {@link ImageNode} and the schema table above (TASK-547).
       ImageNode,
+      // Upload bars drawn where a dropped/pasted picture will land (РЕ6) —
+      // decorations, never part of the document or of `getHTML()`.
+      ImageUploadPlaceholder,
     ],
     content: value,
     editable: !disabled,
@@ -681,6 +734,210 @@ export function RichTextEditor({
     [editor],
   );
 
+  // ——— Pictures from every source (wave 198, РЕ1–РЕ7, TASK-1071) ————————————
+
+  /** What the slot registered through `useRichTextImageSources`. */
+  const [imageSources, setImageSources] =
+    React.useState<RichTextImageSources | null>(null);
+
+  /** The address row: `null` closed, otherwise where the picture goes. */
+  const [imageUrl, setImageUrl] = React.useState<{
+    target: RichTextImageTarget;
+    draft: string;
+    rejected: boolean;
+  } | null>(null);
+  const imageUrlInputRef = React.useRef<HTMLInputElement>(null);
+  const imageUrlOpen = imageUrl !== null;
+
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const fileTargetRef = React.useRef<RichTextImageTarget>({ kind: "insert" });
+
+  /** A file drag is over the text (РЕ5); a depth count, as for any drag. */
+  const [fileDragDepth, setFileDragDepth] = React.useState(0);
+
+  /** Put `image` at `target`: at the caret, or over the picture at `pos`. */
+  const placeImage = React.useCallback(
+    (image: RichTextImage, target: RichTextImageTarget) => {
+      if (!editor || editor.isDestroyed) return;
+      const attrs = { src: image.src, alt: image.alt ?? null };
+      if (target.kind === "insert") {
+        insertImage(image);
+        return;
+      }
+      editor
+        .chain()
+        .focus()
+        .command(({ tr }) => {
+          const node = tr.doc.nodeAt(target.pos);
+          if (node?.type.name !== "image") return false;
+          tr.setNodeMarkup(target.pos, undefined, attrs);
+          return true;
+        })
+        .setNodeSelection(target.pos)
+        .run();
+    },
+    [editor, insertImage],
+  );
+
+  /**
+   * Upload `file` through the registered uploader with a placeholder at `pos`
+   * (РЕ6), then put the picture where the placeholder ended up — ProseMirror
+   * has mapped it through whatever the operator typed meanwhile. A failed
+   * upload removes the placeholder and says why; nothing reaches the document.
+   *
+   * For a replacement the placeholder sits right before the old picture, so on
+   * success the picture found just after it is the one to swap.
+   */
+  const uploadInto = React.useCallback(
+    (file: File, pos: number, replacing = false) => {
+      const upload = imageSources?.upload;
+      if (!editor || !upload) return;
+      const id = `rte-upload-${(uploadSeq += 1)}`;
+      const size = formatFileSize(file.size);
+      const placeholder = createPlaceholderElement({
+        label: ti.uploadingPlaceholder(file.name, size, null),
+        hint: ti.uploadingHint,
+      });
+      editor.view.dispatch(
+        editor.state.tr.setMeta(imageUploadPlaceholderKey, {
+          add: { id, pos, element: placeholder.element },
+        }),
+      );
+
+      const removePlaceholder = () => {
+        if (editor.isDestroyed) return;
+        editor.view.dispatch(
+          editor.state.tr.setMeta(imageUploadPlaceholderKey, {
+            remove: { id },
+          }),
+        );
+      };
+
+      upload(file, (percent) =>
+        placeholder.update(
+          ti.uploadingPlaceholder(file.name, size, percent),
+          percent,
+        ),
+      ).then(
+        (image) => {
+          if (editor.isDestroyed) return;
+          const at = findPlaceholder(editor.state, id);
+          if (at === null) return;
+          const attrs = { src: image.src, alt: image.alt ?? null };
+          const swap =
+            replacing && editor.state.doc.nodeAt(at)?.type.name === "image";
+          if (swap) {
+            editor.view.dispatch(
+              editor.state.tr
+                .setMeta(imageUploadPlaceholderKey, { remove: { id } })
+                .setNodeMarkup(at, undefined, attrs),
+            );
+          } else {
+            // One transaction: the bar goes and the picture arrives together.
+            // `updateSelection: false` — the operator may be typing elsewhere,
+            // and the caret must not jump to a picture that finished loading.
+            editor
+              .chain()
+              .command(({ tr }) => {
+                tr.setMeta(imageUploadPlaceholderKey, { remove: { id } });
+                return true;
+              })
+              .insertContentAt(
+                at,
+                { type: "image", attrs },
+                { updateSelection: false },
+              )
+              .run();
+          }
+          toast.success(ti.uploaded);
+        },
+        (error: unknown) => {
+          removePlaceholder();
+          const reason =
+            error instanceof Error && error.message
+              ? error.message
+              : ti.uploadFailedGeneric;
+          toast.error(ti.uploadFailed(file.name, reason));
+        },
+      );
+    },
+    [editor, imageSources],
+  );
+
+  /**
+   * Where a block picture dropped/pasted near `pos` may go — the same point
+   * ProseMirror's drop cursor shows, so the line the operator aimed at is where
+   * the placeholder appears.
+   */
+  const blockPointNear = React.useCallback(
+    (pos: number) => {
+      if (!editor) return 0;
+      const probe = editor.schema.nodes.image.create({ src: "" });
+      return (
+        dropPoint(
+          editor.state.doc,
+          pos,
+          new Slice(Fragment.from(probe), 0, 0),
+        ) ?? pos
+      );
+    },
+    [editor],
+  );
+
+  const uploadFiles = React.useCallback(
+    (files: File[], target: RichTextImageTarget) => {
+      if (!editor || files.length === 0) return;
+      if (target.kind === "replace") {
+        uploadInto(files[0], target.pos, true);
+        return;
+      }
+      const at = blockPointNear(editor.state.selection.to);
+      for (const file of files) uploadInto(file, at);
+    },
+    [editor, uploadInto, blockPointNear],
+  );
+
+  const imageActions = React.useMemo<RichTextImageActions>(
+    () => ({
+      sources: imageSources,
+      editable,
+      openLibrary: (target) =>
+        imageSources?.openLibrary?.((image) => placeImage(image, target)),
+      pickFile: (target) => {
+        fileTargetRef.current = target;
+        fileInputRef.current?.click();
+      },
+      openUrl: (target) => setImageUrl({ target, draft: "", rejected: false }),
+    }),
+    [imageSources, editable, placeImage],
+  );
+
+  const applyImageUrl = React.useCallback(() => {
+    if (!imageUrl) return;
+    const src = imageUrl.draft.trim();
+    if (!isServerSafeImageSrc(src)) {
+      setImageUrl({ ...imageUrl, rejected: true });
+      return;
+    }
+    placeImage({ src, alt: null }, imageUrl.target);
+    setImageUrl(null);
+  }, [imageUrl, placeImage]);
+
+  // Focus the address field as it opens, as the link field does.
+  React.useEffect(() => {
+    if (imageUrlOpen) imageUrlInputRef.current?.focus();
+  }, [imageUrlOpen]);
+
+  const canUploadFiles = editable && Boolean(imageSources?.upload);
+
+  const carriesFiles = (types: ReadonlyArray<string> | undefined) =>
+    Array.from(types ?? []).includes("Files");
+
+  let imageCount = 0;
+  editor?.state.doc.descendants((node) => {
+    if (node.type.name === "image") imageCount += 1;
+  });
+
   // Keep the editor editable state in sync with `disabled`. The second argument
   // is NOT cosmetic: `setEditable()` emits an `update` event by default even
   // though the document did not change, and that event ran `onChange` with the
@@ -707,6 +964,7 @@ export function RichTextEditor({
     // A half-typed URL belongs to the document it was being typed into.
     setLinkDraft(null);
     setLinkRejected(false);
+    setImageUrl(null);
   }, [resetKey]);
 
   // Seed / re-sync external value → editor (see the block comment above).
@@ -734,179 +992,356 @@ export function RichTextEditor({
   const showPlaceholder = Boolean(placeholder) && editor?.isEmpty;
 
   return (
-    <div
-      className={cn(
-        "rounded-md border border-input transition-[color,box-shadow]",
-        "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50",
-        // Disabled is painted with the `disabled` tokens, never faded
-        // (TASK-735): `opacity-50` took the muted toolbar and placeholder to
-        // ≈2:1. The dark `bg-input/30` is dropped rather than out-ranked — a
-        // plain `bg-disabled` would lose to the `dark:` media rule.
-        disabled
-          ? "pointer-events-none cursor-not-allowed bg-disabled text-disabled-foreground"
-          : "bg-transparent shadow-xs dark:bg-input/30",
-        className,
-      )}
-      data-slot="rich-text-editor"
-    >
-      <div className="flex flex-wrap items-center gap-0.5 border-b border-input p-1">
-        {TOOLBAR_GROUPS.map((group, groupIndex) => (
-          <React.Fragment key={groupIndex}>
-            {groupIndex > 0 && (
-              <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-            )}
-            {group.map((button) => {
-              const Icon = button.icon;
-              const active = editor
-                ? (button.isActive?.(editor) ?? false)
-                : false;
-              // `isEnabled` is a precondition on top of the global locks, never
-              // instead of them: a table action stays disabled while the
-              // editor is disabled even with the caret inside a table.
-              const applicable = editor
-                ? (button.isEnabled?.(editor) ?? true)
-                : false;
-              return (
-                <button
-                  key={button.label}
-                  type="button"
-                  title={button.label}
-                  aria-label={button.label}
-                  // Only the toggles are toggles. "Insert table" and "add row"
-                  // do a thing and are done; announcing them as permanently
-                  // "not pressed" is noise a screen-reader user has to sit
-                  // through on every button in the strip.
-                  aria-pressed={button.isActive ? active : undefined}
-                  disabled={!editable || !editor || !applicable}
-                  onClick={() =>
-                    editor && button.run(editor, { openLinkEditor })
-                  }
-                  className={cn(
-                    "inline-flex h-7 items-center justify-center rounded-sm text-muted-foreground transition-colors",
-                    Icon ? "w-7" : "px-2 text-xs whitespace-nowrap",
-                    "hover:bg-accent hover:text-accent-foreground",
-                    // The grey fill marks the button inactive: its enabled
-                    // `muted-foreground` is only 4.34:1 on `bg-disabled`, so
-                    // the text steps to `disabled-foreground` (TASK-735).
-                    "disabled:pointer-events-none disabled:bg-disabled disabled:text-disabled-foreground",
-                    active && "bg-accent text-accent-foreground",
-                  )}
-                >
-                  {Icon ? <Icon className="h-4 w-4" /> : button.short}
-                </button>
-              );
-            })}
-          </React.Fragment>
-        ))}
+    <RichTextImageSourcesContext.Provider value={setImageSources}>
+      <RichTextImageActionsContext.Provider value={imageActions}>
+        <div
+          className={cn(
+            "rounded-md border border-input transition-[color,box-shadow]",
+            "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50",
+            // Disabled is painted with the `disabled` tokens, never faded
+            // (TASK-735): `opacity-50` took the muted toolbar and placeholder to
+            // ≈2:1. The dark `bg-input/30` is dropped rather than out-ranked — a
+            // plain `bg-disabled` would lose to the `dark:` media rule.
+            disabled
+              ? "pointer-events-none cursor-not-allowed bg-disabled text-disabled-foreground"
+              : "bg-transparent shadow-xs dark:bg-input/30",
+            className,
+          )}
+          data-slot="rich-text-editor"
+        >
+          <div className="flex flex-wrap items-center gap-0.5 border-b border-input p-1">
+            {TOOLBAR_GROUPS.map((group, groupIndex) => (
+              <React.Fragment key={groupIndex}>
+                {groupIndex > 0 && (
+                  <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+                )}
+                {group.map((button) => {
+                  const Icon = button.icon;
+                  const active = editor
+                    ? (button.isActive?.(editor) ?? false)
+                    : false;
+                  // `isEnabled` is a precondition on top of the global locks, never
+                  // instead of them: a table action stays disabled while the
+                  // editor is disabled even with the caret inside a table.
+                  const applicable = editor
+                    ? (button.isEnabled?.(editor) ?? true)
+                    : false;
+                  return (
+                    <button
+                      key={button.label}
+                      type="button"
+                      title={button.label}
+                      aria-label={button.label}
+                      // Only the toggles are toggles. "Insert table" and "add row"
+                      // do a thing and are done; announcing them as permanently
+                      // "not pressed" is noise a screen-reader user has to sit
+                      // through on every button in the strip.
+                      aria-pressed={button.isActive ? active : undefined}
+                      disabled={!editable || !editor || !applicable}
+                      onClick={() =>
+                        editor && button.run(editor, { openLinkEditor })
+                      }
+                      className={cn(
+                        "inline-flex h-7 items-center justify-center rounded-sm text-muted-foreground transition-colors",
+                        Icon ? "w-7" : "px-2 text-xs whitespace-nowrap",
+                        "hover:bg-accent hover:text-accent-foreground",
+                        // The grey fill marks the button inactive: its enabled
+                        // `muted-foreground` is only 4.34:1 on `bg-disabled`, so
+                        // the text steps to `disabled-foreground` (TASK-735).
+                        "disabled:pointer-events-none disabled:bg-disabled disabled:text-disabled-foreground",
+                        active && "bg-accent text-accent-foreground",
+                      )}
+                    >
+                      {Icon ? <Icon className="h-4 w-4" /> : button.short}
+                    </button>
+                  );
+                })}
+              </React.Fragment>
+            ))}
 
-        {/*
-          The image control, supplied by the caller (TASK-547). It sits after
-          every built-in group and behind the same separator, so the strip reads
-          as one toolbar rather than a toolbar with something bolted on.
+            {/*
+          The image control (TASK-547; wave 198 РЕ1). It sits after every
+          built-in group and behind the same separator, so the strip reads as
+          one toolbar rather than a toolbar with something bolted on.
 
-          Rendered only once the editor exists: `insertImage` is a no-op before
+          Since wave 198 the slot renders `RichTextImageMenu` («Зображення ▾»)
+          and registers what it can supply (the media library, an uploader)
+          through `useRichTextImageSources`; the editor lends the menu its
+          actions — the address row, the file dialog, the upload placeholders —
+          through `RichTextImageActionsContext`.
+
+          Rendered only once the editor exists: an action is a no-op before
           that, and a button that silently does nothing is worse than one that
-          appears a tick later. While `disabled`, the wrapper's
-          `pointer-events-none` already makes it unclickable — the same
-          treatment every other control gets.
+          appears a tick later.
         */}
-        {imagePicker && editor && (
-          <>
-            <span className="mx-1 h-5 w-px bg-border" aria-hidden />
-            {imagePicker(insertImage)}
-          </>
-        )}
-      </div>
+            {imagePicker && editor && (
+              <>
+                <span className="mx-1 h-5 w-px bg-border" aria-hidden />
+                {imagePicker(insertImage)}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={CONTENT_IMAGE_ACCEPT}
+                  multiple
+                  tabIndex={-1}
+                  aria-hidden="true"
+                  className="hidden"
+                  onChange={(event) => {
+                    uploadFiles(
+                      Array.from(event.target.files ?? []),
+                      fileTargetRef.current,
+                    );
+                    // Re-picking the SAME file after a failure must fire again.
+                    event.target.value = "";
+                  }}
+                />
+              </>
+            )}
+          </div>
 
-      {/*
+          {/*
         The URL field, shown only while it is being used. `role="group"` with a
         name, so a screen reader announces what this strip of controls is for
         when focus lands in it from the toolbar button above.
       */}
-      {editable && linkEditorOpen && (
-        <div
-          role="group"
-          aria-label="Редагування посилання"
-          data-slot="rich-text-editor-link"
-          className="flex flex-wrap items-center gap-2 border-b border-input px-3 py-2"
-        >
-          <Input
-            ref={linkInputRef}
-            type="text"
-            inputMode="url"
-            value={linkDraft ?? ""}
-            aria-label="Адреса посилання"
-            aria-invalid={linkRejected || undefined}
-            aria-describedby={
-              linkRejected ? "rich-text-editor-link-error" : undefined
-            }
-            placeholder="https://example.com"
-            className="h-8 w-64 max-w-full"
-            onChange={(event) => {
-              setLinkDraft(event.target.value);
-              // The complaint is about what WAS submitted; the moment it is
-              // being retyped it is stale.
-              setLinkRejected(false);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                // Never let Enter reach the surrounding page form.
-                event.preventDefault();
-                applyLink();
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                // …and never let Escape reach a dialog that may be wrapping
-                // this form: it closes the URL field, nothing else.
-                event.stopPropagation();
-                closeLinkEditor(true);
-              }
-            }}
-          />
-          <Button type="button" size="sm" onClick={applyLink}>
-            Застосувати
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => closeLinkEditor(true)}
-          >
-            Скасувати
-          </Button>
-          {/*
+          {editable && linkEditorOpen && (
+            <div
+              role="group"
+              aria-label="Редагування посилання"
+              data-slot="rich-text-editor-link"
+              className="flex flex-wrap items-center gap-2 border-b border-input px-3 py-2"
+            >
+              <Input
+                ref={linkInputRef}
+                type="text"
+                inputMode="url"
+                value={linkDraft ?? ""}
+                aria-label="Адреса посилання"
+                aria-invalid={linkRejected || undefined}
+                aria-describedby={
+                  linkRejected ? "rich-text-editor-link-error" : undefined
+                }
+                placeholder="https://example.com"
+                className="h-8 w-64 max-w-full"
+                onChange={(event) => {
+                  setLinkDraft(event.target.value);
+                  // The complaint is about what WAS submitted; the moment it is
+                  // being retyped it is stale.
+                  setLinkRejected(false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    // Never let Enter reach the surrounding page form.
+                    event.preventDefault();
+                    applyLink();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    // …and never let Escape reach a dialog that may be wrapping
+                    // this form: it closes the URL field, nothing else.
+                    event.stopPropagation();
+                    closeLinkEditor(true);
+                  }
+                }}
+              />
+              <Button type="button" size="sm" onClick={applyLink}>
+                Застосувати
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => closeLinkEditor(true)}
+              >
+                Скасувати
+              </Button>
+              {/*
             Mounted empty from the moment the field opens, for the same reason
             as the truncation banner above: a live region inserted together
             with its text is frequently not announced at all. The rejection can
             only happen after the field is already on screen, so the region is
             always older than the message it carries.
           */}
-          <p
-            id="rich-text-editor-link-error"
-            role="alert"
-            className="w-full text-xs text-destructive"
-          >
-            {linkRejected
-              ? "Дозволені лише посилання http://, https://, mailto: або адреса всередині сайту (/example)."
-              : ""}
-          </p>
-        </div>
-      )}
+              <p
+                id="rich-text-editor-link-error"
+                role="alert"
+                className="w-full text-xs text-destructive"
+              >
+                {linkRejected
+                  ? "Дозволені лише посилання http://, https://, mailto: або адреса всередині сайту (/example)."
+                  : ""}
+              </p>
+            </div>
+          )}
 
-      <div className="relative">
-        {showPlaceholder && (
-          <p
-            className={cn(
-              "pointer-events-none absolute left-3 top-2 text-sm",
-              // `muted-foreground` is 4.34:1 on the disabled fill.
-              disabled ? "text-disabled-foreground" : "text-muted-foreground",
-            )}
+          {/*
+        «За посиланням…» (РЕ1) — the same kind of row as the link field above,
+        for the same reasons (no nested <form>; Enter and Escape handled on the
+        input). The hint says the one thing this path cannot check: the
+        storefront shows pictures only from the shop's own storage and the
+        allowed hosts, a list the admin is not told (TASK-745 tail).
+      */}
+          {editable && imageUrl && (
+            <div
+              role="group"
+              aria-label={ti.imageUrlGroup}
+              data-slot="rich-text-editor-image-url"
+              className="flex flex-wrap items-center gap-2 border-b border-input px-3 py-2"
+            >
+              <Input
+                ref={imageUrlInputRef}
+                type="text"
+                inputMode="url"
+                value={imageUrl.draft}
+                aria-label={ti.imageUrlLabel}
+                aria-invalid={imageUrl.rejected || undefined}
+                aria-describedby="rich-text-editor-image-url-hint rich-text-editor-image-url-error"
+                placeholder="https://"
+                className="h-8 w-64 max-w-full"
+                onChange={(event) =>
+                  setImageUrl({
+                    ...imageUrl,
+                    draft: event.target.value,
+                    rejected: false,
+                  })
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    applyImageUrl();
+                  } else if (event.key === "Escape") {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setImageUrl(null);
+                    editor?.commands.focus();
+                  }
+                }}
+              />
+              <Button type="button" size="sm" onClick={applyImageUrl}>
+                {ti.apply}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setImageUrl(null);
+                  editor?.commands.focus();
+                }}
+              >
+                {dict.common.cancel}
+              </Button>
+              <p
+                id="rich-text-editor-image-url-hint"
+                className="w-full text-xs text-muted-foreground"
+              >
+                {ti.imageUrlHint}
+              </p>
+              <p
+                id="rich-text-editor-image-url-error"
+                role="alert"
+                className="w-full text-xs text-destructive"
+              >
+                {imageUrl.rejected ? ti.imageUrlInvalid : ""}
+              </p>
+            </div>
+          )}
+
+          {/*
+        The text. Files dropped or pasted into it upload into the media library
+        (РЕ5/РЕ6) — caught in the CAPTURE phase, before ProseMirror's own
+        handlers see them, and only when an uploader is registered: otherwise
+        the browser and ProseMirror behave exactly as before. A drag of a
+        picture already in the text carries no files and is never touched.
+      */}
+          <div
+            className="relative"
+            onDragEnter={(event) => {
+              if (canUploadFiles && carriesFiles(event.dataTransfer?.types)) {
+                setFileDragDepth((depth) => depth + 1);
+              }
+            }}
+            onDragLeave={(event) => {
+              if (canUploadFiles && carriesFiles(event.dataTransfer?.types)) {
+                setFileDragDepth((depth) => Math.max(0, depth - 1));
+              }
+            }}
+            onDragOver={(event) => {
+              if (canUploadFiles && carriesFiles(event.dataTransfer?.types)) {
+                // Accept the drop; ProseMirror still draws its drop cursor.
+                event.preventDefault();
+              }
+            }}
+            onDropCapture={(event) => {
+              setFileDragDepth(0);
+              const files = Array.from(event.dataTransfer?.files ?? []);
+              if (!canUploadFiles || !editor || files.length === 0) return;
+              event.preventDefault();
+              event.stopPropagation();
+              let pos: number | null = null;
+              try {
+                pos =
+                  editor.view.posAtCoords({
+                    left: event.clientX,
+                    top: event.clientY,
+                  })?.pos ?? null;
+              } catch {
+                // No layout (tests, a detached view): fall back to the caret.
+                pos = null;
+              }
+              const at = blockPointNear(pos ?? editor.state.selection.to);
+              for (const file of files) uploadInto(file, at);
+            }}
+            onPasteCapture={(event) => {
+              const data = event.clipboardData;
+              const files = Array.from(data?.files ?? []);
+              if (!canUploadFiles || !editor || files.length === 0) return;
+              // Word and co. put a PICTURE of the copied text next to the text
+              // itself; that is a text paste, and ProseMirror keeps it.
+              if ((data?.getData("text/plain") ?? "").trim()) return;
+              event.preventDefault();
+              event.stopPropagation();
+              uploadFiles(files, { kind: "insert" });
+            }}
           >
-            {placeholder}
-          </p>
-        )}
-        <EditorContent editor={editor} />
-      </div>
-    </div>
+            {showPlaceholder && (
+              <p
+                className={cn(
+                  "pointer-events-none absolute left-3 top-2 text-sm",
+                  // `muted-foreground` is 4.34:1 on the disabled fill.
+                  disabled
+                    ? "text-disabled-foreground"
+                    : "text-muted-foreground",
+                )}
+              >
+                {placeholder}
+              </p>
+            )}
+            <EditorContent editor={editor} />
+            {fileDragDepth > 0 && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-1 rounded-b-md border-2 border-dashed border-primary bg-primary/5 text-center"
+              >
+                <Upload className="size-5 text-primary" />
+                <p className="text-sm font-semibold text-primary">
+                  {ti.dropActive}
+                </p>
+                <p className="text-xs text-muted-foreground">{ti.dropHint}</p>
+              </div>
+            )}
+          </div>
+
+          {imageCount > 0 && (
+            <div
+              data-slot="rich-text-editor-footer"
+              className="border-t border-input px-3 py-1.5 text-xs text-muted-foreground"
+            >
+              {ti.imageCount(imageCount)}
+            </div>
+          )}
+        </div>
+      </RichTextImageActionsContext.Provider>
+    </RichTextImageSourcesContext.Provider>
   );
 }
 

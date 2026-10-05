@@ -1,8 +1,10 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
 import type { UseFormRegisterReturn } from "react-hook-form";
+import { ChevronDownIcon } from "lucide-react";
 import { Input, Label, SingleImageUpload } from "@/shared/ui";
+import { cn } from "@/shared/lib/utils";
 import { dict } from "@/shared/config";
 import {
   CONTENT_IMAGE_ACCEPT,
@@ -52,6 +54,14 @@ export interface ContentImageFieldProps {
    * offered), and the picker slot and the URL box stay the whole field.
    */
   canUpload?: boolean;
+  /**
+   * `"inline"` (wave 198, BrandsProposal БР5): the picker sits in the upload
+   * button's row, and the URL box folds under a «{label}» disclosure — `label`
+   * then names the URL box only (the section card names the field), so the
+   * label never points at the wrong control. It opens by itself while the
+   * field has an error. Default `"stacked"` — the layout every other form has.
+   */
+  layout?: "stacked" | "inline";
 }
 
 /**
@@ -84,7 +94,29 @@ export function ContentImageField({
   fieldError,
   picker,
   canUpload = true,
+  layout = "stacked",
 }: ContentImageFieldProps) {
+  if (layout === "inline") {
+    return (
+      <InlineContentImageField
+        {...{
+          id,
+          label,
+          urlPlaceholder,
+          copy,
+          value,
+          urlInput,
+          onSelectFile,
+          onRemove,
+          isUploading,
+          uploadError,
+          fieldError,
+          picker,
+          canUpload,
+        }}
+      />
+    );
+  }
   return (
     <div className="flex flex-col gap-2">
       <Label htmlFor={id}>{label}</Label>
@@ -124,6 +156,95 @@ export function ContentImageField({
           {fieldError}
         </p>
       )}
+    </div>
+  );
+}
+
+/** The `layout="inline"` arrangement — see the prop's note. */
+function InlineContentImageField({
+  id,
+  label,
+  urlPlaceholder,
+  copy,
+  value,
+  urlInput,
+  onSelectFile,
+  onRemove,
+  isUploading,
+  uploadError,
+  fieldError,
+  picker,
+  canUpload = true,
+}: Omit<ContentImageFieldProps, "layout">) {
+  const [urlOpenState, setUrlOpen] = useState(false);
+  const regionId = useId();
+  // An error in the URL box must be visible — so the fold opens for it.
+  const urlOpen = urlOpenState || Boolean(fieldError);
+  const errorId = `${id}-error`;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {canUpload ? (
+        <SingleImageUpload
+          imageUrl={value.trim() ? value : null}
+          accept={CONTENT_IMAGE_ACCEPT}
+          labels={{
+            alt: copy.alt,
+            empty: copy.empty,
+            upload: copy.upload,
+            replace: copy.replace,
+            delete: copy.remove,
+            deleteTitle: copy.removeTitle,
+            deleteDescription: copy.removeDescription,
+            cancel: dict.common.cancel,
+            confirmDelete: copy.remove,
+          }}
+          hint={copy.hint}
+          error={uploadError}
+          isUploading={isUploading}
+          onSelectFile={onSelectFile}
+          onDelete={onRemove}
+          actions={picker}
+        />
+      ) : (
+        picker
+      )}
+
+      <div className="flex flex-col gap-2 border-t pt-3">
+        <button
+          type="button"
+          aria-expanded={urlOpen}
+          aria-controls={regionId}
+          onClick={() => setUrlOpen(!urlOpen)}
+          className="flex min-h-11 w-full items-center justify-between gap-2 rounded-md text-left text-sm font-medium text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50 md:min-h-8"
+        >
+          {label}
+          <ChevronDownIcon
+            aria-hidden="true"
+            className={cn(
+              "size-4 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none",
+              urlOpen && "rotate-180",
+            )}
+          />
+        </button>
+        <div id={regionId} hidden={!urlOpen}>
+          <Label htmlFor={id} className="sr-only">
+            {label}
+          </Label>
+          <Input
+            id={id}
+            placeholder={urlPlaceholder}
+            aria-invalid={fieldError ? true : undefined}
+            aria-describedby={fieldError ? errorId : undefined}
+            {...urlInput}
+          />
+        </div>
+        {fieldError && (
+          <p id={errorId} role="alert" className="text-sm text-destructive">
+            {fieldError}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

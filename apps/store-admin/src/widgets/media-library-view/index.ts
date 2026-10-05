@@ -7,3 +7,5 @@
 // importing the screen it belongs to rather than reaching into a feature.
 export { MediaLibraryView } from "./ui/media-library-view";
 export { MediaLibrarySkeleton } from "@/features/media-picker";
+// Wave 198 (МТ11): the route-level loading UI, heading included.
+export { MediaLibraryPageSkeleton } from "./ui/media-library-page-skeleton";

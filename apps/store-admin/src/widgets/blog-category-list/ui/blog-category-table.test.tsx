@@ -16,9 +16,13 @@ import {
   within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
-import { dict } from "@/shared/config";
+import { dict, STOREFRONT_URL } from "@/shared/config";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
+import { PERM } from "@/entities/permission";
 import { BlogCategoryTable } from "./blog-category-table";
+
+/** Reordering, editing and deleting are `blog:write` — the grid's own key. */
+const WRITER = { permissions: [PERM.blogWrite] };
 
 /* ─────────────────────────────── fixtures ──────────────────────────────── */
 
@@ -96,7 +100,7 @@ const assertive = () =>
   screen.getByTestId("tree-live-assertive").textContent ?? "";
 
 async function renderGrid() {
-  const result = renderWithProviders(<BlogCategoryTable />);
+  const result = renderWithProviders(<BlogCategoryTable />, { auth: WRITER });
   await screen.findByRole("grid", { name: dict.blogCategories.gridLabel });
   await waitFor(() => expect(rowIds()).toHaveLength(3));
   return result;
@@ -294,5 +298,169 @@ describe("BlogCategoryTable — toolbar (TASK-357)", () => {
     expect(
       screen.getByRole("button", { name: dict.common.table.refreshAria }),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * Wave 198 (BlogCategoriesProposal КБ1–КБ6, TASK-1072): «На сайті» instead of
+ * Slug, «Статей» into the filtered posts list, the row's actions in «⋯», the
+ * delete confirm as an AlertDialog and the «has posts» refusal explained.
+ */
+describe("BlogCategoryTable — columns and «⋯» (КБ1)", () => {
+  const c = dict.blogCategories;
+
+  it("shows the site filter and the posts link instead of Slug", async () => {
+    mockReorder();
+    await renderGrid();
+
+    expect(
+      screen.getByRole("columnheader", { name: c.colSite }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("columnheader", { name: c.colPosts }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("columnheader", { name: "Slug" }),
+    ).not.toBeInTheDocument();
+
+    const site = within(rowEl(A)).getByRole("link", {
+      name: c.siteLinkAria("Новини"),
+    });
+    expect(site).toHaveAttribute(
+      "href",
+      `${STOREFRONT_URL}/blog?category=aaaa`,
+    );
+    expect(site).toHaveAttribute("target", "_blank");
+    expect(
+      within(rowEl(A)).getByRole("link", { name: c.postsLinkAria("Новини") }),
+    ).toHaveAttribute("href", "/blog?category=aaaa");
+    expect(screen.getByText(c.orderHint)).toBeInTheDocument();
+  });
+
+  it("offers Редагувати · Показати статті · Відкрити на сайті · Видалити…", async () => {
+    mockReorder();
+    await renderGrid();
+
+    await userEvent.click(
+      within(rowEl(A)).getByRole("button", {
+        name: c.rowActionsAria("Новини"),
+      }),
+    );
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([c.rowEdit, c.rowShowPosts, c.rowOpenSite, c.rowDelete]);
+    expect(
+      within(menu).getByRole("menuitem", { name: c.rowEdit }),
+    ).toHaveAttribute("href", `/blog/categories?edit=${A}`);
+    expect(
+      within(menu).getByRole("menuitem", { name: c.rowShowPosts }),
+    ).toHaveAttribute("href", "/blog?category=aaaa");
+  });
+
+  it("without blog:write: no reordering, no edit or delete", async () => {
+    mockReorder();
+    renderWithProviders(<BlogCategoryTable />);
+    await waitFor(() => expect(rowIds()).toHaveLength(3));
+
+    expect(screen.queryByText(c.orderHint)).not.toBeInTheDocument();
+    expect(
+      within(rowEl(A)).queryByRole("button", {
+        name: dict.reorderList.handleLabel("Новини"),
+      }),
+    ).not.toBeInTheDocument();
+    // …and the keyboard pick-up is refused too: nothing is ever sent.
+    rowEl(A).focus();
+    fireEvent.keyDown(rowEl(A), { key: " " });
+    expect(rowEl(A)).toHaveAttribute("data-grabbed", "false");
+
+    await userEvent.click(
+      within(rowEl(A)).getByRole("button", {
+        name: c.rowActionsAria("Новини"),
+      }),
+    );
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([c.rowShowPosts, c.rowOpenSite]);
+  });
+});
+
+describe("BlogCategoryTable — delete (КБ3, TASK-812)", () => {
+  const c = dict.blogCategories;
+
+  async function askToDelete() {
+    await userEvent.click(
+      within(rowEl(A)).getByRole("button", {
+        name: c.rowActionsAria("Новини"),
+      }),
+    );
+    const menu = await screen.findByRole("menu");
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: c.rowDelete }),
+    );
+    return screen.findByRole("alertdialog");
+  }
+
+  it("asks in an AlertDialog, and only the confirm deletes", async () => {
+    mockReorder();
+    const deletes: string[] = [];
+    server.use(
+      http.delete("*/api/admin/blog/categories/:id", ({ params }) => {
+        deletes.push(String(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await renderGrid();
+
+    let dialog = await askToDelete();
+    expect(
+      within(dialog).getByText(c.deleteTitle("Новини")),
+    ).toBeInTheDocument();
+    expect(dialog).toHaveTextContent(c.deleteDescription("aaaa"));
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+    expect(deletes).toHaveLength(0);
+
+    dialog = await askToDelete();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: c.deleteAction }),
+    );
+
+    await waitFor(() => expect(deletes).toEqual([A]));
+  });
+
+  it("explains a 409 «has posts» and links to them, instead of a vague toast", async () => {
+    mockReorder();
+    server.use(
+      http.delete("*/api/admin/blog/categories/:id", () =>
+        HttpResponse.json(
+          {
+            statusCode: 409,
+            message: "Category has posts and cannot be deleted",
+          },
+          { status: 409 },
+        ),
+      ),
+    );
+    await renderGrid();
+
+    const dialog = await askToDelete();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: c.deleteAction }),
+    );
+
+    const refusal = await screen.findByRole("alertdialog", {
+      name: c.hasPostsTitle("Новини"),
+    });
+    expect(refusal).toHaveTextContent(c.hasPostsDescription);
+    expect(
+      within(refusal).getByRole("link", { name: c.rowShowPosts }),
+    ).toHaveAttribute("href", "/blog?category=aaaa");
   });
 });

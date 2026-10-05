@@ -3,7 +3,7 @@ import { E2E_ADMIN_EMAIL } from "./fixtures/seed-e2e";
 import { loginAsAdmin } from "./fixtures/admin-session";
 
 /**
- * TASK-480 — «Персонал», end to end.
+ * TASK-480 — «Співробітники» (до хвилі 198 — «Персонал»), end to end.
  *
  * The check this exists for is the one the 2026-08-27 live run failed: an owner
  * who wants to hire a manager must be able to FIND where that happens. Every
@@ -28,10 +28,16 @@ import { loginAsAdmin } from "./fixtures/admin-session";
  * hardcoded because the app is not importable from the root-level suite.
  */
 
-const NAV_STAFF = "Персонал";
-const NAV_USERS = "Користувачі";
+// Renamed in wave 198 (TASK-1059, owner decision 2026-09-30).
+const NAV_STAFF = "Співробітники";
+// «Клієнти», not «Користувачі» — one name for the section (TASK-1058).
+const NAV_USERS = "Клієнти";
 const HEADING_TEMPLATES = "Шаблони прав";
-const CTA_HIRE = "Новий співробітник";
+const CTA_HIRE = "Додати співробітника";
+const COL_LAST_SIGN_IN = "Останній вхід";
+const FILTERS_BUTTON = /^Фільтри/;
+const FILTER_LEVEL_GROUP = "Фільтр за рівнем";
+const FILTERS_APPLY = "Показати співробітників";
 const COPY_RULE_FRAGMENT = "НЕ змінює прав тих, хто вже працює";
 /** What `staffDisplayName` renders for the seeded admin: name over address. */
 const E2E_ADMIN_NAME = "E2E Admin";
@@ -40,7 +46,7 @@ const E2E_ADMIN_NAME = "E2E Admin";
 // fragment passes only on a stand that happens to have hired a second admin.
 const FULL_ACCESS_PATTERN = /Повний доступ (має|мають) \d+ (особа|особи|осіб)/;
 
-test.describe("admin «Персонал» (TASK-480)", () => {
+test.describe("admin «Співробітники» (TASK-480, TASK-1051, TASK-1059)", () => {
   // Own session per test: the saved-state shortcut does not survive this API's
   // refresh-token rotation. See fixtures/admin-session.ts.
   test.beforeEach(async ({ page }) => {
@@ -54,11 +60,18 @@ test.describe("admin «Персонал» (TASK-480)", () => {
 
     // The whole point of the section: it is FINDABLE. The owner's report was
     // that creating a manager appeared impossible, not that it errored.
-    await page.getByRole("link", { name: NAV_STAFF }).click();
+    await page.getByRole("link", { name: NAV_STAFF, exact: true }).click();
 
     await expect(page).toHaveURL(/\/staff$/);
-    await expect(page.getByRole("heading", { name: NAV_STAFF })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: NAV_STAFF, exact: true }),
+    ).toBeVisible();
     await expect(page.getByText(E2E_ADMIN_EMAIL).first()).toBeVisible();
+    // The shared registry's columns (wave 198): «Останній сеанс» is now
+    // «Останній вхід».
+    await expect(
+      page.getByRole("columnheader", { name: COL_LAST_SIGN_IN }),
+    ).toBeVisible();
   });
 
   test("shows the standing «Повний доступ мають N осіб» panel, naming them", async ({
@@ -122,18 +135,27 @@ test.describe("admin «Персонал» (TASK-480)", () => {
     // the route is what makes this pass.
     await page.goto("/staff?role=MANAGER");
 
-    await expect(page.getByRole("heading", { name: NAV_STAFF })).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: NAV_STAFF, exact: true }),
+    ).toBeVisible();
 
     // The seeded staff account is an ADMIN, so the MANAGER filter empties the
     // list — and switching the filter to «Адміністратор» must bring it back.
-    await page.getByRole("combobox", { name: "Фільтр за рівнем" }).click();
-    await page.getByRole("option", { name: "Адміністратор" }).click();
+    // Wave 198: the level select moved into the «Фільтри» side sheet (pills,
+    // applied with «Показати співробітників»).
+    await page.getByRole("button", { name: FILTERS_BUTTON }).click();
+    const sheet = page.getByRole("dialog");
+    await sheet
+      .getByRole("group", { name: FILTER_LEVEL_GROUP })
+      .getByRole("button", { name: "Адміністратор", exact: true })
+      .click();
+    await sheet.getByRole("button", { name: FILTERS_APPLY }).click();
 
     await expect(page).toHaveURL(/[?&]role=ADMIN\b/);
     await expect(page.getByText(E2E_ADMIN_EMAIL).first()).toBeVisible();
   });
 
-  test("«Користувачі» is the customer list and no longer offers hiring", async ({
+  test("«Клієнти» is the customer list and no longer offers hiring", async ({
     page,
   }) => {
     await page.goto("/users");

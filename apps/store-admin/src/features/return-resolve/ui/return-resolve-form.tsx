@@ -1,14 +1,16 @@
 "use client";
 
+import { useId, useState, type ReactNode } from "react";
 import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
+import { Loader2 } from "lucide-react";
 import { toast } from "@/shared/ui/toast";
 import {
+  ReturnEntityStatus,
   allowedReturnTransitions,
   getAdminReturnControllerFindAllQueryKey,
   getAdminReturnControllerFindByIdQueryKey,
-  returnStatusLabel,
   useAdminReturnControllerResolve,
   type ReturnEntity,
 } from "@/entities/return";
@@ -17,85 +19,199 @@ import { useAuth } from "@/entities/session";
 import {
   Button,
   Checkbox,
+  FieldError,
   Input,
   Label,
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
   Textarea,
+  useConfirmDialog,
 } from "@/shared/ui";
 import { dict } from "@/shared/config";
-import { apiErrorCode, apiErrorStatus } from "@/shared/lib";
+import {
+  apiErrorCode,
+  apiErrorMessage,
+  apiErrorStatus,
+  formatCurrency,
+} from "@/shared/lib";
+import { cn } from "@/shared/lib/utils";
 import {
   OPERATOR_NOTES_MAX_LENGTH,
   canRestock,
   createResolveReturnSchema,
+  refundCapOf,
   resolveValuesToDto,
   returnedValueOf,
   type ResolveReturnFormValues,
 } from "../model/resolve-schema";
 
+const d = dict.returns;
+
 /** The API's TASK-785 refusal codes, carried in the 400 body's `error`. */
 const REFUND_CEILING_MESSAGES: Record<string, () => string> = {
   RETURN_REFUND_EXCEEDS_RETURNED_VALUE: () =>
-    dict.returns.resolveRefundExceedsReturnedValue(),
+    d.resolveRefundExceedsReturnedValue(),
   RETURN_REFUND_EXCEEDS_ORDER_BALANCE: () =>
-    dict.returns.resolveRefundExceedsOrderBalance(),
+    d.resolveRefundExceedsOrderBalance(),
 };
 
 interface ReturnResolveFormProps {
   rma: ReturnEntity;
+  /**
+   * What the order still has to give back — `order.total` less the other
+   * returns' refunds (TASK-959, see `orderBalanceOf`). `null`/absent when the
+   * card could not compute it (no `orders:read`); the server still enforces it.
+   */
+  orderBalance?: string | null;
 }
 
 /**
- * Record the operator's decision on a return (TASK-340).
+ * «Наступний крок» + «Внутрішні примітки» of a return (TASK-340, wave 198
+ * TASK-1056, ReturnsProposal Р3–Р5).
  *
- * Three deliberate absences, each of which would otherwise be a control that
- * lies:
+ * One card that offers ONLY what the state machine allows from here, as named
+ * actions instead of a status select and one «Зберегти рішення»:
  *
- *  - No status options beyond what the state machine allows, and none at all
- *    once the return is REJECTED or REFUNDED — those are communicated decisions,
- *    and rewriting one in place erases that it happened.
- *  - The restock checkbox appears only when moving to RECEIVED and only while
- *    the goods have not already been credited. "The parcel arrived" and "the
- *    contents are sellable" are different claims, and only the operator can see
- *    which is true.
- *  - No refund button. Money leaving is recorded here as an amount, not
- *    triggered from here — the provider-side refund lives with the payment, and
- *    a button that merely *looks* like it moves money is worse than none.
+ *   REQUESTED → «Схвалити заявку» · «Відхилити заявку…»
+ *   APPROVED  → «Повернути товар на склад (N шт.)» ☑ + «Товар отримано» ·
+ *               «Відхилити заявку…»
+ *   RECEIVED  → «Сума повернення, ₴ *» + «Гроші повернуто»
+ *   REJECTED / REFUNDED → nothing: a communicated decision is not rewritten.
  *
- * And a fourth (TASK-716): no form at all without `returns:write`. The PATCH
- * answers 403 to anyone else, so the section says in one line that the return
- * is view-only rather than offering a decision that cannot be saved. Neither
- * branch renders while the grant set is still loading: `can()` answers false in
- * that window for everyone, and the view-only line flashed at every writer.
+ * Every action is the same `PATCH /admin/returns/:id` the old form sent, behind
+ * the same `returns:write` (TASK-716) — a reader sees the step and the notes,
+ * and one line saying the return is view-only. Nothing renders while the
+ * grant set is loading: `can()` answers false in that window for everyone.
+ *
+ * Deliberate absences, each of which would otherwise be a control that lies:
+ *  - The amount appears only on the refund step (§6 of the problems list).
+ *    Its value is still carried on the other steps, so moving an old return
+ *    along never clears an amount recorded earlier.
+ *  - No refund button that moves money: «Гроші повернуто» records an amount;
+ *    the provider-side refund lives with the payment. The artboard's «Переказом
+ *    / готівкою · Через LiqPay» is not drawn — the API stores no refund method
+ *    (TASK-1056's API tail, TASK-951).
+ *  - Restock is offered only at «Товар отримано» and only once; ticked by
+ *    default since wave 198 (most parcels come back sellable — «Зніміть, якщо…»).
+ *
+ * The notes are shown ONCE (they were on the card twice); «Змінити» turns them
+ * into a field that is saved with the next step — the API has no notes-only
+ * write, so on a closed return there is no «Змінити».
  */
-export function ReturnResolveForm({ rma }: ReturnResolveFormProps) {
+export function ReturnResolveForm({
+  rma,
+  orderBalance,
+}: ReturnResolveFormProps) {
   const { can, arePermissionsLoading } = useAuth();
   if (arePermissionsLoading) return null;
   if (!can(PERM.returnsWrite)) {
     return (
-      <p className="text-sm text-muted-foreground">{dict.common.viewOnly}</p>
+      <div className="flex flex-col gap-6">
+        <StepCard>
+          <p className="text-sm text-muted-foreground">
+            {dict.common.viewOnly}
+          </p>
+        </StepCard>
+        <NotesCard notes={rma.operatorNotes ?? null} />
+      </div>
     );
   }
-  return <ReturnResolveEditor rma={rma} />;
+  return <ReturnResolveEditor rma={rma} orderBalance={orderBalance} />;
 }
 
-function ReturnResolveEditor({ rma }: ReturnResolveFormProps) {
+/* ── Cards ──────────────────────────────────────────────────────────────── */
+
+function StepCard({
+  children,
+  active = false,
+}: {
+  children: ReactNode;
+  active?: boolean;
+}) {
+  const headingId = useId();
+  return (
+    <section
+      aria-labelledby={headingId}
+      className={cn(
+        "flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-card",
+        active && "border-primary/40",
+      )}
+    >
+      <h3 id={headingId} className="text-sm font-semibold text-foreground">
+        {d.resolveHeading}
+      </h3>
+      {children}
+    </section>
+  );
+}
+
+function NotesCard({
+  notes,
+  onEdit,
+  editor,
+}: {
+  notes: string | null;
+  /** Present when the notes can be changed (a writer, a return still open). */
+  onEdit?: () => void;
+  /** The field, while editing. */
+  editor?: ReactNode;
+}) {
+  // A plain section, not a labelled region: the field inside is labelled
+  // «Внутрішні примітки» too, and two controls with one name is one too many.
+  return (
+    <section className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-card">
+      <div className="flex items-center justify-between gap-2">
+        <h3 className="text-sm font-semibold text-foreground">
+          {d.operatorNotes}
+        </h3>
+        {onEdit && !editor ? (
+          <Button
+            type="button"
+            variant="link"
+            size="sm"
+            className="h-auto p-0"
+            onClick={onEdit}
+          >
+            {d.notesEdit}
+          </Button>
+        ) : null}
+      </div>
+      {editor ?? (
+        <>
+          <p
+            className={cn(
+              "text-sm break-words whitespace-pre-line",
+              notes ? "text-foreground" : "text-muted-foreground",
+            )}
+          >
+            {notes ?? d.notesEmpty}
+          </p>
+          <p className="text-xs text-muted-foreground">{d.operatorNotesHint}</p>
+        </>
+      )}
+    </section>
+  );
+}
+
+/* ── Editor ─────────────────────────────────────────────────────────────── */
+
+function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
   const queryClient = useQueryClient();
   const resolve = useAdminReturnControllerResolve();
+  const { confirm, confirmDialog } = useConfirmDialog();
+  const [editingNotes, setEditingNotes] = useState(false);
 
   const allowed = allowedReturnTransitions(rma.status);
+  const returnedValue = returnedValueOf(rma.items);
+  // The hint names a maximum only when the card knows BOTH ceilings — the
+  // same rule as «Можна повернути максимум» beside it; the returned value
+  // alone may overstate what the order has left.
+  const cap =
+    orderBalance != null ? refundCapOf({ returnedValue, orderBalance }) : null;
+  const units = rma.items.reduce((sum, item) => sum + item.quantity, 0);
 
   const form = useForm<ResolveReturnFormValues>({
-    // TASK-785: the API's refund ceiling, mirrored from the lines this card
-    // already holds. The order-balance ceiling needs the order total and the
-    // order's other returns, which this form is not given; the server still
-    // enforces it, and its 400 is put under the amount field (see onError).
+    // TASK-785 / TASK-959: both API ceilings, as far as this card knows them.
     resolver: zodResolver(
-      createResolveReturnSchema({ returnedValue: returnedValueOf(rma.items) }),
+      createResolveReturnSchema({ returnedValue, orderBalance }),
     ),
     // forms.md Rule 2a — the entity id is stable for the life of this page, and
     // `keepDirtyValues` protects a half-written note from a background refetch.
@@ -103,26 +219,17 @@ function ReturnResolveEditor({ rma }: ReturnResolveFormProps) {
       status: "",
       operatorNotes: rma.operatorNotes ?? "",
       refundedAmount: rma.refundedAmount ?? "",
-      restock: false,
+      restock: rma.restockedAt === null,
     },
     resetOptions: { keepDirtyValues: true },
   });
 
   // `useWatch` rather than `form.watch`: the latter returns a fresh function the
-  // React Compiler cannot memoize, and it warns rather than silently producing
-  // stale UI. Subscribing by name is also narrower — this re-renders on these
-  // two fields, not on every keystroke in the notes box.
-  const targetStatus = useWatch({ control: form.control, name: "status" });
+  // React Compiler cannot memoize.
   const restock = useWatch({ control: form.control, name: "restock" });
-  const restockAvailable = canRestock(targetStatus, rma.restockedAt);
+  const { errors } = form.formState;
 
-  if (allowed.length === 0) {
-    return (
-      <p className="text-sm text-muted-foreground">
-        {dict.returns.resolveNoTransitions}
-      </p>
-    );
-  }
+  const pendingStatus = resolve.isPending ? resolve.variables?.data.status : "";
 
   const onSubmit = (values: ResolveReturnFormValues) => {
     resolve.mutate(
@@ -139,167 +246,303 @@ function ReturnResolveEditor({ rma }: ReturnResolveFormProps) {
             queryKey: getAdminReturnControllerFindAllQueryKey(),
           });
           form.setValue("status", "", { shouldDirty: false });
-          form.setValue("restock", false, { shouldDirty: false });
-          toast.success(dict.returns.resolveSuccess);
+          setEditingNotes(false);
+          toast.success(d.resolveSuccess);
         },
         onError: (error) => {
           const status = apiErrorStatus(error);
           if (status === 409) {
-            // The server's state machine is authoritative — this client-side
-            // mirror losing to it is exactly the drift the mirror's docblock
-            // warns about, so refetch and say so plainly.
+            // The server's state machine is authoritative — the client-side
+            // mirror losing to it is exactly the drift its docblock warns
+            // about, so refetch and say so plainly.
             void queryClient.invalidateQueries({
               queryKey: getAdminReturnControllerFindByIdQueryKey(rma.id),
             });
-            toast.error(dict.returns.resolveConflict);
-            return;
-          }
-          const code = apiErrorCode(error);
-          const ceiling =
-            typeof code === "string"
-              ? REFUND_CEILING_MESSAGES[code]
-              : undefined;
-          if (status === 400 && ceiling) {
-            // Under the amount, not in a toast: that number is what is wrong.
-            form.setError(
-              "refundedAmount",
-              { type: "server", message: ceiling() },
-              { shouldFocus: true },
-            );
+            toast.error(d.resolveConflict);
             return;
           }
           if (status === 400) {
-            toast.error(dict.returns.resolveBadRequest);
+            const code = apiErrorCode(error);
+            const ceiling =
+              typeof code === "string"
+                ? REFUND_CEILING_MESSAGES[code]
+                : undefined;
+            if (ceiling) {
+              // Under the amount, not in a toast: that number is what is wrong.
+              form.setError(
+                "refundedAmount",
+                { type: "server", message: ceiling() },
+                { shouldFocus: true },
+              );
+              return;
+            }
+            // TASK-956: a DTO refusal names its field — put it under that
+            // field. Anything else gets a sentence that is true.
+            const message = apiErrorMessage(error) ?? "";
+            if (/operatorNotes/.test(message)) {
+              setEditingNotes(true);
+              form.setError("operatorNotes", {
+                type: "server",
+                message: d.operatorNotesTooLong,
+              });
+              return;
+            }
+            if (/refundedAmount/.test(message)) {
+              form.setError(
+                "refundedAmount",
+                { type: "server", message: d.resolveRefundedAmountInvalid },
+                { shouldFocus: true },
+              );
+              return;
+            }
+            toast.error(d.resolveBadRequest);
             return;
           }
-          toast.error(dict.returns.resolveFailed);
+          toast.error(d.resolveFailed);
         },
       },
     );
   };
 
+  const submitStep = (status: string) => {
+    if (resolve.isPending) return;
+    form.clearErrors();
+    form.setValue("status", status, { shouldDirty: true });
+    if (
+      status === ReturnEntityStatus.REFUNDED &&
+      form.getValues("refundedAmount").trim() === ""
+    ) {
+      // «Гроші повернуто» without a sum records nothing anyone can check.
+      form.setError(
+        "refundedAmount",
+        { type: "required", message: d.resolveRefundedAmountRequired },
+        { shouldFocus: true },
+      );
+      return;
+    }
+    void form.handleSubmit(onSubmit, (fieldErrors) => {
+      // A note refused by the schema is only visible in its editor.
+      if (fieldErrors.operatorNotes) setEditingNotes(true);
+    })();
+  };
+
+  const askReject = async () => {
+    const confirmed = await confirm({
+      title: d.rejectConfirmTitle,
+      description: d.rejectConfirmDescription,
+      confirmLabel: d.rejectConfirm,
+      destructive: true,
+    });
+    if (confirmed) submitStep(ReturnEntityStatus.REJECTED);
+  };
+
+  const actionButton = (status: string, label: string) => {
+    const busy = pendingStatus === status;
+    return (
+      <Button
+        type="button"
+        className="w-full"
+        disabled={resolve.isPending}
+        aria-busy={busy || undefined}
+        onClick={() => submitStep(status)}
+      >
+        {busy ? (
+          <>
+            <Loader2
+              aria-hidden="true"
+              className="animate-spin motion-reduce:animate-none"
+            />
+            {d.saving}
+          </>
+        ) : (
+          label
+        )}
+      </Button>
+    );
+  };
+
+  const rejectButton = allowed.includes(ReturnEntityStatus.REJECTED) ? (
+    <Button
+      type="button"
+      variant="ghost"
+      className="w-full text-destructive hover:text-destructive"
+      disabled={resolve.isPending}
+      onClick={() => void askReject()}
+    >
+      {pendingStatus === ReturnEntityStatus.REJECTED ? (
+        <>
+          <Loader2
+            aria-hidden="true"
+            className="animate-spin motion-reduce:animate-none"
+          />
+          {d.saving}
+        </>
+      ) : (
+        d.reject
+      )}
+    </Button>
+  ) : null;
+
+  const amountError = errors.refundedAmount?.message;
+  const notesError = errors.operatorNotes?.message;
+
+  let step: ReactNode;
+  if (allowed.length === 0) {
+    step = (
+      <p className="text-sm text-muted-foreground">{d.resolveNoTransitions}</p>
+    );
+  } else if (rma.status === ReturnEntityStatus.REQUESTED) {
+    step = (
+      <>
+        <p className="text-sm text-muted-foreground">{d.nextRequested}</p>
+        {actionButton(ReturnEntityStatus.APPROVED, d.approve)}
+        {rejectButton}
+      </>
+    );
+  } else if (rma.status === ReturnEntityStatus.APPROVED) {
+    const restockAvailable = canRestock(
+      ReturnEntityStatus.RECEIVED,
+      rma.restockedAt,
+    );
+    step = (
+      <>
+        <p className="text-sm text-muted-foreground">{d.nextApproved}</p>
+        {restockAvailable ? (
+          <div className="flex flex-col gap-1">
+            <span className="flex items-center gap-2">
+              <Checkbox
+                id="return-restock"
+                checked={restock}
+                onCheckedChange={(checked) =>
+                  form.setValue("restock", checked === true, {
+                    shouldDirty: true,
+                  })
+                }
+                aria-describedby="return-restock-hint"
+              />
+              <Label htmlFor="return-restock">{d.restockUnits(units)}</Label>
+            </span>
+            <p
+              id="return-restock-hint"
+              className="pl-6 text-xs text-muted-foreground"
+            >
+              {d.resolveRestockHint}
+            </p>
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {d.resolveRestockAlreadyDone}
+          </p>
+        )}
+        {actionButton(ReturnEntityStatus.RECEIVED, d.markReceived)}
+        {rejectButton}
+      </>
+    );
+  } else {
+    // RECEIVED — the only move left is the money.
+    step = (
+      <>
+        <p className="text-sm text-muted-foreground">
+          {d.nextReceived(rma.restockedAt !== null)}
+        </p>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="return-refunded-amount" required>
+            {d.resolveRefundedAmount}
+          </Label>
+          <Input
+            id="return-refunded-amount"
+            inputMode="decimal"
+            autoComplete="off"
+            required
+            placeholder={d.resolveRefundedAmountPlaceholder}
+            aria-describedby={
+              amountError
+                ? "return-refunded-amount-error"
+                : "return-refunded-amount-hint"
+            }
+            aria-invalid={amountError ? true : undefined}
+            {...form.register("refundedAmount")}
+            // The form has no submit button (each step is its own action), so
+            // Enter in the step's only text field must do the step itself.
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              submitStep(ReturnEntityStatus.REFUNDED);
+            }}
+          />
+          {amountError ? (
+            <FieldError id="return-refunded-amount-error" className="text-xs">
+              {amountError}
+            </FieldError>
+          ) : (
+            <p
+              id="return-refunded-amount-hint"
+              className="text-xs text-muted-foreground"
+            >
+              {cap === null
+                ? d.resolveRefundedAmountHint
+                : d.refundCapHint(formatCurrency(cap))}
+            </p>
+          )}
+        </div>
+        {actionButton(ReturnEntityStatus.REFUNDED, d.markRefunded)}
+      </>
+    );
+  }
+
+  const canEditNotes = allowed.length > 0;
+
   return (
     <form
-      onSubmit={form.handleSubmit(onSubmit)}
-      className="flex flex-col gap-4"
+      onSubmit={(event) => event.preventDefault()}
+      className="flex flex-col gap-6"
       noValidate
     >
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="return-status">{dict.returns.resolveStatus}</Label>
-        <Select
-          value={targetStatus}
-          onValueChange={(value) =>
-            form.setValue("status", value, { shouldDirty: true })
-          }
-        >
-          <SelectTrigger
-            id="return-status"
-            className="w-64"
-            aria-label={dict.returns.resolveStatusAria}
-          >
-            <SelectValue placeholder={dict.returns.resolveStatusPlaceholder} />
-          </SelectTrigger>
-          <SelectContent>
-            {allowed.map((status) => (
-              <SelectItem key={status} value={status}>
-                {returnStatusLabel(status)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="return-refunded-amount">
-          {dict.returns.resolveRefundedAmount}
-        </Label>
-        <Input
-          id="return-refunded-amount"
-          inputMode="decimal"
-          autoComplete="off"
-          placeholder={dict.returns.resolveRefundedAmountPlaceholder}
-          aria-describedby="return-refunded-amount-hint"
-          aria-invalid={form.formState.errors.refundedAmount ? true : undefined}
-          {...form.register("refundedAmount")}
-        />
-        <p
-          id="return-refunded-amount-hint"
-          className="text-xs text-muted-foreground"
-        >
-          {dict.returns.resolveRefundedAmountHint}
-        </p>
-        {form.formState.errors.refundedAmount ? (
-          <p role="alert" className="text-xs text-destructive">
-            {form.formState.errors.refundedAmount.message}
-          </p>
-        ) : null}
-      </div>
-
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="return-operator-notes">
-          {dict.returns.operatorNotes}
-        </Label>
-        {/* TASK-794: the DTO's limit, stopped at the keyboard and explained if
-            it is ever reached another way — a bare `max()` used to block the
-            submit with nothing on screen. */}
-        <Textarea
-          id="return-operator-notes"
-          rows={3}
-          maxLength={OPERATOR_NOTES_MAX_LENGTH}
-          placeholder={dict.returns.operatorNotesPlaceholder}
-          aria-describedby="return-operator-notes-hint"
-          aria-invalid={form.formState.errors.operatorNotes ? true : undefined}
-          {...form.register("operatorNotes")}
-        />
-        <p
-          id="return-operator-notes-hint"
-          className="text-xs text-muted-foreground"
-        >
-          {dict.returns.operatorNotesHint}
-        </p>
-        {form.formState.errors.operatorNotes ? (
-          <p role="alert" className="text-xs text-destructive">
-            {form.formState.errors.operatorNotes.message}
-          </p>
-        ) : null}
-      </div>
-
-      {restockAvailable ? (
-        <div className="flex flex-col gap-1.5">
-          <span className="flex items-center gap-2">
-            <Checkbox
-              id="return-restock"
-              checked={restock}
-              onCheckedChange={(checked) =>
-                form.setValue("restock", checked === true, {
-                  shouldDirty: true,
-                })
-              }
-              aria-describedby="return-restock-hint"
-            />
-            <Label htmlFor="return-restock">
-              {dict.returns.resolveRestock}
-            </Label>
-          </span>
-          <p id="return-restock-hint" className="text-xs text-muted-foreground">
-            {dict.returns.resolveRestockHint}
-          </p>
-        </div>
-      ) : rma.restockedAt !== null ? (
-        <p className="text-xs text-muted-foreground">
-          {dict.returns.resolveRestockAlreadyDone}
-        </p>
-      ) : null}
-
-      <div>
-        <Button
-          type="submit"
-          size="sm"
-          disabled={resolve.isPending || targetStatus === ""}
-        >
-          {dict.returns.resolveSubmit}
-        </Button>
-      </div>
+      <StepCard active={allowed.length > 0}>{step}</StepCard>
+      <NotesCard
+        notes={rma.operatorNotes ?? null}
+        onEdit={canEditNotes ? () => setEditingNotes(true) : undefined}
+        editor={
+          canEditNotes && editingNotes ? (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="return-operator-notes" className="sr-only">
+                {d.operatorNotes}
+              </Label>
+              {/* TASK-794: the DTO's limit, stopped at the keyboard and
+                  explained if it is ever reached another way. */}
+              <Textarea
+                id="return-operator-notes"
+                rows={3}
+                maxLength={OPERATOR_NOTES_MAX_LENGTH}
+                placeholder={d.operatorNotesPlaceholder}
+                aria-describedby={
+                  notesError
+                    ? "return-operator-notes-error"
+                    : "return-operator-notes-hint"
+                }
+                aria-invalid={notesError ? true : undefined}
+                {...form.register("operatorNotes")}
+              />
+              {notesError ? (
+                <FieldError
+                  id="return-operator-notes-error"
+                  className="text-xs"
+                >
+                  {notesError}
+                </FieldError>
+              ) : (
+                <p
+                  id="return-operator-notes-hint"
+                  className="text-xs text-muted-foreground"
+                >
+                  {d.notesEditHint}
+                </p>
+              )}
+            </div>
+          ) : undefined
+        }
+      />
+      {confirmDialog}
     </form>
   );
 }

@@ -1,4 +1,5 @@
 import { toast as sonnerToast } from "sonner";
+import { dict } from "@/shared/config";
 import { toast } from "./toast";
 
 /**
@@ -56,6 +57,40 @@ describe("toast wrapper", () => {
     expect(mocked.error).toHaveBeenCalledWith(
       "Тимчасова помилка",
       expect.objectContaining({ duration: 3000 }),
+    );
+  });
+
+  it("offers «Скасувати» on an undo toast and runs the undo on it (wave 198)", () => {
+    const onUndo = jest.fn();
+    toast.undo("Приховано 3 товари. Вони зникли з вітрини.", { onUndo });
+
+    const [message, data] = mocked.success.mock.calls[0] as [
+      string,
+      {
+        duration: number;
+        action: { label: string; onClick: () => void };
+      },
+    ];
+    expect(message).toBe("Приховано 3 товари. Вони зникли з вітрини.");
+    expect(data.action.label).toBe(dict.canon.undo);
+    // Long enough to read the sentence and reach the button: 10 s, not 6.
+    expect(data.duration).toBe(10_000);
+    data.action.onClick();
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets an undo toast name its own action and lifetime", () => {
+    toast.undo("Переміщено", {
+      onUndo: () => {},
+      label: "Повернути",
+      duration: 20_000,
+    });
+    expect(mocked.success).toHaveBeenCalledWith(
+      "Переміщено",
+      expect.objectContaining({
+        duration: 20_000,
+        action: expect.objectContaining({ label: "Повернути" }),
+      }),
     );
   });
 

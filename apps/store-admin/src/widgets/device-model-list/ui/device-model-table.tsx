@@ -1,230 +1,346 @@
 "use client";
 
-import Link from "next/link";
+import { useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
   getAdminDeviceControllerFindModelsQueryKey,
-  useAdminDeviceControllerFindModels,
-  useAdminDeviceControllerFindBrands,
   useAdminDeviceControllerActivateModel,
   useAdminDeviceControllerDeactivateModel,
+  useAdminDeviceControllerFindBrands,
+  useAdminDeviceControllerFindModels,
+  useLiveCompatPages,
+  type DeviceModelEntity,
 } from "@/entities/device";
+import { PERM } from "@/entities/permission";
+import { useAuth } from "@/entities/session";
 import {
-  Badge,
-  Button,
+  Callout,
+  DataRegistry,
   LiveAnnouncer,
-  Table,
-  TableBody,
-  TableCell,
-  TableFilters,
-  TableHead,
-  TableHeader,
-  TablePagination,
-  TableRow,
-  TableSearch,
-  TableToolbar,
+  SummaryValue,
   pageSizeFrom,
-  type TableFilterDef,
+  useConfirmDialog,
+  useDataRegistry,
+  type FilterChip,
+  type QuickView,
+  type RowActionItem,
 } from "@/shared/ui";
-import { dict } from "@/shared/config";
-import { DeviceModelTableSkeleton } from "./device-model-table-skeleton";
+import { countLabel } from "@/shared/lib";
+import { useUrlParams } from "@/shared/lib/use-url-params";
+import { dict, STOREFRONT_URL } from "@/shared/config";
+import {
+  buildDeviceModelColumns,
+  renderDeviceModelCard,
+} from "./device-model-registry-columns";
+import { DeviceModelFilterSheet } from "./device-model-filter-sheet";
+
+const d = dict.devices;
+
+const ALL_VIEW = "all";
+/** The old `?isActive=` values — kept, so every bookmarked filter still works. */
+const SHOWN_VIEW = "true";
+const HIDDEN_VIEW = "false";
+
+const COUNT_QUERY = { page: 1, limit: 1 } as const;
+
+const getRowId = (model: DeviceModelEntity) => model.id;
+const getRowLabel = (model: DeviceModelEntity) => model.name;
+const editHref = (model: DeviceModelEntity) =>
+  `/devices/models/${model.id}/edit`;
+const compatProductsHref = (model: DeviceModelEntity) =>
+  `/products?deviceModelId=${encodeURIComponent(model.id)}`;
+/** The storefront catalogue narrowed to this model — `?device=<slug>`. */
+const siteCatalogHref = (model: DeviceModelEntity) =>
+  `${STOREFRONT_URL}/catalog?device=${encodeURIComponent(model.slug)}`;
+
+/** View counters from the API's own `meta.total` (the blog / reviews pattern). */
+function useViewCounts(
+  deviceBrandId: string | undefined,
+  search: string | undefined,
+) {
+  const base = { ...COUNT_QUERY, deviceBrandId, search };
+  const all = useAdminDeviceControllerFindModels(base);
+  const shown = useAdminDeviceControllerFindModels({ ...base, isActive: true });
+  const hidden = useAdminDeviceControllerFindModels({
+    ...base,
+    isActive: false,
+  });
+  return {
+    [ALL_VIEW]: all.data?.meta?.total,
+    [SHOWN_VIEW]: shown.data?.meta?.total,
+    [HIDDEN_VIEW]: hidden.data?.meta?.total,
+  } as Record<string, number | undefined>;
+}
 
 /**
- * Admin device-model table (TASK-190). Paginated + searchable (name), across all
- * statuses, with a per-row visibility toggle. Search/page state live in the URL.
+ * The device-model registry (TASK-190 → TASK-357 → TASK-423) on the shared
+ * `DataRegistry` (wave 198, DevicesProposal ПР1–ПР4, ПР10, TASK-1082).
  *
- * TASK-357 moved the search form into the shared `TableToolbar`, added the
- * refresh control, and gave the input its own placeholder/label — it used to
- * borrow the section heading ("Моделі пристроїв"), which read to a screen reader
- * as a field named after the page it sits on.
+ * The URL contract is unchanged: `?search=`, `?deviceBrandId=`, `?isActive=`,
+ * `?page=`, `?limit=`. The status select became the quick views; the brand
+ * select moved into «Фільтри» as a combobox you can type into, and its chip
+ * says «Бренд: Samsung» rather than the filter's technical name.
  *
- * TASK-423 / AD-DEV-04 added the two filters the ENDPOINT had accepted all along.
- * `AdminDeviceControllerFindModelsParams` has carried `deviceBrandId` and
- * `isActive` since TASK-190 and this table passed neither, so "show me every
- * iPhone model" could only be attempted as a name search — which works for
- * «iPhone» and not for a brand whose name is absent from its models' names. The
- * fix was entirely on this side of the wire.
+ * What moved, nothing removed: «Редагувати» and «Приховати / Активувати» went
+ * from two buttons into «⋯»; hiding now asks first and says how many live
+ * compatibility pages stop opening (ПР10); «Сумісні товари» opens «Товари»
+ * filtered by the device; «Каталог для цієї моделі на сайті» opens the
+ * storefront's `/catalog?device=<slug>` for a model that is shown.
  *
- * `LiveAnnouncer` wraps the view rather than sitting inside it — the toolbar
- * calls `useAnnouncer()` to confirm a refresh, and a hook called in the same
- * component that renders the provider would read the default no-op context.
+ * «Сторінок на сайті» counts the live landing pages from
+ * `GET /catalog/compat-pages` (the sitemap's list). Not drawn because the API
+ * has no support (TASK-1082 API tails): «Товарів» per model and the «Без
+ * товарів» view (no product count in the list), search by series (the API
+ * searches the name), the «Рік» filter.
  */
 export function DeviceModelTable() {
   return (
     <LiveAnnouncer>
-      <DeviceModelView />
+      <DeviceModelRegistry />
     </LiveAnnouncer>
   );
 }
 
-function DeviceModelView() {
+function DeviceModelRegistry() {
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const updateParams = useUrlParams();
+  const { can } = useAuth();
+  const canWrite = can(PERM.devicesWrite);
+  const canOpenProducts = can(PERM.productsRead);
+  const { confirm, confirmDialog } = useConfirmDialog();
 
   const searchParam = searchParams.get("search") ?? "";
   const brandParam = searchParams.get("deviceBrandId") ?? "";
   const statusParam = searchParams.get("isActive") ?? "";
   const page = Math.max(1, Number(searchParams.get("page")) || 1);
   const pageSize = pageSizeFrom(searchParams);
+  const isActive =
+    statusParam === SHOWN_VIEW
+      ? true
+      : statusParam === HIDDEN_VIEW
+        ? false
+        : undefined;
 
-  const { data, isLoading, isFetching, isError, refetch } =
+  const { data, dataUpdatedAt, isLoading, isFetching, isError, refetch } =
     useAdminDeviceControllerFindModels({
       page,
       limit: pageSize,
       search: searchParam || undefined,
       deviceBrandId: brandParam || undefined,
-      isActive: statusParam ? statusParam === "true" : undefined,
+      isActive,
     });
-  // The brand list feeds the filter's options. Device brands are a short,
-  // hand-curated taxonomy (Apple, Samsung, …), so one high-limit page is the
-  // whole thing — and it includes hidden brands, or their models would be
-  // unreachable from here.
-  const brandsQuery = useAdminDeviceControllerFindBrands({ limit: 100 });
+  const counts = useViewCounts(
+    brandParam || undefined,
+    searchParam || undefined,
+  );
+  // The brand list feeds the filter and the chip's name. Device brands are a
+  // short, hand-curated taxonomy, and the no-argument read is the complete
+  // list the brands tab already holds — hidden brands included.
+  const brandsQuery = useAdminDeviceControllerFindBrands();
+  const brands = useMemo(
+    () => brandsQuery.data?.data ?? [],
+    [brandsQuery.data],
+  );
+  const compat = useLiveCompatPages();
+
   const activate = useAdminDeviceControllerActivateModel();
   const deactivate = useAdminDeviceControllerDeactivateModel();
   const pending = activate.isPending || deactivate.isPending;
 
-  const models = data?.data ?? [];
+  const models = useMemo(() => data?.data ?? [], [data]);
+  const total = data?.meta?.total ?? 0;
   const totalPages = data?.meta?.totalPages ?? 1;
 
-  const filters: TableFilterDef[] = [
-    {
-      param: "deviceBrandId",
-      label: dict.devices.filterBrandAria,
-      allLabel: dict.devices.allBrands,
-      options: (brandsQuery.data?.data ?? []).map((brand) => ({
-        value: brand.id,
-        label: brand.name,
-      })),
-      className: "w-44",
-    },
-    {
-      param: "isActive",
-      label: dict.devices.filterStatusAria,
-      allLabel: dict.devices.allStatuses,
-      options: [
-        { value: "true", label: dict.devices.statusActive },
-        { value: "false", label: dict.devices.statusInactive },
-      ],
-    },
-  ];
+  // `undefined` = not known: still loading, or the read failed — never a 0
+  // that would tell the hide dialog there is nothing to warn about.
+  const pagesOf = useMemo(
+    () => (model: DeviceModelEntity) =>
+      compat.isLoading || compat.isError
+        ? undefined
+        : (compat.byModel.get(model.id)?.length ?? 0),
+    [compat.byModel, compat.isLoading, compat.isError],
+  );
+  const columns = useMemo(
+    () => buildDeviceModelColumns({ pagesOf }),
+    [pagesOf],
+  );
+  const renderCard = useMemo(() => renderDeviceModelCard(pagesOf), [pagesOf]);
+  const registry = useDataRegistry({
+    tableId: "device-models",
+    columns,
+    rows: models,
+    getRowId,
+  });
 
-  const toggle = (id: string, isActive: boolean) => {
-    const mutation = isActive ? deactivate : activate;
+  const setVisibility = (model: DeviceModelEntity, show: boolean) => {
+    const mutation = show ? activate : deactivate;
     mutation.mutate(
-      { id },
+      { id: model.id },
       {
         onSuccess: () => {
           void queryClient.invalidateQueries({
             queryKey: getAdminDeviceControllerFindModelsQueryKey(),
           });
         },
-        onError: () => toast.error(dict.devices.toastStatusFailed),
+        onError: () => toast.error(d.toastStatusFailed),
       },
     );
   };
 
+  // ПР10 — hiding takes the model out of the device picker AND closes its
+  // landing pages; say so first. Showing it again has nothing to warn about.
+  const handleToggle = async (model: DeviceModelEntity) => {
+    if (!model.isActive) {
+      setVisibility(model, true);
+      return;
+    }
+    const pages = pagesOf(model);
+    const confirmed = await confirm({
+      title: d.hideModelTitle(model.name),
+      description:
+        pages === undefined ? d.hideModelBodyUnknown : d.hideModelBody(pages),
+      confirmLabel: d.hideAction,
+    });
+    if (confirmed) setVisibility(model, false);
+  };
+
+  const rowActions = (model: DeviceModelEntity): RowActionItem[] => {
+    const items: RowActionItem[] = [
+      {
+        label: canWrite ? dict.common.edit : dict.common.view,
+        href: editHref(model),
+      },
+    ];
+    if (canOpenProducts) {
+      items.push({
+        label: d.rowCompatProducts,
+        href: compatProductsHref(model),
+      });
+    }
+    // Owner decision 2026-10-01: only what is live on the site is linked.
+    if (model.isActive) {
+      items.push({
+        label: d.rowOpenCatalog,
+        href: siteCatalogHref(model),
+        newTab: true,
+      });
+    }
+    if (canWrite) {
+      items.push({
+        label: model.isActive ? d.hideModelItem : d.activate,
+        onSelect: () => void handleToggle(model),
+        disabled: pending,
+        separatorBefore: true,
+      });
+    }
+    return items;
+  };
+
+  const activeView =
+    statusParam === "" ? ALL_VIEW : isActive === undefined ? "" : statusParam;
+  const quickViews: QuickView[] = [
+    { id: ALL_VIEW, label: d.allStatuses, count: counts[ALL_VIEW] },
+    { id: SHOWN_VIEW, label: d.viewShown, count: counts[SHOWN_VIEW] },
+    { id: HIDDEN_VIEW, label: d.viewHidden, count: counts[HIDDEN_VIEW] },
+  ];
+
+  // The chip shows whenever the filter is on — a brand that is still loading
+  // or no longer exists (an old bookmark) must still be removable, or the list
+  // is narrowed with nothing on screen saying why.
+  const brandName =
+    brands.find((brand) => brand.id === brandParam)?.name ??
+    (brandsQuery.isLoading ? "…" : d.chipBrandUnknown);
+  const chips: FilterChip[] = brandParam
+    ? [
+        {
+          key: "brand",
+          label: d.chipBrand(brandName),
+          onRemove: () =>
+            updateParams({ deviceBrandId: undefined, page: undefined }),
+        },
+      ]
+    : [];
+
   return (
-    <div className="flex flex-col gap-4">
-      <TableToolbar
-        className="mb-0"
+    <>
+      <DataRegistry
+        registry={registry}
+        title={d.tabModels}
+        showHeader={false}
+        quickViews={{
+          items: quickViews,
+          activeId: activeView,
+          onChange: (id) =>
+            updateParams({
+              isActive: id === ALL_VIEW ? undefined : id,
+              page: undefined,
+            }),
+        }}
+        search={{
+          value: searchParam,
+          placeholder: d.modelsSearchPlaceholder,
+          label: d.modelsSearchAria,
+        }}
+        filters={{
+          count: brandParam ? 1 : 0,
+          renderSheet: ({ open, onOpenChange }) => (
+            <DeviceModelFilterSheet
+              open={open}
+              onOpenChange={onOpenChange}
+              applied={{ deviceBrandId: brandParam }}
+              brands={brands}
+              onApply={(next) =>
+                updateParams({
+                  deviceBrandId: next.deviceBrandId || undefined,
+                  page: undefined,
+                })
+              }
+            />
+          ),
+        }}
+        views={{ defaultName: d.viewDefault }}
         onRefresh={() => void refetch()}
         isRefreshing={isFetching}
-        search={
-          <TableSearch
-            value={searchParam}
-            placeholder={dict.devices.modelsSearchPlaceholder}
-            label={dict.devices.modelsSearchAria}
-          />
+        notice={
+          canWrite ? null : (
+            <Callout variant="strip">{d.viewOnlyNotice}</Callout>
+          )
         }
-        filters={
-          <TableFilters
-            filters={filters}
-            values={{ deviceBrandId: brandParam, isActive: statusParam }}
-          />
+        chips={chips}
+        onClearAllChips={() =>
+          updateParams({ deviceBrandId: undefined, page: undefined })
         }
+        summary={
+          data ? (
+            <>
+              {d.summaryFound}{" "}
+              <SummaryValue>{countLabel(total, d.modelItemForms)}</SummaryValue>
+            </>
+          ) : null
+        }
+        sortLabel={d.sortNewest}
+        updatedAt={dataUpdatedAt || undefined}
+        itemForms={d.modelItemForms}
+        getRowLabel={getRowLabel}
+        getRowHref={editHref}
+        rowActions={rowActions}
+        rowActionsLabel={(model) => d.modelRowActionsAria(model.name)}
+        renderCard={renderCard}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={d.modelsLoadError}
+        onRetry={() => void refetch()}
+        isRetrying={isFetching}
+        isRefetching={isFetching && !isLoading}
+        emptyState={d.modelsEmpty}
+        searchQuery={searchParam || undefined}
+        isFiltered={Boolean(brandParam || statusParam)}
+        pagination={{ page, totalPages, pageSize }}
       />
-
-      {isLoading ? (
-        <DeviceModelTableSkeleton />
-      ) : isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.devices.modelsLoadError}
-        </p>
-      ) : models.length === 0 ? (
-        <div className="rounded-md border border-border p-8 text-center text-sm text-muted-foreground">
-          {searchParam
-            ? dict.devices.modelsEmptyMatch(searchParam)
-            : brandParam || statusParam
-              ? dict.common.table.emptyFiltered
-              : dict.devices.modelsEmpty}
-        </div>
-      ) : (
-        <div className="rounded-lg border border-border shadow-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{dict.devices.colName}</TableHead>
-                <TableHead>{dict.devices.colBrand}</TableHead>
-                <TableHead hideOnMobile>{dict.devices.colSeries}</TableHead>
-                <TableHead hideOnMobile>{dict.devices.colYear}</TableHead>
-                <TableHead>{dict.devices.colStatus}</TableHead>
-                <TableHead className="text-right">
-                  {dict.common.actions}
-                </TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {models.map((model) => (
-                <TableRow key={model.id}>
-                  <TableCell className="font-medium">{model.name}</TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {model.brandName ?? "—"}
-                  </TableCell>
-                  <TableCell hideOnMobile className="text-muted-foreground">
-                    {model.series ?? "—"}
-                  </TableCell>
-                  <TableCell hideOnMobile>{model.releaseYear ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant={model.isActive ? "default" : "secondary"}>
-                      {model.isActive
-                        ? dict.devices.statusActive
-                        : dict.devices.statusInactive}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="flex justify-end gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={pending}
-                      onClick={() => toggle(model.id, model.isActive)}
-                    >
-                      {model.isActive
-                        ? dict.devices.deactivate
-                        : dict.devices.activate}
-                    </Button>
-                    <Button asChild variant="outline" size="sm">
-                      <Link href={`/devices/models/${model.id}/edit`}>
-                        {dict.common.edit}
-                      </Link>
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {!isLoading && !isError && models.length > 0 && (
-        <TablePagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={pageSize}
-        />
-      )}
-    </div>
+      {confirmDialog}
+    </>
   );
 }

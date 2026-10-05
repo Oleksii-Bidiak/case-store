@@ -32,6 +32,11 @@ import { clearCreateCarryover } from "../model/create-carryover";
 import { CreateProductView } from "./create-product-view";
 import { EditProductView } from "./edit-product-view";
 
+// Each case drives the whole sectioned form (wave 198, TASK-1050) and runs
+// 4–5 s alone — over the 5 s default whenever other suites share the machine.
+// Same budget as the heavy cases in `product-form.test.tsx`.
+jest.setTimeout(15000);
+
 // next/navigation is unavailable under jsdom. Where the operator is sent after
 // a create is part of what this suite asserts, so the mocks are stable.
 const mockPush = jest.fn();

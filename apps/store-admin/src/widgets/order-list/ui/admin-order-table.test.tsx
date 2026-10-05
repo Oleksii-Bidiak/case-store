@@ -9,14 +9,19 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { OrderEntityPaymentStatus, paymentStatusLabel } from "@/entities/order";
+import { toKyivDateInput } from "@/shared/lib";
 import { AdminOrderTable } from "./admin-order-table";
+
+const d = dict.orders;
+const r = dict.common.registry;
 
 // next/navigation is unavailable under jsdom — mock the router + URL state.
 // `mockSearchParams` is mutable so deep-link tests can seed the URL (TASK-250).
 const mockReplace = jest.fn();
+const mockPush = jest.fn();
 let mockSearchParams = new URLSearchParams("");
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
   usePathname: () => "/orders",
   useSearchParams: () => mockSearchParams,
 }));
@@ -32,18 +37,50 @@ jest.mock("@/shared/ui/toast", () => ({
   },
 }));
 
+function setViewport(mobile: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: mobile,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+}
+
+const originalMatchMedia = window.matchMedia;
+
 beforeEach(() => {
   mockReplace.mockClear();
+  mockPush.mockClear();
+  toastSuccess.mockClear();
+  toastError.mockClear();
   mockSearchParams = new URLSearchParams("");
+  localStorage.clear();
+  setViewport(false);
 });
 
+afterAll(() => {
+  window.matchMedia = originalMatchMedia;
+});
+
+/** «#ORDER-UU» — how the registry names the default row. */
+const ROW_NUMBER = "#ORDER-UU";
+
 /** One admin order row with a joined customer (TASK-125). */
-function makeOrderRow(customer: unknown) {
+function makeOrderRow(
+  customer: unknown,
+  overrides: Record<string, unknown> = {},
+) {
   return {
     id: "order-uuid-12345678",
     userId: "user-uuid-87654321",
     status: "PENDING",
     paymentStatus: "PENDING",
+    paymentMethod: "ONLINE",
+    deliveryMethod: "NOVA_POSHTA",
     subtotal: "29.99",
     discount: "0",
     shippingCost: "0",
@@ -52,35 +89,62 @@ function makeOrderRow(customer: unknown) {
     shippingAddress: null,
     billingAddress: null,
     notes: null,
+    trackingNumber: null,
     items: [{ id: "item-1" }],
     customer,
     createdAt: "2026-06-01T10:00:00.000Z",
     updatedAt: "2026-06-01T10:00:00.000Z",
+    ...overrides,
   };
 }
 
-describe("AdminOrderTable — customer column (TASK-125)", () => {
-  it("shows the customer email and name, not the user UUID", async () => {
-    server.use(
-      http.get("*/api/admin/orders", () =>
-        HttpResponse.json({
-          data: [
-            makeOrderRow({
-              id: "user-uuid-87654321",
-              email: "buyer@example.com",
-              firstName: "Ivan",
-              lastName: "Petrenko",
-            }),
-          ],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-    );
+function serveRows(rows: unknown[], total = rows.length) {
+  const seen: URL[] = [];
+  server.use(
+    http.get("*/api/admin/orders", ({ request }) => {
+      const url = new URL(request.url);
+      seen.push(url);
+      return HttpResponse.json({
+        data: rows,
+        meta: { total, page: 1, limit: 20, totalPages: 1 },
+      });
+    }),
+  );
+  return seen;
+}
+
+/** The last request for the PAGE (the sheet's count probe asks with limit=1). */
+const pageRequest = (seen: URL[]) =>
+  [...seen].reverse().find((url) => url.searchParams.get("limit") !== "1");
+
+async function openFilters() {
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp(`^${r.filters}`) }),
+  );
+  return screen.findByRole("dialog");
+}
+
+async function applyFilters(sheet: HTMLElement) {
+  await userEvent.click(
+    within(sheet).getByRole("button", { name: /^Показати/ }),
+  );
+}
+
+describe("AdminOrderTable — the client cell (TASK-125, TASK-1045)", () => {
+  it("shows the customer's name and, with no phone on the order, the email", async () => {
+    serveRows([
+      makeOrderRow({
+        id: "user-uuid-87654321",
+        email: "buyer@example.com",
+        firstName: "Ivan",
+        lastName: "Petrenko",
+      }),
+    ]);
 
     renderWithProviders(<AdminOrderTable />);
 
-    expect(await screen.findByText("buyer@example.com")).toBeInTheDocument();
-    expect(screen.getByText("Ivan Petrenko")).toBeInTheDocument();
+    expect(await screen.findByText("Ivan Petrenko")).toBeInTheDocument();
+    expect(screen.getByText("buyer@example.com")).toBeInTheDocument();
     // The UUID fallback must not render when a customer is present.
     expect(screen.queryByText(/user-uui…|87654321…/)).not.toBeInTheDocument();
     // Status badges render Ukrainian labels, not raw enums (TASK-129).
@@ -89,503 +153,556 @@ describe("AdminOrderTable — customer column (TASK-125)", () => {
     expect(screen.queryByText("PENDING")).not.toBeInTheDocument();
   });
 
-  it("falls back to the truncated user id when no customer is joined", async () => {
-    server.use(
-      http.get("*/api/admin/orders", () =>
-        HttpResponse.json({
-          data: [makeOrderRow(null)],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        }),
+  it("prefers the phone from the delivery address over the email", async () => {
+    serveRows([
+      makeOrderRow(
+        {
+          id: "user-uuid-87654321",
+          email: "buyer@example.com",
+          firstName: "Ivan",
+          lastName: "Petrenko",
+        },
+        {
+          shippingAddress: {
+            firstName: "Ivan",
+            lastName: "Petrenko",
+            phone: "380672145590",
+            city: "Київ",
+            address1: "Відділення №12",
+          },
+        },
       ),
-    );
+    ]);
+
+    renderWithProviders(<AdminOrderTable />);
+
+    expect(await screen.findByText("+380 67 214 5590")).toBeInTheDocument();
+    expect(screen.queryByText("buyer@example.com")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the truncated user id when no customer is joined", async () => {
+    serveRows([makeOrderRow(null)]);
 
     renderWithProviders(<AdminOrderTable />);
 
     expect(await screen.findByText("user-uui…")).toBeInTheDocument();
   });
-});
 
-describe("AdminOrderTable — lifecycle tabs (TASK-250)", () => {
-  it.each([
-    [dict.orders.tabNew, "/orders?status=PENDING"],
-    [dict.orders.tabProcessing, "/orders?status=CONFIRMED,PROCESSING"],
-    [dict.orders.tabShipped, "/orders?status=SHIPPED"],
-  ])("clicking «%s» writes %s and resets page", async (label, expectedUrl) => {
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    await userEvent.click(screen.getByRole("tab", { name: label }));
-
-    // Radix automatic activation may fire onValueChange on both focus and click;
-    // every call carries the same (idempotent) URL, so assert on the value written.
-    expect(mockReplace).toHaveBeenCalled();
-    // URLSearchParams percent-encodes the comma in CONFIRMED,PROCESSING (%2C);
-    // decode before comparing so the CSV contract reads literally.
-    for (const [url] of mockReplace.mock.calls) {
-      expect(decodeURIComponent(url)).toBe(expectedUrl);
-    }
-  });
-
-  it("clicking «Всі» clears the status filter", async () => {
-    mockSearchParams = new URLSearchParams("status=PENDING");
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(/Немає замовлень зі статусом/);
-
-    await userEvent.click(
-      screen.getByRole("tab", { name: dict.orders.tabAll }),
-    );
-
-    expect(mockReplace).toHaveBeenCalledWith("/orders");
-  });
-
-  it("resets ?page= to 1 (drops it) when switching tabs", async () => {
-    mockSearchParams = new URLSearchParams("page=3");
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    await userEvent.click(
-      screen.getByRole("tab", { name: dict.orders.tabShipped }),
-    );
-
-    const url = mockReplace.mock.calls[0][0];
-    expect(url).toContain("status=SHIPPED");
-    expect(url).not.toContain("page=");
-  });
-
-  it("deep-links: ?status=CONFIRMED,PROCESSING renders В обробці active + filters the table", async () => {
-    mockSearchParams = new URLSearchParams("status=CONFIRMED,PROCESSING");
-    let capturedStatus: string | null = null;
-    server.use(
-      http.get("*/api/admin/orders", ({ request }) => {
-        capturedStatus = new URL(request.url).searchParams.get("status");
-        return HttpResponse.json({
-          data: [makeOrderRow(null)],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        });
-      }),
-    );
-
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText("user-uui…");
-
-    // The table is filtered server-side with the CSV status.
-    expect(capturedStatus).toBe("CONFIRMED,PROCESSING");
-    // Only the В обробці tab is active.
-    expect(
-      screen.getByRole("tab", { name: dict.orders.tabProcessing }),
-    ).toHaveAttribute("data-state", "active");
-    expect(
-      screen.getByRole("tab", { name: dict.orders.tabNew }),
-    ).toHaveAttribute("data-state", "inactive");
-    expect(
-      screen.getByRole("tab", { name: dict.orders.tabAll }),
-    ).toHaveAttribute("data-state", "inactive");
-  });
-
-  it("deep-links: ?status=DELIVERED filters the table with no preset tab active", async () => {
-    mockSearchParams = new URLSearchParams("status=DELIVERED");
-    let capturedStatus: string | null = null;
-    server.use(
-      http.get("*/api/admin/orders", ({ request }) => {
-        capturedStatus = new URL(request.url).searchParams.get("status");
-        return HttpResponse.json({
-          data: [makeOrderRow(null)],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        });
-      }),
-    );
-
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText("user-uui…");
-
-    expect(capturedStatus).toBe("DELIVERED");
-    // No preset tab matches DELIVERED — every tab renders inactive.
-    for (const label of [
-      dict.orders.tabNew,
-      dict.orders.tabProcessing,
-      dict.orders.tabShipped,
-      dict.orders.tabAll,
-    ]) {
-      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
-        "data-state",
-        "inactive",
-      );
-    }
-  });
-});
-
-/**
- * TASK-405 — the demo run hit `/orders?status=…` opened in a fresh tab and found
- * the filter controls dead. Two independent causes; these cover the second one.
- *
- * The first was the route: `page.tsx` was statically prerendered, so a hard load
- * with a query string served a prerender that a later query-only
- * `router.replace` never re-rendered. That is fixed by `export const dynamic`
- * on the route and is not observable from a widget test — jsdom has no Next
- * router; the assertions below are exactly the part that is.
- *
- * The second was in this widget: the "Всі" tab carried `value: ""`, which is not
- * a legal Radix `Tabs` value. `?status=PROCESSING` (a single status — the Select
- * writes it, no preset tab matches it) is the state the run was actually in.
- */
-describe("AdminOrderTable — «Всі» tab sentinel (TASK-405)", () => {
-  it("switches away from a deep-linked ?status=PROCESSING", async () => {
-    mockSearchParams = new URLSearchParams("status=PROCESSING");
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(/Немає замовлень зі статусом/);
-
-    // A single PROCESSING matches no preset, so nothing renders active on arrival.
-    for (const label of [
-      dict.orders.tabNew,
-      dict.orders.tabProcessing,
-      dict.orders.tabShipped,
-      dict.orders.tabAll,
-    ]) {
-      expect(screen.getByRole("tab", { name: label })).toHaveAttribute(
-        "data-state",
-        "inactive",
-      );
-    }
-
-    await userEvent.click(
-      screen.getByRole("tab", { name: dict.orders.tabShipped }),
-    );
-
-    expect(mockReplace).toHaveBeenCalled();
-    for (const [url] of mockReplace.mock.calls) {
-      expect(url).toBe("/orders?status=SHIPPED");
-    }
-  });
-
-  it("clears ?status=PROCESSING without leaking the sentinel into the URL", async () => {
-    mockSearchParams = new URLSearchParams("status=PROCESSING");
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(/Немає замовлень зі статусом/);
-
-    await userEvent.click(
-      screen.getByRole("tab", { name: dict.orders.tabAll }),
-    );
-
-    expect(mockReplace).toHaveBeenCalled();
-    for (const [url] of mockReplace.mock.calls) {
-      // `__all__` is a UI-only value: the URL just loses `?status=`.
-      expect(url).toBe("/orders");
-    }
-  });
-
-  it("gives «Всі» a real Radix value and renders it active with no ?status=", async () => {
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    const allTab = screen.getByRole("tab", { name: dict.orders.tabAll });
-    expect(allTab).toHaveAttribute("data-state", "active");
-    // Radix derives the trigger id from its `value`; with `""` the id stopped at
-    // the separator, which is the shape this test exists to keep out.
-    expect(allTab.id).toContain("__all__");
-    expect(allTab.id).not.toMatch(/-trigger-$/);
-  });
-});
-
-describe("AdminOrderTable — column sorting (TASK-147)", () => {
-  beforeEach(() => mockReplace.mockClear());
-
-  it("renders sortable headers and updates the URL on click", async () => {
-    server.use(
-      http.get("*/api/admin/orders", () =>
-        HttpResponse.json({
-          data: [makeOrderRow(null)],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-    );
-
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText("user-uui…");
-
-    const createdHeader = screen.getByRole("button", {
-      name: dict.common.sortByAria(dict.orders.colCreated),
-    });
-    expect(createdHeader).toBeInTheDocument();
-
-    await userEvent.click(createdHeader);
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      expect.stringContaining("sortBy=createdAt"),
-    );
-  });
-});
-
-describe("AdminOrderTable — toolbar refresh (TASK-354)", () => {
-  it("refetches the queue when Оновити is pressed", async () => {
-    let calls = 0;
-    server.use(
-      http.get("*/api/admin/orders", () => {
-        calls += 1;
-        return HttpResponse.json({
-          data: [makeOrderRow(null)],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        });
-      }),
-    );
-
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText("user-uui…");
-    expect(calls).toBe(1);
-
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.common.table.refreshAria }),
-    );
-
-    await waitFor(() => expect(calls).toBe(2));
-  });
-
-  it("keeps the lifecycle tabs working from inside the toolbar", async () => {
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    // The tabs moved into the toolbar's `filters` slot; the deep-link contract
-    // (TASK-250) is unchanged, so the same click writes the same URL.
-    await userEvent.click(
-      screen.getByRole("tab", { name: dict.orders.tabShipped }),
-    );
-
-    expect(mockReplace).toHaveBeenCalledWith("/orders?status=SHIPPED");
-  });
-});
-
-describe("AdminOrderTable — mobile card layout (TASK-258)", () => {
-  it("renders in card mode with per-cell labels", async () => {
-    server.use(
-      http.get("*/api/admin/orders", () =>
-        HttpResponse.json({
-          data: [makeOrderRow(null)],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-    );
-
-    const { container } = renderWithProviders(<AdminOrderTable />);
-    await screen.findByText("user-uui…");
-
-    expect(container.querySelector('[data-slot="table"]')).toHaveClass(
-      "max-md:block",
-    );
-    expect(
-      container.querySelector(`[data-label="${dict.orders.colStatus}"]`),
-    ).toBeInTheDocument();
-    expect(
-      container.querySelector(`[data-label="${dict.common.actions}"]`),
-    ).toBeInTheDocument();
-  });
-});
-
-/**
- * TASK-425 — the list as a queue: filter by what the money did, by how it was
- * meant to arrive, and by "this has been sitting too long".
- */
-describe("AdminOrderTable — queue filters (TASK-425)", () => {
-  /** Capture the query string the table actually asks the API for. */
-  const captureListUrl = (): { current: string } => {
-    const seen = { current: "" };
-    server.use(
-      http.get("*/api/admin/orders", ({ request }) => {
-        seen.current = request.url;
-        return HttpResponse.json({
-          data: [],
-          meta: { total: 0, page: 1, limit: 20, totalPages: 1 },
-        });
-      }),
-    );
-    return seen;
-  };
-
-  it("offers a payment-status and a payment-method filter", async () => {
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    expect(
-      screen.getByRole("combobox", {
-        name: dict.orders.filterPaymentStatusAria,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("combobox", {
-        name: dict.orders.filterPaymentMethodAria,
-      }),
-    ).toBeInTheDocument();
-  });
-
-  it("sends the payment filters from the URL to the API", async () => {
-    const seen = captureListUrl();
-    mockSearchParams = new URLSearchParams(
-      "paymentStatus=FAILED&paymentMethod=ONLINE",
-    );
-
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    await waitFor(() => expect(seen.current).toContain("paymentStatus=FAILED"));
-    expect(seen.current).toContain("paymentMethod=ONLINE");
-  });
-
-  it("selecting a payment status writes it to the URL and resets the page", async () => {
-    mockSearchParams = new URLSearchParams("page=3");
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    await userEvent.click(
-      screen.getByRole("combobox", {
-        name: dict.orders.filterPaymentStatusAria,
-      }),
-    );
-    await userEvent.click(screen.getByRole("option", { name: "Оплачено" }));
-
-    expect(mockReplace).toHaveBeenCalledWith("/orders?paymentStatus=PAID");
-  });
-
-  // TASK-472. The option list claimed "every value of the enum" and no test held
-  // it to that, which is how PARTIALLY_REFUNDED could be added to the enum and
-  // missed here. Asserted against `OrderEntityPaymentStatus` itself, so the next
-  // value added to the enum fails this test instead of silently going missing.
-  it("offers every payment status, PARTIALLY_REFUNDED included", async () => {
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    await userEvent.click(
-      screen.getByRole("combobox", {
-        name: dict.orders.filterPaymentStatusAria,
-      }),
-    );
-
-    for (const status of Object.values(OrderEntityPaymentStatus)) {
-      expect(
-        screen.getByRole("option", { name: paymentStatusLabel(status) }),
-      ).toBeInTheDocument();
-    }
-  });
-
-  it("filters by PARTIALLY_REFUNDED from the picker", async () => {
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    await userEvent.click(
-      screen.getByRole("combobox", {
-        name: dict.orders.filterPaymentStatusAria,
-      }),
-    );
-    await userEvent.click(
-      screen.getByRole("option", {
-        name: dict.orderStatus.paymentLabels.PARTIALLY_REFUNDED,
-      }),
-    );
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      "/orders?paymentStatus=PARTIALLY_REFUNDED",
-    );
-  });
-
-  it("toggles the «waiting too long» chip into a SERVER filter", async () => {
-    const seen = captureListUrl();
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    const chip = screen.getByRole("button", {
-      name: dict.orders.overdueChipAria,
-    });
-    // Off by default, and it says so to a screen reader rather than only by colour.
-    expect(chip).toHaveAttribute("aria-pressed", "false");
-
-    await userEvent.click(chip);
-
-    expect(mockReplace).toHaveBeenCalledWith("/orders?pendingOverdue=true");
-    // Never filtered client-side: the 48-hour threshold is the dashboard's
-    // constant and lives on the server, so the chip and the tile agree by
-    // construction.
-    expect(seen.current).not.toContain("pendingOverdue");
-  });
-
-  it("renders the chip pressed and asks the API for it when deep-linked", async () => {
-    const seen = captureListUrl();
-    mockSearchParams = new URLSearchParams("pendingOverdue=true");
-
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    expect(
-      screen.getByRole("button", { name: dict.orders.overdueChipAria }),
-    ).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(seen.current).toContain("pendingOverdue=true"));
-  });
-
-  it("clicking the pressed chip clears the filter", async () => {
-    mockSearchParams = new URLSearchParams("pendingOverdue=true");
-    renderWithProviders(<AdminOrderTable />);
-    await screen.findByText(dict.orders.empty);
-
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.orders.overdueChipAria }),
-    );
-
-    expect(mockReplace).toHaveBeenCalledWith("/orders");
-  });
-});
-
-describe("AdminOrderTable — account or guest (TASK-425)", () => {
   const guestRow = {
     ...makeOrderRow(null),
     userId: null,
     guest: {
       email: "olena@example.com",
-      phone: "+380501112233",
+      phone: "380501112233",
       name: "Олена Шевченко",
     },
   };
 
-  it("labels each row as an account or a guest in its own column", async () => {
-    server.use(
-      http.get("*/api/admin/orders", () =>
-        HttpResponse.json({
-          data: [
-            makeOrderRow({
-              id: "user-uuid-87654321",
-              email: "buyer@example.com",
-              firstName: "Ivan",
-              lastName: "Petrenko",
-            }),
-            { ...guestRow, id: "order-uuid-87654321" },
-          ],
-          meta: { total: 2, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-    );
+  it("marks a guest order with the «гість» badge in the client cell", async () => {
+    serveRows([guestRow]);
 
     renderWithProviders(<AdminOrderTable />);
 
-    expect(
-      await screen.findByText(dict.orders.customerTypeAccount),
-    ).toBeInTheDocument();
-    expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
-    expect(screen.getByText(dict.orders.colCustomerType)).toBeInTheDocument();
+    expect(await screen.findByText("Олена Шевченко")).toBeInTheDocument();
+    expect(screen.getByText(d.guestBadge)).toBeInTheDocument();
+    expect(screen.getByText("+380 50 111 2233")).toBeInTheDocument();
   });
 
-  it("falls back to the phone when a guest order has no email (TASK-426)", async () => {
-    server.use(
-      http.get("*/api/admin/orders", () =>
-        HttpResponse.json({
-          // The order an operator takes by phone: `ManualOrderContactDto` makes
-          // the email optional, so the API answers `email: null`. Reading the
-          // email alone left this row's customer cell blank — the one contact
-          // the operator had just typed, invisible on the queue they live in.
-          data: [{ ...guestRow, guest: { ...guestRow.guest, email: null } }],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-    );
+  it("shows the phone of a guest order with no email (TASK-426)", async () => {
+    serveRows([{ ...guestRow, guest: { ...guestRow.guest, email: null } }]);
 
     renderWithProviders(<AdminOrderTable />);
 
-    expect(await screen.findByText("+380501112233")).toBeInTheDocument();
-    expect(screen.getByText(dict.orders.customerTypeGuest)).toBeInTheDocument();
+    expect(await screen.findByText("+380 50 111 2233")).toBeInTheDocument();
+  });
+
+  it("keeps «Тип клієнта» as a column one can turn on in «Колонки» (TASK-425)", async () => {
+    serveRows([guestRow]);
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText("Олена Шевченко");
+
+    // Hidden by default: the «гість» badge in the client cell says it.
+    expect(
+      screen.queryByRole("columnheader", {
+        name: new RegExp(d.colCustomerType),
+      }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: r.columns }));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: d.colCustomerType }),
+    );
+
+    expect(
+      await screen.findByRole("columnheader", {
+        name: new RegExp(d.colCustomerType),
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(d.customerTypeGuest)).toBeInTheDocument();
+  });
+});
+
+describe("AdminOrderTable — the number, delivery and payment cells", () => {
+  it("names the order «#XXXXXXXX» with the full id on hover, as the row's link", async () => {
+    serveRows([makeOrderRow(null)]);
+    renderWithProviders(<AdminOrderTable />);
+
+    const number = await screen.findByText(ROW_NUMBER);
+    expect(number).toHaveAttribute("title", "order-uuid-12345678");
+    expect(number.closest("a")).toHaveAttribute(
+      "href",
+      "/orders/order-uuid-12345678",
+    );
+  });
+
+  it("shows the created date and time on two lines", async () => {
+    serveRows([makeOrderRow(null)]);
+    renderWithProviders(<AdminOrderTable />);
+
+    // 10:00 UTC on 1 June is 13:00 in Kyiv.
+    expect(await screen.findByText("01.06.2026")).toBeInTheDocument();
+    expect(screen.getByText("13:00")).toBeInTheDocument();
+  });
+
+  it("shows the payment status with the method under it", async () => {
+    serveRows([
+      makeOrderRow(null, { paymentMethod: "ON_DELIVERY", status: "CONFIRMED" }),
+    ]);
+    renderWithProviders(<AdminOrderTable />);
+
+    await screen.findByText(ROW_NUMBER);
+    const table = within(screen.getByRole("table"));
+    expect(table.getByText(d.paymentMethodOnDelivery)).toBeInTheDocument();
+  });
+
+  it("shows the address and the waybill, and says when a confirmed order has none", async () => {
+    serveRows([
+      makeOrderRow(null, {
+        id: "aaaaaaaa-0000-0000-0000-000000000001",
+        status: "SHIPPED",
+        trackingNumber: "20450912345676",
+        shippingAddress: {
+          city: "Київ",
+          npWarehouseName: "Відділення №12",
+          address1: "Відділення №12",
+        },
+      }),
+      makeOrderRow(null, {
+        id: "bbbbbbbb-0000-0000-0000-000000000002",
+        status: "CONFIRMED",
+        shippingAddress: { city: "Львів", address1: "Відділення №3" },
+      }),
+    ]);
+    renderWithProviders(<AdminOrderTable />);
+
+    expect(await screen.findByText("Київ, Відділення №12")).toBeInTheDocument();
+    expect(screen.getByText(d.ttnValue("20450912345676"))).toBeInTheDocument();
+    expect(screen.getByText("Львів, Відділення №3")).toBeInTheDocument();
+    expect(screen.getByText(d.ttnMissing)).toBeInTheDocument();
+  });
+});
+
+describe("AdminOrderTable — quick views (TASK-250, TASK-405)", () => {
+  it("offers «Нові · В обробці · Відправлені · Усі»", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    const views = within(
+      screen.getByRole("tablist", { name: r.quickViewsLabel }),
+    ).getAllByRole("tab");
+    expect(views.map((tab) => tab.textContent)).toEqual([
+      d.tabNew,
+      d.tabProcessing,
+      d.tabShipped,
+      d.tabAll,
+    ]);
+    expect(d.tabAll).toBe("Усі");
+  });
+
+  it.each([
+    [dict.orders.tabNew, "/orders?status=PENDING"],
+    [dict.orders.tabProcessing, "/orders?status=CONFIRMED,PROCESSING"],
+    [dict.orders.tabShipped, "/orders?status=SHIPPED"],
+  ])("clicking «%s» writes %s and resets page", async (label, expectedUrl) => {
+    mockSearchParams = new URLSearchParams("page=3");
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    await userEvent.click(screen.getByRole("tab", { name: label }));
+
+    // URLSearchParams percent-encodes the comma in CONFIRMED,PROCESSING (%2C);
+    // decode before comparing so the CSV contract reads literally.
+    expect(mockReplace).toHaveBeenCalledTimes(1);
+    expect(decodeURIComponent(mockReplace.mock.calls[0][0])).toBe(expectedUrl);
+  });
+
+  it("deep-links: ?status=CONFIRMED,PROCESSING renders В обробці active + filters the table", async () => {
+    mockSearchParams = new URLSearchParams("status=CONFIRMED,PROCESSING");
+    const seen = serveRows([makeOrderRow(null)]);
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(ROW_NUMBER);
+
+    expect(pageRequest(seen)?.searchParams.get("status")).toBe(
+      "CONFIRMED,PROCESSING",
+    );
+    expect(screen.getByRole("tab", { name: d.tabProcessing })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: d.tabNew })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+    expect(screen.getByRole("tab", { name: d.tabAll })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+  });
+
+  it("deep-links: ?status=DELIVERED filters the table with no view active, but the views stay reachable by Tab", async () => {
+    mockSearchParams = new URLSearchParams("status=DELIVERED");
+    const seen = serveRows([makeOrderRow(null)]);
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(ROW_NUMBER);
+
+    expect(pageRequest(seen)?.searchParams.get("status")).toBe("DELIVERED");
+    const tabs = [d.tabNew, d.tabProcessing, d.tabShipped, d.tabAll].map(
+      (label) => screen.getByRole("tab", { name: label }),
+    );
+    for (const tab of tabs) {
+      expect(tab).toHaveAttribute("aria-selected", "false");
+    }
+    // With nothing active, roving focus must still let one tab into the order.
+    expect(tabs.filter((tab) => tab.tabIndex === 0)).toHaveLength(1);
+  });
+
+  it("«Усі» clears a deep-linked ?status=PROCESSING without leaking a sentinel", async () => {
+    mockSearchParams = new URLSearchParams("status=PROCESSING");
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(/Немає замовлень зі статусом/);
+
+    await userEvent.click(screen.getByRole("tab", { name: d.tabAll }));
+
+    expect(mockReplace).toHaveBeenCalledWith("/orders");
+    for (const [url] of mockReplace.mock.calls) {
+      expect(url).not.toContain("__all__");
+    }
+  });
+
+  it("renders «Усі» active with no ?status=", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    expect(screen.getByRole("tab", { name: d.tabAll })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+});
+
+describe("AdminOrderTable — toolbar", () => {
+  it("has the search naming only the fields the API searches, and the four controls", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    const search = screen.getByRole("searchbox", { name: d.searchAria });
+    // The API searches the number, the email and the phone (TASK-336) — not the
+    // name, not the waybill — so the placeholder does not promise them.
+    expect(search).toHaveAttribute("placeholder", d.searchPlaceholder);
+    expect(d.searchPlaceholder).not.toMatch(/ТТН|ім'я/);
+    expect(screen.getByRole("button", { name: r.filters })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: r.columns })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: r.view(d.viewDefault) }),
+    ).toBeInTheDocument();
+  });
+
+  it("refetches the queue when Оновити is pressed (TASK-354)", async () => {
+    const seen = serveRows([makeOrderRow(null)]);
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(ROW_NUMBER);
+    expect(seen).toHaveLength(1);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    );
+
+    await waitFor(() => expect(seen).toHaveLength(2));
+  });
+
+  it("says how many orders were found and in what order", async () => {
+    serveRows([makeOrderRow(null)], 27);
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(ROW_NUMBER);
+
+    expect(screen.getByText(d.summaryFound, { exact: false }).textContent).toBe(
+      `${d.summaryFound} 27 замовлень`,
+    );
+    expect(
+      screen.getByText(r.summarySort(d.sortCreatedDesc), { exact: false }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("AdminOrderTable — column sorting (TASK-147)", () => {
+  it.each([
+    [d.colCreated, "createdAt"],
+    [d.colStatus, "status"],
+    [d.colTotal, "total"],
+  ])("sorts by «%s» from its header", async (label, field) => {
+    serveRows([makeOrderRow(null)]);
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(ROW_NUMBER);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.sortByAria(label) }),
+    );
+
+    expect(mockReplace).toHaveBeenCalledWith(
+      expect.stringContaining(`sortBy=${field}`),
+    );
+  });
+});
+
+/**
+ * TASK-425 / 470 / 471 / 352 — the three selects and the six toggles moved into
+ * «Фільтри» with the same URL params. Nothing filters on the client.
+ */
+describe("AdminOrderTable — filters in the sheet", () => {
+  it("offers every payment status, PARTIALLY_REFUNDED included, and every method", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    const sheet = await openFilters();
+    const payment = within(
+      within(sheet).getByRole("group", { name: d.filterPaymentStatusAria }),
+    );
+    for (const status of Object.values(OrderEntityPaymentStatus)) {
+      expect(
+        payment.getByRole("button", { name: paymentStatusLabel(status) }),
+      ).toBeInTheDocument();
+    }
+    const method = within(
+      within(sheet).getByRole("group", { name: d.filterPaymentMethodAria }),
+    );
+    for (const label of [
+      d.paymentMethodOnline,
+      d.paymentMethodOnDelivery,
+      d.paymentMethodInstallments,
+    ]) {
+      expect(method.getByRole("button", { name: label })).toBeInTheDocument();
+    }
+  });
+
+  it("applies payment status and method to the URL and resets the page", async () => {
+    mockSearchParams = new URLSearchParams("page=3");
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    const sheet = await openFilters();
+    await userEvent.click(
+      within(
+        within(sheet).getByRole("group", { name: d.filterPaymentStatusAria }),
+      ).getByRole("button", {
+        name: dict.orderStatus.paymentLabels.PARTIALLY_REFUNDED,
+      }),
+    );
+    await userEvent.click(
+      within(
+        within(sheet).getByRole("group", { name: d.filterPaymentMethodAria }),
+      ).getByRole("button", { name: d.paymentMethodOnDelivery }),
+    );
+    await applyFilters(sheet);
+
+    expect(mockReplace).toHaveBeenLastCalledWith(
+      "/orders?paymentStatus=PARTIALLY_REFUNDED&paymentMethod=ON_DELIVERY",
+    );
+  });
+
+  it("filters by several order statuses at once (the CSV the API accepts)", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    const sheet = await openFilters();
+    const statuses = within(
+      within(sheet).getByRole("group", { name: d.filterStatusAria }),
+    );
+    await userEvent.click(
+      statuses.getByRole("checkbox", { name: "Доставлено" }),
+    );
+    await userEvent.click(
+      statuses.getByRole("checkbox", { name: "Скасовано" }),
+    );
+    await applyFilters(sheet);
+
+    expect(decodeURIComponent(mockReplace.mock.lastCall?.[0])).toBe(
+      "/orders?status=DELIVERED,CANCELLED",
+    );
+  });
+
+  it("sends the URL's filters to the API", async () => {
+    const seen = serveRows([]);
+    mockSearchParams = new URLSearchParams(
+      "paymentStatus=FAILED&paymentMethod=ONLINE&dateFrom=2026-09-01&dateTo=2026-09-24",
+    );
+
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.common.table.emptyFiltered);
+
+    const params = pageRequest(seen)?.searchParams;
+    expect(params?.get("paymentStatus")).toBe("FAILED");
+    expect(params?.get("paymentMethod")).toBe("ONLINE");
+    expect(params?.get("dateFrom")).toBe("2026-09-01");
+    expect(params?.get("dateTo")).toBe("2026-09-24");
+  });
+
+  it("shows applied filters as chips named like the artboard, and a chip removes its filter", async () => {
+    mockSearchParams = new URLSearchParams(
+      "paymentMethod=ON_DELIVERY&dateFrom=2026-09-01&dateTo=2026-09-24",
+    );
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.common.table.emptyFiltered);
+
+    const methodChip = screen.getByRole("button", {
+      name: r.removeChipAria(d.chipPaymentMethod(d.paymentMethodOnDelivery)),
+    });
+    expect(methodChip).toHaveTextContent("Спосіб оплати: Післяплата");
+    expect(
+      screen.getByRole("button", {
+        name: r.removeChipAria(d.chipPeriod("01.09 – 24.09.2026")),
+      }),
+    ).toBeInTheDocument();
+    // «Фільтри» counts what is applied.
+    expect(
+      screen.getByRole("button", {
+        name: new RegExp(`^${r.filters}\\s*${r.filtersApplied(2)}$`),
+      }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(methodChip);
+    expect(mockReplace).toHaveBeenLastCalledWith(
+      "/orders?dateFrom=2026-09-01&dateTo=2026-09-24",
+    );
+  });
+
+  it("picks a period preset into dateFrom/dateTo (Kyiv calendar days)", async () => {
+    // The preset arithmetic is pinned in `order-filters.test.ts`; here only the
+    // round trip from the pill to the URL, against today's Kyiv date.
+    const today = toKyivDateInput(Date.now());
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    const sheet = await openFilters();
+    await userEvent.click(
+      within(sheet).getByRole("button", { name: d.periodMonth }),
+    );
+    await applyFilters(sheet);
+
+    expect(mockReplace).toHaveBeenLastCalledWith(
+      `/orders?dateFrom=${today.slice(0, 8)}01&dateTo=${today}`,
+    );
+  });
+
+  const SIGNALS: ReadonlyArray<[string, string]> = [
+    [dict.orders.overdueChip, "pendingOverdue"],
+    [dict.orders.debtChip, "hasDebt"],
+    [dict.orders.awaitingPaymentChip, "awaitingPayment"],
+    [dict.orders.reservationExpiredChip, "reservationExpired"],
+    [dict.orders.unavailableItemsChip, "hasUnavailableItems"],
+    [dict.orders.paidAfterCancelChip, "paidAfterCancel"],
+    [dict.orders.unpaidInTransitChip, "unpaidInTransit"],
+  ];
+
+  it.each(SIGNALS)(
+    "the «%s» signal writes ?%s=true and never filters on the client",
+    async (label, param) => {
+      const seen = serveRows([]);
+      renderWithProviders(<AdminOrderTable />);
+      await screen.findByText(d.empty);
+
+      const sheet = await openFilters();
+      const box = within(
+        within(sheet).getByRole("group", { name: d.filterSignals }),
+      ).getByRole("checkbox", { name: label });
+      expect(box).not.toBeChecked();
+      await userEvent.click(box);
+      await applyFilters(sheet);
+
+      expect(mockReplace).toHaveBeenLastCalledWith(`/orders?${param}=true`);
+      expect(pageRequest(seen)?.searchParams.has(param)).toBe(false);
+    },
+  );
+
+  it.each(SIGNALS)(
+    "renders «%s» ticked, as a chip, and asks the API for ?%s when deep-linked",
+    async (label, param) => {
+      const seen = serveRows([]);
+      mockSearchParams = new URLSearchParams(`${param}=true`);
+
+      renderWithProviders(<AdminOrderTable />);
+      await screen.findByText(dict.common.table.emptyFiltered);
+
+      expect(pageRequest(seen)?.searchParams.get(param)).toBe("true");
+      expect(
+        screen.getByRole("button", { name: r.removeChipAria(label) }),
+      ).toBeInTheDocument();
+      const sheet = await openFilters();
+      expect(
+        within(sheet).getByRole("checkbox", { name: label }),
+      ).toBeChecked();
+    },
+  );
+
+  it("unticking a signal clears it; two signals compose", async () => {
+    const seen = serveRows([]);
+    mockSearchParams = new URLSearchParams(
+      "hasDebt=true&hasUnavailableItems=true",
+    );
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(dict.common.table.emptyFiltered);
+
+    expect(pageRequest(seen)?.searchParams.get("hasDebt")).toBe("true");
+    expect(pageRequest(seen)?.searchParams.get("hasUnavailableItems")).toBe(
+      "true",
+    );
+
+    const sheet = await openFilters();
+    await userEvent.click(
+      within(sheet).getByRole("checkbox", { name: d.debtChip }),
+    );
+    await applyFilters(sheet);
+    expect(mockReplace).toHaveBeenLastCalledWith(
+      "/orders?hasUnavailableItems=true",
+    );
+  });
+
+  it("names the sheet's apply button with the API's count for the draft", async () => {
+    server.use(
+      http.get("*/api/admin/orders", ({ request }) => {
+        const params = new URL(request.url).searchParams;
+        const debt = params.get("hasDebt") === "true";
+        return HttpResponse.json({
+          data: [],
+          meta: { total: debt ? 3 : 0, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+    );
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(d.empty);
+
+    const sheet = await openFilters();
+    await userEvent.click(
+      within(sheet).getByRole("checkbox", { name: d.debtChip }),
+    );
+
+    expect(
+      await within(sheet).findByRole("button", {
+        name: d.filtersApplyCount("3 замовлення"),
+      }),
+    ).toBeInTheDocument();
   });
 });
 
@@ -603,21 +720,9 @@ describe("AdminOrderTable — CSV export (TASK-425)", () => {
     return seen;
   };
 
-  const stubList = (total: number) =>
-    server.use(
-      http.get("*/api/admin/orders", () =>
-        HttpResponse.json({
-          data: [makeOrderRow(null)],
-          meta: { total, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-    );
-
   let clickSpy: jest.SpyInstance;
 
   beforeEach(() => {
-    toastSuccess.mockClear();
-    toastError.mockClear();
     URL.createObjectURL = jest.fn(() => "blob:mock-url");
     URL.revokeObjectURL = jest.fn();
     clickSpy = jest
@@ -629,62 +734,77 @@ describe("AdminOrderTable — CSV export (TASK-425)", () => {
     clickSpy.mockRestore();
   });
 
-  it("exports the CURRENT SELECTION, not the page on screen", async () => {
-    stubList(1);
+  async function exportCsv() {
+    await userEvent.click(screen.getByRole("button", { name: r.exportLabel }));
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: r.exportCsv }),
+    );
+  }
+
+  it("offers CSV only — no XLSX until something writes it", async () => {
+    serveRows([makeOrderRow(null)]);
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(ROW_NUMBER);
+
+    await userEvent.click(screen.getByRole("button", { name: r.exportLabel }));
+    expect(
+      await screen.findByRole("menuitem", { name: r.exportCsv }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("menuitem", { name: r.exportXlsx }),
+    ).not.toBeInTheDocument();
+    // No selection on this screen — so no «Лише вибрані» to pick.
+    expect(
+      screen.queryByRole("menuitemradio", { name: r.exportSelectedOnly }),
+    ).not.toBeInTheDocument();
+    // The server builds the file: no promise about the visible columns.
+    expect(screen.getByText(dict.orders.exportFootnote)).toBeInTheDocument();
+    expect(screen.queryByText(r.exportFootnote)).not.toBeInTheDocument();
+  });
+
+  it("exports the CURRENT FILTERS, not the page on screen", async () => {
+    serveRows([makeOrderRow(null)]);
     const seen = stubExport("orderNumber,total\r\nABC12345,1469.00");
-    // Filters as applied — including the ones a Select cannot express.
     mockSearchParams = new URLSearchParams(
-      "status=PENDING&search=ABC&paymentStatus=PENDING&pendingOverdue=true&page=2",
+      "status=PENDING&search=ABC&paymentStatus=PENDING&pendingOverdue=true&hasUnavailableItems=true&dateFrom=2026-09-01&page=2",
     );
 
     renderWithProviders(<AdminOrderTable />);
-    await screen.findByText("user-uui…");
-
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.orders.exportCsv }),
-    );
+    await screen.findByText(ROW_NUMBER);
+    await exportCsv();
 
     await waitFor(() => expect(seen.url).toContain("status=PENDING"));
     expect(seen.url).toContain("search=ABC");
     expect(seen.url).toContain("paymentStatus=PENDING");
     expect(seen.url).toContain("pendingOverdue=true");
-    // The page is NOT sent: the export is the selection, and the server refuses
-    // a paged export outright rather than returning an ambiguous file.
+    expect(seen.url).toContain("hasUnavailableItems=true");
+    expect(seen.url).toContain("dateFrom=2026-09-01");
     expect(seen.url).not.toContain("page=");
 
     await waitFor(() =>
       expect(URL.createObjectURL as jest.Mock).toHaveBeenCalledTimes(1),
     );
     expect(clickSpy).toHaveBeenCalledTimes(1);
-    expect(toastSuccess).toHaveBeenCalledWith(dict.orders.exportSuccess(1));
+    expect(toastSuccess).toHaveBeenCalledWith(d.exportSuccess(1));
   });
 
   it("says so — and keeps saying so — when the server capped the file", async () => {
-    // The list knows 9 000 orders match; the file came back with two.
-    stubList(9000);
+    serveRows([makeOrderRow(null)], 9000);
     stubExport("orderNumber,total\r\nABC12345,1469.00\r\nDEF67890,99.00");
 
     renderWithProviders(<AdminOrderTable />);
-    await screen.findByText("user-uui…");
+    await screen.findByText(ROW_NUMBER);
+    await exportCsv();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.orders.exportCsv }),
-    );
-
-    // Through toast.ERROR, which is sticky: a spreadsheet quietly missing most
-    // of the orders is the one outcome the operator must not scroll past.
     await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith(
-        dict.orders.exportTruncated(2, 9000),
-      ),
+      expect(toastError).toHaveBeenCalledWith(d.exportTruncated(2, 9000)),
     );
     expect(toastSuccess).not.toHaveBeenCalled();
-    // The file is still handed over — a partial export beats none.
     expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 
   it("reports a failed export instead of downloading an empty file", async () => {
-    stubList(1);
+    serveRows([makeOrderRow(null)]);
     server.use(
       http.get("*/api/admin/orders/export", () =>
         HttpResponse.json({ message: "boom" }, { status: 500 }),
@@ -692,290 +812,316 @@ describe("AdminOrderTable — CSV export (TASK-425)", () => {
     );
 
     renderWithProviders(<AdminOrderTable />);
-    await screen.findByText("user-uui…");
+    await screen.findByText(ROW_NUMBER);
+    await exportCsv();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.orders.exportCsv }),
-    );
-
-    await waitFor(() =>
-      expect(toastError).toHaveBeenCalledWith(dict.orders.exportError),
-    );
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith(d.exportError));
     expect(clickSpy).not.toHaveBeenCalled();
   });
 });
 
-/**
- * The derived marks and their filters (TASK-470 / 471 / 472).
- *
- * Two halves, and they fail differently. The CHIPS are pure rendering over the
- * row the API returned — worth testing because each is a compound condition and
- * a wrong one is invisible: the order quietly carries no chip, and an operator
- * concludes it is fine. The FILTERS are worth testing because they must reach
- * the SERVER: the marks are conditions over three or four columns and the list
- * is paginated, so anything filtered on the client would answer "how many on
- * this page" while looking exactly like the right answer.
- */
 describe("AdminOrderTable — the derived marks of B-1 (TASK-470/471/472)", () => {
-  const captureUrl = (): { current: string } => {
-    const seen = { current: "" };
-    server.use(
-      http.get("*/api/admin/orders", ({ request }) => {
-        seen.current = request.url;
-        return HttpResponse.json({
-          data: [],
-          meta: { total: 0, page: 1, limit: 20, totalPages: 1 },
-        });
-      }),
-    );
-    return seen;
-  };
-
   const stubRow = (row: Record<string, unknown>) =>
-    server.use(
-      http.get("*/api/admin/orders", () =>
-        HttpResponse.json({
-          data: [{ ...makeOrderRow(null), ...row }],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-    );
+    serveRows([{ ...makeOrderRow(null), ...row }]);
 
-  /**
-   * Queries are scoped to the TABLE on purpose. Every mark has a filter toggle
-   * in the toolbar carrying the same words, which is the point — the operator
-   * clicks the toggle that matches the chip they just read — but it means an
-   * unscoped `getByText` would find the control as readily as the row.
-   */
   const table = async () => {
     // Wait for a cell of the real row first: the loading SKELETON is a <table>
-    // too, so `findByRole("table")` resolves against it and every query inside
-    // then misses.
-    await screen.findByText("user-uui…");
+    // too, so `findByRole("table")` resolves against it.
+    await screen.findByText(ROW_NUMBER);
     return within(screen.getByRole("table"));
   };
 
-  describe("the chips on a row", () => {
-    it("flags a delivered order nobody paid for", async () => {
-      stubRow({
-        status: "DELIVERED",
-        paymentStatus: "PENDING",
-        total: "1200.00",
-      });
-
-      renderWithProviders(<AdminOrderTable />);
-
-      // The amount is IN the chip: an operator about to ring the customer needs
-      // the figure, not a flag that something is wrong.
-      expect((await table()).getByText(/Борг\s/)).toHaveTextContent(/1\s?200/);
+  it("flags a delivered order nobody paid for", async () => {
+    stubRow({
+      status: "DELIVERED",
+      paymentStatus: "PENDING",
+      total: "1200.00",
     });
-
-    it("counts down the payment window on a card order", async () => {
-      stubRow({
-        paymentMethod: "ONLINE",
-        paymentStatus: "PENDING",
-        reservationExpiresAt: new Date(Date.now() + 23 * 60_000).toISOString(),
-      });
-
-      renderWithProviders(<AdminOrderTable />);
-
-      expect(
-        (await table()).getByText(/Очікує оплати · \d+ хв/),
-      ).toBeInTheDocument();
-    });
-
-    it("says «Резерв сплив» once the window has closed", async () => {
-      stubRow({
-        paymentMethod: "ONLINE",
-        paymentStatus: "PENDING",
-        reservationExpiresAt: "2020-01-01T00:00:00.000Z",
-      });
-
-      renderWithProviders(<AdminOrderTable />);
-
-      expect(
-        (await table()).getByText(dict.orders.markReservationExpired),
-      ).toBeInTheDocument();
-    });
-
-    it("shows the refunded fraction on a partially refunded order", async () => {
-      stubRow({
-        paymentStatus: "PARTIALLY_REFUNDED",
-        refundedTotal: "499.00",
-        total: "1200.00",
-      });
-
-      renderWithProviders(<AdminOrderTable />);
-
-      // `\d` after the words, because the payment BADGE beside it reads exactly
-      // «Частково повернуто» — the mark is the one that carries the fraction.
-      const chip = (await table()).getByText(/Частково повернуто \d/);
-      expect(chip).toHaveTextContent(/499/);
-      expect(chip).toHaveTextContent(/1\s?200/);
-    });
-
-    it("draws no mark at all on an ordinary paid order", async () => {
-      stubRow({ status: "PROCESSING", paymentStatus: "PAID" });
-
-      renderWithProviders(<AdminOrderTable />);
-
-      const row = await table();
-      expect(row.getByText("Оплачено")).toBeInTheDocument();
-      expect(row.queryByText(/Борг/)).not.toBeInTheDocument();
-      expect(row.queryByText(/Очікує оплати ·/)).not.toBeInTheDocument();
-      expect(
-        row.queryByText(dict.orders.markReservationExpired),
-      ).not.toBeInTheDocument();
-    });
+    renderWithProviders(<AdminOrderTable />);
+    expect((await table()).getByText(/Борг\s/)).toHaveTextContent(/1\s?200/);
   });
 
-  describe("the toggles that filter by them", () => {
-    const TOGGLES: ReadonlyArray<[string, string]> = [
-      [dict.orders.debtChipAria, "hasDebt"],
-      [dict.orders.awaitingPaymentChipAria, "awaitingPayment"],
-      [dict.orders.reservationExpiredChipAria, "reservationExpired"],
-      [dict.orders.unavailableItemsChipAria, "hasUnavailableItems"],
-      // TASK-352 (c): «Оплачено після скасування».
-      [dict.orders.paidAfterCancelChipAria, "paidAfterCancel"],
-    ];
+  it("counts down the payment window on a card order", async () => {
+    stubRow({
+      paymentMethod: "ONLINE",
+      paymentStatus: "PENDING",
+      reservationExpiresAt: new Date(Date.now() + 23 * 60_000).toISOString(),
+    });
+    renderWithProviders(<AdminOrderTable />);
+    expect(
+      (await table()).getByText(/Очікує оплати · \d+ хв/),
+    ).toBeInTheDocument();
+  });
 
-    it.each(TOGGLES)(
-      "«%s» writes ?%s=true and never filters client-side",
-      async (aria, param) => {
-        const seen = captureUrl();
-        renderWithProviders(<AdminOrderTable />);
-        await screen.findByText(dict.orders.empty);
+  it("says «Резерв сплив» once the window has closed", async () => {
+    stubRow({
+      paymentMethod: "ONLINE",
+      paymentStatus: "PENDING",
+      reservationExpiresAt: "2020-01-01T00:00:00.000Z",
+    });
+    renderWithProviders(<AdminOrderTable />);
+    expect(
+      (await table()).getByText(d.markReservationExpired),
+    ).toBeInTheDocument();
+  });
 
-        const chip = screen.getByRole("button", { name: aria });
-        // Off by default, and it says so to a screen reader rather than by colour.
-        expect(chip).toHaveAttribute("aria-pressed", "false");
+  it("shows the refunded fraction on a partially refunded order", async () => {
+    stubRow({
+      paymentStatus: "PARTIALLY_REFUNDED",
+      refundedTotal: "499.00",
+      total: "1200.00",
+    });
+    renderWithProviders(<AdminOrderTable />);
+    const chip = (await table()).getByText(/Частково повернуто \d/);
+    expect(chip).toHaveTextContent(/499/);
+    expect(chip).toHaveTextContent(/1\s?200/);
+  });
 
-        await userEvent.click(chip);
+  it("draws no mark at all on an ordinary paid order", async () => {
+    stubRow({ status: "PROCESSING", paymentStatus: "PAID" });
+    renderWithProviders(<AdminOrderTable />);
+    const row = await table();
+    expect(row.getByText("Оплачено")).toBeInTheDocument();
+    expect(row.queryByText(/Борг/)).not.toBeInTheDocument();
+    expect(row.queryByText(/Очікує оплати ·/)).not.toBeInTheDocument();
+  });
+});
 
-        expect(mockReplace).toHaveBeenCalledWith(`/orders?${param}=true`);
-        expect(seen.current).not.toContain(param);
-      },
+describe("AdminOrderTable — the row's «⋯» (was «Переглянути»)", () => {
+  const rowWithTtn = makeOrderRow(null, {
+    status: "SHIPPED",
+    trackingNumber: "20450912345676",
+  });
+
+  async function openMenu() {
+    await userEvent.click(
+      await screen.findByRole("button", {
+        name: r.rowActionsAria(d.rowAria(ROW_NUMBER)),
+      }),
+    );
+  }
+
+  it("opens the order, also in a new tab", async () => {
+    serveRows([rowWithTtn]);
+    renderWithProviders(<AdminOrderTable />);
+    await openMenu();
+
+    expect(
+      await screen.findByRole("menuitem", { name: d.rowOpen }),
+    ).toHaveAttribute("href", "/orders/order-uuid-12345678");
+    const newTab = screen.getByRole("menuitem", { name: d.rowOpenNewTab });
+    expect(newTab).toHaveAttribute("href", "/orders/order-uuid-12345678");
+    expect(newTab).toHaveAttribute("target", "_blank");
+  });
+
+  it("copies the number and the waybill", async () => {
+    const user = userEvent.setup();
+    serveRows([rowWithTtn]);
+    renderWithProviders(<AdminOrderTable />);
+    const write = jest.spyOn(navigator.clipboard, "writeText");
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: r.rowActionsAria(d.rowAria(ROW_NUMBER)),
+      }),
+    );
+    await user.click(
+      await screen.findByRole("menuitem", { name: d.rowCopyNumber }),
+    );
+    expect(write).toHaveBeenLastCalledWith(ROW_NUMBER);
+    await waitFor(() =>
+      expect(toastSuccess).toHaveBeenCalledWith(d.copiedNumber(ROW_NUMBER)),
     );
 
-    it.each(TOGGLES)(
-      "renders «%s» pressed and asks the API for ?%s when deep-linked",
-      async (aria, param) => {
-        const seen = captureUrl();
-        mockSearchParams = new URLSearchParams(`${param}=true`);
-
-        renderWithProviders(<AdminOrderTable />);
-        await screen.findByText(dict.orders.empty);
-
-        expect(screen.getByRole("button", { name: aria })).toHaveAttribute(
-          "aria-pressed",
-          "true",
-        );
-        await waitFor(() => expect(seen.current).toContain(`${param}=true`));
-      },
+    await user.click(
+      screen.getByRole("button", {
+        name: r.rowActionsAria(d.rowAria(ROW_NUMBER)),
+      }),
     );
+    await user.click(
+      await screen.findByRole("menuitem", { name: d.rowCopyTtn }),
+    );
+    expect(write).toHaveBeenLastCalledWith("20450912345676");
+  });
 
-    it("clicking a pressed toggle clears it", async () => {
-      mockSearchParams = new URLSearchParams("hasDebt=true");
-      renderWithProviders(<AdminOrderTable />);
-      await screen.findByText(dict.orders.empty);
+  it("offers «Скопіювати ТТН» only when there is one", async () => {
+    serveRows([makeOrderRow(null)]);
+    renderWithProviders(<AdminOrderTable />);
+    await openMenu();
 
-      await userEvent.click(
-        screen.getByRole("button", { name: dict.orders.debtChipAria }),
-      );
+    await screen.findByRole("menuitem", { name: d.rowOpen });
+    expect(
+      screen.queryByRole("menuitem", { name: d.rowCopyTtn }),
+    ).not.toBeInTheDocument();
+  });
 
-      expect(mockReplace).toHaveBeenCalledWith("/orders");
+  it("leads «Змінити статус…» to the card's status control — only with orders:write", async () => {
+    serveRows([makeOrderRow(null)]);
+    renderWithProviders(<AdminOrderTable />, {
+      auth: { permissions: ["orders:read", "orders:write"] },
     });
+    await openMenu();
 
-    it("composes two marks at once", async () => {
-      // Independent booleans rather than one `?mark=` choice, precisely so this
-      // question — "delivered, unpaid AND missing a position" — is expressible.
-      const seen = captureUrl();
-      mockSearchParams = new URLSearchParams(
-        "hasDebt=true&hasUnavailableItems=true",
-      );
+    expect(
+      await screen.findByRole("menuitem", { name: d.rowChangeStatus }),
+    ).toHaveAttribute("href", "/orders/order-uuid-12345678#order-status");
+  });
 
-      renderWithProviders(<AdminOrderTable />);
-      await screen.findByText(dict.orders.empty);
-
-      await waitFor(() => expect(seen.current).toContain("hasDebt=true"));
-      expect(seen.current).toContain("hasUnavailableItems=true");
+  it("does not offer «Змінити статус…» to a reader", async () => {
+    serveRows([makeOrderRow(null)]);
+    renderWithProviders(<AdminOrderTable />, {
+      auth: { permissions: ["orders:read"] },
     });
+    await openMenu();
 
-    it("carries the mark filters into the CSV export", async () => {
-      // The export's promise is "the rows you are looking at"; a file that
-      // silently disagrees with the screen it came from gives no hint that it is
-      // the one lying.
-      mockSearchParams = new URLSearchParams("hasUnavailableItems=true");
-      const exportSeen = { current: "" };
-      server.use(
-        http.get("*/api/admin/orders", () =>
-          HttpResponse.json({
-            data: [makeOrderRow(null)],
-            meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-          }),
-        ),
-        http.get("*/api/admin/orders/export", ({ request }) => {
-          exportSeen.current = request.url;
-          return HttpResponse.text("id\r\norder-uuid-12345678");
-        }),
-      );
+    await screen.findByRole("menuitem", { name: d.rowOpen });
+    expect(
+      screen.queryByRole("menuitem", { name: d.rowChangeStatus }),
+    ).not.toBeInTheDocument();
+  });
 
-      renderWithProviders(<AdminOrderTable />);
-      await screen.findByText("user-uui…");
+  it("opens the order on a click anywhere on the row", async () => {
+    serveRows([makeOrderRow(null)]);
+    renderWithProviders(<AdminOrderTable />);
 
-      await userEvent.click(
-        screen.getByRole("button", { name: dict.orders.exportCsv }),
-      );
+    await userEvent.click(await screen.findByText("Очікує підтвердження"));
+    expect(mockPush).toHaveBeenCalledWith("/orders/order-uuid-12345678");
+  });
+});
 
-      await waitFor(() =>
-        expect(exportSeen.current).toContain("hasUnavailableItems=true"),
-      );
+describe("AdminOrderTable — page totals and pagination", () => {
+  it("totals the page: count, sum and positions", async () => {
+    serveRows([
+      makeOrderRow(null, {
+        total: "1000.50",
+        items: [{ id: "a" }, { id: "b" }],
+      }),
+      makeOrderRow(null, {
+        id: "second-uuid-0000",
+        total: "999.50",
+        items: [{ id: "c" }],
+      }),
+    ]);
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(ROW_NUMBER);
+
+    const footer = screen
+      .getByText(r.totalsOnPage("2 замовлення"))
+      .closest("tr") as HTMLElement;
+    expect(footer).toHaveTextContent(/2\s?000 ₴/);
+    expect(within(footer).getByText("3")).toBeInTheDocument();
+  });
+
+  it("keeps the pager with its page-size picker", async () => {
+    serveRows([makeOrderRow(null)]);
+    renderWithProviders(<AdminOrderTable />);
+    await screen.findByText(ROW_NUMBER);
+
+    expect(
+      screen.getByRole("button", { name: dict.common.next }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", { name: dict.common.table.pageSizeLabel }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("AdminOrderTable — empty and error states", () => {
+  it("says there are no orders yet", async () => {
+    renderWithProviders(<AdminOrderTable />);
+    expect(await screen.findByText(d.empty)).toBeInTheDocument();
+  });
+
+  it("names the status a status filter found nothing in", async () => {
+    mockSearchParams = new URLSearchParams("status=PENDING");
+    renderWithProviders(<AdminOrderTable />);
+    expect(
+      await screen.findByText(d.emptyStatus("Очікує підтвердження")),
+    ).toBeInTheDocument();
+  });
+
+  it("names the search term rather than the status filter", async () => {
+    mockSearchParams = new URLSearchParams("search=0671&status=PENDING");
+    renderWithProviders(<AdminOrderTable />);
+    expect(await screen.findByText(r.noResults("0671"))).toBeInTheDocument();
+  });
+
+  it("shows the load error with a retry", async () => {
+    server.use(
+      http.get("*/api/admin/orders", () =>
+        HttpResponse.json({ message: "boom" }, { status: 500 }),
+      ),
+    );
+    renderWithProviders(<AdminOrderTable />);
+    expect(await screen.findByText(d.loadError)).toBeInTheDocument();
+  });
+});
+
+describe("AdminOrderTable — cards below md (П7)", () => {
+  it("draws a card per order with number, status, client, total, payment and «⋯»", async () => {
+    setViewport(true);
+    serveRows([
+      makeOrderRow(null, {
+        userId: null,
+        guest: { email: null, phone: "380501112233", name: "Олена Шевченко" },
+        total: "35647",
+        shippingAddress: { city: "Львів", address1: "Відділення №3" },
+      }),
+    ]);
+    renderWithProviders(<AdminOrderTable />);
+
+    const card = await screen.findByRole("listitem", {
+      name: d.rowAria(ROW_NUMBER),
     });
+    const inCard = within(card);
+    expect(inCard.getByText(ROW_NUMBER)).toBeInTheDocument();
+    expect(inCard.getByText("Очікує підтвердження")).toBeInTheDocument();
+    expect(inCard.getByText("Олена Шевченко")).toBeInTheDocument();
+    expect(inCard.getByText(d.guestBadge)).toBeInTheDocument();
+    expect(inCard.getByText(/35\s?647 ₴/)).toBeInTheDocument();
+    expect(inCard.getByText("Очікує оплати")).toBeInTheDocument();
+    expect(inCard.getByText("Львів, Відділення №3")).toBeInTheDocument();
+    expect(
+      inCard.getByRole("button", {
+        name: r.rowActionsAria(d.rowAria(ROW_NUMBER)),
+      }),
+    ).toBeInTheDocument();
   });
 });
 
 /**
  * TASK-715 — «Створити замовлення» leads to a form whose submit is
- * `POST /admin/orders`, behind `orders:write`. A reader used to fill the whole
- * form in and only then get a 403; now the link is simply not there.
+ * `POST /admin/orders`, behind `orders:write`.
  */
-describe("AdminOrderTable — create CTA needs orders:write (TASK-715)", () => {
-  function serveOne() {
-    server.use(
-      http.get("*/api/admin/orders", () =>
-        HttpResponse.json({
-          data: [makeOrderRow(null)],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-    );
-  }
-
-  it("is not rendered for a session that may only read orders", async () => {
-    serveOne();
+describe("AdminOrderTable — header actions", () => {
+  it("does not offer «Створити замовлення» to a reader, who still exports", async () => {
+    serveRows([makeOrderRow(null)]);
     renderWithProviders(<AdminOrderTable />, {
       auth: { permissions: ["orders:read"] },
     });
 
-    await screen.findByText("user-uui…");
+    await screen.findByText(ROW_NUMBER);
     expect(
-      screen.queryByRole("link", { name: dict.orders.createCta }),
+      screen.queryByRole("link", { name: d.createCta }),
     ).not.toBeInTheDocument();
-    // Reading is not writing: the export is a GET and stays.
     expect(
-      screen.getByRole("button", { name: dict.orders.exportCsv }),
+      screen.getByRole("button", { name: r.exportLabel }),
     ).toBeInTheDocument();
   });
 
   it("links to /orders/new for a session holding orders:write", async () => {
-    serveOne();
+    serveRows([makeOrderRow(null)]);
     renderWithProviders(<AdminOrderTable />, {
       auth: { permissions: ["orders:read", "orders:write"] },
     });
 
-    await screen.findByText("user-uui…");
+    await screen.findByText(ROW_NUMBER);
+    expect(screen.getByRole("link", { name: d.createCta })).toHaveAttribute(
+      "href",
+      "/orders/new",
+    );
     expect(
-      screen.getByRole("link", { name: dict.orders.createCta }),
-    ).toHaveAttribute("href", "/orders/new");
+      screen.getByRole("heading", { name: d.heading }),
+    ).toBeInTheDocument();
   });
 });

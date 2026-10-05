@@ -16,6 +16,9 @@ export {
   getAdminCarouselControllerFindAllQueryKey,
   getAdminCarouselControllerFindByIdQueryKey,
   getAdminCarouselControllerGetItemsQueryKey,
+  // Wave 198 (TASK-1074): the PUBLIC list — published carousels with the
+  // products the site resolved for them. The form shows it as «Зараз на сайті».
+  useCarouselControllerFindAll,
 } from "@/shared/api";
 
 export type {
@@ -32,3 +35,10 @@ export type {
 } from "@/shared/api";
 
 export { CarouselEntitySource, CarouselEntityPlacement } from "@/shared/api";
+
+// Wave 198 (TASK-1074): «Дублювати» on the existing create + set-items API.
+export {
+  DuplicateCarouselItemsError,
+  duplicateCarouselPayload,
+  useDuplicateCarousel,
+} from "./model/use-duplicate-carousel";

@@ -1,14 +1,22 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
-import { BlogCategoryTable, BlogCategoryTableSkeleton } from "@/widgets";
-import { Button } from "@/shared/ui";
+import {
+  BlogCategoryFormDialog,
+  BlogCategoryTable,
+  BlogCategoryTableSkeleton,
+  BlogSectionTabs,
+} from "@/widgets";
+import { PERM } from "@/entities/permission";
+import { PermissionGate } from "@/entities/session";
+import { Button, RegistryHeader } from "@/shared/ui";
 import { dict } from "@/shared/config";
 
 /**
- * TASK-405: no query state on this route yet, but it is a dashboard list like
- * its siblings and sits behind auth — kept dynamic so that adding a filter here
- * later cannot quietly bring back the stale-prerender bug.
+ * TASK-405: the form dialog lives in the query string (`?new=1`,
+ * `?edit=<id>`), and a statically prerendered route serves one prerender for
+ * every query string — rendering on request keeps a query-only navigation
+ * real. Every admin route sits behind auth, so nothing static is lost.
  */
 export const dynamic = "force-dynamic";
 
@@ -16,28 +24,33 @@ export const metadata: Metadata = {
   title: dict.blogCategories.metaTitle,
 };
 
+/**
+ * «Блог → Категорії» (wave 198, BlogCategoriesProposal КБ1–КБ6): the section
+ * header and tabs, the sortable grid, and the category form as a dialog over
+ * it (КБ4) — opened by «Додати категорію» and «⋯ → Редагувати».
+ */
 export default function BlogCategoriesPage() {
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div className="flex flex-col gap-1">
-          <Link
-            href="/blog"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            {dict.blogCategories.backToPosts}
-          </Link>
-          <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-            {dict.blogCategories.heading}
-          </h2>
-        </div>
-        <Button asChild>
-          <Link href="/blog/categories/new">{dict.blogCategories.add}</Link>
-        </Button>
-      </div>
+    <div className="flex flex-col gap-4">
+      <RegistryHeader
+        title={dict.blogPosts.heading}
+        actions={
+          <PermissionGate permission={PERM.blogWrite} fallback={null}>
+            <Button asChild>
+              <Link href="/blog/categories?new=1" scroll={false}>
+                {dict.blogCategories.add}
+              </Link>
+            </Button>
+          </PermissionGate>
+        }
+      />
+      <BlogSectionTabs active="categories" />
 
       <Suspense fallback={<BlogCategoryTableSkeleton />}>
         <BlogCategoryTable />
+      </Suspense>
+      <Suspense fallback={null}>
+        <BlogCategoryFormDialog />
       </Suspense>
     </div>
   );

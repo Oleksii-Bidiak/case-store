@@ -1,6 +1,6 @@
-import { AdminFormSkeleton } from "@/shared/ui";
+import { DeviceModelFormSkeleton } from "@/widgets";
 
-/** Route-level loading UI for `/devices/models/[id]/edit`. */
+/** Route-level loading UI for `/devices/models/[id]/edit` (DevicesProposal ПР12). */
 export default function Loading() {
-  return <AdminFormSkeleton />;
+  return <DeviceModelFormSkeleton withAside />;
 }

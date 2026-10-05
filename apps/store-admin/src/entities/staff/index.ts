@@ -13,7 +13,7 @@
 // `shared/api/generated/**`.
 
 export {
-  // «Персонал» — the register itself.
+  // «Співробітники» — the register itself.
   useListStaff,
   useCreateStaff,
   useGetStaff,
@@ -86,3 +86,4 @@ export {
 } from "./model/use-grantable-catalogue";
 
 export { PermissionZoneGrid } from "./ui/PermissionZoneGrid";
+export { StaffLevelBadge, StaffStatusBadge } from "./ui/StaffBadges";

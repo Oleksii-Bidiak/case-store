@@ -2,7 +2,10 @@
 export { AdminSidebar, AdminHeader } from "./admin-shell";
 export { AdminProductTable, AdminProductTableSkeleton } from "./product-list";
 export { CreateProductView, EditProductView } from "./product-form-view";
-export { AdminProductPreviewView } from "./admin-product-preview";
+export {
+  AdminProductPreviewSkeleton,
+  AdminProductPreviewView,
+} from "./admin-product-preview";
 export {
   AdminProductGroupTable,
   AdminProductGroupTableSkeleton,
@@ -10,6 +13,7 @@ export {
 export {
   CreateProductGroupView,
   EditProductGroupView,
+  ProductGroupFormSkeleton,
 } from "./product-group-form-view";
 // TASK-291: `category-list` (the flat AdminCategoryTable) is deleted — the
 // treegrid below is the only category list surface.
@@ -24,46 +28,55 @@ export {
   DeviceModelTableSkeleton,
 } from "./device-model-list";
 export {
-  CreateDeviceBrandView,
-  EditDeviceBrandView,
-} from "./device-brand-form-view";
+  DeviceSectionHeader,
+  DeviceSectionHeaderSkeleton,
+} from "./device-section";
 export {
   CreateDeviceModelView,
+  DeviceModelFormSkeleton,
   EditDeviceModelView,
 } from "./device-model-form-view";
 export {
   AdminDiscountTable,
   AdminDiscountTableSkeleton,
 } from "./discount-list";
-export { CreateDiscountView, EditDiscountView } from "./discount-form-view";
+export {
+  CreateDiscountView,
+  DiscountFormSkeleton,
+  EditDiscountView,
+} from "./discount-form-view";
 export { AdminPageTable, AdminPageTableSkeleton } from "./page-list";
 export { CreatePageView, EditPageView } from "./page-form-view";
-export { BlogPostTable, BlogPostTableSkeleton } from "./blog-post-list";
+export {
+  BlogPostTable,
+  BlogPostTableSkeleton,
+  BlogSectionTabs,
+} from "./blog-post-list";
 export { CreateBlogPostView, EditBlogPostView } from "./blog-post-form-view";
 export {
   BlogCategoryTable,
   BlogCategoryTableSkeleton,
 } from "./blog-category-list";
-export {
-  CreateBlogCategoryView,
-  EditBlogCategoryView,
-} from "./blog-category-form-view";
+export { BlogCategoryFormDialog } from "./blog-category-form-view";
 export { AdminBannerTable, AdminBannerTableSkeleton } from "./banner-list";
-export { CreateBannerView, EditBannerView } from "./banner-form-view";
+export {
+  BannerFormSkeleton,
+  CreateBannerView,
+  EditBannerView,
+} from "./banner-form-view";
 export { AdminBrandTable, AdminBrandTableSkeleton } from "./brand-list";
 export {
   AddonServiceTable,
   AddonServiceTableSkeleton,
 } from "./addon-service-list";
 export {
-  CreateAddonServiceView,
-  EditAddonServiceView,
-} from "./addon-service-form-view";
-export { CreateBrandView, EditBrandView } from "./brand-form-view";
+  BrandFormSkeleton,
+  CreateBrandView,
+  EditBrandView,
+} from "./brand-form-view";
 export { SiteContactSettingsView } from "./site-contact-settings-view";
 export { SeoSettingsView } from "./seo-settings-view";
 export { AdminFaqTable, AdminFaqTableSkeleton } from "./faq-list";
-export { CreateFaqView, EditFaqView } from "./faq-form-view";
 export { AdminOrderTable, AdminOrderTableSkeleton } from "./order-list";
 export {
   AdminReviewTable,
@@ -90,6 +103,7 @@ export { AuditLogView, AuditLogSkeleton } from "./audit-log";
 export { AdminProfileView } from "./admin-profile";
 export {
   AdminDashboardStats,
+  AdminDashboardStatsError,
   AdminDashboardStatsSkeleton,
   DashboardSectionSkeleton,
 } from "./dashboard-stats";
@@ -99,19 +113,27 @@ export {
 } from "./dashboard-needs-action";
 export {
   DashboardCharts,
+  DashboardChartsSkeleton,
   RevenueTrendChart,
   OrdersByStatusChart,
 } from "./dashboard-charts";
 export { DashboardLowStockTable } from "./dashboard-low-stock";
 export { ContentMapView } from "./content-map";
 export { DashboardTopProductsTable } from "./dashboard-top-products";
-export { DashboardLastOrdersTable } from "./dashboard-last-orders";
+export {
+  DashboardLastOrdersTable,
+  DashboardLastOrdersTableSkeleton,
+} from "./dashboard-last-orders";
 export { DashboardTrafficCard } from "./dashboard-traffic";
 export {
   AdminCarouselTable,
   AdminCarouselTableSkeleton,
 } from "./carousel-list";
-export { CreateCarouselView, EditCarouselView } from "./carousel-form-view";
+export {
+  CarouselFormSkeleton,
+  CreateCarouselView,
+  EditCarouselView,
+} from "./carousel-form-view";
 // Operator-created (phone) orders (TASK-341)
 export { OrderCreateView } from "./order-create-view";
 // Returns / RMA (TASK-340)

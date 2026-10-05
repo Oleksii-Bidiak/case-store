@@ -1,4 +1,5 @@
-import { Node, mergeAttributes } from "@tiptap/react";
+import { Node, ReactNodeViewRenderer, mergeAttributes } from "@tiptap/react";
+import { ImageNodeView } from "./image-node-view";
 
 /**
  * The `<img>` node for the admin editor (TASK-547).
@@ -56,5 +57,12 @@ export const ImageNode = Node.create({
 
   renderHTML({ HTMLAttributes }) {
     return ["img", mergeAttributes(HTMLAttributes)];
+  },
+
+  // Wave 198 (РЕ2/РЕ3): the picture on SCREEN gets a «Без опису» marker and,
+  // when selected, a panel. That is view-only chrome — what is saved is still
+  // `renderHTML` above, `src` and `alt` and nothing else.
+  addNodeView() {
+    return ReactNodeViewRenderer(ImageNodeView);
   },
 });

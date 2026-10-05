@@ -65,10 +65,10 @@ describe("OrderReturnsSection (TASK-724)", () => {
       screen.getByRole("heading", { name: dict.orders.returnsForOrder }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByRole("link", { name: dict.returns.title("ret00001") }),
+      await screen.findByRole("link", { name: dict.returns.title("RET00001") }),
     ).toHaveAttribute("href", "/returns/ret00001-aaaa");
     expect(
-      screen.getByRole("link", { name: dict.returns.title("ret00002") }),
+      screen.getByRole("link", { name: dict.returns.title("RET00002") }),
     ).toHaveAttribute("href", "/returns/ret00002-bbbb");
     expect(screen.getByText(returnStatusLabel("APPROVED"))).toBeInTheDocument();
     expect(screen.getByText(returnStatusLabel("REFUNDED"))).toBeInTheDocument();
@@ -86,10 +86,10 @@ describe("OrderReturnsSection (TASK-724)", () => {
     );
 
     const operatorRow = (
-      await screen.findByRole("link", { name: dict.returns.title("ret00002") })
+      await screen.findByRole("link", { name: dict.returns.title("RET00002") })
     ).closest("li");
     const buyerRow = screen
-      .getByRole("link", { name: dict.returns.title("ret00001") })
+      .getByRole("link", { name: dict.returns.title("RET00001") })
       .closest("li");
 
     expect(operatorRow).toHaveTextContent(dict.returns.createdByOperator);
@@ -119,7 +119,7 @@ describe("OrderReturnsSection (TASK-724)", () => {
       { auth: READER },
     );
 
-    await screen.findByRole("link", { name: dict.returns.title("ret00001") });
+    await screen.findByRole("link", { name: dict.returns.title("RET00001") });
     expect(
       screen.queryByText(dict.returns.createdByOperator),
     ).not.toBeInTheDocument();

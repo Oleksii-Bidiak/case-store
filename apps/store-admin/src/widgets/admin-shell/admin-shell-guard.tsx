@@ -21,13 +21,17 @@ import { dict } from "@/shared/config";
  */
 export function AdminShellGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const { isInitializing, isStaff } = useAuth();
+  const { isInitializing, isStaff, isSessionExpired } = useAuth();
 
   useEffect(() => {
-    if (!isInitializing && !isStaff) {
+    // Wave 198 (TASK-528 + TASK-974): a session that EXPIRED is not a browser
+    // that was never signed in. «Сесія закінчилась» in the shell already sends
+    // the person to /login with `next` and `reason`; a bare redirect here would
+    // race it and drop both.
+    if (!isInitializing && !isStaff && !isSessionExpired) {
       router.replace("/login");
     }
-  }, [isInitializing, isStaff, router]);
+  }, [isInitializing, isStaff, isSessionExpired, router]);
 
   if (isInitializing || !isStaff) {
     return (

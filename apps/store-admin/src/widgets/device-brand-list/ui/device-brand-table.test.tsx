@@ -18,7 +18,27 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
+import { PERM } from "@/entities/permission";
 import { DeviceBrandTable } from "./device-brand-table";
+
+const WRITER = { permissions: [PERM.devicesWrite] };
+
+const mockReplace = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  usePathname: () => "/devices/brands",
+  useSearchParams: () => new URLSearchParams(""),
+}));
+
+const toastUndo = jest.fn<string, unknown[]>(() => "undo-toast");
+jest.mock("@/shared/ui/toast", () => ({
+  toast: {
+    success: jest.fn(),
+    error: jest.fn(),
+    dismiss: jest.fn(),
+    undo: (...args: unknown[]) => toastUndo(...args),
+  },
+}));
 
 /* ─────────────────────────────── fixtures ──────────────────────────────── */
 
@@ -73,6 +93,8 @@ function mockReorder(
 
 beforeEach(() => {
   resetReorderLock();
+  toastUndo.mockClear();
+  mockReplace.mockClear();
   bodies = [];
   listCalls = 0;
 });
@@ -97,7 +119,7 @@ const assertive = () =>
   screen.getByTestId("tree-live-assertive").textContent ?? "";
 
 async function renderGrid() {
-  const result = renderWithProviders(<DeviceBrandTable />);
+  const result = renderWithProviders(<DeviceBrandTable />, { auth: WRITER });
   await screen.findByRole("grid", { name: dict.devices.brandsGridLabel });
   await waitFor(() => expect(rowIds()).toHaveLength(3));
   return result;
@@ -296,5 +318,105 @@ describe("DeviceBrandTable — toolbar (TASK-357)", () => {
     expect(
       screen.getByRole("button", { name: dict.common.table.refreshAria }),
     ).toBeInTheDocument();
+  });
+});
+
+/* ───────────────────── wave 198 — DevicesProposal ПР5/ПР6 ───────────────────── */
+
+describe("DeviceBrandTable — rows and actions (ПР5)", () => {
+  it("explains the order, puts the slug under the name and links «Моделей»", async () => {
+    mockReorder();
+    await renderGrid();
+
+    expect(screen.getByText(dict.devices.reorderHint)).toBeInTheDocument();
+    expect(within(rowEl(A)).getByText("apple")).toBeInTheDocument();
+    expect(
+      within(rowEl(A)).getByRole("link", {
+        name: dict.devices.modelsLinkAria(0, "Apple"),
+      }),
+    ).toHaveAttribute("href", `/devices/models?deviceBrandId=${A}`);
+    expect(
+      within(rowEl(A)).getByText(dict.devices.statusActive),
+    ).toBeInTheDocument();
+  });
+
+  it("posts the «Скасувати» toast after a move (C0 undo toast)", async () => {
+    mockReorder();
+    await renderGrid();
+
+    keyboardMoveUp(B);
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    await waitFor(() => expect(toastUndo).toHaveBeenCalledTimes(1));
+    // The persistent way back stays for the keyboard.
+    expect(
+      screen.getByRole("button", { name: dict.reorderList.undo }),
+    ).toBeInTheDocument();
+  });
+
+  it("moves «Редагувати» and «Приховати» into «⋯»; «Редагувати» opens the dialog", async () => {
+    mockReorder();
+    await renderGrid();
+
+    await userEvent.click(
+      within(rowEl(A)).getByRole("button", {
+        name: dict.devices.brandRowActionsAria("Apple"),
+      }),
+    );
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([dict.common.edit, dict.devices.deactivate]);
+
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: dict.common.edit }),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: dict.devices.brandDialogTitle("Apple"),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("the old edit deep link opens the dialog over the list; closing returns to the list", async () => {
+    mockReorder();
+    renderWithProviders(<DeviceBrandTable dialog={{ mode: "edit", id: A }} />, {
+      auth: WRITER,
+    });
+
+    const dialog = await screen.findByRole("dialog", {
+      name: dict.devices.brandDialogTitle("Apple"),
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: dict.common.cancel }),
+    );
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith("/devices/brands"),
+    );
+  });
+
+  it("view-only: no grip, «Переглянути» in «⋯»", async () => {
+    mockReorder();
+    renderWithProviders(<DeviceBrandTable />);
+    await waitFor(() => expect(rowIds()).toHaveLength(3));
+
+    expect(
+      within(rowEl(A)).queryByRole("button", {
+        name: dict.reorderList.handleLabel("Apple"),
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText(dict.devices.viewOnlyNotice)).toBeInTheDocument();
+    await userEvent.click(
+      within(rowEl(A)).getByRole("button", {
+        name: dict.devices.brandRowActionsAria("Apple"),
+      }),
+    );
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual([dict.common.view]);
   });
 });

@@ -91,3 +91,7 @@ export {
   historyNoteLabel,
   isRefusedPaymentEvent,
 } from "./history-label";
+
+// TASK-1038 (wave 198): «#7C1E9A42» — the one way an order is named on screen.
+export { formatOrderNumber } from "./lib/format-order-number";
+export { OrderNumber, type OrderNumberProps } from "./ui/order-number";

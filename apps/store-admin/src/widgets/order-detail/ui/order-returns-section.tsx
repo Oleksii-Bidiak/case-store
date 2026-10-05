@@ -81,7 +81,7 @@ export function OrderReturnsSection({
                   href={`/returns/${rma.id}`}
                   className="font-medium text-primary hover:underline"
                 >
-                  {dict.returns.title(rma.id.slice(0, 8))}
+                  {dict.returns.title(rma.id.slice(0, 8).toUpperCase())}
                 </Link>
                 <Badge variant={returnStatusBadgeVariant(rma.status)}>
                   {returnStatusLabel(rma.status)}

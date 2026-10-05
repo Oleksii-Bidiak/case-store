@@ -1,6 +1,6 @@
 "use client";
 
-import { useId } from "react";
+import { useId, type ComponentProps, type ReactNode } from "react";
 import {
   ChevronDownIcon,
   ChevronUpIcon,
@@ -28,9 +28,26 @@ interface SortableColumnHeaderProps {
    * name, which has to stay "Сортувати за …".
    */
   hint?: string;
+  /**
+   * Also show `hint` as the native `title` tooltip. Default `true`; pass
+   * `false` when the header draws its own tooltip (wave 198), so two tooltips
+   * do not stack on hover. The description for assistive tech stays.
+   */
+  hintAsTitle?: boolean;
   /** Hide this column below `md` (forwarded to the underlying `TableHead`). */
   hideOnMobile?: boolean;
   className?: string;
+  /**
+   * What the button shows instead of the plain `label` — e.g. the label plus
+   * an info tooltip (wave 198). The accessible name stays «Сортувати за: label».
+   */
+  content?: ReactNode;
+  /** Extra attributes for the `<th>` (width style, data attributes). */
+  headProps?: Omit<ComponentProps<"th">, "children" | "className">;
+  /** Classes for the sort button (the registry pads it like its cells). */
+  buttonClassName?: string;
+  /** Rendered after the button inside the `<th>` — a resize handle. */
+  children?: ReactNode;
 }
 
 /**
@@ -47,8 +64,13 @@ export function SortableColumnHeader({
   sortOrder,
   onSort,
   hint,
+  hintAsTitle = true,
   hideOnMobile,
   className,
+  content,
+  headProps,
+  buttonClassName,
+  children,
 }: SortableColumnHeaderProps) {
   const hintId = useId();
   const isActive = sortBy === field;
@@ -65,6 +87,7 @@ export function SortableColumnHeader({
 
   return (
     <TableHead
+      {...headProps}
       aria-sort={ariaSort}
       hideOnMobile={hideOnMobile}
       className={cn("p-0", className)}
@@ -74,10 +97,13 @@ export function SortableColumnHeader({
         onClick={() => onSort(field)}
         aria-label={dict.common.sortByAria(label)}
         aria-describedby={hint ? hintId : undefined}
-        title={hint}
-        className="flex w-full items-center gap-1 px-4 py-2 text-left font-medium hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+        title={hintAsTitle ? hint : undefined}
+        className={cn(
+          "flex w-full items-center gap-1 px-4 py-2 text-left font-medium hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+          buttonClassName,
+        )}
       >
-        <span>{label}</span>
+        <span>{content ?? label}</span>
         <Icon
           className={cn("size-4 shrink-0", !isActive && "opacity-40")}
           aria-hidden="true"
@@ -88,6 +114,7 @@ export function SortableColumnHeader({
           {hint}
         </span>
       ) : null}
+      {children}
     </TableHead>
   );
 }

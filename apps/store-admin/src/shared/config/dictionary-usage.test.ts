@@ -39,39 +39,52 @@ const DICTIONARY = path.join(SRC, "shared/config/dictionary.ts");
 const DYNAMIC_ACCESS: Record<string, string> = {
   "banners.placements":
     "widgets/banner-list/ui/admin-banner-table.tsx — placements[placement]",
-  "banners.statusLabels":
-    "widgets/banner-list/ui/admin-banner-table.tsx — statusLabels[status]",
+  "banners.quickViews":
+    "widgets/banner-list/ui/admin-banner-table.tsx — quickViews[view] per display state",
+  "banners.displayStates":
+    "widgets/banner-list/ui/admin-banner-table.tsx, widgets/banner-form-view/ui/edit-banner-view.tsx — displayStates[state]",
+  "banners.placementWhere":
+    "widgets/banner-list/ui/admin-banner-table.tsx, features/banner-form/ui/banner-form.tsx — placementWhere[placement]",
   "bannerForm.placements":
-    "features/banner-form/ui/banner-form.tsx — <option> per placement enum",
+    "features/banner-form/ui/banner-form.tsx — RadioCard per placement",
+  "bannerForm.imageHints":
+    "features/banner-form/ui/banner-form.tsx — imageHints[placement] as the picture hint",
   "bannerPreview.shape":
     "shared/ui/banner-placement-preview/banner-placement-preview.tsx — shape[placement]",
   "carousels.placementLabels":
-    "widgets/carousel-list/ui/admin-carousel-table.tsx — section heading per placement",
+    "widgets/carousel-list/ui/admin-carousel-table.tsx, widgets/carousel-form-view/ui/edit-carousel-view.tsx — per placement",
+  "carousels.placementWhere":
+    "widgets/carousel-list/ui/admin-carousel-table.tsx, features/carousel-form/ui/carousel-form.tsx — where the placement is",
   "carousels.sourceLabels":
-    "widgets/carousel-list/ui/admin-carousel-table.tsx — badge per source",
+    "widgets/carousel-list/ui/admin-carousel-table.tsx — the source in words",
   "carousels.statusLabels":
-    "widgets/carousel-list/ui/admin-carousel-table.tsx — badge per status",
+    "widgets/carousel-list/ui/admin-carousel-table.tsx, widgets/carousel-form-view/ui/edit-carousel-view.tsx — badge per status",
   "carouselForm.sourceOptions":
-    "features/carousel-form/ui/carousel-form.tsx, widgets/carousel-form-view/ui/edit-carousel-view.tsx — per source",
+    "features/carousel-form/ui/carousel-form.tsx, widgets/carousel-form-view/ui/carousel-source-panels.tsx — per source",
+  "carouselForm.sourceDescriptions":
+    "features/carousel-form/ui/carousel-form.tsx — RadioCard description per source",
   "carouselForm.placementOptions":
-    "features/carousel-form/ui/carousel-form.tsx — <option> per placement",
+    "features/carousel-form/ui/carousel-form.tsx — RadioCard per placement",
   "catalogImport.status":
     "widgets/catalog-import-view/ui/catalog-import-view.tsx — d.status[run.status]",
   "auditLog.entityLabels":
     "widgets/audit-log/model/action-label.ts, ui/AuditLogView.tsx — per entity type",
   "auditLog.actionVerbs":
     "widgets/audit-log/model/action-label.ts — verb per action",
-  // Only the leaves `renderTextField` reads by computed key — `siteContactForm[name]`
-  // and `[`${name}Placeholder`]` over CONTACT_FIELDS + LINK_FIELDS. The rest of
-  // the block (working hours, submit, errors) is read statically and stays
-  // under the scan.
+  "auditLog.entityNouns":
+    "widgets/audit-log/model/audit-sentence.ts — noun per entity type",
+  "auditLog.fieldLabels":
+    "widgets/audit-log/model/audit-sentence.ts — label per diff field",
+  // Only the leaves the messenger fields read by computed key —
+  // `siteContactForm[name]` and `[`${name}Placeholder`]` over LINK_FIELDS. The
+  // rest of the block (email and phone since TASK-1053, working hours, submit,
+  // errors) is read statically and stays under the scan.
   ...Object.fromEntries(
-    ["email", "phone", "viberLink", "telegramLink", "instagramLink"].flatMap(
-      (name) =>
-        [name, `${name}Placeholder`].map((leaf) => [
-          `siteContactForm.${leaf}`,
-          "features/site-contact-form/ui/site-contact-form.tsx — siteContactForm[name] / [`${name}Placeholder`]",
-        ]),
+    ["viberLink", "telegramLink", "instagramLink"].flatMap((name) =>
+      [name, `${name}Placeholder`].map((leaf) => [
+        `siteContactForm.${leaf}`,
+        "features/site-contact-form/ui/site-contact-form.tsx — siteContactForm[name] / [`${name}Placeholder`]",
+      ]),
     ),
   ),
   "bannerForm.imageUpload":

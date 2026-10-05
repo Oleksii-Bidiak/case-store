@@ -13,6 +13,45 @@ import { dict } from "@/shared/config";
 
 const d = dict.staff;
 
+/**
+ * The status switch as a hook, so the card's «⋯» menu and the «Акаунт» tab's
+ * button run the SAME request with the same toasts and cache refresh — two
+ * copies of "switch off a service account" are how one of them ends up skipping
+ * the list invalidation.
+ */
+export function useStaffStatusToggle(userId: string, isActive: boolean) {
+  const queryClient = useQueryClient();
+  const updateStatus = useUpdateStaffStatus();
+
+  const toggle = () => {
+    updateStatus.mutate(
+      { id: userId, data: { isActive: !isActive } },
+      {
+        onSuccess: () => {
+          void queryClient.invalidateQueries({
+            queryKey: getGetStaffQueryKey(userId),
+          });
+          void queryClient.invalidateQueries({
+            queryKey: getListStaffQueryKey(),
+          });
+          toast.success(
+            isActive ? d.statusToastDeactivated : d.statusToastActivated,
+          );
+        },
+        onError: (error) => {
+          toast.error(apiErrorMessage(error) ?? d.statusToastFailed);
+        },
+      },
+    );
+  };
+
+  return {
+    toggle,
+    isPending: updateStatus.isPending,
+    label: isActive ? d.statusDeactivate : d.statusActivate,
+  };
+}
+
 interface StaffStatusToggleProps {
   userId: string;
   isActive: boolean;
@@ -39,44 +78,17 @@ export function StaffStatusToggle({
   isActive,
   disabled = false,
 }: StaffStatusToggleProps) {
-  const queryClient = useQueryClient();
-  const updateStatus = useUpdateStaffStatus();
-
-  const handleToggle = () => {
-    updateStatus.mutate(
-      { id: userId, data: { isActive: !isActive } },
-      {
-        onSuccess: () => {
-          void queryClient.invalidateQueries({
-            queryKey: getGetStaffQueryKey(userId),
-          });
-          void queryClient.invalidateQueries({
-            queryKey: getListStaffQueryKey(),
-          });
-          toast.success(
-            isActive ? d.statusToastDeactivated : d.statusToastActivated,
-          );
-        },
-        onError: (error) => {
-          toast.error(apiErrorMessage(error) ?? d.statusToastFailed);
-        },
-      },
-    );
-  };
+  const { toggle, isPending, label } = useStaffStatusToggle(userId, isActive);
 
   return (
     <Button
       type="button"
       size="sm"
       variant={isActive ? "outline" : "default"}
-      onClick={handleToggle}
-      disabled={disabled || updateStatus.isPending}
+      onClick={toggle}
+      disabled={disabled || isPending}
     >
-      {updateStatus.isPending
-        ? dict.common.saving
-        : isActive
-          ? d.statusDeactivate
-          : d.statusActivate}
+      {isPending ? dict.common.saving : label}
     </Button>
   );
 }

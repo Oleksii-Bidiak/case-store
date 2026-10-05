@@ -489,3 +489,63 @@ describe("OrderDetailsForm — without orders:write (TASK-715)", () => {
     ).toBeInTheDocument();
   });
 });
+
+/** Wave 198 (TASK-1046, К1/К3). */
+describe("OrderDetailsForm — the waybill by mockup", () => {
+  it("says how many digits there are now under the rule", async () => {
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
+
+    await userEvent.type(
+      screen.getByLabelText(dict.orders.trackingNumber),
+      "2045091234567",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.detailsSave }),
+    );
+
+    const error = await screen.findByText(dict.orders.trackingNumberInvalid);
+    expect(error).toHaveTextContent(dict.orders.trackingNumberDigitsNow(13));
+  });
+
+  it("links a valid waybill to Nova Poshta's tracking page", async () => {
+    renderWithProviders(
+      <OrderDetailsForm
+        order={{ ...ORDER, trackingNumber: "2045 0000 0000 01" } as OrderEntity}
+      />,
+      { auth: WRITER },
+    );
+
+    const link = await screen.findByRole("link", {
+      name: dict.orders.trackOnNp,
+    });
+    expect(link).toHaveAttribute(
+      "href",
+      "https://novaposhta.ua/tracking/?cargo_number=20450000000001",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("offers «Оновити» on a stale-write conflict", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    capturePatch(bodies, {
+      status: 409,
+      body: { error: "ORDER_STALE", message: "stale", statusCode: 409 },
+    });
+    renderWithProviders(<OrderDetailsForm order={ORDER} />, { auth: WRITER });
+
+    await userEvent.type(
+      screen.getByLabelText(dict.orders.internalNotes),
+      "Передзвонити",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orders.detailsSave }),
+    );
+
+    expect(
+      await screen.findByText(dict.orderStatus.conflict.ORDER_STALE),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: dict.orderStatus.reloadCta }),
+    ).toBeInTheDocument();
+  });
+});

@@ -4,8 +4,12 @@ import {
   screen,
   waitFor,
   userEvent,
+  within,
 } from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
+import { WithAuth } from "@/entities/session/model/auth-context.fixture";
+import { PERM } from "@/entities/permission";
+import { countLabel } from "@/shared/lib";
 import { dict } from "@/shared/config";
 import { MessageInbox } from "./message-inbox";
 
@@ -18,24 +22,28 @@ jest.mock("next/navigation", () => ({
   useSearchParams: () => mockSearchParamsRef.current,
 }));
 
+const d = dict.messages;
+const r = dict.common.registry;
+
 function makeMessageRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "msg-uuid-1",
     name: "Ivan Petrenko",
     phone: "+380671234567",
     email: "ivan@example.com",
-    topic: "order",
+    topic: "delivery",
     orderRef: "ORD-10231",
     message: "Доброго дня! Питання по замовленню.",
     status: "NEW",
     adminNote: null,
+    matchedUserId: null,
     createdAt: "2026-07-05T10:00:00.000Z",
     updatedAt: "2026-07-05T10:00:00.000Z",
     ...overrides,
   };
 }
 
-function listResponse(rows: unknown[]) {
+function listResponse(rows: unknown[], meta: Record<string, number> = {}) {
   return HttpResponse.json({
     data: rows,
     meta: {
@@ -44,277 +52,386 @@ function listResponse(rows: unknown[]) {
       limit: 20,
       totalPages: 1,
       unread: rows.length,
+      ...meta,
     },
   });
 }
 
-describe("MessageInbox", () => {
-  beforeEach(() => {
-    mockReplace.mockClear();
-    mockSearchParamsRef.current = new URLSearchParams("");
-  });
+/**
+ * Stubs the inbox. The view counters ask for one-row pages (`limit=1`), keyed
+ * here by status (`""` = «Усі»); the returned params are the TABLE's requests.
+ */
+function stubInbox(
+  rows: unknown[] = [makeMessageRow()],
+  counts: Record<string, number> = {},
+) {
+  const params: URLSearchParams[] = [];
+  server.use(
+    http.get("*/api/contact/admin", ({ request }) => {
+      const query = new URL(request.url).searchParams;
+      if (query.get("limit") === "1") {
+        return listResponse([], {
+          total: counts[query.get("status") ?? ""] ?? 0,
+        });
+      }
+      params.push(query);
+      return listResponse(rows);
+    }),
+  );
+  return params;
+}
 
-  it("renders sender, topic, snippet, and status for each message", async () => {
-    server.use(
-      http.get("*/api/contact/admin", () =>
-        listResponse([
-          makeMessageRow(),
-          makeMessageRow({
-            id: "msg-uuid-2",
-            name: "Olena Koval",
-            status: "READ",
-            topic: null,
-            message: "Дякую за швидку відповідь!",
-          }),
-        ]),
-      ),
-    );
+/** A manager who may work the inbox — the default for these cases. */
+const WRITER = [PERM.messagesRead, PERM.messagesWrite];
 
-    renderWithProviders(<MessageInbox />);
+function renderInbox(permissions: string[] = WRITER) {
+  return renderWithProviders(
+    <WithAuth permissions={permissions}>
+      <MessageInbox />
+    </WithAuth>,
+  );
+}
+
+const rowMenu = (name = "Ivan Petrenko") =>
+  screen.getByRole("button", { name: r.rowActionsAria(d.rowAria(name)) });
+
+beforeEach(() => {
+  mockReplace.mockClear();
+  mockSearchParamsRef.current = new URLSearchParams("");
+});
+
+describe("MessageInbox — rows (MessagesProposal З1)", () => {
+  it("renders sender, phone in +380 form, topic in words, snippet and status", async () => {
+    stubInbox([
+      makeMessageRow(),
+      makeMessageRow({
+        id: "msg-uuid-2",
+        name: "Olena Koval",
+        status: "READ",
+        topic: "warranty",
+        message: "Дякую за швидку відповідь!",
+      }),
+    ]);
+    renderInbox();
 
     expect(await screen.findByText("Ivan Petrenko")).toBeInTheDocument();
     expect(screen.getByText("Olena Koval")).toBeInTheDocument();
+    expect(screen.getAllByText("+380 67 123 4567")).toHaveLength(2);
+    expect(screen.getByText(d.topicDelivery)).toBeInTheDocument();
+    expect(screen.getByText(d.topicWarranty)).toBeInTheDocument();
     expect(
       screen.getByText("Доброго дня! Питання по замовленню."),
     ).toBeInTheDocument();
-    // NEW + READ status badges render their localized labels.
-    expect(screen.getByText(dict.messages.statusNew)).toBeInTheDocument();
-    expect(screen.getByText(dict.messages.statusRead)).toBeInTheDocument();
+    const table = screen.getByRole("table");
+    expect(within(table).getByText(d.statusNew)).toBeInTheDocument();
+    expect(within(table).getByText(d.statusRead)).toBeInTheDocument();
   });
 
-  it("updates the status URL param when the filter changes", async () => {
-    const user = userEvent.setup();
-    server.use(
-      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
-    );
+  /**
+   * TASK-734 — at 1440 a long message ran over «Статус» and «Отримано»
+   * (`max-w-xs` + `nowrap`). The text now wraps inside a fixed-width column
+   * and stops at two lines; the whole text is one click away in the panel.
+   */
+  it("clamps the message text to two lines inside its fixed-width column (TASK-734)", async () => {
+    const long = "Дуже довге повідомлення без жодного переносу. ".repeat(30);
+    stubInbox([makeMessageRow({ message: long })]);
+    renderInbox();
 
-    renderWithProviders(<MessageInbox />);
-    await screen.findByText("Ivan Petrenko");
-
-    await user.click(
-      screen.getByRole("combobox", { name: dict.messages.filterStatusAria }),
-    );
-    await user.click(
-      await screen.findByRole("option", { name: dict.messages.filterArchived }),
-    );
-
-    await waitFor(() =>
-      expect(mockReplace).toHaveBeenCalledWith(
-        expect.stringContaining("status=ARCHIVED"),
-      ),
-    );
+    const text = await screen.findByText(long.trim());
+    expect(text).toHaveClass("line-clamp-2");
+    expect(text).not.toHaveClass("whitespace-nowrap");
+    const cell = text.closest("td");
+    expect(cell).toHaveAttribute("data-column-id", "message");
+    // The cell clips and wraps rather than growing past its column.
+    expect(cell).toHaveClass("overflow-hidden", "break-words");
+    const header = screen
+      .getAllByRole("columnheader")
+      .find((th) => th.getAttribute("data-column-id") === "message");
+    expect(header).toHaveStyle({ width: "320px" });
   });
 
-  it("opens the detail dialog and marks the message read", async () => {
-    const user = userEvent.setup();
+  it("marks a NEW message with a dot and a tinted row", async () => {
+    stubInbox([
+      makeMessageRow(),
+      makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval", status: "READ" }),
+    ]);
+    renderInbox();
+
+    const fresh = (await screen.findByText("Ivan Petrenko")).closest("tr");
+    const read = screen.getByText("Olena Koval").closest("tr");
+    expect(within(fresh!).getByLabelText(d.statusNew)).toBeInTheDocument();
+    expect(fresh).toHaveClass("bg-primary/6");
+    expect(within(read!).queryByLabelText(d.statusNew)).not.toBeInTheDocument();
+    expect(read).not.toHaveClass("bg-primary/6");
+  });
+
+  it("links an order number to the order search, as the panel prints it", async () => {
+    stubInbox([
+      makeMessageRow({ orderRef: "#7c1e9a42" }),
+      makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
+    ]);
+    renderInbox([...WRITER, PERM.ordersRead]);
+
+    const link = await screen.findByRole("link", {
+      name: d.orderLinkAria("#7C1E9A42"),
+    });
+    expect(link).toHaveAttribute("href", "/orders?search=7C1E9A42");
+    expect(link).toHaveTextContent("#7C1E9A42");
+    // Free text the customer typed is not a guessable order — no link.
+    expect(screen.getByText("ORD-10231")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: /ORD-10231/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("prints the order number without a link for a session that cannot read orders", async () => {
+    stubInbox([makeMessageRow({ orderRef: "#7c1e9a42" })]);
+    renderInbox();
+
+    expect(await screen.findByText("#7C1E9A42")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: d.orderLinkAria("#7C1E9A42") }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens the side panel on a row click", async () => {
+    stubInbox();
+    renderInbox();
+
+    await userEvent.click(await screen.findByText(d.topicDelivery));
+    const panel = await screen.findByRole("dialog");
+    expect(within(panel).getByText(d.sourceForm)).toBeInTheDocument();
+  });
+
+  it("opens the side panel from «⋯ → Відкрити» and marks the message read", async () => {
     let patched: { id?: string; body?: unknown } = {};
+    stubInbox();
     server.use(
-      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
-      http.get("*/api/contact/admin/unread-count", () =>
-        HttpResponse.json({ data: { unread: 1 } }),
-      ),
       http.patch("*/api/contact/admin/:id", async ({ params, request }) => {
         patched = { id: params.id as string, body: await request.json() };
-        return HttpResponse.json({
-          data: makeMessageRow({ status: "READ" }),
-        });
+        return HttpResponse.json({ data: makeMessageRow({ status: "READ" }) });
       }),
     );
-
-    renderWithProviders(<MessageInbox />);
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
-    await user.click(screen.getByRole("button", { name: dict.messages.open }));
+    await userEvent.click(rowMenu());
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: d.open }),
+    );
+    const panel = await screen.findByRole("dialog");
+    expect(within(panel).getByText("ORD-10231")).toBeInTheDocument();
 
-    // The dialog shows the full contact details.
-    expect(await screen.findByText("+380671234567")).toBeInTheDocument();
-    expect(screen.getByText("ORD-10231")).toBeInTheDocument();
-
-    await user.click(
-      screen.getByRole("button", { name: dict.messages.markRead }),
+    await userEvent.click(
+      within(panel).getByRole("button", {
+        name: d.statusMenu(d.statusNew),
+      }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: d.markRead }),
     );
 
     await waitFor(() => expect(patched.id).toBe("msg-uuid-1"));
     expect(patched.body).toEqual({ status: "READ" });
   });
 
-  it("saves an admin note through the update mutation", async () => {
-    const user = userEvent.setup();
+  it("changes the status straight from «⋯» too", async () => {
     let patched: unknown = null;
+    stubInbox();
     server.use(
-      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
-      http.get("*/api/contact/admin/unread-count", () =>
-        HttpResponse.json({ data: { unread: 1 } }),
-      ),
       http.patch("*/api/contact/admin/:id", async ({ request }) => {
         patched = await request.json();
         return HttpResponse.json({
-          data: makeMessageRow({ adminNote: "Called back" }),
+          data: makeMessageRow({ status: "IN_PROGRESS" }),
         });
       }),
     );
-
-    renderWithProviders(<MessageInbox />);
-    await screen.findByText("Ivan Petrenko");
-    await user.click(screen.getByRole("button", { name: dict.messages.open }));
-
-    const note = await screen.findByLabelText(dict.messages.fieldAdminNote);
-    await user.type(note, "Called back");
-    await user.click(
-      screen.getByRole("button", { name: dict.messages.saveNote }),
-    );
-
-    await waitFor(() => expect(patched).toEqual({ adminNote: "Called back" }));
-  });
-
-  it("shows the empty state when there are no messages", async () => {
-    server.use(http.get("*/api/contact/admin", () => listResponse([])));
-
-    renderWithProviders(<MessageInbox />);
-
-    expect(await screen.findByText(dict.messages.empty)).toBeInTheDocument();
-  });
-
-  it("renders in card mode with per-cell labels (TASK-258)", async () => {
-    server.use(
-      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
-    );
-
-    const { container } = renderWithProviders(<MessageInbox />);
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
-    expect(container.querySelector('[data-slot="table"]')).toHaveClass(
-      "max-md:block",
+    await userEvent.click(rowMenu());
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: d.markInProgress }),
     );
+    await waitFor(() => expect(patched).toEqual({ status: "IN_PROGRESS" }));
+  });
+
+  it("offers «Профіль клієнта» in «⋯» only for a matched sender (TASK-256)", async () => {
+    stubInbox([
+      makeMessageRow({ matchedUserId: "user-uuid-1" }),
+      makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
+    ]);
+    renderInbox();
+    await screen.findByText("Ivan Petrenko");
+
+    await userEvent.click(rowMenu());
     expect(
-      container.querySelector(`[data-label="${dict.messages.colStatus}"]`),
-    ).toBeInTheDocument();
+      await screen.findByRole("menuitem", { name: d.viewProfile }),
+    ).toHaveAttribute("href", "/users/user-uuid-1");
+    await userEvent.keyboard("{Escape}");
+
+    await userEvent.click(rowMenu("Olena Koval"));
+    await screen.findByRole("menuitem", { name: d.open });
     expect(
-      container.querySelector(`[data-label="${dict.common.actions}"]`),
-    ).toBeInTheDocument();
+      screen.queryByRole("menuitem", { name: d.viewProfile }),
+    ).not.toBeInTheDocument();
   });
+});
 
-  it("offers the IN_PROGRESS filter option and round-trips it through the URL (TASK-256)", async () => {
-    const user = userEvent.setup();
-    server.use(
-      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
-    );
+describe("MessageInbox — views (З1, З4)", () => {
+  const tab = (name: string) =>
+    screen.getByRole("tab", { name: new RegExp(`^${name}`) });
 
-    renderWithProviders(<MessageInbox />);
+  it("replaces the status select with views, «Усі» active and no status asked", async () => {
+    const params = stubInbox();
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
-    await user.click(
-      screen.getByRole("combobox", { name: dict.messages.filterStatusAria }),
-    );
-    await user.click(
-      await screen.findByRole("option", {
-        name: dict.messages.filterInProgress,
-      }),
-    );
-
-    await waitFor(() =>
-      expect(mockReplace).toHaveBeenCalledWith(
-        expect.stringContaining("status=IN_PROGRESS"),
-      ),
-    );
+    for (const label of [
+      d.filterNew,
+      d.filterInProgress,
+      d.filterRead,
+      d.viewArchived,
+      d.filterSpam,
+      d.filterAll,
+    ]) {
+      expect(tab(label)).toBeInTheDocument();
+    }
+    expect(tab(d.filterAll)).toHaveAttribute("aria-selected", "true");
+    // «Усі» never asks for SPAM — the API leaves it out (TASK-761).
+    expect(params[0].get("status")).toBeNull();
+    // The status select is gone — the only combobox left is the page size.
+    expect(screen.getAllByRole("combobox")).toHaveLength(1);
   });
 
-  it("renders the IN_PROGRESS status badge label (TASK-256)", async () => {
-    server.use(
-      http.get("*/api/contact/admin", () =>
-        listResponse([makeMessageRow({ status: "IN_PROGRESS" })]),
-      ),
+  it.each([
+    [d.filterNew, "/messages?status=NEW"],
+    [d.filterInProgress, "/messages?status=IN_PROGRESS"],
+    [d.filterRead, "/messages?status=READ"],
+    [d.viewArchived, "/messages?status=ARCHIVED"],
+    [d.filterSpam, "/messages?status=SPAM"],
+  ])("«%s» writes the old ?status= (%s)", async (label, url) => {
+    stubInbox();
+    renderInbox();
+    await screen.findByText("Ivan Petrenko");
+
+    await userEvent.click(tab(label));
+    expect(mockReplace).toHaveBeenCalledWith(url);
+  });
+
+  it("«Усі» drops the status and the page", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "status=NEW&page=2&search=ivan",
     );
+    stubInbox();
+    renderInbox();
+    await screen.findByText("Ivan Petrenko");
 
-    renderWithProviders(<MessageInbox />);
+    await userEvent.click(tab(d.filterAll));
+    expect(mockReplace).toHaveBeenCalledWith("/messages?search=ivan");
+  });
 
+  it("highlights the view a deep link stands for", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("status=IN_PROGRESS");
+    const params = stubInbox([makeMessageRow({ status: "IN_PROGRESS" })]);
+    renderInbox();
+    await screen.findByText("Ivan Petrenko");
+
+    expect(params[0].get("status")).toBe("IN_PROGRESS");
+    expect(tab(d.filterInProgress)).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("counts each view from the API's own totals", async () => {
+    stubInbox([makeMessageRow()], {
+      NEW: 1,
+      IN_PROGRESS: 2,
+      READ: 3,
+      ARCHIVED: 4,
+      SPAM: 5,
+      "": 10,
+    });
+    renderInbox();
+    await screen.findByText("Ivan Petrenko");
+
+    await waitFor(() => expect(tab(d.filterAll)).toHaveTextContent("10"));
+    expect(tab(d.filterNew)).toHaveTextContent("1");
+    expect(tab(d.filterInProgress)).toHaveTextContent("2");
+    expect(tab(d.filterRead)).toHaveTextContent("3");
+    expect(tab(d.viewArchived)).toHaveTextContent("4");
+    expect(tab(d.filterSpam)).toHaveTextContent("5");
+  });
+
+  it("says how many are found and how many are new", async () => {
+    stubInbox([makeMessageRow(), makeMessageRow({ id: "msg-uuid-2" })]);
+    renderInbox();
+    await screen.findAllByText("Ivan Petrenko");
+
+    // `meta.unread` is the API's own count of NEW messages.
     expect(
-      await screen.findByText(dict.messages.statusInProgress),
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === "P" &&
+          element.textContent ===
+            `${d.summaryFound} ${countLabel(2, d.itemForms)} · ${d.summaryNew} 2`,
+      ),
     ).toBeInTheDocument();
   });
 
-  // TASK-761: honeypot hits are kept as SPAM rows instead of being dropped, so
-  // a false positive can be seen — but only by asking for them.
-  it("offers a «Спам» filter that sends status=SPAM", async () => {
-    const user = userEvent.setup();
-    server.use(
-      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
-    );
-
-    renderWithProviders(<MessageInbox />);
-    await screen.findByText("Ivan Petrenko");
-
-    await user.click(
-      screen.getByRole("combobox", { name: dict.messages.filterStatusAria }),
-    );
-    await user.click(
-      await screen.findByRole("option", { name: dict.messages.filterSpam }),
-    );
-
-    await waitFor(() =>
-      expect(mockReplace).toHaveBeenCalledWith(
-        expect.stringContaining("status=SPAM"),
-      ),
-    );
-  });
-
-  it("asks the API for SPAM when the URL says so, and labels the rows", async () => {
+  // TASK-761: honeypot hits are kept as SPAM rows, visible only on request —
+  // and the view says what it is.
+  it("asks for SPAM on «Спам», labels the rows and explains the view", async () => {
     mockSearchParamsRef.current = new URLSearchParams("status=SPAM");
-    let requested: string | null = null;
-    server.use(
-      http.get("*/api/contact/admin", ({ request }) => {
-        requested = new URL(request.url).searchParams.get("status");
-        return listResponse([makeMessageRow({ status: "SPAM" })]);
-      }),
-    );
-
-    renderWithProviders(<MessageInbox />);
-
-    expect(
-      await screen.findByText(dict.messages.statusSpam, { selector: "span" }),
-    ).toBeInTheDocument();
-    expect(requested).toBe("SPAM");
-  });
-
-  it("does not ask for SPAM in the default «Усі» view — the API leaves it out", async () => {
-    let requested: string | null = "unset";
-    server.use(
-      http.get("*/api/contact/admin", ({ request }) => {
-        requested = new URL(request.url).searchParams.get("status");
-        return listResponse([makeMessageRow()]);
-      }),
-    );
-
-    renderWithProviders(<MessageInbox />);
+    const params = stubInbox([makeMessageRow({ status: "SPAM" })]);
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
-    expect(requested).toBeNull();
+    expect(params[0].get("status")).toBe("SPAM");
+    expect(
+      within(screen.getByRole("table")).getByText(d.statusSpam),
+    ).toBeInTheDocument();
+    expect(screen.getByText(d.spamTitle)).toBeInTheDocument();
+    expect(screen.getByText(d.spamText)).toBeInTheDocument();
   });
 
-  it("sends the default sort and rewrites the URL when a header is clicked (TASK-354)", async () => {
-    const user = userEvent.setup();
-    let captured: URLSearchParams | null = null;
-    server.use(
-      http.get("*/api/contact/admin", ({ request }) => {
-        captured = new URL(request.url).searchParams;
-        return listResponse([makeMessageRow()]);
-      }),
-    );
+  it("does not explain spam on the other views", async () => {
+    stubInbox();
+    renderInbox();
+    await screen.findByText("Ivan Petrenko");
 
-    renderWithProviders(<MessageInbox />);
+    expect(screen.queryByText(d.spamTitle)).not.toBeInTheDocument();
+  });
+
+  it("shows the empty text of «Усі»", async () => {
+    stubInbox([]);
+    renderInbox();
+    expect(await screen.findByText(d.empty)).toBeInTheDocument();
+  });
+
+  it("shows the empty text of the view", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("status=ARCHIVED");
+    stubInbox([]);
+    renderInbox();
+    expect(await screen.findByText(d.emptyArchived)).toBeInTheDocument();
+  });
+});
+
+describe("MessageInbox — sort and refresh (TASK-354)", () => {
+  it("sends the default sort and rewrites the URL when a header is clicked", async () => {
+    const params = stubInbox();
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
     // The DTO default is sent explicitly, so "no param" and "the default param"
     // are not two cache entries for the same page.
-    expect(captured!.get("sortBy")).toBe("createdAt");
-    expect(captured!.get("sortOrder")).toBe("desc");
+    expect(params[0].get("sortBy")).toBe("createdAt");
+    expect(params[0].get("sortOrder")).toBe("desc");
+    expect(
+      screen.getByText(r.summarySort(d.sortCreatedDesc)),
+    ).toBeInTheDocument();
 
-    await user.click(
-      screen.getByRole("button", {
-        name: dict.common.sortByAria(dict.messages.colName),
-      }),
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.sortByAria(d.colName) }),
     );
-
     await waitFor(() =>
       expect(mockReplace).toHaveBeenCalledWith(
         expect.stringContaining("sortBy=name"),
@@ -322,107 +439,71 @@ describe("MessageInbox", () => {
     );
   });
 
-  it("refetches the inbox when Оновити is pressed (TASK-354)", async () => {
-    const user = userEvent.setup();
-    let calls = 0;
-    server.use(
-      http.get("*/api/contact/admin", () => {
-        calls += 1;
-        return listResponse([makeMessageRow()]);
-      }),
-    );
-
-    renderWithProviders(<MessageInbox />);
+  it("refetches the inbox when «Оновити» is pressed", async () => {
+    const params = stubInbox();
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
-    expect(calls).toBe(1);
+    expect(params).toHaveLength(1);
 
-    await user.click(
+    await userEvent.click(
       screen.getByRole("button", { name: dict.common.table.refreshAria }),
     );
-
-    await waitFor(() => expect(calls).toBe(2));
+    await waitFor(() => expect(params).toHaveLength(2));
   });
+});
 
-  it("bulk-archives the selected messages through the batch endpoint (TASK-354)", async () => {
-    const user = userEvent.setup();
+describe("MessageInbox — bulk bar (З2) and TASK-1011", () => {
+  it("keeps the idle hint and archives the selection through the batch endpoint", async () => {
     let body: unknown = null;
+    stubInbox([
+      makeMessageRow(),
+      makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
+    ]);
     server.use(
-      http.get("*/api/contact/admin", () =>
-        listResponse([
-          makeMessageRow(),
-          makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
-        ]),
-      ),
       http.patch("*/api/contact/admin/status", async ({ request }) => {
         body = await request.json();
         return HttpResponse.json({ data: { updatedCount: 1 } });
       }),
     );
-
-    renderWithProviders(<MessageInbox />);
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
-    // No selection ⇒ no bar at all; its appearance IS the feedback.
-    expect(
-      screen.queryByText(dict.common.table.selectedCount(1)),
-    ).not.toBeInTheDocument();
-
-    await user.click(
+    expect(screen.getByText(d.bulkIdleHint)).toBeInTheDocument();
+    await userEvent.click(
       screen.getByRole("checkbox", {
-        name: dict.messages.bulk.selectRow("Ivan Petrenko"),
+        name: r.selectRowAria(d.rowAria("Ivan Petrenko")),
       }),
     );
-
-    await user.click(
-      await screen.findByRole("button", {
-        name: dict.messages.bulk.markArchived(1),
-      }),
+    await userEvent.click(
+      screen.getByRole("button", { name: d.bulk.markArchived(1) }),
     );
-
     await waitFor(() =>
       expect(body).toEqual({ ids: ["msg-uuid-1"], status: "ARCHIVED" }),
     );
   });
 
-  it("acts only on rows still on the page, and Shift+click sweeps a range (TASK-354)", async () => {
-    const user = userEvent.setup();
+  it("marks the whole page read from the header checkbox", async () => {
     let body: unknown = null;
+    stubInbox([
+      makeMessageRow(),
+      makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
+      makeMessageRow({ id: "msg-uuid-3", name: "Petro Shevchuk" }),
+    ]);
     server.use(
-      http.get("*/api/contact/admin", () =>
-        listResponse([
-          makeMessageRow(),
-          makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
-          makeMessageRow({ id: "msg-uuid-3", name: "Petro Shevchuk" }),
-        ]),
-      ),
       http.patch("*/api/contact/admin/status", async ({ request }) => {
         body = await request.json();
         return HttpResponse.json({ data: { updatedCount: 3 } });
       }),
     );
-
-    renderWithProviders(<MessageInbox />);
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
-    await user.click(
-      screen.getByRole("checkbox", {
-        name: dict.messages.bulk.selectRow("Ivan Petrenko"),
-      }),
+    await userEvent.click(
+      screen.getByRole("checkbox", { name: dict.common.table.selectAll }),
     );
-    await user.keyboard("{Shift>}");
-    await user.click(
-      screen.getByRole("checkbox", {
-        name: dict.messages.bulk.selectRow("Petro Shevchuk"),
-      }),
+    await userEvent.click(
+      screen.getByRole("button", { name: d.bulk.markRead(3) }),
     );
-    await user.keyboard("{/Shift}");
-
-    await user.click(
-      await screen.findByRole("button", {
-        name: dict.messages.bulk.markRead(3),
-      }),
-    );
-
     await waitFor(() =>
       expect(body).toEqual({
         ids: ["msg-uuid-1", "msg-uuid-2", "msg-uuid-3"],
@@ -431,117 +512,57 @@ describe("MessageInbox", () => {
     );
   });
 
-  it("announces the selection into the live region (TASK-354)", async () => {
-    const user = userEvent.setup();
-    server.use(
-      http.get("*/api/contact/admin", () =>
-        listResponse([
-          makeMessageRow(),
-          makeMessageRow({ id: "msg-uuid-2", name: "Olena Koval" }),
-        ]),
-      ),
-    );
-
-    renderWithProviders(<MessageInbox />);
+  it("offers bulk «В роботу» too", async () => {
+    stubInbox();
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
-    // Regression guard. `useRowSelection` calls `useAnnouncer()`, so it has to
-    // run BELOW the `<LiveAnnouncer>` — a hook called in the same component
-    // that renders the provider silently gets the default no-op context, and
-    // every announcement disappears with nothing on screen looking wrong.
-    await user.click(
+    await userEvent.click(
       screen.getByRole("checkbox", {
-        name: dict.messages.bulk.selectRow("Ivan Petrenko"),
+        name: r.selectRowAria(d.rowAria("Ivan Petrenko")),
       }),
     );
-
-    await waitFor(() =>
-      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
-        dict.common.table.announceSelected("Ivan Petrenko", 1),
-      ),
-    );
-  });
-
-  it("pins the row checkbox to the card corner instead of stacking it as a labelled field (TASK-354)", async () => {
-    server.use(
-      http.get("*/api/contact/admin", () => listResponse([makeMessageRow()])),
-    );
-
-    const { container } = renderWithProviders(<MessageInbox />);
-    await screen.findByText("Ivan Petrenko");
-
-    const cell = container.querySelector('[data-slot="table-select-cell"]');
-    // No `data-label` ⇒ no "ВИБІР ☐" caption strip above the sender's name.
-    expect(cell).not.toHaveAttribute("data-label");
-    expect(cell).toHaveClass("max-md:absolute");
-    // …and the control is still named after the record it acts on, so nothing
-    // in the card is anonymous once the caption is gone.
     expect(
-      screen.getByRole("checkbox", {
-        name: dict.messages.bulk.selectRow("Ivan Petrenko"),
-      }),
+      screen.getByRole("button", { name: d.bulk.markInProgress(1) }),
     ).toBeInTheDocument();
   });
 
-  it("links the sender name to the customer profile when matchedUserId is present (TASK-256)", async () => {
-    server.use(
-      http.get("*/api/contact/admin", () =>
-        listResponse([
-          makeMessageRow({ matchedUserId: "user-uuid-1" }),
-          makeMessageRow({
-            id: "msg-uuid-2",
-            name: "Olena Koval",
-            matchedUserId: null,
-          }),
-        ]),
-      ),
-    );
+  /**
+   * TASK-1011 — `messages:write` is what the API checks on every status change
+   * and the note; without it the inbox is a read-only list that says so (З7).
+   */
+  it("is view-only without messages:write: no selection, no status items", async () => {
+    stubInbox();
+    renderInbox([PERM.messagesRead]);
+    await screen.findByText("Ivan Petrenko");
 
-    renderWithProviders(<MessageInbox />);
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByText(d.bulkIdleHint)).not.toBeInTheDocument();
+    expect(screen.getByText(d.readOnly)).toBeInTheDocument();
 
-    // Matched sender → a link to the customer card.
-    const link = await screen.findByRole("link", { name: "Ivan Petrenko" });
-    expect(link).toHaveAttribute("href", "/users/user-uuid-1");
-
-    // Unmatched sender → plain text, no link.
-    expect(screen.getByText("Olena Koval")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "Olena Koval" }),
-    ).not.toBeInTheDocument();
+    await userEvent.click(rowMenu());
+    await screen.findByRole("menuitem", { name: d.open });
+    for (const label of [
+      d.markInProgress,
+      d.markRead,
+      d.markArchived,
+      d.markNew,
+    ]) {
+      expect(
+        screen.queryByRole("menuitem", { name: label }),
+      ).not.toBeInTheDocument();
+    }
   });
 });
 
-/**
- * TASK-423 — the inbox had no search. A customer's second message lands weeks
- * after the first, so "what did we already tell this person?" meant paging
- * through the archive.
- */
+/** TASK-423 — search over name, email, phone, topic, order ref and text. */
 describe("MessageInbox — search and page size (TASK-423)", () => {
-  beforeEach(() => {
-    mockReplace.mockClear();
-    mockSearchParamsRef.current = new URLSearchParams("");
-  });
-
-  function stubInbox(rows = [makeMessageRow()]) {
-    const params: URLSearchParams[] = [];
-    server.use(
-      http.get("*/api/contact/admin", ({ request }) => {
-        params.push(new URL(request.url).searchParams);
-        return listResponse(rows);
-      }),
-    );
-    return params;
-  }
-
   it("debounces the typed term into the URL", async () => {
     stubInbox();
-    renderWithProviders(<MessageInbox />);
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
-    await userEvent.type(
-      screen.getByLabelText(dict.messages.searchAria),
-      "ORD-10231",
-    );
+    await userEvent.type(screen.getByLabelText(d.searchAria), "ORD-10231");
 
     await waitFor(() =>
       expect(mockReplace).toHaveBeenCalledWith("/messages?search=ORD-10231"),
@@ -551,22 +572,18 @@ describe("MessageInbox — search and page size (TASK-423)", () => {
   it("forwards the term and the shared page size to the API", async () => {
     mockSearchParamsRef.current = new URLSearchParams("search=ivan");
     const params = stubInbox();
-
-    renderWithProviders(<MessageInbox />);
+    renderInbox();
     await screen.findByText("Ivan Petrenko");
 
     expect(params[0].get("search")).toBe("ivan");
     expect(params[0].get("limit")).toBe("20");
   });
 
-  it("names the term in the empty state instead of «немає повідомлень»", async () => {
+  it("names the term in the empty state", async () => {
     mockSearchParamsRef.current = new URLSearchParams("search=ghost");
     stubInbox([]);
+    renderInbox();
 
-    renderWithProviders(<MessageInbox />);
-
-    expect(
-      await screen.findByText(dict.messages.emptyMatch("ghost")),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(r.noResults("ghost"))).toBeInTheDocument();
   });
 });

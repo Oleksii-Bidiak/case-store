@@ -625,3 +625,79 @@ describe("PaymentStatusSelect — why nothing can change, and what next (TASK-84
     ).not.toBeInTheDocument();
   });
 });
+
+/**
+ * Wave 198 (TASK-1046, К1): unpaid cash on delivery leads with «Гроші від НП
+ * отримано» — the SAME PATCH to PAID the list offers; the list stays below as
+ * «Інший статус оплати».
+ */
+describe("PaymentStatusSelect — cash on delivery (TASK-1046)", () => {
+  function renderCod(paymentMethod = "ON_DELIVERY") {
+    return renderWithProviders(
+      <PaymentStatusSelect
+        orderId={ORDER_ID}
+        paymentMethod={paymentMethod}
+        total="35647"
+      />,
+      { auth: WRITER },
+    );
+  }
+
+  it("marks the money from NP as received with the same write", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
+    const bodies: unknown[] = [];
+    server.use(
+      http.patch(
+        "*/api/admin/orders/:orderId/payment-status",
+        async ({ request }) => {
+          bodies.push(await request.json());
+          return HttpResponse.json({
+            data: { id: ORDER_ID, paymentStatus: "PAID" },
+          });
+        },
+      ),
+    );
+    renderCod();
+
+    expect(
+      await screen.findByText(/Післяплата · 35\s?647 ₴/),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.orderStatus.codReceived }),
+    );
+
+    await waitFor(() => expect(bodies).toEqual([{ paymentStatus: "PAID" }]));
+    expect(
+      screen.getByText(dict.orderStatus.otherPaymentStatus),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("combobox", {
+        name: dict.orderStatus.paymentUpdateAria,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("is not offered on a card order, nor once PAID is not a legal move", async () => {
+    stubTransitions("PENDING", ["PAID", "FAILED"]);
+    const { unmount } = renderCod("ONLINE");
+    await screen.findByRole("combobox", {
+      name: dict.orderStatus.paymentUpdateAria,
+    });
+    expect(
+      screen.queryByRole("button", { name: dict.orderStatus.codReceived }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(dict.orderStatus.updatePaymentStatus),
+    ).toBeInTheDocument();
+    unmount();
+
+    stubTransitions("PENDING", ["FAILED"]);
+    renderCod();
+    await screen.findByRole("combobox", {
+      name: dict.orderStatus.paymentUpdateAria,
+    });
+    expect(
+      screen.queryByRole("button", { name: dict.orderStatus.codReceived }),
+    ).not.toBeInTheDocument();
+  });
+});

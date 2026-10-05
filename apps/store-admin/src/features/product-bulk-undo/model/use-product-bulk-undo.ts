@@ -35,8 +35,12 @@ export interface ProductBulkUndoApi {
     rows: readonly BulkUndoRow[],
     nextValue: BulkUndoValue<K>,
   ) => void;
-  /** The write succeeded: offer its undo for `UNDO_WINDOW_MS`. */
-  commit: () => void;
+  /**
+   * The write succeeded: offer its undo for `UNDO_WINDOW_MS`. Returns how many
+   * products the offer would put back — `null` when nothing changed, so the
+   * caller shows no «Скасувати» toast either (wave 198).
+   */
+  commit: () => number | null;
   undo: () => void;
   /**
    * An undo is on offer (inside the window, not yet used). It does NOT know
@@ -126,9 +130,10 @@ export function useProductBulkUndo(): ProductBulkUndoApi {
     // label (the reorder commit announcement does the same). The caller calls
     // `commit` last in its `onSuccess` — after `selection.clear()` — so this is
     // the message that stays in the polite region.
-    if (plan) {
-      announcePolite(t.announceUndoAvailable(countPlanIds(plan), t.undo));
-    }
+    if (!plan) return null;
+    const count = countPlanIds(plan);
+    announcePolite(t.announceUndoAvailable(count, t.undo));
+    return count;
   }, [announcePolite]);
 
   const runStep = useCallback(

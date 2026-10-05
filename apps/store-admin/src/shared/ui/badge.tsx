@@ -21,6 +21,9 @@ const badgeVariants = cva(
           "border-border text-foreground [a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         ghost: "[a&]:hover:bg-accent [a&]:hover:text-accent-foreground",
         link: "text-primary underline-offset-4 [a&]:hover:underline",
+        // The small «нове» tag next to a filter or option that did not exist
+        // before (wave 198). 10/16 semibold on a 14% primary tint.
+        new: "bg-primary/14 px-1.5 py-0 text-2xs font-semibold text-primary",
       },
     },
     defaultVariants: {

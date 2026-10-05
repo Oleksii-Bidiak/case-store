@@ -27,11 +27,26 @@ import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import { resetReorderLock } from "@/shared/lib/reorder-lock";
 import { getCategoryControllerGetAdminTreeQueryKey } from "@/entities/category";
+import { toast } from "@/shared/ui/toast";
 import { AdminCategoryTree } from "./admin-category-tree";
 import {
   EXPANDED_STORAGE_KEY,
   pointerAnnouncements,
 } from "./admin-category-tree";
+
+// Wave 198 (TASK-963): a move ends in a «Скасувати» toast. sonner renders
+// nothing without a <Toaster>, so the wrapper is replaced with spies and the
+// toast's own action is invoked by hand.
+jest.mock("@/shared/ui/toast", () => ({
+  UNDO_TOAST_DURATION_MS: 10_000,
+  toast: {
+    success: jest.fn(),
+    error: jest.fn(),
+    undo: jest.fn(() => "undo-toast"),
+    dismiss: jest.fn(),
+  },
+}));
+const undoToast = toast.undo as jest.Mock;
 
 /* ─────────────────────────────── fixtures ──────────────────────────────── */
 
@@ -138,6 +153,7 @@ function mockReorder(
 
 beforeEach(() => {
   resetReorderLock();
+  undoToast.mockClear();
   bodies = [];
   mockPush.mockClear();
   mockReplace.mockClear();
@@ -778,17 +794,18 @@ describe("AdminCategoryTree — row-internal Tab cycle (§7.1, §7.2)", () => {
       }),
     ).toHaveFocus();
 
+    // Wave 198 (КТ1): the grip leads the name cell, the twisty follows it.
     await userEvent.tab();
     expect(
       row.getByRole("button", {
-        name: dict.categories.tree.collapseRow("Аксесуари"),
+        name: dict.reorderTree.handleLabel("Аксесуари"),
       }),
     ).toHaveFocus();
 
     await userEvent.tab();
     expect(
       row.getByRole("button", {
-        name: dict.reorderTree.handleLabel("Аксесуари"),
+        name: dict.categories.tree.collapseRow("Аксесуари"),
       }),
     ).toHaveFocus();
 
@@ -1308,17 +1325,32 @@ describe("AdminCategoryTree — product counts and inherited visibility (TASK-40
     await renderTree();
 
     const parentCell = within(rowEl(A)).getAllByRole("gridcell")[3];
-    expect(parentCell).toHaveTextContent("19");
-    expect(parentCell).toHaveTextContent(dict.categories.productsDirect(0));
+    // КТ1: «19 · прямо 0» — the total leads, the direct count trails it.
+    expect(parentCell).toHaveTextContent(
+      `19 · ${dict.categories.productsDirect(0)}`,
+    );
   });
 
-  it("shows no bracketed direct count when the category files everything itself", async () => {
+  it("a parent says «прямо M» even when every product sits on it directly", async () => {
+    mockTree([
+      node(A, null, 1, [node(A1, A, 2)], {
+        productCount: 4,
+        subtreeProductCount: 4,
+      }),
+    ]);
+    await renderTree();
+
+    const cell = within(rowEl(A)).getAllByRole("gridcell")[3];
+    expect(cell).toHaveTextContent(`4 · ${dict.categories.productsDirect(4)}`);
+  });
+
+  it("shows no direct count on a leaf — it would only echo the total", async () => {
     mockTree([node(A, null, 1, [], { productCount: 7 })]);
     await renderTree();
 
     const cell = within(rowEl(A)).getAllByRole("gridcell")[3];
     expect(cell).toHaveTextContent("7");
-    expect(cell.textContent).not.toContain("безпосередньо");
+    expect(cell.textContent).not.toContain(dict.categories.productsDirect(7));
   });
 
   it("badges an ACTIVE child of a deactivated parent as hidden through it", async () => {
@@ -1334,10 +1366,19 @@ describe("AdminCategoryTree — product counts and inherited visibility (TASK-40
     ]);
     await renderTree();
 
-    // The child's own status is untouched — it really is active…
-    expect(within(rowEl(A1)).getByText(dict.common.active)).toBeInTheDocument();
-    // …and the badge is what explains why it has no storefront page anyway.
-    const badge = within(rowEl(A1)).getByText(
+    // Wave 198 (КТ1): the badge says what the SITE does — the child is not
+    // shown — while its own toggle still offers to hide it (its flag is on)…
+    const statusCell = within(rowEl(A1)).getAllByRole("gridcell")[4];
+    expect(
+      within(statusCell).getByText(dict.categories.tree.statusHidden),
+    ).toBeInTheDocument();
+    expect(
+      within(statusCell).getByRole("button", {
+        name: dict.statusToggle.categoryDeactivate,
+      }),
+    ).toBeInTheDocument();
+    // …and «через батьківську» is what explains why it is hidden anyway.
+    const badge = within(statusCell).getByText(
       dict.categories.tree.hiddenByParent,
     );
     expect(badge).toBeInTheDocument();
@@ -1382,6 +1423,239 @@ describe("AdminCategoryTree — product counts and inherited visibility (TASK-40
     expect(badge).toHaveAttribute(
       "title",
       dict.categories.tree.hiddenByParentHint(NAMES[A1]),
+    );
+  });
+});
+
+/* ───────────── wave 198: CategoriesProposal КТ1–КТ4 (TASK-1052) ───────────── */
+
+describe("AdminCategoryTree — CategoriesProposal КТ1–КТ4 (wave 198)", () => {
+  const tt = dict.categories.tree;
+
+  it("КТ1: column headers, and the status speaks of the site — «Показується / Приховано»", async () => {
+    server.use(
+      http.get("*/api/categories/admin/tree", () =>
+        HttpResponse.json(
+          treeResponse([
+            node(A, null, 1, [node(A1, A, 2), node(A2, A, 2)]),
+            node(B, null, 1, [], { isActive: false }),
+            node(C, null, 1),
+          ]),
+        ),
+      ),
+    );
+    await renderTree();
+
+    const headers = screen
+      .getAllByRole("columnheader")
+      .map((h) => h.textContent ?? "");
+    expect(headers.some((h) => h.startsWith(dict.categories.colName))).toBe(
+      true,
+    );
+    expect(headers.some((h) => h.startsWith(dict.categories.colSlug))).toBe(
+      true,
+    );
+    expect(headers.some((h) => h.startsWith("Товарів"))).toBe(true);
+    expect(headers.some((h) => h.startsWith(dict.categories.colStatus))).toBe(
+      true,
+    );
+
+    const statusOf = (id: string) =>
+      within(rowEl(id)).getAllByRole("gridcell")[4];
+    expect(within(statusOf(A)).getByText(tt.statusShown)).toBeInTheDocument();
+    expect(within(statusOf(B)).getByText(tt.statusHidden)).toBeInTheDocument();
+    // The toggles keep their verbs: hide a shown row, show a hidden one.
+    expect(
+      within(statusOf(A)).getByRole("button", {
+        name: dict.statusToggle.categoryDeactivate,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(statusOf(B)).getByRole("button", {
+        name: dict.statusToggle.categoryActivate,
+      }),
+    ).toBeInTheDocument();
+    // The old flag words are gone from the grid.
+    expect(screen.queryByText(dict.common.active)).not.toBeInTheDocument();
+  });
+
+  it("КТ1: a root name is semibold, a child's is not", async () => {
+    mockReorder();
+    await renderTree();
+
+    expect(within(rowEl(A)).getByText(NAMES[A])).toHaveClass("font-semibold");
+    expect(within(rowEl(A1)).getByText(NAMES[A1])).not.toHaveClass(
+      "font-semibold",
+    );
+  });
+
+  it("КТ4: the name cell carries the 390 px sub-line «N тов. · status (через батьківську)»", async () => {
+    server.use(
+      http.get("*/api/categories/admin/tree", () =>
+        HttpResponse.json(
+          treeResponse([
+            node(A, null, 1, [node(A1, A, 2, [], { productCount: 8 })], {
+              isActive: false,
+              productCount: 0,
+              subtreeProductCount: 8,
+            }),
+            node(B, null, 1, [], { productCount: 3 }),
+          ]),
+        ),
+      ),
+    );
+    await renderTree();
+
+    const nameCell = (id: string) =>
+      within(rowEl(id)).getAllByRole("gridcell")[1];
+    expect(nameCell(B)).toHaveTextContent(
+      `${tt.mobileCount(3)} · ${tt.statusShown}`,
+    );
+    expect(nameCell(A1)).toHaveTextContent(
+      `${tt.mobileCount(8)} · ${tt.statusHidden} (${tt.hiddenByParent})`,
+    );
+    // The desktop-only columns hide below md rather than scrolling sideways.
+    const cells = within(rowEl(B)).getAllByRole("gridcell");
+    expect(cells[2]).toHaveClass("hidden", "md:table-cell");
+    expect(cells[3]).toHaveClass("hidden", "md:table-cell");
+    expect(cells[4]).toHaveClass("hidden", "md:table-cell");
+  });
+
+  it("«Розгорнути все» opens every level; «Згорнути все» leaves only the roots", async () => {
+    mockReorder();
+    await renderTree();
+    expect(visibleIds()).toEqual([A, A1, A2, B, C]);
+
+    await userEvent.click(screen.getByRole("button", { name: tt.expandAll }));
+    expect(visibleIds()).toEqual([A, A1, A1A, A2, B, C]);
+    assertAriaInvariants();
+
+    await userEvent.click(screen.getByRole("button", { name: tt.collapseAll }));
+    expect(visibleIds()).toEqual([A, B, C]);
+    assertAriaInvariants();
+  });
+
+  it("the refresh button re-reads the tree", async () => {
+    let gets = 0;
+    server.use(
+      http.get("*/api/categories/admin/tree", () => {
+        gets += 1;
+        return HttpResponse.json(treeResponse());
+      }),
+    );
+    await renderTree();
+    const before = gets;
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.refreshAria }),
+    );
+    await waitFor(() => expect(gets).toBe(before + 1));
+  });
+
+  it("the bulk bar is ALWAYS there: idle it teaches, active it carries the count and the actions", async () => {
+    mockReorder();
+    await renderTree();
+
+    const bar = document.querySelector('[data-slot="registry-bulk-bar"]');
+    expect(bar).toHaveAttribute("data-state", "idle");
+    expect(bar).toHaveTextContent(tt.bulkIdleHint);
+    expect(
+      screen.queryByRole("button", { name: tt.bulk.activate(1) }),
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(checkboxOf(A));
+
+    expect(bar).toHaveAttribute("data-state", "active");
+    expect(
+      screen.getByRole("button", { name: "Показувати на сайті (1)" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Приховати (1)" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.common.table.clearSelection }),
+    );
+    expect(bar).toHaveAttribute("data-state", "idle");
+    expect(rowEl(A)).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("TASK-963: a committed move ends in a «Скасувати» toast that undoes it — and the persistent control stays", async () => {
+    mockReorder();
+    await renderTree();
+
+    const persistent = screen.getByRole("button", { name: tt.undo });
+    expect(persistent).toHaveAttribute("aria-disabled", "true");
+    expect(persistent).not.toBeDisabled();
+
+    rowEl(B).focus();
+    fireEvent.keyDown(rowEl(B), { key: " " });
+    fireEvent.keyDown(rowEl(B), { key: "ArrowUp" });
+    fireEvent.keyDown(rowEl(B), { key: "Enter" });
+
+    await waitFor(() => expect(undoToast).toHaveBeenCalledTimes(1));
+    const [message, options] = undoToast.mock.calls[0] as [
+      string,
+      { onUndo: () => void },
+    ];
+    expect(message).toBe(tt.movedToast.reordered("Кабелі", 1, 3));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: tt.undo })).toHaveAttribute(
+        "aria-disabled",
+        "false",
+      ),
+    );
+
+    act(() => options.onUndo());
+
+    await waitFor(() => expect(bodies).toHaveLength(2));
+    expect(bodies[1]).toEqual({
+      groups: [{ parentId: null, orderedIds: [A, B, C] }],
+    });
+    // An undo is not itself a move: no second toast.
+    expect(undoToast).toHaveBeenCalledTimes(1);
+  });
+
+  it("TASK-963: nesting a row says where it went — ««X» вкладено в «Y».»", async () => {
+    mockReorder();
+    await renderTree();
+
+    rowEl(B).focus();
+    fireEvent.keyDown(rowEl(B), { key: " " });
+    fireEvent.keyDown(rowEl(B), { key: "ArrowRight" });
+    fireEvent.keyDown(rowEl(B), { key: "Enter" });
+
+    await waitFor(() => expect(undoToast).toHaveBeenCalledTimes(1));
+    expect(undoToast.mock.calls[0][0]).toBe(
+      tt.movedToast.nested("Кабелі", "Аксесуари"),
+    );
+  });
+
+  it("every row action is still in «⋯» (nothing moved off the screen)", async () => {
+    mockReorder();
+    await renderTree();
+
+    rowEl(A1).focus();
+    fireEvent.keyDown(rowEl(A1), { key: "F10", shiftKey: true });
+    await screen.findByRole("menuitem", { name: tt.moveUp });
+    for (const name of [
+      tt.moveUp,
+      tt.moveDown,
+      tt.outdent,
+      tt.makeRoot,
+      tt.moveTo,
+      tt.edit,
+      tt.deactivate,
+    ]) {
+      expect(screen.getByRole("menuitem", { name })).toBeInTheDocument();
+    }
+    // Indent names its target when there is one.
+    expect(
+      screen.getByRole("menuitem", { name: /Зробити підкатегорією/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: tt.edit })).toHaveAttribute(
+      "href",
+      `/categories/${A1}/edit`,
     );
   });
 });

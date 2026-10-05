@@ -21,8 +21,8 @@ export interface BannerPlacementPreviewProps {
   placement: BannerPreviewPlacement;
   title: string;
   subtitle?: string;
-  /** Accepted for prop-parity with the banner form, but currently unused: none
-   *  of the four storefront placements reads `imageUrl` (see header comment). */
+  /** The banner picture — drawn behind the copy on the three homepage
+   *  placements, as the storefront does since TASK-740 (see header comment). */
   imageUrl?: string;
   ctaLabel?: string;
   ctaHref?: string;
@@ -52,11 +52,12 @@ export interface BannerPlacementPreviewProps {
  * - ANNOUNCEMENT_BAR (`header/ui/announcement-bar.tsx`): the real strip uses
  *   ONLY `title` and `ctaHref`; subtitle/ctaLabel/imageUrl/theme are ignored,
  *   and the preview reflects that (plus a hint so the admin isn't misled).
- * - `imageUrl` is currently ignored by ALL four storefront placements, so no
- *   variant renders it here either. TASK-429 revisited this and kept it that way:
- *   honouring it here would make the preview promise artwork the storefront never
- *   draws — a lie in the OTHER direction, and a worse one, because the operator
- *   would upload an image and wonder why the site ignores it.
+ * - `imageUrl`: TASK-740 taught the storefront to draw it (`BannerBackdrop`:
+ *   a cover picture under a tint, over the gradient) on HERO_SLIDE, PROMO_TILE
+ *   and PROMO_BANNER, so since wave 198 (TASK-1073) the preview draws it the same
+ *   way, with the same tints. The announcement bar still has no picture, and
+ *   neither does its preview. A picture that fails to load is dropped, exactly
+ *   as the storefront drops it.
  *
  * SHAPE (TASK-429). Before this, the preview constrained WIDTH only, so every
  * placement rendered at "whatever the 360px side panel is wide" with a height that
@@ -86,6 +87,7 @@ export function BannerPlacementPreview({
   placement,
   title,
   subtitle,
+  imageUrl,
   ctaLabel,
   ctaHref,
   theme,
@@ -94,6 +96,7 @@ export function BannerPlacementPreview({
 
   const variant: VariantProps = {
     title,
+    imageUrl: imageUrl?.trim() || undefined,
     subtitle: subtitle?.trim() || undefined,
     ctaLabel: ctaLabel?.trim() || undefined,
     ctaHref: ctaHref?.trim() || undefined,
@@ -190,6 +193,7 @@ type Viewport = "desktop" | "mobile";
 
 interface VariantProps {
   title: string;
+  imageUrl?: string;
   subtitle?: string;
   ctaLabel?: string;
   ctaHref?: string;
@@ -197,6 +201,36 @@ interface VariantProps {
   /** Drives the shapes that genuinely differ between breakpoints (hero ratio,
    *  promo-tile column count) — see the component header. */
   viewport: Viewport;
+}
+
+/**
+ * The banner picture behind the copy — the admin twin of the storefront
+ * `BannerBackdrop` (TASK-740): a cover image under the placement's tint, on a
+ * `-z-10` layer of an `isolate` box. Renders nothing without a URL or when the
+ * picture fails to load, so the gradient shows exactly as on the site.
+ */
+function PreviewBackdrop({
+  src,
+  scrimClassName,
+}: {
+  src?: string;
+  scrimClassName: string;
+}) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  if (!src || failedSrc === src) return null;
+  return (
+    <div aria-hidden="true" className="absolute inset-0 -z-10">
+      {/* eslint-disable-next-line @next/next/no-img-element -- a live preview of an operator-supplied URL; next/image would need every host allow-listed */}
+      <img
+        data-testid="banner-preview-image"
+        src={src}
+        alt=""
+        className="size-full object-cover"
+        onError={() => setFailedSrc(src)}
+      />
+      <div className={cn("absolute inset-0", scrimClassName)} />
+    </div>
+  );
 }
 
 /** `title || dict.bannerPreview.emptyTitle` with italic-muted styling when
@@ -233,6 +267,7 @@ const HERO_ASPECT: Record<Viewport, string> = {
 function HeroSlidePreview({
   title,
   subtitle,
+  imageUrl,
   ctaLabel,
   viewport,
 }: VariantProps) {
@@ -240,11 +275,12 @@ function HeroSlidePreview({
     <div
       data-testid="banner-preview-hero-slide"
       className={cn(
-        "flex items-center overflow-hidden rounded-2xl p-4 text-white",
+        "relative isolate flex items-center overflow-hidden rounded-2xl p-4 text-white",
         HERO_ASPECT[viewport],
       )}
       style={{ backgroundImage: HERO_GRADIENT }}
     >
+      <PreviewBackdrop src={imageUrl} scrimClassName="bg-black/45" />
       {/* The copy block sits on the left half exactly as it does on the site; the
           scale model is small, so the padding and type scale come down with it —
           the shape is what has to be faithful, not the font size. */}
@@ -280,6 +316,7 @@ const TILE_ACCENT_NAMES = Object.keys(TILE_ACCENTS) as TileAccent[];
 function PromoTilePreview({
   title,
   subtitle,
+  imageUrl,
   ctaLabel,
   theme,
   viewport,
@@ -293,8 +330,12 @@ function PromoTilePreview({
   const tile = (
     <div
       data-testid="banner-preview-promo-tile"
-      className={cn("flex flex-col rounded-2xl border p-3", accent.surface)}
+      className={cn(
+        "relative isolate flex flex-col overflow-hidden rounded-2xl border p-3",
+        accent.surface,
+      )}
     >
+      <PreviewBackdrop src={imageUrl} scrimClassName="bg-background/80" />
       <TitleText
         title={title}
         className="font-display text-sm font-bold text-foreground"
@@ -349,6 +390,7 @@ function GhostTile() {
 function PromoBannerPreview({
   title,
   subtitle,
+  imageUrl,
   ctaLabel,
   ctaHref,
 }: VariantProps) {
@@ -358,8 +400,9 @@ function PromoBannerPreview({
       // Full content width, CONTENT height — the storefront banner is
       // `max-w-7xl px-4` with `p-10 sm:p-12` and no ratio at all, so none is
       // invented here (TASK-429); the padding is scaled down with the model.
-      className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-5"
+      className="relative isolate flex flex-wrap items-center justify-between gap-4 overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-5"
     >
+      <PreviewBackdrop src={imageUrl} scrimClassName="bg-slate-900/60" />
       <div className="min-w-0 max-w-md text-white">
         <TitleText
           title={title}

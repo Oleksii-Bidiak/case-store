@@ -50,10 +50,10 @@ export function CreateCategoryView() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
         <Link
           href="/categories"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          className="w-fit text-sm text-muted-foreground hover:text-foreground"
         >
           {dict.categories.back}
         </Link>

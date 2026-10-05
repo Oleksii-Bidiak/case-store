@@ -124,7 +124,10 @@ describe("BrandForm — logo upload (TASK-424)", () => {
     const onSubmit = jest.fn();
     renderWithProviders(<BrandForm onSubmit={onSubmit} isPending={false} />);
 
-    await userEvent.type(screen.getByLabelText(dict.brandForm.name), "Spigen");
+    await userEvent.type(
+      screen.getByRole("textbox", { name: dict.brandForm.name }),
+      "Spigen",
+    );
     await userEvent.upload(fileInput(), pickFile());
     await waitFor(() => expect(logoField()).toHaveValue(STORED_URL));
 
@@ -184,5 +187,108 @@ describe("BrandForm — logo upload (TASK-424)", () => {
     );
 
     await waitFor(() => expect(logoField()).toHaveValue(""));
+  });
+});
+
+describe("BrandForm — canon layout (wave 198, БР5–БР9)", () => {
+  const f = dict.brandForm;
+  const noop = () => {};
+
+  it("groups the fields into «Основне · Логотип · Показувати на сайті»", () => {
+    renderWithProviders(<BrandForm onSubmit={noop} isPending={false} />);
+
+    expect(
+      screen.getByRole("region", { name: f.sectionMain }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: f.sectionLogo }),
+    ).toBeInTheDocument();
+    // A Switch, not a native checkbox.
+    expect(screen.getByRole("switch", { name: f.active })).toBeChecked();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  });
+
+  it("marks the name required and shows errors under the fields with aria-invalid", async () => {
+    renderWithProviders(<BrandForm onSubmit={noop} isPending={false} />);
+
+    const name = screen.getByRole("textbox", { name: f.name });
+    expect(name).toHaveAttribute("aria-required", "true");
+    await userEvent.type(screen.getByLabelText(f.slug), "Apple_Inc");
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    expect(await screen.findByText(f.errorSummary(2))).toBeInTheDocument();
+    expect(name).toHaveAttribute("aria-invalid", "true");
+    expect(name).toHaveAccessibleDescription(f.errors.nameRequired);
+    expect(screen.getByLabelText(f.slug)).toHaveAccessibleDescription(
+      f.errors.slugPattern,
+    );
+  });
+
+  it("puts «З медіатеки» in the upload button's row and folds the link box", async () => {
+    renderWithProviders(<BrandForm onSubmit={noop} isPending={false} />, {
+      auth: { permissions: MEDIA_PERMISSIONS },
+    });
+
+    const upload = screen.getByRole("button", { name: f.logoUpload.upload });
+    const library = screen.getByRole("button", {
+      name: dict.mediaPicker.trigger,
+    });
+    expect(upload.parentElement).toBe(library.parentElement);
+
+    const fold = screen.getByRole("button", { name: f.logo });
+    expect(fold).toHaveAttribute("aria-expanded", "false");
+    expect(logoField()).not.toBeVisible();
+    await userEvent.click(fold);
+    expect(fold).toHaveAttribute("aria-expanded", "true");
+    expect(logoField()).toBeVisible();
+  });
+
+  it("submits «Показувати на сайті» off when the switch is turned off", async () => {
+    const onSubmit = jest.fn();
+    renderWithProviders(<BrandForm onSubmit={onSubmit} isPending={false} />);
+
+    await userEvent.type(
+      screen.getByRole("textbox", { name: f.name }),
+      "Mcdodo",
+    );
+    await userEvent.click(screen.getByRole("switch", { name: f.active }));
+    await userEvent.click(screen.getByRole("button", { name: f.submit }));
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      name: "Mcdodo",
+      isActive: false,
+    });
+  });
+
+  it("renders the side panel it is given", () => {
+    renderWithProviders(
+      <BrandForm onSubmit={noop} isPending={false} aside={<p>side panel</p>} />,
+    );
+    expect(screen.getByText("side panel")).toBeInTheDocument();
+  });
+
+  it("view-only: the fields as text, no save, no upload", async () => {
+    renderWithProviders(
+      <BrandForm
+        id="b1"
+        defaultValues={{ name: "Apple", slug: "apple", isActive: true }}
+        onSubmit={noop}
+        isPending={false}
+        readOnly
+      />,
+    );
+
+    expect(await screen.findByText("Apple")).toBeInTheDocument();
+    expect(screen.getByText("apple")).toBeInTheDocument();
+    expect(screen.getByText(dict.common.viewOnly)).toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: f.submit }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: f.logoUpload.upload }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: f.active })).toBeDisabled();
   });
 });

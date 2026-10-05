@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/shared/ui/toast";
 import {
+  GroupPositionsSection,
   ProductGroupForm,
   productGroupFormValuesToDto,
   type ProductGroupFormValues,
@@ -13,15 +14,26 @@ import {
   getProductGroupControllerFindAllQueryKey,
   useProductGroupControllerCreate,
 } from "@/entities/product-group";
+import { useAuth } from "@/entities/session";
+import { PERM } from "@/entities/permission";
 import { dict } from "@/shared/config";
 
+const g = dict.productGroups;
+
+const LIST_PATH = "/product-groups";
+
 /**
- * Create-group page body: renders the group form and wires the create mutation,
- * list-cache invalidation, success/error toasts, and redirect.
+ * «Нова група» (wave 198, ProductGroupsProposal ГТ6): the same sectioned form
+ * as the group page. Positions can only join a group that exists, so the
+ * section explains that instead of offering «Додати позицію…». Without
+ * `products:write` (the API's guard) the form is read-only with nothing to
+ * submit (TASK-1011).
  */
 export function CreateProductGroupView() {
   const router = useRouter();
   const queryClient = useQueryClient();
+  const { can } = useAuth();
+  const canWrite = can(PERM.productsWrite);
   const create = useProductGroupControllerCreate();
 
   const handleSubmit = (values: ProductGroupFormValues) => {
@@ -32,34 +44,42 @@ export function CreateProductGroupView() {
           void queryClient.invalidateQueries({
             queryKey: getProductGroupControllerFindAllQueryKey(),
           });
-          toast.success(dict.productGroups.toastCreated);
-          router.push("/product-groups");
+          toast.success(g.toastCreated);
+          router.push(LIST_PATH);
         },
-        onError: () => {
-          toast.error(dict.productGroups.toastCreateFailed);
-        },
+        onError: () => toast.error(g.toastCreateFailed),
       },
     );
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <Link
-          href="/product-groups"
-          className="text-sm text-muted-foreground hover:text-foreground"
+          href={LIST_PATH}
+          className="w-fit rounded-xs text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          {dict.productGroups.back}
+          {g.back}
         </Link>
         <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-          {dict.productGroups.createHeading}
+          {g.createHeading}
         </h2>
       </div>
 
       <ProductGroupForm
         onSubmit={handleSubmit}
         isPending={create.isPending}
-        submitLabel={dict.productGroups.createSubmit}
+        submitLabel={g.createSubmit}
+        cancelHref={LIST_PATH}
+        readOnly={!canWrite}
+        renderPositions={(axes, problems) => (
+          <GroupPositionsSection
+            positions={[]}
+            axes={axes}
+            problems={problems}
+            canWrite={canWrite}
+          />
+        )}
       />
     </div>
   );

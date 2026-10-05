@@ -79,6 +79,11 @@ export interface TableSearchProps {
   label?: string;
   disabled?: boolean;
   className?: string;
+  /**
+   * `registry` (wave 198): the larger box of the shared registry toolbar —
+   * 40 px tall, 15/22 type, no width cap of its own (the toolbar caps it).
+   */
+  variant?: "default" | "registry";
 }
 
 export function TableSearch({
@@ -137,6 +142,7 @@ function SearchField({
   label = t.searchLabel,
   disabled = false,
   className,
+  variant = "default",
 }: SearchFieldProps) {
   const [text, setText] = React.useState(value);
 
@@ -178,10 +184,19 @@ function SearchField({
   }, [value]);
 
   return (
-    <div className={cn("relative w-full max-w-xs", className)}>
+    <div
+      className={cn(
+        "relative w-full",
+        variant === "default" && "max-w-xs",
+        className,
+      )}
+    >
       <SearchIcon
         aria-hidden="true"
-        className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
+        className={cn(
+          "pointer-events-none absolute top-1/2 size-4 -translate-y-1/2 text-muted-foreground",
+          variant === "registry" ? "left-3" : "left-2.5",
+        )}
       />
       <Input
         id={id}
@@ -190,7 +205,9 @@ function SearchField({
         disabled={disabled}
         placeholder={placeholder}
         aria-label={label}
-        className="pl-8"
+        className={
+          variant === "registry" ? "h-10 pl-9 md:text-control" : "pl-8"
+        }
         onChange={(event) => {
           const raw = event.target.value;
           setText(raw);

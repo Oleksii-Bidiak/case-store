@@ -7,7 +7,11 @@ import {
   formatPercent,
   formatDurationHours,
 } from "@/shared/lib";
-import { AdminDashboardStats } from "./AdminDashboardStats";
+import {
+  AdminDashboardStats,
+  AdminDashboardStatsError,
+} from "./AdminDashboardStats";
+import { AdminDashboardStatsSkeleton } from "./AdminDashboardStatsSkeleton";
 
 const revenue = {
   totalRevenue: 48230.75,
@@ -175,5 +179,57 @@ describe("AdminDashboardStats — without analytics:revenue (TASK-684)", () => {
     expect(
       screen.getByText(dict.dashboard.averageProcessingTime),
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * TASK-1037 (П4): a failed summary is a bar with «Повторити», not a dead
+ * sentence. The text says what failed; the button re-asks.
+ */
+describe("AdminDashboardStatsError (TASK-1037)", () => {
+  it("names what failed and retries on click", async () => {
+    const onRetry = jest.fn();
+    render(<AdminDashboardStatsError onRetry={onRetry} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      dict.dashboard.loadError,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: dict.canon.retry }),
+    );
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables «Повторити» while the retry is in flight", () => {
+    render(<AdminDashboardStatsError onRetry={() => {}} isRetrying />);
+
+    expect(
+      screen.getByRole("button", { name: dict.canon.retry }),
+    ).toBeDisabled();
+  });
+});
+
+/**
+ * TASK-1037 (П3): the placeholder is the loaded layout — ten cards with the
+ * money tiles, five without (TASK-684), in the same three columns.
+ */
+describe("AdminDashboardStatsSkeleton (TASK-1037)", () => {
+  it("draws ten cards for a session that sees money", () => {
+    const { container } = render(<AdminDashboardStatsSkeleton />);
+
+    expect(
+      container.querySelectorAll("[data-slot='stat-skeleton']"),
+    ).toHaveLength(10);
+    expect(container.firstChild).toHaveClass("lg:grid-cols-3");
+  });
+
+  it("draws five cards without the money tiles", () => {
+    const { container } = render(
+      <AdminDashboardStatsSkeleton withRevenue={false} />,
+    );
+
+    expect(
+      container.querySelectorAll("[data-slot='stat-skeleton']"),
+    ).toHaveLength(5);
   });
 });

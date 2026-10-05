@@ -33,10 +33,10 @@ import {
   flatReorderStrings,
   isFlatReorderConflict,
   orderedIdsIfChanged,
-  useReorderLifecycle,
   type ReorderLifecycleApi,
 } from "@/shared/lib/list-reorder";
 import type { TreeItem } from "@/shared/lib/sortable-tree";
+import { useUndoToastReorder } from "./use-undo-toast-reorder";
 
 /**
  * The key of the UNPARAMETERISED list read — the one the grids render and the one the
@@ -113,7 +113,7 @@ export function useCarouselReorder({
 
   const strings = useMemo(() => flatReorderStrings, []);
 
-  return useReorderLifecycle<ReorderCarouselsDto, AdminCarouselListResponse>({
+  return useUndoToastReorder<ReorderCarouselsDto, AdminCarouselListResponse>({
     resource: "carousels",
     items,
     toPayload,

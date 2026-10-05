@@ -95,6 +95,7 @@ import {
   type TreeItem,
 } from "@/shared/lib/sortable-tree";
 import { useAnnouncer } from "@/shared/ui/live-announcer";
+import { dict } from "@/shared/config";
 
 export const DEFAULT_INDENTATION_WIDTH = 24;
 
@@ -280,14 +281,23 @@ function hintFromProjection(
 export function dropHintStyle(
   hint: DropHint,
   indentationWidth: number,
+  /**
+   * Where a line starts at depth 0 (wave 198): past the checkbox column, so
+   * the line reads as "between these rows", not as an underline of the boxes.
+   */
+  lineInset = 0,
 ): CSSProperties {
   if (hint.mode === "nest") {
+    // Wave 198 (Categories КТ2): the future parent is TINTED as well as
+    // ringed, so "inside" and "beside" differ in area, not only in a hairline.
     return {
       outline: "2px solid var(--color-primary)",
       outlineOffset: "-2px",
+      backgroundColor:
+        "color-mix(in oklab, var(--color-primary) 10%, transparent)",
     };
   }
-  const indent = Math.max(0, hint.depth) * indentationWidth;
+  const indent = lineInset + Math.max(0, hint.depth) * indentationWidth;
   return {
     backgroundImage: `linear-gradient(to right, transparent ${indent}px, var(--color-primary) ${indent}px)`,
     backgroundSize: "100% 2px",
@@ -313,6 +323,35 @@ export interface SortableTreeRowRenderProps {
   style: CSSProperties;
   /** Spread on the GRIP HANDLE `<button>` — never on the row. */
   handleProps: SortableTreeHandleProps;
+  /**
+   * Set only on the row the live drop hint is anchored to (wave 198): what a
+   * release would do, in words — render `label` in a {@link DropHintPill} for a
+   * `nest`. The row's `style` already paints the frame / line.
+   */
+  dropHint: { mode: DropHintMode; label: string } | null;
+}
+
+/**
+ * The «Вкласти в «…»» pill a consumer renders inside the row a nest would
+ * land in (Categories КТ2). Decorative for assistive tech: the same words are
+ * announced through the live region while the pointer decides.
+ */
+export function DropHintPill({ children }: { children: ReactNode }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="ml-2 inline-flex items-center rounded-full bg-primary px-2 py-0.5 text-xs font-medium whitespace-nowrap text-primary-foreground"
+    >
+      {children}
+    </span>
+  );
+}
+
+/** The words for a hint, anchored on `item` (the row the hint is painted on). */
+function dropHintLabel(mode: DropHintMode, item: TreeItem): string {
+  if (mode === "nest") return dict.canon.treeNestInto(item.label);
+  if (mode === "before") return dict.canon.treePlaceBefore(item.label);
+  return dict.canon.treePlaceAfter(item.label);
 }
 
 export interface SortableTreeAnnouncements {
@@ -344,6 +383,8 @@ export interface SortableTreeProps {
   /** Disables dragging entirely (e.g. while a search filter is active, §3.11). */
   disabled?: boolean;
   indentationWidth?: number;
+  /** Pixels before an insertion line starts — e.g. the checkbox column. */
+  lineInset?: number;
   children?: ReactNode;
 }
 
@@ -355,6 +396,7 @@ export function SortableTree({
   announcements,
   disabled = false,
   indentationWidth = DEFAULT_INDENTATION_WIDTH,
+  lineInset = 0,
   children,
 }: SortableTreeProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -406,6 +448,16 @@ export function SortableTree({
     );
   }, [activeId, indentationWidth, items, maxDepth, offsetLeft, overId, rows]);
   const dropHint = resolved?.hint ?? null;
+
+  // Say what a release would do (wave 198) — only when that ANSWER changes,
+  // and settled like a held arrow key: a pointer sweeping over rows must not
+  // read out every row it crosses.
+  const hintItem = dropHint ? byId.get(dropHint.anchorId) : undefined;
+  const hintText =
+    dropHint && hintItem ? dropHintLabel(dropHint.mode, hintItem) : null;
+  useEffect(() => {
+    if (hintText) announcePolite(hintText, { repeat: true });
+  }, [announcePolite, hintText]);
 
   // The frame that is ON SCREEN, for the drop to consume. Written after commit,
   // so it is always the projection the operator actually saw — if a move event
@@ -531,7 +583,9 @@ export function SortableTree({
               index={index}
               disabled={disabled || item.disabled === true}
               hint={dropHint?.anchorId === row.id ? dropHint : null}
+              isActive={activeId === row.id}
               indentationWidth={indentationWidth}
+              lineInset={lineInset}
               renderRow={renderRow}
             />
           );
@@ -549,7 +603,10 @@ interface SortableTreeRowProps {
   disabled: boolean;
   /** Set only on the ONE row the live drop hint is anchored to. */
   hint: DropHint | null;
+  /** This row is the one being dragged (from our own drag state). */
+  isActive: boolean;
   indentationWidth: number;
+  lineInset: number;
   renderRow: (props: SortableTreeRowRenderProps) => ReactNode;
 }
 
@@ -559,7 +616,9 @@ function SortableTreeRow({
   index,
   disabled,
   hint,
+  isActive,
   indentationWidth,
+  lineInset,
   renderRow,
 }: SortableTreeRowProps) {
   const {
@@ -575,7 +634,12 @@ function SortableTreeRow({
   const style: CSSProperties = {
     transform: CSS.Translate.toString(transform),
     transition: transition ?? undefined,
-    ...(hint ? dropHintStyle(hint, indentationWidth) : {}),
+    // The row in hand fades on a muted ground (Categories КТ2), so the eye
+    // follows the hint, not the original.
+    ...(isActive
+      ? { opacity: 0.45, backgroundColor: "var(--color-muted)" }
+      : {}),
+    ...(hint ? dropHintStyle(hint, indentationWidth, lineInset) : {}),
   };
 
   const handleProps: SortableTreeHandleProps = {
@@ -594,6 +658,9 @@ function SortableTreeRow({
         setNodeRef,
         style,
         handleProps,
+        dropHint: hint
+          ? { mode: hint.mode, label: dropHintLabel(hint.mode, item) }
+          : null,
       })}
     </>
   );

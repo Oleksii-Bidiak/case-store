@@ -1,6 +1,5 @@
 import { http, HttpResponse } from "msw";
 import {
-  act,
   renderWithProviders,
   screen,
   userEvent,
@@ -10,27 +9,79 @@ import {
 import { server } from "@/shared/test/msw-server";
 import { WithAuth } from "@/entities/session/model/auth-context.fixture";
 import { dict } from "@/shared/config";
-import { UNDO_WINDOW_MS } from "@/shared/lib/list-reorder/use-reorder-lifecycle";
+import { countLabel } from "@/shared/lib/plural";
+import { formatCurrency, formatDateTime } from "@/shared/lib";
 import { AdminProductTable } from "./admin-product-table";
 
 const mockReplace = jest.fn();
-// TASK-427: the «Видалені» view is a URL state, so the query string has to be
-// steerable per test — same ref pattern as AdminUserTable.
+const mockPush = jest.fn();
+// The view is a URL state (quick views, filters, deleted view), so the query
+// string has to be steerable per test.
 const mockSearchParamsRef = { current: new URLSearchParams("") };
 jest.mock("next/navigation", () => ({
-  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: mockPush }),
   usePathname: () => "/products",
   useSearchParams: () => mockSearchParamsRef.current,
 }));
+
+// `toast.undo` carries the «Скасувати» of a bulk action (wave 198). Mocked so a
+// test can read the message and press the action without a <Toaster>.
+const toastUndo = jest.fn();
+const toastSuccess = jest.fn();
+const toastError = jest.fn();
+jest.mock("@/shared/ui/toast", () => ({
+  toast: {
+    undo: (...args: unknown[]) => toastUndo(...args),
+    success: (...args: unknown[]) => toastSuccess(...args),
+    error: (...args: unknown[]) => toastError(...args),
+    dismiss: jest.fn(),
+  },
+}));
+
+const d = dict.products;
+const r = dict.common.registry;
+const forms = d.itemForms;
+
+function setViewport(mobile: boolean) {
+  window.matchMedia = ((query: string) => ({
+    matches: mobile,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia;
+}
+
+const originalMatchMedia = window.matchMedia;
+
+beforeEach(() => {
+  mockReplace.mockClear();
+  mockPush.mockClear();
+  toastUndo.mockClear();
+  toastSuccess.mockClear();
+  toastError.mockClear();
+  localStorage.clear();
+  setViewport(false);
+});
 
 afterEach(() => {
   mockSearchParamsRef.current = new URLSearchParams("");
 });
 
-function makeProductRow() {
+afterAll(() => {
+  window.matchMedia = originalMatchMedia;
+});
+
+const P1 = "iPhone 15 Pro Case";
+const P2 = "Galaxy S24 Case";
+
+function makeProductRow(overrides: Record<string, unknown> = {}) {
   return {
     id: "product-1",
-    name: "iPhone 15 Pro Case",
+    name: P1,
     slug: "iphone-15-pro-case",
     price: "499.00",
     categoryId: "cat-1",
@@ -40,7 +91,8 @@ function makeProductRow() {
     reservedQty: 3,
     physicalQty: 13,
     createdAt: "2026-06-01T10:00:00.000Z",
-    updatedAt: "2026-06-01T10:00:00.000Z",
+    updatedAt: "2026-06-02T10:00:00.000Z",
+    ...overrides,
   };
 }
 
@@ -79,12 +131,6 @@ function treeNode(
   };
 }
 
-/**
- * TASK-717: category names come from the full tree — the admin tree for a
- * session with `categories:write`, the public tree otherwise. Both are stubbed
- * so a restricted render (the delete-permission cases) stays off
- * onUnhandledRequest.
- */
 function categoryTreeHandlers(
   tree: TreeNodeStub[] = [treeNode("cat-1", "Cases")],
 ) {
@@ -96,25 +142,36 @@ function categoryTreeHandlers(
   ];
 }
 
-function stubEndpoints() {
+/**
+ * The listing. The registry also asks for the quick-view counters — the same
+ * endpoint with `limit=1` — so the MAIN request is told apart by its limit.
+ */
+function stubList(rows: unknown[] = [makeProductRow()], total?: number) {
+  const queries: URLSearchParams[] = [];
   server.use(
-    // TASK-230: the table lists via the guarded admin endpoint (all statuses).
-    http.get("*/api/products/admin/list", () =>
-      HttpResponse.json({
-        data: [makeProductRow()],
-        meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
-      }),
-    ),
+    http.get("*/api/products/admin/list", ({ request }) => {
+      const params = new URL(request.url).searchParams;
+      queries.push(params);
+      return HttpResponse.json({
+        data: params.get("limit") === "1" ? rows.slice(0, 1) : rows,
+        meta: {
+          total: total ?? rows.length,
+          page: 1,
+          limit: 20,
+          totalPages: 1,
+        },
+      });
+    }),
     ...categoryTreeHandlers(),
   );
+  return {
+    queries,
+    /** Requests of the table itself (not the counters). */
+    main: () => queries.filter((q) => q.get("limit") !== "1"),
+    counters: () => queries.filter((q) => q.get("limit") === "1"),
+  };
 }
 
-/**
- * TASK-427: the row's delete action calls `useAuth()`, which throws outside a
- * provider — every render in this file therefore goes through the session
- * fixture. Owner by default (the owner holds every permission implicitly), so
- * the pre-existing sorting / filter / bulk assertions are unaffected.
- */
 function renderTable(options: { permissions?: string[] } = {}) {
   return renderWithProviders(
     <WithAuth
@@ -126,231 +183,785 @@ function renderTable(options: { permissions?: string[] } = {}) {
   );
 }
 
-describe("AdminProductTable — column sorting (TASK-147)", () => {
-  beforeEach(() => mockReplace.mockClear());
+const selectRow = (name: string) =>
+  userEvent.click(
+    screen.getByRole("checkbox", { name: r.selectRowAria(name) }),
+  );
 
-  it("renders sortable Name/Price/Created headers", async () => {
-    stubEndpoints();
+const openRowMenu = async (name: string) => {
+  await userEvent.click(
+    screen.getByRole("button", { name: r.rowActionsAria(name) }),
+  );
+  return screen.findByRole("menu");
+};
+
+const lastUrl = () => String(mockReplace.mock.calls.at(-1)?.[0] ?? "");
+
+/* ── header, quick views, toolbar ─────────────────────────────────────── */
+
+describe("AdminProductTable — header and quick views (TASK-1048)", () => {
+  it("draws the header with «Додати товар» for a products:write holder", async () => {
+    stubList();
+    renderTable({ permissions: ["products:read", "products:write"] });
+    await screen.findByText(P1);
+
+    expect(
+      screen.getByRole("heading", { level: 2, name: d.heading }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: d.add })).toHaveAttribute(
+      "href",
+      "/products/new",
+    );
+  });
+
+  it("offers the five quick views with the API's own counts", async () => {
+    const list = stubList([makeProductRow()], 7);
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
+    await screen.findByText(P1);
 
+    const tabs = screen.getByRole("tablist", { name: r.quickViewsLabel });
     for (const label of [
-      dict.products.colName,
-      dict.products.colPrice,
-      dict.products.colCreated,
+      d.viewAll,
+      d.viewActive,
+      d.viewHidden,
+      d.viewOut,
+      d.filterDeleted,
     ]) {
+      expect(
+        within(tabs).getByRole("tab", { name: new RegExp(label) }),
+      ).toBeInTheDocument();
+    }
+    // Counts come from `meta.total` of one-row requests, one per view.
+    await waitFor(() => expect(list.counters()).toHaveLength(5));
+    await waitFor(() =>
+      expect(
+        within(tabs).getByRole("tab", { name: new RegExp(d.viewAll) }),
+      ).toHaveTextContent("7"),
+    );
+    const counterQueries = list.counters().map((q) => q.toString());
+    expect(counterQueries.some((q) => q.includes("isActive=true"))).toBe(true);
+    expect(counterQueries.some((q) => q.includes("isActive=false"))).toBe(true);
+    expect(counterQueries.some((q) => q.includes("outOfStock=true"))).toBe(
+      true,
+    );
+    expect(counterQueries.some((q) => q.includes("deleted=true"))).toBe(true);
+  });
+
+  it.each([
+    [d.viewActive, "status=active"],
+    [d.viewHidden, "status=hidden"],
+    [d.viewOut, "stock=out"],
+    [d.filterDeleted, "deleted=only"],
+  ])(
+    "«%s» writes the same URL param the old filter did (%s)",
+    async (label, param) => {
+      stubList();
+      renderTable();
+      await screen.findByText(P1);
+
+      await userEvent.click(
+        screen.getByRole("tab", { name: new RegExp(label) }),
+      );
+      expect(lastUrl()).toContain(param);
+    },
+  );
+
+  it("marks the quick view a deep link points at", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("status=hidden");
+    const list = stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(
+      screen.getByRole("tab", { name: new RegExp(d.viewHidden) }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(list.main()[0].get("isActive")).toBe("false");
+  });
+
+  it("«Усі» clears the status, stock and deleted params", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("stock=out&search=clear");
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: new RegExp(d.viewAll) }),
+    );
+    expect(lastUrl()).not.toContain("stock=");
+    // The search is not part of a quick view — it survives.
+    expect(lastUrl()).toContain("search=clear");
+  });
+
+  it("names the searched fields in the search box", async () => {
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(
+      screen.getByPlaceholderText(d.searchPlaceholder),
+    ).toBeInTheDocument();
+  });
+});
+
+/* ── filters ──────────────────────────────────────────────────────────── */
+
+describe("AdminProductTable — «Фільтри» (TASK-1048)", () => {
+  function stubSheetData() {
+    server.use(
+      http.get("*/api/brands", () =>
+        HttpResponse.json({
+          data: [
+            { id: "brand-1", name: "Spigen", slug: "spigen" },
+            { id: "brand-2", name: "Apple", slug: "apple" },
+          ],
+        }),
+      ),
+      http.get("*/api/device-models", () =>
+        HttpResponse.json({
+          data: [
+            {
+              id: "model-1",
+              name: "iPhone 15",
+              slug: "iphone-15",
+              brandName: "Apple",
+            },
+          ],
+          meta: { total: 1, page: 1, limit: 200, totalPages: 1 },
+        }),
+      ),
+    );
+  }
+
+  const openSheet = () =>
+    userEvent.click(
+      screen.getByRole("button", { name: new RegExp(r.filters) }),
+    );
+
+  it("keeps the old status filter reachable — in the sheet, into the URL", async () => {
+    stubList();
+    stubSheetData();
+    renderTable();
+    await screen.findByText(P1);
+
+    await openSheet();
+    const sheet = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(
+        within(sheet).getByRole("group", { name: d.filterStatus }),
+      ).getByRole("button", { name: d.filterStatusHidden }),
+    );
+    await userEvent.click(
+      within(sheet).getByRole("button", { name: d.filtersApply }),
+    );
+    expect(lastUrl()).toContain("status=hidden");
+  });
+
+  it("keeps the stock filter and the deleted view reachable too", async () => {
+    stubList();
+    stubSheetData();
+    renderTable();
+    await screen.findByText(P1);
+
+    await openSheet();
+    const sheet = await screen.findByRole("dialog");
+    await userEvent.click(
+      within(
+        within(sheet).getByRole("group", { name: d.filterStock }),
+      ).getByRole("button", { name: d.filterStockOut }),
+    );
+    await userEvent.click(
+      within(
+        within(sheet).getByRole("group", { name: d.filterStatus }),
+      ).getByRole("button", { name: d.filterDeleted }),
+    );
+    await userEvent.click(
+      within(sheet).getByRole("button", { name: d.filtersApply }),
+    );
+    expect(lastUrl()).toContain("stock=out");
+    expect(lastUrl()).toContain("deleted=only");
+  });
+
+  it("sends the brand, price and in-stock filters the API already supports", async () => {
+    mockSearchParamsRef.current = new URLSearchParams(
+      "brandId=brand-1&minPrice=100&maxPrice=900&stock=in&categoryId=cat-1&deviceModelId=model-1",
+    );
+    const list = stubList();
+    stubSheetData();
+    renderTable();
+    await screen.findByText(P1);
+
+    const main = list.main()[0];
+    expect(main.get("brandId")).toBe("brand-1");
+    expect(main.get("minPrice")).toBe("100");
+    expect(main.get("maxPrice")).toBe("900");
+    expect(main.get("inStock")).toBe("true");
+    expect(main.get("categoryId")).toBe("cat-1");
+    expect(main.get("deviceModelId")).toBe("model-1");
+
+    // One chip per applied filter, each removable on its own.
+    expect(
+      await screen.findByRole("button", {
+        name: r.removeChipAria(d.chipBrand("Spigen")),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: r.removeChipAria(d.chipCategory("Cases")),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", {
+        name: r.removeChipAria(d.chipDevice("iPhone 15")),
+      }),
+    ).toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole("button", {
+        name: r.removeChipAria(d.chipPrice("100", "900")),
+      }),
+    );
+    expect(lastUrl()).not.toContain("minPrice");
+    expect(lastUrl()).toContain("brandId=brand-1");
+  });
+
+  it("picks a brand in the sheet", async () => {
+    stubList();
+    stubSheetData();
+    renderTable();
+    await screen.findByText(P1);
+
+    await openSheet();
+    const sheet = await screen.findByRole("dialog");
+    await userEvent.click(
+      await within(sheet).findByRole("button", { name: "Spigen" }),
+    );
+    await userEvent.click(
+      within(sheet).getByRole("button", { name: d.filtersApply }),
+    );
+    expect(lastUrl()).toContain("brandId=brand-1");
+  });
+});
+
+/* ── columns ──────────────────────────────────────────────────────────── */
+
+describe("AdminProductTable — columns (TASK-1048)", () => {
+  it("sorts on name, price and stock — the fields the API sorts by", async () => {
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    for (const label of [d.colName, d.colPrice, d.colStock]) {
       expect(
         screen.getByRole("button", { name: dict.common.sortByAria(label) }),
       ).toBeInTheDocument();
     }
-  });
-
-  it("updates the URL with the sort field on header click", async () => {
-    stubEndpoints();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
     await userEvent.click(
       screen.getByRole("button", {
-        name: dict.common.sortByAria(dict.products.colPrice),
+        name: dict.common.sortByAria(d.colPrice),
       }),
     );
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      expect.stringContaining("sortBy=price"),
-    );
-  });
-});
-
-describe("AdminProductTable — stock column (TASK-254)", () => {
-  beforeEach(() => mockReplace.mockClear());
-
-  it("renders the available / reserved / physical composite cell", async () => {
-    stubEndpoints();
-    renderTable();
-    const nameCell = await screen.findByText("iPhone 15 Pro Case");
-
-    const row = nameCell.closest("tr") as HTMLElement;
-    // available 10 / reserved 3 / physical 13 — all rendered in one cell.
-    expect(row.textContent).toContain("10");
-    expect(row.textContent).toContain("3");
-    expect(row.textContent).toContain("13");
-  });
-
-  it("sorts by stock (Вільно) when the column header is clicked", async () => {
-    stubEndpoints();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
+    expect(lastUrl()).toContain("sortBy=price");
     await userEvent.click(
       screen.getByRole("button", {
-        name: dict.common.sortByAria(dict.products.colStock),
+        name: dict.common.sortByAria(d.colStock),
       }),
     );
-
-    expect(mockReplace).toHaveBeenCalledWith(
-      expect.stringContaining("sortBy=stock"),
-    );
+    expect(lastUrl()).toContain("sortBy=stock");
   });
-});
 
-describe("AdminProductTable — mobile card layout (TASK-258)", () => {
-  it("renders in card mode with per-cell labels", async () => {
-    stubEndpoints();
+  it("keeps «Створено» (and its sort) in «Колонки», hidden by default", async () => {
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(
+      screen.queryByRole("button", {
+        name: dict.common.sortByAria(d.colCreated),
+      }),
+    ).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: r.columns }));
+    await userEvent.click(
+      await screen.findByRole("checkbox", { name: d.colCreated }),
+    );
+    expect(
+      await screen.findByRole("button", {
+        name: dict.common.sortByAria(d.colCreated),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows «Оновлено» from the payload's updatedAt", async () => {
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(
+      screen.getByRole("columnheader", {
+        name: new RegExp(`^${d.colUpdated}`),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      document.querySelector('td[data-column-id="updated"]'),
+    ).toHaveTextContent(formatDateTime("2026-06-02T10:00:00.000Z"));
+  });
+
+  it("flags a product with no photo and thumbnails one that has it", async () => {
+    stubList([
+      makeProductRow(),
+      makeProductRow({
+        id: "product-2",
+        name: P2,
+        primaryImage: {
+          id: "img-1",
+          url: "https://cdn.example.com/a.jpg",
+          alt: null,
+          blurDataUrl: null,
+          sortOrder: 0,
+          isPrimary: true,
+        },
+      }),
+    ]);
     const { container } = renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
+    await screen.findByText(P1);
 
-    expect(container.querySelector('[data-slot="table"]')).toHaveClass(
-      "max-md:block",
-    );
+    expect(screen.getAllByText(d.noPhoto)).toHaveLength(1);
     expect(
-      container.querySelector(`[data-label="${dict.products.colName}"]`),
+      container.querySelector('img[src="https://cdn.example.com/a.jpg"]'),
     ).toBeInTheDocument();
-    expect(
-      container.querySelector(`[data-label="${dict.common.actions}"]`),
-    ).toBeInTheDocument();
-  });
-
-  it("announces the selection into the live region (TASK-292)", async () => {
-    const user = userEvent.setup();
-    stubEndpoints();
-
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    // Regression guard. `useRowSelection` and `useProductBulkStatus` both call
-    // `useAnnouncer()`, so they have to run BELOW the `<LiveAnnouncer>`. A hook
-    // called in the very component that renders the provider silently gets the
-    // default no-op context, and every announcement disappears with nothing on
-    // screen looking wrong.
-    await user.click(
-      screen.getByRole("checkbox", {
-        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
-      }),
-    );
-
-    await waitFor(() =>
-      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
-        dict.common.table.announceSelected("iPhone 15 Pro Case", 1),
-      ),
-    );
-  });
-});
-
-describe("AdminProductTable — photo column and filters (TASK-362)", () => {
-  beforeEach(() => mockReplace.mockClear());
-
-  // After a catalogue import — which deliberately brings no photos — this
-  // column IS the operator's worklist.
-  it("flags a product with no photo instead of showing an empty cell", async () => {
-    stubEndpoints();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    expect(screen.getByText(dict.products.noPhoto)).toBeInTheDocument();
-  });
-
-  it("renders the primary image as a thumbnail when the product has one", async () => {
-    server.use(
-      http.get("*/api/products/admin/list", () =>
-        HttpResponse.json({
-          data: [
-            {
-              ...makeProductRow(),
-              primaryImage: {
-                id: "img-1",
-                url: "https://cdn.example.com/a.jpg",
-                alt: null,
-                blurDataUrl: null,
-                sortOrder: 0,
-                isPrimary: true,
-              },
-            },
-          ],
-          meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
-        }),
-      ),
-      ...categoryTreeHandlers(),
-    );
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    expect(screen.queryByText(dict.products.noPhoto)).toBeNull();
   });
 
   it("shows the article number and brand under the name", async () => {
-    server.use(
-      http.get("*/api/products/admin/list", () =>
-        HttpResponse.json({
-          data: [
-            {
-              ...makeProductRow(),
-              sku: "IP15-CLR",
-              brand: { id: "b1", name: "Spigen", slug: "spigen" },
-            },
-          ],
-          meta: { total: 1, page: 1, limit: 10, totalPages: 1 },
-        }),
-      ),
-      ...categoryTreeHandlers(),
-    );
+    stubList([
+      makeProductRow({
+        sku: "IP15-CLR",
+        brand: { id: "b1", name: "Spigen", slug: "spigen" },
+      }),
+    ]);
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
+    await screen.findByText(P1);
 
-    // After an import, 274 products share a name — the article number is what
-    // tells two rows apart.
     expect(screen.getByText("IP15-CLR · Spigen")).toBeInTheDocument();
   });
 
-  // TASK-423: these were two bare native `<select>`s; they are now the shared
-  // `TableFilters`, so the interaction is open-the-listbox + click-the-option
-  // instead of `selectOptions`. What is asserted is unchanged — the URL, because
-  // that is what makes a restock worklist a link the operator can keep.
-  it("puts the status filter in the URL so a worklist is a shareable link", async () => {
-    stubEndpoints();
+  it("strikes the old price through when there is one", async () => {
+    stubList([makeProductRow({ price: "749.00", compareAtPrice: "999.00" })]);
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
+    await screen.findByText(P1);
 
-    await userEvent.click(
-      screen.getByRole("combobox", { name: dict.products.filterStatus }),
-    );
-    await userEvent.click(
-      screen.getByRole("option", { name: dict.products.filterStatusHidden }),
-    );
-
-    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
-    expect(mockReplace.mock.calls.at(-1)?.[0]).toContain("status=hidden");
+    const old = formatCurrency("999.00");
+    // Read out with its meaning; the struck-through figure is the visual.
+    expect(screen.getByText(d.oldPriceAria(old))).toHaveClass("sr-only");
+    expect(screen.getByText(old).tagName).toBe("S");
   });
 
-  it("puts the stock filter in the URL too", async () => {
-    stubEndpoints();
+  it("links the product name to its read-only card", async () => {
+    stubList();
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
 
-    await userEvent.click(
-      screen.getByRole("combobox", { name: dict.products.filterStock }),
+    expect(await screen.findByRole("link", { name: P1 })).toHaveAttribute(
+      "href",
+      "/products/product-1",
     );
-    await userEvent.click(
-      screen.getByRole("option", { name: dict.products.filterStockOut }),
-    );
+  });
 
-    await waitFor(() => expect(mockReplace).toHaveBeenCalled());
-    expect(mockReplace.mock.calls.at(-1)?.[0]).toContain("stock=out");
+  it("says «Показується» / «Приховано» instead of a raw toggle", async () => {
+    stubList([
+      makeProductRow(),
+      makeProductRow({ id: "product-2", name: P2, isActive: false }),
+    ]);
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(screen.getByText(d.statusShown)).toBeInTheDocument();
+    expect(screen.getByText(d.statusHidden)).toBeInTheDocument();
   });
 });
 
-/**
- * Bulk «Перемістити до групи» (TASK-423 / AD-PROD-33).
- *
- * The assertions are on the REQUEST BODY: the ids the operator selected and the
- * group they picked. A dialog that looks right while sending the wrong group, or
- * sending `groupId: undefined` where `null` means "ungroup", renders identically
- * and silently reassigns the wrong products.
- */
-describe("AdminProductTable — bulk move to group (TASK-423)", () => {
-  beforeEach(() => mockReplace.mockClear());
+describe("AdminProductTable — «Залишок» (TASK-254, TASK-408, TASK-1048)", () => {
+  it("says how many are free, with the reserve and the shelf underneath", async () => {
+    stubList([makeProductRow({ stock: 10, reservedQty: 3, physicalQty: 13 })]);
+    renderTable();
+    await screen.findByText(P1);
 
-  /** Stub the group list and the bulk endpoint; hand back the recorded bodies. */
+    const cell = document.querySelector('td[data-column-id="stock"]');
+    expect(cell).toHaveTextContent(d.stockFree(10));
+    expect(cell).toHaveTextContent(d.stockReserved(3));
+    expect(cell).toHaveTextContent(d.stockPhysical(13));
+  });
+
+  it("omits the reserve when nothing is reserved, and says «Немає» at zero", async () => {
+    stubList([makeProductRow({ stock: 0, reservedQty: 0, physicalQty: 0 })]);
+    renderTable();
+    await screen.findByText(P1);
+
+    const cell = document.querySelector('td[data-column-id="stock"]');
+    expect(cell).toHaveTextContent(d.stockNone);
+    expect(cell).toHaveTextContent(d.stockPhysical(0));
+    expect(cell).not.toHaveTextContent(/резерв/);
+  });
+
+  it("explains the three numbers on the header — the artboard text", async () => {
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    // The sort button is described by the full sentence (keyboard + SR).
+    expect(
+      screen.getByRole("button", { name: dict.common.sortByAria(d.colStock) }),
+    ).toHaveAccessibleDescription(d.colStockHint);
+  });
+
+  it("adds the page's free stock to the totals row", async () => {
+    stubList([
+      makeProductRow({ stock: 10 }),
+      makeProductRow({ id: "product-2", name: P2, stock: 5 }),
+    ]);
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(
+      screen.getByText(r.totalsOnPage(countLabel(2, forms))),
+    ).toBeInTheDocument();
+    expect(screen.getByText(d.totalsFree(15))).toBeInTheDocument();
+  });
+
+  it("says how many were found — the API's total", async () => {
+    stubList([makeProductRow()], 42);
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(screen.getByText(countLabel(42, forms))).toBeInTheDocument();
+  });
+});
+
+/* ── category column (TASK-717) ───────────────────────────────────────── */
+
+describe("AdminProductTable — category column covers every depth (TASK-717)", () => {
+  const LEAF_ID = "cat-leaf";
+  const chain = [
+    treeNode("cat-root", "Аксесуари", [
+      treeNode(
+        "cat-mid",
+        "Чохли",
+        [treeNode(LEAF_ID, "Чохли для iPhone", [], "cat-mid", 3)],
+        "cat-root",
+        2,
+      ),
+    ]),
+  ];
+
+  function stubLeafProduct() {
+    const reads = { admin: 0, public: 0 };
+    server.use(
+      http.get("*/api/products/admin/list", () =>
+        HttpResponse.json({
+          data: [makeProductRow({ categoryId: LEAF_ID })],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        }),
+      ),
+      http.get("*/api/categories/admin/tree", () => {
+        reads.admin += 1;
+        return HttpResponse.json({ data: chain });
+      }),
+      http.get("*/api/categories/tree", () => {
+        reads.public += 1;
+        return HttpResponse.json({ data: chain });
+      }),
+    );
+    return reads;
+  }
+
+  const categoryCell = () =>
+    document.querySelector('td[data-column-id="category"]');
+
+  it("names a level-3 subcategory from the admin tree for a categories:write holder", async () => {
+    const reads = stubLeafProduct();
+    renderTable({ permissions: ["products:read", "categories:write"] });
+    await screen.findByText(P1);
+
+    await waitFor(() =>
+      expect(categoryCell()).toHaveTextContent("Чохли для iPhone"),
+    );
+    expect(reads.admin).toBeGreaterThan(0);
+    expect(reads.public).toBe(0);
+  });
+
+  it("names it for the owner too (every permission implicitly)", async () => {
+    stubLeafProduct();
+    renderTable();
+    await screen.findByText(P1);
+
+    await waitFor(() =>
+      expect(categoryCell()).toHaveTextContent("Чохли для iPhone"),
+    );
+  });
+
+  it("falls back to the public tree for a manager without categories:write — never asks the 403 route", async () => {
+    const reads = stubLeafProduct();
+    renderTable({ permissions: ["products:read"] });
+    await screen.findByText(P1);
+
+    await waitFor(() =>
+      expect(categoryCell()).toHaveTextContent("Чохли для iPhone"),
+    );
+    expect(reads.public).toBeGreaterThan(0);
+    expect(reads.admin).toBe(0);
+  });
+
+  it("still shows «—» for a category the tree does not contain", async () => {
+    stubLeafProduct();
+    server.use(
+      http.get("*/api/categories/tree", () =>
+        HttpResponse.json({ data: [treeNode("other", "Інше")] }),
+      ),
+    );
+    renderTable({ permissions: ["products:read"] });
+    await screen.findByText(P1);
+
+    await waitFor(() => expect(categoryCell()).toHaveTextContent("—"));
+    expect(categoryCell()).not.toHaveTextContent("Чохли для iPhone");
+  });
+});
+
+/* ── row actions ──────────────────────────────────────────────────────── */
+
+describe("AdminProductTable — row «⋯» (TASK-1048, TASK-1323)", () => {
+  it("opens, edits, previews, hides and deletes for a full-rights session", async () => {
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    const menu = await openRowMenu(P1);
+    expect(
+      within(menu).getByRole("menuitem", { name: d.rowOpen }),
+    ).toHaveAttribute("href", "/products/product-1");
+    expect(
+      within(menu).getByRole("menuitem", { name: dict.common.edit }),
+    ).toHaveAttribute("href", "/products/product-1/edit");
+    expect(
+      within(menu).getByRole("menuitem", { name: d.rowPreview }),
+    ).toHaveAttribute("href", "/products/preview/iphone-15-pro-case");
+    expect(
+      within(menu).getByRole("menuitem", {
+        name: dict.statusToggle.productDeactivate,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).getByRole("menuitem", { name: d.rowDelete }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides one product through the same endpoint the toggle used", async () => {
+    stubList();
+    let hits = 0;
+    server.use(
+      http.patch("*/api/products/product-1/deactivate", () => {
+        hits += 1;
+        return HttpResponse.json({ data: makeProductRow({ isActive: false }) });
+      }),
+    );
+    renderTable();
+    await screen.findByText(P1);
+
+    const menu = await openRowMenu(P1);
+    await userEvent.click(
+      within(menu).getByRole("menuitem", {
+        name: dict.statusToggle.productDeactivate,
+      }),
+    );
+    await waitFor(() => expect(hits).toBe(1));
+  });
+
+  it("offers «Показати» on a hidden product", async () => {
+    stubList([makeProductRow({ isActive: false })]);
+    renderTable();
+    await screen.findByText(P1);
+
+    const menu = await openRowMenu(P1);
+    expect(
+      within(menu).getByRole("menuitem", {
+        name: dict.statusToggle.productActivate,
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("without products:write: no edit, no show/hide — reading stays", async () => {
+    stubList();
+    renderTable({ permissions: ["products:read"] });
+    await screen.findByText(P1);
+
+    const menu = await openRowMenu(P1);
+    expect(
+      within(menu).getByRole("menuitem", { name: d.rowOpen }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).getByRole("menuitem", { name: d.rowPreview }),
+    ).toBeInTheDocument();
+    expect(
+      within(menu).queryByRole("menuitem", { name: dict.common.edit }),
+    ).toBeNull();
+    expect(
+      within(menu).queryByRole("menuitem", {
+        name: dict.statusToggle.productDeactivate,
+      }),
+    ).toBeNull();
+    expect(
+      within(menu).queryByRole("menuitem", { name: d.rowDelete }),
+    ).toBeNull();
+  });
+
+  it("opens the card on a row click", async () => {
+    stubList();
+    renderTable();
+    const link = await screen.findByRole("link", { name: P1 });
+    const row = link.closest("tr") as HTMLElement;
+    await userEvent.click(within(row).getByText(d.statusShown));
+    expect(mockPush).toHaveBeenCalledWith("/products/product-1");
+  });
+});
+
+describe("AdminProductTable — delete a product (TASK-427)", () => {
+  function stubDeletableRow() {
+    const counts = { list: 0, deletes: 0 };
+    server.use(
+      http.get("*/api/products/admin/list", ({ request }) => {
+        if (new URL(request.url).searchParams.get("limit") !== "1") {
+          counts.list += 1;
+        }
+        return HttpResponse.json({
+          data: [makeProductRow()],
+          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
+        });
+      }),
+      ...categoryTreeHandlers(),
+      http.delete("*/api/products/product-1", () => {
+        counts.deletes += 1;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    return counts;
+  }
+
+  const clickDelete = async () => {
+    const menu = await openRowMenu(P1);
+    await userEvent.click(
+      within(menu).getByRole("menuitem", { name: d.rowDelete }),
+    );
+  };
+
+  it("says what a soft delete actually does before asking to confirm", async () => {
+    stubDeletableRow();
+    renderTable();
+    await screen.findByText(P1);
+
+    await clickDelete();
+
+    expect(await screen.findByText(d.deleteHeading)).toBeInTheDocument();
+    expect(screen.getByText(d.deleteKeeps)).toBeInTheDocument();
+    expect(screen.getByText(d.deleteFrees)).toBeInTheDocument();
+    expect(screen.getByText(d.deleteAlternative)).toBeInTheDocument();
+  });
+
+  it("sends nothing while the confirm is open, and DELETEs once confirmed", async () => {
+    const counts = stubDeletableRow();
+    renderTable();
+    await screen.findByText(P1);
+
+    await clickDelete();
+    expect(counts.deletes).toBe(0);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: d.deleteConfirm }),
+    );
+
+    await waitFor(() => expect(counts.deletes).toBe(1));
+    await waitFor(() => expect(counts.list).toBeGreaterThan(1));
+  });
+
+  it("offers no delete to a session without products:delete", async () => {
+    stubDeletableRow();
+    renderTable({ permissions: ["products:read", "products:write"] });
+    await screen.findByText(P1);
+
+    const menu = await openRowMenu(P1);
+    expect(
+      within(menu).queryByRole("menuitem", { name: d.rowDelete }),
+    ).toBeNull();
+  });
+});
+
+describe("AdminProductTable — the deleted view (TASK-427)", () => {
+  it("asks for live products by default — the flag is absent, not false", async () => {
+    const list = stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(list.main()[0].has("deleted")).toBe(false);
+  });
+
+  it("switches the listing to tombstones on ?deleted=only", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    const list = stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(list.main()[0].get("deleted")).toBe("true");
+    expect(screen.getByText(d.deletedNotice)).toBeInTheDocument();
+    expect(screen.getByText(d.deletedBadge)).toBeInTheDocument();
+  });
+
+  it("offers no write on a tombstoned row — it accepts none", async () => {
+    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(screen.queryByRole("link", { name: P1 })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: r.rowActionsAria(P1) }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("checkbox", { name: r.selectRowAria(P1) }),
+    ).toBeNull();
+  });
+});
+
+/* ── bulk ─────────────────────────────────────────────────────────────── */
+
+describe("AdminProductTable — bulk bar (TASK-838, TASK-1048)", () => {
+  it("is always there: idle it says what selecting is for", async () => {
+    stubList();
+    renderTable();
+    await screen.findByText(P1);
+
+    expect(screen.getByText(d.bulkIdleHint)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: d.bulkHide })).toBeNull();
+
+    await selectRow(P1);
+    for (const label of [d.bulkShow, d.bulkHide, d.bulkGroup, d.bulkColor]) {
+      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+    }
+    expect(
+      screen.getByText(r.bulkSelected(countLabel(1, forms))),
+    ).toBeInTheDocument();
+  });
+
+  it("without products:write: no checkbox column, no bulk bar, no «Додати товар»", async () => {
+    stubList();
+    renderTable({ permissions: ["products:read"] });
+    await screen.findByText(P1);
+
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(screen.queryByText(d.bulkIdleHint)).toBeNull();
+    expect(screen.queryByRole("link", { name: d.add })).toBeNull();
+    expect(screen.queryByRole("button", { name: r.bulkMoreAria })).toBeNull();
+    const row = screen.getByText(P1).closest("tr") as HTMLElement;
+    expect(within(row).getAllByRole("cell").length).toBe(
+      screen.getAllByRole("columnheader").length,
+    );
+  });
+});
+
+describe("AdminProductTable — bulk move to group (TASK-423)", () => {
   function stubGroupBulk() {
     const bodies: unknown[] = [];
     server.use(
@@ -370,110 +981,61 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
     return bodies;
   }
 
-  /** Select the single row the list stub returns. */
-  async function selectTheRow() {
+  async function pickGroup(name: string) {
+    await userEvent.click(screen.getByRole("button", { name: d.bulkGroup }));
     await userEvent.click(
-      screen.getByRole("checkbox", {
-        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
-      }),
+      await screen.findByLabelText(d.bulk.groupDialogLabel),
+    );
+    await userEvent.click(await screen.findByRole("option", { name }));
+    await userEvent.click(
+      screen.getByRole("button", { name: d.bulk.groupSubmit }),
     );
   }
 
-  it("offers the action only while rows are selected", async () => {
-    stubEndpoints();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    // The bulk bar renders nothing at zero — an always-present bar of disabled
-    // buttons reads as broken.
-    expect(
-      screen.queryByRole("button", {
-        name: dict.products.bulk.moveToGroup(1),
-      }),
-    ).not.toBeInTheDocument();
-
-    await selectTheRow();
-
-    expect(
-      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
-    ).toBeInTheDocument();
-  });
-
   it("sends the selected ids and the chosen group", async () => {
-    stubEndpoints();
+    stubList();
     const bodies = stubGroupBulk();
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
+    await screen.findByText(P1);
+    await selectRow(P1);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
-    );
-    await userEvent.click(
-      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
-    );
-    await userEvent.click(
-      await screen.findByRole("option", { name: "Чохли Silicone" }),
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
-    );
+    await pickGroup("Чохли Silicone");
 
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toEqual({ ids: ["product-1"], groupId: "group-b" });
   });
 
   it("sends groupId: null — not undefined — for «Без групи»", async () => {
-    // `null` is the MEANING "take these out of their group"; the DTO requires the
-    // field, precisely so that an omission cannot be read as a destructive clear.
-    stubEndpoints();
+    stubList();
     const bodies = stubGroupBulk();
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
+    await screen.findByText(P1);
+    await selectRow(P1);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
-    );
-    await userEvent.click(
-      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
-    );
-    await userEvent.click(
-      await screen.findByRole("option", {
-        name: dict.products.bulk.groupNone,
-      }),
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
-    );
+    await pickGroup(d.bulk.groupNone);
 
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toEqual({ ids: ["product-1"], groupId: null });
   });
 
   it("refuses to submit until a target is picked", async () => {
-    stubEndpoints();
+    stubList();
     const bodies = stubGroupBulk();
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
+    await screen.findByText(P1);
+    await selectRow(P1);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.bulkGroup }));
     const submit = await screen.findByRole("button", {
-      name: dict.products.bulk.groupSubmit,
+      name: d.bulk.groupSubmit,
     });
-
-    // Defaulting to the first group would be a silent guess about which family
-    // these products belong to.
     expect(submit).toBeDisabled();
     await userEvent.click(submit);
     expect(bodies).toHaveLength(0);
   });
 
   it("does not fetch the group list until the dialog is opened", async () => {
-    stubEndpoints();
+    stubList();
     let groupRequests = 0;
     server.use(
       http.get("*/api/product-groups", () => {
@@ -481,74 +1043,37 @@ describe("AdminProductTable — bulk move to group (TASK-423)", () => {
         return HttpResponse.json({ data: [] });
       }),
     );
-
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
+    await screen.findByText(P1);
+    await selectRow(P1);
 
-    // A request per page view, for a control most visits never touch.
     expect(groupRequests).toBe(0);
-
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.bulkGroup }));
     await waitFor(() => expect(groupRequests).toBe(1));
   });
 
   it("clears the selection once the server confirms", async () => {
-    stubEndpoints();
+    stubList();
     stubGroupBulk();
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
+    await screen.findByText(P1);
+    await selectRow(P1);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(1) }),
-    );
-    await userEvent.click(
-      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
-    );
-    await userEvent.click(
-      await screen.findByRole("option", { name: "Чохли Clear" }),
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
-    );
+    await pickGroup("Чохли Clear");
 
-    // Bar gone ⇒ selection cleared ⇒ the dialog closed on a real confirmation,
-    // not optimistically.
     await waitFor(() =>
-      expect(
-        screen.queryByRole("button", {
-          name: dict.products.bulk.moveToGroup(1),
-        }),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByRole("button", { name: d.bulkGroup })).toBeNull(),
     );
   });
 });
 
-/**
- * Bulk «Задати колір» (TASK-487 / owner decision B-10).
- *
- * The assertions are on the REQUEST BODY, for the reason the group block above
- * gives: a dialog that looks right while sending the wrong value renders
- * identically. The one extra thing pinned here is that `null` (clear) and a
- * blank string are NOT the same thing — the API treats `null` as "remove the
- * colour", and a dialog that fell through to it from an empty box would make
- * pressing «Записати» on a half-typed field quietly destructive.
- */
 describe("AdminProductTable — bulk set colour (TASK-487)", () => {
-  // TASK-812: the clear prompt is an AlertDialog. The spy only proves that
-  // `window.confirm` is never reached any more.
   let confirmSpy: jest.SpyInstance;
-
   beforeEach(() => {
-    mockReplace.mockClear();
     confirmSpy = jest.spyOn(window, "confirm");
   });
   afterEach(() => confirmSpy.mockRestore());
 
-  /** Stub the bulk colour endpoint; hand back the recorded bodies. */
   function stubColorBulk() {
     const bodies: unknown[] = [];
     server.use(
@@ -560,441 +1085,54 @@ describe("AdminProductTable — bulk set colour (TASK-487)", () => {
     return bodies;
   }
 
-  async function selectTheRow() {
-    await userEvent.click(
-      screen.getByRole("checkbox", {
-        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
-      }),
-    );
-  }
-
-  async function openDialog() {
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.setColor(1) }),
-    );
-    return screen.findByLabelText(dict.products.bulk.colorDialogLabel);
-  }
-
-  it("offers the action only while rows are selected", async () => {
-    stubEndpoints();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    expect(
-      screen.queryByRole("button", { name: dict.products.bulk.setColor(1) }),
-    ).not.toBeInTheDocument();
-
-    await selectTheRow();
-
-    expect(
-      screen.getByRole("button", { name: dict.products.bulk.setColor(1) }),
-    ).toBeInTheDocument();
-  });
+  const openColor = () =>
+    userEvent.click(screen.getByRole("button", { name: d.bulkColor }));
 
   it("sends the selected ids and the typed colour, trimmed", async () => {
-    stubEndpoints();
+    stubList();
     const bodies = stubColorBulk();
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
+    await screen.findByText(P1);
+    await selectRow(P1);
 
-    const input = await openDialog();
-    await userEvent.type(input, "  Чорний  ");
+    await openColor();
+    await userEvent.type(
+      await screen.findByLabelText(d.bulk.colorDialogLabel),
+      "  Чорний ",
+    );
     await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
+      screen.getByRole("button", { name: d.bulk.colorSubmit }),
     );
 
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toEqual({ ids: ["product-1"], color: "Чорний" });
-  });
-
-  it("sends color: null — not an empty string — for «Прибрати колір»", async () => {
-    stubEndpoints();
-    const bodies = stubColorBulk();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
-
-    await openDialog();
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.colorClear }),
-    );
-
-    // Removing a colour takes the products out of the colour filter — the one
-    // direction of this action that is worth asking about.
-    const prompt = await screen.findByRole("alertdialog");
-    expect(prompt).toHaveTextContent(dict.products.bulk.colorClearConfirm(1));
-    expect(bodies).toHaveLength(0);
-    await userEvent.click(
-      within(prompt).getByRole("button", {
-        name: dict.products.bulk.colorClear,
-      }),
-    );
-
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ ids: ["product-1"], color: null });
     expect(confirmSpy).not.toHaveBeenCalled();
   });
 
-  it("writes nothing when the clear prompt is declined", async () => {
-    stubEndpoints();
+  it("asks in an AlertDialog before clearing; cancel writes nothing", async () => {
+    stubList();
     const bodies = stubColorBulk();
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
+    await screen.findByText(P1);
+    await selectRow(P1);
 
-    await openDialog();
+    await openColor();
     await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.colorClear }),
+      await screen.findByRole("button", { name: d.bulk.colorClear }),
     );
+    const prompt = await screen.findByRole("alertdialog");
     await userEvent.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", {
-        name: dict.common.cancel,
-      }),
+      within(prompt).getByRole("button", { name: dict.common.cancel }),
     );
-
     await waitFor(() =>
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
     );
     expect(bodies).toHaveLength(0);
-    // The colour dialog is still open — declining the prompt is not «close».
-    expect(
-      screen.getByLabelText(dict.products.bulk.colorDialogLabel),
-    ).toBeInTheDocument();
-  });
-
-  it("refuses to submit an empty colour rather than treating it as a clear", async () => {
-    stubEndpoints();
-    const bodies = stubColorBulk();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
-
-    await openDialog();
-    const submit = screen.getByRole("button", {
-      name: dict.products.bulk.colorSubmit,
-    });
-
-    expect(submit).toBeDisabled();
-    await userEvent.click(submit);
-    expect(bodies).toHaveLength(0);
-  });
-
-  it("does NOT ask for confirmation when setting a colour", async () => {
-    // Nothing leaves the storefront and a typo is fixed by running it again —
-    // a prompt would be noise on the action an operator repeats most.
-    stubEndpoints();
-    stubColorBulk();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
-
-    const input = await openDialog();
-    await userEvent.type(input, "Білий");
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
-    );
-
-    await waitFor(() =>
-      expect(
-        screen.queryByLabelText(dict.products.bulk.colorDialogLabel),
-      ).toBeNull(),
-    );
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     expect(confirmSpy).not.toHaveBeenCalled();
   });
-
-  it("clears the selection once the server confirms", async () => {
-    stubEndpoints();
-    stubColorBulk();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
-
-    const input = await openDialog();
-    await userEvent.type(input, "Чорний");
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
-    );
-
-    await waitFor(() =>
-      expect(
-        screen.queryByRole("button", { name: dict.products.bulk.setColor(1) }),
-      ).not.toBeInTheDocument(),
-    );
-  });
-
-  it("forgets the previous colour when the dialog is reopened", async () => {
-    // A dialog that remembers last time's value is a dialog that writes the
-    // wrong colour to the next selection.
-    stubEndpoints();
-    stubColorBulk();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
-
-    const input = await openDialog();
-    await userEvent.type(input, "Чорний");
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.common.cancel }),
-    );
-
-    await selectTheRow();
-    await userEvent.click(
-      screen.getByRole("checkbox", {
-        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
-      }),
-    );
-    expect(await openDialog()).toHaveValue("");
-  });
 });
 
-/**
- * TASK-427 — deleting from the row.
- *
- * `DELETE /api/products/:id` had existed since TASK-140, with a permission and a
- * proper soft delete, and no button anywhere in the panel could reach it.
- */
-describe("AdminProductTable — delete a product (TASK-427)", () => {
-  /** The list + categories + a counting DELETE handler for `product-1`. */
-  function stubDeletableRow() {
-    const counts = { list: 0, deletes: 0 };
-    server.use(
-      http.get("*/api/products/admin/list", () => {
-        counts.list += 1;
-        return HttpResponse.json({
-          data: [makeProductRow()],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        });
-      }),
-      ...categoryTreeHandlers(),
-      http.delete("*/api/products/product-1", () => {
-        counts.deletes += 1;
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-    return counts;
-  }
-
-  const clickDelete = () =>
-    userEvent.click(
-      screen.getByRole("button", { name: dict.products.deleteAction }),
-    );
-
-  it("says what a soft delete actually does before asking to confirm", async () => {
-    stubDeletableRow();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    await clickDelete();
-
-    // The three facts an operator decides on: the order history survives, the
-    // slug and артикул are freed (so this is NOT «приховати»), and deactivation
-    // is the reversible action they may actually have wanted.
-    expect(
-      await screen.findByText(dict.products.deleteHeading),
-    ).toBeInTheDocument();
-    expect(screen.getByText(dict.products.deleteKeeps)).toBeInTheDocument();
-    expect(screen.getByText(dict.products.deleteFrees)).toBeInTheDocument();
-    expect(
-      screen.getByText(dict.products.deleteAlternative),
-    ).toBeInTheDocument();
-  });
-
-  it("sends nothing while the confirm is open, and DELETEs once confirmed", async () => {
-    const counts = stubDeletableRow();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    await clickDelete();
-    expect(counts.deletes).toBe(0);
-
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.deleteConfirm }),
-    );
-
-    await waitFor(() => expect(counts.deletes).toBe(1));
-    // The row has to leave the table: the list query is invalidated, not just
-    // the product's own cache entry.
-    await waitFor(() => expect(counts.list).toBeGreaterThan(1));
-  });
-
-  it("offers no delete control to a session without products:delete", async () => {
-    stubDeletableRow();
-    renderTable({ permissions: ["products:read"] });
-    await screen.findByText("iPhone 15 Pro Case");
-
-    expect(
-      screen.queryByRole("button", { name: dict.products.deleteAction }),
-    ).toBeNull();
-  });
-
-  it("links the product name to its read-only card", async () => {
-    stubEndpoints();
-    renderTable();
-
-    expect(
-      await screen.findByRole("link", { name: "iPhone 15 Pro Case" }),
-    ).toHaveAttribute("href", "/products/product-1");
-  });
-});
-
-/**
- * TASK-427 — finding what was deleted.
- *
- * Before this filter the repository hard-coded `deletedAt: null` on every admin
- * read, so a deleted product was gone from the panel entirely: the operator had
- * no way to confirm the delete had happened, and no way to see what was removed
- * last week.
- */
-describe("AdminProductTable — the deleted view (TASK-427)", () => {
-  /** Records the query string of every listing request. */
-  function stubListRecordingQueries() {
-    const queries: string[] = [];
-    server.use(
-      http.get("*/api/products/admin/list", ({ request }) => {
-        queries.push(new URL(request.url).search);
-        return HttpResponse.json({
-          data: [makeProductRow()],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        });
-      }),
-      ...categoryTreeHandlers(),
-    );
-    return queries;
-  }
-
-  it("asks for live products by default — the flag is absent, not false", async () => {
-    const queries = stubListRecordingQueries();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    expect(queries[0]).not.toContain("deleted");
-  });
-
-  it("switches the listing to tombstones on ?deleted=only", async () => {
-    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
-    const queries = stubListRecordingQueries();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    expect(queries[0]).toContain("deleted=true");
-    expect(screen.getByText(dict.products.deletedNotice)).toBeInTheDocument();
-    expect(screen.getByText(dict.products.deletedBadge)).toBeInTheDocument();
-  });
-
-  it("offers no write on a tombstoned row — it accepts none", async () => {
-    mockSearchParamsRef.current = new URLSearchParams("deleted=only");
-    stubListRecordingQueries();
-    renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-
-    // No card link (every by-id read excludes the row → a 404), no edit link,
-    // no delete, no status toggle and nothing to select for a bulk action.
-    expect(
-      screen.queryByRole("link", { name: "iPhone 15 Pro Case" }),
-    ).toBeNull();
-    expect(screen.queryByRole("link", { name: dict.common.edit })).toBeNull();
-    expect(
-      screen.queryByRole("button", { name: dict.products.deleteAction }),
-    ).toBeNull();
-    expect(
-      screen.getByRole("checkbox", {
-        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
-      }),
-    ).toBeDisabled();
-  });
-});
-
-describe("AdminProductTable — category column covers every depth (TASK-717)", () => {
-  const LEAF_ID = "cat-leaf";
-  // Аксесуари → Чохли → Чохли для iPhone: the product sits on level 3, which is
-  // where an import files nearly every position. The old lookup read active
-  // ROOTS only and answered «—» here.
-  const chain = [
-    treeNode("cat-root", "Аксесуари", [
-      treeNode(
-        "cat-mid",
-        "Чохли",
-        [treeNode(LEAF_ID, "Чохли для iPhone", [], "cat-mid", 3)],
-        "cat-root",
-        2,
-      ),
-    ]),
-  ];
-
-  /** Stub the list with one product on the leaf, recording which tree was read. */
-  function stubLeafProduct() {
-    const reads = { admin: 0, public: 0 };
-    server.use(
-      http.get("*/api/products/admin/list", () =>
-        HttpResponse.json({
-          data: [{ ...makeProductRow(), categoryId: LEAF_ID }],
-          meta: { total: 1, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-      http.get("*/api/categories/admin/tree", () => {
-        reads.admin += 1;
-        return HttpResponse.json({ data: chain });
-      }),
-      http.get("*/api/categories/tree", () => {
-        reads.public += 1;
-        return HttpResponse.json({ data: chain });
-      }),
-    );
-    return reads;
-  }
-
-  it("names a level-3 subcategory from the admin tree for a categories:write holder", async () => {
-    const reads = stubLeafProduct();
-    renderTable({ permissions: ["products:read", "categories:write"] });
-
-    expect(await screen.findByText("Чохли для iPhone")).toBeInTheDocument();
-    expect(reads.admin).toBeGreaterThan(0);
-    // The full tree already covers it — the public read is never made.
-    expect(reads.public).toBe(0);
-  });
-
-  it("names it for the owner too (every permission implicitly)", async () => {
-    stubLeafProduct();
-    renderTable();
-
-    expect(await screen.findByText("Чохли для iPhone")).toBeInTheDocument();
-  });
-
-  it("falls back to the public tree for a manager without categories:write — never asks the 403 route", async () => {
-    const reads = stubLeafProduct();
-    renderTable({ permissions: ["products:read"] });
-
-    expect(await screen.findByText("Чохли для iPhone")).toBeInTheDocument();
-    expect(reads.public).toBeGreaterThan(0);
-    expect(reads.admin).toBe(0);
-  });
-
-  it("still shows «—» for a category the tree does not contain", async () => {
-    stubLeafProduct();
-    server.use(
-      http.get("*/api/categories/tree", () =>
-        HttpResponse.json({ data: [treeNode("other", "Інше")] }),
-      ),
-    );
-    renderTable({ permissions: ["products:read"] });
-
-    await screen.findByText("iPhone 15 Pro Case");
-    // The name/article line also falls back to «—», so read the category cell.
-    const cell = document.querySelector(
-      `td[data-label="${dict.products.colCategory}"]`,
-    );
-    await waitFor(() => expect(cell).toHaveTextContent("—"));
-    expect(screen.queryByText("Чохли для iPhone")).toBeNull();
-  });
-});
-
-/**
- * Bulk activate / deactivate (TASK-355) through the shared `useBulkStatus`
- * engine, with the prompt as an AlertDialog (TASK-812).
- */
-describe("AdminProductTable — bulk status confirm (TASK-812)", () => {
+describe("AdminProductTable — bulk show / hide (TASK-355, TASK-812)", () => {
   function stubStatusBulk() {
     const bodies: unknown[] = [];
     server.use(
@@ -1006,28 +1144,17 @@ describe("AdminProductTable — bulk status confirm (TASK-812)", () => {
     return bodies;
   }
 
-  async function selectTheRow() {
-    await userEvent.click(
-      screen.getByRole("checkbox", {
-        name: dict.products.bulk.selectRow("iPhone 15 Pro Case"),
-      }),
-    );
-  }
-
-  it("asks in an AlertDialog before deactivating; cancel sends nothing", async () => {
+  it("asks in an AlertDialog before hiding; cancel sends nothing", async () => {
     const confirmSpy = jest.spyOn(window, "confirm");
-    stubEndpoints();
+    stubList();
     const bodies = stubStatusBulk();
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
+    await screen.findByText(P1);
+    await selectRow(P1);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.deactivate(1) }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.bulkHide }));
     const prompt = await screen.findByRole("alertdialog");
-    expect(prompt).toHaveTextContent(dict.products.bulk.deactivateConfirm(1));
-
+    expect(prompt).toHaveTextContent(d.bulk.deactivateConfirm(1));
     await userEvent.click(
       within(prompt).getByRole("button", { name: dict.common.cancel }),
     );
@@ -1039,78 +1166,53 @@ describe("AdminProductTable — bulk status confirm (TASK-812)", () => {
     confirmSpy.mockRestore();
   });
 
-  it("deactivates once confirmed, and activating does not ask at all", async () => {
-    stubEndpoints();
+  it("hides once confirmed; showing does not ask at all", async () => {
+    stubList([makeProductRow({ isActive: false })]);
     const bodies = stubStatusBulk();
     renderTable();
-    await screen.findByText("iPhone 15 Pro Case");
-    await selectTheRow();
+    await screen.findByText(P1);
+    await selectRow(P1);
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.deactivate(1) }),
-    );
-    await userEvent.click(
-      within(await screen.findByRole("alertdialog")).getByRole("button", {
-        name: dict.products.bulk.deactivate(1),
-      }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.bulkShow }));
     await waitFor(() => expect(bodies).toHaveLength(1));
-    expect(bodies[0]).toEqual({ ids: ["product-1"], isActive: false });
+    expect(bodies[0]).toEqual({ ids: ["product-1"], isActive: true });
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
 
     await waitFor(() =>
-      expect(
-        screen.queryByRole("button", {
-          name: dict.products.bulk.activate(1),
-        }),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByRole("button", { name: d.bulkShow })).toBeNull(),
     );
-    await selectTheRow();
+    await selectRow(P1);
+    await userEvent.click(screen.getByRole("button", { name: d.bulkHide }));
     await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.activate(1) }),
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: d.bulk.deactivate(1),
+      }),
     );
     await waitFor(() => expect(bodies).toHaveLength(2));
-    expect(bodies[1]).toEqual({ ids: ["product-1"], isActive: true });
-    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(bodies[1]).toEqual({ ids: ["product-1"], isActive: false });
   });
 });
 
-/**
- * «Скасувати» for the last bulk action (TASK-837 / AD-PROD-33).
- *
- * The undo replays the FORWARD endpoints, once per distinct previous value — so
- * the assertions are on the request bodies of the replay: which ids go back to
- * which value, and that rows which never changed are not written at all.
- */
-describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
-  const P1 = "iPhone 15 Pro Case";
-  const P2 = "Galaxy S24 Case";
+/* ── undo (TASK-837) ──────────────────────────────────────────────────── */
 
-  /** Two rows whose previous values differ on every undoable field. */
+describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
   function stubTwoRows() {
+    stubList([
+      makeProductRow({
+        isActive: true,
+        groupId: "group-a",
+        attributes: { Колір: "Чорний" },
+      }),
+      makeProductRow({
+        id: "product-2",
+        name: P2,
+        slug: "galaxy-s24-case",
+        isActive: false,
+        groupId: null,
+        attributes: {},
+      }),
+    ]);
     server.use(
-      http.get("*/api/products/admin/list", () =>
-        HttpResponse.json({
-          data: [
-            {
-              ...makeProductRow(),
-              isActive: true,
-              groupId: "group-a",
-              attributes: { Колір: "Чорний" },
-            },
-            {
-              ...makeProductRow(),
-              id: "product-2",
-              name: P2,
-              slug: "galaxy-s24-case",
-              isActive: false,
-              groupId: null,
-              attributes: {},
-            },
-          ],
-          meta: { total: 2, page: 1, limit: 20, totalPages: 1 },
-        }),
-      ),
-      ...categoryTreeHandlers(),
       http.get("*/api/product-groups", () =>
         HttpResponse.json({
           data: [
@@ -1122,7 +1224,6 @@ describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
     );
   }
 
-  /** Record every body sent to one bulk endpoint. */
   function recordPatch(path: string, status = 200) {
     const bodies: unknown[] = [];
     server.use(
@@ -1137,95 +1238,117 @@ describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
   }
 
   async function selectBoth() {
-    for (const name of [P1, P2]) {
-      await userEvent.click(
-        screen.getByRole("checkbox", {
-          name: dict.products.bulk.selectRow(name),
-        }),
-      );
-    }
+    await selectRow(P1);
+    await selectRow(P2);
   }
 
-  const undoButton = () =>
-    screen.findByRole("button", { name: dict.products.bulk.undo });
+  /** «⋯» of the bulk bar → «Скасувати останню масову дію». */
+  async function undoItem() {
+    await userEvent.click(
+      await screen.findByRole("button", { name: r.bulkMoreAria }),
+    );
+    return screen.findByRole("menuitem", { name: d.bulk.undo });
+  }
 
-  /**
-   * The control is PERSISTENT, like every other ReorderUndoButton: outside the
-   * window it is aria-disabled, never unmounted — unmounting would drop a
-   * keyboard user's focus to <body>.
-   */
-  it("offers no undo before any bulk action — the control is there, inert", async () => {
+  it("keeps the persistent undo in «⋯», inert before any bulk action", async () => {
     stubTwoRows();
     renderTable();
     await screen.findByText(P1);
 
-    expect(await undoButton()).toHaveAttribute("aria-disabled", "true");
+    expect(await undoItem()).toHaveAttribute("aria-disabled", "true");
   });
 
-  it("activate → undo deactivates only the row that was inactive before", async () => {
+  it("show → toast «Скасувати» and the menu item both put back only what changed", async () => {
     stubTwoRows();
     const bodies = recordPatch("status");
     renderTable();
     await screen.findByText(P1);
     await selectBoth();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.bulkShow }));
     await waitFor(() => expect(bodies).toHaveLength(1));
     expect(bodies[0]).toEqual({
       ids: ["product-1", "product-2"],
       isActive: true,
     });
-    // The commit names the control, so a screen-reader user learns it exists.
+
+    // The toast names what changed — only product-2 actually changed.
+    await waitFor(() => expect(toastUndo).toHaveBeenCalledTimes(1));
+    const [message, options] = toastUndo.mock.calls[0] as [
+      string,
+      { onUndo: () => void },
+    ];
+    expect(message).toBe(d.toastShown(countLabel(1, forms)));
     await waitFor(() =>
       expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
-        dict.products.bulk.announceUndoAvailable(1, dict.products.bulk.undo),
+        d.bulk.announceUndoAvailable(1, d.bulk.undo),
       ),
     );
 
-    const button = await undoButton();
-    await waitFor(() =>
-      expect(button).not.toHaveAttribute("aria-disabled", "true"),
-    );
-    await userEvent.click(button);
-
+    options.onUndo();
     await waitFor(() => expect(bodies).toHaveLength(2));
-    // product-1 was already active — nothing to put back, so it is not written.
     expect(bodies[1]).toEqual({ ids: ["product-2"], isActive: false });
-    // Used up: inert, but still mounted and still holding the focus.
     await waitFor(() =>
-      expect(button).toHaveAttribute("aria-disabled", "true"),
+      expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
+        d.bulk.announceUndone(1),
+      ),
     );
-    expect(button).toBeInTheDocument();
-    expect(button).toHaveFocus();
-    expect(screen.getByTestId("tree-live-polite")).toHaveTextContent(
-      dict.products.bulk.announceUndone(1),
+    // Used up: the menu item is inert again.
+    expect(await undoItem()).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("hide → the toast says they left the storefront", async () => {
+    stubTwoRows();
+    const bodies = recordPatch("status");
+    renderTable();
+    await screen.findByText(P1);
+    await selectBoth();
+
+    await userEvent.click(screen.getByRole("button", { name: d.bulkHide }));
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: d.bulk.deactivate(2),
+      }),
+    );
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    await waitFor(() =>
+      expect(toastUndo).toHaveBeenCalledWith(
+        d.toastHidden(countLabel(1, forms)),
+        expect.objectContaining({ onUndo: expect.any(Function) }),
+      ),
     );
   });
 
-  it("move to group → undo sends one request per previous group, null included", async () => {
+  it("move to group → menu undo sends one request per previous group, null included", async () => {
     stubTwoRows();
     const bodies = recordPatch("group");
     renderTable();
     await screen.findByText(P1);
     await selectBoth();
 
+    await userEvent.click(screen.getByRole("button", { name: d.bulkGroup }));
     await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(2) }),
-    );
-    await userEvent.click(
-      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
+      await screen.findByLabelText(d.bulk.groupDialogLabel),
     );
     await userEvent.click(
       await screen.findByRole("option", { name: "Чохли Silicone" }),
     );
     await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
+      screen.getByRole("button", { name: d.bulk.groupSubmit }),
     );
     await waitFor(() => expect(bodies).toHaveLength(1));
+    await waitFor(() =>
+      expect(toastUndo).toHaveBeenCalledWith(
+        d.toastGrouped(countLabel(2, forms)),
+        expect.anything(),
+      ),
+    );
 
-    await userEvent.click(await undoButton());
+    const item = await undoItem();
+    await waitFor(() =>
+      expect(item).not.toHaveAttribute("aria-disabled", "true"),
+    );
+    await userEvent.click(item);
 
     await waitFor(() => expect(bodies).toHaveLength(3));
     expect(bodies.slice(1)).toEqual([
@@ -1241,19 +1364,21 @@ describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
     await screen.findByText(P1);
     await selectBoth();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.setColor(2) }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.bulkColor }));
     await userEvent.type(
-      await screen.findByLabelText(dict.products.bulk.colorDialogLabel),
+      await screen.findByLabelText(d.bulk.colorDialogLabel),
       "Білий",
     );
     await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.colorSubmit }),
+      screen.getByRole("button", { name: d.bulk.colorSubmit }),
     );
     await waitFor(() => expect(bodies).toHaveLength(1));
+    await waitFor(() => expect(toastUndo).toHaveBeenCalledTimes(1));
+    expect(toastUndo.mock.calls[0][0]).toBe(
+      d.toastColored(countLabel(2, forms)),
+    );
 
-    await userEvent.click(await undoButton());
+    (toastUndo.mock.calls[0][1] as { onUndo: () => void }).onUndo();
 
     await waitFor(() => expect(bodies).toHaveLength(3));
     expect(bodies.slice(1)).toEqual([
@@ -1269,20 +1394,18 @@ describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
     await screen.findByText(P1);
     await selectBoth();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.deactivate(2) }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.bulkHide }));
     await userEvent.click(
       within(await screen.findByRole("alertdialog")).getByRole("button", {
         name: dict.common.cancel,
       }),
     );
-
     await waitFor(() =>
       expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument(),
     );
     expect(bodies).toHaveLength(0);
-    expect(await undoButton()).toHaveAttribute("aria-disabled", "true");
+    expect(toastUndo).not.toHaveBeenCalled();
+    expect(await undoItem()).toHaveAttribute("aria-disabled", "true");
   });
 
   it("a failed undo keeps the offer and says so", async () => {
@@ -1292,285 +1415,69 @@ describe("AdminProductTable — undo the last bulk action (TASK-837)", () => {
     await screen.findByText(P1);
     await selectBoth();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.bulkShow }));
     await waitFor(() => expect(bodies).toHaveLength(1));
+    await waitFor(() => expect(toastUndo).toHaveBeenCalledTimes(1));
 
-    // The replay hits a failing server.
     const failed = recordPatch("status", 500);
-    await userEvent.click(await undoButton());
+    await userEvent.click(await undoItem());
 
     await waitFor(() =>
       expect(screen.getByTestId("tree-live-assertive")).toHaveTextContent(
-        dict.products.bulk.announceUndoFailed,
+        d.bulk.announceUndoFailed,
       ),
     );
     expect(failed).toEqual([{ ids: ["product-2"], isActive: false }]);
-    // Still on offer — a second press retries what is left.
-    expect(await undoButton()).not.toHaveAttribute("aria-disabled", "true");
+    expect(await undoItem()).not.toHaveAttribute("aria-disabled", "true");
   });
 
-  /** Move both rows to «Чохли Silicone» through the dialog. */
-  async function moveBothToGroupB() {
-    await selectBoth();
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.moveToGroup(2) }),
-    );
-    await userEvent.click(
-      await screen.findByLabelText(dict.products.bulk.groupDialogLabel),
-    );
-    await userEvent.click(
-      await screen.findByRole("option", { name: "Чохли Silicone" }),
-    );
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.groupSubmit }),
-    );
-  }
-
-  /**
-   * Group endpoint answering from a script of statuses, one per call — so a
-   * two-step undo can succeed on the first step and fail on the second.
-   */
-  function scriptedGroupPatch(statuses: number[]) {
-    const bodies: unknown[] = [];
-    server.use(
-      http.patch("*/api/products/group", async ({ request }) => {
-        bodies.push(await request.json());
-        const status = statuses[bodies.length - 1] ?? 200;
-        return status === 200
-          ? HttpResponse.json({ data: { updatedCount: 1 } })
-          : HttpResponse.json({ message: "boom" }, { status });
-      }),
-    );
-    return bodies;
-  }
-
-  it("a partial failure keeps only the unfinished step: the retry sends just that", async () => {
+  it("the toast's «Скасувати» does nothing once the offer is used up", async () => {
     stubTwoRows();
-    // forward ok · undo step 1 ok · undo step 2 fails · retry ok
-    const bodies = scriptedGroupPatch([200, 200, 500, 200]);
-    renderTable();
-    await screen.findByText(P1);
-    await moveBothToGroupB();
-    await waitFor(() => expect(bodies).toHaveLength(1));
-
-    const button = await undoButton();
-    await waitFor(() =>
-      expect(button).not.toHaveAttribute("aria-disabled", "true"),
-    );
-    await userEvent.click(button);
-    await waitFor(() =>
-      expect(screen.getByTestId("tree-live-assertive")).toHaveTextContent(
-        dict.products.bulk.announceUndoFailed,
-      ),
-    );
-    expect(bodies.slice(1)).toEqual([
-      { ids: ["product-1"], groupId: "group-a" },
-      { ids: ["product-2"], groupId: null },
-    ]);
-
-    await waitFor(() =>
-      expect(button).not.toHaveAttribute("aria-disabled", "true"),
-    );
-    await userEvent.click(button);
-
-    await waitFor(() => expect(bodies).toHaveLength(4));
-    // product-1 already went back — it is NOT replayed a second time.
-    expect(bodies[3]).toEqual({ ids: ["product-2"], groupId: null });
-    await waitFor(() =>
-      expect(button).toHaveAttribute("aria-disabled", "true"),
-    );
-  });
-
-  describe("the offer lapses after UNDO_WINDOW_MS", () => {
-    beforeEach(() => {
-      // Timers advance with the wall clock too, so React Query and user-event
-      // keep working; `advanceTimersByTime` jumps over the window. The
-      // microtask / nextTick / setImmediate queues stay REAL: MSW's fetch
-      // interception runs on them, and faking them hangs the whole run with
-      // no test timeout ever firing (order-detail-view.test.tsx does the same).
-      jest.useFakeTimers({
-        advanceTimers: true,
-        doNotFake: ["queueMicrotask", "nextTick", "setImmediate"],
-      });
-    });
-
-    afterEach(() => {
-      jest.useRealTimers();
-    });
-
-    it("goes inert when the window runs out, and a press then sends nothing", async () => {
-      stubTwoRows();
-      const bodies = recordPatch("status");
-      renderTable();
-      await screen.findByText(P1);
-      await selectBoth();
-      await userEvent.click(
-        screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
-      );
-      await waitFor(() => expect(bodies).toHaveLength(1));
-
-      const button = await undoButton();
-      await waitFor(() =>
-        expect(button).not.toHaveAttribute("aria-disabled", "true"),
-      );
-
-      act(() => {
-        jest.advanceTimersByTime(UNDO_WINDOW_MS);
-      });
-
-      await waitFor(() =>
-        expect(button).toHaveAttribute("aria-disabled", "true"),
-      );
-      // Still mounted — a focused user keeps their place.
-      expect(button).toBeInTheDocument();
-      await userEvent.click(button);
-      expect(bodies).toHaveLength(1);
-    });
-
-    it("a failed retry does not buy a fresh window: the deadline travels with the offer", async () => {
-      stubTwoRows();
-      // forward ok · undo step 1 ok · undo step 2 fails
-      const bodies = scriptedGroupPatch([200, 200, 500]);
-      renderTable();
-      await screen.findByText(P1);
-      await moveBothToGroupB();
-      await waitFor(() => expect(bodies).toHaveLength(1));
-
-      const button = await undoButton();
-      await waitFor(() =>
-        expect(button).not.toHaveAttribute("aria-disabled", "true"),
-      );
-
-      // Two thirds of the window pass before the (half-failing) undo.
-      act(() => {
-        jest.advanceTimersByTime(UNDO_WINDOW_MS - 10_000);
-      });
-      await userEvent.click(button);
-      await waitFor(() => expect(bodies).toHaveLength(3));
-      await waitFor(() =>
-        expect(button).not.toHaveAttribute("aria-disabled", "true"),
-      );
-
-      // Past the ORIGINAL deadline, but well inside a window restarted at the
-      // failure — the remaining step must no longer be on offer.
-      act(() => {
-        jest.advanceTimersByTime(11_000);
-      });
-      await waitFor(() =>
-        expect(button).toHaveAttribute("aria-disabled", "true"),
-      );
-    });
-  });
-
-  /**
-   * An undo replayed while a NEWER forward write is still in flight would land
-   * first; the forward write then commits an offer that can never reach the
-   * value from before both. So the control is inert until every write settles.
-   */
-  it("is inert while another bulk write is in flight", async () => {
-    stubTwoRows();
-    const bodies: unknown[] = [];
-    let release: () => void = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    server.use(
-      http.patch("*/api/products/status", async ({ request }) => {
-        bodies.push(await request.json());
-        // The second forward write hangs until the test lets it go.
-        if (bodies.length === 2) await gate;
-        return HttpResponse.json({ data: { updatedCount: 1 } });
-      }),
-    );
+    const bodies = recordPatch("status");
     renderTable();
     await screen.findByText(P1);
     await selectBoth();
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
-    );
-    await waitFor(() => expect(bodies).toHaveLength(1));
-    const button = await undoButton();
-    await waitFor(() =>
-      expect(button).not.toHaveAttribute("aria-disabled", "true"),
-    );
 
-    await selectBoth();
-    await userEvent.click(
-      screen.getByRole("button", { name: dict.products.bulk.activate(2) }),
-    );
+    await userEvent.click(screen.getByRole("button", { name: d.bulkShow }));
+    await waitFor(() => expect(toastUndo).toHaveBeenCalledTimes(1));
+    const { onUndo } = toastUndo.mock.calls[0][1] as { onUndo: () => void };
+
+    await userEvent.click(await undoItem());
     await waitFor(() => expect(bodies).toHaveLength(2));
 
-    await waitFor(() =>
-      expect(button).toHaveAttribute("aria-disabled", "true"),
-    );
-    await userEvent.click(button);
-    expect(bodies).toHaveLength(2);
-
-    // Once the newer write lands, ITS undo is on offer.
-    release();
-    await waitFor(() =>
-      expect(button).not.toHaveAttribute("aria-disabled", "true"),
-    );
+    onUndo();
+    // A second replay would be a stale snapshot written over the first.
+    await new Promise((resolve) => setTimeout(resolve, 50));
     expect(bodies).toHaveLength(2);
   });
 });
 
-/**
- * TASK-837/838 — the bulk endpoints (status, group, colour) all require
- * `products:write`, and the undo replays them. A session without it gets no
- * selection column, no bulk bar and no undo: every one of those clicks would
- * end in a 403. The server guard stays the real boundary.
- */
-describe("AdminProductTable — bulk actions need products:write (TASK-837/838)", () => {
-  const P1 = "iPhone 15 Pro Case";
+/* ── 390: cards ───────────────────────────────────────────────────────── */
 
-  it("renders no selection, no bulk bar and no undo without products:write", async () => {
-    stubEndpoints();
-    renderTable({ permissions: ["products:read"] });
-    await screen.findByText(P1);
+describe("AdminProductTable — cards below md (Т7)", () => {
+  it("shows a card per product with price, free stock, status and «⋯»", async () => {
+    setViewport(true);
+    stubList([makeProductRow({ sku: "IP15-CLR" })]);
+    renderTable();
 
-    // Row checkboxes, the header select-all and the toolbar's (phone) one.
-    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    const card = await screen.findByRole("listitem", { name: P1 });
+    expect(within(card).getByText("IP15-CLR")).toBeInTheDocument();
+    expect(within(card).getByText(d.stockFree(10))).toBeInTheDocument();
+    expect(within(card).getByText(d.statusShown)).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: dict.products.bulk.undo }),
-    ).toBeNull();
+      within(card).getByRole("button", { name: r.rowActionsAria(P1) }),
+    ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: dict.products.bulk.activate(1) }),
-    ).toBeNull();
-    // The column goes as a whole: header and row still have the same width.
-    const row = screen.getByText(P1).closest("tr") as HTMLElement;
-    expect(within(row).getAllByRole("cell")).toHaveLength(
-      screen.getAllByRole("columnheader").length,
-    );
+      within(card).getByRole("checkbox", { name: r.selectRowAria(P1) }),
+    ).toBeInTheDocument();
   });
 
-  it("renders the selection, the bulk bar and the undo with products:write", async () => {
-    stubEndpoints();
-    renderTable({ permissions: ["products:read", "products:write"] });
-    await screen.findByText(P1);
+  it("drops the checkbox from the card without products:write", async () => {
+    setViewport(true);
+    stubList();
+    renderTable({ permissions: ["products:read"] });
 
-    expect(
-      await screen.findByRole("button", { name: dict.products.bulk.undo }),
-    ).toHaveAttribute("aria-disabled", "true");
-    expect(
-      screen.getAllByRole("checkbox", { name: dict.common.table.selectAll }),
-    ).not.toHaveLength(0);
-
-    await userEvent.click(
-      screen.getByRole("checkbox", {
-        name: dict.products.bulk.selectRow(P1),
-      }),
-    );
-
-    for (const label of [
-      dict.products.bulk.activate(1),
-      dict.products.bulk.deactivate(1),
-      dict.products.bulk.moveToGroup(1),
-      dict.products.bulk.setColor(1),
-    ]) {
-      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
-    }
+    const card = await screen.findByRole("listitem", { name: P1 });
+    expect(within(card).queryByRole("checkbox")).toBeNull();
   });
 });
