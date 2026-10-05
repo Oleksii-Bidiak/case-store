@@ -396,9 +396,12 @@ test.describe("the header fits every width from 320 to 1440 (TASK-504, TASK-505)
       await page.setViewportSize({ width, height: VIEWPORT_HEIGHT });
       await page.goto("/account");
       const main = page.getByRole("main");
+      // A section is a link since TASK-867 (sidebar ≥lg, chip strip below).
       await main
-        .getByRole("button", { name: "Налаштування", exact: true })
+        .getByRole("navigation", { name: "Розділи кабінету" })
+        .getByRole("link", { name: "Налаштування", exact: true })
         .click();
+      await expect(page).toHaveURL(/section=settings/);
       await expect(
         main.getByRole("heading", { name: "Оформлення" }),
       ).toBeVisible();

@@ -46,7 +46,14 @@
 import { ADMIN_ORIGIN, CLIENT_ORIGIN } from "./ports";
 
 /** Storefront: the login page, its post-login target and the deep links. */
-const CLIENT_ROUTES = ["/login", "/", "/checkout", "/cart", "/products"];
+const CLIENT_ROUTES = [
+  "/login",
+  "/",
+  "/checkout",
+  "/cart",
+  "/products",
+  "/account/orders",
+];
 
 /** Admin: the login page, the dashboard it redirects to and the deep links. */
 const ADMIN_ROUTES = ["/login", "/", "/orders", "/staff", "/users"];
