@@ -1,7 +1,8 @@
 # План 194 — CI, пайплайн, ops, доки; архітектурний хвіст API
 
 **Статус:** 🔄 — частина I ✅ (2026-09-25, 18/18 задач пройшли незалежну перевірку, змержено в
-develop 2026-09-26; TASK-753 — холодний логін 3/3, повний Playwright червоний до TASK-750/751), частина A2 ⬜ ·
+develop 2026-09-26; TASK-753 — холодний логін 3/3, повний Playwright червоний до TASK-750/751), частина A2 ✅
+(2026-10-05, 5/5 задач у гілці `worktree-refactor-806-api-architecture`, ще не змержено) ·
 **Задачі:** 23 рядки у двох частинах · **Гілки:** частина I —
 `worktree-chore-494-ci-ops-docs` (worktree `chore-494-ci-ops-docs`), частина A2 —
 `worktree-refactor-806-api-architecture` (worktree `refactor-806-api-architecture`) · **Після:**
@@ -160,6 +161,68 @@ CodeQL, `backup.test.js` (його вже запускає глоб env-drift у
 TASK-753; будь-яка одна сторона ламала або `admin-order-permissions.spec`, або фікс флаку.
 `04a-env-matrix.md` перегенеровано через `--docs --write`. `BACKLOG.md`: рядки 194 з гілки,
 TASK-791 з develop. Межа healthcheck Caddy (перевіряє лише admin API) винесена в TASK-1017.
+
+## Частина A2 — підсумок (2026-10-05)
+
+Гілка `worktree-refactor-806-api-architecture` від develop `7dc8df51`, по коміту на задачу. Перед
+стартом жодної іншої гілки чи worktree, що змінює `store-api`, не було.
+
+**Результати**
+
+- **791** — `tsconfig.spec.json` не бачив жодного файла (успадкований `exclude`), і жоден скрипт
+  його не запускав. Тепер `typecheck` проходить `src/**/*.spec.ts`, `test/**` і `prisma/**/*.spec.ts`.
+  Виправлено 275 помилок, а не 5 з опису: 74 type-only реекспорти й імпорти в продакшн-барелях
+  (`isolatedModules`) і ~200 застарілих моків. Три int-спеки були зелені не з тієї причини:
+  `PaymentStatus.SUCCEEDED` не існує, а тест відкату кошика падав на відсутніх
+  `addonServiceIds` раніше, ніж доходив до FK (692284f2).
+- **806** — рішення власника: варіант B, конверт будує контролер. 23 сервіси повертають доменні
+  дані (`Paginated<T>` з `common/pagination` замість 17 копій `PaginationMeta`). Дубль
+  `BrandListResponse` зник. Лінт `no-restricted-syntax` на `*.service.ts`, правило 5 в
+  `AGENTS.md`. Кешовані значення brand/product змінили форму, тому ключі отримали сегмент `v2`
+  під тими самими purge-префіксами (f17cdc3c).
+- **818** — барелі віддають те, що інші модулі справді читають, і не віддають контролерів і
+  репозиторіїв поза DI-`exports`. 139 із 166 глибоких імпортів пішли через барель. 27 замкнули б
+  require-цикл, тож лишились із `eslint-disable … -- cycle: <ланцюжок>`. Локальне правило
+  `local/no-deep-module-import` резолвить шлях відносно файла, тому `../dto` усередині модуля
+  не плутає з чужим модулем (8cc30596).
+- **827** — купони картки клієнта беруться через `DiscountService.listUserRedemptions`, кошик
+  чекауту — через `CartService.loadForCheckout`. `CartRepository` модуль більше не експортує.
+  `computeDiscount` повертає `AppliedDiscount`. Нова e2e фіксує форму купонів на дроті (718243b8).
+- **820** — докблоки `@RequirePermission`/`@OwnerOnly`, гарда, каталогу прав і
+  `order-state-machine` відповідають коду. `LiveAnnouncer` адмінки використовує `cancel()` замість
+  монотонного токена, новий тест асертивного шляху червоніє без скасування (87e14d17).
+
+**Дріт не змінився.** Після 806 і 818 `swagger.json` після `swagger:export` байт-у-байт той
+самий. Після 827 він лише перевпорядкований (`UserModule` тепер імпортує `DiscountModule`), а з
+відсортованими ключами дорівнює develop. Теки `generated/` під `.gitignore`, тож `git diff` по
+них нічого не доводить. Натомість Orval-клієнти обох фронтів згенеровано з `swagger.json`
+develop і з фінального, усі 1488 файлів збіглися за sha256.
+
+**Фінальний прогін** (з кореня worktree, послідовно):
+
+- typecheck 0, lint 0;
+- store-api unit 265/5352;
+- int 47/48 suites (19 падінь `dashboard.repository.int-spec` — те саме було на чистому develop,
+  TASK-1757);
+- e2e 56/1107;
+- store-admin 275/3362, store-client 229/2222;
+- Playwright 82 passed / 17 skipped (опційний `screens-190`) / 0 failed.
+
+`qa-recheck.md` не змінювався: у жодної з п'яти задач немає чеків, поведінка для користувача та
+сама.
+
+**Нові рядки BACKLOG:**
+
+- TASK-1753 — решта ~20 чужих репозиторіїв у сервісах;
+- 1754 — `UserRepository` читає order/review/contactMessage;
+- 1755 — `OrderRepository` пише таблиці знижок і кошика в транзакції та дублює cap-предикат;
+- 1756 — `DiscountRepository` віддає сирі Prisma-моделі;
+- 1757 — `dashboard.repository.int-spec` залежить від залишків у `store_test`;
+- 1758 — два Swagger-класи `PaginationMeta`;
+- 1759 — `check-docs-links` червоний на чистому checkout через посилання на `uploads/`.
+
+**Для мержу:** після мержу `npm ci` + `npm run codegen`. На стенді старі Redis-ключі brand/product
+просто відпадуть за TTL або при першому purge.
 
 ## Ризики
 
