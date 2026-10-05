@@ -462,6 +462,13 @@ function ReturnResolveEditor({ rma, orderBalance }: ReturnResolveFormProps) {
             }
             aria-invalid={amountError ? true : undefined}
             {...form.register("refundedAmount")}
+            // The form has no submit button (each step is its own action), so
+            // Enter in the step's only text field must do the step itself.
+            onKeyDown={(event) => {
+              if (event.key !== "Enter") return;
+              event.preventDefault();
+              submitStep(ReturnEntityStatus.REFUNDED);
+            }}
           />
           {amountError ? (
             <FieldError id="return-refunded-amount-error" className="text-xs">

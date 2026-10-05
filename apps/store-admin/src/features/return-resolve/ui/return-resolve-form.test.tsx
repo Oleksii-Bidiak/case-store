@@ -165,6 +165,28 @@ describe("ReturnResolveForm — one «Наступний крок» per status (
   });
 });
 
+describe("ReturnResolveForm — the refund step from the keyboard", () => {
+  it("records «Гроші повернуто» on Enter in the amount field", async () => {
+    const bodies = stubResolve(() =>
+      HttpResponse.json({ data: makeReturn({ status: "REFUNDED" }) }),
+    );
+    renderAsWriter(
+      <ReturnResolveForm rma={makeReturn({ status: "RECEIVED" })} />,
+    );
+
+    await userEvent.type(
+      screen.getByLabelText(d.resolveRefundedAmount, { exact: false }),
+      "250{Enter}",
+    );
+
+    await waitFor(() => expect(bodies).toHaveLength(1));
+    expect(bodies[0]).toMatchObject({
+      status: "REFUNDED",
+      refundedAmount: "250",
+    });
+  });
+});
+
 describe("ReturnResolveForm — the restock question (TASK-340)", () => {
   it("asks it only at «Товар отримано», ticked by default (Р3)", () => {
     renderAsWriter(<ReturnResolveForm rma={makeReturn()} />);
