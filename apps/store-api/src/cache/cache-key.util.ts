@@ -34,8 +34,8 @@ export const PRODUCT_DETAIL_ID_PREFIX = 'product:detail:id';
  * both generations, so nothing the old code left behind can outlive a write.
  *
  * `v2` (TASK-806): services stopped building the `{ data, meta }` response
- * envelope. The product listing caches `{ items, meta }`, the slug detail the bare
- * entity, the brand list the bare array. The id detail always cached the bare
+ * envelope. The product listing caches `{ items, meta }`, the slug detail the
+ * `{ product, category, group, images }` wrapper, the brand list the bare array. The id detail always cached the bare
  * entity and the facet counts never held an envelope, so their keys are unchanged.
  */
 const VALUE_SHAPE_VERSION = 'v2';
