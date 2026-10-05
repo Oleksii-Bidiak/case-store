@@ -96,7 +96,8 @@ export class AdminDiscountController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async list(@Query() query: DiscountListQueryDto): Promise<AdminDiscountListResponse> {
-    return this.discountService.list(query);
+    const page = await this.discountService.list(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /** GET /api/admin/discounts/:id — get one. */

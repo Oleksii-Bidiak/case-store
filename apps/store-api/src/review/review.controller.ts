@@ -21,7 +21,8 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { FailClosedThrottle, ReviewSubmissionThrottle } from '../throttler';
-import { ReviewService, PaginationMeta } from './review.service';
+import { ReviewService } from './review.service';
+import type { PaginationMeta } from '../common/pagination';
 import { ReviewEntity, ReviewAggregateEntity, OwnReviewEntity } from './entities';
 import { CreateReviewDto, ReviewListQueryDto } from './dto';
 import { JwtAuthGuard, CurrentUser } from '../auth';
@@ -177,7 +178,8 @@ export class ReviewController {
     @Param('productId') productId: string,
     @Query() query: ReviewListQueryDto,
   ): Promise<{ data: ReviewEntity[]; aggregate: ReviewAggregateEntity; meta: PaginationMeta }> {
-    return this.reviewService.getApprovedReviews(productId, query);
+    const page = await this.reviewService.getApprovedReviews(productId, query);
+    return { data: page.items, aggregate: page.aggregate, meta: page.meta };
   }
 
   /**

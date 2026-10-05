@@ -25,6 +25,7 @@ import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 import { reorderErrorToHttp } from '../common/reorder';
+import type { Paginated, PaginationMeta } from '../common/pagination';
 import { HUB_SLUGS, PAGE_ROOT_PATHS, hubRouteForSlug, revalidatePathsForPage } from './hub-routes';
 
 /** Stable `error` code of the 409 raised for a page address already in use (TASK-566). */
@@ -34,24 +35,6 @@ export const PAGE_SLUG_TAKEN = 'PAGE_SLUG_TAKEN';
 interface PageRef {
   slug: string;
   kind: PageKind;
-}
-
-/**
- * Pagination metadata returned alongside paginated results.
- */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Paginated response envelope for page lists.
- */
-interface PaginatedPagesResponse {
-  data: PageEntity[];
-  meta: PaginationMeta;
 }
 
 @Injectable()
@@ -64,7 +47,7 @@ export class PageService {
   /**
    * List published pages (public storefront).
    */
-  async findAll(query: PageListQueryDto): Promise<PaginatedPagesResponse> {
+  async findAll(query: PageListQueryDto): Promise<Paginated<PageEntity>> {
     const params: FindAllParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
@@ -74,7 +57,7 @@ export class PageService {
     const { pages, total } = await this.pageRepository.findAll(params);
 
     return {
-      data: pages.map((page) => PageEntity.fromPrisma(page)),
+      items: pages.map((page) => PageEntity.fromPrisma(page)),
       meta: this.buildMeta(total, params.page, params.limit),
     };
   }
@@ -100,7 +83,7 @@ export class PageService {
    * List all pages including drafts (admin). Omitting `page`/`limit` returns the
    * COMPLETE list — the mode the reorder UI requires (TASK-428).
    */
-  async findAllAdmin(query: AdminPageListQueryDto = {}): Promise<PaginatedPagesResponse> {
+  async findAllAdmin(query: AdminPageListQueryDto = {}): Promise<Paginated<PageEntity>> {
     const params: FindAllAdminParams = {
       page: query.page,
       limit: query.limit,
@@ -112,7 +95,7 @@ export class PageService {
     const { pages, total } = await this.pageRepository.findAllAdmin(params);
 
     return {
-      data: pages.map((page) => PageEntity.fromPrisma(page)),
+      items: pages.map((page) => PageEntity.fromPrisma(page)),
       meta: this.buildAdminMeta(total, query.page, query.limit),
     };
   }
@@ -316,7 +299,7 @@ export class PageService {
    * Only the HUB is revalidated: a reorder changes the sequence `/legal` renders, never
    * the content of any single `/legal/<slug>` route.
    */
-  async reorder(dto: ReorderPagesDto): Promise<PaginatedPagesResponse> {
+  async reorder(dto: ReorderPagesDto): Promise<Paginated<PageEntity>> {
     let pages;
     let total;
     try {
@@ -339,10 +322,10 @@ export class PageService {
 
     // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
     // response straight into the list query's cache (`useReorderLifecycle` →
-    // `setQueryData`), and an envelope missing `meta` would blank the row counter the
+    // `setQueryData`), and a response missing `meta` would blank the row counter the
     // moment someone drags a row.
     return {
-      data: pages.map((page) => PageEntity.fromPrisma(page)),
+      items: pages.map((page) => PageEntity.fromPrisma(page)),
       meta: this.buildAdminMeta(total),
     };
   }

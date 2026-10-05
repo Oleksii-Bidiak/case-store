@@ -111,9 +111,9 @@ describe('BlogService', () => {
 
       const result = await service.findAll({ page: 1, limit: 9, category: 'compare', q: 'iphone' });
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(BlogPostEntity);
-      expect(result.data[0].category.slug).toBe('compare');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toBeInstanceOf(BlogPostEntity);
+      expect(result.items[0].category.slug).toBe('compare');
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 9, totalPages: 1 });
       expect(repositoryMock.findAll).toHaveBeenCalledWith({
         page: 1,
@@ -165,7 +165,7 @@ describe('BlogService', () => {
         limit: 9,
         includeUnlisted: false,
       });
-      expect(result.data.map((p) => p.id)).toEqual(['post-3', 'post-1']);
+      expect(result.items.map((p) => p.id)).toEqual(['post-3', 'post-1']);
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 9, totalPages: 1 });
       expect(repositoryMock.findAll).not.toHaveBeenCalled();
     });
@@ -195,7 +195,7 @@ describe('BlogService', () => {
 
       expect(repositoryMock.findAll).not.toHaveBeenCalled();
       expect(repositoryMock.findPublishedByIds).not.toHaveBeenCalled();
-      expect(result.data).toEqual([]);
+      expect(result.items).toEqual([]);
       expect(result.meta).toEqual({ total: 12, page: 5, limit: 9, totalPages: 2 });
     });
 
@@ -215,7 +215,7 @@ describe('BlogService', () => {
       const result = await service.findAll({ page: 1, limit: 9, q: 'iphone' });
 
       expect(repositoryMock.findAll).toHaveBeenCalled();
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
     });
 
     it('falls back to Postgres when a throwing engine breaks the port contract', async () => {
@@ -225,7 +225,7 @@ describe('BlogService', () => {
 
       const result = await service.findAll({ page: 1, limit: 9, q: 'iphone' });
 
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
     });
 
     it('falls back when the PUBLISHED re-read drops every hit (stale index)', async () => {
@@ -238,7 +238,7 @@ describe('BlogService', () => {
       const result = await service.findAll({ page: 1, limit: 9, q: 'draft' });
 
       expect(repositoryMock.findAll).toHaveBeenCalled();
-      expect(result.data.map((p) => p.id)).toEqual(['post-1']);
+      expect(result.items.map((p) => p.id)).toEqual(['post-1']);
     });
 
     // TASK-436 × TASK-417 — the two landed on separate branches, and the index
@@ -776,7 +776,7 @@ describe('BlogService', () => {
         limit: 5,
         search: 'гайд',
       });
-      expect(result.data[0]).toBeInstanceOf(BlogCategoryEntity);
+      expect(result.items[0]).toBeInstanceOf(BlogCategoryEntity);
       expect(result.meta).toEqual({ total: 12, page: 2, limit: 5, totalPages: 3 });
       expect(repositoryMock.findAllCategories).not.toHaveBeenCalled();
     });
@@ -865,9 +865,9 @@ describe('BlogService', () => {
       const result = await service.reorderCategories({ orderedIds: [b, a] }, 'admin-1');
 
       expect(repositoryMock.reorderCategories).toHaveBeenCalledWith([b, a]);
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toBeInstanceOf(BlogCategoryEntity);
-      expect(result.data[0].id).toBe(b);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toBeInstanceOf(BlogCategoryEntity);
+      expect(result.items[0].id).toBe(b);
       // Shape parity with the admin list — the panel writes this straight into its cache.
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
       expect(revalidationMock.revalidate).toHaveBeenCalledWith({

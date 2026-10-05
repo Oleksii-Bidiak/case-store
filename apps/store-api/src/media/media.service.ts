@@ -8,23 +8,10 @@ import { MediaUsageRepository } from './media-usage.repository';
 import { MEDIA_USAGE_KIND_ORDER, MediaUsage } from './media-usage.types';
 import { MediaListQueryDto, MediaMetadataDto, DEFAULT_MEDIA_PAGE_SIZE } from './dto';
 import { MediaAssetDetailEntity, MediaAssetEntity } from './entities';
+import type { Paginated } from '../common/pagination';
 
 /** How many usages the delete refusal spells out before it says "and N more". */
 const MAX_USAGES_IN_REFUSAL = 8;
-
-/** Pagination metadata for the library list. */
-export interface MediaPaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/** Envelope returned by the list endpoint. */
-export interface MediaListResult {
-  data: MediaAssetEntity[];
-  meta: MediaPaginationMeta;
-}
 
 /**
  * The media library (TASK-441, plan 177).
@@ -47,7 +34,7 @@ export class MediaService {
   }
 
   /** One page of the library, each row carrying how many places use it. */
-  async findAll(query: MediaListQueryDto): Promise<MediaListResult> {
+  async findAll(query: MediaListQueryDto): Promise<Paginated<MediaAssetEntity>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? DEFAULT_MEDIA_PAGE_SIZE;
 
@@ -64,7 +51,7 @@ export class MediaService {
     const usageByUrl = await this.usage.findUsage(assets.map((asset) => asset.url));
 
     return {
-      data: assets.map((asset) =>
+      items: assets.map((asset) =>
         MediaAssetEntity.fromPrisma(asset, usageByUrl.get(asset.url)?.length ?? 0),
       ),
       meta: {

@@ -31,30 +31,14 @@ import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 import { reorderErrorToHttp } from '../common/reorder';
-
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-interface PaginatedPostsResponse {
-  data: BlogPostEntity[];
-  meta: PaginationMeta;
-}
+import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /**
- * Admin category list envelope. `meta` is present even for an unpaginated read so
+ * The admin category list is a `Paginated` page even for an unpaginated read, so
  * the panel can show a truthful row count without branching on the query — and so
- * the reorder response, which the panel writes straight into the list cache, can
+ * the reorder answer, which the panel writes straight into the list cache, can
  * carry the identical shape.
  */
-interface AdminCategoriesResponse {
-  data: BlogCategoryEntity[];
-  meta: PaginationMeta;
-}
-
 @Injectable()
 export class BlogService {
   constructor(
@@ -85,7 +69,7 @@ export class BlogService {
    * `sitemap.xml` is the only caller that flips it, and it has to say so out loud
    * (see `FindAllPostsParams`).
    */
-  async findAll(query: BlogPostListQueryDto): Promise<PaginatedPostsResponse> {
+  async findAll(query: BlogPostListQueryDto): Promise<Paginated<BlogPostEntity>> {
     const params: FindAllPostsParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 9,
@@ -100,7 +84,7 @@ export class BlogService {
     const { posts, total } = await this.blogRepository.findAll(params);
 
     return {
-      data: posts.map((post) => BlogPostEntity.fromPrisma(post)),
+      items: posts.map((post) => BlogPostEntity.fromPrisma(post)),
       meta: this.buildMeta(total, params.page, params.limit),
     };
   }
@@ -112,7 +96,7 @@ export class BlogService {
    */
   private async findAllFromIndex(
     params: FindAllPostsParams,
-  ): Promise<PaginatedPostsResponse | null> {
+  ): Promise<Paginated<BlogPostEntity> | null> {
     const q = params.q?.trim();
     if (!q) return null;
 
@@ -137,7 +121,7 @@ export class BlogService {
     // (TASK-537). Answer that with the engine's exact total rather than falling
     // back: Postgres would put a different set and total under the same URL.
     if (hits.ids.length === 0) {
-      return { data: [], meta: this.buildMeta(hits.total, params.page, params.limit) };
+      return { items: [], meta: this.buildMeta(hits.total, params.page, params.limit) };
     }
 
     // The flag is enforced on the re-read as well as in the engine (TASK-537):
@@ -146,16 +130,16 @@ export class BlogService {
     // on the hub and in the header suggestions.
     const posts = await this.blogRepository.findPublishedByIds(hits.ids, params.includeUnlisted);
     const byId = new Map(posts.map((post) => [post.id, post]));
-    const data = hits.ids
+    const items = hits.ids
       .map((id) => byId.get(id))
       .filter((post): post is NonNullable<typeof post> => post != null)
       .map((post) => BlogPostEntity.fromPrisma(post));
 
     // Nothing survived the PUBLISHED re-read — the index is stale enough that
     // answering "no articles" would be a lie. Let Postgres have the query.
-    if (data.length === 0) return null;
+    if (items.length === 0) return null;
 
-    return { data, meta: this.buildMeta(hits.total, params.page, params.limit) };
+    return { items, meta: this.buildMeta(hits.total, params.page, params.limit) };
   }
 
   /**
@@ -213,7 +197,7 @@ export class BlogService {
   // ─── posts: admin ───────────────────────────────────────────────────────────
 
   /** List all posts (any status) with an optional status filter (admin). */
-  async findAllAdmin(query: AdminBlogPostListQueryDto): Promise<PaginatedPostsResponse> {
+  async findAllAdmin(query: AdminBlogPostListQueryDto): Promise<Paginated<BlogPostEntity>> {
     const params: FindAllAdminPostsParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 9,
@@ -225,7 +209,7 @@ export class BlogService {
     const { posts, total } = await this.blogRepository.findAllAdmin(params);
 
     return {
-      data: posts.map((post) => BlogPostEntity.fromPrisma(post)),
+      items: posts.map((post) => BlogPostEntity.fromPrisma(post)),
       meta: this.buildMeta(total, params.page, params.limit),
     };
   }
@@ -440,7 +424,7 @@ export class BlogService {
    */
   async findAllCategoriesAdmin(
     query: AdminBlogCategoryListQueryDto = {},
-  ): Promise<AdminCategoriesResponse> {
+  ): Promise<Paginated<BlogCategoryEntity>> {
     const params: FindAllAdminCategoriesParams = {
       page: query.page,
       limit: query.limit,
@@ -449,7 +433,7 @@ export class BlogService {
     const { categories, total } = await this.blogRepository.findAllCategoriesAdmin(params);
 
     return {
-      data: categories.map((c) => BlogCategoryEntity.fromPrisma(c)),
+      items: categories.map((c) => BlogCategoryEntity.fromPrisma(c)),
       meta: this.buildOptionalMeta(total, query.page, query.limit),
     };
   }
@@ -518,7 +502,7 @@ export class BlogService {
   async reorderCategories(
     dto: ReorderBlogCategoriesDto,
     actorId?: string,
-  ): Promise<AdminCategoriesResponse> {
+  ): Promise<Paginated<BlogCategoryEntity>> {
     let categories;
     try {
       categories = await this.blogRepository.reorderCategories(dto.orderedIds);
@@ -536,10 +520,10 @@ export class BlogService {
     // The reorder always answers with the COMPLETE list, so its `meta` is the unpaginated
     // one. Shape parity with `findAllCategoriesAdmin` is load-bearing: the admin panel
     // writes this response straight into the list query's cache (`useReorderLifecycle` →
-    // `setQueryData`), and an envelope missing `meta` would blank the row counter the
+    // `setQueryData`), and a response missing `meta` would blank the row counter the
     // moment someone drags a row.
     return {
-      data: categories.map((category) => BlogCategoryEntity.fromPrisma(category)),
+      items: categories.map((category) => BlogCategoryEntity.fromPrisma(category)),
       meta: this.buildOptionalMeta(categories.length),
     };
   }

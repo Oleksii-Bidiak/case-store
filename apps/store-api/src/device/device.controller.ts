@@ -45,13 +45,13 @@ export class DeviceController {
   @ApiOperation({ summary: 'List active device brands', operationId: 'deviceControllerFindBrands' })
   @ApiResponse({ status: 200, description: 'Active device brands', type: DeviceBrandListResponse })
   async findBrands(): Promise<DeviceBrandListResponse> {
-    return this.deviceService.getBrands(true);
+    return { data: await this.deviceService.getBrands(true) };
   }
 
   @Get('device-models')
   @ApiOperation({ summary: 'List active device models', operationId: 'deviceControllerFindModels' })
   @ApiResponse({ status: 200, description: 'Active device models', type: DeviceModelListResponse })
   async findModels(@Query() query: DeviceModelListQueryDto): Promise<DeviceModelListResponse> {
-    return this.deviceService.getModels(query);
+    return { data: await this.deviceService.getModels(query) };
   }
 }

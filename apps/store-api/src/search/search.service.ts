@@ -14,6 +14,7 @@ import { SearchSynonymsService } from '../search-synonyms/search-synonyms.servic
 import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
 import { SearchSuggestionEntity } from './entities';
 import type { SearchQueryDto, SearchSort } from './dto';
+import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /** Default page size for the `/search` results grid. */
 export const DEFAULT_SEARCH_LIMIT = 20;
@@ -139,19 +140,8 @@ const MEILI_SORT: Record<SearchSort, string[] | undefined> = {
   newest: ['createdAt:desc'],
 };
 
-/** Pagination metadata returned with a search result page. */
-export interface SearchMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/** Paginated search results — same envelope shape as the product list. */
-export interface SearchResults {
-  data: PublicProductEntity[];
-  meta: SearchMeta;
-}
+/** One page of search results — the same `Paginated` shape as the product list. */
+export type SearchResultsPage = Paginated<PublicProductEntity>;
 
 /**
  * SearchService — owns the product search index lifecycle AND the query path
@@ -201,7 +191,7 @@ export class SearchService implements OnModuleInit {
    * question identically. {@link search} itself keeps taking ids, so every
    * internal caller and every existing test is unaffected.
    */
-  async searchFromQuery(query: SearchQueryDto): Promise<SearchResults> {
+  async searchFromQuery(query: SearchQueryDto): Promise<SearchResultsPage> {
     const filters = await this.catalogueFilters.resolve(query);
     return this.search(query.q ?? '', query.page ?? 1, query.limit ?? DEFAULT_SEARCH_LIMIT, {
       categoryId: filters.categoryId,
@@ -363,7 +353,7 @@ export class SearchService implements OnModuleInit {
     page = 1,
     limit = DEFAULT_SEARCH_LIMIT,
     filters: SearchFilters = {},
-  ): Promise<SearchResults> {
+  ): Promise<SearchResultsPage> {
     const query = (rawQuery ?? '').trim();
     const pageNum = page > 0 ? page : 1;
     const pageSize = limit > 0 ? limit : DEFAULT_SEARCH_LIMIT;
@@ -401,14 +391,14 @@ export class SearchService implements OnModuleInit {
       // beyond `maxTotalHits`). Say so with the engine's own total instead of
       // swapping in Postgres' result set under the same URL.
       if (result && result.hits.length === 0 && totalHits > 0) {
-        return { data: [], meta: this.buildMeta(totalHits, pageNum, pageSize) };
+        return { items: [], meta: this.buildMeta(totalHits, pageNum, pageSize) };
       }
       if (result && result.hits.length > 0) {
         const ids = result.hits.map((hit) => hit.id);
         const products = await this.productRepository.findByIdsForCards(ids);
         const byId = new Map(products.map((p) => [p.id, p]));
         // Preserve Meilisearch's relevance ordering.
-        const data = ids
+        const items = ids
           .map((id) => byId.get(id))
           .filter((p): p is NonNullable<typeof p> => p != null)
           .map((p) => PublicProductEntity.fromPrisma(p));
@@ -416,8 +406,8 @@ export class SearchService implements OnModuleInit {
         // whose category was withdrawn). Answering "nothing found" over a live
         // catalogue would be a lie told by a stale index, so let Postgres have
         // the query — the same rule the blog path applies.
-        if (data.length > 0) {
-          return { data, meta: this.buildMeta(totalHits, pageNum, pageSize) };
+        if (items.length > 0) {
+          return { items, meta: this.buildMeta(totalHits, pageNum, pageSize) };
         }
       }
     }
@@ -457,7 +447,7 @@ export class SearchService implements OnModuleInit {
     page: number,
     limit: number,
     filters: SearchFilters,
-  ): Promise<SearchResults | null> {
+  ): Promise<SearchResultsPage | null> {
     if (page !== 1 || !looksLikeSku(query) || hasFacets(filters)) return null;
 
     const match = await this.productRepository.findBySkuIgnoringCase(query);
@@ -467,7 +457,7 @@ export class SearchService implements OnModuleInit {
     if (!card) return null;
 
     return {
-      data: [PublicProductEntity.fromPrisma(card)],
+      items: [PublicProductEntity.fromPrisma(card)],
       meta: { total: 1, page: 1, limit, totalPages: 1 },
     };
   }
@@ -568,7 +558,7 @@ export class SearchService implements OnModuleInit {
     page: number,
     limit: number,
     filters: SearchFilters = {},
-  ): Promise<SearchResults> {
+  ): Promise<SearchResultsPage> {
     // The subtree rollup lives in the service, not the repository (TASK-236):
     // `findAll` takes an already-expanded id set.
     const categoryIds = filters.categoryId
@@ -593,7 +583,7 @@ export class SearchService implements OnModuleInit {
       sortOrder,
     });
     return {
-      data: products.map((p) => PublicProductEntity.fromPrisma(p)),
+      items: products.map((p) => PublicProductEntity.fromPrisma(p)),
       meta: this.buildMeta(total, page, limit),
     };
   }
@@ -640,7 +630,7 @@ export class SearchService implements OnModuleInit {
     };
   }
 
-  private buildMeta(total: number, page: number, limit: number): SearchMeta {
+  private buildMeta(total: number, page: number, limit: number): PaginationMeta {
     return { total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 }

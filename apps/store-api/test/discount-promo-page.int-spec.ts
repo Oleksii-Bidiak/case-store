@@ -72,7 +72,7 @@ describe('Discount promo-page publishing (integration — real Postgres)', () =>
   });
 
   it('lists only the published code in the public feed', async () => {
-    const codes = (await service.findActivePublic()).data.map((d) => d.code);
+    const codes = (await service.findActivePublic()).map((d) => d.code);
 
     expect(codes).toContain(publishedCode);
     expect(codes).not.toContain(hiddenCode);
@@ -89,7 +89,7 @@ describe('Discount promo-page publishing (integration — real Postgres)', () =>
     const hidden = await prisma.discount.findUniqueOrThrow({ where: { code: hiddenCode } });
     await service.update(hidden.id, { showOnPromoPage: true });
 
-    const codes = (await service.findActivePublic()).data.map((d) => d.code);
+    const codes = (await service.findActivePublic()).map((d) => d.code);
     expect(codes).toContain(hiddenCode);
   });
 });

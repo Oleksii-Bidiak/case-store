@@ -17,6 +17,7 @@ import type {
   UpdateReviewDto,
   CreateReviewReplyDto,
 } from './dto';
+import type { Paginated } from '../common/pagination';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 10;
@@ -24,31 +25,12 @@ const DEFAULT_LIMIT = 10;
 const DEFAULT_MODERATION_LIMIT = 20;
 
 /**
- * Pagination metadata returned alongside review lists.
+ * One page of a product's approved reviews together with the product's rating
+ * aggregate (which counts every rating, not just this page — see
+ * {@link ReviewService.getApprovedReviews}).
  */
-export interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Response shape for the public product-reviews endpoint: the page of approved
- * reviews, the product's rating aggregate, and pagination metadata.
- */
-export interface ApprovedReviewsResult {
-  data: ReviewEntity[];
+export interface ApprovedReviewsPage extends Paginated<ReviewEntity> {
   aggregate: ReviewAggregateEntity;
-  meta: PaginationMeta;
-}
-
-/**
- * Response shape for the admin moderation queue.
- */
-export interface ModerationReviewsResult {
-  data: AdminReviewEntity[];
-  meta: PaginationMeta;
 }
 
 /**
@@ -173,7 +155,7 @@ export class ReviewService {
   async getApprovedReviews(
     productId: string,
     query: ReviewListQueryDto,
-  ): Promise<ApprovedReviewsResult> {
+  ): Promise<ApprovedReviewsPage> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
 
@@ -190,12 +172,12 @@ export class ReviewService {
       ...new Set(reviews.map((review) => review.userId)),
     ]);
 
-    const data = reviews.map((review) =>
+    const items = reviews.map((review) =>
       ReviewEntity.fromPrisma(review, verifiedUserIds.has(review.userId)),
     );
 
     return {
-      data,
+      items,
       aggregate: ReviewAggregateEntity.fromAggregate(aggregate),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
@@ -257,7 +239,7 @@ export class ReviewService {
    * (`pending` by default). Rows are enriched with author email and product
    * name for the admin table.
    */
-  async getReviewsForModeration(query: AdminReviewQueryDto): Promise<ModerationReviewsResult> {
+  async getReviewsForModeration(query: AdminReviewQueryDto): Promise<Paginated<AdminReviewEntity>> {
     const page = query.page ?? DEFAULT_PAGE;
     // The admin queue's own default, 20 — the one page size every admin table
     // now uses (TASK-423). Deliberately NOT the storefront's DEFAULT_LIMIT: the
@@ -281,7 +263,7 @@ export class ReviewService {
     );
 
     return {
-      data: reviews.map((row) => AdminReviewEntity.fromModerationRow(row)),
+      items: reviews.map((row) => AdminReviewEntity.fromModerationRow(row)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

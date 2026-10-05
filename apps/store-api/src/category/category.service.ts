@@ -33,6 +33,7 @@ import {
 } from './category.errors';
 import { ReorderGroupInput } from './category-reorder.rules';
 import { generateSlug } from '../common/utils';
+import type { Paginated } from '../common/pagination';
 import {
   BRAND_LIST_PREFIX,
   CacheService,
@@ -49,54 +50,6 @@ import { PermissionService } from '../auth/permissions';
  * B-2 of plan 178). Body-dependent, hence checked here rather than by the guard.
  */
 const CREATE_TARGET_PERMISSION = 'categories:write';
-
-/**
- * Pagination metadata returned alongside paginated results.
- */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Paginated response envelope for category lists.
- */
-interface PaginatedCategoriesResponse {
-  data: CategoryEntity[];
-  meta: PaginationMeta;
-}
-
-/**
- * Paginated response envelope for categories with product counts.
- */
-interface PaginatedCategoriesWithCountResponse {
-  data: CategoryWithCountEntity[];
-  meta: PaginationMeta;
-}
-
-/**
- * Category tree response for navigation.
- */
-interface CategoryTreeResponse {
-  data: CategoryTreeNodeEntity[];
-}
-
-/**
- * Admin category tree response (TASK-291) — same envelope, richer nodes.
- */
-interface AdminCategoryTreeResponse {
-  data: AdminCategoryTreeNodeEntity[];
-}
-
-/**
- * Category detail response with product count.
- */
-interface CategoryWithCountResponse {
-  data: CategoryWithCountEntity;
-  productCount: number;
-}
 
 /**
  * Batch reorder/reparent payload (TASK-291). Structural on purpose: `ReorderTreeDto`
@@ -163,7 +116,7 @@ export class CategoryService {
    * and `?isActive=false` would have listed ONLY them. The admin list
    * ({@link findAllWithProductCount}) is where `isActive` is honoured as sent.
    */
-  async getRootCategories(query: CategoryListQueryDto): Promise<PaginatedCategoriesResponse> {
+  async getRootCategories(query: CategoryListQueryDto): Promise<Paginated<CategoryEntity>> {
     const params: FindRootParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
@@ -176,7 +129,7 @@ export class CategoryService {
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      data: categories.map((category) => CategoryEntity.fromPrisma(category)),
+      items: categories.map((category) => CategoryEntity.fromPrisma(category)),
       meta: {
         total,
         page: params.page,
@@ -190,12 +143,10 @@ export class CategoryService {
    * Get the full category tree for navigation.
    * Public endpoint — returns nested categories for menus/breadcrumbs.
    */
-  async getCategoryTree(): Promise<CategoryTreeResponse> {
+  async getCategoryTree(): Promise<CategoryTreeNodeEntity[]> {
     const tree = await this.categoryRepository.findCategoryTree();
 
-    return {
-      data: tree.map((node) => CategoryTreeNodeEntity.fromPrisma(node)),
-    };
+    return tree.map((node) => CategoryTreeNodeEntity.fromPrisma(node));
   }
 
   /**
@@ -206,10 +157,8 @@ export class CategoryService {
    * {@link CategoryTreeNodeEntity}: `parentId`, `productCount`, `depth`), so this is
    * a pass-through — there is nothing left to map.
    */
-  async getCategoryTreeForAdmin(): Promise<AdminCategoryTreeResponse> {
-    const data = await this.categoryRepository.findCategoryTreeForAdmin();
-
-    return { data };
+  async getCategoryTreeForAdmin(): Promise<AdminCategoryTreeNodeEntity[]> {
+    return this.categoryRepository.findCategoryTreeForAdmin();
   }
 
   /**
@@ -220,7 +169,7 @@ export class CategoryService {
    * category is indistinguishable from a missing slug and returns 404 (TASK-297)
    * — the same contract the public PDP has had since TASK-145.
    */
-  async findBySlug(slug: string): Promise<CategoryWithCountResponse> {
+  async findBySlug(slug: string): Promise<CategoryWithCountEntity> {
     const category = await this.categoryRepository.findBySlug(slug);
 
     if (!category) {
@@ -233,14 +182,11 @@ export class CategoryService {
       throw new NotFoundException('Category not found');
     }
 
-    return {
-      data: CategoryWithCountEntity.fromPrisma(
-        result.category,
-        result.productCount,
-        result.subtreeProductCount,
-      ),
-      productCount: result.productCount,
-    };
+    return CategoryWithCountEntity.fromPrisma(
+      result.category,
+      result.productCount,
+      result.subtreeProductCount,
+    );
   }
 
   /**
@@ -434,7 +380,10 @@ export class CategoryService {
    * The repository's domain errors are mapped to HTTP here — the wire body carries the
    * stable `error` code the admin panel keys its UA announcements off.
    */
-  async reorderTree(dto: ReorderTreeInput, actorId?: string): Promise<AdminCategoryTreeResponse> {
+  async reorderTree(
+    dto: ReorderTreeInput,
+    actorId?: string,
+  ): Promise<AdminCategoryTreeNodeEntity[]> {
     let result;
     try {
       result = await this.categoryRepository.applyTreeMoves(dto.groups);
@@ -455,7 +404,7 @@ export class CategoryService {
       'Category tree reordered',
     );
 
-    return { data: result.tree };
+    return result.tree;
   }
 
   /**
@@ -504,7 +453,7 @@ export class CategoryService {
     ids: string[],
     isActive: boolean,
     actorId?: string,
-  ): Promise<AdminCategoryTreeResponse> {
+  ): Promise<AdminCategoryTreeNodeEntity[]> {
     let result;
     try {
       result = await this.categoryRepository.setActiveMany(ids, isActive);
@@ -514,7 +463,7 @@ export class CategoryService {
 
     await this.afterStatusChange(ids, isActive, actorId, result.updatedCount);
 
-    return { data: result.tree };
+    return result.tree;
   }
 
   /**
@@ -724,7 +673,7 @@ export class CategoryService {
    */
   async findAllWithProductCount(
     query: CategoryListQueryDto,
-  ): Promise<PaginatedCategoriesWithCountResponse> {
+  ): Promise<Paginated<CategoryWithCountEntity>> {
     const params: FindAllParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
@@ -739,7 +688,7 @@ export class CategoryService {
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      data: categories.map((item) =>
+      items: categories.map((item) =>
         CategoryWithCountEntity.fromPrisma(
           item.category,
           item.productCount,

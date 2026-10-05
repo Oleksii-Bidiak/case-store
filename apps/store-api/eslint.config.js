@@ -63,6 +63,47 @@ const ISOWNER_UNIQUE_SELECTOR = {
     '(TASK-634, schema.prisma User.isOwner).',
 };
 
+/**
+ * The `{ data, meta? }` response envelope is built by the CONTROLLER (TASK-806,
+ * AGENTS.md "Backend Conventions" rule 5). Services return domain data — an
+ * entity, an array, `Paginated<T>` from `common/pagination`, or a small domain
+ * result type — so a service can be reused by another service, a job or a
+ * script without unwrapping an HTTP shape, and the wire format lives in one layer.
+ *
+ * Matched: an object literal with a `data` key that a service returns (explicit
+ * `return` or an arrow's implicit return, also through `as` / `satisfies` / `!`),
+ * and a `data` member declared in an interface / type literal (the old
+ * `XxxResponse { data; meta }` types). Spec files (`*.service.spec.ts`) are not
+ * matched by the glob, so test doubles may still say `data`. A
+ * service that needs a `data` key for a reason other than the HTTP envelope (a
+ * payment provider's payload, say) disables the line with that reason, rather
+ * than the selector being weakened for everyone.
+ */
+const ENVELOPE_MESSAGE =
+  'Services return domain data, not the `{ data, meta }` response envelope — the controller ' +
+  'builds it (TASK-806, AGENTS.md "Backend Conventions" rule 5). Return the entity / array / ' +
+  '`Paginated<T>` from common/pagination instead.';
+
+// What a service hands back: an explicit `return` or an arrow's implicit return,
+// seen through up to two `as` / `satisfies` / `!` wrappers — a cast must not be the
+// way around the rule (`return { data } as Foo`, `{ data } satisfies X as Y`).
+const RETURNS = ':matches(ReturnStatement, ArrowFunctionExpression)';
+const TS_WRAPPER = ':matches(TSAsExpression, TSSatisfiesExpression, TSNonNullExpression)';
+const DATA_KEY = 'ObjectExpression > Property[key.name="data"]';
+
+const SERVICE_ENVELOPE_SELECTORS = [
+  { selector: `${RETURNS} > ${DATA_KEY}`, message: ENVELOPE_MESSAGE },
+  { selector: `${RETURNS} > ${TS_WRAPPER} > ${DATA_KEY}`, message: ENVELOPE_MESSAGE },
+  {
+    selector: `${RETURNS} > ${TS_WRAPPER} > ${TS_WRAPPER} > ${DATA_KEY}`,
+    message: ENVELOPE_MESSAGE,
+  },
+  {
+    selector: 'TSPropertySignature[key.name="data"]',
+    message: ENVELOPE_MESSAGE,
+  },
+];
+
 export default [
   ...nestConfig,
   {
@@ -85,6 +126,9 @@ export default [
     ignores: ['src/prisma/prisma.service.ts'],
     rules: {
       'no-restricted-imports': ['error', SERVICE_DATA_ACCESS_RESTRICTIONS],
+      // Replaces the global list for services (flat config does not merge), so
+      // the global selector is repeated here before the service-only ones.
+      'no-restricted-syntax': ['error', ISOWNER_UNIQUE_SELECTOR, ...SERVICE_ENVELOPE_SELECTORS],
     },
   },
 ];

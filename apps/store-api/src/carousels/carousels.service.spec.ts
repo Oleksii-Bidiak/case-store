@@ -87,7 +87,7 @@ describe('CarouselService', () => {
   describe('resolveProducts via findAllPublished — rule sources', () => {
     it('BESTSELLING delegates to ProductService.findAll with the bestselling params', async () => {
       carouselRepositoryMock.findAllPublished.mockResolvedValue([baseCarousel]);
-      productServiceMock.findAll.mockResolvedValue({ data: [productCard], meta: {} });
+      productServiceMock.findAll.mockResolvedValue({ items: [productCard], meta: {} });
 
       const result = await service.findAllPublished();
 
@@ -103,15 +103,15 @@ describe('CarouselService', () => {
       });
       expect(query.onSale).toBeUndefined();
       expect(query.categoryId).toBeUndefined();
-      expect(result.data[0]).toBeInstanceOf(PublicCarouselEntity);
-      expect(result.data[0].products).toEqual([productCard]);
+      expect(result[0]).toBeInstanceOf(PublicCarouselEntity);
+      expect(result[0].products).toEqual([productCard]);
     });
 
     it('NEWEST delegates with createdAt desc ordering', async () => {
       carouselRepositoryMock.findAllPublished.mockResolvedValue([
         { ...baseCarousel, source: CarouselSource.NEWEST, itemLimit: 8 },
       ]);
-      productServiceMock.findAll.mockResolvedValue({ data: [], meta: {} });
+      productServiceMock.findAll.mockResolvedValue({ items: [], meta: {} });
 
       await service.findAllPublished();
 
@@ -130,7 +130,7 @@ describe('CarouselService', () => {
       carouselRepositoryMock.findAllPublished.mockResolvedValue([
         { ...baseCarousel, source: CarouselSource.ON_SALE },
       ]);
-      productServiceMock.findAll.mockResolvedValue({ data: [], meta: {} });
+      productServiceMock.findAll.mockResolvedValue({ items: [], meta: {} });
 
       await service.findAllPublished();
 
@@ -149,7 +149,7 @@ describe('CarouselService', () => {
       carouselRepositoryMock.findAllPublished.mockResolvedValue([
         { ...baseCarousel, source: CarouselSource.CATEGORY, categoryId: 'category-1' },
       ]);
-      productServiceMock.findAll.mockResolvedValue({ data: [], meta: {} });
+      productServiceMock.findAll.mockResolvedValue({ items: [], meta: {} });
 
       await service.findAllPublished();
 
@@ -172,7 +172,7 @@ describe('CarouselService', () => {
       const result = await service.findAllPublished();
 
       expect(productServiceMock.findAll).not.toHaveBeenCalled();
-      expect(result.data[0].products).toEqual([]);
+      expect(result[0].products).toEqual([]);
     });
   });
 
@@ -185,14 +185,14 @@ describe('CarouselService', () => {
         { productId: 'product-2', sortOrder: 0 },
         { productId: 'product-1', sortOrder: 1 },
       ]);
-      productServiceMock.getCardsByIds.mockResolvedValue({ data: [productCard] });
+      productServiceMock.getCardsByIds.mockResolvedValue([productCard]);
 
       const result = await service.findAllPublished();
 
       expect(carouselRepositoryMock.findItemIds).toHaveBeenCalledWith('carousel-uuid-1');
       expect(productServiceMock.getCardsByIds).toHaveBeenCalledWith(['product-2', 'product-1']);
       expect(productServiceMock.findAll).not.toHaveBeenCalled();
-      expect(result.data[0].products).toEqual([productCard]);
+      expect(result[0].products).toEqual([productCard]);
     });
 
     it('an empty item set resolves to [] without calling getCardsByIds', async () => {
@@ -204,7 +204,7 @@ describe('CarouselService', () => {
       const result = await service.findAllPublished();
 
       expect(productServiceMock.getCardsByIds).not.toHaveBeenCalled();
-      expect(result.data[0].products).toEqual([]);
+      expect(result[0].products).toEqual([]);
     });
   });
 
@@ -214,14 +214,14 @@ describe('CarouselService', () => {
         baseCarousel,
         { ...baseCarousel, id: 'carousel-uuid-3', source: CarouselSource.MANUAL },
       ]);
-      productServiceMock.findAll.mockResolvedValue({ data: [productCard], meta: {} });
+      productServiceMock.findAll.mockResolvedValue({ items: [productCard], meta: {} });
       carouselRepositoryMock.findItemIds.mockResolvedValue([]);
 
       const result = await service.findAllPublished();
 
-      expect(result.data).toHaveLength(2);
-      expect(result.data[1].id).toBe('carousel-uuid-3');
-      expect(result.data[1].products).toEqual([]);
+      expect(result).toHaveLength(2);
+      expect(result[1].id).toBe('carousel-uuid-3');
+      expect(result[1].products).toEqual([]);
     });
   });
 
@@ -230,15 +230,15 @@ describe('CarouselService', () => {
       carouselRepositoryMock.findAllPublished.mockResolvedValue([
         { ...baseCarousel, placement: CarouselPlacement.HOME_TABS },
       ]);
-      productServiceMock.findAll.mockResolvedValue({ data: [productCard], meta: {} });
+      productServiceMock.findAll.mockResolvedValue({ items: [productCard], meta: {} });
 
       const result = await service.findAllPublished({ placement: CarouselPlacement.HOME_TABS });
 
       expect(carouselRepositoryMock.findAllPublished).toHaveBeenCalledWith({
         placement: CarouselPlacement.HOME_TABS,
       });
-      expect(result.data[0]).toBeInstanceOf(PublicCarouselEntity);
-      expect(result.data[0].placement).toBe(CarouselPlacement.HOME_TABS);
+      expect(result[0]).toBeInstanceOf(PublicCarouselEntity);
+      expect(result[0].placement).toBe(CarouselPlacement.HOME_TABS);
     });
 
     it('asks for every placement when the query omits it (pre-TASK-288 behaviour)', async () => {
@@ -255,7 +255,7 @@ describe('CarouselService', () => {
       carouselRepositoryMock.findAllPublished.mockResolvedValue([
         { ...baseCarousel, placement: CarouselPlacement.HOME_TABS },
       ]);
-      productServiceMock.findAll.mockResolvedValue({ data: [productCard], meta: {} });
+      productServiceMock.findAll.mockResolvedValue({ items: [productCard], meta: {} });
 
       await service.findAllPublished({ placement: CarouselPlacement.HOME_TABS });
 
@@ -279,8 +279,8 @@ describe('CarouselService', () => {
 
       const result = await service.findAllAdmin({ status: undefined });
 
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toBeInstanceOf(CarouselEntity);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toBeInstanceOf(CarouselEntity);
       expect(carouselRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
         placement: undefined,
         status: undefined,
@@ -304,7 +304,7 @@ describe('CarouselService', () => {
           status: undefined,
         }),
       );
-      expect(result.data[0].placement).toBe(CarouselPlacement.HOME_TABS);
+      expect(result.items[0].placement).toBe(CarouselPlacement.HOME_TABS);
     });
 
     // TASK-357: an unpaginated read still reports a truthful count.
@@ -853,7 +853,7 @@ describe('CarouselService', () => {
         CarouselPlacement.HOME_RAILS,
         payload.orderedIds,
       );
-      expect(result.data[0]).toBeInstanceOf(CarouselEntity);
+      expect(result.items[0]).toBeInstanceOf(CarouselEntity);
       // The unpaginated shape: one page holding everything (the panel writes this
       // response straight into the list query's cache).
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });

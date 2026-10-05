@@ -31,6 +31,6 @@ export class BannerController {
     type: BannerListResponse,
   })
   async findAll(@Query() query: BannerListQueryDto): Promise<BannerListResponse> {
-    return this.bannerService.findAllPublished(query);
+    return { data: await this.bannerService.findAllPublished(query) };
   }
 }

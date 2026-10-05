@@ -1367,8 +1367,8 @@ describe('OrderService', () => {
 
       const result = await service.getOrders(USER_ID, {});
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(OrderEntity);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toBeInstanceOf(OrderEntity);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 10, totalPages: 1 });
     });
 
@@ -3306,7 +3306,7 @@ describe('OrderService', () => {
 
       const result = await service.getOrders(USER_ID, {});
 
-      expect(result.data[0].internalNotes).toBeUndefined();
+      expect(result.items[0].internalNotes).toBeUndefined();
     });
 
     it('is absent from a guest order read', async () => {
@@ -3332,7 +3332,7 @@ describe('OrderService', () => {
 
       const result = await service.adminGetAllOrders({});
 
-      expect(result.data[0].internalNotes).toBe('Suspected fraud — call before dispatch');
+      expect(result.items[0].internalNotes).toBe('Suspected fraud — call before dispatch');
     });
   });
 
@@ -4733,8 +4733,8 @@ describe('OrderService', () => {
 
       const result = await service.adminGetAllOrders({});
 
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toBeInstanceOf(OrderEntity);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toBeInstanceOf(OrderEntity);
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 10, totalPages: 1 });
     });
 
@@ -4832,7 +4832,7 @@ describe('OrderService', () => {
 
       const result = await service.adminGetAllOrders({});
 
-      expect(result.data[0].customer).toEqual(customer);
+      expect(result.items[0].customer).toEqual(customer);
     });
   });
 

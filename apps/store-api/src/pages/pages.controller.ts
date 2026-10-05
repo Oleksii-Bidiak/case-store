@@ -67,7 +67,8 @@ export class PageController {
     type: PageListResponse,
   })
   async findAll(@Query() query: PageListQueryDto): Promise<PageListResponse> {
-    return this.pageService.findAll(query);
+    const page = await this.pageService.findAll(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get(':slug')

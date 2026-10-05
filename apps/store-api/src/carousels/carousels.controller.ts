@@ -39,6 +39,6 @@ export class CarouselController {
     type: PublicCarouselListResponse,
   })
   async findAll(@Query() query: CarouselListQueryDto): Promise<PublicCarouselListResponse> {
-    return this.carouselService.findAllPublished(query);
+    return { data: await this.carouselService.findAllPublished(query) };
   }
 }

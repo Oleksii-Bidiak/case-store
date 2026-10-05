@@ -75,8 +75,8 @@ describe('NewsletterService', () => {
 
       const result = await service.findAll({ page: 1, limit: 20 });
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0].email).toBe('user@example.com');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].email).toBe('user@example.com');
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
     });
 

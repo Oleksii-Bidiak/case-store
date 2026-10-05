@@ -167,7 +167,7 @@ describe('Carousel placement (e2e)', () => {
   beforeEach(() => {
     jest.resetAllMocks();
     revalidationMock.revalidate.mockResolvedValue(undefined);
-    productServiceMock.findAll.mockResolvedValue({ data: [], meta: {} });
+    productServiceMock.findAll.mockResolvedValue({ items: [], meta: {} });
     carouselRepositoryMock.findAllPublished.mockImplementation((params: FindPublishedParams = {}) =>
       Promise.resolve(
         publishedRows.filter(

@@ -72,14 +72,14 @@ describe('RBAC guards (e2e)', () => {
     update: jest.fn().mockResolvedValue({ id: 'prod-rbac-1', ...validProduct, price: 19.99 }),
     adminFindAll: jest
       .fn()
-      .mockResolvedValue({ data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } }),
+      .mockResolvedValue({ items: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } }),
   };
 
   // The admin order list is the PII surface this suite guards: it carries
   // customer emails, phones and delivery addresses.
   const orderServiceMock = {
     adminGetAllOrders: jest.fn().mockResolvedValue({
-      data: [
+      items: [
         {
           id: 'order-rbac-1',
           customerEmail: 'shopper@example.com',

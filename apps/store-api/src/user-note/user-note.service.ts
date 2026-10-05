@@ -4,9 +4,12 @@ import { UserNoteEntity } from './entities';
 import { CreateUserNoteDto } from './dto';
 import { UserRepository } from '../user';
 
-/** What the notes panel renders: the newest entries plus the true total. */
-export interface UserNoteListResult {
-  data: UserNoteEntity[];
+/**
+ * What the notes panel renders: the newest entries plus the true total. Not a
+ * `Paginated` page — the journal is capped, never paged, so it has no page number.
+ */
+export interface UserNoteList {
+  items: UserNoteEntity[];
   meta: { total: number; limit: number };
 }
 
@@ -38,7 +41,7 @@ export class UserNoteService {
    * list: on a card reached by a pasted id, "no notes" and "no such customer" must
    * not look the same.
    */
-  async findByUser(userId: string): Promise<UserNoteListResult> {
+  async findByUser(userId: string): Promise<UserNoteList> {
     await this.requireCustomer(userId);
 
     const [notes, total] = await Promise.all([
@@ -47,7 +50,7 @@ export class UserNoteService {
     ]);
 
     return {
-      data: notes.map((note) => UserNoteEntity.fromPrisma(note)),
+      items: notes.map((note) => UserNoteEntity.fromPrisma(note)),
       meta: { total, limit: USER_NOTES_LIMIT },
     };
   }

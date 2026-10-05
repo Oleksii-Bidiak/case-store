@@ -53,9 +53,9 @@ describe('FaqService', () => {
 
       const result = await service.findAllActive();
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(FaqItemEntity);
-      expect(result.data[0].question).toBe('Скільки коштує доставка?');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBeInstanceOf(FaqItemEntity);
+      expect(result[0].question).toBe('Скільки коштує доставка?');
     });
   });
 
@@ -65,7 +65,7 @@ describe('FaqService', () => {
 
       const result = await service.findAllAdmin();
 
-      expect(result.data[0]).toBeInstanceOf(FaqItemEntity);
+      expect(result.items[0]).toBeInstanceOf(FaqItemEntity);
     });
 
     // TASK-357: an unpaginated read still reports a truthful count.
@@ -183,7 +183,7 @@ describe('FaqService', () => {
       const result = await service.reorder({ orderedIds: ['faq-uuid-1'] });
 
       expect(repositoryMock.reorderAll).toHaveBeenCalledWith(['faq-uuid-1']);
-      expect(result.data[0]).toBeInstanceOf(FaqItemEntity);
+      expect(result.items[0]).toBeInstanceOf(FaqItemEntity);
       // The unpaginated shape: one page holding everything (the panel writes this
       // response straight into the list query's cache).
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 1, totalPages: 1 });

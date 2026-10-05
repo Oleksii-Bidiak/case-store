@@ -18,24 +18,7 @@ import {
   CUSTOMER_CARD_COUPONS_LIMIT,
   CUSTOMER_CARD_MESSAGES_LIMIT,
 } from './user-admin-card.types';
-
-/**
- * Pagination metadata returned alongside paginated results.
- */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Paginated response envelope for user lists.
- */
-interface PaginatedUsersResponse {
-  data: UserEntity[];
-  meta: PaginationMeta;
-}
+import type { Paginated } from '../common/pagination';
 
 @Injectable()
 export class UserService {
@@ -122,7 +105,7 @@ export class UserService {
    * Supports filtering by role, active status, and text search.
    * Returns a paginated response with metadata.
    */
-  async findAll(query: UserListQueryDto): Promise<PaginatedUsersResponse> {
+  async findAll(query: UserListQueryDto): Promise<Paginated<UserEntity>> {
     const params: FindAllParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
@@ -138,7 +121,7 @@ export class UserService {
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      data: users.map((user) => UserEntity.fromPrisma(user)),
+      items: users.map((user) => UserEntity.fromPrisma(user)),
       meta: {
         total,
         page: params.page,

@@ -363,7 +363,7 @@ describe('ContactService', () => {
 
       const result = await service.findAllAdmin({ page: 1, limit: 20 });
 
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1, unread: 3 });
       expect(contactRepositoryMock.countByStatus).toHaveBeenCalledWith(ContactMessageStatus.NEW);
     });
@@ -408,7 +408,11 @@ describe('ContactService', () => {
 
       const result = await service.findAllAdmin({ page: 1, limit: 20 });
 
-      expect(result.data.map((m) => m.matchedUserId)).toEqual(['user-uuid-1', null, 'user-uuid-1']);
+      expect(result.items.map((m) => m.matchedUserId)).toEqual([
+        'user-uuid-1',
+        null,
+        'user-uuid-1',
+      ]);
       // One batched call per page — never N+1, and only distinct emails.
       expect(contactRepositoryMock.findMatchingUserIds).toHaveBeenCalledTimes(1);
       expect(contactRepositoryMock.findMatchingUserIds).toHaveBeenCalledWith([

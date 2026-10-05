@@ -251,8 +251,8 @@ describe('DiscountService.findActivePublic (TASK-179)', () => {
 
     const result = await service.findActivePublic();
 
-    expect(result.data).toHaveLength(1);
-    const entity = result.data[0];
+    expect(result).toHaveLength(1);
+    const entity = result[0];
     expect(entity).toEqual({
       code: 'SUMMER10',
       type: DiscountType.PERCENT,
@@ -280,7 +280,7 @@ describe('DiscountService.findActivePublic (TASK-179)', () => {
 
     const result = await service.findActivePublic();
 
-    expect(result.data.map((d) => d.code)).toEqual(['ALWAYS']);
+    expect(result.map((d) => d.code)).toEqual(['ALWAYS']);
   });
 
   it('excludes a discount whose global cap is exhausted', async () => {
@@ -291,7 +291,7 @@ describe('DiscountService.findActivePublic (TASK-179)', () => {
 
     const result = await service.findActivePublic();
 
-    expect(result.data.map((d) => d.code)).toEqual(['LIVE']);
+    expect(result.map((d) => d.code)).toEqual(['LIVE']);
   });
 
   it('queries the repository with the current time', async () => {

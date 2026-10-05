@@ -1,7 +1,7 @@
 import { Controller, Get, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiExtraModels, ApiProperty } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { SearchService, type SearchResults } from './search.service';
+import { SearchService } from './search.service';
 import { SearchQueryDto, SuggestQueryDto } from './dto';
 import { SearchSuggestionEntity } from './entities';
 import { PublicProductEntity } from '../product/entities';
@@ -62,10 +62,11 @@ export class SearchController {
   @Throttle({ default: { limit: 60, ttl: 60000 } })
   @ApiOperation({ summary: 'Search products (paginated, typo-tolerant)', operationId: 'search' })
   @ApiResponse({ status: 200, description: 'Matching products', type: SearchResultsResponse })
-  async search(@Query() query: SearchQueryDto): Promise<SearchResults> {
+  async search(@Query() query: SearchQueryDto): Promise<SearchResultsResponse> {
     // Thin by design (TASK-420): the DTO → filters mapping moved into the
     // service, which is where the slug → id resolution it now needs belongs.
-    return this.searchService.searchFromQuery(query);
+    const page = await this.searchService.searchFromQuery(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get('suggest')

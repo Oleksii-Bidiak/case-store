@@ -598,8 +598,8 @@ describe('SearchService', () => {
         filter: ['isActive = true'],
       });
       // Order follows Meili relevance (product-2 first), not the repo order.
-      expect(result.data.map((p) => p.id)).toEqual(['product-2', 'product-1']);
-      expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
+      expect(result.items.map((p) => p.id)).toEqual(['product-2', 'product-1']);
+      expect(result.items[0]).toBeInstanceOf(PublicProductEntity);
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
     });
 
@@ -629,7 +629,7 @@ describe('SearchService', () => {
       const result = await service.search('case', 9, 12);
 
       expect(repo.findAll).not.toHaveBeenCalled();
-      expect(result.data).toEqual([]);
+      expect(result.items).toEqual([]);
       expect(result.meta).toEqual({ total: 25, page: 9, limit: 12, totalPages: 3 });
     });
 
@@ -658,8 +658,8 @@ describe('SearchService', () => {
           limit: 20,
         }),
       );
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toBeInstanceOf(PublicProductEntity);
     });
 
     it('falls back to Postgres when the index answers with zero hits (TASK-376)', async () => {
@@ -674,7 +674,7 @@ describe('SearchService', () => {
       expect(repo.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ search: 'case', isActive: true, categoryActiveOnly: true }),
       );
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
       expect(result.meta.total).toBe(1);
     });
 
@@ -706,7 +706,7 @@ describe('SearchService', () => {
       expect(repo.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ search: 'case', isActive: true, categoryActiveOnly: true }),
       );
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
       expect(result.meta.total).toBe(1);
     });
   });
@@ -900,7 +900,7 @@ describe('SearchService', () => {
       expect(repo.findBySkuIgnoringCase).toHaveBeenCalledWith('RN13PRO-BK2');
       // An SKU is a code, not a phrase — it must not be typo-corrected or ranked.
       expect(meili.search).not.toHaveBeenCalled();
-      expect(result.data.map((p) => p.id)).toEqual(['product-1']);
+      expect(result.items.map((p) => p.id)).toEqual(['product-1']);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
     });
 
@@ -923,7 +923,7 @@ describe('SearchService', () => {
 
         expect(repo.findBySkuIgnoringCase).toHaveBeenCalledWith('ip15-1');
         expect(meili.search).not.toHaveBeenCalled();
-        expect(result.data.map((p) => p.id)).toEqual(['product-1']);
+        expect(result.items.map((p) => p.id)).toEqual(['product-1']);
       },
     );
 
@@ -935,7 +935,7 @@ describe('SearchService', () => {
       const result = await service.search('RN13PRO-BK2', 1, 20);
 
       expect(meili.search).toHaveBeenCalled();
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
     });
 
     it('drops the hit when the product is no longer card-visible (withdrawn category)', async () => {
@@ -946,7 +946,7 @@ describe('SearchService', () => {
 
       const result = await service.search('RN13PRO-BK2', 1, 20);
 
-      expect(result.data).toEqual([]);
+      expect(result.items).toEqual([]);
       expect(repo.findAll).toHaveBeenCalled();
     });
 

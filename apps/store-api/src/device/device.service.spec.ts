@@ -71,8 +71,8 @@ describe('DeviceService', () => {
       const result = await service.getBrands(true);
 
       expect(deviceRepositoryMock.findBrands).toHaveBeenCalledWith(true);
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toMatchObject({ id: 'brand-1', name: 'Apple', slug: 'apple' });
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({ id: 'brand-1', name: 'Apple', slug: 'apple' });
     });
   });
 
@@ -92,7 +92,7 @@ describe('DeviceService', () => {
         limit: undefined,
         search: undefined,
       });
-      expect(result.data[0]).toMatchObject({ id: 'brand-1', modelCount: 3 });
+      expect(result.items[0]).toMatchObject({ id: 'brand-1', modelCount: 3 });
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 1, totalPages: 1 });
     });
 
@@ -148,7 +148,7 @@ describe('DeviceService', () => {
         search: 'pro',
       });
       expect(deviceRepositoryMock.findModels).not.toHaveBeenCalled();
-      expect(result.data[0]).toEqual({
+      expect(result[0]).toEqual({
         id: 'model-1',
         deviceBrandId: 'brand-1',
         name: 'iPhone 15 Pro',
@@ -171,7 +171,7 @@ describe('DeviceService', () => {
 
       const result = await service.getModels({});
 
-      expect(Object.keys(result.data[0]).sort()).toEqual(['deviceBrandId', 'id', 'name', 'slug']);
+      expect(Object.keys(result[0]).sort()).toEqual(['deviceBrandId', 'id', 'name', 'slug']);
     });
   });
 
@@ -184,7 +184,7 @@ describe('DeviceService', () => {
 
       const result = await service.getModelsPaginated({});
 
-      expect(result.data[0]).toMatchObject({
+      expect(result.items[0]).toMatchObject({
         metaTitle: 'T',
         metaDescription: 'D',
         description: 'L',
@@ -327,8 +327,8 @@ describe('DeviceService', () => {
       const result = await service.reorderBrands({ orderedIds: [b, a] }, 'admin-1');
 
       expect(deviceRepositoryMock.reorderBrands).toHaveBeenCalledWith([b, a]);
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toMatchObject({ id: b, modelCount: 4 });
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toMatchObject({ id: b, modelCount: 4 });
       // Shape parity with the admin list — the panel writes this straight into its cache.
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
       expect(pinoLoggerMock.info).toHaveBeenCalledWith(

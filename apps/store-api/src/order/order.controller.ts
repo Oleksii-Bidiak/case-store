@@ -27,7 +27,8 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { FailClosedThrottle, OrderLookupThrottle } from '../throttler';
-import { OrderService, PaginationMeta } from './order.service';
+import { OrderService } from './order.service';
+import type { PaginationMeta } from '../common/pagination';
 import {
   OrderEntity,
   OrderItemEntity,
@@ -350,7 +351,8 @@ export class OrderController {
     @CurrentUser('id') userId: string,
     @Query() query: OrderListQueryDto,
   ): Promise<{ data: OrderEntity[]; meta: PaginationMeta }> {
-    return this.orderService.getOrders(userId, query);
+    const page = await this.orderService.getOrders(userId, query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**

@@ -69,7 +69,7 @@ export class AuditController {
     data: AuditLogEntity[];
     meta: AuditLogPaginationMeta;
   }> {
-    return this.auditService.findMany({
+    const page = await this.auditService.findMany({
       page: query.page ?? 1,
       limit: query.limit ?? 50,
       actorId: query.actorId,
@@ -82,5 +82,6 @@ export class AuditController {
       sortBy: query.sortBy,
       sortOrder: query.sortOrder,
     });
+    return { data: page.items, meta: page.meta };
   }
 }

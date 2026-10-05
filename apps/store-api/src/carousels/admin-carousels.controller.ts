@@ -125,7 +125,8 @@ export class AdminCarouselController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminCarouselListQueryDto): Promise<AdminCarouselListResponse> {
-    return this.carouselService.findAllAdmin(query);
+    const page = await this.carouselService.findAllAdmin(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**
@@ -160,7 +161,8 @@ export class AdminCarouselController {
     description: 'REORDER_STALE — another admin changed this placement first',
   })
   async reorder(@Body() dto: ReorderCarouselsDto): Promise<AdminCarouselListResponse> {
-    return this.carouselService.reorderPlacement(dto);
+    const page = await this.carouselService.reorderPlacement(dto);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get(':id')

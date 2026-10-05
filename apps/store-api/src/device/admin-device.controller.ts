@@ -137,7 +137,8 @@ export class AdminDeviceController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findBrands(@Query() query: DeviceBrandListQueryDto): Promise<AdminDeviceBrandListResponse> {
-    return this.deviceService.getBrandsWithCount(query);
+    const page = await this.deviceService.getBrandsWithCount(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**
@@ -171,7 +172,8 @@ export class AdminDeviceController {
     @Body() dto: ReorderDeviceBrandsDto,
     @CurrentUser('id') adminUserId: string,
   ): Promise<AdminDeviceBrandListResponse> {
-    return this.deviceService.reorderBrands(dto, adminUserId);
+    const page = await this.deviceService.reorderBrands(dto, adminUserId);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get('brands/:id')
@@ -247,7 +249,8 @@ export class AdminDeviceController {
   @ApiResponse({ status: 200, description: 'Device models', type: AdminDeviceModelListResponse })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findModels(@Query() query: DeviceModelListQueryDto): Promise<AdminDeviceModelListResponse> {
-    return this.deviceService.getModelsPaginated(query);
+    const page = await this.deviceService.getModelsPaginated(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get('models/:id')

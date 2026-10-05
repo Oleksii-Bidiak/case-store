@@ -30,13 +30,15 @@ describe('AdminUserNoteController (TASK-430)', () => {
     controller = module.get(AdminUserNoteController);
   });
 
-  it('delegates the read to the service', async () => {
-    serviceMock.findByUser.mockResolvedValue({ data: [], meta: { total: 0, limit: 50 } });
+  it('delegates the read to the service and builds the { data, meta } envelope', async () => {
+    const notes = [{ id: 'note-uuid-1' }];
+    const meta = { total: 1, limit: 50 };
+    serviceMock.findByUser.mockResolvedValue({ items: notes, meta });
 
     const result = await controller.list(CUSTOMER_ID);
 
     expect(serviceMock.findByUser).toHaveBeenCalledWith(CUSTOMER_ID);
-    expect(result.meta.total).toBe(0);
+    expect(result).toEqual({ data: notes, meta });
   });
 
   it('takes the author from the access token, never from the body', async () => {

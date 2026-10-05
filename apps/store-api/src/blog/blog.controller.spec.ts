@@ -41,13 +41,14 @@ describe('Blog controllers', () => {
   });
 
   describe('public', () => {
-    it('findAll delegates to the service and returns the paginated envelope', async () => {
-      const payload = { data: [], meta: { total: 0, page: 1, limit: 9, totalPages: 0 } };
-      serviceMock.findAll.mockResolvedValue(payload);
+    it('findAll builds the paginated { data, meta } envelope from the service page', async () => {
+      const posts = [{ id: 'p1' }];
+      const meta = { total: 1, page: 1, limit: 9, totalPages: 1 };
+      serviceMock.findAll.mockResolvedValue({ items: posts, meta });
 
       const result = await publicCtrl.findAll({ page: 1, limit: 9 });
 
-      expect(result).toBe(payload);
+      expect(result).toEqual({ data: posts, meta });
       expect(serviceMock.findAll).toHaveBeenCalled();
     });
 

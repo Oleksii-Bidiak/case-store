@@ -56,8 +56,8 @@ describe('Banner controllers', () => {
   });
 
   describe('BannerController (public)', () => {
-    it('returns the published banner list envelope', async () => {
-      serviceMock.findAllPublished.mockResolvedValue({ data: [entity] });
+    it('wraps the published banner list in a { data } envelope', async () => {
+      serviceMock.findAllPublished.mockResolvedValue([entity]);
 
       const result = await publicController.findAll({ placement: BannerPlacement.HERO_SLIDE });
 
@@ -69,9 +69,9 @@ describe('Banner controllers', () => {
   });
 
   describe('AdminBannerController', () => {
-    it('list forwards the query to the service', async () => {
+    it('list forwards the query and builds the { data, meta } envelope', async () => {
       const meta = { total: 1, page: 1, limit: 1, totalPages: 1 };
-      serviceMock.findAllAdmin.mockResolvedValue({ data: [entity], meta });
+      serviceMock.findAllAdmin.mockResolvedValue({ items: [entity], meta });
 
       const result = await adminController.findAll({ status: PublishStatus.DRAFT });
 

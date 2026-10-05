@@ -83,7 +83,8 @@ export class ProductGroupController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: ProductGroupListQueryDto): Promise<ProductGroupListResponse> {
-    return this.service.findAll(query);
+    const page = await this.service.findAll(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get(':id')

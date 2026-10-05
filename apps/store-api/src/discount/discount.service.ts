@@ -11,17 +11,10 @@ import { DiscountEntity, DiscountPreviewEntity, PublicDiscountEntity } from './e
 import { CreateDiscountDto, UpdateDiscountDto, DiscountListQueryDto } from './dto';
 import { DiscountErrorCode, badDiscount, conflictDiscount } from './discount.errors';
 import { centsToString, toCents } from '../addon-service/money.util';
+import type { Paginated } from '../common/pagination';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-
-/** Pagination metadata returned alongside an admin discount list. */
-export interface DiscountPaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
 
 /**
  * DiscountService — promo-code validation, amount calculation, redemption, and
@@ -207,21 +200,19 @@ export class DiscountService {
    * no id). No pagination: a curated promo list is bounded (dozens, not
    * hundreds).
    */
-  async findActivePublic(): Promise<{ data: PublicDiscountEntity[] }> {
+  async findActivePublic(): Promise<PublicDiscountEntity[]> {
     const candidates = await this.discountRepository.findActiveWindowCandidates(new Date());
     const redeemable = candidates.filter(
       (discount) =>
         discount.maxRedemptions === null || discount.redeemedCount < discount.maxRedemptions,
     );
-    return { data: redeemable.map((discount) => PublicDiscountEntity.fromPrisma(discount)) };
+    return redeemable.map((discount) => PublicDiscountEntity.fromPrisma(discount));
   }
 
   // ─── Admin CRUD ─────────────────────────────────────────────────────────
 
   /** Admin — paginated discount list with optional active filter + code search. */
-  async list(
-    query: DiscountListQueryDto,
-  ): Promise<{ data: DiscountEntity[]; meta: DiscountPaginationMeta }> {
+  async list(query: DiscountListQueryDto): Promise<Paginated<DiscountEntity>> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
 
@@ -235,7 +226,7 @@ export class DiscountService {
     });
 
     return {
-      data: discounts.map((d) => DiscountEntity.fromPrisma(d)),
+      items: discounts.map((d) => DiscountEntity.fromPrisma(d)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

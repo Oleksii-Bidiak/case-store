@@ -24,6 +24,23 @@ export const PRODUCT_DETAIL_SLUG_PREFIX = 'product:detail:slug';
 export const PRODUCT_DETAIL_ID_PREFIX = 'product:detail:id';
 
 /**
+ * Shape version of a cached VALUE, written into the key BELOW its purge prefix.
+ *
+ * Bump it in every key whose cached value changes shape. Redis outlives a deploy,
+ * so without it the new code would read an entry the old code wrote and hand the
+ * old shape on as if it were the new one — for the whole TTL. Sitting below the
+ * prefix (`product:list:v2:…`, not `product:list-v2:…`) keeps
+ * `delByPrefix(PRODUCT_LIST_PREFIX)` / `delByPrefix(BRAND_LIST_PREFIX)` purging
+ * both generations, so nothing the old code left behind can outlive a write.
+ *
+ * `v2` (TASK-806): services stopped building the `{ data, meta }` response
+ * envelope. The product listing caches `{ items, meta }`, the slug detail the bare
+ * entity, the brand list the bare array. The id detail always cached the bare
+ * entity and the facet counts never held an envelope, so their keys are unchanged.
+ */
+const VALUE_SHAPE_VERSION = 'v2';
+
+/**
  * Prefix shared by all public brand-list cache entries (TASK-414). Its own
  * namespace, not `product:`, so `delByPrefix(PRODUCT_LIST_PREFIX)` cannot
  * quietly clear it (or miss it) by accident — `ProductService` purges both
@@ -38,12 +55,12 @@ export const BRAND_LIST_PREFIX = 'brand:list';
  * the two can never collide.
  */
 export function brandListCategoryKey(categoryId?: string): string {
-  return `${BRAND_LIST_PREFIX}:category=${categoryId ?? 'all'}`;
+  return `${BRAND_LIST_PREFIX}:${VALUE_SHAPE_VERSION}:category=${categoryId ?? 'all'}`;
 }
 
 /** Cache key for a product-detail-by-slug response. */
 export function productDetailSlugKey(slug: string): string {
-  return `${PRODUCT_DETAIL_SLUG_PREFIX}:${slug}`;
+  return `${PRODUCT_DETAIL_SLUG_PREFIX}:${VALUE_SHAPE_VERSION}:${slug}`;
 }
 
 /** Cache key for a product-detail-by-id response. */
@@ -193,7 +210,7 @@ function encodeSegment(value: string): string {
  * - `onSale: false` / `inStock: false` are treated as absent (TASK-541).
  */
 export function buildProductListKey(params: ProductListKeyParams): string {
-  return `${PRODUCT_LIST_PREFIX}:${serializeSegments(params, KEY_FIELDS)}`;
+  return `${PRODUCT_LIST_PREFIX}:${VALUE_SHAPE_VERSION}:${serializeSegments(params, KEY_FIELDS)}`;
 }
 
 /**
@@ -245,7 +262,8 @@ function serializeSegments<T extends object>(params: T, fields: ReadonlyArray<ke
  * CRUD (`AttributeDefinitionService`), which purges this prefix itself.
  *
  * It cannot collide with a listing entry: every listing key opens with
- * `page=` (the page is always serialized), this one with `facets:`.
+ * `v2:page=` (the version, then the page, which is always serialized), this one
+ * with `facets:`.
  */
 export const FILTERABLE_SPECS_PREFIX = `${PRODUCT_LIST_PREFIX}:facets`;
 

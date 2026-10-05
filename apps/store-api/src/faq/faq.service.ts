@@ -14,6 +14,7 @@ import {
 } from './dto';
 import { RevalidationNotifier } from '../publishing';
 import { reorderErrorToHttp } from '../common/reorder';
+import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /**
  * Cache tag purged on the storefront after every FAQ write. The storefront's
@@ -23,34 +24,12 @@ import { reorderErrorToHttp } from '../common/reorder';
 const FAQ_TAG = 'faq';
 
 /**
- * Response envelope for a plain FAQ list.
- */
-interface FaqListResponse {
-  data: FaqItemEntity[];
-}
-
-/** Pagination metadata carried by the admin FAQ list response. */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Response envelope for the ADMIN FAQ list. `meta` is present even for an
- * unpaginated read so the panel can show a truthful row count without branching
- * on whether it asked for pages.
- */
-interface AdminFaqListResponse {
-  data: FaqItemEntity[];
-  meta: PaginationMeta;
-}
-
-/**
  * Business logic for the global FAQ list (TASK-242). Thin over the repository:
  * existence checks on mutation and a storefront revalidation after every write.
  * Never touches PrismaClient directly.
+ *
+ * The ADMIN list is a `Paginated` page even for an unpaginated read, so the panel
+ * can show a truthful row count without branching on whether it asked for pages.
  */
 @Injectable()
 export class FaqService {
@@ -62,9 +41,9 @@ export class FaqService {
   /**
    * List all active FAQ items (public storefront). Ordered by sortOrder.
    */
-  async findAllActive(): Promise<FaqListResponse> {
+  async findAllActive(): Promise<FaqItemEntity[]> {
     const items = await this.repository.findAllActive();
-    return { data: items.map((item) => FaqItemEntity.fromPrisma(item)) };
+    return items.map((item) => FaqItemEntity.fromPrisma(item));
   }
 
   /**
@@ -72,7 +51,7 @@ export class FaqService {
    * searched by question and paginated. Omitting `page`/`limit` returns the
    * complete list (TASK-357).
    */
-  async findAllAdmin(query: AdminFaqListQueryDto = {}): Promise<AdminFaqListResponse> {
+  async findAllAdmin(query: AdminFaqListQueryDto = {}): Promise<Paginated<FaqItemEntity>> {
     const params: FindAllAdminParams = {
       page: query.page,
       limit: query.limit,
@@ -81,7 +60,7 @@ export class FaqService {
     const { items, total } = await this.repository.findAllAdmin(params);
 
     return {
-      data: items.map((item) => FaqItemEntity.fromPrisma(item)),
+      items: items.map((item) => FaqItemEntity.fromPrisma(item)),
       meta: this.buildMeta(total, query.page, query.limit),
     };
   }
@@ -161,7 +140,7 @@ export class FaqService {
    * `/info` FAQ accordion, so any reorder that lands changes what a shopper sees — even
    * one that only moves hidden items changes the ranks around them.
    */
-  async reorder(dto: ReorderFaqItemsDto): Promise<AdminFaqListResponse> {
+  async reorder(dto: ReorderFaqItemsDto): Promise<Paginated<FaqItemEntity>> {
     let items;
     let total;
     try {
@@ -174,10 +153,10 @@ export class FaqService {
 
     // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
     // response straight into the list query's cache (`useReorderLifecycle` →
-    // `setQueryData`), and an envelope missing `meta` would blank the row counter the
+    // `setQueryData`), and a response missing `meta` would blank the row counter the
     // moment someone drags a row.
     return {
-      data: items.map((item) => FaqItemEntity.fromPrisma(item)),
+      items: items.map((item) => FaqItemEntity.fromPrisma(item)),
       meta: this.buildMeta(total),
     };
   }

@@ -4,6 +4,7 @@ import { Prisma, UserRole } from '@prisma/client';
 import { AuditRepository, type FindAuditLogsParams } from './audit.repository';
 import { AuditLogEntity } from './entities';
 import { sanitizeForAudit } from './audit.sanitize';
+import type { Paginated } from '../common/pagination';
 
 /** One entry to record. Everything but `action` is optional — see the model. */
 export interface RecordAuditParams {
@@ -80,14 +81,11 @@ export class AuditService {
   }
 
   /** Paginated read for the admin log viewer. */
-  async findMany(params: FindAuditLogsParams): Promise<{
-    data: AuditLogEntity[];
-    meta: { total: number; page: number; limit: number; totalPages: number };
-  }> {
+  async findMany(params: FindAuditLogsParams): Promise<Paginated<AuditLogEntity>> {
     const { entries, total } = await this.repository.findMany(params);
 
     return {
-      data: entries.map((entry) => AuditLogEntity.fromPrisma(entry)),
+      items: entries.map((entry) => AuditLogEntity.fromPrisma(entry)),
       meta: {
         total,
         page: params.page,

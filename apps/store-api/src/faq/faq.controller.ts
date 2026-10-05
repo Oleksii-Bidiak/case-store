@@ -36,6 +36,6 @@ export class FaqController {
     type: FaqListResponse,
   })
   async findAll(): Promise<FaqListResponse> {
-    return this.faqService.findAllActive();
+    return { data: await this.faqService.findAllActive() };
   }
 }

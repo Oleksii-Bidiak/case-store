@@ -82,13 +82,14 @@ describe('AdminNewsletterController', () => {
     controller = module.get<AdminNewsletterController>(AdminNewsletterController);
   });
 
-  it('returns the paginated list envelope from the service', async () => {
-    const payload = { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } };
-    serviceMock.findAll.mockResolvedValue(payload);
+  it('builds the paginated { data, meta } envelope from the service page (TASK-806)', async () => {
+    const rows = [{ email: 'user@example.com' }];
+    const meta = { total: 1, page: 1, limit: 20, totalPages: 1 };
+    serviceMock.findAll.mockResolvedValue({ items: rows, meta });
 
     const result = await controller.findAll({});
 
-    expect(result).toBe(payload);
+    expect(result).toEqual({ data: rows, meta });
   });
 
   it('sends CSV with attachment + text/csv headers', async () => {

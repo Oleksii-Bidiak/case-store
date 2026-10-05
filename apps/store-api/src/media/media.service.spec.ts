@@ -105,15 +105,15 @@ describe('MediaService', () => {
   });
 
   describe('findAll', () => {
-    it('returns the { data, meta } envelope with honest pagination', async () => {
+    it('returns one page of items with honest pagination meta', async () => {
       repository.findAll.mockResolvedValue({ assets: [makeAsset()], total: 125 });
       usage.findUsage.mockResolvedValue(new Map([[ASSET_URL, []]]));
 
       const result = await service.findAll({ page: 2, limit: 24 });
 
       expect(result.meta).toEqual({ total: 125, page: 2, limit: 24, totalPages: 6 });
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0].url).toBe(ASSET_URL);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].url).toBe(ASSET_URL);
     });
 
     it('scans usage ONCE for the whole page, not once per row', async () => {
@@ -130,7 +130,7 @@ describe('MediaService', () => {
 
       expect(usage.findUsage).toHaveBeenCalledTimes(1);
       expect(usage.findUsage).toHaveBeenCalledWith([ASSET_URL, second.url]);
-      expect(result.data.map((row) => row.usedInCount)).toEqual([1, 0]);
+      expect(result.items.map((row) => row.usedInCount)).toEqual([1, 0]);
     });
 
     it('counts usage from the SAME source the delete gate refuses on', async () => {
@@ -148,7 +148,7 @@ describe('MediaService', () => {
       );
 
       const listed = await service.findAll({});
-      expect(listed.data[0].usedInCount).toBe(1);
+      expect(listed.items[0].usedInCount).toBe(1);
 
       usage.findUsageForUrl.mockResolvedValue([
         { kind: MEDIA_USAGE_KINDS.PAGE_CONTENT, entityId: 'page-1', label: 'Доставка' },

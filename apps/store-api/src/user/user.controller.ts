@@ -202,7 +202,8 @@ export class UserController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: UserListQueryDto): Promise<UserListResponse> {
-    return this.userService.findAll(query);
+    const page = await this.userService.findAll(query);
+    return { data: page.items, meta: page.meta };
   }
 
   // `POST /`, `POST /:id/password` and `PATCH /:id/role` used to be here.

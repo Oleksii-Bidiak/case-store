@@ -30,6 +30,7 @@ import {
 import { ProductListQueryDto, parseSpecFilters, serializeSpecFilters } from './dto';
 import { generateSlug } from '../common/utils';
 import { sanitizeRichText } from '../common/sanitize';
+import type { Paginated } from '../common/pagination';
 import {
   CacheService,
   buildProductListKey,
@@ -51,51 +52,19 @@ import { CATALOGUE_REVALIDATE_TARGET, RevalidationNotifier } from '../publishing
 const DEFAULT_CACHE_TTL_SECONDS = 300;
 
 /**
- * Pagination metadata returned alongside paginated results.
+ * A product together with the relations its detail page renders: category,
+ * group (siblings + axes) and images. The public read carries the public-safe
+ * {@link PublicProductEntity}; the admin preview (TASK-155) the full
+ * {@link ProductEntity} with raw `stock` and `isActive`.
+ *
+ * Lists are `Paginated<PublicProductEntity>` (public) and
+ * `Paginated<ProductEntity>` (admin, TASK-254 — raw `stock`, `isActive` and the
+ * derived `reservedQty`/`physicalQty`, which the public list never exposes).
  */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Paginated response envelope for product lists.
- */
-interface PaginatedProductsResponse {
-  data: PublicProductEntity[];
-  meta: PaginationMeta;
-}
-
-/**
- * Admin paginated list envelope (TASK-254). Unlike the public
- * {@link PaginatedProductsResponse}, items are full {@link ProductEntity}
- * objects carrying raw `stock`, `isActive`, and the derived
- * `reservedQty`/`physicalQty` — the public list deliberately never exposes these.
- */
-interface AdminPaginatedProductsResponse {
-  data: ProductEntity[];
-  meta: PaginationMeta;
-}
-
-/**
- * Product detail response with category, group (siblings + axes), and images.
- */
-interface ProductDetailResponse {
-  data: PublicProductEntity;
-  category: ProductCategoryEntity;
-  group: ProductGroupEntity | null;
-  images: ProductImageEntity[];
-}
-
-/**
- * Admin product detail response. Mirrors {@link ProductDetailResponse} but
- * carries the full {@link ProductEntity} (raw `stock`, `isActive`) instead of
- * the public-safe shape — used by the admin preview path (TASK-155).
- */
-interface ProductDetailAdminResponse {
-  data: ProductEntity;
+export interface ProductDetail<
+  P extends PublicProductEntity | ProductEntity = PublicProductEntity,
+> {
+  product: P;
   category: ProductCategoryEntity;
   group: ProductGroupEntity | null;
   images: ProductImageEntity[];
@@ -141,7 +110,7 @@ export class ProductService {
    * The admin table uses {@link adminFindAll} instead.
    * Cache-aside: a cache hit skips the database entirely.
    */
-  async findAll(query: ProductListQueryDto): Promise<PaginatedProductsResponse> {
+  async findAll(query: ProductListQueryDto): Promise<Paginated<PublicProductEntity>> {
     // Slug → id, once, before anything else (TASK-420). At most three indexed
     // point lookups, and none at all on the unfiltered listing — the hot path is
     // unchanged. It cannot be deferred past the cache read: the key is keyed on
@@ -180,7 +149,7 @@ export class ProductService {
       sortOrder: listParams.sortOrder,
       isActive: true,
     });
-    const cached = await this.cache.get<PaginatedProductsResponse>(cacheKey);
+    const cached = await this.cache.get<Paginated<PublicProductEntity>>(cacheKey);
     if (cached) {
       return cached;
     }
@@ -211,14 +180,14 @@ export class ProductService {
       deleted: undefined,
       categoryIds: await this.resolveSubtreeIds(filters.categoryId),
     };
-    const response = await this.listFromDb(params);
+    const page = await this.listFromDb(params);
 
-    // NOTE: as of the line-item contract change, cached list entries hold
-    // `PublicProductEntity` items (no raw `stock`, with `inStock`/`lowStock`).
-    // Any Redis warm-up entries written before this deploy carry the old shape
-    // and must be evicted on rollout — the cache TTL otherwise self-heals.
-    await this.cache.set(cacheKey, response, this.cacheTtlSeconds);
-    return response;
+    // Cached list entries hold `{ items, meta }` of `PublicProductEntity` (no raw
+    // `stock`, with `inStock`/`lowStock`). A change to that shape bumps the
+    // value-shape version in `buildProductListKey` (TASK-806), so a deploy never
+    // reads an entry the previous release wrote.
+    await this.cache.set(cacheKey, page, this.cacheTtlSeconds);
+    return page;
   }
 
   /**
@@ -235,7 +204,7 @@ export class ProductService {
    * read in the system that can return soft-deleted rows, and it returns them
    * INSTEAD of the live ones, never mixed in.
    */
-  async adminFindAll(query: ProductListQueryDto): Promise<AdminPaginatedProductsResponse> {
+  async adminFindAll(query: ProductListQueryDto): Promise<Paginated<ProductEntity>> {
     // The admin table addresses categories/brands/devices by id, but it binds
     // the SAME DTO, so it goes through the same resolver (TASK-420) — which
     // accepts either spelling and leaves an id untouched when it resolves.
@@ -267,15 +236,14 @@ export class ProductService {
    * occurrence. Not cached: id combinations are per-visitor, so hit rates
    * would be negligible.
    */
-  async getCardsByIds(ids: string[]): Promise<{ data: PublicProductEntity[] }> {
+  async getCardsByIds(ids: string[]): Promise<PublicProductEntity[]> {
     const uniqueIds = [...new Set(ids)];
     const products = await this.productRepository.findByIdsForCards(uniqueIds);
     const byId = new Map(products.map((product) => [product.id, product]));
-    const data = uniqueIds
+    return uniqueIds
       .map((id) => byId.get(id))
       .filter((product): product is NonNullable<typeof product> => product != null)
       .map((product) => PublicProductEntity.fromPrisma(product));
-    return { data };
   }
 
   /**
@@ -329,13 +297,13 @@ export class ProductService {
     return this.categoryRepository.findSubtreeIds(categoryId);
   }
 
-  /** Run the repository listing and wrap it in the paginated envelope. */
-  private async listFromDb(params: FindAllParams): Promise<PaginatedProductsResponse> {
+  /** Run the repository listing and map it onto one page of public entities. */
+  private async listFromDb(params: FindAllParams): Promise<Paginated<PublicProductEntity>> {
     const { products, total } = await this.productRepository.findAll(params);
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      data: products.map((product) => PublicProductEntity.fromPrisma(product)),
+      items: products.map((product) => PublicProductEntity.fromPrisma(product)),
       meta: {
         total,
         page: params.page,
@@ -353,7 +321,7 @@ export class ProductService {
    * The reserved aggregate is fetched once for the whole page (one `groupBy`),
    * never per-row.
    */
-  private async listFromDbForAdmin(params: FindAllParams): Promise<AdminPaginatedProductsResponse> {
+  private async listFromDbForAdmin(params: FindAllParams): Promise<Paginated<ProductEntity>> {
     const { products, total } = await this.productRepository.findAll(params);
     const reservedByProductId = await this.productRepository.getReservedQtyByProductId(
       products.map((product) => product.id),
@@ -361,7 +329,7 @@ export class ProductService {
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      data: products.map((product) =>
+      items: products.map((product) =>
         ProductEntity.fromPrisma({
           ...product,
           reservedQty: reservedByProductId.get(product.id) ?? 0,
@@ -407,9 +375,9 @@ export class ProductService {
    * product — or one whose CATEGORY was deactivated (TASK-297) — is
    * indistinguishable from a missing slug and returns 404 (TASK-145).
    */
-  async findBySlug(slug: string): Promise<ProductDetailResponse> {
+  async findBySlug(slug: string): Promise<ProductDetail> {
     const cacheKey = productDetailSlugKey(slug);
-    const cached = await this.cache.get<ProductDetailResponse>(cacheKey);
+    const cached = await this.cache.get<ProductDetail>(cacheKey);
     if (cached) {
       return cached;
     }
@@ -421,15 +389,15 @@ export class ProductService {
     }
 
     const compatibleDeviceModels = await this.deviceCompatRepository.getDeviceCompat(product.id);
-    const response: ProductDetailResponse = {
-      data: PublicProductEntity.fromPrisma({ ...product, compatibleDeviceModels }),
+    const detail: ProductDetail = {
+      product: PublicProductEntity.fromPrisma({ ...product, compatibleDeviceModels }),
       category: ProductCategoryEntity.fromPrisma(product.category),
       group: product.group ? ProductGroupEntity.fromPrisma(product.group) : null,
       images: product.images.map((img) => ProductImageEntity.fromPrisma(img)),
     };
 
-    await this.cache.set(cacheKey, response, this.cacheTtlSeconds);
-    return response;
+    await this.cache.set(cacheKey, detail, this.cacheTtlSeconds);
+    return detail;
   }
 
   /**
@@ -484,7 +452,7 @@ export class ProductService {
    * Throws NotFoundException when the slug does not resolve (missing or
    * soft-deleted).
    */
-  async findBySlugForAdminPreview(slug: string): Promise<ProductDetailAdminResponse> {
+  async findBySlugForAdminPreview(slug: string): Promise<ProductDetail<ProductEntity>> {
     const product = await this.productRepository.findBySlugWithRelations(slug, {
       activeOnly: false,
     });
@@ -499,7 +467,7 @@ export class ProductService {
       product.id,
     ]);
     return {
-      data: ProductEntity.fromPrisma({
+      product: ProductEntity.fromPrisma({
         ...productFields,
         reservedQty: reservedByProductId.get(product.id) ?? 0,
       }),

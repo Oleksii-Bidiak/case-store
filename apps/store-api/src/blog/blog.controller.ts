@@ -91,7 +91,8 @@ export class BlogController {
     type: BlogPostListResponse,
   })
   async findAll(@Query() query: BlogPostListQueryDto): Promise<BlogPostListResponse> {
-    return this.blogService.findAll(query);
+    const page = await this.blogService.findAll(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get('categories')

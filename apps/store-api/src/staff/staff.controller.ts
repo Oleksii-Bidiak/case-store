@@ -143,8 +143,9 @@ export class StaffController {
   @ApiOperation({ summary: 'List staff accounts', operationId: 'listStaff' })
   @ApiResponse({ status: 200, description: 'Paginated staff', type: StaffListResponseEnvelope })
   @ApiResponse({ status: 403, description: 'Forbidden — requires staff:read' })
-  findAll(@Query() query: StaffListQueryDto) {
-    return this.staffService.findAll(query);
+  async findAll(@Query() query: StaffListQueryDto) {
+    const page = await this.staffService.findAll(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**

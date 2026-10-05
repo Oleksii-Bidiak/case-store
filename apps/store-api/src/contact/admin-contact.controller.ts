@@ -137,7 +137,8 @@ export class AdminContactController {
   @ApiResponse({ status: 401, description: 'Authentication required' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async list(@Query() query: ContactMessageListQueryDto): Promise<ContactInboxResponse> {
-    return this.contactService.findAllAdmin(query);
+    const page = await this.contactService.findAllAdmin(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get('unread-count')

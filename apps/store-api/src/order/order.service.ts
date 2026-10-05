@@ -70,6 +70,7 @@ import {
 import { buildCsvDocument, escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
 // TASK-483/466: one canonical phone spelling on both sides of the comparison.
 import { normalizeUaPhone } from '../common/validators';
+import type { Paginated } from '../common/pagination';
 import type {
   CreateOrderDto,
   CreateManualOrderDto,
@@ -221,16 +222,6 @@ function isUnconfirmedOnlinePayment(order: {
     order.paymentMethod === PaymentMethod.ONLINE &&
     (order.paymentStatus === PaymentStatus.PENDING || order.paymentStatus === PaymentStatus.FAILED)
   );
-}
-
-/**
- * Pagination metadata returned alongside a list of orders.
- */
-export interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
 }
 
 /**
@@ -910,17 +901,14 @@ export class OrderService {
    * List the calling user's orders (paginated, newest first, optional status
    * filter).
    */
-  async getOrders(
-    userId: string,
-    query: OrderListQueryDto,
-  ): Promise<{ data: OrderEntity[]; meta: PaginationMeta }> {
+  async getOrders(userId: string, query: OrderListQueryDto): Promise<Paginated<OrderEntity>> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
 
     const { orders, total } = await this.orderRepository.findByUserId(userId, query);
 
     return {
-      data: orders.map((order) => OrderEntity.fromPrisma(order)),
+      items: orders.map((order) => OrderEntity.fromPrisma(order)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -930,9 +918,7 @@ export class OrderService {
    * optional `userId`, `status`, and created-at date-range filters. No
    * ownership scoping; authorization (ADMIN role) is enforced at the controller.
    */
-  async adminGetAllOrders(
-    query: AdminOrderListQueryDto,
-  ): Promise<{ data: OrderEntity[]; meta: PaginationMeta }> {
+  async adminGetAllOrders(query: AdminOrderListQueryDto): Promise<Paginated<OrderEntity>> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
 
@@ -940,7 +926,7 @@ export class OrderService {
 
     return {
       // TASK-336: admin reads opt into the operator-only fields.
-      data: orders.map((order) => OrderEntity.fromPrisma(order, { includeInternal: true })),
+      items: orders.map((order) => OrderEntity.fromPrisma(order, { includeInternal: true })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

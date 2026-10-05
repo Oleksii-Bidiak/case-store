@@ -285,8 +285,8 @@ describe('UserService', () => {
 
       const result = await service.findAll(query);
 
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toBeInstanceOf(UserEntity);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toBeInstanceOf(UserEntity);
       expect(result.meta.total).toBe(2);
       expect(result.meta.page).toBe(1);
       expect(result.meta.limit).toBe(20);

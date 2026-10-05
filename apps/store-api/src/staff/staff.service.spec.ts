@@ -551,8 +551,8 @@ describe('StaffService', () => {
       const result = await service.findAll({ page: 1, limit: 20 });
 
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
-      expect(result.data.map((row) => row.level)).toEqual([1, 3]);
-      expect(result.data[1].isOwner).toBe(true);
+      expect(result.items.map((row) => row.level)).toEqual([1, 3]);
+      expect(result.items[1].isOwner).toBe(true);
     });
   });
 

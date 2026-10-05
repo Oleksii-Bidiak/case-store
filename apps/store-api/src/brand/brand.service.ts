@@ -9,6 +9,7 @@ import {
 import { BrandEntity } from './entities';
 import { CreateBrandDto, UpdateBrandDto, BrandListQueryDto } from './dto';
 import { generateSlug } from '../common/utils';
+import type { Paginated } from '../common/pagination';
 import { CategoryRepository } from '../category/category.repository';
 import { CacheService } from '../cache';
 // Direct file import: the `../cache` barrel is outside this change's file scope.
@@ -16,31 +17,6 @@ import { BRAND_LIST_PREFIX, brandListCategoryKey } from '../cache/cache-key.util
 
 /** Fallback TTL (seconds) when REDIS_CACHE_TTL_SECONDS is not configured. */
 const DEFAULT_CACHE_TTL_SECONDS = 300;
-
-/**
- * Pagination metadata returned alongside paginated results.
- */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Response envelope for a plain brand list (public).
- */
-interface BrandListResponse {
-  data: BrandEntity[];
-}
-
-/**
- * Paginated response envelope for the admin brand list.
- */
-interface PaginatedBrandsResponse {
-  data: BrandEntity[];
-  meta: PaginationMeta;
-}
 
 /**
  * Business logic for brands (TASK-189). Thin over the repository: slug
@@ -77,9 +53,9 @@ export class BrandService {
    * brand mutation below (the query also reads `brand.isActive` and
    * `brand.name`, which only these mutations touch).
    */
-  async findAllActive(categoryId?: string): Promise<BrandListResponse> {
+  async findAllActive(categoryId?: string): Promise<BrandEntity[]> {
     const cacheKey = brandListCategoryKey(categoryId);
-    const cached = await this.cache.get<BrandListResponse>(cacheKey);
+    const cached = await this.cache.get<BrandEntity[]>(cacheKey);
     if (cached) {
       return cached;
     }
@@ -88,16 +64,16 @@ export class BrandService {
       ? await this.categoryRepository.findSubtreeIds(categoryId)
       : undefined;
     const brands = await this.brandRepository.findAllActive(categoryIds);
-    const response = { data: brands.map((brand) => BrandEntity.fromPrisma(brand)) };
+    const list = brands.map((brand) => BrandEntity.fromPrisma(brand));
 
-    await this.cache.set(cacheKey, response, this.cacheTtlSeconds);
-    return response;
+    await this.cache.set(cacheKey, list, this.cacheTtlSeconds);
+    return list;
   }
 
   /**
    * Paginated admin listing (all statuses) with optional status filter + search.
    */
-  async findAllAdmin(query: BrandListQueryDto): Promise<PaginatedBrandsResponse> {
+  async findAllAdmin(query: BrandListQueryDto): Promise<Paginated<BrandEntity>> {
     const params: FindAllAdminParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
@@ -109,7 +85,7 @@ export class BrandService {
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      data: brands.map(({ brand, productCount }) => BrandEntity.fromPrisma(brand, productCount)),
+      items: brands.map(({ brand, productCount }) => BrandEntity.fromPrisma(brand, productCount)),
       meta: { total, page: params.page, limit: params.limit, totalPages },
     };
   }

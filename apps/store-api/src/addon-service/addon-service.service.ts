@@ -25,18 +25,7 @@ import {
 import { CategoryRepository } from '../category';
 import { ProductRepository } from '../product';
 import { toTwoDecimals } from './money.util';
-
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-interface PaginatedAddonServicesResponse {
-  data: AddonServiceEntity[];
-  meta: PaginationMeta;
-}
+import type { Paginated } from '../common/pagination';
 
 /**
  * Storefront cache tag for the public add-on list (TASK-561). The storefront's
@@ -67,9 +56,9 @@ export class AddonServiceService {
   // ─── Catalog CRUD ─────────────────────────────────────────────────────────
 
   /** All active services — backs the admin template/exclusive pickers. */
-  async findAllActive(): Promise<{ data: AddonServiceEntity[] }> {
+  async findAllActive(): Promise<AddonServiceEntity[]> {
     const services = await this.addonServiceRepository.findAllActive();
-    return { data: services.map((service) => AddonServiceEntity.fromPrisma(service)) };
+    return services.map((service) => AddonServiceEntity.fromPrisma(service));
   }
 
   /**
@@ -83,7 +72,7 @@ export class AddonServiceService {
     return services.map((service) => PublicAddonServiceEntity.fromPrisma(service));
   }
 
-  async findAllAdmin(query: AddonServiceListQueryDto): Promise<PaginatedAddonServicesResponse> {
+  async findAllAdmin(query: AddonServiceListQueryDto): Promise<Paginated<AddonServiceEntity>> {
     const params: FindAllAdminParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
@@ -94,7 +83,7 @@ export class AddonServiceService {
     const { addonServices, total } = await this.addonServiceRepository.findAllAdmin(params);
 
     return {
-      data: addonServices.map((service) => AddonServiceEntity.fromPrisma(service)),
+      items: addonServices.map((service) => AddonServiceEntity.fromPrisma(service)),
       meta: {
         total,
         page: params.page,

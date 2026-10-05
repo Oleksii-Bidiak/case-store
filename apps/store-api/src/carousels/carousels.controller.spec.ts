@@ -76,8 +76,8 @@ describe('Carousel controllers', () => {
   });
 
   describe('CarouselController (public)', () => {
-    it('returns the published carousel list envelope (empty products included)', async () => {
-      serviceMock.findAllPublished.mockResolvedValue({ data: [publicEntity] });
+    it('wraps the published carousel list in a { data } envelope (empty products included)', async () => {
+      serviceMock.findAllPublished.mockResolvedValue([publicEntity]);
 
       const result = await publicController.findAll({});
 
@@ -86,7 +86,7 @@ describe('Carousel controllers', () => {
     });
 
     it('forwards the placement query to the service (TASK-288)', async () => {
-      serviceMock.findAllPublished.mockResolvedValue({ data: [] });
+      serviceMock.findAllPublished.mockResolvedValue([]);
 
       await publicController.findAll({ placement: CarouselPlacement.HOME_TABS });
 
@@ -97,9 +97,9 @@ describe('Carousel controllers', () => {
   });
 
   describe('AdminCarouselController', () => {
-    it('list forwards the query to the service', async () => {
+    it('list forwards the query and builds the { data, meta } envelope', async () => {
       const meta = { total: 1, page: 1, limit: 1, totalPages: 1 };
-      serviceMock.findAllAdmin.mockResolvedValue({ data: [entity], meta });
+      serviceMock.findAllAdmin.mockResolvedValue({ items: [entity], meta });
 
       const result = await adminController.findAll({ status: PublishStatus.DRAFT });
 
@@ -109,7 +109,7 @@ describe('Carousel controllers', () => {
 
     it('list forwards a placement filter to the service', async () => {
       serviceMock.findAllAdmin.mockResolvedValue({
-        data: [entity],
+        items: [entity],
         meta: { total: 1, page: 1, limit: 1, totalPages: 1 },
       });
 

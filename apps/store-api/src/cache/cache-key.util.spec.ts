@@ -1,4 +1,6 @@
 import {
+  BRAND_LIST_PREFIX,
+  brandListCategoryKey,
   buildFilterableSpecsKey,
   buildProductListKey,
   FILTERABLE_SPECS_PREFIX,
@@ -54,14 +56,14 @@ describe('cache-key.util', () => {
       });
 
       expect(key).toBe(
-        'product:list:page=2|limit=10|category=phone-cases|brand=apple|device=iphone-15|isActive=true|minPrice=10|maxPrice=100|search=case|onSale=true|sortBy=price|sortOrder=asc',
+        'product:list:v2:page=2|limit=10|category=phone-cases|brand=apple|device=iphone-15|isActive=true|minPrice=10|maxPrice=100|search=case|onSale=true|sortBy=price|sortOrder=asc',
       );
     });
 
     it('omits undefined/null optional params (no "undefined" literals)', () => {
       const key = buildProductListKey({ page: 1, limit: 20 });
 
-      expect(key).toBe('product:list:page=1|limit=20');
+      expect(key).toBe('product:list:v2:page=1|limit=20');
       expect(key).not.toContain('undefined');
       expect(key).not.toContain('null');
     });
@@ -220,11 +222,27 @@ describe('cache-key.util', () => {
 
   describe('detail key helpers', () => {
     it('builds a slug detail key', () => {
-      expect(productDetailSlugKey('iphone-15-case')).toBe('product:detail:slug:iphone-15-case');
+      expect(productDetailSlugKey('iphone-15-case')).toBe('product:detail:slug:v2:iphone-15-case');
     });
 
     it('builds an id detail key', () => {
       expect(productDetailIdKey('uuid-123')).toBe('product:detail:id:uuid-123');
+    });
+  });
+
+  // TASK-806: the cached values stopped being `{ data, meta }` envelopes, so their
+  // keys carry a shape version — still under the prefix every write purges by.
+  describe('value-shape version', () => {
+    it('versions the brand list key below BRAND_LIST_PREFIX', () => {
+      expect(brandListCategoryKey('cat-1')).toBe('brand:list:v2:category=cat-1');
+      expect(brandListCategoryKey()).toBe('brand:list:v2:category=all');
+      expect(brandListCategoryKey().startsWith(BRAND_LIST_PREFIX)).toBe(true);
+    });
+
+    it('versions the listing key below PRODUCT_LIST_PREFIX, apart from the facet keys', () => {
+      const listing = buildProductListKey({ page: 1, limit: 20 });
+      expect(listing.startsWith(`${PRODUCT_LIST_PREFIX}:v2:`)).toBe(true);
+      expect(listing.startsWith(FILTERABLE_SPECS_PREFIX)).toBe(false);
     });
   });
 

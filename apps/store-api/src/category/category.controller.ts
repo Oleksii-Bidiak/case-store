@@ -101,7 +101,7 @@ export class CategoryController {
     type: CategoryTreeResponse,
   })
   async getCategoryTree(): Promise<CategoryTreeResponse> {
-    return this.categoryService.getCategoryTree();
+    return { data: await this.categoryService.getCategoryTree() };
   }
 
   /**
@@ -134,7 +134,7 @@ export class CategoryController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async getCategoryTreeForAdmin(): Promise<AdminCategoryTreeResponse> {
-    return this.categoryService.getCategoryTreeForAdmin();
+    return { data: await this.categoryService.getCategoryTreeForAdmin() };
   }
 
   /**
@@ -154,7 +154,8 @@ export class CategoryController {
     type: CategoryListResponse,
   })
   async getRootCategories(@Query() query: CategoryListQueryDto): Promise<CategoryListResponse> {
-    return this.categoryService.getRootCategories(query);
+    const page = await this.categoryService.getRootCategories(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**
@@ -174,6 +175,8 @@ export class CategoryController {
   })
   @ApiResponse({ status: 404, description: 'Category not found or deactivated' })
   async findBySlug(@Param('slug') slug: string): Promise<CategoryWithCountResponse> {
-    return this.categoryService.findBySlug(slug);
+    const category = await this.categoryService.findBySlug(slug);
+    // `productCount` is echoed at the top level too — part of the published contract.
+    return { data: category, productCount: category.productCount };
   }
 }

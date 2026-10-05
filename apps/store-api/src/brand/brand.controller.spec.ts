@@ -31,18 +31,18 @@ describe('BrandController (public)', () => {
     controller = module.get<BrandController>(BrandController);
   });
 
-  it('returns the active brand list envelope from the service', async () => {
-    const payload = { data: [] };
-    serviceMock.findAllActive.mockResolvedValue(payload);
+  it('wraps the service brand list in a { data } envelope (TASK-806)', async () => {
+    const brands = [{ id: 'b1', name: 'Spigen' }];
+    serviceMock.findAllActive.mockResolvedValue(brands);
 
     const result = await controller.findAll({});
 
-    expect(result).toBe(payload);
+    expect(result).toEqual({ data: brands });
     expect(serviceMock.findAllActive).toHaveBeenCalledWith(undefined);
   });
 
   it('passes ?categoryId= through to the service (TASK-414)', async () => {
-    serviceMock.findAllActive.mockResolvedValue({ data: [] });
+    serviceMock.findAllActive.mockResolvedValue([]);
 
     await controller.findAll({ categoryId: 'cat-1' });
 
@@ -77,13 +77,14 @@ describe('AdminBrandController', () => {
     expect(guards).toContain(PermissionGuard);
   });
 
-  it('returns the paginated list envelope from the service', async () => {
-    const payload = { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } };
-    serviceMock.findAllAdmin.mockResolvedValue(payload);
+  it('builds the paginated { data, meta } envelope from the service page (TASK-806)', async () => {
+    const brands = [{ id: 'b1', name: 'Spigen' }];
+    const meta = { total: 1, page: 1, limit: 20, totalPages: 1 };
+    serviceMock.findAllAdmin.mockResolvedValue({ items: brands, meta });
 
     const result = await controller.findAllAdmin({});
 
-    expect(result).toBe(payload);
+    expect(result).toEqual({ data: brands, meta });
   });
 
   it('wraps findById in a { data } envelope', async () => {
