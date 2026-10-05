@@ -587,6 +587,7 @@ export function AdminOrderTable() {
               selectable={false}
               columns={registry.visibleColumnIds}
               formats={["csv"]}
+              footnote={d.exportFootnote}
               onExport={() => void handleExport()}
               disabled={isExporting}
             />

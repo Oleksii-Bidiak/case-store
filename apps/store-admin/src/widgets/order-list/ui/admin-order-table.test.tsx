@@ -757,6 +757,9 @@ describe("AdminOrderTable — CSV export (TASK-425)", () => {
     expect(
       screen.queryByRole("menuitemradio", { name: r.exportSelectedOnly }),
     ).not.toBeInTheDocument();
+    // The server builds the file: no promise about the visible columns.
+    expect(screen.getByText(dict.orders.exportFootnote)).toBeInTheDocument();
+    expect(screen.queryByText(r.exportFootnote)).not.toBeInTheDocument();
   });
 
   it("exports the CURRENT FILTERS, not the page on screen", async () => {

@@ -3335,6 +3335,9 @@ export const dict = {
     exportTruncated: (exported: number, total: number) =>
       `Експортовано лише ${exported} із ${total} замовл. — файл обмежено. Звузьте фільтри (дата, статус), щоб отримати решту.`,
     exportError: "Не вдалося сформувати CSV. Спробуйте ще раз.",
+    // The server builds the file — the «Колонки» choice does not reach it.
+    exportFootnote:
+      "Файл формує сервер: усі поля замовлень за поточними фільтрами, зокрема приховані колонки.",
 
     // --- Без права `orders:write` (TASK-715) ----------------------------------
     // Кнопок зміни немає зовсім; `/orders/new`, набраний руками, дає одну
