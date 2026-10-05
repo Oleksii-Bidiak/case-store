@@ -1381,7 +1381,7 @@ describe('OrderService', () => {
 
     it('should pass the userId and query to the repository', async () => {
       orderRepositoryMock.findByUserId.mockResolvedValue({ orders: [], total: 0 });
-      const query = { status: OrderStatus.PENDING, page: 2, limit: 5 };
+      const query = { status: [OrderStatus.PENDING, OrderStatus.SHIPPED], page: 2, limit: 5 };
 
       await service.getOrders(USER_ID, query);
 

@@ -1015,7 +1015,7 @@ describe('OrderController (e2e)', () => {
       expect(response.body.meta).toEqual({ total: 1, page: 1, limit: 10, totalPages: 1 });
     });
 
-    it('should pass the status filter to the repository', async () => {
+    it('should pass a single status filter to the repository as a one-element array', async () => {
       const token = generateAccessToken(userA.id, userA.role);
       orderRepositoryMock.findByUserId.mockResolvedValue({ orders: [], total: 0 });
 
@@ -1026,8 +1026,49 @@ describe('OrderController (e2e)', () => {
 
       expect(orderRepositoryMock.findByUserId).toHaveBeenCalledWith(
         userA.id,
-        expect.objectContaining({ status: OrderStatus.PENDING }),
+        expect.objectContaining({ status: [OrderStatus.PENDING] }),
       );
+    });
+
+    it('should accept several statuses as CSV (TASK-217)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      orderRepositoryMock.findByUserId.mockResolvedValue({ orders: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/orders?status=PENDING,SHIPPED')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(orderRepositoryMock.findByUserId).toHaveBeenCalledWith(
+        userA.id,
+        expect.objectContaining({ status: [OrderStatus.PENDING, OrderStatus.SHIPPED] }),
+      );
+    });
+
+    it('should accept several statuses as repeated params (TASK-217)', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+      orderRepositoryMock.findByUserId.mockResolvedValue({ orders: [], total: 0 });
+
+      await request(app.getHttpServer())
+        .get('/api/orders?status=CANCELLED&status=REFUNDED')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(200);
+
+      expect(orderRepositoryMock.findByUserId).toHaveBeenCalledWith(
+        userA.id,
+        expect.objectContaining({ status: [OrderStatus.CANCELLED, OrderStatus.REFUNDED] }),
+      );
+    });
+
+    it('should return 400 when one of several statuses is invalid', async () => {
+      const token = generateAccessToken(userA.id, userA.role);
+
+      await request(app.getHttpServer())
+        .get('/api/orders?status=PENDING,BOGUS')
+        .set('Authorization', `Bearer ${token}`)
+        .expect(400);
+
+      expect(orderRepositoryMock.findByUserId).not.toHaveBeenCalled();
     });
 
     it('should return 401 without a JWT', async () => {

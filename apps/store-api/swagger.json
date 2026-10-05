@@ -12257,18 +12257,21 @@
             "name": "status",
             "required": false,
             "in": "query",
-            "description": "Filter by order status",
+            "description": "Filter by one or more order statuses — repeated params (`status=PENDING&status=SHIPPED`) or one comma-separated value (`status=PENDING,SHIPPED`); absent means all statuses (TASK-217).",
             "schema": {
-              "type": "string",
-              "enum": [
-                "PENDING",
-                "CONFIRMED",
-                "PROCESSING",
-                "SHIPPED",
-                "DELIVERED",
-                "CANCELLED",
-                "REFUNDED"
-              ]
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "PENDING",
+                  "CONFIRMED",
+                  "PROCESSING",
+                  "SHIPPED",
+                  "DELIVERED",
+                  "CANCELLED",
+                  "REFUNDED"
+                ]
+              }
             }
           },
           {

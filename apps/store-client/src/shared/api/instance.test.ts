@@ -238,3 +238,17 @@ describe("session-expired signal", () => {
     unsubscribe();
   });
 });
+
+describe("api paramsSerializer (TASK-217)", () => {
+  it("sends array params as repeated keys, not `key[]`", () => {
+    // The API's whitelist validation rejects a literal `status[]` key with 400.
+    const url = api.getUri({
+      url: "/api/orders",
+      params: { status: ["PENDING", "SHIPPED"], page: 2 },
+    });
+
+    expect(url).toContain("status=PENDING&status=SHIPPED");
+    expect(url).not.toContain("status%5B%5D");
+    expect(url).toContain("page=2");
+  });
+});

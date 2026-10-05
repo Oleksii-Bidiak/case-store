@@ -26,6 +26,7 @@ import {
   getSchemaPath,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
+import { OrderStatus } from '@prisma/client';
 import { FailClosedThrottle, OrderLookupThrottle } from '../throttler';
 import { OrderService } from './order.service';
 import type { PaginationMeta } from '../common/pagination';
@@ -341,7 +342,16 @@ export class OrderController {
   @Get()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'List current user orders', operationId: 'getOrders' })
-  @ApiQuery({ name: 'status', required: false, description: 'Filter by order status' })
+  @ApiQuery({
+    name: 'status',
+    required: false,
+    enum: OrderStatus,
+    isArray: true,
+    description:
+      'Filter by one or more order statuses — repeated params (`status=PENDING&status=SHIPPED`) ' +
+      'or one comma-separated value (`status=PENDING,SHIPPED`); absent means all statuses ' +
+      '(TASK-217).',
+  })
   @ApiQuery({ name: 'page', required: false, description: 'Page number (1-based)' })
   @ApiQuery({ name: 'limit', required: false, description: 'Items per page (max 100)' })
   @ApiResponse({
