@@ -182,7 +182,9 @@ export function Combobox({
             role="combobox"
             className={className}
             aria-expanded={showList}
-            aria-controls={listId}
+            // Only while the listbox exists: a closed list is not in the DOM, and a
+            // dangling IDREF is an axe `aria-valid-attr-value` failure.
+            aria-controls={showList ? listId : undefined}
             aria-autocomplete="list"
             aria-activedescendant={activeDescendantId}
             autoComplete={autoComplete}

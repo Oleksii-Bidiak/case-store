@@ -216,6 +216,31 @@ describe("AccountDropdown", () => {
     expect(screen.getByRole("button", { name: "after" })).toHaveFocus();
   });
 
+  it("skips a Tab neighbour the browser does not render (display:none)", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <AccountDropdown
+          triggerContent={<span>icon</span>}
+          triggerAria={triggerName}
+          menuAria="Меню акаунту"
+        >
+          <AccountDropdownItem href="/account">Мій акаунт</AccountDropdownItem>
+        </AccountDropdown>
+        <button type="button">hidden-at-this-width</button>
+        <button type="button">after</button>
+      </>,
+    );
+    const hidden = screen.getByRole("button", { name: "hidden-at-this-width" });
+    // jsdom has no layout; stand in for a `hidden sm:flex` action.
+    Object.defineProperty(hidden, "checkVisibility", { value: () => false });
+    await openWithEnter(user);
+
+    await user.keyboard("{Tab}");
+
+    expect(screen.getByRole("button", { name: "after" })).toHaveFocus();
+  });
+
   it("closes on Shift+Tab and moves focus back past the trigger", async () => {
     const user = userEvent.setup();
     setup();

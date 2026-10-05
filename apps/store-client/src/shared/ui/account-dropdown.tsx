@@ -32,6 +32,16 @@ const TABBABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
+ * Whether the browser would actually Tab to `el`: a `hidden sm:flex` header
+ * action is in the DOM but `display:none`, and `.focus()` on it is a no-op
+ * that drops focus on `<body>`. `checkVisibility()` sees through ancestors;
+ * where it is missing (older engines, jsdom) the element is assumed rendered.
+ */
+function isRendered(el: HTMLElement) {
+  return typeof el.checkVisibility === "function" ? el.checkVisibility() : true;
+}
+
+/**
  * Move focus to the Tab-sequence neighbour of `from` (`1` next, `-1` previous).
  * The panel is portalled to the end of `<body>`, so a native Tab out of it
  * would land at the end of the page; this puts focus where Tab would have gone
@@ -44,7 +54,8 @@ function focusTabNeighbour(from: HTMLElement, direction: 1 | -1) {
     (el) =>
       !el.closest("[data-radix-menu-content]") &&
       !el.closest("[inert]") &&
-      !el.closest('[aria-hidden="true"]'),
+      !el.closest('[aria-hidden="true"]') &&
+      isRendered(el),
   );
   const index = tabbables.indexOf(from);
   const target = index === -1 ? undefined : tabbables[index + direction];

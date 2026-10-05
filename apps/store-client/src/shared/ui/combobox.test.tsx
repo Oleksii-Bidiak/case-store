@@ -248,6 +248,14 @@ describe("Combobox", () => {
       expect(input).toHaveAttribute("aria-expanded", "true");
     });
 
+    it("points aria-controls at the listbox only while it is in the DOM", () => {
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(input).not.toHaveAttribute("aria-controls");
+    });
+
     it("keeps focus on the input when the list opens", async () => {
       const user = userEvent.setup();
       setup({ value: "Ки" });
