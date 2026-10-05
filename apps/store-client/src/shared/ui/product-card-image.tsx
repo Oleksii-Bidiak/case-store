@@ -7,9 +7,10 @@ import { BLUR_PLACEHOLDER } from "./image-placeholder";
 
 /**
  * Default `sizes` for the responsive catalog grid
- * (`grid-cols-1 min-[390px]:grid-cols-2 lg:grid-cols-4` inside the `max-w-7xl`
- * container): one column on the narrowest phones, two from 390px, four from
- * `lg` (~292px slots at the capped container width). The desktop entry is a
+ * (`grid-cols-1 min-[390px]:grid-cols-2 lg:grid-cols-4` inside the
+ * `PAGE_CONTAINER`, 1320px minus a 32px gutter each side): one column on the
+ * narrowest phones, two from 390px, four from `lg` (~296px slots at the capped
+ * container width). The desktop entry is a
  * fixed 300px cap — `calc(25vw - 2rem)` over-downloaded on wide screens (480px+
  * candidates for a ≤300px slot) since the container is capped anyway (TASK-210).
  *

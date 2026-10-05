@@ -101,6 +101,26 @@ describe("buildCatalogListingParams (TASK-563)", () => {
     expect(params.device).toBe("iphone-15");
   });
 
+  // TASK-1301 — `/promo` is the on-sale slice of the catalogue: neither a
+  // missing nor a hand-edited `?onSale=false` can widen it to full-price stock.
+  it.each(["", "onSale=false", "onSale=true"])(
+    "keeps the discount lock on for ?%s",
+    (query) => {
+      expect(
+        buildCatalogListingParams(fromUrl(query), { onSale: true }).onSale,
+      ).toBe(true);
+    },
+  );
+
+  it("gives the locked server and client one cache key", () => {
+    const query = "category=chohly&page=2";
+    expect(
+      cacheKey(buildCatalogListingParams(fromRecord(query), { onSale: true })),
+    ).toBe(
+      cacheKey(buildCatalogListingParams(fromUrl(query), { onSale: true })),
+    );
+  });
+
   // The property the whole prefetch rests on: the server (awaited
   // `searchParams` record) and the client (`useSearchParams`) reading one URL
   // land on ONE React Query cache entry. A differing key is a skeleton over the

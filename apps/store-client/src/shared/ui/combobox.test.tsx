@@ -204,6 +204,126 @@ describe("Combobox", () => {
     });
   });
 
+  // APG list-autocomplete example: Home/End are the textbox's caret keys. With
+  // an option highlighted they return visual focus to the input, so a
+  // following Enter commits the typed text instead of the highlighted row.
+  describe("Home / End", () => {
+    it.each(["{Home}", "{End}"])(
+      "%s drops the highlight and leaves Enter to the free text",
+      async (key) => {
+        const user = userEvent.setup();
+        const { onSelect } = setup({ value: "Ки" });
+
+        const input = screen.getByRole("combobox");
+        await user.click(input);
+        await user.keyboard("{ArrowDown}");
+        expect(input).toHaveAttribute("aria-activedescendant");
+
+        await user.keyboard(key);
+        expect(input).not.toHaveAttribute("aria-activedescendant");
+        expect(screen.getByRole("listbox")).toBeInTheDocument();
+        expect(input).toHaveFocus();
+
+        await user.keyboard("{Enter}");
+        expect(onSelect).not.toHaveBeenCalled();
+      },
+    );
+  });
+
+  // TASK-502: the list is a Radix Popover portalled to <body> (no `overflow`
+  // ancestor can clip it, collisions flip it), while DOM focus stays on the
+  // input for the whole interaction.
+  describe("popover placement", () => {
+    it("portals the listbox out of the field's own DOM subtree", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      const listbox = screen.getByRole("listbox");
+
+      expect(input.parentElement).not.toContainElement(listbox);
+      expect(listbox).toHaveAttribute("id", "cb-listbox");
+      expect(input).toHaveAttribute("aria-controls", "cb-listbox");
+      expect(input).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("points aria-controls at the listbox only while it is in the DOM", () => {
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(input).not.toHaveAttribute("aria-controls");
+    });
+
+    it("keeps focus on the input when the list opens", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      expect(input).toHaveFocus();
+    });
+
+    it("stays open when the already-focused input is clicked again", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      await user.click(input);
+
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      expect(input).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("does not blur the input on a press inside the popup", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      const input = screen.getByRole("combobox");
+      await user.click(input);
+      await user.pointer({
+        keys: "[MouseLeft>]",
+        target: screen.getByRole("listbox"),
+      });
+
+      expect(input).toHaveFocus();
+      expect(screen.getByRole("listbox")).toBeInTheDocument();
+      await user.pointer({ keys: "[/MouseLeft]" });
+    });
+
+    it("closes when the pointer goes down outside the field and the popup", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+
+      await user.click(screen.getByRole("combobox"));
+      await user.click(document.body);
+
+      expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+      expect(screen.getByRole("combobox")).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+    });
+
+    it("scrolls the keyboard-highlighted option into view", async () => {
+      const user = userEvent.setup();
+      setup({ value: "Ки" });
+      const spy = jest.spyOn(Element.prototype, "scrollIntoView");
+
+      await user.click(screen.getByRole("combobox"));
+      await user.keyboard("{ArrowUp}");
+
+      const [, second] = screen.getAllByRole("option");
+      expect(spy.mock.contexts).toContain(second);
+      expect(spy).toHaveBeenLastCalledWith({ block: "nearest" });
+      spy.mockRestore();
+    });
+  });
+
   // TASK-411: `activeIndex` is the KEYBOARD selection and nothing else. It
   // used to be written by onMouseEnter too, so a cursor left resting over the
   // popup silently re-targeted Enter at whatever row it happened to cover.

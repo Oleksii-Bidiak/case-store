@@ -10,9 +10,9 @@ import { ThemeToggle } from "./theme-toggle";
 
 /** The three option labels, shared with the account settings copy. */
 const LABEL = {
-  light: dict.account.dashboard.themeLight,
-  system: dict.account.dashboard.themeSystem,
-  dark: dict.account.dashboard.themeDark,
+  light: dict.theme.light,
+  system: dict.theme.system,
+  dark: dict.theme.dark,
 } as const;
 
 /**
@@ -46,7 +46,7 @@ describe("ThemeToggle", () => {
     renderToggle();
 
     const group = screen.getByRole("radiogroup", {
-      name: dict.header.themeAria,
+      name: dict.theme.groupAria,
     });
     expect(group).toBeInTheDocument();
     expect(screen.getAllByRole("radio")).toHaveLength(3);
@@ -130,7 +130,7 @@ describe("ThemeToggle", () => {
     // The caption is the group's accessible name in both variants; in `full` it
     // is on screen, and each segment shows its label next to the icon.
     expect(
-      screen.getByRole("radiogroup", { name: dict.header.themeAria }),
+      screen.getByRole("radiogroup", { name: dict.theme.groupAria }),
     ).toBeInTheDocument();
     expect(radio(LABEL.system)).toHaveTextContent(LABEL.system);
   });
@@ -142,9 +142,9 @@ describe("ThemeToggle", () => {
     renderToggle({ variant: "full", hideLabel: true });
 
     expect(
-      screen.getByRole("radiogroup", { name: dict.header.themeAria }),
+      screen.getByRole("radiogroup", { name: dict.theme.groupAria }),
     ).toBeInTheDocument();
-    expect(screen.getByText(dict.header.themeAria)).toHaveClass("sr-only");
+    expect(screen.getByText(dict.theme.groupAria)).toHaveClass("sr-only");
     // The segments themselves stay labelled — that is what `full` buys.
     expect(radio(LABEL.system)).toHaveTextContent(LABEL.system);
   });

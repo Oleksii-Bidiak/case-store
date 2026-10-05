@@ -48,4 +48,21 @@ describe("AccountView", () => {
       screen.getByRole("heading", { level: 1, name: d.bonusesHeading }),
     ).toBeInTheDocument();
   });
+
+  it("tints the active menu item with a token utility, not an inline colour (TASK-879)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<AccountView />, { auth: { isAuthenticated: true } });
+
+    await screen.findByRole("heading", { level: 1, name: d.profileHeading });
+    await user.click(screen.getByRole("button", { name: d.nav.settings }));
+
+    const active = screen.getByRole("button", { name: d.nav.settings });
+    expect(active).toHaveAttribute("aria-current", "page");
+    expect(active).toHaveClass("bg-primary/10", "text-primary");
+    expect(active).not.toHaveAttribute("style");
+
+    const idle = screen.getByRole("button", { name: d.nav.bonuses });
+    expect(idle).not.toHaveAttribute("aria-current");
+    expect(idle).not.toHaveClass("bg-primary/10");
+  });
 });

@@ -38,9 +38,9 @@ function getPageItems(current: number, total: number): (number | "ellipsis")[] {
 }
 
 const arrowBase =
-  "inline-flex size-[42px] items-center justify-center rounded-[11px] border-[1.5px] border-border bg-card transition-colors";
+  "inline-flex size-[42px] items-center justify-center rounded-menu border-[1.5px] border-border bg-card transition-colors";
 const numberBase =
-  "inline-flex h-[42px] min-w-[42px] items-center justify-center rounded-[11px] border-[1.5px] px-1.5 font-mono text-sm font-semibold transition-colors";
+  "inline-flex h-[42px] min-w-[42px] items-center justify-center rounded-menu border-[1.5px] px-1.5 font-mono text-sm font-semibold transition-colors";
 
 /**
  * The storefront's ONE numbered pagination (TASK-417).

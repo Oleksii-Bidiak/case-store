@@ -2,7 +2,7 @@
 
 import { Send, Camera, MessageCircle } from "lucide-react";
 import { NewsletterSubscribeForm } from "@/features";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER, H2_CLASS } from "@/shared/config";
 import type { SiteContactSettingsEntity } from "@/shared/api/generated/models";
 
 /** The shop's social channels, as «Контакти магазину» stores them. */
@@ -22,6 +22,10 @@ const SOCIAL_CHANNELS = [
 
 const SOCIAL_ITEM_CLASS =
   "inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-semibold text-foreground transition-all hover:-translate-y-0.5 hover:border-primary hover:text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
+// Neutral outline, merged over the form's filled default through `cn()`.
+const NEWSLETTER_SUBMIT_CLASS =
+  "border border-border bg-background text-foreground hover:bg-muted hover:text-primary";
 
 interface NewsletterProps {
   /**
@@ -48,14 +52,18 @@ export function Newsletter({ contact }: NewsletterProps = {}) {
   });
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4">
+    <section className={PAGE_CONTAINER}>
       <div className="flex flex-wrap items-center justify-between gap-8 rounded-2xl border border-border bg-card p-8 shadow-card sm:p-10">
         <div className="max-w-xl">
-          <h2 className="font-display text-xl font-bold tracking-tight text-foreground sm:text-2xl">
-            {heading}
-          </h2>
+          <h2 className={`${H2_CLASS} text-foreground`}>{heading}</h2>
           <p className="mt-2 text-sm text-muted-foreground">{subtitle}</p>
-          <NewsletterSubscribeForm source="home" className="mt-5 max-w-md" />
+          {/* Outline submit (TASK-865): the hero slide CTA is the homepage's
+              one primary action (design-system §1). */}
+          <NewsletterSubscribeForm
+            source="home"
+            className="mt-5 max-w-md"
+            buttonClassName={NEWSLETTER_SUBMIT_CLASS}
+          />
         </div>
         {channels.length > 0 && (
           <ul className="flex flex-wrap items-center gap-2.5">

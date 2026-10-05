@@ -4,6 +4,7 @@ import {
   BRAND_OG_IMAGE_WIDTH,
   dict,
 } from "@/shared/config";
+import { resolveSiteName } from "./resolve-site-name";
 
 /** One Open Graph image entry, in the shape Next's `Metadata.openGraph` takes. */
 export interface OgImage {
@@ -38,7 +39,9 @@ export interface OgImage {
  * are whatever the catalogue holds (a square product photo, a wide cover), so no
  * size is claimed for them: a wrong size is worse than none. EVERY entry carries
  * `alt` (→ `og:image:alt`), from the caller — the page's own title — with the
- * store's root title as the floor.
+ * brand-card alt as the floor. That alt is built from the caller's resolved
+ * `siteName` (TASK-546), so renaming the store in /settings/seo renames the
+ * card too; before, it was `dict.meta.rootTitle` with the name baked in.
  *
  * Why tier 1 outranks tier 2 (TASK-437): the page image is whatever the
  * catalogue happened to put first — a product photo cropped for a grid tile, an
@@ -68,8 +71,18 @@ export function buildOgImages(input?: {
    * brand card keeps its own alt: it is a picture of the store, not of the page.
    */
   alt?: string | null;
+  /**
+   * The store's display name — `resolveSiteName(seo)` at the call site
+   * (TASK-546). It names the brand card in `og:image:alt` and is the alt floor
+   * when the page passes no title. Omitted → the same fallback
+   * `resolveSiteName` uses everywhere else.
+   */
+  siteName?: string | null;
 }): OgImage[] {
-  const alt = input?.alt?.trim() || dict.meta.rootTitle;
+  const brandAlt = dict.meta.brandCardAlt(
+    resolveSiteName({ siteName: input?.siteName }),
+  );
+  const alt = input?.alt?.trim() || brandAlt;
   // Uploaded for the 1200×630 card — the size is known, so it is stated.
   const cardSized = (url: string): OgImage[] => [
     { url, width: BRAND_OG_IMAGE_WIDTH, height: BRAND_OG_IMAGE_HEIGHT, alt },
@@ -94,7 +107,7 @@ export function buildOgImages(input?: {
       url: BRAND_OG_IMAGE_PATH,
       width: BRAND_OG_IMAGE_WIDTH,
       height: BRAND_OG_IMAGE_HEIGHT,
-      alt: dict.meta.rootTitle,
+      alt: brandAlt,
     },
   ];
 }

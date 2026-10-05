@@ -1,9 +1,18 @@
 import { useState } from "react";
 import { http, HttpResponse } from "msw";
-import { renderWithProviders, screen, userEvent } from "@/shared/test/render";
+import {
+  renderWithProviders,
+  screen,
+  userEvent,
+  waitFor,
+} from "@/shared/test/render";
 import { server } from "@/shared/test/msw-server";
 import { dict } from "@/shared/config";
 import type { ProductControllerFindAllParams } from "@/entities/product";
+import {
+  filterRailSections,
+  type FilterSectionId,
+} from "../model/filter-sections";
 import { ProductFilters } from "./product-filters";
 
 // ProductFilters now renders the «Виробник» BrandFilter, which fetches
@@ -460,6 +469,73 @@ describe("ProductFilters — hideSpecFacets (TASK-523)", () => {
     expect(await screen.findByText(dict.filters.specsTitle)).toBeVisible();
   });
 
+  /**
+   * TASK-515 — the catalogue skeleton draws its placeholder rail from
+   * `filterRailSections`; the real rail must render those very sections, in
+   * that order, or skeleton → content jumps again.
+   */
+  it.each([
+    ["the default /products rail", {}],
+    ["a category rail", { categoryId: CATEGORY_ID }],
+    [
+      "a locked-device landing rail",
+      { categoryId: CATEGORY_ID, lockedDevice: true },
+    ],
+    [
+      "the /search rail",
+      { categoryId: CATEGORY_ID, hideOnSale: true, hideSpecFacets: true },
+    ],
+    ["the /promo rail", { lockedOnSale: true }],
+  ] as const)(
+    "renders the section cards of %s in filterRailSections order",
+    async (_label, props) => {
+      server.use(
+        http.get("*/api/brands", () =>
+          HttpResponse.json({
+            data: [{ id: "b-1", name: "Apple", slug: "apple" }],
+          }),
+        ),
+      );
+      const titleOf: Record<FilterSectionId, string | null> = {
+        search: null, // the keyword card has no heading on desktop
+        availability: dict.filters.availabilityTitle,
+        onSale: dict.filters.saleTitle,
+        brand: dict.filters.brandTitle,
+        device: dict.filters.deviceTitle,
+        price: dict.filters.priceTitle,
+        specs: dict.filters.specsTitle,
+      };
+      const expected = filterRailSections({
+        lockedDevice: "lockedDevice" in props && props.lockedDevice,
+        hideOnSale: "hideOnSale" in props && props.hideOnSale,
+        lockedOnSale: "lockedOnSale" in props && props.lockedOnSale,
+        hideSpecFacets: "hideSpecFacets" in props && props.hideSpecFacets,
+        hasCategory: "categoryId" in props,
+      })
+        .map((section) => titleOf[section])
+        .filter((title): title is string => title !== null);
+
+      const { container } = renderWithProviders(
+        <ProductFilters
+          currentParams={{}}
+          onFilterChange={jest.fn()}
+          {...props}
+        />,
+      );
+
+      // The two data-driven cards appear last; wait for whichever is expected.
+      await screen.findByText(dict.filters.brandTitle);
+      if (expected.includes(dict.filters.specsTitle)) {
+        await screen.findByText(dict.filters.specsTitle);
+      }
+
+      const rendered = [...container.querySelectorAll("h3")].map(
+        (heading) => heading.textContent,
+      );
+      expect(rendered).toEqual(expected);
+    },
+  );
+
   it.each([
     ["the sidebar", false],
     ["the drawer", true],
@@ -484,4 +560,64 @@ describe("ProductFilters — hideSpecFacets (TASK-523)", () => {
       expect(facetCalls).toBe(0);
     },
   );
+});
+
+/**
+ * TASK-515 — `GET /brands` is not in the server-rendered page, so «Виробник»
+ * used to render nothing until it answered: right after the skeleton swap the
+ * rail was a card short and the device and price cards jumped up, then back.
+ */
+describe("ProductFilters — «Виробник» holds its place (TASK-515)", () => {
+  const sectionsInRail = (root: HTMLElement) =>
+    [...root.querySelectorAll("[data-section]")].map((node) =>
+      node.getAttribute("data-section"),
+    );
+
+  it("keeps the brand card's box in the sidebar until the brand list is in", async () => {
+    server.use(
+      http.get("*/api/brands", () =>
+        HttpResponse.json({
+          data: [{ id: "b-1", name: "Apple", slug: "apple" }],
+        }),
+      ),
+    );
+
+    const { container } = renderWithProviders(
+      <ProductFilters currentParams={{}} onFilterChange={jest.fn()} />,
+    );
+
+    // Between «Знижки» and «Сумісний пристрій» — where the card will land.
+    expect(sectionsInRail(container)).toEqual(["brand"]);
+    const placeholder = container.querySelector('[data-section="brand"]');
+    expect(placeholder?.previousElementSibling).toHaveTextContent(
+      dict.filters.onSaleOnly,
+    );
+
+    await screen.findByText(dict.filters.brandTitle);
+    expect(sectionsInRail(container)).toEqual([]);
+  });
+
+  it("gives the box up when there turn out to be no brands", async () => {
+    const { container } = renderWithProviders(
+      <ProductFilters currentParams={{}} onFilterChange={jest.fn()} />,
+    );
+
+    expect(sectionsInRail(container)).toEqual(["brand"]);
+    await screen.findByText(dict.filters.deviceTitle);
+    await screen.findByText(dict.filters.priceTitle);
+    await waitFor(() => expect(sectionsInRail(container)).toEqual([]));
+    expect(screen.queryByText(dict.filters.brandTitle)).not.toBeInTheDocument();
+  });
+
+  it("draws no placeholder box in the drawer, whose disclosures gate on data", () => {
+    const { container } = renderWithProviders(
+      <ProductFilters
+        collapsible
+        currentParams={{}}
+        onFilterChange={jest.fn()}
+      />,
+    );
+
+    expect(sectionsInRail(container)).toEqual([]);
+  });
 });

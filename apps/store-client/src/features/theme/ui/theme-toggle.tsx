@@ -11,13 +11,14 @@ import { cn } from "@/shared/lib/utils";
  * the middle on purpose — it is the neutral default the storefront ships with,
  * and the two explicit choices flank it like the ends of a slider.
  *
- * The labels are NOT new copy: they are the same three strings the account
- * settings section names, so the two surfaces can never drift apart.
+ * Copy comes from the control's own `dict.theme` block (TASK-532), not from
+ * the header's or the account's: the control renders in three hosts, and
+ * borrowing one host's strings made every edit leak into the other two.
  */
 const THEME_OPTIONS = [
-  { value: "light", label: dict.account.dashboard.themeLight, Icon: Sun },
-  { value: "system", label: dict.account.dashboard.themeSystem, Icon: Monitor },
-  { value: "dark", label: dict.account.dashboard.themeDark, Icon: Moon },
+  { value: "light", label: dict.theme.light, Icon: Sun },
+  { value: "system", label: dict.theme.system, Icon: Monitor },
+  { value: "dark", label: dict.theme.dark, Icon: Moon },
 ] as const;
 
 /**
@@ -151,7 +152,7 @@ export function ThemeToggle({
             : "sr-only",
         )}
       >
-        {dict.header.themeAria}
+        {dict.theme.groupAria}
       </span>
 
       <div

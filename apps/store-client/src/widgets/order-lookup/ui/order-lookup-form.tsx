@@ -5,10 +5,7 @@ import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useLookupOrder, type PublicOrderEntity } from "@/entities/order";
 import { dict } from "@/shared/config";
-// The mask function rather than `shared/ui`'s `PhoneInput`: this panel draws its
-// own fields, exactly like the contact form does, and pulling the shadcn-styled
-// input in would drag a second set of base classes into it.
-import { formatUAPhone } from "@/shared/lib/phone";
+import { Button, Input, Label, PhoneInput } from "@/shared/ui";
 import {
   normalizeOrderNumber,
   orderLookupSchema,
@@ -16,10 +13,13 @@ import {
 } from "../model/order-lookup-schema";
 import { OrderLookupResult } from "./order-lookup-result";
 
-const FIELD =
-  "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-[14.5px] text-foreground outline-none focus-visible:border-primary";
-const LABEL = "text-[13px] font-semibold text-foreground";
-const ERROR = "text-[12.5px] font-medium text-destructive";
+// TASK-872: the fields are the `shared/ui` primitives, so they carry the same
+// focus-visible ring, invalid border and disabled look as every other storefront
+// form. `h-11` is the 44px touch target; the radius stays the primitive's
+// `rounded-md` (DS §5 — inputs), and `bg-background` lifts them off the card.
+const FIELD = "h-11 bg-background";
+const LABEL = "font-semibold text-foreground";
+const ERROR = "text-xs font-medium text-destructive";
 
 /**
  * OrderLookupForm — the public "номер + телефон" form (TASK-483).
@@ -116,13 +116,14 @@ export function OrderLookupForm() {
           <p className="text-xs leading-relaxed text-muted-foreground">
             {d.privacyNote}
           </p>
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => lookup.reset()}
-            className="h-11 self-start rounded-xl border border-border bg-background px-6 text-sm font-semibold text-foreground transition-colors hover:border-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className="h-11 self-start rounded-cta px-6 font-semibold"
           >
             {d.searchAgain}
-          </button>
+          </Button>
         </div>
       </>
     );
@@ -131,6 +132,11 @@ export function OrderLookupForm() {
   // 404 → the one generic "not found" sentence (the server refuses to say which
   // half was wrong, so neither do we); 429 → its own copy, because that one is
   // about the request rather than about the order; anything else → generic.
+  //
+  // TASK-872: a 200 with an EMPTY list is a miss too, and used to drop the
+  // shopper back on the form with no word at all — as if the button did nothing.
+  // It reads exactly like the 404: wording it differently would tell a guesser
+  // which of the two answers came back, the one distinction the API hides.
   const status = lookup.error?.response?.status;
   const errorMessage = lookup.isError
     ? status === 404
@@ -138,12 +144,14 @@ export function OrderLookupForm() {
       : status === 429
         ? d.errors.rateLimited
         : d.errors.generic
-    : null;
+    : lookup.isSuccess && orders.length === 0
+      ? d.errors.notFound
+      : null;
 
   return (
     <>
       {announcer}
-      <div className="rounded-2xl border border-border bg-card p-8 shadow-card">
+      <div className="rounded-card border border-border bg-card p-8 shadow-card">
         <p className="mb-6 text-sm leading-relaxed text-muted-foreground">
           {d.intro}
         </p>
@@ -161,14 +169,14 @@ export function OrderLookupForm() {
             is the relationship that means "extra information about", which is
             what a hint is. */}
           <div className="flex flex-col gap-2">
-            <label className={LABEL} htmlFor="order-lookup-number">
+            <Label className={LABEL} htmlFor="order-lookup-number">
               {d.fieldNumber}
-            </label>
-            <input
+            </Label>
+            <Input
               id="order-lookup-number"
               autoComplete="off"
               placeholder={d.fieldNumberPlaceholder}
-              aria-invalid={Boolean(errors.number)}
+              aria-invalid={errors.number ? true : undefined}
               aria-describedby={
                 errors.number
                   ? "order-lookup-number-error order-lookup-hint"
@@ -194,31 +202,30 @@ export function OrderLookupForm() {
             )}
           </div>
 
-          <label className="flex flex-col gap-2">
-            <span className={LABEL}>{d.fieldPhone}</span>
-            {/* Controlled, not `register`ed: the field shows the mask while the
-              form value stays the raw string the shopper typed — the same split
-              the checkout and contact fields use. */}
+          {/* Same shape as the number field: a sibling <Label>, the error
+            outside it. It used to sit INSIDE a wrapping <label>, which made
+            the error text part of the phone box's accessible name. */}
+          <div className="flex flex-col gap-2">
+            <Label className={LABEL} htmlFor="order-lookup-phone">
+              {d.fieldPhone}
+            </Label>
+            {/* Controlled, not `register`ed: `PhoneInput` shows the mask while
+              the form value stays the raw string the shopper typed — the same
+              split the checkout field uses. */}
             <Controller
               name="phone"
               control={control}
               render={({ field }) => (
-                <input
+                <PhoneInput
                   id="order-lookup-phone"
-                  type="tel"
-                  inputMode="numeric"
                   autoComplete="tel"
                   placeholder={d.fieldPhonePlaceholder}
-                  aria-invalid={Boolean(errors.phone)}
+                  aria-invalid={errors.phone ? true : undefined}
                   aria-describedby={
                     errors.phone ? "order-lookup-phone-error" : undefined
                   }
                   className={FIELD}
-                  name={field.name}
-                  ref={field.ref}
-                  onBlur={field.onBlur}
-                  value={formatUAPhone(field.value ?? "")}
-                  onChange={(event) => field.onChange(event.target.value)}
+                  {...field}
                 />
               )}
             />
@@ -231,7 +238,7 @@ export function OrderLookupForm() {
                 {errors.phone.message}
               </span>
             )}
-          </label>
+          </div>
 
           {errorMessage && (
             <p
@@ -242,13 +249,13 @@ export function OrderLookupForm() {
             </p>
           )}
 
-          <button
+          <Button
             type="submit"
             disabled={lookup.isPending}
-            className="h-12 rounded-xl bg-primary text-base font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+            className="h-12 w-full rounded-cta text-base font-bold"
           >
             {lookup.isPending ? d.submitting : d.submit}
-          </button>
+          </Button>
         </form>
       </div>
     </>

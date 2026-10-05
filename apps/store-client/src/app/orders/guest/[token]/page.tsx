@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { GuestOrderView, OrderConfirmationSkeleton } from "@/widgets";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 
 interface GuestOrderPageProps {
   params: Promise<{ token: string }>;
@@ -33,7 +33,7 @@ export default async function GuestOrderPage({ params }: GuestOrderPageProps) {
   return (
     // Same container as `app/orders/page.tsx` — without it this page ran edge
     // to edge on a wide screen while every sibling route did not (TASK-407).
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className={`${PAGE_CONTAINER} py-8`}>
       <Suspense fallback={<OrderConfirmationSkeleton />}>
         <GuestOrderView token={token} />
       </Suspense>

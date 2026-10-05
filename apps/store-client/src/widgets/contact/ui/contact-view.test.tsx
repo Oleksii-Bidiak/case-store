@@ -44,6 +44,43 @@ describe("ContactView", () => {
     );
   });
 
+  it("keeps one filled primary — the submit; FAQ outline, topic chip tinted (TASK-865)", () => {
+    const { container } = renderWithProviders(
+      <ContactView contact={contact} />,
+    );
+
+    const filled = container.querySelectorAll(".bg-primary");
+    expect(filled).toHaveLength(1);
+    expect(filled[0]).toBe(screen.getByRole("button", { name: d.submit }));
+    expect(screen.getByRole("link", { name: d.faqCta })).toHaveAttribute(
+      "data-variant",
+      "outline",
+    );
+    const selected = screen.getByRole("button", { pressed: true });
+    expect(selected).toHaveClass("bg-primary/10", "text-foreground");
+  });
+
+  it("shows no bracketed placeholder and no office without an address (TASK-873)", () => {
+    const { container } = renderWithProviders(
+      <ContactView contact={contact} />,
+    );
+
+    expect(container.textContent).not.toMatch(/\[[^\]]*[а-яіїєґa-z][^\]]*\]/i);
+    // «Контакти магазину» stores no address yet, so there is no office card.
+    expect(
+      screen.queryByRole("heading", { name: d.officeHeading }),
+    ).not.toBeInTheDocument();
+    // Each department writes to the shop's one support email, subject = title.
+    for (const dep of d.departments) {
+      expect(
+        screen.getByRole("link", { name: d.departmentWriteAria(dep.title) }),
+      ).toHaveAttribute(
+        "href",
+        `mailto:${contact.email}?subject=${encodeURIComponent(dep.title)}`,
+      );
+    }
+  });
+
   it("falls back to the localized defaults when no contact settings exist", () => {
     renderWithProviders(<ContactView contact={null} />);
 
@@ -262,6 +299,15 @@ describe("ContactView", () => {
       await screen.findByText(d.sentHeading);
       expect(received).toMatchObject({ website: "https://spam.example" });
     });
+  });
+
+  it("steps the hero padding up with the viewport — no flat p-11 on a phone (TASK-878)", () => {
+    renderWithProviders(<ContactView contact={contact} />);
+
+    const hero = screen.getByRole("heading", { level: 1 }).parentElement
+      ?.parentElement as HTMLElement;
+    expect(hero).toHaveClass("p-6", "sm:p-8", "lg:p-11");
+    expect(hero).not.toHaveClass("p-11");
   });
 
   it("blocks submit and surfaces validation errors when required fields are empty", async () => {

@@ -17,12 +17,13 @@ import { dict } from "@/shared/config";
 // a second set of base classes into a panel that does not use them. What must be
 // shared is the rule and the mask — both live in `shared/lib/phone` (TASK-407).
 import { formatUAPhone } from "@/shared/lib/phone";
+import { Button } from "@/shared/ui";
 import { contactSchema, type ContactFormValues } from "../model/contact-schema";
 
 const FIELD =
-  "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-[14.5px] text-foreground outline-none focus-visible:border-primary";
+  "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-base text-foreground outline-none focus-visible:border-primary md:text-sm";
 const LABEL = "text-[13px] font-semibold text-foreground";
-const ERROR = "text-[12.5px] font-medium text-destructive";
+const ERROR = "text-xs font-medium text-destructive";
 
 /**
  * ContactForm — the "Напишіть нам" message form. Submits to `POST /api/contact`
@@ -84,9 +85,9 @@ export function ContactForm() {
 
   if (submit.isSuccess) {
     return (
-      <div className="rounded-[18px] border border-border bg-card p-8 shadow-card">
+      <div className="rounded-card border border-border bg-card p-8 shadow-card">
         <div className="flex flex-col items-center py-10 text-center">
-          <span className="mb-[18px] inline-flex size-16 items-center justify-center rounded-full bg-[color-mix(in_oklab,var(--color-success)_16%,var(--color-card))] text-success">
+          <span className="mb-[18px] inline-flex size-16 items-center justify-center rounded-full bg-success/16 text-success">
             <Check className="size-8" strokeWidth={2.4} aria-hidden="true" />
           </span>
           <b className="mb-2 font-display text-xl font-bold text-foreground">
@@ -124,8 +125,8 @@ export function ContactForm() {
     : null;
 
   return (
-    <div className="rounded-[18px] border border-border bg-card p-8 shadow-card">
-      <h2 className="mb-1.5 font-display text-[23px] font-bold text-foreground">
+    <div className="rounded-card border border-border bg-card p-8 shadow-card">
+      <h2 className="mb-1.5 font-display text-2xl font-bold text-foreground">
         {d.formHeading}
       </h2>
       <p className="mb-[22px] text-sm leading-relaxed text-muted-foreground">
@@ -150,9 +151,13 @@ export function ContactForm() {
                   onClick={() =>
                     setValue("topic", t.key, { shouldDirty: true })
                   }
-                  className={`h-[38px] rounded-md border px-4 text-[13.5px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                  className={`h-[38px] rounded-md border px-3.5 text-sm font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
+                    // Tint, not filled (TASK-865): a selected option, not an
+                    // action — the submit below is the page's one primary.
+                    // text-foreground, because text-primary on the tint
+                    // falls under 4.5:1 in the dark theme.
                     active
-                      ? "border-primary bg-primary text-primary-foreground"
+                      ? "border-primary bg-primary/10 text-foreground"
                       : "border-border bg-background text-foreground hover:border-primary"
                   }`}
                 >
@@ -256,7 +261,7 @@ export function ContactForm() {
             aria-describedby={
               errors.message ? "contact-message-error" : undefined
             }
-            className="resize-y rounded-xl border-[1.5px] border-border bg-background px-[15px] py-3 text-[14.5px] text-foreground outline-none focus-visible:border-primary"
+            className="resize-y rounded-xl border-[1.5px] border-border bg-background px-[15px] py-3 text-base text-foreground outline-none focus-visible:border-primary md:text-sm"
             {...register("message")}
           />
           {errors.message && (
@@ -268,7 +273,7 @@ export function ContactForm() {
 
         <ContactHoneypot {...register(CONTACT_HONEYPOT_FIELD)} />
 
-        <label className="flex cursor-pointer items-start gap-2.5 text-[12.5px] leading-relaxed text-muted-foreground">
+        <label className="flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-muted-foreground">
           <input
             id="contact-consent"
             type="checkbox"
@@ -281,7 +286,9 @@ export function ContactForm() {
           />
           <span>
             {d.consentBefore}
-            <Link href="/legal" className="text-primary hover:underline">
+            {/* TASK-866 — the privacy policy itself, not the /legal hub:
+                the shopper consents to one document, so they open that one. */}
+            <Link href={d.consentHref} className="text-primary hover:underline">
               {d.consentLink}
             </Link>
           </span>
@@ -301,13 +308,15 @@ export function ContactForm() {
           </p>
         )}
 
-        <button
+        {/* The page's one primary action (TASK-865, design-system §1). */}
+        <Button
           type="submit"
+          size="lg"
           disabled={submit.isPending}
-          className="h-[50px] rounded-xl bg-primary text-[15px] font-bold text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-60"
+          className="h-12 rounded-cta text-base font-bold"
         >
           {submit.isPending ? d.submitting : d.submit}
-        </button>
+        </Button>
       </form>
     </div>
   );

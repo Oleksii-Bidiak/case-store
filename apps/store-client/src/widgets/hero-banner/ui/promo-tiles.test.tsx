@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import type { BannerEntity } from "@/shared/api/generated/models";
+import { dict } from "@/shared/config";
 import { PromoTiles } from "./promo-tiles";
 
 function tileBanner(
@@ -43,5 +44,35 @@ describe("PromoTiles — banner pictures (TASK-740)", () => {
 
     const withoutPicture = screen.getByRole("link", { name: /Павербанки/ });
     expect(withoutPicture.querySelector("img")).toBeNull();
+  });
+});
+
+describe("PromoTiles — real links only (TASK-873)", () => {
+  it("renders a banner without a link as a plain card, not an `#` link", () => {
+    const { container } = render(
+      <PromoTiles
+        banners={[
+          { ...tileBanner("t1", "Без посилання", null), ctaHref: null },
+          tileBanner("t2", "З посиланням", null),
+        ]}
+      />,
+    );
+
+    expect(container.querySelector('a[href="#"]')).toBeNull();
+    expect(screen.getByText("Без посилання").closest("a")).toBeNull();
+    expect(screen.getByRole("link", { name: /З посиланням/ })).toHaveAttribute(
+      "href",
+      "/promo",
+    );
+  });
+
+  it("points every fallback tile at a real page", () => {
+    const { container } = render(<PromoTiles />);
+
+    const links = Array.from(container.querySelectorAll("a"));
+    expect(links).toHaveLength(dict.home.promoTiles.length);
+    for (const link of links) {
+      expect(link.getAttribute("href")).toMatch(/^\/[a-z]/);
+    }
   });
 });

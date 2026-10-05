@@ -3,7 +3,8 @@
  * range slider and the min/max number inputs in sync (TASK-208).
  *
  * Conventions:
- *  - The filter domain is `[0, PRICE_DOMAIN_MAX]`. A bound sitting exactly on
+ *  - The filter domain is `[0, domainMax]` — `PRICE_DOMAIN_MAX` for the catalog,
+ *    the highest saved price for the wishlist (TASK-1300). A bound sitting exactly on
  *    its domain edge means "no filter on this side": the input renders empty
  *    and the URL param is omitted.
  *  - Values are clamped (never rejected) on commit; an inverted pair is
@@ -15,9 +16,12 @@ export const PRICE_DOMAIN_MAX = 100000;
 /** Slider snap increment (the inputs accept any value, incl. decimals). */
 export const PRICE_STEP = 100;
 
-/** Clamp a price into the slider domain `[0, PRICE_DOMAIN_MAX]`. */
-export function clampPrice(value: number): number {
-  return Math.max(0, Math.min(PRICE_DOMAIN_MAX, value));
+/** Clamp a price into the slider domain `[0, domainMax]`. */
+export function clampPrice(
+  value: number,
+  domainMax: number = PRICE_DOMAIN_MAX,
+): number {
+  return Math.max(0, Math.min(domainMax, value));
 }
 
 /**
@@ -42,9 +46,10 @@ export function normalizePriceRange(
   min: number | undefined,
   max: number | undefined,
   changed: "min" | "max",
+  domainMax: number = PRICE_DOMAIN_MAX,
 ): [number, number] {
-  let lo = clampPrice(min ?? 0);
-  let hi = clampPrice(max ?? PRICE_DOMAIN_MAX);
+  let lo = clampPrice(min ?? 0, domainMax);
+  let hi = clampPrice(max ?? domainMax, domainMax);
   if (lo > hi) {
     if (changed === "min") lo = hi;
     else hi = lo;
@@ -56,13 +61,16 @@ export function normalizePriceRange(
  * Map a normalized range to the URL updates consumed by `onFilterChange`.
  * Domain-edge bounds are omitted (`undefined` deletes the param).
  */
-export function priceRangeToUrlUpdates([min, max]: [number, number]): {
+export function priceRangeToUrlUpdates(
+  [min, max]: [number, number],
+  domainMax: number = PRICE_DOMAIN_MAX,
+): {
   minPrice: string | undefined;
   maxPrice: string | undefined;
 } {
   return {
     minPrice: min > 0 ? String(min) : undefined,
-    maxPrice: max < PRICE_DOMAIN_MAX ? String(max) : undefined,
+    maxPrice: max < domainMax ? String(max) : undefined,
   };
 }
 

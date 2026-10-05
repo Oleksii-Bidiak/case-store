@@ -15,7 +15,10 @@
  * one of them already holds, is what keeps that one request one request.
  */
 
-import type { CategoryControllerGetFilterableSpecsParams } from "@/entities/category";
+import {
+  getCategoryControllerGetFilterableSpecsQueryKey,
+  type CategoryControllerGetFilterableSpecsParams,
+} from "@/entities/category";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 
 /**
@@ -40,4 +43,27 @@ export function toFacetQueryParams(
     inStock: params.inStock,
     onSale: params.onSale,
   };
+}
+
+/**
+ * `placeholderData` for the facet query (TASK-515): while a tick refetches the
+ * counts, keep showing the facet list the shopper is ticking in — but only if
+ * it belongs to the SAME category. Another category's facets are a different
+ * list, not stale numbers, so on a category switch there is no placeholder and
+ * the card shows its pending box instead.
+ *
+ * Without it every tick changed the key, the query went back to pending, and
+ * «Характеристики» vanished (taking the focused checkbox with it) until the new
+ * counts came back — and now that the card holds a placeholder box while
+ * pending, it would have flashed grey on every click instead.
+ */
+export function keepFacetsOfCategory(categoryId: string | undefined) {
+  const path = getCategoryControllerGetFilterableSpecsQueryKey(
+    categoryId ?? "",
+  )[0];
+  return <T>(
+    previous: T | undefined,
+    previousQuery?: { queryKey: readonly unknown[] },
+  ): T | undefined =>
+    categoryId && previousQuery?.queryKey[0] === path ? previous : undefined;
 }

@@ -1,13 +1,32 @@
 export { ProductFilters } from "./ui/product-filters";
 export { ActiveFilterChips } from "./ui/active-filter-chips";
+// Presentational pieces shared with the wishlist rail (TASK-1300): the chip row
+// and the inputs + two-thumb price slider, each fed by its caller's own state.
+export { FilterChipList, type FilterChip } from "./ui/filter-chip-list";
+export { PriceRangeFilter } from "./ui/price-range-filter";
 export { DeviceModelFilter } from "./ui/device-model-filter";
 export { SpecFacets } from "./ui/spec-facets";
 export { CategoryChips } from "./ui/category-chips";
-export { SortSelect } from "./ui/sort-select";
+// Its placeholder and its second-row rule (TASK-515): the catalogue skeleton and
+// pages reserve exactly the rows the chips will draw.
+export { CategoryChipsSkeleton } from "./ui/category-chips-skeleton";
+// One filter card's placeholder (TASK-515): the catalogue skeleton's rail and
+// the brand / spec cards' own pending state are the same box.
+export { FilterCardSkeleton } from "./ui/filter-card-skeleton";
+export { subcategoryChipsOf } from "./model/category-chips";
+export { SortSelect, type SortOption } from "./ui/sort-select";
 export { ViewToggle, type CatalogView } from "./ui/view-toggle";
 export { FilterCheckbox } from "./ui/filter-checkbox";
 // The one mobile filter drawer (TASK-804) — catalogue, /search and wishlist.
 export { FiltersDrawer } from "./ui/filters-drawer";
+// …and the toolbar button that opens it (TASK-876).
+export { FiltersButton } from "./ui/filters-button";
+// The one empty state of a product listing (TASK-870, design-system §6).
+export {
+  ListingEmptyState,
+  type ListingEmptyStateAction,
+  type ListingEmptyStateProps,
+} from "./ui/listing-empty-state";
 // The single definition of "the catalogue filters" (TASK-414) — widgets count
 // and clear through these rather than re-listing the params.
 export {
@@ -21,3 +40,11 @@ export {
 // Listing params → facet-request params (TASK-489): one mapping, so every
 // caller of the facet endpoint shares one React Query key and one request.
 export { toFacetQueryParams } from "./model/facet-query";
+// The rail's section order (TASK-515) — the panel gates on it and the catalogue
+// skeleton draws its placeholder cards from it, so the two cannot drift.
+export {
+  FILTER_SECTION_ORDER,
+  filterRailSections,
+  type FilterSectionId,
+  type FilterSectionOptions,
+} from "./model/filter-sections";

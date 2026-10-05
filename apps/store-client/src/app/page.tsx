@@ -95,6 +95,7 @@ export async function generateMetadata(): Promise<Metadata> {
       images: buildOgImages({
         defaultOgImage: resolved.ogImage,
         alt: title.absolute,
+        siteName,
       }),
     },
   };

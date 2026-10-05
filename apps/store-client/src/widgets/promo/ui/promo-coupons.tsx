@@ -4,7 +4,7 @@ import { Copy } from "lucide-react";
 import { toast } from "sonner";
 import { useListActiveDiscounts } from "@/entities/discount";
 import { Skeleton } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, H2_CLASS } from "@/shared/config";
 import { mapDiscountToCoupon } from "../model/coupons";
 
 /**
@@ -29,6 +29,16 @@ export function PromoCoupons() {
 
   const coupons = (data?.data ?? []).map(mapDiscountToCoupon);
 
+  // TASK-869 — `app/promo/layout.tsx` prefetches this feed on the server, so on
+  // the normal path the first render already has the tickets and the
+  // placeholder below is never painted. It is the FALLBACK for a failed
+  // prefetch (the client then fetches behind it). For that path the ticket card
+  // carries `min-h-32` and the placeholder is `h-32` (both 128px): a one-line
+  // ticket (~126.5px of content) lands at exactly the placeholder's height. A
+  // ticket whose title / condition wraps (narrow columns: 320–389px, 640–767px,
+  // 1024–1179px) is taller and still grows — that residual is why the layout
+  // prefetches instead of relying on a fixed height.
+
   // Hide the section entirely when there are no active codes and nothing is
   // pending/errored — a lone heading over an empty grid reads as broken.
   if (!isPending && !isError && coupons.length === 0) {
@@ -37,14 +47,18 @@ export function PromoCoupons() {
 
   return (
     <section className="mt-9">
-      <h2 className="mb-4 font-display text-2xl font-bold tracking-tight text-foreground">
+      <h2 className={`mb-4 ${H2_CLASS} text-foreground`}>
         {dict.promo.couponsHeading}
       </h2>
 
       {isPending ? (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-[116px] w-full rounded-2xl" />
+            <Skeleton
+              key={i}
+              data-testid="promo-coupon-skeleton"
+              className="h-32 w-full rounded-2xl"
+            />
           ))}
         </div>
       ) : isError ? (
@@ -56,13 +70,14 @@ export function PromoCoupons() {
           {coupons.map((coupon) => (
             <div
               key={coupon.code}
-              className="relative flex items-center gap-[18px] overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card"
+              data-testid="promo-coupon"
+              className="relative flex min-h-32 items-center gap-4 md:gap-6 overflow-hidden rounded-2xl border border-border bg-card p-5 shadow-card"
             >
               {/* Ticket notches. */}
               <span className="absolute top-1/2 -left-[9px] size-[18px] -translate-y-1/2 rounded-full bg-background" />
               <span className="absolute top-1/2 -right-[9px] size-[18px] -translate-y-1/2 rounded-full bg-background" />
 
-              <div className="shrink-0 border-r-2 border-dashed border-border pr-[18px] text-center">
+              <div className="shrink-0 border-r-2 border-dashed border-border pr-4 md:pr-6 text-center">
                 <span className="block font-display text-3xl leading-none font-bold text-sale">
                   {coupon.amount}
                 </span>
@@ -72,7 +87,7 @@ export function PromoCoupons() {
               </div>
 
               <div className="min-w-0 flex-1">
-                <b className="mb-1 block text-[14.5px] text-foreground">
+                <b className="mb-1 block text-sm text-foreground">
                   {coupon.title}
                 </b>
                 <p className="mb-2.5 text-xs leading-snug text-muted-foreground">
@@ -82,7 +97,7 @@ export function PromoCoupons() {
                   type="button"
                   onClick={() => copy(coupon.code)}
                   aria-label={dict.promo.couponCopyAria(coupon.code)}
-                  className="inline-flex h-[34px] items-center gap-2 rounded-[9px] border-[1.5px] border-dashed border-primary bg-[color-mix(in_oklab,var(--color-primary)_7%,var(--color-card))] px-3 font-mono text-[13px] font-bold tracking-wide text-primary transition-colors hover:bg-[color-mix(in_oklab,var(--color-primary)_14%,var(--color-card))] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  className="inline-flex h-[34px] items-center gap-2 rounded-sm border-[1.5px] border-dashed border-primary bg-[color-mix(in_oklab,var(--color-primary)_7%,var(--color-card))] px-3 font-mono text-[13px] font-bold tracking-wide text-primary transition-colors hover:bg-[color-mix(in_oklab,var(--color-primary)_14%,var(--color-card))] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   {coupon.code}
                   <Copy className="size-3.5" aria-hidden="true" />

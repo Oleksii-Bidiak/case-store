@@ -8,3 +8,8 @@ export {
   type InfoSectionSource,
   type InfoService,
 } from "./model/info-content";
+export {
+  hasUnfilledPlaceholder,
+  stripUnfilledBlocks,
+  stripUnfilledSentences,
+} from "./model/unfilled-placeholders";

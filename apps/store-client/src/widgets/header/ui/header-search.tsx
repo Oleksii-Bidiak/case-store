@@ -35,8 +35,8 @@ import { dict } from "@/shared/config";
  * wordmark to ~16px at 768px), so the input and submit segments collapse into a
  * single magnifier that drops a panel with the shared {@link SearchAutocomplete}
  * (TASK-411). The "Каталог" segment stays at every width this widget exists at —
- * from `lg` it is the only catalog entry point, since the slide-out menu that
- * carries the category accordion is `lg:hidden` (TASK-413).
+ * from `xl` it is the only catalog entry point, since the slide-out menu that
+ * carries the category accordion is `xl:hidden` (TASK-413, TASK-511/512).
  */
 export function HeaderSearch() {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -244,7 +244,9 @@ export function HeaderSearch() {
       // the free space at 1024 is 253, so the pill clamped itself at 410 and
       // the overflow was billed to the only shrinkable item left: the brand,
       // which collapsed to 1px. The search field is the elastic part of this
-      // row; the store's name is not.
+      // row; the store's name is not. Since TASK-511/512 the section links and
+      // the theme switch wait for `xl` and the actions are icon-only below it,
+      // so at 1024 the input gets ≈317px instead of ~79 (e2e/header-widths).
       className="relative z-40 hidden md:block lg:max-w-2xl lg:min-w-0 lg:flex-1"
     >
       <form

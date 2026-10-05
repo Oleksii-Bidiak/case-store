@@ -2,6 +2,7 @@ import {
   formatUAPhone,
   isValidUAPhone,
   normalizeUAPhone,
+  toTelHref,
   UA_PHONE_LOCAL_LENGTH,
 } from "./phone";
 
@@ -76,4 +77,21 @@ describe("isValidUAPhone", () => {
   it("keeps the local length at 9 digits", () => {
     expect(UA_PHONE_LOCAL_LENGTH).toBe(9);
   });
+});
+
+describe("toTelHref (TASK-873)", () => {
+  it.each([
+    [" +380 (44) 000-00-00 ", "tel:+380440000000"],
+    // A free-phone line dials as written — not rewritten to +380.
+    ["0 800 30 30 30", "tel:0800303030"],
+  ])("turns %s into %s", (input, expected) => {
+    expect(toTelHref(input)).toBe(expected);
+  });
+
+  it.each([["телефон"], ["—"], ["   "]])(
+    "returns null when nothing dialable is left in %j",
+    (input) => {
+      expect(toTelHref(input)).toBeNull();
+    },
+  );
 });

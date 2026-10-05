@@ -143,3 +143,14 @@ describe("ContactForm — a failed submit keeps the form (TASK-764)", () => {
     expectInputKept();
   });
 });
+
+describe("ContactForm — consent link (TASK-866)", () => {
+  it("links the consent to the privacy policy document, not the /legal hub", () => {
+    renderWithProviders(<ContactForm />);
+
+    expect(screen.getByRole("link", { name: d.consentLink })).toHaveAttribute(
+      "href",
+      "/legal/privacy-policy",
+    );
+  });
+});

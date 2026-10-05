@@ -19,8 +19,8 @@ import {
 } from "../model/info-contact-schema";
 
 const FIELD =
-  "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-[14.5px] text-foreground outline-none focus-visible:border-primary";
-const ERROR = "text-[12.5px] font-medium text-destructive";
+  "h-[46px] rounded-xl border-[1.5px] border-border bg-background px-[15px] text-base text-foreground outline-none focus-visible:border-primary md:text-sm";
+const ERROR = "text-xs font-medium text-destructive";
 
 /** TASK-762: the real remaining minutes when the API sends them. */
 function cooldownText(error: unknown): string {
@@ -59,11 +59,11 @@ export function InfoContactForm() {
   };
 
   return (
-    <div className="rounded-[18px] border border-border bg-card p-[30px] shadow-card">
-      <h2 className="mb-1.5 font-display text-[22px] font-bold text-foreground">
+    <div className="rounded-card border border-border bg-card p-[30px] shadow-card">
+      <h2 className="mb-1.5 font-display text-2xl font-bold text-foreground">
         {d.formHeading}
       </h2>
-      <p className="mb-5 text-[13.5px] text-muted-foreground">{d.formIntro}</p>
+      <p className="mb-5 text-sm text-muted-foreground">{d.formIntro}</p>
 
       {submit.isSuccess ? (
         <p
@@ -165,7 +165,7 @@ export function InfoContactForm() {
               aria-describedby={
                 errors.message ? "info-contact-message-error" : undefined
               }
-              className="resize-y rounded-xl border-[1.5px] border-border bg-background px-[15px] py-3 text-[14.5px] text-foreground outline-none focus-visible:border-primary"
+              className="resize-y rounded-xl border-[1.5px] border-border bg-background px-[15px] py-3 text-base text-foreground outline-none focus-visible:border-primary md:text-sm"
               {...register("message")}
             />
             {errors.message && (

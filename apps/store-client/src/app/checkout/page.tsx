@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import type { Metadata } from "next";
 import { CheckoutView } from "@/widgets";
 import { CheckoutSkeleton } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 
 export const metadata: Metadata = {
   title: dict.meta.checkoutTitle,
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function CheckoutPage() {
   return (
-    <div className="mx-auto w-full max-w-[1180px] px-4 pt-7 pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-7 pb-16`}>
       <Suspense fallback={<CheckoutSkeleton />}>
         <CheckoutView />
       </Suspense>

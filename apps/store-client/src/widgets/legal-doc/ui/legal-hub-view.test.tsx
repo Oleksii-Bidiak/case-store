@@ -37,17 +37,47 @@ describe("LegalHubView", () => {
     expect(terms).toHaveAttribute("href", "/legal/terms");
   });
 
-  it("renders the support CTA linking to the contacts destination", () => {
+  it("renders the support CTA linking to the /contact form (TASK-866)", () => {
     renderWithProviders(<LegalHubView docs={docs} />);
 
     expect(screen.getByText(dict.legal.hub.supportHeading)).toBeInTheDocument();
+    // /contact is the single contact form (owner decision 7.8) — not the
+    // /info Contacts tab it used to point at.
     expect(
       screen.getByRole("link", { name: dict.legal.hub.supportCta }),
-    ).toHaveAttribute("href", dict.legal.contactHref);
+    ).toHaveAttribute("href", "/contact");
   });
 
-  it("shows the empty state when there are no documents", () => {
-    renderWithProviders(<LegalHubView docs={[]} />);
+  it("keeps the support CTA the hub's one primary, with a focus ring (TASK-865)", () => {
+    const { container } = renderWithProviders(<LegalHubView docs={docs} />);
+
+    const filled = container.querySelectorAll(".bg-primary");
+    expect(filled).toHaveLength(1);
+    expect(filled[0]).toBe(
+      screen.getByRole("link", { name: dict.legal.hub.supportCta }),
+    );
+    expect(filled[0].className).toMatch(/focus-visible:ring/);
+  });
+
+  it("shows the §6 empty state with the support action as its one primary (TASK-870)", () => {
+    const { container } = renderWithProviders(<LegalHubView docs={[]} />);
+
     expect(screen.getByText(dict.legal.hub.empty)).toBeInTheDocument();
+    expect(screen.getByText(dict.legal.hub.emptyBody)).toBeInTheDocument();
+
+    // The empty card carries the action; the support card is not rendered,
+    // so the hub still has exactly one primary.
+    const cta = screen.getByRole("link", { name: dict.legal.hub.supportCta });
+    expect(cta).toHaveAttribute("href", "/contact");
+    expect(cta).toHaveClass("h-11");
+    expect(
+      screen.queryByText(dict.legal.hub.supportHeading),
+    ).not.toBeInTheDocument();
+    expect(container.querySelectorAll(".bg-primary")).toHaveLength(1);
+
+    // The glyph is decoration.
+    expect(
+      container.querySelector(".size-18")?.getAttribute("aria-hidden"),
+    ).toBe("true");
   });
 });

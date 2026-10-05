@@ -1,6 +1,5 @@
-import { Suspense, cache } from "react";
+import { Suspense } from "react";
 import type { Metadata } from "next";
-import { permanentRedirect } from "next/navigation";
 import type { QueryClient } from "@tanstack/react-query";
 import { PrefetchBoundary } from "@/shared/api/prefetch-boundary";
 import { ProductDetailView, ProductDetailSkeleton } from "@/widgets";
@@ -8,11 +7,9 @@ import {
   buildProductRailParams,
   type ProductRailFilter,
 } from "@/widgets/product-detail";
-import { resolveSlugRedirect } from "@/shared/lib/slug-redirect";
 import {
   getProductControllerFindAllQueryOptions,
   getProductControllerFindBySlugQueryKey,
-  productControllerFindBySlug,
 } from "@/shared/api/generated/products/products";
 import type { ProductDetailResponseEnvelope } from "@/shared/api/generated/models";
 import {
@@ -30,23 +27,12 @@ import {
   toMetadataTitle,
 } from "@/shared/lib/seo";
 import { fetchSeoSettings } from "@/shared/api/seo-settings-server";
-import { SITE_URL, CURRENCY, dict } from "@/shared/config";
+import { SITE_URL, CURRENCY, dict, PAGE_CONTAINER } from "@/shared/config";
+import { fetchProductBySlug, resolveProductRoute } from "./product-route";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
 }
-
-/**
- * The product read of one request, shared by `generateMetadata`, the JSON-LD
- * and the React Query prefetch (TASK-563). It is axios, which Next's `fetch`
- * dedup does not see, so without React `cache()` every PDP render downloaded the
- * product twice — and would now do it three times. The deadline keeps a silent
- * API from holding the response open (see `serverRequestOptions`).
- */
-const fetchProductBySlug = cache(
-  (slug: string): Promise<ProductDetailResponseEnvelope> =>
-    productControllerFindBySlug(slug, serverRequestOptions()),
-);
 
 export async function generateMetadata({
   params,
@@ -103,6 +89,7 @@ export async function generateMetadata({
           pageImage: images[0]?.url,
           defaultOgImage: resolved.ogImage,
           alt: title.absolute,
+          siteName,
         }),
       },
     };
@@ -119,38 +106,26 @@ export default async function ProductDetailPage({
   // Fetch server-side for structured data AND for the first HTML (TASK-563):
   // the same response is seeded into the query ProductDetailView reads, so the
   // server renders the whole product — name, price, breadcrumb links — instead
-  // of a skeleton. On any failure JSON-LD is simply omitted and nothing is
-  // seeded — ProductDetailView still fetches and handles the 404/UI itself.
-  // Schema objects are built here (plain data); the JSX is constructed outside
-  // the try/catch.
-  const detail = await fetchProductBySlug(slug).catch(() => null);
-
-  // TASK-285: a failed product fetch (detail === null) is the 404 candidate
-  // path — check the slug-redirect ledger and serve a permanent (308) redirect
-  // when the admin renamed the slug. A genuinely dead slug (no redirect row)
-  // falls through unchanged: ProductDetailView still renders its own
-  // client-side not-found state.
+  // of a skeleton. Schema objects are built here (plain data); the JSX is
+  // constructed outside the try/catch.
   //
-  // This note used to claim the route deliberately has NO route-level
-  // loading.tsx, so that no loading boundary could stream a 200 shell before
-  // permanentRedirect() sets the status. That never held HERE:
-  // `app/products/loading.tsx` sits one segment above and wraps this page too —
-  // which is exactly why the live run saw the CATALOGUE grid skeleton on a
-  // product page (SF-PDP-03/05). TASK-409 therefore added `[slug]/loading.tsx`
-  // with the right skeleton: it changes which fallback renders, not whether one
-  // exists. The /categories/[slug] twin has no such ancestor and keeps the
-  // precaution. Whether this route's redirect reaches the wire as a 308 status
-  // or as a client-router redirect wants a live check on the demo stand — the
-  // shopper lands on the new slug either way.
+  // `resolveProductRoute` settles a slug that did not load (TASK-285/874): a
+  // 308 to the renamed slug, the route's `notFound()` for a product the API
+  // says does not exist (the store's not-found page with `noindex` instead of
+  // the «не вдалося завантажити» block a dead link used to get), `null` for an
+  // outage — nothing is seeded and ProductDetailView shows its load error after
+  // a client retry. On a document load `[slug]/layout.tsx` has already run the
+  // same cached call ABOVE `loading.tsx`, which is what puts the 404 / 308 on
+  // the wire (the skeleton shell would otherwise be flushed with a 200 first);
+  // here it is a cache hit. It decides here for the client router's own
+  // requests, which the layout skips (see its note): the not-found UI still
+  // replaces the skeleton on a soft navigation to a dead link.
   //
-  // The in-page <Suspense> fallback below keeps the skeleton UX while
-  // ProductDetailView hydrates.
-  if (!detail) {
-    const newSlug = await resolveSlugRedirect("PRODUCT", slug);
-    if (newSlug) {
-      permanentRedirect(`/products/${newSlug}`);
-    }
-  }
+  // `[slug]/loading.tsx` is this route's only loading boundary (TASK-409/832 —
+  // the catalogue's moved into the `(catalog)` route group, so its grid
+  // skeleton no longer wraps a product page). The in-page <Suspense> fallback
+  // below keeps the skeleton UX while ProductDetailView hydrates.
+  const detail = await resolveProductRoute(slug);
 
   const schemas = detail ? await buildProductPageSchemas(detail) : null;
   const queryClient = createServerQueryClient();
@@ -159,7 +134,7 @@ export default async function ProductDetailPage({
   }
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8">
+    <div className={`${PAGE_CONTAINER} py-8`}>
       {schemas?.product && <JsonLd schema={schemas.product} />}
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>

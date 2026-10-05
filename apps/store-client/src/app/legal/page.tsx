@@ -4,7 +4,7 @@ import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { fetchPublishedPages } from "@/shared/api/pages-server";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
-import { SITE_URL, dict } from "@/shared/config";
+import { PAGE_CONTAINER, SITE_URL, dict } from "@/shared/config";
 
 // TASK-435 — admin-managed via the `legal` HUB page row; the hub's own headings
 // stay as the fallback.
@@ -32,14 +32,16 @@ export default async function LegalHubPage() {
   const docs = await getDocs();
 
   return (
-    <div className="mx-auto w-full max-w-[1000px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.legal.breadcrumbHome, item: SITE_URL },
           { name: dict.legal.hub.heading, item: `${SITE_URL}/legal` },
         ])}
       />
-      <LegalHubView docs={docs} />
+      <div className="mx-auto max-w-5xl">
+        <LegalHubView docs={docs} />
+      </div>
     </div>
   );
 }

@@ -40,6 +40,20 @@ function isClosedOrder(status: OrderEntityStatus): boolean {
   return (CLOSED_ORDER_STATUSES as readonly string[]).includes(status);
 }
 
+/**
+ * Whether the panel offers «Спробувати ще раз» as a PRIMARY button: a declined
+ * payment on an order that is still open. The page reads the same answer to
+ * demote its own «Продовжити покупки» to outline, so the screen keeps one
+ * primary action (design-system §1, TASK-865). The slow-PENDING retry is an
+ * outline button and does not count.
+ */
+export function offersPaymentRetry(
+  paymentStatus: OrderEntityPaymentStatus,
+  orderStatus: OrderEntityStatus,
+): boolean {
+  return paymentStatus === "FAILED" && !isClosedOrder(orderStatus);
+}
+
 interface OrderPaymentPanelProps {
   orderId: string;
   /** The server's word on the money. The ONLY thing this panel may assert from. */
@@ -115,7 +129,7 @@ export function OrderPaymentPanel({
   ) => (
     <section
       className={[
-        "flex flex-col gap-3 rounded-lg border p-6",
+        "flex flex-col gap-3 rounded-card border p-6",
         tone === "negative"
           ? "border-destructive/40 bg-destructive/5"
           : "border-border bg-card",
@@ -176,7 +190,7 @@ export function OrderPaymentPanel({
     );
   }
 
-  if (paymentStatus === "FAILED") {
+  if (offersPaymentRetry(paymentStatus, orderStatus)) {
     return shell(
       "negative",
       <XCircle className="size-5" aria-hidden />,

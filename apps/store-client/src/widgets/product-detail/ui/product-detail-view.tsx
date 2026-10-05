@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { AlertTriangle, BarChart3, Check } from "lucide-react";
+import { BarChart3 } from "lucide-react";
 import {
   ProductImageGallery,
   ProductStockIndicator,
@@ -16,8 +16,13 @@ import { CartSheet } from "@/widgets/cart";
 import { AddToCartButton } from "@/features/add-to-cart";
 import { WishlistToggleButton } from "@/features/toggle-wishlist";
 import { formatMoney, trackEvent } from "@/shared/lib";
-import { dict, FEATURE_STUBS } from "@/shared/config";
-import { Button, RatingStars } from "@/shared/ui";
+import {
+  dict,
+  FEATURE_STUBS,
+  H1_CLASS,
+  STICKY_ASIDE_TOP,
+} from "@/shared/config";
+import { Badge, RatingStars } from "@/shared/ui";
 import { ProductDetailSkeleton } from "./product-detail-skeleton";
 import { ProductSiblingNavigator } from "./product-sibling-navigator";
 import { ProductTrustBadges } from "./product-trust-badges";
@@ -25,6 +30,7 @@ import { ProductSpecsTabs } from "./product-specs-tabs";
 import { ProductHighlights } from "./product-highlights";
 import { ProductRail } from "./product-rail";
 import { MobileAtcBar } from "./mobile-atc-bar";
+import { ProductInCartButton } from "./product-in-cart-button";
 
 function truncate(value: string, max: number): string {
   return value.length > max ? `${value.slice(0, max - 1)}…` : value;
@@ -91,6 +97,8 @@ export function ProductDetailView({ slug }: { slug: string }) {
     return <ProductDetailSkeleton />;
   }
 
+  // An outage, not an absence: a dead slug never reaches this view — the
+  // server page answers it with the store's not-found (TASK-874).
   if (isError || !data) {
     return (
       <div className="flex flex-col items-start gap-4">
@@ -166,23 +174,35 @@ export function ProductDetailView({ slug }: { slug: string }) {
             images={sortedImages}
             altFallback={product.name}
           />
+          {/* The catalogue's sale badge (shared/ui Badge, `sale` variant —
+              TASK-874), at the PDP's size: the larger photo takes the mockup's
+              `.pd-sale` chip (badge radius `rounded-sm`), not the card's
+              compact pill. */}
           {onSale && (
-            <span className="absolute top-4 left-4 rounded-[9px] bg-sale px-3 py-1.5 text-sm font-bold text-sale-foreground">
+            <Badge
+              variant="sale"
+              className="absolute top-4 left-4 rounded-sm px-3 py-1.5 text-sm font-bold"
+            >
               −{discountPercent}%
-            </span>
+            </Badge>
           )}
-          <div className="absolute top-4 right-4">
+          {/* «В обране» sits ABOVE the gallery's full-frame zoom trigger
+              (`z-20`, inset-0): without its own `z-30` the transparent zoom
+              button painted over the heart and a tap on it opened the lightbox
+              instead of saving the product (TASK-832). The overlay variant's
+              own 44px hit-area is kept — a `size-10` override used to shrink
+              it below the touch-target minimum. */}
+          <div className="absolute top-4 right-4 z-30">
             <WishlistToggleButton
               productId={product.id}
               productName={product.name}
               variant="overlay"
-              className="size-10"
             />
           </div>
         </div>
 
         {/* Info column — under the gallery at `md`, beside it at `lg`. */}
-        <div className="flex min-w-0 flex-col gap-[18px] md:col-start-1 md:row-start-2 lg:col-start-2 lg:row-start-1">
+        <div className="flex min-w-0 flex-col gap-4 md:gap-6 md:col-start-1 md:row-start-2 lg:col-start-2 lg:row-start-1">
           <div className="flex flex-col gap-1.5">
             {product.brand && (
               <Link
@@ -192,9 +212,7 @@ export function ProductDetailView({ slug }: { slug: string }) {
                 {product.brand.name}
               </Link>
             )}
-            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground sm:text-[27px] sm:leading-tight">
-              {product.name}
-            </h1>
+            <h1 className={`${H1_CLASS} text-foreground`}>{product.name}</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-muted-foreground">
@@ -225,11 +243,11 @@ export function ProductDetailView({ slug }: { slug: string }) {
         </div>
 
         {/* Sticky buy box — its own column from `md`, spanning the gallery and
-            the info rows. `top-24` is the storefront's 96px sticky clearance
-            (STICKY_HEADER_OFFSET); `STICKY_ASIDE_TOP` itself is `lg:`-prefixed,
-            so it cannot express the `md:` breakpoint this column needs. */}
-        <div className="md:sticky md:top-24 md:col-start-2 md:row-span-2 md:row-start-1 lg:col-start-3 lg:row-span-1">
-          <div className="rounded-[18px] border border-border bg-card p-[22px] shadow-card">
+            the info rows. */}
+        <div
+          className={`md:sticky ${STICKY_ASIDE_TOP} md:col-start-2 md:row-span-2 md:row-start-1 lg:col-start-3 lg:row-span-1`}
+        >
+          <div className="rounded-card border border-border bg-card p-[22px] shadow-card">
             <div className="mb-1 flex flex-wrap items-end gap-3">
               <span
                 className={`font-display text-[32px] font-bold tracking-tight ${
@@ -255,35 +273,14 @@ export function ProductDetailView({ slug }: { slug: string }) {
             <div className="mb-2.5 flex items-stretch gap-2.5">
               <div className="flex-1">
                 {inCart ? (
-                  // Already in the cart. Two readings of that fact: the position
-                  // is waiting (success), or it sold out while it waited
-                  // (destructive — the shopper learns it here, not at checkout).
-                  // Either way the button opens the mini-cart, the one place the
-                  // line can be changed or dropped.
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={openCartSheet}
-                    aria-label={
-                      product.inStock
-                        ? dict.addToCart.inCartAria(product.name)
-                        : dict.addToCart.soldOutAria(product.name)
-                    }
-                    className={`h-12 w-full font-semibold transition-colors ${
-                      product.inStock
-                        ? "border-success/40 text-success hover:bg-success/10 hover:text-success"
-                        : "border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    }`}
-                  >
-                    {product.inStock ? (
-                      <Check aria-hidden="true" className="size-4" />
-                    ) : (
-                      <AlertTriangle aria-hidden="true" className="size-4" />
-                    )}
-                    {product.inStock
-                      ? dict.addToCart.inCart
-                      : dict.addToCart.soldOut}
-                  </Button>
+                  // Already in the cart — the same control as the mobile bar's
+                  // (in stock: «В кошику»; sold out while it waited: «Товар
+                  // закінчився»). Either way it opens the mini-cart.
+                  <ProductInCartButton
+                    productName={product.name}
+                    inStock={product.inStock}
+                    onOpenCart={openCartSheet}
+                  />
                 ) : (
                   <AddToCartButton
                     productId={product.id}
@@ -348,8 +345,11 @@ export function ProductDetailView({ slug }: { slug: string }) {
 
       <MobileAtcBar
         productId={product.id}
+        productName={product.name}
         price={product.price}
-        disabled={!product.inStock}
+        inStock={product.inStock}
+        inCart={inCart}
+        onOpenCart={openCartSheet}
       />
 
       {sheetMounted && (

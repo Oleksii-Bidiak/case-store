@@ -4,13 +4,15 @@ import {
   BRAND_OG_IMAGE_PATH,
   BRAND_OG_IMAGE_WIDTH,
   dict,
+  SITE_NAME,
 } from "@/shared/config";
 
 const brandCard = {
   url: BRAND_OG_IMAGE_PATH,
   width: BRAND_OG_IMAGE_WIDTH,
   height: BRAND_OG_IMAGE_HEIGHT,
-  alt: dict.meta.rootTitle,
+  // The zero-config name: no `siteName` passed → the `resolveSiteName` fallback.
+  alt: dict.meta.brandCardAlt(SITE_NAME),
 };
 
 const ALT = "Чохол Spigen для iPhone 15 | CaseStore";
@@ -74,7 +76,7 @@ describe("buildOgImages (TASK-432, tiers extended by TASK-437/569, sized by TASK
     ]);
   });
 
-  it("gives every image an alt, the store's root title when the caller has none", () => {
+  it("gives every image an alt, the brand-card alt when the caller has none", () => {
     for (const images of [
       buildOgImages({ entityOgImage: "https://cdn.example/a.png" }),
       buildOgImages({ pageImage: "https://cdn.example/b.png", alt: "  " }),
@@ -82,8 +84,32 @@ describe("buildOgImages (TASK-432, tiers extended by TASK-437/569, sized by TASK
       buildOgImages({ defaultOgImage: "https://cdn.example/d.png" }),
       buildOgImages(),
     ]) {
-      expect(images[0].alt).toBe(dict.meta.rootTitle);
+      expect(images[0].alt).toBe(dict.meta.brandCardAlt(SITE_NAME));
     }
+  });
+
+  it("names the brand card and the alt floor after the store's resolved name (TASK-546)", () => {
+    const expected = dict.meta.brandCardAlt("Аксесуарня");
+    expect(buildOgImages({ siteName: "Аксесуарня" })).toEqual([
+      { ...brandCard, alt: expected },
+    ]);
+    // The floor for a page that passes no title follows the name too…
+    expect(
+      buildOgImages({
+        pageImage: "https://cdn.example/b.png",
+        siteName: "Аксесуарня",
+      })[0].alt,
+    ).toBe(expected);
+    // …while a page's own title still wins.
+    expect(
+      buildOgImages({
+        siteName: "Аксесуарня",
+        alt: ALT,
+        pageImage: "https://cdn.example/b.png",
+      })[0].alt,
+    ).toBe(ALT);
+    // Blank → the same fallback `resolveSiteName` uses.
+    expect(buildOgImages({ siteName: "   " })).toEqual([brandCard]);
   });
 
   it("falls back to the committed brand card when nothing is set", () => {

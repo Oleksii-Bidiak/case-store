@@ -24,6 +24,9 @@ export {
   getCategoryControllerGetCategoryTreeQueryKey,
   // Structured-spec facets (TASK-191)
   useCategoryControllerGetFilterableSpecs,
+  // Its key's path part tells one category's facet list from another's
+  // (TASK-515 — the filter rail keeps the list across a refetch of the counts).
+  getCategoryControllerGetFilterableSpecsQueryKey,
 } from "@/shared/api/generated/categories/categories";
 
 // The shared root-category query params — one key for widgets and the server

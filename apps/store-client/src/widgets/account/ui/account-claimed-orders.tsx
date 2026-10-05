@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { dict } from "@/shared/config";
+import { Button } from "@/shared/ui";
 
 /**
  * AccountClaimedOrders — "we found the orders you placed before you signed up"
@@ -65,19 +66,19 @@ export function AccountClaimedOrders() {
       </p>
 
       <div className="flex flex-wrap items-center gap-3">
-        <Link
-          href="/orders"
-          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
-          {d.claimedOrdersCta}
-        </Link>
-        <button
+        {/* Outline + ghost (TASK-865): «Зберегти» in the profile form below
+            is the page's one primary action (design-system §1). */}
+        <Button asChild variant="outline" className="h-11 rounded-cta px-5">
+          <Link href="/orders">{d.claimedOrdersCta}</Link>
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
           onClick={dismiss}
-          className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-11 rounded-cta px-4 text-muted-foreground hover:text-foreground"
         >
           {d.claimedOrdersDismiss}
-        </button>
+        </Button>
       </div>
     </div>
   );

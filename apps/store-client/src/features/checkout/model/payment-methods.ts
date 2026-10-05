@@ -210,3 +210,13 @@ export function coercePaymentMethod(
   );
   return match?.method ?? DEFAULT_PAYMENT_METHOD;
 }
+
+/**
+ * The shopper-facing name of a method — the same title the «Оплата» radio
+ * shows — for read-backs such as the review step (TASK-882). Taken from the one
+ * copy table, so the review can never name the method differently from the
+ * option the shopper actually picked.
+ */
+export function paymentMethodTitle(method: CheckoutPaymentMethod): string {
+  return COPY[method].title;
+}

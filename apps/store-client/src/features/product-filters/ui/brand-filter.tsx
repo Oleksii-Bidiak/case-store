@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/shared/ui";
+import { FilterCardSkeleton } from "./filter-card-skeleton";
 
 /** Radix Select forbids an empty-string item value; this stands in for "all brands". */
 const ALL_BRANDS = "__all_brands__";
@@ -43,8 +44,9 @@ interface BrandFilterProps {
 /**
  * BrandFilter (TASK-189) — a "Виробник" dropdown card for the catalog filter
  * panel. Lists the active brands from `GET /brands`; a leading "Всі виробники"
- * option clears the selection. Renders nothing (no empty card) while there are
- * no brands — same empty-state convention as `CategoryChips`.
+ * option clears the selection. Renders nothing (no empty card) when there are
+ * no brands — same empty-state convention as `CategoryChips` — and the card's
+ * placeholder box while the list is still loading (TASK-515).
  *
  * Scoped to the active category since TASK-414. Before that the dropdown listed
  * every brand in the shop regardless of where the shopper was standing, so
@@ -60,7 +62,7 @@ export function BrandFilter({
   cardClassName,
   titleClassName,
 }: BrandFilterProps) {
-  const { data, isSuccess } = useBrandControllerFindAll(
+  const { data, isSuccess, isPending } = useBrandControllerFindAll(
     categoryId ? { categoryId } : undefined,
   );
   const brands = data?.data ?? [];
@@ -84,6 +86,16 @@ export function BrandFilter({
     // trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [missingFromSlice]);
+
+  // Hold the card's box until the brand list is in (TASK-515). `GET /brands`
+  // is not part of the server-rendered page, so returning nothing here left
+  // the rail a card short for the first second after the skeleton swap: the
+  // device and price cards jumped up by this card's height and fell back down
+  // when it arrived. Only the card layout — the drawer gates this component on
+  // its own copy of the list, so it never mounts it pending.
+  if (isPending && cardClassName) {
+    return <FilterCardSkeleton section="brand" />;
+  }
 
   if (brands.length === 0) {
     return null;

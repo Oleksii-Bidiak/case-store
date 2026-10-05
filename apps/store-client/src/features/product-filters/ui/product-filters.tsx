@@ -1,33 +1,24 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import type { ProductControllerFindAllParams } from "@/entities/product";
 import { useBrandControllerFindAll } from "@/entities/brand";
 import { useCategoryControllerGetFilterableSpecs } from "@/entities/category";
 import { dict } from "@/shared/config";
-import { formatMoney } from "@/shared/lib";
-import { Button, Input, Label, Slider } from "@/shared/ui";
-import {
-  PRICE_DOMAIN_MAX,
-  PRICE_STEP,
-  clampPrice,
-  normalizePriceRange,
-  parsePriceInput,
-  priceRangeToUrlUpdates,
-  priceToInputText,
-  rangeKey,
-} from "../model/price-range";
+import { Button } from "@/shared/ui";
 import {
   clearFilterUpdates,
   hasActiveFilters as computeHasActiveFilters,
 } from "../model/active-filters";
-import { toFacetQueryParams } from "../model/facet-query";
+import { keepFacetsOfCategory, toFacetQueryParams } from "../model/facet-query";
+import { filterRailSections } from "../model/filter-sections";
 import { SearchInput } from "./search-input";
 import { BrandFilter } from "./brand-filter";
 import { DeviceModelFilter } from "./device-model-filter";
 import { SpecFacets } from "./spec-facets";
 import { FilterCheckbox } from "./filter-checkbox";
+import { PriceRangeFilter } from "./price-range-filter";
 
 interface ProductFiltersProps {
   /** Currently-active filter params (derived from the URL). */
@@ -79,6 +70,12 @@ interface ProductFiltersProps {
    */
   hideOnSale?: boolean;
   /**
+   * «Зі знижкою» is fixed by the route — `/promo` (TASK-1301). The section is
+   * left out (as with `hideOnSale`) AND the reset neither counts nor clears
+   * it: on that page the discount is the listing itself, not a filter.
+   */
+  lockedOnSale?: boolean;
+  /**
    * Leave out the structured-spec facets even when a category is active
    * (TASK-523). `/search` narrows by category — so it passes `categoryId`,
    * which scopes the brand list — but `GET /api/search` has no `?specs=`, and
@@ -107,73 +104,9 @@ export function ProductFilters({
   collapsible = false,
   lockedDevice = false,
   hideOnSale = false,
+  lockedOnSale = false,
   hideSpecFacets = false,
 }: ProductFiltersProps) {
-  // Committed price bounds from the URL, clamped into the slider domain.
-  const committedMin = clampPrice(currentParams.minPrice ?? 0);
-  const committedMax = clampPrice(currentParams.maxPrice ?? PRICE_DOMAIN_MAX);
-
-  // Draft price state shared by the slider and the min/max inputs (TASK-208):
-  // `range` drives the thumbs, `minText`/`maxText` drive the (controlled)
-  // inputs. Dragging mirrors into the texts live; typing commits into `range`
-  // on blur — the same moment the URL is written, matching the old behaviour.
-  const [range, setRange] = useState<[number, number]>([
-    committedMin,
-    committedMax,
-  ]);
-  const [minText, setMinText] = useState(priceToInputText(committedMin, 0));
-  const [maxText, setMaxText] = useState(
-    priceToInputText(committedMax, PRICE_DOMAIN_MAX),
-  );
-
-  // The inputs are focus-sensitive (the user types in them), so external URL
-  // changes re-seed local state via a `lastPushedRef`-guarded effect
-  // (docs/conventions/forms.md Rule 1b) — our own URL echo is ignored, and the
-  // inputs are never `key`-remounted.
-  const lastPushedRef = useRef(rangeKey([committedMin, committedMax]));
-
-  useEffect(() => {
-    const next: [number, number] = [committedMin, committedMax];
-    if (rangeKey(next) !== lastPushedRef.current) {
-      lastPushedRef.current = rangeKey(next);
-      setRange(next);
-      setMinText(priceToInputText(committedMin, 0));
-      setMaxText(priceToInputText(committedMax, PRICE_DOMAIN_MAX));
-    }
-  }, [committedMin, committedMax]);
-
-  /** Push a normalized range to the URL unless it matches the last push. */
-  const pushRange = (next: [number, number]) => {
-    if (rangeKey(next) === lastPushedRef.current) return;
-    lastPushedRef.current = rangeKey(next);
-    onFilterChange(priceRangeToUrlUpdates(next));
-  };
-
-  /** Mirror slider movement into the inputs live (while dragging). */
-  const handleSliderChange = (next: number[]) => {
-    const draft: [number, number] = [next[0], next[1]];
-    setRange(draft);
-    setMinText(priceToInputText(draft[0], 0));
-    setMaxText(priceToInputText(draft[1], PRICE_DOMAIN_MAX));
-  };
-
-  /**
-   * Commit a typed bound (on blur): clamp/normalize both bounds — resolving an
-   * inverted pair against the field the user edited — sync the slider and the
-   * canonical input texts, then write the URL.
-   */
-  const handleInputCommit = (changed: "min" | "max") => {
-    const next = normalizePriceRange(
-      parsePriceInput(minText),
-      parsePriceInput(maxText),
-      changed,
-    );
-    setRange(next);
-    setMinText(priceToInputText(next[0], 0));
-    setMaxText(priceToInputText(next[1], PRICE_DOMAIN_MAX));
-    pushRange(next);
-  };
-
   // Every filter this panel owns — search, brand, device, price, spec facets and
   // availability. Sourced from the one shared definition (TASK-414) so the
   // button's VISIBILITY and what it CLEARS can never drift apart again: until
@@ -190,10 +123,24 @@ export function ProductFilters({
   const panelFilterScope = {
     includeCategory: false,
     includeDevice: !lockedDevice,
+    includeOnSale: !lockedOnSale,
   } as const;
   const hasActiveFilters = computeHasActiveFilters(
     currentParams,
     panelFilterScope,
+  );
+
+  // Which sections this rail shows, in render order (TASK-515). The catalogue
+  // skeleton draws its placeholder cards from the same `filterRailSections`, so
+  // gating here — not on ad-hoc prop checks — keeps the two from drifting.
+  const sections = new Set(
+    filterRailSections({
+      lockedDevice,
+      hideOnSale,
+      lockedOnSale,
+      hideSpecFacets,
+      hasCategory: Boolean(categoryId),
+    }),
   );
 
   // Presence gates for the collapsible mobile drawer only: BrandFilter and
@@ -218,12 +165,14 @@ export function ProductFilters({
     toFacetQueryParams(currentParams),
     {
       query: {
-        enabled: collapsible && Boolean(categoryId) && !hideSpecFacets,
+        enabled: collapsible && sections.has("specs"),
+        // Same as `SpecFacets` (TASK-515): a tick refetches the counts, and
+        // the disclosure must not vanish while they are in flight.
+        placeholderData: keepFacetsOfCategory(categoryId),
       },
     },
   );
-  const hasSpecs =
-    !hideSpecFacets && Boolean(categoryId) && (specsData?.data.length ?? 0) > 0;
+  const hasSpecs = sections.has("specs") && (specsData?.data.length ?? 0) > 0;
 
   /**
    * Render one filter section's chrome. In `collapsible` mode it is a native
@@ -298,8 +247,9 @@ export function ProductFilters({
           `compareAtPrice > price`. Same absent-when-unticked rule as the
           availability box above. Hidden where the endpoint behind the panel
           does not take the param (`/search`), so it can never be a control
-          that silently does nothing. */}
-      {!hideOnSale &&
+          that silently does nothing, and on `/promo`, where the route fixes it
+          (TASK-1301) — both read from the section list (TASK-515). */}
+      {sections.has("onSale") &&
         renderSection(
           dict.filters.saleTitle,
           <FilterCheckbox
@@ -341,7 +291,7 @@ export function ProductFilters({
 
       {/* Device compatibility (TASK-190) — brand → model cascade. Absent when
           the route already names the device (TASK-490). */}
-      {!lockedDevice &&
+      {sections.has("device") &&
         renderSection(
           dict.filters.deviceTitle,
           <DeviceModelFilter
@@ -355,72 +305,23 @@ export function ProductFilters({
       {/* Price range */}
       {renderSection(
         dict.filters.priceTitle,
-        <>
-          <div className="flex items-center gap-2.5">
-            <Label htmlFor={`${idPrefix}-min-price`} className="sr-only">
-              {dict.filters.minPrice}
-            </Label>
-            <Input
-              id={`${idPrefix}-min-price`}
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              placeholder={dict.filters.minPlaceholder}
-              value={minText}
-              onChange={(event) => setMinText(event.target.value)}
-              onBlur={() => handleInputCommit("min")}
-              className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
-            />
-            <span aria-hidden="true" className="text-muted-foreground">
-              —
-            </span>
-            <Label htmlFor={`${idPrefix}-max-price`} className="sr-only">
-              {dict.filters.maxPrice}
-            </Label>
-            <Input
-              id={`${idPrefix}-max-price`}
-              type="number"
-              min="0"
-              step="0.01"
-              inputMode="decimal"
-              placeholder={dict.filters.maxPlaceholder}
-              value={maxText}
-              onChange={(event) => setMaxText(event.target.value)}
-              onBlur={() => handleInputCommit("max")}
-              className="h-[42px] rounded-md border-[1.5px] font-mono shadow-none"
-            />
-          </div>
-          {/* Draggable range slider (two thumbs). Mirrors the number inputs live
-            while dragging and writes minPrice/maxPrice to the URL on release. */}
-          <Slider
-            value={range}
-            min={0}
-            max={PRICE_DOMAIN_MAX}
-            step={PRICE_STEP}
-            minStepsBetweenThumbs={1}
-            onValueChange={handleSliderChange}
-            onValueCommit={(next) => pushRange([next[0], next[1]])}
-            thumbLabels={[dict.filters.minPrice, dict.filters.maxPrice]}
-            aria-label={dict.filters.priceSliderAria}
-            className="mt-4"
-          />
-          <div
-            aria-hidden="true"
-            className="mt-2.5 flex justify-between font-mono text-xs text-muted-foreground"
-          >
-            <span>{formatMoney(String(range[0]))}</span>
-            <span>{formatMoney(String(range[1]))}</span>
-          </div>
-        </>,
+        // The inputs + two-thumb slider (TASK-208), shared with the wishlist
+        // rail since TASK-1300. Committed bounds come from the URL.
+        <PriceRangeFilter
+          idPrefix={idPrefix}
+          committedMin={currentParams.minPrice}
+          committedMax={currentParams.maxPrice}
+          onCommit={onFilterChange}
+        />,
         currentParams.minPrice != null || currentParams.maxPrice != null,
       )}
 
       {/* Structured-spec facets (TASK-191) — category-scoped; renders nothing
           when no category is active or it has no filterable specs. Collapsible
           drawer gates on `hasSpecs` and strips the facet card's own chrome.
-          Left out altogether with `hideSpecFacets` (TASK-523). */}
-      {hideSpecFacets ? null : collapsible ? (
+          Left out altogether with `hideSpecFacets` (TASK-523) or with no
+          category (TASK-515 — the section list says so either way). */}
+      {!sections.has("specs") ? null : collapsible ? (
         hasSpecs &&
         renderSection(
           dict.filters.specsTitle,

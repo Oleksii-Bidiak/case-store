@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import {
+  act,
   renderWithProviders,
   screen,
   waitFor,
@@ -15,6 +16,62 @@ import {
 import { dict } from "@/shared/config";
 import { WishlistView } from "./wishlist-view";
 import { WishlistSkeleton } from "./wishlist-skeleton";
+
+const mockReplace = jest.fn();
+let currentQuery = "";
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: mockReplace, push: jest.fn() }),
+  usePathname: () => "/wishlist",
+  useSearchParams: () => new URLSearchParams(currentQuery),
+}));
+
+/** Category / brand per product id, as the cards endpoint returns them. */
+let cardFacets: Record<string, { categoryId: string; brand?: string }> = {};
+
+/**
+ * The two requests the rail adds (TASK-1300): product cards for the saved ids
+ * (category + brand) and the category tree (names). Registered last wins in
+ * MSW, so a test that adds its own `/api/products/:slug` handler calls this
+ * again to keep `/api/products/cards` out of it.
+ */
+function registerRailHandlers() {
+  server.use(
+    http.get("*/api/products/cards", ({ request }) => {
+      const ids =
+        new URL(request.url).searchParams.get("ids")?.split(",") ?? [];
+      return HttpResponse.json({
+        data: ids
+          .filter((id) => cardFacets[id])
+          .map((id) => ({
+            id,
+            categoryId: cardFacets[id].categoryId,
+            brand: cardFacets[id].brand
+              ? {
+                  id: `brand-${cardFacets[id].brand}`,
+                  name: cardFacets[id].brand,
+                  slug: cardFacets[id].brand,
+                }
+              : null,
+          })),
+      });
+    }),
+    http.get("*/api/categories/tree", () =>
+      HttpResponse.json({
+        data: [
+          { id: "cat-cases", name: "Чохли", slug: "chohly", children: [] },
+          { id: "cat-cables", name: "Кабелі", slug: "kabeli", children: [] },
+        ],
+      }),
+    ),
+  );
+}
+
+beforeEach(() => {
+  mockReplace.mockClear();
+  currentQuery = "";
+  cardFacets = {};
+  registerRailHandlers();
+});
 
 function buildItem(
   overrides: Partial<WishlistItemEntity> = {},
@@ -93,6 +150,102 @@ describe("WishlistView (TASK-076)", () => {
 
     // No hydrated items → empty state, not a broken card.
     expect(screen.getByText(dict.wishlist.emptyHeading)).toBeInTheDocument();
+  });
+
+  // TASK-875 — owner decision 7.11: the page is «Обране» in every state.
+  it("names the page «Обране» in the h1 and the breadcrumb, empty or not", () => {
+    const { unmount } = renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([]),
+    });
+
+    expect(dict.wishlist.heading).toBe("Обране");
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Обране" }),
+    ).toBeInTheDocument();
+    // The empty line is a sub-heading under the page title, not a second h1.
+    expect(
+      screen.getByRole("heading", {
+        level: 2,
+        name: dict.wishlist.emptyHeading,
+      }),
+    ).toBeInTheDocument();
+    const trail = screen.getByRole("navigation", {
+      name: dict.product.breadcrumbAria,
+    });
+    expect(within(trail).getByText("Обране")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    unmount();
+
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Обране" }),
+    ).toBeInTheDocument();
+    expect(
+      within(
+        screen.getByRole("navigation", { name: dict.product.breadcrumbAria }),
+      ).getByText("Обране"),
+    ).toBeInTheDocument();
+  });
+
+  it("badges a discounted card with −N % like the catalogue card (TASK-875)", () => {
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([
+        buildItem({ price: "75.00", compareAtPrice: "100.00" }),
+      ]),
+    });
+
+    const card = screen.getByRole("article");
+    expect(within(card).getByText("−25%")).toBeInTheDocument();
+    expect(card.querySelector("[data-sold-out-veil]")).toBeNull();
+    expect(
+      within(card).queryByText(dict.product.outOfStock, {
+        selector: "[data-slot=badge] span",
+      }),
+    ).toBeNull();
+  });
+
+  it.each([
+    ["sold out", { maxQty: 0 }],
+    ["withdrawn from sale", { isActive: false }],
+  ])(
+    "badges and dims a %s card like the catalogue card (TASK-875)",
+    (_label, overrides) => {
+      renderWithProviders(<WishlistView />, {
+        queryClient: seededClient([buildItem(overrides)]),
+      });
+
+      const card = screen.getByRole("article");
+      expect(
+        within(card).getByText(dict.product.outOfStock, {
+          selector: "[data-slot=badge] span",
+        }),
+      ).toBeInTheDocument();
+      expect(card.querySelector("[data-sold-out-veil]")).not.toBeNull();
+      expect(
+        within(card).getByRole("button", { name: dict.addToCart.outOfStock }),
+      ).toBeDisabled();
+    },
+  );
+
+  it("gives every active-filter chip an sr-only «Прибрати фільтр» (TASK-875)", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([
+        buildItem({ price: "75.00", compareAtPrice: "100.00" }),
+      ]),
+    });
+
+    await user.click(screen.getByRole("checkbox", { name: /Зі знижкою/ }));
+
+    expect(
+      screen.getByRole("button", {
+        name: `${dict.wishlist.quickSale} ${dict.filters.removeFilter}`,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("renders the redesigned toolbar and defaults to the grid view", () => {
@@ -257,6 +410,7 @@ describe("WishlistView quick-view triggers (TASK-290)", () => {
         });
       }),
     );
+    registerRailHandlers();
 
     const user = userEvent.setup();
     renderWithProviders(<WishlistView />, {
@@ -356,5 +510,214 @@ describe("WishlistView grid ↔ skeleton parity (TASK-415)", () => {
     // The 268px filters column is what makes the content area narrower than the
     // viewport; if only one side declares it, the cards resize on hydration.
     expect(skeletonShell?.className).toBe(realShell?.className);
+  });
+
+  // TASK-869 — the header above the split: breadcrumb, then the title + toolbar
+  // row. The skeleton used to draw one 32px bar instead, so the rail and the
+  // grid started 68px (desktop) / 184px (phone) too high and jumped on load.
+  it("repeats the header of the real page — breadcrumb row, then the title + toolbar row", () => {
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([buildItem()]),
+    });
+    const crumbs = screen.getByRole("navigation", {
+      name: dict.product.breadcrumbAria,
+    });
+    const realRow = screen.getByRole("heading", { level: 1 }).parentElement
+      ?.parentElement;
+
+    const { container } = renderWithProviders(<WishlistSkeleton />);
+    const header = container.firstElementChild?.firstElementChild;
+    const [crumbSlot, row] = Array.from(header?.children ?? []);
+
+    expect(header).toHaveAttribute("aria-hidden", "true");
+    // Same bottom margin and line box as the breadcrumb (text-sm = 20px).
+    expect(crumbSlot).toHaveClass("mb-4.5", "h-5");
+    expect(crumbs).toHaveClass("mb-4.5", "text-sm");
+    // The title + toolbar row wraps by the same rules.
+    expect(row?.className).toBe(realRow?.className);
+    // Title slot on the H1_CLASS line box (36px, 40px from md) + the count line.
+    expect(row?.firstElementChild?.children[0]).toHaveClass("h-9", "md:h-10");
+    expect(row?.firstElementChild?.children[1]).toHaveClass("h-5");
+  });
+});
+
+// ── TASK-1300: /wishlist as «каталог №2» ─────────────────────────────────────
+describe("WishlistView catalogue toolbar (TASK-1300)", () => {
+  function twoBrands() {
+    cardFacets = {
+      a1: { categoryId: "cat-cases", brand: "Apple" },
+      s1: { categoryId: "cat-cables", brand: "Spigen" },
+    };
+    return [
+      buildItem({
+        id: "a1",
+        productId: "a1",
+        productName: "Apple Case",
+        productSlug: "apple-case",
+      }),
+      buildItem({
+        id: "s1",
+        productId: "s1",
+        productName: "Spigen Cable",
+        productSlug: "spigen-cable",
+      }),
+    ];
+  }
+
+  function savedItems(count: number) {
+    return Array.from({ length: count }, (_, i) =>
+      buildItem({
+        id: `m${i}`,
+        productId: `m${i}`,
+        productName: `Saved ${i}`,
+        productSlug: `saved-${i}`,
+        // Distinct times so the default order is deterministic.
+        createdAt: `2026-06-${String(i + 1).padStart(2, "0")}T00:00:00.000Z`,
+      }),
+    );
+  }
+
+  it("filters by a brand from the rail, chips it and counts «Знайдено: X з Y»", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient(twoBrands()),
+    });
+
+    // The brand section appears once the product cards have landed.
+    await user.click(await screen.findByRole("checkbox", { name: /Apple/ }));
+
+    expect(screen.getByText("Apple Case")).toBeInTheDocument();
+    expect(screen.queryByText("Spigen Cable")).not.toBeInTheDocument();
+    expect(screen.getByText(dict.wishlist.foundOf(1, 2))).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole("button", {
+        name: new RegExp(`${dict.filters.brandTitle}: Apple`),
+      }),
+    );
+    expect(screen.getByText("Spigen Cable")).toBeInTheDocument();
+  });
+
+  it("filters by category, naming it from the category tree", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient(twoBrands()),
+    });
+
+    await user.click(await screen.findByRole("checkbox", { name: /Кабелі/ }));
+
+    expect(screen.queryByText("Apple Case")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: new RegExp(dict.wishlist.categoryChip("Кабелі")),
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("sorts with the wishlist's own options in the shared SortSelect", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient([
+        buildItem({
+          id: "c",
+          productId: "c",
+          productName: "Cheap",
+          productSlug: "cheap",
+          price: "10.00",
+        }),
+        buildItem({
+          id: "d",
+          productId: "d",
+          productName: "Dear",
+          productSlug: "dear",
+          price: "90.00",
+        }),
+      ]),
+    });
+
+    const trigger = screen.getByRole("combobox", {
+      name: dict.wishlist.sortAria,
+    });
+    expect(trigger).toHaveTextContent(dict.wishlist.sort.recent);
+
+    await user.click(trigger);
+    await user.click(
+      screen.getByRole("option", { name: dict.wishlist.sort.priceDesc }),
+    );
+
+    const names = screen
+      .getAllByRole("article")
+      .map((card) => within(card).getAllByRole("link")[0].textContent);
+    expect(names).toEqual(["Dear", "Cheap"]);
+  });
+
+  it("pages the list: «Показати ще» appends, numbered pages link through ?page=", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient(savedItems(13)),
+    });
+
+    expect(screen.getAllByRole("article")).toHaveLength(12);
+    expect(screen.getByRole("link", { name: "2" })).toHaveAttribute(
+      "href",
+      "/wishlist?page=2",
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: dict.catalog.loadMore(1) }),
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(13);
+    expect(
+      screen.queryByRole("button", { name: dict.catalog.loadMore(1) }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the appended «Показати ще» pages when an item is removed from the list", async () => {
+    const user = userEvent.setup();
+    const items = savedItems(26);
+    const client = seededClient(items);
+    renderWithProviders(<WishlistView />, { queryClient: client });
+
+    await user.click(
+      screen.getByRole("button", { name: dict.catalog.loadMore(12) }),
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(24);
+
+    // A heart on one card drops it from the server list.
+    const rest = items.slice(0, -1); // the newest card, first on screen
+    act(() => {
+      client.setQueryData(getGetWishlistQueryKey(), {
+        data: {
+          id: "w1",
+          userId: null,
+          items: rest,
+          itemCount: rest.length,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z",
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("link", { name: "Saved 25" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(24);
+  });
+
+  it("returns to the first page when a filter changes on a later page", async () => {
+    const user = userEvent.setup();
+    currentQuery = "page=2";
+    renderWithProviders(<WishlistView />, {
+      queryClient: seededClient(savedItems(13)),
+    });
+
+    // Page 2 of 13 items holds the single remaining card.
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+
+    await user.click(screen.getByRole("checkbox", { name: /В наявності/ }));
+
+    expect(mockReplace).toHaveBeenCalledWith("/wishlist", { scroll: false });
   });
 });

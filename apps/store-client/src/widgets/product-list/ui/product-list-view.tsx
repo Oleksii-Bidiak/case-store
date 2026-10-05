@@ -3,7 +3,6 @@
 import { useCallback, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { keepPreviousData } from "@tanstack/react-query";
-import { SlidersHorizontal } from "lucide-react";
 import { useCategoryControllerGetCategoryTree } from "@/entities/category";
 import { useBrandControllerFindAll } from "@/entities/brand";
 import {
@@ -14,11 +13,14 @@ import {
   ProductFilters,
   ActiveFilterChips,
   CategoryChips,
+  CategoryChipsSkeleton,
   SortSelect,
   ViewToggle,
   FiltersDrawer,
+  FiltersButton,
   clearFilterUpdates,
   countActiveFilters,
+  hasActiveFilters,
   type CatalogView,
 } from "@/features/product-filters";
 import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
@@ -65,22 +67,31 @@ interface ProductListViewProps {
    * the H1, the `<title>` and the canonical all kept naming the old one.
    */
   lockedDevice?: { slug: string };
+  /**
+   * Fix the listing to discounted positions — `/promo` «Товари зі знижкою»
+   * (TASK-1301). The page reuses the whole catalogue (rail, drawer, chips, sort,
+   * view toggle, load-more + pagination) instead of a grid of its own, with the
+   * discount as a route lock: the «Зі знижкою» section and chip disappear, the
+   * drawer badge does not count it, and «скинути всі» never lifts it.
+   */
+  lockedOnSale?: boolean;
+  /**
+   * Id of the element every URL this listing writes points back at — filters,
+   * sort, view and the page links (TASK-1301). Next scrolls a search-param
+   * navigation to the top of the page; on `/products` that is where the
+   * toolbar is, but on `/promo` the listing sits under the hero and coupons,
+   * and each chip click flung the shopper back up to the hero. With an anchor
+   * the navigation lands on the listing's own section instead.
+   */
+  anchorId?: string;
+  /**
+   * The route put the category tree into its `PrefetchBoundary` (TASK-515), so
+   * the server render has it: the category chips go into the first HTML and
+   * need no hydration gate. Pass it only when the prefetch actually succeeded
+   * — claiming a tree the server did not have brings back TASK-534's mismatch.
+   */
+  categoryTreePrefetched?: boolean;
 }
-
-/**
- * Desktop sidebar scroll box (TASK-414). A sticky aside with no height cap runs
- * straight off the bottom of a short viewport, and because it is `position:
- * sticky` the page scroll never brings the overflow back — the lower filters
- * (price, spec facets) are simply unreachable on a laptop in landscape. Capping
- * it at the viewport minus the sticky offset (`lg:top-24` = 6rem, plus a 1rem
- * breathing gap) gives the aside its own scrollbar instead.
- *
- * A module constant like the `STICKY_ASIDE_TOP` it sits beside: `calc()` over
- * `dvh` has no design-token equivalent, and keeping the pair together makes the
- * two halves of the offset obviously related.
- */
-const ASIDE_SCROLL_BOX =
-  "lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:overscroll-contain";
 
 /**
  * Orchestrates the catalog page: keeps filter/sort/view state in the URL, fetches
@@ -92,12 +103,16 @@ const ASIDE_SCROLL_BOX =
 export function ProductListView({
   lockedCategory,
   lockedDevice,
+  lockedOnSale = false,
+  anchorId,
+  categoryTreePrefetched = false,
 }: ProductListViewProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const fragment = anchorId ? `#${anchorId}` : "";
 
   // Derive the active params from the live URL through the SAME builder the
   // server page prefetched the first page with (TASK-563): one set of rules on
@@ -106,6 +121,7 @@ export function ProductListView({
   const params = buildCatalogListingParams((key) => searchParams.get(key), {
     categorySlug: lockedCategory?.slug,
     deviceSlug: lockedDevice?.slug,
+    onSale: lockedOnSale,
   });
 
   const view: CatalogView =
@@ -133,6 +149,7 @@ export function ProductListView({
     // A route-locked device is not a filter the drawer can change (TASK-490),
     // so badging it would promise a control that is not in there.
     includeDevice: !lockedDevice,
+    includeOnSale: !lockedOnSale,
   });
 
   const applyFilters = useCallback(
@@ -146,9 +163,9 @@ export function ProductListView({
         }
       }
       next.set("page", "1"); // reset pagination on any filter/sort change
-      router.replace(`${pathname}?${next.toString()}`);
+      router.replace(`${pathname}?${next.toString()}${fragment}`);
     },
-    [searchParams, pathname, router],
+    [searchParams, pathname, router, fragment],
   );
 
   // View toggle preserves the current page (it does not change the result set).
@@ -160,9 +177,9 @@ export function ProductListView({
       } else {
         next.set("view", nextView);
       }
-      router.replace(`${pathname}?${next.toString()}`);
+      router.replace(`${pathname}?${next.toString()}${fragment}`);
     },
-    [searchParams, pathname, router],
+    [searchParams, pathname, router, fragment],
   );
 
   const clearFilters = useCallback(() => {
@@ -173,37 +190,76 @@ export function ProductListView({
       clearFilterUpdates({
         includeCategory: !lockedCategory,
         includeDevice: !lockedDevice,
+        includeOnSale: !lockedOnSale,
       }),
     );
-  }, [applyFilters, lockedCategory, lockedDevice]);
+  }, [applyFilters, lockedCategory, lockedDevice, lockedOnSale]);
+
+  // The empty state's one primary action (TASK-870, design-system §6). A reset
+  // only when it would change something — the same «what is clearable» rule
+  // `clearFilters` applies, route locks excluded. With nothing to drop (an
+  // empty landing page, nothing on sale) a reset button is a no-op, so the
+  // action leads out to the whole catalogue instead — or home, on the
+  // catalogue itself, where a link to /products would point at this page.
+  const canClearFilters = hasActiveFilters(params, {
+    includeCategory: !lockedCategory,
+    includeDevice: !lockedDevice,
+    includeOnSale: !lockedOnSale,
+  });
+  const emptyState = canClearFilters
+    ? {
+        heading: dict.catalog.emptyHeading,
+        body: dict.catalog.emptyBody,
+        action: { label: dict.catalog.clearAllFilters, onClick: clearFilters },
+      }
+    : lockedOnSale
+      ? {
+          heading: dict.promo.dealsEmptyHeading,
+          body: dict.promo.dealsEmptyBody,
+          action: { label: dict.promo.dealsEmptyCta, href: "/products" },
+        }
+      : {
+          heading: dict.catalog.emptyHeading,
+          body: dict.catalog.emptyUnfilteredBody,
+          action:
+            pathname === "/products"
+              ? { label: dict.common.goHome, href: "/" }
+              : { label: dict.catalog.emptyBrowseAll, href: "/products" },
+        };
 
   const buildPageHref = useCallback(
     (targetPage: number) => {
       const next = new URLSearchParams(searchParams.toString());
       next.set("page", String(targetPage));
-      return `${pathname}?${next.toString()}`;
+      return `${pathname}?${next.toString()}${fragment}`;
     },
-    [searchParams, pathname],
+    [searchParams, pathname, fragment],
   );
 
   // The public tree carries roots + their children in one payload, so the chips
   // row can offer a second, "narrow to a subcategory" level without a second
   // request (TASK-236). Only active categories are returned.
-  const { data: categoriesData } = useCategoryControllerGetCategoryTree();
-  // TASK-534: the tree is not prefetched on the server, so the server always
-  // renders this widget without it (no chips row). On the client the header's
-  // category menu can have fetched the same tree before this Suspense boundary
-  // hydrates, and rendering the chips then made the first child disagree with
-  // the server's (the toolbar) — «Hydration failed», the whole subtree thrown
-  // away. Until hydration is done, render exactly what the server had: no tree.
-  // If the tree is ever prefetched into a HydrationBoundary (TASK-563), the
-  // server has it too and this gate must go, or it becomes the mismatch.
+  const { data: categoriesData, isPending: categoriesPending } =
+    useCategoryControllerGetCategoryTree();
+  // TASK-534: without a prefetched tree the server renders this widget with no
+  // tree. On the client the header's category menu can have fetched the same
+  // tree before this Suspense boundary hydrates, and rendering the chips then
+  // made the first child disagree with the server's — «Hydration failed», the
+  // whole subtree thrown away. So until hydration is done, render exactly what
+  // the server had. `/products` and `/promo` prefetch the tree (TASK-515) and
+  // say so: then the server HAD it, and the chips are in the first HTML.
   const hydrated = useSyncExternalStore(
     subscribeNever,
     clientSnapshot,
     serverSnapshot,
   );
-  const categories = hydrated ? (categoriesData?.data ?? []) : [];
+  const treeReady = hydrated || categoryTreePrefetched;
+  const categories = treeReady ? (categoriesData?.data ?? []) : [];
+  // No tree yet → the row's placeholder, not nothing (TASK-515). The chips row
+  // is 60px of the page above the toolbar and the grid; rendering nothing until
+  // the tree landed pulled both up out of the skeleton's place and then pushed
+  // them back down. A tree that failed to load leaves the row out.
+  const categoryChipsPending = !treeReady || categoriesPending;
 
   // Slug → id, once, for the id-addressed side endpoints (brands-per-category,
   // filterable specs) that the TASK-420 URL migration did not touch. Resolved
@@ -232,7 +288,13 @@ export function ProductListView({
       {/* Category chips — horizontal, scrollable on mobile; drives ?category=.
           Hidden when the category is locked by the route (/categories/[slug]):
           switching categories there is SubcategoryChips' navigation job. */}
-      {!lockedCategory && (
+      {/* A selected category opens the subcategory row (its children or its
+          siblings), so the placeholder reserves it too; only a childless root
+          guesses wrong, by one row. */}
+      {!lockedCategory && categoryChipsPending && (
+        <CategoryChipsSkeleton withSubcategories={Boolean(params.category)} />
+      )}
+      {!lockedCategory && !categoryChipsPending && (
         <CategoryChips
           categories={categories}
           activeCategorySlug={params.category}
@@ -244,21 +306,15 @@ export function ProductListView({
 
       {/* Toolbar: mobile filters button (left) + view toggle + sort (right) */}
       <div className="mb-5 flex items-center gap-3">
-        <button
-          type="button"
+        <FiltersButton
+          activeCount={activeFilterCount}
           onClick={() => setFiltersOpen(true)}
-          className="inline-flex h-11 items-center gap-2 rounded-xl border-[1.5px] border-border bg-card px-4 text-sm font-semibold text-foreground outline-none transition-colors hover:border-primary focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
-        >
-          <SlidersHorizontal className="size-[18px]" />
-          {dict.filters.filtersButton}
-          {activeFilterCount > 0 && (
-            <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11.5px] font-bold text-primary-foreground">
-              {activeFilterCount}
-            </span>
-          )}
-        </button>
+        />
 
-        <div className="ml-auto flex items-center gap-3">
+        {/* `min-w-0` lets the sort trigger shrink on a 320px phone (it
+            truncates its label) instead of widening the page; the filters
+            button beside it keeps its size. */}
+        <div className="ml-auto flex min-w-0 items-center gap-3">
           <ViewToggle
             view={view}
             onChange={setView}
@@ -273,19 +329,23 @@ export function ProductListView({
         brandName={activeBrandName}
         categoryId={activeCategoryId}
         lockedDevice={Boolean(lockedDevice)}
+        lockedOnSale={lockedOnSale}
         onFilterChange={applyFilters}
       />
 
       {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
       <div className="grid grid-cols-1 items-start gap-7 lg:grid-cols-[268px_1fr]">
-        {/* Desktop sidebar */}
+        {/* Desktop sidebar. A sticky aside with no height cap runs off a short
+            viewport, and page scroll never brings the overflow back — so it is
+            capped at `max-h-sticky-aside` and scrolls inside itself (TASK-414). */}
         <aside
-          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} ${ASIDE_SCROLL_BOX} lg:block lg:self-start`}
+          className={`hidden lg:sticky ${STICKY_ASIDE_TOP} lg:block lg:max-h-sticky-aside lg:self-start lg:overflow-y-auto lg:overscroll-contain`}
         >
           <ProductFilters
             currentParams={params}
             categoryId={activeCategoryId}
             lockedDevice={Boolean(lockedDevice)}
+            lockedOnSale={lockedOnSale}
             onFilterChange={applyFilters}
           />
         </aside>
@@ -295,7 +355,7 @@ export function ProductListView({
             params={params}
             buildPageHref={buildPageHref}
             view={view}
-            onClearFilters={clearFilters}
+            empty={emptyState}
           />
         </section>
       </div>
@@ -315,6 +375,7 @@ export function ProductListView({
           currentParams={params}
           categoryId={activeCategoryId}
           lockedDevice={Boolean(lockedDevice)}
+          lockedOnSale={lockedOnSale}
           onFilterChange={applyFilters}
           collapsible
         />

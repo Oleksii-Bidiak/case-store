@@ -22,10 +22,10 @@ export function ProductTrustBadges() {
             aria-hidden="true"
           />
           <div>
-            <b className="block text-[13.5px] font-semibold text-foreground">
+            <b className="block text-sm font-semibold text-foreground">
               {title}
             </b>
-            <span className="text-[12.5px] text-muted-foreground">{text}</span>
+            <span className="text-xs text-muted-foreground">{text}</span>
           </div>
         </div>
       ))}

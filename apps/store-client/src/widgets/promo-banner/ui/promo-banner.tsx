@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { BannerBackdrop, Button } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import {
+  dict,
+  FOCUS_ON_DARK_CLASS,
+  PAGE_CONTAINER,
+  H2_CLASS,
+} from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 
 interface PromoBannerProps {
@@ -26,13 +31,16 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
   const imageUrl = banner?.imageUrl ?? undefined;
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4">
+    <section className={PAGE_CONTAINER}>
       <div className="relative isolate flex flex-wrap items-center justify-between gap-8 overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 to-primary p-10 sm:p-12">
-        {/* Admin picture under the copy (TASK-740); the gradient without one. */}
+        {/* Admin picture under the copy (TASK-740); the gradient without one.
+            The veil is the `overlay` scrim token at 75% → black at 60% in both
+            themes: at least as dark as the old slate-900/60, so white copy
+            keeps its contrast over any picture (TASK-879). */}
         <BannerBackdrop
           src={imageUrl}
           sizes="(max-width: 1280px) 100vw, 1280px"
-          scrimClassName="bg-slate-900/60"
+          scrimClassName="bg-overlay/75"
         />
         <div className="max-w-2xl text-white">
           {eyebrow && (
@@ -40,15 +48,20 @@ export function PromoBanner({ banner }: PromoBannerProps = {}) {
               {eyebrow}
             </span>
           )}
-          <h2 className="mt-4 font-display text-2xl leading-tight font-bold tracking-tight text-balance sm:text-3xl">
-            {title}
-          </h2>
+          <h2 className={`mt-4 ${H2_CLASS} text-balance`}>{title}</h2>
           {subtitle && (
             <p className="mt-2.5 text-base text-white/80">{subtitle}</p>
           )}
         </div>
         {ctaLabel && ctaHref && (
-          <Button size="lg" asChild className="shadow-lift hover:bg-primary/90">
+          // Outline on the dark gradient (TASK-865): the hero slide CTA is the
+          // homepage's one primary action (design-system §1).
+          <Button
+            size="lg"
+            variant="outline"
+            asChild
+            className={`h-11 rounded-cta border-white/40 bg-white/10 font-semibold text-white shadow-none hover:bg-white/20 hover:text-white dark:border-white/40 dark:bg-white/10 dark:hover:bg-white/20 ${FOCUS_ON_DARK_CLASS}`}
+          >
             <Link href={ctaHref}>
               {ctaLabel}
               <ArrowRight className="size-4" />

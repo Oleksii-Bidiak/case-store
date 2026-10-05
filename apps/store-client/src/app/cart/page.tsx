@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { CartView, CartSkeleton } from "@/widgets";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 
 export const metadata: Metadata = {
   title: dict.meta.cartTitle,
@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function CartPage() {
   return (
-    <div className="mx-auto w-full max-w-[1180px] px-4 pt-8 pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-8 pb-16`}>
       <Suspense fallback={<CartSkeleton />}>
         <CartView />
       </Suspense>

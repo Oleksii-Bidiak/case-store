@@ -116,7 +116,15 @@ export function ModelPicker() {
         </SelectContent>
       </Select>
 
-      <Button type="submit" size="lg" disabled={!modelId} className="h-11">
+      {/* Secondary on purpose (TASK-865): the hero slide CTA above is the
+          homepage's one primary action (design-system §1). */}
+      <Button
+        type="submit"
+        size="lg"
+        variant="secondary"
+        disabled={!modelId}
+        className="h-11 rounded-cta font-semibold"
+      >
         {t.submit}
       </Button>
     </form>

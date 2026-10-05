@@ -83,6 +83,27 @@ describe("ChangePasswordForm", () => {
     expect(screen.getByText(d.sessionsWarning)).toBeInTheDocument();
   });
 
+  // TASK-871: the same shared primitives as the auth pages, 44px targets.
+  it("builds its fields and actions on the shared Input and Button", () => {
+    renderWithProviders(<ChangePasswordForm onCancel={jest.fn()} />, {
+      auth: { isAuthenticated: true },
+    });
+
+    for (const label of [d.currentPassword, d.newPassword, d.confirmPassword]) {
+      const input = screen.getByLabelText(label);
+      expect(input).toHaveAttribute("data-slot", "input");
+      expect(input).toHaveClass("h-11");
+    }
+    expect(screen.getByLabelText(d.newPassword)).toHaveAccessibleDescription(
+      dict.auth.register.passwordHint,
+    );
+    for (const name of [d.submit, d.cancel]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toHaveAttribute("data-slot", "button");
+      expect(button).toHaveClass("h-11", "rounded-cta");
+    }
+  });
+
   it("rejects a weak new password without calling the API", async () => {
     const calls = captureChangePassword();
     const user = userEvent.setup();

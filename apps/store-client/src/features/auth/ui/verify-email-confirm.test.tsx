@@ -141,5 +141,14 @@ describe("VerifyEmailConfirm", () => {
     renderWithProviders(<VerifyEmailConfirm />);
 
     expect(screen.getByText(d.checking)).toBeInTheDocument();
+    // TASK-871: a spinner beside the text, decorative and motion-safe; the
+    // live region is the status line itself.
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent(d.checking);
+    expect(status).toHaveAttribute("aria-busy", "true");
+    const spinner = screen.getByTestId("verify-email-spinner");
+    expect(spinner).toHaveAttribute("aria-hidden", "true");
+    expect(spinner).toHaveClass("motion-safe:animate-spin");
+    expect(spinner).not.toHaveClass("animate-spin");
   });
 });

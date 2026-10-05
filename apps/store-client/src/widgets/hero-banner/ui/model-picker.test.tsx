@@ -78,4 +78,12 @@ describe("ModelPicker (TASK-190)", () => {
     // model list the cascade already holds.
     expect(mockPush).toHaveBeenCalledWith("/products?device=iphone-15-pro");
   });
+
+  it("draws «Підібрати» as secondary — the hero slide owns the primary (TASK-865)", () => {
+    renderWithProviders(<ModelPicker />);
+
+    expect(
+      screen.getByRole("button", { name: dict.home.modelPicker.submit }),
+    ).toHaveAttribute("data-variant", "secondary");
+  });
 });

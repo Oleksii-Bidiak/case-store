@@ -42,7 +42,7 @@ import {
   resolveLegacyCatalogParams,
   withQuery,
 } from "@/shared/lib/legacy-catalog-params";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER, H1_CLASS } from "@/shared/config";
 
 interface CategoryLandingPageProps {
   params: Promise<{ slug: string }>;
@@ -194,6 +194,7 @@ export async function generateMetadata({
         categoryImage: node.image,
         defaultOgImage: seoMeta.ogImage,
         alt: title.absolute,
+        siteName,
       }),
     },
   };
@@ -263,16 +264,14 @@ export default async function CategoryLandingPage({
   const schemas = buildCategoryPageSchemas(path, listing?.data);
 
   return (
-    // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products catalog page shell (shared grid must align pixel-for-pixel)
-    <div className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 sm:py-8">
+    <div className={`${PAGE_CONTAINER} py-6 sm:py-8`}>
       {schemas?.breadcrumb && <JsonLd schema={schemas.breadcrumb} />}
       {schemas?.itemList && <JsonLd schema={schemas.itemList} />}
 
       {/* Breadcrumbs */}
       <nav
         aria-label={dict.product.breadcrumbAria}
-        // eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products breadcrumb type size
-        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-[13.5px] text-muted-foreground"
+        className="mb-3.5 flex flex-wrap items-center gap-2.5 text-sm text-muted-foreground"
       >
         {trail.map((crumb, i) => {
           const isLast = i === trail.length - 1;
@@ -303,12 +302,8 @@ export default async function CategoryLandingPage({
       </nav>
 
       {/* Title */}
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products title block spacing */}
-      <div className="mb-[18px]">
-        {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- mirrors the grandfathered /products H1 type size */}
-        <h1 className="font-display text-[31px] leading-tight font-bold tracking-tight text-foreground">
-          {node.name}
-        </h1>
+      <div className="mb-4.5">
+        <h1 className={`${H1_CLASS} text-foreground`}>{node.name}</h1>
         <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
           {node.description || dict.catalog.categorySubtitle(node.name)}
         </p>
@@ -318,7 +313,18 @@ export default async function CategoryLandingPage({
       <SubcategoryChips categories={node.children ?? []} />
 
       <PrefetchBoundary state={dehydrateForClient(queryClient)}>
-        <Suspense fallback={<ProductListSkeleton />}>
+        {/* The whole catalogue shell, like /products (TASK-416), minus the
+            category chips the locked view never shows, plus «Характеристики»
+            — a category is always set here (TASK-515). */}
+        <Suspense
+          fallback={
+            <ProductListSkeleton
+              withSidebar
+              withCategoryChips={false}
+              hasCategory
+            />
+          }
+        >
           <ProductListView
             initialParams={initialParams}
             // Slug for the listing filter, id for the id-addressed side

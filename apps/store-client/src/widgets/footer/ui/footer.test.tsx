@@ -31,7 +31,7 @@ function makePage(overrides: Partial<PageEntity> = {}): PageEntity {
 /** Stub the three endpoints Footer() reads. Pages default to an empty list. */
 function mockFooterData(
   pages: PageEntity[] = [],
-  seo: { logoUrl?: string | null } | null = null,
+  seo: { logoUrl?: string | null; siteName?: string | null } | null = null,
 ) {
   server.use(
     http.get("*/api/site-contact", () => HttpResponse.json({ data: null })),
@@ -190,6 +190,39 @@ describe("Footer — help pages and the two hubs (TASK-834)", () => {
   });
 });
 
+describe("Footer — the /contact form link (TASK-866)", () => {
+  it("links the single contact form from the «Контакти» column even with nothing configured", async () => {
+    // No contact settings, no pages — the bare-store case.
+    mockFooterData([]);
+
+    render(await Footer());
+
+    const link = screen.getByRole("link", {
+      name: dict.footer.contactFormLink,
+    });
+    expect(link).toHaveAttribute("href", "/contact");
+    // It sits under the «Контакти» heading, next to the phone and email rows.
+    const column = screen
+      .getByRole("heading", { name: dict.footer.contactTitle })
+      .closest("div");
+    expect(column).toContainElement(link);
+    // The icon is decoration; the name is the visible text alone.
+    expect(link.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("is the only footer link to /contact", async () => {
+    mockFooterData([makePage()]);
+
+    render(await Footer());
+
+    expect(
+      screen
+        .getAllByRole("link")
+        .filter((link) => link.getAttribute("href") === "/contact"),
+    ).toHaveLength(1);
+  });
+});
+
 describe("Footer — store logo (TASK-299)", () => {
   it("renders the typographic wordmark when no logo is uploaded", async () => {
     mockFooterData([], { logoUrl: null });
@@ -217,5 +250,47 @@ describe("Footer — store logo (TASK-299)", () => {
       "href",
       "/",
     );
+  });
+});
+
+describe("Footer — store name (TASK-546)", () => {
+  it("prints the admin-managed name in the wordmark and the © line", async () => {
+    mockFooterData([], { logoUrl: null, siteName: "  Аксесуарня " });
+
+    render(await Footer());
+
+    expect(screen.getByRole("link", { name: "Аксесуарня" })).toHaveAttribute(
+      "href",
+      "/",
+    );
+    const year = new Date().getFullYear();
+    expect(
+      screen.getByText(dict.footer.rights(year, "Аксесуарня")),
+    ).toBeInTheDocument();
+    // Nothing of the code default is left on a renamed store.
+    expect(screen.queryByText(/CaseStore/)).not.toBeInTheDocument();
+  });
+
+  it("names an uploaded logo with the admin-managed name too", async () => {
+    const logoUrl = "http://localhost:3001/uploads/branding/logo.svg";
+    mockFooterData([], { logoUrl, siteName: "Аксесуарня" });
+
+    render(await Footer());
+
+    expect(screen.getByRole("img", { name: "Аксесуарня" })).toHaveAttribute(
+      "src",
+      logoUrl,
+    );
+  });
+
+  it("falls back to the default name in the © line when none is set", async () => {
+    mockFooterData([], { logoUrl: null, siteName: null });
+
+    render(await Footer());
+
+    const year = new Date().getFullYear();
+    expect(
+      screen.getByText(dict.footer.rights(year, "CaseStore")),
+    ).toBeInTheDocument();
   });
 });

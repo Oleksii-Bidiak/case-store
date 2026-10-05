@@ -8,12 +8,16 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { CheckCircle2 } from "lucide-react";
 import { useAuth, useAuthControllerLogin } from "@/entities/session";
 import { getGetCartQueryKey } from "@/entities/cart";
 import { getGetWishlistQueryKey } from "@/entities/wishlist";
 import { dict } from "@/shared/config";
 import { apiErrorStatus } from "@/shared/lib";
+import { Button } from "@/shared/ui";
+import { PASSWORD_RESET_DONE_PARAM } from "../lib/password-reset-done";
 import { sanitizeRedirectTarget } from "../lib/sanitize-redirect-target";
+import { AUTH_LINK_CLASS, AUTH_SUBMIT_CLASS, AuthField } from "./auth-field";
 
 const loginSchema = z.object({
   email: z.string().email(dict.auth.login.validationEmail),
@@ -22,11 +26,7 @@ const loginSchema = z.object({
 
 type LoginValues = z.infer<typeof loginSchema>;
 
-const fieldClass =
-  "rounded-lg border border-border bg-background px-3 py-2 text-foreground transition-colors hover:border-muted-foreground/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-
-const socialClass =
-  "flex h-11 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background text-sm font-medium text-foreground transition-all hover:border-primary/40 hover:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.99]";
+const socialClass = "h-11 flex-1 gap-2 text-sm font-medium";
 
 /**
  * Backend Google OAuth entry point (TASK-168). A plain top-level browser
@@ -97,6 +97,12 @@ export function LoginForm({
   // account — deliberately indistinguishable) to /login?oauthError=1.
   const hasOAuthError = Boolean(searchParams.get("oauthError"));
 
+  // TASK-871: /reset-password sends a successful reset here with this flag.
+  // Page mode only — the header sheet can open over /login, and the
+  // confirmation belongs to the page the reset form navigated to.
+  const passwordResetDone =
+    !inSheet && searchParams.get(PASSWORD_RESET_DONE_PARAM) === "1";
+
   // Read per render rather than at module scope so a test (and a redeployed
   // container) sees the value it actually set.
   const googleEnabled = isGoogleAuthEnabled();
@@ -162,67 +168,46 @@ export function LoginForm({
           ? dict.common.genericError
           : null;
 
+  const forgotClass = `-mt-1 self-end text-sm font-semibold ${AUTH_LINK_CLASS}`;
+
   return (
     <form
       onSubmit={handleSubmit(onSubmit)}
       className="flex flex-col gap-4"
       noValidate
     >
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="login-email"
-          className="text-sm font-medium text-foreground"
+      {/* Not an error: a confirmation. `text-foreground` on the tinted box —
+          `text-success` alone is ≈3.3:1 on white and fails AA. */}
+      {passwordResetDone && (
+        <p
+          role="status"
+          className="flex items-start gap-2 rounded-lg border border-success/40 bg-success/10 px-3 py-2 text-sm text-foreground"
         >
-          {dict.auth.login.email}
-        </label>
-        <input
-          id="login-email"
-          type="email"
-          autoComplete="email"
-          className={fieldClass}
-          aria-invalid={errors.email ? true : undefined}
-          aria-describedby={errors.email ? "login-email-error" : undefined}
-          {...register("email")}
-        />
-        {errors.email && (
-          <p
-            id="login-email-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.email.message}
-          </p>
-        )}
-      </div>
+          <CheckCircle2
+            aria-hidden="true"
+            className="mt-0.5 size-4 shrink-0 text-success"
+          />
+          <span>{dict.auth.resetPassword.success}</span>
+        </p>
+      )}
 
-      <div className="flex flex-col gap-1">
-        <label
-          htmlFor="login-password"
-          className="text-sm font-medium text-foreground"
-        >
-          {dict.auth.login.password}
-        </label>
-        <input
-          id="login-password"
-          type="password"
-          autoComplete="current-password"
-          className={fieldClass}
-          aria-invalid={errors.password ? true : undefined}
-          aria-describedby={
-            errors.password ? "login-password-error" : undefined
-          }
-          {...register("password")}
-        />
-        {errors.password && (
-          <p
-            id="login-password-error"
-            role="alert"
-            className="text-sm text-destructive"
-          >
-            {errors.password.message}
-          </p>
-        )}
-      </div>
+      <AuthField
+        id="login-email"
+        label={dict.auth.login.email}
+        type="email"
+        autoComplete="email"
+        error={errors.email?.message}
+        {...register("email")}
+      />
+
+      <AuthField
+        id="login-password"
+        label={dict.auth.login.password}
+        type="password"
+        autoComplete="current-password"
+        error={errors.password?.message}
+        {...register("password")}
+      />
 
       {/* Password reset (TASK-169). Sheet mode flips to the in-sheet forgot view;
           page mode links to the standalone /forgot-password page. */}
@@ -230,15 +215,12 @@ export function LoginForm({
         <button
           type="button"
           onClick={onForgotPassword}
-          className="-mt-1 self-end text-sm font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className={forgotClass}
         >
           {dict.auth.login.forgot}
         </button>
       ) : (
-        <Link
-          href="/forgot-password"
-          className="-mt-1 self-end text-sm font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
+        <Link href="/forgot-password" className={forgotClass}>
           {dict.auth.login.forgot}
         </Link>
       )}
@@ -257,13 +239,13 @@ export function LoginForm({
         </p>
       )}
 
-      <button
+      <Button
         type="submit"
         disabled={login.isPending}
-        className="rounded-lg bg-primary px-4 py-2.5 font-semibold text-primary-foreground transition-all hover:bg-primary/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50"
+        className={AUTH_SUBMIT_CLASS}
       >
         {login.isPending ? dict.auth.login.submitting : dict.auth.login.submit}
-      </button>
+      </Button>
 
       {/* Google is a real redirect-based OAuth flow (TASK-168); Apple remains
           an honest coming-soon stub (owner decision 2026-07-11). */}
@@ -272,10 +254,11 @@ export function LoginForm({
         {dict.auth.login.orDivider}
         <span className="h-px flex-1 bg-border" />
       </div>
-      <div className="flex gap-2.5">
+      <div className="flex gap-3">
         {googleEnabled && (
-          <button
+          <Button
             type="button"
+            variant="outline"
             onClick={() => {
               // Full top-level navigation — the redirect target is the same
               // value the password login navigates to after success, so both
@@ -286,16 +269,17 @@ export function LoginForm({
           >
             <GoogleIcon />
             {dict.auth.login.google}
-          </button>
+          </Button>
         )}
-        <button
+        <Button
           type="button"
+          variant="outline"
           onClick={() => toast(dict.auth.login.socialSoon)}
           className={socialClass}
         >
           <AppleIcon />
           {dict.auth.login.apple}
-        </button>
+        </Button>
       </div>
 
       {/* Always visible, for everyone (TASK-287). The API can no longer tell a
@@ -303,10 +287,7 @@ export function LoginForm({
           human route out — it reveals nothing about any account's state. */}
       <p className="text-center text-sm text-muted-foreground">
         {dict.auth.support.loginTrouble}{" "}
-        <Link
-          href="/contact"
-          className="font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-        >
+        <Link href="/contact" className={`font-semibold ${AUTH_LINK_CLASS}`}>
           {dict.auth.support.contactLink}
         </Link>
       </p>
@@ -317,12 +298,12 @@ export function LoginForm({
           <button
             type="button"
             onClick={onSwitchToRegister}
-            className="font-semibold text-primary transition-colors hover:text-primary/80 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            className={AUTH_LINK_CLASS}
           >
             {dict.auth.login.registerLink}
           </button>
         ) : (
-          <Link href="/register" className="text-primary hover:underline">
+          <Link href="/register" className={AUTH_LINK_CLASS}>
             {dict.auth.login.registerLink}
           </Link>
         )}

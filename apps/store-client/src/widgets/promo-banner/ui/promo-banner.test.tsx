@@ -63,12 +63,49 @@ describe("PromoBanner", () => {
     expect(screen.getByText("Custom promo title")).toBeInTheDocument();
   });
 
+  it("veils the picture with the overlay scrim token, not a palette colour (TASK-879)", () => {
+    const { container } = renderWithProviders(
+      <PromoBanner
+        banner={makeBanner({
+          imageUrl: "http://localhost:3001/uploads/banners/wide.webp",
+        })}
+      />,
+    );
+
+    const veil = container.querySelector("img")?.nextElementSibling;
+    expect(veil).toHaveClass("bg-overlay/75");
+    expect(veil?.className).not.toMatch(/slate-/);
+  });
+
   it("keeps the gradient alone when the banner has no picture", () => {
     const { container } = renderWithProviders(
       <PromoBanner banner={makeBanner({ imageUrl: null })} />,
     );
 
     expect(container.querySelector("img")).toBeNull();
+  });
+
+  it("draws the CTA as an outline — the hero slide owns the primary (TASK-865)", () => {
+    renderWithProviders(<PromoBanner />);
+
+    const cta = screen.getByRole("link", { name: dict.home.widePromo.cta });
+    expect(cta).toHaveAttribute("data-variant", "outline");
+    expect(cta).not.toHaveClass("bg-primary");
+  });
+
+  it("shows keyboard focus as a white offset outline on the dark gradient (TASK-865)", () => {
+    renderWithProviders(<PromoBanner />);
+
+    const cta = screen.getByRole("link", { name: dict.home.widePromo.cta });
+    expect(cta).toHaveClass(
+      "focus-visible:border-white",
+      "focus-visible:ring-0",
+      "focus-visible:outline-solid",
+      "focus-visible:outline-offset-2",
+      "focus-visible:outline-white",
+    );
+    // The indigo border would be indigo on indigo here.
+    expect(cta).not.toHaveClass("focus-visible:border-ring");
   });
 
   it("omits the CTA button when the banner has no label/href", () => {

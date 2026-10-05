@@ -15,7 +15,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/shared/ui";
-import { dict } from "@/shared/config";
+import { dict, PAGE_CONTAINER } from "@/shared/config";
 import type { BannerEntity } from "@/shared/api/generated/models";
 import { SearchAutocomplete } from "@/features/search";
 import { ThemeToggle } from "@/features/theme";
@@ -39,6 +39,16 @@ interface HeaderProps {
   announcement?: BannerEntity;
   /** Admin-uploaded store logo (SeoSettings.logoUrl) from the server layout. */
   logoUrl?: string | null;
+  /**
+   * Store display name (SeoSettings.siteName via `resolveSiteName`) from the
+   * server layout — the wordmark and the logo's alt (TASK-546).
+   */
+  siteName: string;
+  /**
+   * Support phone (SiteContactSettings.phone) from the server layout — the
+   * announcement bar hides it when unset (TASK-873).
+   */
+  supportPhone?: string | null;
 }
 
 /**
@@ -48,11 +58,16 @@ interface HeaderProps {
  * categories. Client component because it owns the mobile-menu open state and
  * composes hook-driven sub-widgets.
  *
- * The announcement banner and the store logo are fetched server-side (ISR) and
- * passed in as plain serializable props so the client header can render them
- * without its own fetch.
+ * The announcement banner, the store logo, the store name and the support phone
+ * are fetched server-side (ISR) and passed in as plain serializable props so
+ * the client header can render them without its own fetch.
  */
-export function Header({ announcement, logoUrl }: HeaderProps = {}) {
+export function Header({
+  announcement,
+  logoUrl,
+  siteName,
+  supportPhone,
+}: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -74,9 +89,11 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
 
   return (
     <>
-      <AnnouncementBar banner={announcement} />
+      <AnnouncementBar banner={announcement} phone={supportPhone} />
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur-sm supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-4 sm:gap-3">
+        <div
+          className={`${PAGE_CONTAINER} flex h-16 items-center gap-2 sm:gap-3`}
+        >
           {/* Left: mobile menu trigger + logo. `min-w-0` (here and on the logo
               link) makes this the cluster that yields on a 320px screen — the
               wordmark truncates instead of pushing the cart off-canvas. */}
@@ -90,16 +107,15 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                   // phone, so it gets a full touch target; `shrink-0` keeps it
                   // at that size when the row runs out of width.
                   //
-                  // `lg:hidden`, not `md:hidden` (TASK-413/TASK-504). Measured:
-                  // the 768px row is 736px wide and the desktop cluster it
-                  // would have to carry — brand 168 + search 163 + section
-                  // links 117 + actions 402 + gaps 36 — is 886. Something has
-                  // to give, and before this it was the brand: the logo was
-                  // crushed to 8px. Keeping the slide-out menu to `lg` instead
-                  // means the 768–1023 tablet band reaches the section links,
-                  // «Акції», the theme switch and the account links through it,
-                  // which is exactly the fallback TASK-504 asks for.
-                  className="size-11 shrink-0 lg:hidden"
+                  // `xl:hidden` (TASK-511/512, after TASK-413/504's `lg`).
+                  // Measured: even with icon-only actions the 768px row (736)
+                  // cannot carry brand 168 + pill 159 + section links 117 +
+                  // actions 262 + gaps; and at 1024 (992) the section links and
+                  // the theme switch would leave the search input ~79px — the
+                  // placeholder cut to «Пошук». So until `xl` the slide-out
+                  // menu carries Товари/Блог and the theme switch, and the row
+                  // spends its width on the search input (≈317px at 1024).
+                  className="size-11 shrink-0 xl:hidden"
                   aria-label={dict.header.openMenu}
                 >
                   <Menu className="size-5" />
@@ -120,7 +136,7 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
                   {/* The Sheet's accessible name — the wordmark (or the logo's
                       alt text) is the store name either way. */}
                   <SheetTitle>
-                    <Logo logoUrl={logoUrl} />
+                    <Logo siteName={siteName} logoUrl={logoUrl} />
                   </SheetTitle>
                 </SheetHeader>
                 {/* Mobile search — full width at the top of the slide-out menu. */}
@@ -226,8 +242,8 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
 
                 {/* Theme switch — a preference, not navigation, so it sits
                     below the menu and outside the <nav> landmark. Always
-                    visible here: on a phone this is the only place it appears,
-                    since the header cluster has no room for it. */}
+                    visible here: below `xl` this is the only place it appears,
+                    since the header row has no room for it (TASK-511/512). */}
                 <div className="mt-2 border-t border-border px-2 pt-3 pb-4">
                   <ThemeToggle variant="full" />
                 </div>
@@ -241,7 +257,11 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
               // actually give way and let its wordmark truncate.
               className="flex min-w-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <Logo logoUrl={logoUrl} markClassName="shadow-elevated" />
+              <Logo
+                siteName={siteName}
+                logoUrl={logoUrl}
+                markClassName="shadow-elevated"
+              />
             </Link>
           </div>
 
@@ -250,17 +270,18 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
 
           {/* Section links — the desktop half of NAV_LINKS (TASK-413). They
               appear at exactly the width the slide-out menu that carries them
-              disappears (`lg`), so the same two destinations are one gesture
-              away at every size and this row costs a phone nothing. */}
+              disappears (`xl`, TASK-511/512), so the same two destinations are
+              one gesture away at every size and the row below `xl` keeps its
+              width for the search input. */}
           <nav
             aria-label={dict.nav.primaryAria}
-            className="hidden shrink-0 items-center gap-1 lg:flex"
+            className="hidden shrink-0 items-center gap-1 xl:flex"
           >
             {NAV_LINKS.map((link) => (
               <Link
                 key={link.href}
                 href={link.href}
-                className="flex min-h-11 items-center rounded-lg px-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:px-3"
+                className="flex min-h-11 items-center rounded-lg px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {link.label}
               </Link>
@@ -269,36 +290,43 @@ export function Header({ announcement, logoUrl }: HeaderProps = {}) {
 
           {/* Right: action cluster. `shrink-0` — these are the commerce actions,
               so they keep their size and the brand block absorbs the squeeze.
+              Below `xl` Акції / Обране / Кабінет are icons only (≈262px for the
+              cluster instead of 402), captions from `xl` (TASK-511).
               Below 390px only the cart survives: Обране and Кабінет are hidden
               (both are in the slide-out menu above) rather than letting four
-              targets collide on the narrowest phones. */}
-          <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-1.5">
+              targets collide on the narrowest phones.
+
+              Phone spacing is tighter (`gap-0.5`, cart `ml-0`) because the 44×44
+              Обране / Кабінет targets cost the row 6px at 390 — measured, the
+              wordmark was cut to «CaseSt…» (100/103). Each icon already carries
+              11px of padding either side, so the glyphs stay 24px apart. */}
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-1.5">
             {/* Theme switch — leftmost, so the commerce actions stay grouped
                 next to the cart.
 
-                It appears at exactly `lg`, the width where the slide-out menu —
+                It appears at exactly `xl`, the width where the slide-out menu —
                 the only other place it lives — disappears, so the two together
-                cover every width with no gap. That is what TASK-504 caught
-                behind the old `min-[1100px]`: the menu stopped at `md` and the
-                switch only started at 1100, leaving 768–1099 with no way to
-                change the theme at all. The threshold is measured, not guessed:
-                at 1024 the row has 992px for brand 168 + search + links 133 +
-                actions 402 + gaps 36, which leaves the search pill 253 — above
-                its 165px floor, so nothing is squeezed. At 768 the same cluster
-                needs 886 of 736 and the brand pays; hence the menu to `lg`. */}
-            <ThemeToggle className="mr-1 hidden lg:flex" />
+                cover every width with no gap (TASK-504 caught the old
+                `min-[1100px]` gap). It waits for `xl`, not `lg`, because at
+                1024 it and the section links cost the search input everything
+                but ~79px (TASK-512); in the menu they cost the row nothing. */}
+            <ThemeToggle className="mr-1 hidden xl:flex" />
+            {/* Icon-only below `xl` (TASK-511): the caption is display:none
+                there and so drops out of the accessible name — the aria-label
+                carries it. 44×44 minimum either way. */}
             <Link
               href="/promo"
-              className="hidden min-h-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
+              aria-label={dict.header.promoLabel}
+              className="hidden min-h-11 min-w-11 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-1.5 text-[11px] text-sale transition-colors hover:bg-sale/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex"
             >
               <Tag className="size-[22px]" aria-hidden="true" />
-              {dict.header.promoLabel}
+              <span className="hidden xl:inline">{dict.header.promoLabel}</span>
             </Link>
             <HeaderWishlistBadge className="hidden min-[390px]:flex" />
             <div className="hidden min-[390px]:block">
               <HeaderAuth />
             </div>
-            <HeaderCartBadge className="ml-1" />
+            <HeaderCartBadge className="sm:ml-1" />
           </div>
         </div>
       </header>

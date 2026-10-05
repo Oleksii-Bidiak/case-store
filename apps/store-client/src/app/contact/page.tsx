@@ -4,7 +4,7 @@ import { JsonLd } from "@/shared/ui";
 import { buildBreadcrumbSchema } from "@/shared/lib/schema";
 import { fetchSiteContactSettings } from "@/shared/api/site-contact-server";
 import { buildHubMetadata } from "@/shared/lib/seo/server";
-import { SITE_URL, dict } from "@/shared/config";
+import { SITE_URL, dict, PAGE_CONTAINER } from "@/shared/config";
 
 // TASK-435 — admin-managed via the `contact` HUB page row; dictionary fallback.
 export function generateMetadata(): Promise<Metadata> {
@@ -25,7 +25,7 @@ export default async function ContactPage() {
   const contact = await fetchSiteContactSettings();
 
   return (
-    <div className="mx-auto w-full max-w-[1320px] px-4 pt-[22px] pb-16 sm:px-6">
+    <div className={`${PAGE_CONTAINER} pt-[22px] pb-16`}>
       <JsonLd
         schema={buildBreadcrumbSchema([
           { name: dict.contact.breadcrumbHome, item: SITE_URL },

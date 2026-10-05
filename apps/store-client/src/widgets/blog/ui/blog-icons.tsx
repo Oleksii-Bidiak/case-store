@@ -75,23 +75,6 @@ export function BlogInstagramIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
-export function BlogYoutubeIcon(props: SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinejoin="round"
-      aria-hidden="true"
-      {...props}
-    >
-      <rect x="3" y="6" width="18" height="12" rx="3" />
-      <path d="M10 9l5 3-5 3z" fill="currentColor" />
-    </svg>
-  );
-}
-
 /** Chain link — "copy article URL" share button. */
 export function BlogLinkIcon(props: SVGProps<SVGSVGElement>) {
   return (

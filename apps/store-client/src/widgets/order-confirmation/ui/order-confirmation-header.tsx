@@ -1,9 +1,9 @@
 import {
-  statusBadgeClass as badgeClass,
+  OrderStatusBadge,
   type OrderEntityStatus,
   type OrderEntityPaymentStatus,
 } from "@/entities/order";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { formatDate } from "@/shared/lib/format";
 
 interface OrderConfirmationHeaderProps {
@@ -30,9 +30,7 @@ export function OrderConfirmationHeader({
 
   return (
     <header className="flex flex-col gap-3">
-      <h1 className="text-3xl font-bold text-foreground">
-        {dict.order.thankYou}
-      </h1>
+      <h1 className={`${H1_CLASS} text-foreground`}>{dict.order.thankYou}</h1>
 
       <dl className="flex flex-col gap-1 text-sm">
         <div className="flex gap-2">
@@ -45,24 +43,20 @@ export function OrderConfirmationHeader({
         </div>
       </dl>
 
+      {/* The `<dt>`s name the two badges for a screen reader; the badges
+          themselves carry no aria-label (TASK-868). */}
       <dl className="flex flex-wrap items-center gap-2">
         <dt className="sr-only">{dict.order.orderStatusSr}</dt>
         <dd>
-          <span
-            aria-label={dict.order.orderStatusAria(status)}
-            className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${badgeClass(status)}`}
-          >
+          <OrderStatusBadge status={status}>
             {dict.order.orderStatusLabels[status] ?? status}
-          </span>
+          </OrderStatusBadge>
         </dd>
         <dt className="sr-only">{dict.order.paymentStatusSr}</dt>
         <dd>
-          <span
-            aria-label={dict.order.paymentStatusAria(paymentStatus)}
-            className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${badgeClass(paymentStatus)}`}
-          >
+          <OrderStatusBadge status={paymentStatus}>
             {dict.order.paymentLabel(paymentStatus)}
-          </span>
+          </OrderStatusBadge>
         </dd>
       </dl>
     </header>

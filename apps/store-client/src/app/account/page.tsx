@@ -10,6 +10,8 @@ export const metadata: Metadata = {
 
 export default function AccountPage() {
   return (
+    // AccountSkeleton carries the dashboard's own container, the same one
+    // `loading.tsx` and AccountView's loading branch render (TASK-869).
     <Suspense fallback={<AccountSkeleton />}>
       <AccountView />
     </Suspense>

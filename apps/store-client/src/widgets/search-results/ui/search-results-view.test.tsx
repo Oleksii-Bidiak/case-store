@@ -155,6 +155,10 @@ describe("SearchResultsView", () => {
   it("shows the search prompt (no request) when the query is blank", () => {
     renderWithProviders(<SearchResultsView query="" page={1} />);
     expect(screen.getByText(dict.search.promptHeading)).toBeInTheDocument();
+    // design-system §6 (TASK-870): the prompt ends in ONE primary action.
+    const cta = screen.getByRole("link", { name: dict.search.promptCta });
+    expect(cta).toHaveAttribute("href", "/products");
+    expect(cta).toHaveAttribute("data-variant", "default");
   });
 
   it("renders matching products for a query", async () => {
@@ -180,9 +184,41 @@ describe("SearchResultsView", () => {
     expect(
       await screen.findByText(dict.search.emptyHeading("zzz")),
     ).toBeInTheDocument();
+    // No filter narrowed it — the query itself found nothing, so the primary
+    // action leads to the whole catalogue (TASK-870).
+    const cta = screen.getByRole("link", { name: dict.search.browseAll });
+    expect(cta).toHaveAttribute("href", "/products");
+    expect(cta).toHaveAttribute("data-variant", "default");
     expect(
-      screen.getByRole("link", { name: dict.search.browseAll }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: dict.catalog.clearAllFilters }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers a primary filter reset that keeps the query when filters emptied the results", async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get("*/api/search", () => HttpResponse.json(resultsEnvelope([], 0))),
+    );
+    currentQuery = "q=zzz&brand=apple&minPrice=9999";
+
+    renderWithProviders(<SearchResultsView query="zzz" page={1} />);
+
+    const reset = await screen.findByRole("button", {
+      name: dict.catalog.clearAllFilters,
+    });
+    expect(reset).toHaveAttribute("data-variant", "default");
+    expect(
+      screen.queryByRole("link", { name: dict.search.browseAll }),
+    ).not.toBeInTheDocument();
+
+    await user.click(reset);
+
+    const params = new URLSearchParams(
+      (mockReplace.mock.calls.at(-1)![0] as string).split("?")[1],
+    );
+    expect(params.get("q")).toBe("zzz");
+    expect(params.has("brand")).toBe(false);
+    expect(params.has("minPrice")).toBe(false);
   });
 
   it("shows the error state when the request fails", async () => {
@@ -545,6 +581,165 @@ describe("SearchResultsView", () => {
       });
     });
 
+    /**
+     * TASK-876 — the catalogue's toolbar on /search: the shared «Фільтри»
+     * button, the catalogue's sort pill (one `sort` param here) and the row of
+     * removable chips for the active filters.
+     */
+    describe("catalogue toolbar (TASK-876)", () => {
+      function installApple() {
+        server.use(
+          http.get("*/api/brands", () =>
+            HttpResponse.json({
+              data: [{ id: "brand-apple", name: "Apple", slug: "apple" }],
+            }),
+          ),
+        );
+      }
+
+      it("shows a removable chip per active filter, but none for the query", async () => {
+        currentQuery = "q=case&brand=apple&inStock=true&minPrice=100";
+        installSearch();
+        installApple();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        expect(
+          await screen.findByRole("button", {
+            name: new RegExp(`${dict.filters.brandTitle}: Apple`),
+          }),
+        ).toBeInTheDocument();
+        expect(
+          screen.getByRole("button", {
+            name: new RegExp(dict.filters.inStockChip),
+          }),
+        ).toBeInTheDocument();
+        // The keyword is the subject of the page (it is in the h1), not a
+        // filter — a chip for it would drop the shopper onto the blank prompt.
+        expect(
+          screen.queryByRole("button", { name: /«case»/ }),
+        ).not.toBeInTheDocument();
+      });
+
+      it("removes one filter from its chip and keeps the query", async () => {
+        currentQuery = "q=case&brand=apple&inStock=true";
+        installSearch();
+        installApple();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+        mockReplace.mockClear();
+
+        await userEvent.click(
+          screen.getByRole("button", {
+            name: new RegExp(dict.filters.inStockChip),
+          }),
+        );
+
+        await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.get("q")).toBe("case");
+        expect(target.searchParams.get("brand")).toBe("apple");
+        expect(target.searchParams.has("inStock")).toBe(false);
+      });
+
+      it("clears every filter with «Очистити все» but keeps the query", async () => {
+        currentQuery = "q=case&category=cases&inStock=true&maxPrice=500";
+        installSearch();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+        mockReplace.mockClear();
+
+        await userEvent.click(
+          screen.getByRole("button", { name: dict.filters.clearAll }),
+        );
+
+        await waitFor(() => expect(mockReplace).toHaveBeenCalled());
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.get("q")).toBe("case");
+        expect(target.searchParams.has("category")).toBe(false);
+        expect(target.searchParams.has("inStock")).toBe(false);
+        expect(target.searchParams.has("maxPrice")).toBe(false);
+      });
+
+      it("renders no chips row when nothing is filtered", async () => {
+        currentQuery = "q=case";
+        installSearch();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        expect(
+          screen.queryByRole("button", { name: dict.filters.clearAll }),
+        ).not.toBeInTheDocument();
+      });
+
+      it("uses the catalogue's sort pill and writes one `sort` param", async () => {
+        currentQuery = "q=case";
+        installSearch();
+        const user = userEvent.setup();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        const trigger = screen.getByRole("combobox", {
+          name: dict.catalog.searchPage.sortAria,
+        });
+        // The catalogue pill: it shrinks and truncates on a 320px phone.
+        expect(trigger).toHaveClass("min-w-0");
+        expect(trigger).toHaveTextContent(
+          dict.catalog.searchPage.sortRelevance,
+        );
+
+        await user.click(trigger);
+        await user.click(
+          screen.getByRole("option", { name: dict.filters.sort.priceAsc }),
+        );
+
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.get("sort")).toBe("price_asc");
+        expect(target.searchParams.has("sortBy")).toBe(false);
+        expect(target.searchParams.get("q")).toBe("case");
+      });
+
+      it("leaves relevance, the default order, off the URL", async () => {
+        currentQuery = "q=case&sort=newest";
+        installSearch();
+        const user = userEvent.setup();
+
+        renderWithProviders(<SearchResultsView query="case" page={1} />);
+        await screen.findByText("iPhone 15 Case");
+
+        await user.click(
+          screen.getByRole("combobox", {
+            name: dict.catalog.searchPage.sortAria,
+          }),
+        );
+        await user.click(
+          screen.getByRole("option", {
+            name: dict.catalog.searchPage.sortRelevance,
+          }),
+        );
+
+        const target = new URL(
+          mockReplace.mock.calls.at(-1)?.[0] as string,
+          "http://localhost",
+        );
+        expect(target.searchParams.has("sort")).toBe(false);
+      });
+    });
+
     // TASK-742: GET /api/search takes no `onSale`, so the panel must not offer
     // a box that would be ticked with no effect on the results.
     it("does not offer «Зі знижкою» — the search endpoint has no such param", async () => {
@@ -570,5 +765,76 @@ describe("SearchResultsView", () => {
         screen.queryByLabelText(dict.filters.inStockOnly),
       ).not.toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * TASK-515 — the results grid dropped twice on every search: by the chips row
+ * (60px) when the category tree landed, and by the «Знайдено N» line (44px)
+ * when the results replaced a skeleton that had no such line.
+ */
+describe("SearchResultsView — the page holds its place while loading (TASK-515)", () => {
+  const installOneResult = () =>
+    server.use(
+      http.get("*/api/search", () =>
+        HttpResponse.json(resultsEnvelope([makeProduct()])),
+      ),
+    );
+  const holdTheTree = () =>
+    server.use(
+      http.get("*/api/categories/tree", () => new Promise<never>(() => {})),
+    );
+
+  it("reserves the result-count line in the skeleton, gap-6 above the cards", () => {
+    renderWithProviders(<SearchResultsSkeleton />);
+
+    const line = screen.getByTestId("result-count-skeleton");
+    expect(line).toHaveClass("h-5");
+    expect(line.parentElement).toHaveClass("flex", "flex-col", "gap-6");
+  });
+
+  it("keeps the chips row's placeholder until the category tree arrives", async () => {
+    currentQuery = "q=case";
+    installOneResult();
+    holdTheTree();
+
+    renderWithProviders(<SearchResultsView query="case" page={1} />);
+
+    await screen.findByText("iPhone 15 Case");
+    expect(screen.getByTestId("category-chips-skeleton").children).toHaveLength(
+      1,
+    );
+    expect(
+      screen.queryByRole("group", { name: dict.filters.categoryChipsAria }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reserves the subcategory row too when a category is selected", async () => {
+    currentQuery = "q=case&category=cases";
+    installOneResult();
+    holdTheTree();
+
+    renderWithProviders(<SearchResultsView query="case" page={1} />);
+
+    await screen.findByText("iPhone 15 Case");
+    expect(screen.getByTestId("category-chips-skeleton").children).toHaveLength(
+      2,
+    );
+  });
+
+  it("swaps the placeholder for the chips once the tree is there", async () => {
+    currentQuery = "q=case";
+    installOneResult();
+
+    renderWithProviders(<SearchResultsView query="case" page={1} />);
+
+    expect(
+      await screen.findByRole("group", {
+        name: dict.filters.categoryChipsAria,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("category-chips-skeleton"),
+    ).not.toBeInTheDocument();
   });
 });

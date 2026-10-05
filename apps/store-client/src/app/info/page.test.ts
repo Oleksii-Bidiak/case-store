@@ -24,7 +24,9 @@ jest.mock("@/shared/lib/sanitize-html", () => ({
   sanitizeHtml: (html: string) => `clean:${html}`,
 }));
 // The view is a client component — the route's contract with it is its props.
+// The placeholder filters stay real (TASK-873): they are route logic.
 jest.mock("@/widgets/info-support", () => ({
+  ...jest.requireActual("@/widgets/info-support/model/unfilled-placeholders"),
   InfoView: function InfoView() {
     return null;
   },
@@ -153,6 +155,51 @@ describe("/info — blocks from CMS pages (TASK-560)", () => {
     expect(fetchPages).toHaveBeenCalledWith("INFO");
     expect(pages).toEqual([
       { title: "Як повернути товар", href: "/info/returns-howto" },
+    ]);
+  });
+});
+
+describe("/info — unfilled owner placeholders are hidden (TASK-873)", () => {
+  it("drops the placeholder sentences from section bodies and ledes", async () => {
+    fetchPage.mockImplementation(async (slug) =>
+      slug === INFO_HUB_SECTION_SLUGS.delivery
+        ? makePage(slug, {
+            excerpt: "Відправляємо день у день. Курʼєр — [вартість].",
+            content:
+              "<ul><li><p>Нова Пошта — по всій Україні.</p></li>" +
+              "<li><p>Самовивіз — [адреса пункту самовивозу].</p></li></ul>",
+          })
+        : makePage(slug),
+    );
+
+    const { sections } = await viewProps();
+    const delivery = (
+      sections as Record<string, { intro: string; html: string }>
+    ).delivery;
+
+    expect(delivery.intro).toBe("Відправляємо день у день.");
+    expect(delivery.html).toBe(
+      "clean:<ul><li><p>Нова Пошта — по всій Україні.</p></li></ul>",
+    );
+  });
+
+  it("trims FAQ answers and drops one left empty", async () => {
+    const { fetchFaqItems } = jest.requireMock("@/shared/api/faq-server") as {
+      fetchFaqItems: jest.Mock;
+    };
+    fetchFaqItems.mockResolvedValueOnce([
+      {
+        id: "1",
+        question: "Скільки коштує доставка?",
+        answer: "За тарифами НП. Курʼєр — [вартість].",
+      },
+      { id: "2", question: "Де самовивіз?", answer: "[адреса самовивозу]" },
+    ]);
+
+    const { faqs } = await viewProps();
+
+    expect(faqs).toEqual([
+      { q: "Скільки коштує доставка?", a: "За тарифами НП." },
     ]);
   });
 });

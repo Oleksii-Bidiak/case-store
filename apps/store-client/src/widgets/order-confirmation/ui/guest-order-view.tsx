@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useGetGuestOrder } from "@/entities/order";
-import { dict } from "@/shared/config";
+import { dict, H1_CLASS } from "@/shared/config";
 import { OrderConfirmationSkeleton } from "./order-confirmation-skeleton";
 import { OrderConfirmationHeader } from "./order-confirmation-header";
 import { OrderItemList } from "./order-item-list";
@@ -15,7 +15,7 @@ interface GuestOrderViewProps {
 }
 
 const primaryCta =
-  "inline-block rounded-lg bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+  "inline-block rounded-cta bg-primary px-6 py-3 font-semibold text-primary-foreground hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /**
  * GuestOrderView — a shopper without an account looking at their own order
@@ -53,7 +53,7 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
   if (isError || !order) {
     return (
       <div role="alert" className="flex flex-col items-start gap-4 py-16">
-        <h1 className="text-2xl font-bold text-foreground">
+        <h1 className={`${H1_CLASS} text-foreground`}>
           {dict.order.guest.linkInvalidHeading}
         </h1>
         <p className="text-muted-foreground">
@@ -115,7 +115,7 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
           />
 
           {notes && (
-            <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-6">
+            <div className="flex flex-col gap-2 rounded-card border border-border bg-card p-6">
               <h2 className="text-lg font-semibold text-foreground">
                 {dict.order.notesTitle}
               </h2>
@@ -124,7 +124,7 @@ export function GuestOrderView({ token }: GuestOrderViewProps) {
           )}
 
           {/* The offer, again after the fact and never as a condition. */}
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-6">
+          <div className="flex flex-col gap-2 rounded-card border border-border bg-card p-6">
             <h2 className="text-lg font-semibold text-foreground">
               {dict.order.guest.accountOfferHeading}
             </h2>

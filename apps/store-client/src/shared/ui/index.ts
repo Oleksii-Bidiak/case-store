@@ -9,6 +9,7 @@ export { Combobox, type ComboboxOption, type ComboboxProps } from "./combobox";
 export {
   AccountDropdown,
   AccountDropdownItem,
+  AccountDropdownSeparator,
   type AccountDropdownProps,
   type AccountDropdownItemProps,
 } from "./account-dropdown";
@@ -55,6 +56,10 @@ export { Honeypot } from "./honeypot";
 export { Skeleton } from "./skeleton";
 export { CheckoutSkeleton } from "./checkout-skeleton";
 export { ProductCard } from "./product-card";
+export {
+  ProductCardBadges,
+  ProductCardSoldOutVeil,
+} from "./product-card-badges";
 export { ColorDots } from "./color-dots";
 export { ProductCardImage } from "./product-card-image";
 export { ProductThumb } from "./product-thumb";
@@ -69,3 +74,7 @@ export { CategoryTileImage } from "./category-tile-image";
 export { BannerBackdrop } from "./banner-backdrop";
 // Plain <img> for admin URLs with a load-failure fallback (TASK-759).
 export { FallbackImg } from "./fallback-img";
+// Cart / checkout: the mobile «До сплати + CTA» bar and the trust strip under
+// the summary (TASK-864).
+export { MobilePayBar } from "./mobile-pay-bar";
+export { OrderTrustStrip } from "./order-trust-strip";

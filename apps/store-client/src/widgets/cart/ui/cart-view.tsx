@@ -6,7 +6,7 @@ import { ChevronLeft, ShoppingBag } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGetCartQueryKey, useClearCart, useGetCart } from "@/entities/cart";
 import { useAuth } from "@/entities/session";
-import { dict, STICKY_ASIDE_TOP } from "@/shared/config";
+import { dict, STICKY_ASIDE_TOP, H1_CLASS } from "@/shared/config";
 import {
   Button,
   Dialog,
@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  OrderTrustStrip,
 } from "@/shared/ui";
 import { CartItemRow } from "./cart-item-row";
 import { CartSummary } from "./cart-summary";
@@ -89,12 +90,11 @@ export function CartView() {
         <span className="flex size-20 items-center justify-center rounded-full bg-muted text-muted-foreground">
           <ShoppingBag className="size-9" aria-hidden="true" />
         </span>
-        <h2
-          id="empty-cart-heading"
-          className="font-display text-2xl font-bold text-foreground"
-        >
+        {/* The empty cart is still the /cart page, so its title is the page h1
+            (TASK-751) — same role and scale as the wishlist's empty state. */}
+        <h1 id="empty-cart-heading" className={`${H1_CLASS} text-foreground`}>
           {dict.cart.emptyHeading}
-        </h2>
+        </h1>
         <p className="text-muted-foreground">{dict.cart.emptySubtitle}</p>
         <Link
           href="/products"
@@ -107,6 +107,8 @@ export function CartView() {
   }
 
   return (
+    // No bottom padding here: the room for the fixed mobile «До сплати» bar is
+    // reserved by <body> below the footer (globals.css, TASK-864).
     <div className="flex flex-col gap-6">
       {/* Breadcrumbs */}
       <nav
@@ -120,7 +122,7 @@ export function CartView() {
         <span className="text-foreground">{dict.cart.breadcrumb}</span>
       </nav>
 
-      <h1 className="font-display text-[32px] font-bold tracking-tight text-foreground">
+      <h1 className={`${H1_CLASS} text-foreground`}>
         {dict.cart.title} · {dict.cart.countShort(cart?.totals.itemCount ?? 0)}
       </h1>
 
@@ -132,10 +134,9 @@ export function CartView() {
         )}
       </p>
 
-      {/* eslint-disable-next-line tailwindcss/no-arbitrary-value -- fixed+fluid column layout has no named grid-cols-N equivalent */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_380px] lg:items-start">
+      <div className="grid gap-6 lg:grid-cols-checkout lg:items-start">
         {/* Line items */}
-        <div className="overflow-hidden rounded-[18px] border border-border bg-card shadow-card">
+        <div className="overflow-hidden rounded-card border border-border bg-card shadow-card">
           <ul>
             {items.map((item) => (
               <CartItemRow key={item.id} item={item} showAddons />
@@ -152,7 +153,7 @@ export function CartView() {
             <button
               type="button"
               onClick={() => setConfirmOpen(true)}
-              className="text-[13.5px] text-muted-foreground transition-colors hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="text-sm text-muted-foreground transition-colors hover:text-destructive focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               {dict.cart.clear}
             </button>
@@ -170,6 +171,8 @@ export function CartView() {
               totals={cart.totals}
               hasUnavailableItems={hasUnavailableItems}
             />
+            {/* Trust strip under the summary at every width (TASK-864). */}
+            <OrderTrustStrip />
           </div>
         )}
       </div>
