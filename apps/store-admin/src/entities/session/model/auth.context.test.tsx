@@ -283,6 +283,36 @@ describe("AuthProvider — session marker (TASK-528)", () => {
     expect(document.cookie).not.toContain("admin_ui_session=1");
   });
 
+  it("forgets saved list views on sign-out — they carry search text and are not per user", async () => {
+    stubSession("ADMIN", {
+      role: "ADMIN",
+      isOwner: true,
+      isAdmin: true,
+      permissions: [],
+    });
+    window.localStorage.setItem(
+      "admin.registry.customers",
+      JSON.stringify({ views: [{ name: "x", query: "search=+380671234567" }] }),
+    );
+
+    renderWithProviders(
+      <AuthProvider>
+        <Probe />
+        <SignOutProbe />
+      </AuthProvider>,
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("owner"),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "sign-out" }));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("probe")).toHaveTextContent("guest"),
+    );
+    expect(window.localStorage.getItem("admin.registry.customers")).toBeNull();
+  });
+
   it("forgets the marker when the restored session is not staff", async () => {
     server.use(
       http.post("*/api/auth/refresh", () =>

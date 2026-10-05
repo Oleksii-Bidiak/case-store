@@ -22,6 +22,8 @@ import {
   ADMIN_UI_SESSION_COOKIE,
   ADMIN_UI_SESSION_MAX_AGE_SECONDS,
 } from "@/shared/config/admin-ui-session";
+// The file, not the barrel: the session must not pull the registry's UI in.
+import { clearRegistrySettings } from "@/shared/ui/data-registry/registry-settings-store";
 import { MY_PERMISSIONS_QUERY } from "./my-permissions-query";
 
 /**
@@ -255,6 +257,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // token). Forget the session marker too, so the next page load — /login
     // included — makes no doomed refresh and logs no 401 (TASK-528).
     clearSessionMarker();
+    // Saved list views keep their search text and are not per user.
+    clearRegistrySettings();
   }, [dropSessionState]);
 
   const setTokens = useCallback(

@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import {
   REGISTRY_SETTINGS_VERSION,
+  clearRegistrySettings,
   createLocalStorageRegistrySettingsStore,
   defaultRegistrySettings,
   reconcileRegistrySettings,
@@ -174,6 +175,19 @@ describe("localStorage adapter", () => {
     store.save("orders", settings);
     expect(store.load("orders")).toEqual(settings);
     expect(store.load("products")).toBeNull();
+  });
+
+  it("forgets every list's settings on sign-out and leaves other keys alone", () => {
+    const store = createLocalStorageRegistrySettingsStore();
+    store.save("orders", stored({ density: "compact" }));
+    store.save("customers", stored());
+    window.localStorage.setItem("admin.other", "keep");
+
+    clearRegistrySettings();
+
+    expect(store.load("orders")).toBeNull();
+    expect(store.load("customers")).toBeNull();
+    expect(window.localStorage.getItem("admin.other")).toBe("keep");
   });
 
   it("returns null for a corrupted entry instead of throwing", () => {

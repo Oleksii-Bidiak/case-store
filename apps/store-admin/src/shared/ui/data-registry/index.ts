@@ -11,6 +11,7 @@ export {
 } from "./use-data-registry";
 export {
   REGISTRY_SETTINGS_VERSION,
+  clearRegistrySettings,
   createLocalStorageRegistrySettingsStore,
   defaultRegistrySettings,
   localStorageRegistrySettingsStore,

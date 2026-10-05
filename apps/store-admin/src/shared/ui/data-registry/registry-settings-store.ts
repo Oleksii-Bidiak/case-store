@@ -114,6 +114,26 @@ export function createLocalStorageRegistrySettingsStore(
 export const localStorageRegistrySettingsStore =
   createLocalStorageRegistrySettingsStore();
 
+/**
+ * Forget every list's settings in this browser. Saved views carry their query
+ * — a search for a customer's phone included — and the key is not per user,
+ * so a sign-out must not hand them to whoever signs in next on a shared
+ * machine. Called from every sign-out (until TASK-1044 moves views server-side).
+ */
+export function clearRegistrySettings(prefix = STORAGE_PREFIX): void {
+  try {
+    const storage = window.localStorage;
+    const keys: string[] = [];
+    for (let i = 0; i < storage.length; i += 1) {
+      const key = storage.key(i);
+      if (key?.startsWith(prefix)) keys.push(key);
+    }
+    for (const key of keys) storage.removeItem(key);
+  } catch {
+    // No storage — nothing was remembered.
+  }
+}
+
 function defaultColumns(
   defaults: readonly RegistryColumnDefault[],
 ): RegistryColumnSetting[] {
