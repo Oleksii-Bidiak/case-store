@@ -10,9 +10,9 @@ export {
 } from './admin-faq.controller';
 export {
   FaqRepository,
-  CreateFaqItemInput,
-  UpdateFaqItemInput,
-  FindAllAdminParams,
+  type CreateFaqItemInput,
+  type UpdateFaqItemInput,
+  type FindAllAdminParams,
 } from './faq.repository';
 export { FaqItemEntity } from './entities';
 export { CreateFaqItemDto, UpdateFaqItemDto, AdminFaqListQueryDto } from './dto';

@@ -23,6 +23,7 @@ const owner: LevelledAccount = { id: 'owner-1', role: UserRole.ADMIN, isOwner: t
 const deputy: LevelledAccount = { id: 'deputy-1', role: UserRole.ADMIN, isOwner: false };
 const otherDeputy: LevelledAccount = { id: 'deputy-2', role: UserRole.ADMIN, isOwner: false };
 const manager: LevelledAccount = { id: 'manager-1', role: UserRole.MANAGER, isOwner: false };
+const otherManager: LevelledAccount = { id: 'manager-2', role: UserRole.MANAGER, isOwner: false };
 const customer: LevelledAccount = { id: 'customer-1', role: UserRole.CUSTOMER, isOwner: false };
 
 describe('levelOf', () => {
@@ -41,8 +42,8 @@ describe('levelOf', () => {
     // Not a state the shop can reach today (the owner is seeded ADMIN), but the
     // flag is the level and the role is not. Reading the role first would make
     // a hand-run UPDATE in the database silently demote the owner.
-    expect(levelOf({ id: 'x', role: UserRole.MANAGER, isOwner: true })).toBe(AccessLevel.OWNER);
-    expect(levelOf({ id: 'x', role: UserRole.CUSTOMER, isOwner: true })).toBe(AccessLevel.OWNER);
+    expect(levelOf({ role: UserRole.MANAGER, isOwner: true })).toBe(AccessLevel.OWNER);
+    expect(levelOf({ role: UserRole.CUSTOMER, isOwner: true })).toBe(AccessLevel.OWNER);
   });
 
   it('maps a bare role the same way for the assign check', () => {
@@ -90,9 +91,7 @@ describe('assertMayManage', () => {
   it('refuses a manager on a manager but allows a manager on a customer', () => {
     // The manager→customer case is not theoretical: `customers:write` on
     // /api/users deactivates shoppers, and this is the check that route runs.
-    expect(() => assertMayManage(manager, { ...manager, id: 'manager-2' })).toThrow(
-      ForbiddenException,
-    );
+    expect(() => assertMayManage(manager, otherManager)).toThrow(ForbiddenException);
     expect(() => assertMayManage(manager, customer)).not.toThrow();
   });
 

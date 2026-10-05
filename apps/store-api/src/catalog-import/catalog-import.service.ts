@@ -19,7 +19,7 @@ import {
 } from './catalog-plan';
 import type { ParsedCatalog, ParsedProductRow } from './catalog-import.types';
 import { ProductService } from '../product/product.service';
-import { IMPORTS_SUBDIR, IStorageService, STORAGE_SERVICE } from '../storage';
+import { IMPORTS_SUBDIR, type IStorageService, STORAGE_SERVICE } from '../storage';
 import { generateSlug } from '../common/utils';
 
 /**

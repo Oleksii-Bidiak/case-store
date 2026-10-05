@@ -154,8 +154,10 @@ const makeOrder = (overrides: Partial<OrderWithItems> = {}): OrderWithItems => (
   paymentStatus: PaymentStatus.PENDING,
   subtotal: { toString: () => '69.97' },
   discount: { toString: () => '0' },
+  discountCode: null,
   shippingCost: { toString: () => '0' },
   tax: { toString: () => '0' },
+  addonsTotal: { toString: () => '0' },
   total: { toString: () => '69.97' },
   shippingAddress: address as never,
   billingAddress: address as never,
@@ -1504,7 +1506,7 @@ describe('OrderService', () => {
       orderRepositoryMock.findById.mockResolvedValue(makeOrder(current));
     };
 
-    it.each([
+    it.each<[OrderStatus, OrderStatus, string]>([
       [OrderStatus.DELIVERED, OrderStatus.SHIPPED, 'a backward move'],
       [OrderStatus.SHIPPED, OrderStatus.PENDING, 'a rewind to the start'],
       [OrderStatus.PENDING, OrderStatus.REFUNDED, 'refunding money that never moved'],
@@ -2805,8 +2807,11 @@ describe('OrderService', () => {
     });
 
     it('sends no letter when the operator only had a name and a number', async () => {
+      // `ManualOrderContactDto.email` is typed `string` on purpose but is absent
+      // at runtime when the operator leaves it empty (see the DTO's comment).
+      const noEmail = undefined as unknown as string;
       await service.adminCreateOrder(
-        { ...dto, contact: { ...guestContact, email: undefined } },
+        { ...dto, contact: { ...guestContact, email: noEmail } },
         ADMIN_ID,
       );
 
@@ -4736,7 +4741,7 @@ describe('OrderService', () => {
     it('should pass the query (status, userId, date range, pagination) to the repository', async () => {
       orderRepositoryMock.findAll.mockResolvedValue({ orders: [], total: 0 });
       const query = {
-        status: OrderStatus.SHIPPED,
+        status: [OrderStatus.SHIPPED],
         userId: OTHER_USER_ID,
         dateFrom: '2026-01-01',
         dateTo: '2026-12-31',

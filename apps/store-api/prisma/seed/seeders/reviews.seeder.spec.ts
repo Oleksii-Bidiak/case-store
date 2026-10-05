@@ -127,13 +127,16 @@ describe('seedReviews — the seeded reviewers are confirmed accounts (TASK-588)
     // The stamp is the only change: this seeder decides what the whole
     // storefront's ratings look like, and "while I was here" is how a catalogue
     // quietly changes shape.
-    const pool = reviewCreateMany.mock.calls[0][0].data as { ratingVisible: boolean }[];
+    const pool = reviewCreateMany.mock.calls[0][0].data as {
+      ratingVisible: boolean;
+      textStatus: string;
+    }[];
     const verified = reviewCreateMany.mock.calls[1][0].data as { ratingVisible: boolean }[];
 
     expect(verified).toHaveLength(verifiedSpecs.length);
     expect(pool.every((row) => row.ratingVisible === true)).toBe(true);
-    expect(
-      pool.filter((row) => (row as { textStatus: string }).textStatus === 'PENDING'),
-    ).toHaveLength(PENDING_REVIEW_TARGETS.length);
+    expect(pool.filter((row) => row.textStatus === 'PENDING')).toHaveLength(
+      PENDING_REVIEW_TARGETS.length,
+    );
   });
 });

@@ -76,7 +76,7 @@ function makeRepository(
 
 /** PickupPointRepository stub — no active points by default (TASK-643). */
 function makePickupPoints(
-  overrides: Partial<jest.Mocked<PickupPointRepository>> = {},
+  overrides: Partial<PickupPointRepository> = {},
 ): jest.Mocked<PickupPointRepository> {
   return {
     findActive: jest.fn(async () => []),
@@ -96,9 +96,7 @@ const pickupPoint = (over: Partial<PickupPoint> = {}): PickupPoint => ({
   ...over,
 });
 
-function makeClient(
-  overrides: Partial<jest.Mocked<NovaPoshtaClient>> = {},
-): jest.Mocked<NovaPoshtaClient> {
+function makeClient(overrides: Partial<NovaPoshtaClient> = {}): jest.Mocked<NovaPoshtaClient> {
   return {
     isConfigured: jest.fn(() => true),
     searchCities: jest.fn(async () => []),

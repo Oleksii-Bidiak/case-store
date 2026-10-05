@@ -5,8 +5,8 @@ export { SlugRedirectController, SlugRedirectLookupResponse } from './slug-redir
 export { SlugRedirectRepository } from './slug-redirect.repository';
 export {
   applySlugRename,
-  SlugAddress,
-  SlugRedirectRow,
+  type SlugAddress,
+  type SlugRedirectRow,
   toSlugAddress,
 } from './slug-redirect-chain.util';
 export { SlugRedirectLookupEntity } from './entities';

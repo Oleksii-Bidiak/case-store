@@ -7,6 +7,7 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import type { Category } from '@prisma/client';
 import {
   CategoryRepository,
   CreateCategoryInput,
@@ -46,7 +47,7 @@ import { PermissionService } from '../auth/permissions';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
-const mockCategory = {
+const mockCategory: Category = {
   id: 'cat-uuid-1',
   name: 'Phone Cases',
   slug: 'phone-cases',
@@ -57,11 +58,14 @@ const mockCategory = {
   sortOrder: 0,
   metaTitle: null,
   metaDescription: null,
+  keywords: [],
+  ogImage: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  deletedAt: null,
 };
 
-const mockChildCategory = {
+const mockChildCategory: Category = {
   id: 'cat-uuid-2',
   name: 'iPhone Cases',
   slug: 'iphone-cases',
@@ -70,8 +74,13 @@ const mockChildCategory = {
   parentId: 'cat-uuid-1',
   isActive: true,
   sortOrder: 0,
+  metaTitle: null,
+  metaDescription: null,
+  keywords: [],
+  ogImage: null,
   createdAt: new Date('2026-01-02T00:00:00.000Z'),
   updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+  deletedAt: null,
 };
 
 const mockInactiveCategory = {

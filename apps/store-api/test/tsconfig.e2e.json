@@ -1,14 +1,19 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
+  // Used by ts-jest for the e2e and int suites (transpile-only); type checking
+  // of test/ happens through ../tsconfig.spec.json. `exclude` is overridden
+  // because the inherited one drops `test/` and every spec file.
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    "incremental": false,
     "isolatedModules": true,
-    "rootDir": ".",
+    "rootDir": "..",
     "paths": {
       "@/*": ["../src/*"]
     },
     "types": ["jest", "node"]
   },
-  "include": ["../src/**/*", "./**/*"]
+  "include": ["../src/**/*", "./**/*"],
+  "exclude": ["../node_modules", "../dist"]
 }

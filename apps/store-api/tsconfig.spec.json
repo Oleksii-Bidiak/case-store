@@ -1,10 +1,18 @@
 {
   "$schema": "https://json.schemastore.org/tsconfig",
+  // Typecheck island for unit specs, e2e/int specs and their test helpers
+  // (TASK-791). ts-jest compiles with `isolatedModules` (transpile-only), so
+  // type errors in specs surface only here, via `npm run typecheck`. `exclude`
+  // is overridden because the inherited one drops `test/` and every `*.spec.ts`.
+  // Production files are pulled in transitively by the specs' imports.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    "incremental": false,
     "isolatedModules": true,
+    "rootDir": ".",
     "types": ["jest", "node"]
   },
-  "include": ["src/**/*.spec.ts", "test/**/*.e2e-spec.ts"]
+  "include": ["src/**/*.spec.ts", "test/**/*.ts", "prisma/**/*.spec.ts"],
+  "exclude": ["node_modules", "dist"]
 }

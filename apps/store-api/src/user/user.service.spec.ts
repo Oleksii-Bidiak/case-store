@@ -9,21 +9,22 @@ import { AuthRepository } from '../auth/auth.repository';
 
 import { ReviewService } from '../review/review.service';
 import { EmailChangeService } from '../auth/email-change.service';
+import { buildUser } from '../../test/user.fixture';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
-const mockUser = {
+const mockUser = buildUser({
   id: 'user-uuid-1',
   email: 'test@example.com',
   passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$hash',
   firstName: 'John',
   lastName: 'Doe',
   phone: '+380991234567',
-  role: 'CUSTOMER' as UserRole,
+  role: 'CUSTOMER',
   isActive: true,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-};
+});
 
 const mockAdminUser = {
   ...mockUser,

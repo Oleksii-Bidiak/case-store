@@ -24,10 +24,13 @@ import { isGrantablePermission, isKnownPermission } from '../auth/permissions/pe
  * reading a stranger's purchase history.
  */
 describe('UserController — what each route costs (TASK-479)', () => {
-  const prototype = UserController.prototype as Record<string, object>;
+  const prototype: object = UserController.prototype;
+  /** A handler looked up by name — the route metadata lives on the function. */
+  const handlerOf = (name: string): object =>
+    Object.getOwnPropertyDescriptor(prototype, name)?.value;
 
   const requirementOf = (handler: string): string | undefined =>
-    Reflect.getMetadata(REQUIRE_PERMISSION_KEY, prototype[handler]) as string | undefined;
+    Reflect.getMetadata(REQUIRE_PERMISSION_KEY, handlerOf(handler)) as string | undefined;
 
   it('puts the full customer card behind customers:card', () => {
     expect(requirementOf('getAdminCard')).toBe('customers:card');
@@ -59,9 +62,9 @@ describe('UserController — what each route costs (TASK-479)', () => {
   it('has exactly these doors, and no others', () => {
     const doors = Object.getOwnPropertyNames(prototype)
       .filter((name) => name !== 'constructor')
-      .filter((name) => Reflect.getMetadata(METHOD_METADATA, prototype[name]) !== undefined)
+      .filter((name) => Reflect.getMetadata(METHOD_METADATA, handlerOf(name)) !== undefined)
       .map((name) => {
-        const ownerOnly = Boolean(Reflect.getMetadata(OWNER_ONLY_KEY, prototype[name]));
+        const ownerOnly = Boolean(Reflect.getMetadata(OWNER_ONLY_KEY, handlerOf(name)));
         return `${name}: ${ownerOnly ? '@OwnerOnly' : (requirementOf(name) ?? 'authenticated')}`;
       })
       .sort();

@@ -6,11 +6,11 @@ export { AdminAddonServiceController } from './admin-addon-service.controller';
 export { AddonApplicabilityResolver } from './addon-applicability.resolver';
 export {
   AddonServiceRepository,
-  FindAllAdminParams as AddonServiceFindAllAdminParams,
-  CreateAddonServiceInput,
-  UpdateAddonServiceInput,
-  PaginatedAddonServicesResult,
-  AddonServiceDeltaRow,
+  type FindAllAdminParams as AddonServiceFindAllAdminParams,
+  type CreateAddonServiceInput,
+  type UpdateAddonServiceInput,
+  type PaginatedAddonServicesResult,
+  type AddonServiceDeltaRow,
 } from './addon-service.repository';
 export {
   AddonServiceEntity,

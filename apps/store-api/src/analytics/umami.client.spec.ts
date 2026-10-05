@@ -35,7 +35,7 @@ function makeFetch(
   } = {},
 ) {
   const calls: string[] = [];
-  const impl = jest.fn(async (input: RequestInfo | URL) => {
+  const impl = jest.fn(async (input: Parameters<typeof fetch>[0]) => {
     const url = String(input);
     calls.push(url);
     if (url.includes('/api/auth/login')) {

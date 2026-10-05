@@ -6,7 +6,7 @@ export { AdminSiteContactController } from './admin-site-contact.controller';
 export {
   SiteContactRepository,
   SINGLETON_ID,
-  UpsertSiteContactInput,
+  type UpsertSiteContactInput,
 } from './site-contact.repository';
 export { SiteContactSettingsEntity } from './entities';
 export { UpdateSiteContactDto } from './dto';

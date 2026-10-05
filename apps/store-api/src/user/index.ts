@@ -4,9 +4,9 @@ export { UserService } from './user.service';
 export { UserController } from './user.controller';
 export {
   UserRepository,
-  UpdateUserInput,
-  FindAllParams,
-  PaginatedUsersResult,
+  type UpdateUserInput,
+  type FindAllParams,
+  type PaginatedUsersResult,
 } from './user.repository';
 export { UserEntity } from './entities';
 export { UpdateProfileDto, UserListQueryDto } from './dto';

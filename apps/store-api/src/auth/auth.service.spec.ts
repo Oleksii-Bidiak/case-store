@@ -3,13 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { BadRequestException, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { OAuthProvider } from '@prisma/client';
+import { OAuthProvider, type UserRole } from '@prisma/client';
 import { AuthRepository } from './auth.repository';
 import { AuthService } from './auth.service';
 import type { IssuedSession } from './entities';
 import { RegisterDto } from './dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
+import { buildUser } from '../../test/user.fixture';
 
 // ─── Mock argon2 ──────────────────────────────────────────────────────────────
 
@@ -23,20 +24,20 @@ const argon2 = require('argon2');
 
 // ─── Mock factories ─────────────────────────────────────────────────────────
 
-const mockUser = {
+const mockUser = buildUser({
   id: 'user-uuid-1',
   email: 'test@example.com',
   passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$hash',
   firstName: 'John',
   lastName: 'Doe',
   phone: null,
-  role: 'CUSTOMER' as const,
+  role: 'CUSTOMER',
   isActive: true,
   failedLoginAttempts: 0,
-  lockedUntil: null as Date | null,
+  lockedUntil: null,
   createdAt: new Date(),
   updatedAt: new Date(),
-};
+});
 
 const mockRefreshTokenRecord = {
   id: 'rt-uuid-1',
@@ -1495,7 +1496,7 @@ describe('AuthService', () => {
       expect(authRepository.updatePasswordHash).toHaveBeenCalled();
     });
 
-    it.each(['ADMIN', 'MANAGER'])(
+    it.each<UserRole>(['ADMIN', 'MANAGER'])(
       'refuses the same password for a %s account and changes nothing',
       async (role) => {
         authRepository.findById.mockResolvedValue({ ...mockUser, role });

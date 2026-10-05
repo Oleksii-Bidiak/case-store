@@ -18,6 +18,7 @@ function buildOrderItemRow(
     quantity: 2,
     price: { toString: () => '29.99' },
     createdAt: new Date('2024-01-01T00:00:00.000Z'),
+    addons: [],
     product: {
       id: 'prod-1',
       name: 'iPhone 15 Pro Case — Clear MagSafe',

@@ -74,7 +74,7 @@ describe('PublicProductEntity.fromPrisma', () => {
     const entity = PublicProductEntity.fromPrisma(buildPrismaProduct({ stock: 42 }));
 
     expect('stock' in entity).toBe(false);
-    expect((entity as Record<string, unknown>).stock).toBeUndefined();
+    expect(entity).not.toHaveProperty('stock');
   });
 
   it('rounds ratingAverage to one decimal place', () => {

@@ -7,8 +7,8 @@ export { AdminSeoSettingsController } from './admin-seo-settings.controller';
 export {
   SeoSettingsRepository,
   SINGLETON_ID,
-  UpsertSeoSettingsInput,
-  ContentSeoCounts,
+  type UpsertSeoSettingsInput,
+  type ContentSeoCounts,
 } from './seo-settings.repository';
 export { SeoSettingsEntity, SeoHealthEntity } from './entities';
 export { UpdateSeoSettingsDto, SeoHealthResponseEnvelope } from './dto';

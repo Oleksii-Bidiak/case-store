@@ -66,7 +66,7 @@ describe('AdminUserNoteController (TASK-430)', () => {
   });
 
   it('requires customers:read to read and customers:write to write', () => {
-    const prototype = AdminUserNoteController.prototype as Record<string, object>;
+    const { prototype } = AdminUserNoteController;
 
     expect(Reflect.getMetadata(REQUIRE_PERMISSION_KEY, prototype.list)).toBe('customers:read');
     expect(Reflect.getMetadata(REQUIRE_PERMISSION_KEY, prototype.create)).toBe('customers:write');

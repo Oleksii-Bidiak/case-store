@@ -13,14 +13,12 @@ const baseParams = (overrides: Partial<OrderConfirmationParams> = {}): OrderConf
     items: [
       {
         productName: 'iPhone 15 Pro Case',
-        variantName: 'Black / iPhone 15 Pro',
         quantity: 2,
         price: '29.99',
         lineTotal: '59.98',
       },
       {
         productName: 'Screen Protector',
-        variantName: null,
         quantity: 1,
         price: '9.99',
         lineTotal: '9.99',
@@ -86,14 +84,12 @@ describe('buildOrderConfirmationEmail', () => {
             items: [
               {
                 productName: 'MacBook Case',
-                variantName: null,
                 quantity: 1,
                 price: '1299.00',
                 lineTotal: '1299.00',
               },
               {
                 productName: 'Screen Protector',
-                variantName: null,
                 quantity: 1,
                 price: '29.99',
                 lineTotal: '29.99',

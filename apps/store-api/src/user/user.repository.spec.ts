@@ -1,3 +1,4 @@
+import { UserRole } from '@prisma/client';
 import { UserRepository } from './user.repository';
 import { PrismaService } from '../prisma';
 
@@ -142,7 +143,7 @@ describe('UserRepository (soft-delete behaviour)', () => {
       prismaMock.user.findMany.mockResolvedValue([]);
       prismaMock.user.count.mockResolvedValue(0);
 
-      await repository.findAll({ page: 1, limit: 20, role: 'ADMIN' as UserRole, search: 'olena' });
+      await repository.findAll({ page: 1, limit: 20, role: UserRole.ADMIN, search: 'olena' });
 
       const { AND } = prismaMock.user.findMany.mock.calls[0][0].where;
       // First clause, and not replaceable: asking for ADMIN ANDs a contradiction

@@ -13,7 +13,7 @@ import type {
   EmailChangeConfirmMailPayload,
   EmailChangeNoticeMailPayload,
 } from '../mail/templates/email-change.template';
-import { Clock, NOTIFICATION_OUTBOX_CLOCK } from './notification-outbox.clock';
+import { type Clock, NOTIFICATION_OUTBOX_CLOCK } from './notification-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
   EMAIL_CHANGE_CONFIRM_MAIL_TYPE,

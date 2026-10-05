@@ -8,7 +8,7 @@ import {
   UNRESOLVED_FILTER_ID,
 } from '../catalog-filter/catalogue-filter.resolver';
 import { PublicProductEntity } from '../product/entities';
-import { MeiliClient, SEARCH_MAX_TOTAL_HITS } from './meili.client';
+import { MeiliClient, SEARCH_MAX_TOTAL_HITS, type ProductSearchDocument } from './meili.client';
 import type { SearchSynonymsService } from '../search-synonyms/search-synonyms.service';
 import {
   SearchService,
@@ -98,6 +98,8 @@ describe('SearchService', () => {
       | 'search'
     >
   >;
+  /** The product documents handed to the first `indexDocuments` call. */
+  const firstIndexedDocs = () => meili.indexDocuments.mock.calls[0][0] as ProductSearchDocument[];
   let repo: jest.Mocked<
     Pick<
       ProductRepository,
@@ -268,7 +270,7 @@ describe('SearchService', () => {
 
       await service.indexProduct('product-1');
 
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0].searchTerms).toEqual(['gadget']);
     });
 
@@ -295,7 +297,7 @@ describe('SearchService', () => {
       await service.indexProduct('product-1');
 
       expect(meili.indexDocuments).toHaveBeenCalledTimes(1);
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0]).toEqual(
         expect.objectContaining({
           id: 'product-1',
@@ -323,7 +325,7 @@ describe('SearchService', () => {
       await service.indexProduct('product-1');
 
       expect(categoryRepo.findAncestorIds).toHaveBeenCalledWith('leaf-cat');
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0].categoryIds).toEqual(['leaf-cat', 'mid-cat', 'root-cat']);
       // Old scalar field is gone.
       expect(docs[0]).not.toHaveProperty('categoryId');
@@ -336,7 +338,7 @@ describe('SearchService', () => {
 
       await service.indexProduct('product-1');
 
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0].deviceModelIds).toEqual(['dm-1', 'dm-2']);
     });
 
@@ -345,7 +347,7 @@ describe('SearchService', () => {
 
       await service.indexProduct('product-1');
 
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       // "iPhone 15 Case" + "Cases" + brand → айфон + чохол/чохли + спіген, so a
       // typo'd UA query («афйон») matches via ordinary typo tolerance.
       //
@@ -367,7 +369,7 @@ describe('SearchService', () => {
 
       await service.indexProduct('product-1');
 
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0].keywords).toEqual(['ударостійкий', 'подарунок']);
     });
 
@@ -376,7 +378,7 @@ describe('SearchService', () => {
 
       await service.indexProduct('product-1');
 
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0].keywords).toEqual([]);
     });
 
@@ -395,7 +397,7 @@ describe('SearchService', () => {
 
       await service.indexProduct('product-1');
 
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0].searchTerms).toContain('магсейф');
     });
 
@@ -406,7 +408,7 @@ describe('SearchService', () => {
 
       await service.reindexAll();
 
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0].keywords).toEqual(['подарунок']);
     });
 
@@ -415,7 +417,7 @@ describe('SearchService', () => {
 
       await service.indexProduct('product-1');
 
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0].sku).toBeNull();
     });
 
@@ -432,7 +434,7 @@ describe('SearchService', () => {
 
       await service.indexProduct('product-1');
 
-      const [docs] = meili.indexDocuments.mock.calls[0];
+      const docs = firstIndexedDocs();
       expect(docs[0].searchTerms).toContain('айфон');
     });
 

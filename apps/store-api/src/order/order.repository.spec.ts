@@ -109,13 +109,18 @@ const firstItem: CartWithItems['items'][number] = {
   quantity: 2,
   createdAt: new Date(),
   updatedAt: new Date(),
+  addons: [],
   product: {
     id: 'product-uuid-1',
     name: 'iPhone 15 Pro Case',
-    price: { toString: () => '29.99' } as never,
+    slug: 'iphone-15-pro-case',
+    price: { toString: () => '29.99' },
     compareAtPrice: null,
     stock: 50,
     isActive: true,
+    categoryId: 'category-uuid-1',
+    category: { isActive: true },
+    images: [],
   },
 };
 
@@ -125,13 +130,18 @@ const secondItem: CartWithItems['items'][number] = {
   quantity: 1,
   createdAt: new Date(),
   updatedAt: new Date(),
+  addons: [],
   product: {
     id: 'product-uuid-2',
     name: 'Screen Protector',
-    price: { toString: () => '9.99' } as never,
+    slug: 'screen-protector',
+    price: { toString: () => '9.99' },
     compareAtPrice: null,
     stock: 30,
     isActive: true,
+    categoryId: 'category-uuid-1',
+    category: { isActive: true },
+    images: [],
   },
 };
 

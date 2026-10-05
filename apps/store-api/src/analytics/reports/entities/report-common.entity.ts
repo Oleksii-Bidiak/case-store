@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ReportPeriod, ReportPreset, REPORT_PRESETS } from '../report-period';
+import { type ReportPeriod, type ReportPreset, REPORT_PRESETS } from '../report-period';
 
 /**
  * The two ranges a report answered for (TASK-685). Calendar days only — the

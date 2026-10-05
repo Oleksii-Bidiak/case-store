@@ -98,20 +98,29 @@ const productRepositoryMock = {
 // the very thing under test. Both echo the requested key back as a resolved row,
 // so an id filter passes through unchanged and the pre-TASK-420 expectations
 // hold; tests override them with `null` to exercise the unresolved path.
+type SlugRow = { id: string; slug: string };
+type NamedSlugRow = SlugRow & { name: string };
+
 const categoryRepositoryMock = {
   findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
-  findById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
-  findBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
+  findById: jest.fn((id: string): Promise<SlugRow | null> =>
+    Promise.resolve({ id, slug: `slug-of-${id}` }),
+  ),
+  findBySlug: jest.fn((slug: string): Promise<SlugRow | null> =>
+    Promise.resolve({ id: `id-of-${slug}`, slug }),
+  ),
 };
 
 // ─── BrandRepository mock (TASK-189 brand validation on create/update) ────────
 // `findById` resolves to a stub brand by default so create/update pass the
 // existence check; tests override it to null to simulate an unknown brand.
 const brandRepositoryMock = {
-  findById: jest.fn((id: string) => Promise.resolve({ id, name: 'Spigen', slug: `slug-of-${id}` })),
+  findById: jest.fn((id: string): Promise<NamedSlugRow | null> =>
+    Promise.resolve({ id, name: 'Spigen', slug: `slug-of-${id}` }),
+  ),
   // Backs the real CatalogueFilterResolver (TASK-420), same echo convention as
   // the category mock above.
-  findBySlug: jest.fn((slug: string) =>
+  findBySlug: jest.fn((slug: string): Promise<NamedSlugRow | null> =>
     Promise.resolve({ id: `id-of-${slug}`, name: 'Spigen', slug }),
   ),
 };
