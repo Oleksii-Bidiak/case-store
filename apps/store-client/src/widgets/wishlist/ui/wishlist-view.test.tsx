@@ -1,6 +1,7 @@
 import { QueryClient } from "@tanstack/react-query";
 import { http, HttpResponse } from "msw";
 import {
+  act,
   renderWithProviders,
   screen,
   waitFor,
@@ -669,6 +670,40 @@ describe("WishlistView catalogue toolbar (TASK-1300)", () => {
     expect(
       screen.queryByRole("button", { name: dict.catalog.loadMore(1) }),
     ).not.toBeInTheDocument();
+  });
+
+  it("keeps the appended «Показати ще» pages when an item is removed from the list", async () => {
+    const user = userEvent.setup();
+    const items = savedItems(26);
+    const client = seededClient(items);
+    renderWithProviders(<WishlistView />, { queryClient: client });
+
+    await user.click(
+      screen.getByRole("button", { name: dict.catalog.loadMore(12) }),
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(24);
+
+    // A heart on one card drops it from the server list.
+    const rest = items.slice(0, -1); // the newest card, first on screen
+    act(() => {
+      client.setQueryData(getGetWishlistQueryKey(), {
+        data: {
+          id: "w1",
+          userId: null,
+          items: rest,
+          itemCount: rest.length,
+          createdAt: "2026-06-30T00:00:00.000Z",
+          updatedAt: "2026-06-30T00:00:00.000Z",
+        },
+      });
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("link", { name: "Saved 25" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.getAllByRole("article")).toHaveLength(24);
   });
 
   it("returns to the first page when a filter changes on a later page", async () => {

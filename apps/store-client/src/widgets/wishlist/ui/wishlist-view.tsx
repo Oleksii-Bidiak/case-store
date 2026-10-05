@@ -133,14 +133,11 @@ export function WishlistView() {
   const activeFilterCount = countActiveWishlistFilters(filters);
 
   // «Показати ще» appends pages to the URL's page. The appended count belongs
-  // to one result set; a mismatched key (filters, sort, page or list changed)
-  // reads as zero — a render-time guard, not an effect.
-  const resultKey = JSON.stringify([
-    filters,
-    sortKey,
-    requestedPage,
-    matching.length,
-  ]);
+  // to one result set; a mismatched key (filters, sort or page changed) reads
+  // as zero — a render-time guard, not an effect. The list's length is left
+  // out on purpose: removing one card must not collapse the appended pages
+  // (`paginateWishlist` clamps if the list shrinks below them).
+  const resultKey = JSON.stringify([filters, sortKey, requestedPage]);
   const [appended, setAppended] = useState({ key: resultKey, pages: 0 });
   const extraPages = appended.key === resultKey ? appended.pages : 0;
   const page = paginateWishlist(matching, requestedPage, extraPages);
