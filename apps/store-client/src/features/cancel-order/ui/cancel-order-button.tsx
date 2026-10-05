@@ -9,6 +9,7 @@ import {
   useCancelOrder,
 } from "@/entities/order";
 import { dict } from "@/shared/config";
+import { cn } from "@/shared/lib/utils";
 import {
   Button,
   Dialog,
@@ -23,6 +24,11 @@ import {
 
 interface CancelOrderButtonProps {
   orderId: string;
+  /**
+   * Extra classes for the trigger, merged over its `sm` outline look — the
+   * order history sets its 44px `rounded-cta` action size here (TASK-217).
+   */
+  className?: string;
 }
 
 /**
@@ -35,7 +41,10 @@ interface CancelOrderButtonProps {
  * itself does not re-check status. Mirrors the controlled-dialog pattern in
  * `widgets/cart/ui/cart-summary.tsx`.
  */
-export function CancelOrderButton({ orderId }: CancelOrderButtonProps) {
+export function CancelOrderButton({
+  orderId,
+  className,
+}: CancelOrderButtonProps) {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -59,7 +68,10 @@ export function CancelOrderButton({ orderId }: CancelOrderButtonProps) {
         <Button
           variant="outline"
           size="sm"
-          className="border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive"
+          className={cn(
+            "border-destructive text-destructive hover:bg-destructive/10 hover:text-destructive",
+            className,
+          )}
         >
           {dict.cancelOrder.trigger}
         </Button>

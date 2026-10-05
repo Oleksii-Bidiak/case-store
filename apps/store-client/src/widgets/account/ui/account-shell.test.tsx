@@ -180,6 +180,47 @@ describe("AccountShell (TASK-217 / TASK-867)", () => {
     expect(mockReplace).not.toHaveBeenCalled();
   });
 
+  it("fills the content column with the order list's skeleton on /account/orders", () => {
+    at("/account/orders", "status=active");
+    renderWithProviders(
+      <AccountShell ordersSkeleton={<p>orders skeleton</p>}>
+        <p>route content</p>
+      </AccountShell>,
+      { auth: { isAuthenticated: false, isInitializing: true } },
+    );
+
+    expect(
+      within(screen.getByTestId("account-skeleton-content")).getByText(
+        "orders skeleton",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("account-profile-skeleton"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps the order list's skeleton off the order detail and the profile", () => {
+    at("/account/orders/abc");
+    const { unmount } = renderWithProviders(
+      <AccountShell ordersSkeleton={<p>orders skeleton</p>}>
+        <p>route content</p>
+      </AccountShell>,
+      { auth: { isAuthenticated: false, isInitializing: true } },
+    );
+    expect(screen.queryByText("orders skeleton")).not.toBeInTheDocument();
+    unmount();
+
+    at("/account");
+    renderWithProviders(
+      <AccountShell ordersSkeleton={<p>orders skeleton</p>}>
+        <p>route content</p>
+      </AccountShell>,
+      { auth: { isAuthenticated: false, isInitializing: true } },
+    );
+    expect(screen.queryByText("orders skeleton")).not.toBeInTheDocument();
+    expect(screen.getByTestId("account-profile-skeleton")).toBeInTheDocument();
+  });
+
   it("sends a signed-out visitor to the login with the full path and query", () => {
     at("/account/orders", "status=active&page=2");
     renderShell({ isAuthenticated: false });

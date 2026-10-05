@@ -48,6 +48,20 @@ export {
 } from "./lib/status-badge";
 export { OrderStatusBadge } from "./ui/order-status-badge";
 
+// TASK-217: the account order screens (history card now, detail next).
+export type {
+  GetOrdersParams,
+  GetOrdersStatusItem,
+} from "@/shared/api/generated/models";
+export {
+  reservationMinutesLeft,
+  awaitingPaymentMinutes,
+} from "./lib/payment-countdown";
+export { useNow, NOW_TICK_MS } from "./lib/use-now";
+export { novaPoshtaTrackingUrl } from "./lib/tracking";
+export { OrderTrackingNumber } from "./ui/order-tracking-number";
+export { OrderItemThumb } from "./ui/order-item-thumb";
+
 export {
   useCreateOrder,
   useGetOrders,

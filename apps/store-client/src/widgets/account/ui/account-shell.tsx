@@ -9,7 +9,11 @@ import { useUserControllerGetProfile } from "@/entities/user";
 import { dict, PAGE_CONTAINER, STICKY_ASIDE_TOP } from "@/shared/config";
 import { AccountBackIcon, AccountLogoutIcon } from "./account-icons";
 import { AccountSectionStrip, AccountSidebarNav } from "./account-nav-links";
-import { ACCOUNT_PATH, isAccountOrderDetailPath } from "./account-nav";
+import {
+  ACCOUNT_ORDERS_PATH,
+  ACCOUNT_PATH,
+  isAccountOrderDetailPath,
+} from "./account-nav";
 import {
   AccountProfileSkeleton,
   AccountShellSkeleton,
@@ -57,7 +61,19 @@ function AccountAuthRedirect() {
  * being redirected, the shell renders its own skeleton (TASK-869) — children
  * are not mounted, so no route under it queries the API unauthenticated.
  */
-export function AccountShell({ children }: { children: ReactNode }) {
+export function AccountShell({
+  children,
+  ordersSkeleton = null,
+}: {
+  children: ReactNode;
+  /**
+   * The order list's own skeleton, shown in the content column while the
+   * shell itself loads on `/account/orders` (TASK-217). Passed in by the app
+   * layout: it belongs to `widgets/order-history`, which this widget cannot
+   * import.
+   */
+  ordersSkeleton?: ReactNode;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
@@ -80,7 +96,11 @@ export function AccountShell({ children }: { children: ReactNode }) {
       <>
         {guard}
         <AccountShellSkeleton detail={detail}>
-          {pathname === ACCOUNT_PATH ? <AccountProfileSkeleton /> : null}
+          {pathname === ACCOUNT_PATH ? (
+            <AccountProfileSkeleton />
+          ) : pathname === ACCOUNT_ORDERS_PATH ? (
+            ordersSkeleton
+          ) : null}
         </AccountShellSkeleton>
       </>
     );

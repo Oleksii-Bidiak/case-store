@@ -1,18 +1,33 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Package } from "lucide-react";
 import { useAuth } from "@/entities/session";
-import { OrderStatusBadge, useGetOrders } from "@/entities/order";
-import { CancelOrderButton } from "@/features/cancel-order";
+import {
+  awaitingPaymentMinutes,
+  useGetOrders,
+  useNow,
+  type GetOrdersParams,
+  type OrderEntity,
+} from "@/entities/order";
 import { useGetMyReturns, type ReturnEntity } from "@/entities/return";
-import { ReturnRequestButton } from "@/features/return-request";
-import { Badge, Button } from "@/shared/ui";
 import { dict, H1_CLASS } from "@/shared/config";
-import { formatDate, formatMoney } from "@/shared/lib";
-import { OrderHistorySkeleton } from "./order-history-skeleton";
+import { Button, Tabs, TabsContent, TabsList, TabsTrigger } from "@/shared/ui";
+import { Pagination } from "@/shared/ui/pagination";
+import {
+  ORDER_TAB_STATUSES,
+  ORDER_TABS,
+  ORDERS_PAGE_SIZE,
+  ordersHref,
+  parseOrderTab,
+  parseOrdersPage,
+  type OrderTab,
+} from "../model/order-history-params";
+import { OrderCard } from "./order-card";
+import { ORDER_LIST_CLASS } from "./order-card-class";
+import { OrderCardsSkeleton } from "./order-history-skeleton";
 
 /**
  * The status of the NEWEST return request per order (TASK-608). The API lists
@@ -30,76 +45,167 @@ function latestReturnStatusByOrder(
   return byOrder;
 }
 
-/** Existing Badge variants only; the look is Д-в's call (plan 196 register). */
-const RETURN_BADGE_VARIANT: Record<
-  string,
-  "secondary" | "success" | "outline"
-> = {
-  REFUNDED: "success",
-  REJECTED: "outline",
-};
-
-function ReturnStatusBadge({ status }: { status: string | undefined }) {
-  if (!status) return null;
-  const label = dict.returnRequest.statusLabels[status] ?? status;
-  return (
-    <Badge
-      variant={RETURN_BADGE_VARIANT[status] ?? "secondary"}
-      aria-label={dict.returnRequest.statusAria(label)}
-    >
-      {label}
-    </Badge>
-  );
+function tabParams(
+  tab: OrderTab,
+  page: number,
+  limit: number,
+): GetOrdersParams {
+  const statuses = ORDER_TAB_STATUSES[tab];
+  return {
+    ...(statuses ? { status: [...statuses] } : {}),
+    page,
+    limit,
+  };
 }
 
 /**
- * OrderHistoryView — client orchestrator for `/orders`. Auth-gated like the
- * account/checkout views. Lists the signed-in user's orders (newest first) with
- * a status badge and total; each row links to its confirmation/detail page.
+ * A tab's total for its counter — `GET /api/orders?…&limit=1`, read from
+ * `meta.total`. The selected tab is not asked twice: its total comes from the
+ * page query itself.
  */
-export function OrderHistoryView() {
-  const router = useRouter();
-  const { isAuthenticated, isInitializing } = useAuth();
+function useTabTotal(
+  tab: OrderTab,
+  selected: OrderTab,
+  enabled: boolean,
+): number | undefined {
+  const { data } = useGetOrders(tabParams(tab, 1, 1), {
+    query: {
+      enabled: enabled && tab !== selected,
+      select: (response) => response.meta.total,
+    },
+  });
+  return data;
+}
 
-  const { data, isLoading, isError } = useGetOrders(undefined, {
+/** Whether a card could be showing the «Очікує оплати» countdown at all. */
+function mayAwaitPayment(order: OrderEntity): boolean {
+  return (
+    order.paymentMethod === "ONLINE" &&
+    order.paymentStatus === "PENDING" &&
+    order.status === "PENDING" &&
+    order.reservationExpiresAt !== null
+  );
+}
+
+interface OrderHistoryViewProps {
+  /**
+   * A one-off notice between the heading and the tabs — the app passes the
+   * «Ми знайшли ваші попередні замовлення» banner (TASK-485), which lives in
+   * `widgets/account` and so cannot be imported from here.
+   */
+  notice?: ReactNode;
+}
+
+/**
+ * OrderHistoryView — `/account/orders` (TASK-217, AccountOrders.dc.html).
+ *
+ * Renders inside the account shell, which owns the frame and the ONE auth
+ * guard; the queries still wait for a session so nothing is asked
+ * unauthenticated. State lives in the URL: `?status=all|active|delivered|
+ * cancelled` (unknown → all) and `?page=` (switching a tab resets it; a page
+ * past the end is replaced with the last one).
+ *
+ * States: skeleton cards under the real heading and tabs while a page loads;
+ * an alert + «Спробувати ще раз» on failure; the big empty card when the
+ * account has no orders at all; one muted line when only the selected tab is
+ * empty.
+ */
+export function OrderHistoryView({ notice }: OrderHistoryViewProps) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { isAuthenticated } = useAuth();
+
+  const tab = parseOrderTab(searchParams.get("status"));
+  const page = parseOrdersPage(searchParams.get("page"));
+
+  const list = useGetOrders(tabParams(tab, page, ORDERS_PAGE_SIZE), {
     query: { enabled: isAuthenticated },
   });
 
+  const totals: Record<OrderTab, number | undefined> = {
+    all: useTabTotal("all", tab, isAuthenticated),
+    active: useTabTotal("active", tab, isAuthenticated),
+    delivered: useTabTotal("delivered", tab, isAuthenticated),
+    cancelled: useTabTotal("cancelled", tab, isAuthenticated),
+  };
+  totals[tab] = list.data?.meta.total;
+
   // TASK-608: one request for every return the customer has, instead of one
-  // `GET /orders/:id/returns` per row. A failure here costs the page nothing but
-  // the return badges, so it is deliberately not part of the loading/error gate.
+  // per card. A failure costs the page nothing but the return badges, so it
+  // is deliberately not part of the loading/error gate.
   const { data: myReturns } = useGetMyReturns({
     query: { enabled: isAuthenticated },
   });
 
+  const orders = list.data?.data ?? [];
+  const totalPages = list.data?.meta.totalPages;
+  const lastPage = Math.max(1, totalPages ?? 1);
+  const pastTheEnd = totalPages !== undefined && page > lastPage;
+
+  // One clock for every card; it only ticks while a countdown can show.
+  const now = useNow(orders.some(mayAwaitPayment));
+
+  const hrefFor = (next: { tab: OrderTab; page: number }) =>
+    ordersHref(pathname, searchParams, next);
+
+  // A page past the end (a stale link, the last order of the last page just
+  // cancelled into another tab) is replaced with the last page that exists.
+  const clampHref = pastTheEnd ? hrefFor({ tab, page: lastPage }) : null;
   useEffect(() => {
-    if (!isInitializing && !isAuthenticated) {
-      router.replace("/login?redirect=/orders");
-    }
-  }, [isInitializing, isAuthenticated, router]);
+    if (clampHref) router.replace(clampHref, { scroll: false });
+  }, [clampHref, router]);
 
-  if (isInitializing || !isAuthenticated || isLoading) {
-    return <OrderHistorySkeleton />;
-  }
-
-  const orders = data?.data ?? [];
+  const accountEmpty = totals.all === 0;
   const latestReturn = latestReturnStatusByOrder(myReturns?.data ?? []);
+  const selectedTotal = totals[tab];
 
-  return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+  const header = (
+    <div className="flex flex-wrap items-baseline gap-x-3.5 gap-y-1">
       <h1 className={`${H1_CLASS} text-foreground`}>
         {dict.orderHistory.title}
       </h1>
+      {!list.isError && !accountEmpty && selectedTotal !== undefined && (
+        <span className="text-sm text-muted-foreground">
+          {dict.orderHistory.count(selectedTotal)}
+        </span>
+      )}
+    </div>
+  );
 
-      {isError ? (
-        <p role="alert" className="text-sm text-destructive">
-          {dict.orderHistory.loadError}
-        </p>
-      ) : orders.length === 0 ? (
-        // Design-system §6: icon + one line + a primary action (TASK-870).
-        // The same card as the catalogue's `ListingEmptyState` — muted disc,
-        // display-type line, 44px primary — so every empty list on the
-        // storefront reads alike.
+  if (list.isError) {
+    return (
+      <div className="flex flex-col gap-5">
+        {header}
+        {notice}
+        <div className="flex flex-col items-start gap-3">
+          <p
+            role="alert"
+            className="rounded-menu border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive"
+          >
+            {dict.orderHistory.loadError}
+          </p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void list.refetch()}
+            className="h-11 rounded-cta px-4.5 font-semibold"
+          >
+            {dict.common.retry}
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (accountEmpty) {
+    // Design-system §6 (TASK-870): icon + one line + a primary action, the
+    // same card as every other empty list on the storefront. No tabs: there
+    // is nothing to filter.
+    return (
+      <div className="flex flex-col gap-5">
+        {header}
+        {notice}
         <div className="flex flex-col items-center justify-center rounded-card border border-border bg-card px-5 py-14 text-center shadow-card">
           <span
             aria-hidden="true"
@@ -110,63 +216,79 @@ export function OrderHistoryView() {
           <p className="max-w-md font-display text-xl font-bold text-foreground">
             {dict.orderHistory.empty}
           </p>
-          <Button asChild size="lg" className="mt-5 h-11">
+          <Button asChild size="lg" className="mt-5 h-11 rounded-cta px-6">
             <Link href="/products">{dict.orderHistory.emptyCta}</Link>
           </Button>
         </div>
-      ) : (
-        <ul className="flex flex-col gap-3">
-          {orders.map((order) => (
-            <li key={order.id} className="flex flex-wrap items-center gap-3">
-              <Link
-                href={`/orders/${order.id}/confirmation`}
-                className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-card border border-border p-4 shadow-card transition-colors hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <div className="flex flex-col">
-                  <span className="font-medium text-foreground">
-                    {dict.orderHistory.orderNumber} #
-                    {order.id.slice(0, 8).toUpperCase()}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {formatDate(order.createdAt)}
-                  </span>
-                </div>
+      </div>
+    );
+  }
 
-                <div className="flex items-center gap-3">
-                  <OrderStatusBadge
-                    status={order.status}
-                    srLabel={dict.orderHistory.statusSr}
-                  >
-                    {dict.order.orderStatusLabels[order.status] ?? order.status}
-                  </OrderStatusBadge>
-                  <ReturnStatusBadge status={latestReturn.get(order.id)} />
-                  <span className="font-semibold text-foreground">
-                    {formatMoney(order.total)}
+  const loading = list.isPending || pastTheEnd;
+
+  return (
+    <div className="flex flex-col gap-5">
+      {header}
+      {notice}
+
+      <Tabs
+        value={tab}
+        onValueChange={(value) =>
+          router.push(hrefFor({ tab: parseOrderTab(value), page: 1 }), {
+            scroll: false,
+          })
+        }
+        className="gap-5"
+      >
+        {/* Scrolls sideways on a phone, bleeding to the screen edge so the
+            clipped last tab says "more" (design-system §5, chip rows). */}
+        <div className="-mx-4 overflow-x-auto px-4 scrollbar-none sm:-mx-6 sm:px-6 lg:mx-0 lg:px-0">
+          <TabsList aria-label={dict.orderHistory.tabsAria}>
+            {ORDER_TABS.map((key) => (
+              <TabsTrigger key={key} value={key} className="flex-none px-3">
+                {dict.orderHistory.tabs[key]}
+                {totals[key] !== undefined && (
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {totals[key]}
                   </span>
-                </div>
-              </Link>
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-              {order.status === "PENDING" && (
-                <CancelOrderButton orderId={order.id} />
-              )}
-
-              {/* TASK-373. DELIVERED only, and not SHIPPED, even though the API
-                  accepts both: a parcel still in transit is not something to
-                  file a return about, and offering it there invites a claim on
-                  goods the customer has not seen yet. The one legitimate case —
-                  a refusal at the counter — comes back to us as an undelivered
-                  parcel, which is an operator's job, not a form's. */}
-              {order.status === "DELIVERED" && (
-                <ReturnRequestButton
-                  orderId={order.id}
-                  orderNumber={`#${order.id.slice(0, 8).toUpperCase()}`}
-                  items={order.items}
+        <TabsContent value={tab} className="flex flex-col gap-3">
+          {loading ? (
+            <OrderCardsSkeleton />
+          ) : orders.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {dict.orderHistory.tabEmpty}
+            </p>
+          ) : (
+            <>
+              <ul className={ORDER_LIST_CLASS}>
+                {orders.map((order) => (
+                  <li key={order.id}>
+                    <OrderCard
+                      order={order}
+                      returnStatus={latestReturn.get(order.id)}
+                      awaitingMinutes={awaitingPaymentMinutes(order, now)}
+                    />
+                  </li>
+                ))}
+              </ul>
+              {lastPage > 1 && (
+                <Pagination
+                  currentPage={page}
+                  totalPages={lastPage}
+                  buildHref={(target) => hrefFor({ tab, page: target })}
+                  className="mt-3"
                 />
               )}
-            </li>
-          ))}
-        </ul>
-      )}
+            </>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

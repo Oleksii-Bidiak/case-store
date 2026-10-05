@@ -34,6 +34,11 @@ interface ReturnRequestButtonProps {
   /** Short order number, as it is written everywhere else on the storefront. */
   orderNumber: string;
   items: readonly OrderLine[];
+  /**
+   * Extra classes for the trigger, merged over its `sm` outline look — the
+   * order history sets its 44px `rounded-cta` action size here (TASK-217).
+   */
+  className?: string;
 }
 
 /**
@@ -59,6 +64,7 @@ export function ReturnRequestButton({
   orderId,
   orderNumber,
   items,
+  className,
 }: ReturnRequestButtonProps) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -145,6 +151,7 @@ export function ReturnRequestButton({
         <Button
           variant="outline"
           size="sm"
+          className={className}
           aria-label={dict.returnRequest.triggerAria(orderNumber)}
         >
           {dict.returnRequest.trigger}
@@ -166,7 +173,7 @@ export function ReturnRequestButton({
         ) : null}
 
         <div className="flex flex-col gap-3">
-          <p className="text-sm font-medium text-foreground">
+          <p className="text-sm font-semibold text-foreground">
             {dict.returnRequest.itemsHeading}
           </p>
           <ul className="flex flex-col gap-3">
