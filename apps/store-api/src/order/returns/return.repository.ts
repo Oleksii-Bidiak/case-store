@@ -8,7 +8,7 @@ import {
   PRODUCT_LIST_PREFIX,
 } from '../../cache';
 import { normalizeUaPhone, phoneDigits } from '../../common/validators';
-import { ProductIndexer } from '../../search/product-indexer';
+import { ProductIndexer } from '../../search';
 import { RETURN_SORT_FIELDS } from './dto';
 import type { ReturnSortField } from './dto';
 import type {

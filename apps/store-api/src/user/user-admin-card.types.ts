@@ -1,4 +1,5 @@
-import { OrderStatus, PaymentStatus, DiscountType, Prisma, ReviewTextStatus } from '@prisma/client';
+import { OrderStatus, PaymentStatus, Prisma, ReviewTextStatus } from '@prisma/client';
+import type { UserDiscountRedemption } from '../discount';
 
 /**
  * Internal TypeScript shapes + list-size constants for the admin customer card
@@ -57,13 +58,7 @@ export interface AdminCardReviewRow {
 /**
  * A single redeemed-coupon row for the card. `code`/`type`/`value` are joined
  * from the parent `Discount`; `value` is a `Prisma.Decimal` (converted in the
- * entity factory).
+ * entity factory). The discount module owns the read and the shape — it comes
+ * from `DiscountService.listUserRedemptions` (TASK-827).
  */
-export interface AdminCardCouponRow {
-  id: string;
-  code: string;
-  type: DiscountType;
-  value: Prisma.Decimal;
-  orderId: string;
-  redeemedAt: Date;
-}
+export type AdminCardCouponRow = UserDiscountRedemption;

@@ -3,9 +3,9 @@ export { AttributeDefinitionModule } from './attribute-definition.module';
 export { AttributeDefinitionService } from './attribute-definition.service';
 export { AttributeDefinitionRepository } from './attribute-definition.repository';
 export {
-  CreateAttributeDefinitionInput,
-  UpdateAttributeDefinitionInput,
-  FacetValueCount,
+  type CreateAttributeDefinitionInput,
+  type UpdateAttributeDefinitionInput,
+  type FacetValueCount,
 } from './attribute-definition.repository';
 export {
   AttributeDefinitionEntity,

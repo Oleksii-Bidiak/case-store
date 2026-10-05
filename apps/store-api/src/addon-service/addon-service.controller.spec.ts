@@ -97,11 +97,22 @@ describe('AddonService controllers (TASK-174)', () => {
       expect(addonServiceService.setActive).toHaveBeenCalledWith('svc-a', false);
     });
 
-    it('passes the paginated admin list envelope straight through', async () => {
-      const page = { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } };
-      addonServiceService.findAllAdmin.mockResolvedValue(page);
+    it('builds the paginated { data, meta } envelope from the service page (TASK-806)', async () => {
+      const services = [{ id: 'svc-a' }];
+      const meta = { total: 1, page: 1, limit: 20, totalPages: 1 };
+      addonServiceService.findAllAdmin.mockResolvedValue({ items: services, meta });
 
-      expect(await adminController.findAllAdmin({ page: 1, limit: 20 })).toBe(page);
+      expect(await adminController.findAllAdmin({ page: 1, limit: 20 })).toEqual({
+        data: services,
+        meta,
+      });
+    });
+
+    it('wraps the active picker list in { data } (TASK-806)', async () => {
+      const services = [{ id: 'svc-a' }];
+      addonServiceService.findAllActive.mockResolvedValue(services);
+
+      expect(await adminController.findAllActive()).toEqual({ data: services });
     });
 
     it('delegates the category-template read/replace routes', async () => {

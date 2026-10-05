@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { CarouselPlacement, CarouselSource } from '@prisma/client';
-import { PublicProductEntity } from '../../product/entities';
+import { PublicProductEntity } from '../../product';
 import type { CarouselEntity } from './carousel.entity';
 
 /**

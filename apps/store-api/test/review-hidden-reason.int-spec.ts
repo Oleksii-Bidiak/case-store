@@ -143,7 +143,7 @@ describe('Review hidden reason (integration, TASK-599)', () => {
     }
     // Not on the storefront, not in the average.
     const page = await service.getApprovedReviews(productIds[0], {});
-    expect(page.data.map((r) => r.comment)).not.toContain('moderated-then-banned text');
+    expect(page.items.map((r) => r.comment)).not.toContain('moderated-then-banned text');
   });
 
   it('a moderator hiding an already-banned account outranks the ban', async () => {
@@ -195,7 +195,7 @@ describe('Review hidden reason (integration, TASK-599)', () => {
   it('takes a deleted account off the storefront and out of the average, past every restore', async () => {
     const userId = await authorWithReviews('deleted');
     const before = await service.getApprovedReviews(productIds[0], {});
-    expect(before.data.map((r) => r.comment)).toContain('deleted text');
+    expect(before.items.map((r) => r.comment)).toContain('deleted text');
     const countBefore = before.aggregate.ratingCount;
 
     // A moderator had already hidden it — DELETED must outrank that too.
@@ -208,7 +208,7 @@ describe('Review hidden reason (integration, TASK-599)', () => {
     await service.hideAuthor(userId, ReviewHiddenReason.DELETED);
 
     const after = await service.getApprovedReviews(productIds[0], {});
-    expect(after.data.map((r) => r.comment)).not.toContain('deleted text');
+    expect(after.items.map((r) => r.comment)).not.toContain('deleted text');
     // Exactly this author's star left the average; nothing else moved.
     expect(after.aggregate.ratingCount).toBe(countBefore - 1);
 

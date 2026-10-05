@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { CartModule } from '../cart';
-import { CartIdentityInterceptor } from '../cart/interceptors';
+import { CartIdentityInterceptor, CartModule } from '../cart';
 import { UserModule } from '../user';
 import { DeliveryModule } from '../delivery';
 import { DiscountModule } from '../discount';
@@ -14,7 +13,7 @@ import { OrderLookupRepository } from './order-lookup.repository';
 import { OrderService } from './order.service';
 // TASK-485: the seam the auth side claims guest orders through. Imported here
 // (never the other way round) because this module is the one that IMPLEMENTS it.
-import { GUEST_ORDER_CLAIM_PORT } from '../common/ports/guest-order-claim.port';
+import { GUEST_ORDER_CLAIM_PORT } from '../common/ports';
 import { OrderController } from './order.controller';
 import { AdminOrderController } from './admin-order.controller';
 import { ReturnRepository } from './returns/return.repository';

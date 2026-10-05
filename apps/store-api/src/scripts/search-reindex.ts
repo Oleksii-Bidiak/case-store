@@ -33,10 +33,7 @@
  * `loadAppModuleWithoutScheduler`, never imported statically (TASK-1027).
  */
 import { NestFactory } from '@nestjs/core';
-import { MeiliClient } from '../search/meili.client';
-import { SearchService } from '../search/search.service';
-import { BlogSearchService } from '../search/blog-search.service';
-import { runSearchReindex } from '../search/search-reindex.runner';
+import { BlogSearchService, MeiliClient, SearchService, runSearchReindex } from '../search';
 import { loadAppModuleWithoutScheduler } from './without-scheduler';
 
 async function main(): Promise<void> {

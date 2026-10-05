@@ -1,21 +1,17 @@
 // Review Module — public API
 export { ReviewModule } from './review.module';
 export { ReviewService } from './review.service';
-export { ReviewController } from './review.controller';
-export { ReviewUpdateController } from './review-update.controller';
-export { AdminReviewController } from './admin-review.controller';
-export { ReviewRepository } from './review.repository';
-export type {
-  CreateReviewInput,
-  ReviewAggregateData,
-  ReviewWithReply,
-  ReviewModerationRow,
-  ReviewModerationFilter,
-} from './review.repository';
-// `review.constants` is deliberately NOT re-exported here. `ProductRepository`
-// imports `COUNTS_TOWARD_RATING` from the leaf file directly (as it already does
-// with `order.constants`); routing it through this barrel would drag the module,
-// its controllers and its service into the product module's import graph.
+// The review predicates other modules count with (the dashboard's moderation
+// queue, the product rating). `ProductRepository` still imports them from the
+// leaf file: this barrel leads back to it (see the cycle note there, TASK-818).
+export {
+  COUNTS_TOWARD_RATING,
+  AUTHOR_NOT_HIDDEN,
+  HAS_TEXT_TO_MODERATE,
+  moderationQueueWhere,
+  authorVisibilityWhere,
+  type AuthorVisibilityFilter,
+} from './review.constants';
 export {
   ReviewEntity,
   ReviewAggregateEntity,

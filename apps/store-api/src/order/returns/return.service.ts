@@ -8,13 +8,13 @@ import { PinoLogger } from 'nestjs-pino';
 import { OrderStatus, ReturnStatus } from '@prisma/client';
 import { ReturnRepository } from './return.repository';
 import { OrderRepository } from '../order.repository';
-// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
-import { ShopNotifier } from '../../notification/shop-notifier.service';
+import { ShopNotifier } from '../../notification';
 import { ReturnEntity } from './entities';
 import { RESTOCK_ON_STATUS, canTransitionReturn } from './return-state-machine';
 import type { CreateReturnDto, ResolveReturnDto, ReturnListQueryDto } from './dto';
 import { refundExceedsOrderBalanceError, refundExceedsReturnedValueError } from './return.errors';
 import { centsToString, toCents } from '../../addon-service';
+import type { Paginated } from '../../common/pagination';
 import type {
   AssertRefundWithinBalance,
   AssertReturnClaimable,
@@ -217,16 +217,13 @@ export class ReturnService {
   }
 
   /** Admin — the returns queue, newest request first. */
-  async adminGetReturns(query: ReturnListQueryDto): Promise<{
-    data: ReturnEntity[];
-    meta: { total: number; page: number; limit: number; totalPages: number };
-  }> {
+  async adminGetReturns(query: ReturnListQueryDto): Promise<Paginated<ReturnEntity>> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
     const { returns, total } = await this.returnRepository.findAll(query);
 
     return {
-      data: returns.map((row) => ReturnEntity.fromPrisma(row, { includeInternal: true })),
+      items: returns.map((row) => ReturnEntity.fromPrisma(row, { includeInternal: true })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

@@ -2,27 +2,14 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { ProductGroupRepository, FindAllGroupsParams } from './product-group.repository';
 import { CreateProductGroupDto, UpdateProductGroupDto, ProductGroupListQueryDto } from './dto';
 import { ProductGroupSummaryEntity, ProductGroupDetailEntity } from './entities';
-
-/** Pagination metadata carried by the group list response. */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Group list envelope. `meta` is present even for an unpaginated read so the panel
- * can show a truthful row count without branching on the query.
- */
-interface ProductGroupListResponse {
-  data: ProductGroupSummaryEntity[];
-  meta: PaginationMeta;
-}
+import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /**
  * Business logic for product-group management (TASK-142). Maps repository rows
  * to admin entities and enforces existence on read/update.
+ *
+ * The group list is a `Paginated` page even for an unpaginated read, so the panel
+ * can show a truthful row count without branching on the query.
  */
 @Injectable()
 export class ProductGroupService {
@@ -33,7 +20,9 @@ export class ProductGroupService {
    * optional name search and opt-in pagination. Omitting `page`/`limit` returns the
    * complete list — what the product form's group picker needs (TASK-357).
    */
-  async findAll(query: ProductGroupListQueryDto = {}): Promise<ProductGroupListResponse> {
+  async findAll(
+    query: ProductGroupListQueryDto = {},
+  ): Promise<Paginated<ProductGroupSummaryEntity>> {
     const params: FindAllGroupsParams = {
       page: query.page,
       limit: query.limit,
@@ -42,7 +31,7 @@ export class ProductGroupService {
     const { groups, total } = await this.repository.findAll(params);
 
     return {
-      data: groups.map((g) => ProductGroupSummaryEntity.fromPrisma(g)),
+      items: groups.map((g) => ProductGroupSummaryEntity.fromPrisma(g)),
       meta: this.buildMeta(total, query.page, query.limit),
     };
   }

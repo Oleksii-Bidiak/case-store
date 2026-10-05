@@ -74,8 +74,8 @@ describe('UserNoteService (TASK-430)', () => {
       const result = await service.findByUser(CUSTOMER_ID);
 
       expect(noteRepositoryMock.findByUserId).toHaveBeenCalledWith(CUSTOMER_ID, USER_NOTES_LIMIT);
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0].authorEmail).toBe('manager@example.com');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].authorEmail).toBe('manager@example.com');
       // `total` is the count of ALL entries, not of the page — the panel says
       // «показано останні 50 з 128» off the back of it, and reporting the page
       // length here would turn a truncated journal into a complete-looking one.

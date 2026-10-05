@@ -105,7 +105,7 @@ describe('SalesRepository (integration)', () => {
     });
   }
 
-  function dayOf(series: Array<{ date: string }>, date: string) {
+  function dayOf<T extends { date: string }>(series: T[], date: string): T {
     const point = series.find((p) => p.date === date);
     if (!point) throw new Error(`no point for ${date} in the series`);
     return point;

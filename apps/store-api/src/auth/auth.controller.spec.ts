@@ -5,6 +5,16 @@ import { AuthService } from './auth.service';
 import type { IssuedSession } from './entities';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { GuestStateMergeService } from './guest-state-merge.service';
+import { PermissionService } from './permissions';
+import { EmailVerificationService } from './email-verification.service';
+import { EmailChangeService } from './email-change.service';
+
+// Constructor collaborators the routes under test never reach.
+const untouchedCollaborators = [
+  {} as PermissionService,
+  {} as EmailVerificationService,
+  {} as EmailChangeService,
+] as const;
 
 /**
  * TASK-168 (plan 153 §Migration step 7).
@@ -59,6 +69,7 @@ describe('AuthController — google oauth callback', () => {
       authService as unknown as AuthService,
       configMock as unknown as ConfigService,
       guestStateMergeMock as unknown as GuestStateMergeService,
+      ...untouchedCollaborators,
     );
   });
 
@@ -158,6 +169,7 @@ describe('AuthController — guest state on login', () => {
       authService as unknown as AuthService,
       { get: jest.fn() } as unknown as ConfigService,
       guestStateMerge as unknown as GuestStateMergeService,
+      ...untouchedCollaborators,
     );
   });
 

@@ -30,7 +30,7 @@ describe('PermissionGrantRepository (TASK-477)', () => {
   const calls: string[] = [];
 
   const prismaMock = {
-    $transaction: jest.fn((fn: (tx: unknown) => unknown) => {
+    $transaction: jest.fn((fn: (tx: unknown) => unknown): Promise<unknown> => {
       calls.push('transaction:begin');
       return Promise.resolve(fn(prismaMock));
     }),

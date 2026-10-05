@@ -16,40 +16,17 @@ import {
   SetCarouselItemsDto,
   ReorderCarouselsDto,
 } from './dto';
-import { ProductService } from '../product/product.service';
-import { ProductListQueryDto } from '../product/dto';
-import { PublicProductEntity } from '../product/entities';
+import { ProductListQueryDto, ProductService, PublicProductEntity } from '../product';
 import { CategoryRepository } from '../category';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 import { reorderErrorToHttp } from '../common/reorder';
-
-/** Pagination metadata carried by the admin carousel list response. */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
+import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /**
- * Response envelope for an admin carousel list.
- *
- * `meta` is present even for an unpaginated read: the admin panel needs an
- * honest row count, and an envelope that changes shape with the query would
- * force the client to branch on it.
+ * The admin carousel list is a `Paginated` page even for an unpaginated read: the
+ * admin panel needs an honest row count, and a list whose shape changed with the
+ * query would force the client to branch on it.
  */
-interface CarouselListResponse {
-  data: CarouselEntity[];
-  meta: PaginationMeta;
-}
-
-/**
- * Response envelope for the public carousel list (published + resolved products).
- */
-interface PublicCarouselListResponse {
-  data: PublicCarouselEntity[];
-}
-
 @Injectable()
 export class CarouselService {
   /** Homepage cache target purged after any admin write that changes visibility. */
@@ -74,17 +51,17 @@ export class CarouselService {
    * list — the storefront hides empty sections client-side, §Empty-carousel
    * behavior, plan 154).
    */
-  async findAllPublished(query: CarouselListQueryDto = {}): Promise<PublicCarouselListResponse> {
+  async findAllPublished(query: CarouselListQueryDto = {}): Promise<PublicCarouselEntity[]> {
     const params: FindPublishedParams = { placement: query.placement };
     const carousels = await this.carouselRepository.findAllPublished(params);
 
-    const data: PublicCarouselEntity[] = [];
+    const published: PublicCarouselEntity[] = [];
     for (const carousel of carousels) {
       const products = await this.resolveProducts(carousel);
-      data.push(PublicCarouselEntity.fromEntity(carousel, products));
+      published.push(PublicCarouselEntity.fromEntity(carousel, products));
     }
 
-    return { data };
+    return published;
   }
 
   /**
@@ -92,7 +69,7 @@ export class CarouselService {
    * placement and/or status, searched by title and paginated. Omitting
    * `page`/`limit` returns the complete list (TASK-357).
    */
-  async findAllAdmin(query: AdminCarouselListQueryDto): Promise<CarouselListResponse> {
+  async findAllAdmin(query: AdminCarouselListQueryDto): Promise<Paginated<CarouselEntity>> {
     const params: FindAllAdminParams = {
       placement: query.placement,
       status: query.status,
@@ -103,7 +80,7 @@ export class CarouselService {
     const { carousels, total } = await this.carouselRepository.findAllAdmin(params);
 
     return {
-      data: carousels.map((carousel) => CarouselEntity.fromPrisma(carousel)),
+      items: carousels.map((carousel) => CarouselEntity.fromPrisma(carousel)),
       meta: this.buildMeta(total, query.page, query.limit),
     };
   }
@@ -277,7 +254,7 @@ export class CarouselService {
    * The repository's domain errors are mapped to HTTP here, so the wire body carries the
    * stable `error` code the admin panel keys its UA announcements off.
    */
-  async reorderPlacement(dto: ReorderCarouselsDto): Promise<CarouselListResponse> {
+  async reorderPlacement(dto: ReorderCarouselsDto): Promise<Paginated<CarouselEntity>> {
     let carousels;
     let total;
     try {
@@ -302,10 +279,10 @@ export class CarouselService {
 
     // Shape parity with `findAllAdmin` is load-bearing: the admin panel writes this
     // response straight into the list query's cache (`useReorderLifecycle` →
-    // `setQueryData`), and an envelope missing `meta` would blank the row counter the
+    // `setQueryData`), and a response missing `meta` would blank the row counter the
     // moment someone drags a row.
     return {
-      data: carousels.map((carousel) => CarouselEntity.fromPrisma(carousel)),
+      items: carousels.map((carousel) => CarouselEntity.fromPrisma(carousel)),
       meta: this.buildMeta(total),
     };
   }
@@ -395,10 +372,7 @@ export class CarouselService {
         }
         // Rows arrive ordered by sortOrder ASC; getCardsByIds preserves request
         // order and silently drops unknown/deactivated/deleted ids.
-        const { data } = await this.productService.getCardsByIds(
-          items.map((item) => item.productId),
-        );
-        return data;
+        return this.productService.getCardsByIds(items.map((item) => item.productId));
       }
     }
   }
@@ -421,8 +395,8 @@ export class CarouselService {
       sortOrder: 'desc',
       ...overrides,
     });
-    const { data } = await this.productService.findAll(query);
-    return data;
+    const { items } = await this.productService.findAll(query);
+    return items;
   }
 
   /**

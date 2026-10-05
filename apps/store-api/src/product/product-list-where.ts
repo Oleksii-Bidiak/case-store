@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: attribute-definition barrel > attribute-definition.repository > this file
 import { FACETABLE_TYPES } from '../attribute-definition/attribute-definition.constants';
 import type { SpecFacetFilter } from './dto/product-list-query.dto';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';

@@ -4,6 +4,7 @@ import { UserService } from './user.service';
 import { UserController } from './user.controller';
 import { AuthModule } from '../auth';
 import { ReviewModule } from '../review/review.module';
+import { DiscountModule } from '../discount';
 
 @Module({
   // AuthModule exports AuthRepository, which UserService uses to revoke a
@@ -13,7 +14,10 @@ import { ReviewModule } from '../review/review.module';
   // account's ratings and texts (TASK-589). Imported from the leaf module file
   // rather than the barrel: `../review` re-exports the controllers and entities
   // too, and this module needs none of them.
-  imports: [AuthModule, ReviewModule],
+  //
+  // DiscountModule exports DiscountService, which supplies the customer card's
+  // redeemed coupons (TASK-827). It does not import this module back.
+  imports: [AuthModule, ReviewModule, DiscountModule],
   controllers: [UserController],
   providers: [UserRepository, UserService],
   // UserRepository is exported so OrderModule can look up a recipient's email

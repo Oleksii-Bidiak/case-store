@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma, Discount, DiscountRedemption } from '@prisma/client';
 import { PrismaService } from '../prisma';
+import type { UserDiscountRedemption } from './discount.types';
 
 /**
  * Fields accepted when creating a discount. Money values arrive as Prisma
@@ -235,5 +236,28 @@ export class DiscountRepository {
     tx: Prisma.TransactionClient,
   ): Promise<DiscountRedemption> {
     return tx.discountRedemption.create({ data });
+  }
+
+  /**
+   * A user's redemptions, newest first, capped at `limit`. The parent
+   * discount's `code`/`type`/`value` are joined in the same query, then
+   * flattened (`redeemedAt` = `DiscountRedemption.createdAt`). Feeds the admin
+   * customer card (TASK-827 moved it here from `UserRepository`).
+   */
+  async findRedemptionsByUser(userId: string, limit: number): Promise<UserDiscountRedemption[]> {
+    const redemptions = await this.prisma.discountRedemption.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      include: { discount: { select: { code: true, type: true, value: true } } },
+    });
+    return redemptions.map((redemption) => ({
+      id: redemption.id,
+      code: redemption.discount.code,
+      type: redemption.discount.type,
+      value: redemption.discount.value,
+      orderId: redemption.orderId,
+      redeemedAt: redemption.createdAt,
+    }));
   }
 }

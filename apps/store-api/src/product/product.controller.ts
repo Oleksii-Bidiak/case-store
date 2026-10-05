@@ -279,7 +279,8 @@ export class ProductController {
     type: ProductListResponseEnvelope,
   })
   async findAll(@Query() query: ProductListQueryDto): Promise<ProductListResponse> {
-    return this.productService.findAll(query);
+    const page = await this.productService.findAll(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**
@@ -308,7 +309,8 @@ export class ProductController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async adminFindAll(@Query() query: ProductListQueryDto): Promise<AdminProductListResponse> {
-    return this.productService.adminFindAll(query);
+    const page = await this.productService.adminFindAll(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**
@@ -333,7 +335,7 @@ export class ProductController {
     type: ProductCardsResponseEnvelope,
   })
   async getCards(@Query() query: ProductCardsQueryDto): Promise<ProductCardsResponse> {
-    return this.productService.getCardsByIds(query.ids);
+    return { data: await this.productService.getCardsByIds(query.ids) };
   }
 
   /**
@@ -352,7 +354,8 @@ export class ProductController {
   })
   @ApiResponse({ status: 404, description: 'Product not found' })
   async findBySlug(@Param('slug') slug: string): Promise<ProductDetailResponse> {
-    return this.productService.findBySlug(slug);
+    const { product, ...relations } = await this.productService.findBySlug(slug);
+    return { data: product, ...relations };
   }
 
   /**
@@ -386,7 +389,8 @@ export class ProductController {
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   @ApiResponse({ status: 404, description: 'Product not found' })
   async findPreviewBySlug(@Param('slug') slug: string): Promise<AdminProductPreviewResponse> {
-    return this.productService.findBySlugForAdminPreview(slug);
+    const { product, ...relations } = await this.productService.findBySlugForAdminPreview(slug);
+    return { data: product, ...relations };
   }
 
   /**

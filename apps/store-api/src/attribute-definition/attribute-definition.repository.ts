@@ -7,6 +7,7 @@ import { ReorderTx, acquireAdvisoryLocks, lockKey, reorderBucket } from '../comm
 // The listing's OWN where-builder, imported as a pure function (TASK-489). It is
 // not a second copy and not a service edge: facet counts must describe exactly
 // the slice the listing returns, so there is one builder and two callers.
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > attribute-definition barrel > this file
 import {
   ON_SALE_PRODUCT_IDS_SQL,
   buildProductListWhere,

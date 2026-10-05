@@ -10,7 +10,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { FailClosedThrottle } from '../throttler';
 import {
@@ -39,12 +39,9 @@ import { JwtAuthGuard } from './guards';
 import { GoogleAuthGuard } from './guards';
 import { CurrentUser } from './decorators';
 import { AuthTokens } from './entities';
-import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
-import { CART_TOKEN_COOKIE, buildCartTokenCookieOptions } from '../cart/cart-identity.types';
-import {
-  WISHLIST_TOKEN_COOKIE,
-  buildWishlistTokenCookieOptions,
-} from '../wishlist/wishlist-identity.types';
+import type { GoogleOAuthProfile } from './oauth/google-oauth-profile';
+import { CART_TOKEN_COOKIE, buildCartTokenCookieOptions } from '../cart';
+import { WISHLIST_TOKEN_COOKIE, buildWishlistTokenCookieOptions } from '../wishlist';
 import {
   REFRESH_TOKEN_COOKIE,
   buildRefreshCookieOptions,

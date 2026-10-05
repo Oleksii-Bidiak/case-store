@@ -1,7 +1,5 @@
 import { DeliveryMethod } from '@prisma/client';
-// Imported from the file, not the module barrel: this helper is pure and must
-// not drag the add-on module's Nest providers into whoever imports it.
-import { centsToString, toCents } from '../addon-service/money.util';
+import { centsToString, toCents } from '../addon-service';
 
 /**
  * Shipping-cost rules that need no carrier call (TASK-643, plan 184; B-6 §6).

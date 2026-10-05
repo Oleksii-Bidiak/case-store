@@ -15,7 +15,7 @@ import { RegisterDto } from './dto';
 import { REGISTER_HONEYPOT_FIELD } from './dto/register.dto';
 import { GoogleOAuthProfile } from './oauth/google-oauth-profile';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
-import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
+import { NotificationOutboxService } from '../notification-outbox';
 import { hashPassword, verifyPassword } from '../common/security';
 import {
   normalizeEmailAddress,

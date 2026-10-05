@@ -57,6 +57,9 @@ function makeProductRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
+type SlugKeyedRow = { id: string | undefined; slug: string };
+type MeiliHits = { hits: Array<{ id: string }>; totalHits: number };
+
 describe('Search (e2e)', () => {
   let app: INestApplication;
 
@@ -97,12 +100,13 @@ describe('Search (e2e)', () => {
       ),
     },
     brand: {
-      findUnique: jest.fn(({ where }: { where: { slug?: string; id?: string } }) =>
-        Promise.resolve(
-          where.slug
-            ? { id: `id-of-${where.slug}`, slug: where.slug }
-            : { id: where.id, slug: `slug-of-${where.id}` },
-        ),
+      findUnique: jest.fn(
+        ({ where }: { where: { slug?: string; id?: string } }): Promise<SlugKeyedRow | null> =>
+          Promise.resolve(
+            where.slug
+              ? { id: `id-of-${where.slug}`, slug: where.slug }
+              : { id: where.id, slug: `slug-of-${where.id}` },
+          ),
       ),
     },
     deviceModel: {
@@ -126,7 +130,7 @@ describe('Search (e2e)', () => {
     indexDocuments: jest.fn(async () => undefined),
     deleteDocument: jest.fn(async () => undefined),
     clearDocuments: jest.fn(async () => undefined),
-    search: jest.fn(async () => ({ hits: [], totalHits: 0 })),
+    search: jest.fn(async (): Promise<MeiliHits | null> => ({ hits: [], totalHits: 0 })),
   };
 
   beforeAll(async () => {

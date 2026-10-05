@@ -1,10 +1,7 @@
 import { IsBoolean, IsNumber, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
-// Direct file import rather than the '../../catalog-filter' barrel: a DTO must
-// not drag the resolver (and with it three repositories) into every module that
-// only wanted to validate a query string.
-import { SLUG_MAX_LENGTH, blankToUndefined } from '../../catalog-filter/slug-filter.dto-util';
+import { SLUG_MAX_LENGTH, blankToUndefined } from '../../catalog-filter';
 
 /**
  * The ACTIVE catalogue filters, as sent alongside a facet request (TASK-489).

@@ -8,7 +8,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
-import { AuditRepository } from '../src/audit';
+import { AuditRepository } from '../src/audit/audit.repository';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';
 import { createPermissionRepositoryMock } from './permission-repository.mock';

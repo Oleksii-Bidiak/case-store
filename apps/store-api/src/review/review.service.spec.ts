@@ -297,8 +297,8 @@ describe('ReviewService', () => {
       const result = await service.getApprovedReviews(PRODUCT_ID, {});
 
       expect(reviewRepositoryMock.findApprovedByProduct).toHaveBeenCalledWith(PRODUCT_ID, 1, 10);
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).not.toHaveProperty('isActive');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).not.toHaveProperty('isActive');
       expect(result.aggregate.ratingAverage).toBe(5);
       expect(result.aggregate.ratingCount).toBe(1);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 10, totalPages: 1 });
@@ -323,7 +323,7 @@ describe('ReviewService', () => {
 
       expect(result.aggregate.ratingCount).toBe(9);
       expect(result.meta.total).toBe(1);
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
     });
 
     // TASK-298: the badge used to be resolved with one `isVerifiedPurchase` call PER review
@@ -347,9 +347,9 @@ describe('ReviewService', () => {
 
       const result = await service.getApprovedReviews(PRODUCT_ID, {});
 
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toMatchObject({ id: 'r-buyer', verifiedPurchase: true });
-      expect(result.data[1]).toMatchObject({ id: 'r-non-buyer', verifiedPurchase: false });
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toMatchObject({ id: 'r-buyer', verifiedPurchase: true });
+      expect(result.items[1]).toMatchObject({ id: 'r-non-buyer', verifiedPurchase: false });
 
       expect(reviewRepositoryMock.findVerifiedPurchaserIds).toHaveBeenCalledTimes(1);
       expect(reviewRepositoryMock.findVerifiedPurchaserIds).toHaveBeenCalledWith(PRODUCT_ID, [
@@ -366,7 +366,7 @@ describe('ReviewService', () => {
 
       const result = await service.getApprovedReviews(PRODUCT_ID, {});
 
-      expect(result.data).toEqual([]);
+      expect(result.items).toEqual([]);
       expect(reviewRepositoryMock.findVerifiedPurchaserIds).toHaveBeenCalledWith(PRODUCT_ID, []);
     });
   });
@@ -398,11 +398,11 @@ describe('ReviewService', () => {
         undefined,
         { visibility: undefined, productId: undefined, createdIp: undefined },
       );
-      expect(result.data[0].userEmail).toBe('olena@example.com');
-      expect(result.data[0].productName).toBe('iPhone 15 Pro Case');
+      expect(result.items[0].userEmail).toBe('olena@example.com');
+      expect(result.items[0].productName).toBe('iPhone 15 Pro Case');
       // TASK-430: the queue shows the SKU next to the name, because the name alone
       // does not identify a position in a catalogue with colour variants.
-      expect(result.data[0].productSku).toBe('CASE-IP15P-BLK');
+      expect(result.items[0].productSku).toBe('CASE-IP15P-BLK');
       expect(result.meta.total).toBe(1);
     });
 
@@ -423,7 +423,7 @@ describe('ReviewService', () => {
 
       const result = await service.getReviewsForModeration({});
 
-      expect(result.data[0].productSku).toBeNull();
+      expect(result.items[0].productSku).toBeNull();
     });
 
     it('passes the approved status through to the repository', async () => {
@@ -475,9 +475,9 @@ describe('ReviewService', () => {
 
       const result = await service.getReviewsForModeration({});
 
-      expect(result.data[0].textStatus).toBe('REJECTED');
-      expect(result.data[0].ratingVisible).toBe(true);
-      expect(result.data[0]).not.toHaveProperty('isActive');
+      expect(result.items[0].textStatus).toBe('REJECTED');
+      expect(result.items[0].ratingVisible).toBe(true);
+      expect(result.items[0]).not.toHaveProperty('isActive');
     });
 
     // TASK-596: `ratingVisible = false` alone cannot tell "a moderator withdrew
@@ -504,11 +504,11 @@ describe('ReviewService', () => {
         visibility: ReviewAuthorVisibility.ALL,
       });
 
-      expect(result.data[0].hiddenAt).toEqual(hiddenAt);
-      expect(result.data[0].hiddenReason).toBe(ReviewHiddenReason.MODERATOR);
+      expect(result.items[0].hiddenAt).toEqual(hiddenAt);
+      expect(result.items[0].hiddenReason).toBe(ReviewHiddenReason.MODERATOR);
       // Unconfirmed, not withdrawn: the other half of the distinction.
-      expect(result.data[1].hiddenAt).toBeNull();
-      expect(result.data[1].hiddenReason).toBeNull();
+      expect(result.items[1].hiddenAt).toBeNull();
+      expect(result.items[1].hiddenReason).toBeNull();
       expect(reviewRepositoryMock.findForModeration).toHaveBeenCalledWith(
         'pending',
         1,
@@ -559,7 +559,7 @@ describe('ReviewService', () => {
         productId: PRODUCT_ID,
         createdIp: '203.0.113.42',
       });
-      expect(result.data[0].createdIp).toBe('203.0.113.42');
+      expect(result.items[0].createdIp).toBe('203.0.113.42');
     });
   });
 
@@ -836,7 +836,7 @@ describe('ReviewService', () => {
 
       const result = await service.getApprovedReviews(PRODUCT_ID, {});
 
-      expect(result.data[0].reply).toEqual({
+      expect(result.items[0].reply).toEqual({
         body: 'Дякуємо! Передали ваш відгук виробнику.',
         createdAt: now,
       });
@@ -855,7 +855,7 @@ describe('ReviewService', () => {
 
       const result = await service.getApprovedReviews(PRODUCT_ID, {});
 
-      expect(result.data[0].reply).toBeNull();
+      expect(result.items[0].reply).toBeNull();
     });
 
     it('shows the moderation queue what was already answered', async () => {
@@ -875,7 +875,7 @@ describe('ReviewService', () => {
 
       const result = await service.getReviewsForModeration({});
 
-      expect(result.data[0].reply).toEqual({
+      expect(result.items[0].reply).toEqual({
         body: 'Дякуємо! Передали ваш відгук виробнику.',
         createdAt: now,
       });

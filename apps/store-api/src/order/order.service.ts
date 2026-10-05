@@ -21,11 +21,10 @@ import { OrderRepository, type AdminOrderExportRow } from './order.repository';
 // TASK-483: the public lookup has its own repository — see its docblock for why
 // the narrow projection gets a narrow query rather than a filtered wide one.
 import { OrderLookupRepository } from './order-lookup.repository';
-import { CartRepository, type CartWithItems } from '../cart/cart.repository';
-import { UserRepository } from '../user/user.repository';
+import { CartService, type CartWithItems } from '../cart';
+import { UserRepository } from '../user';
 import { NotificationOutboxService } from '../notification-outbox';
-// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
-import { ShopNotifier } from '../notification/shop-notifier.service';
+import { ShopNotifier } from '../notification';
 import { DeliveryService, isDeliveryNotConfigured } from '../delivery';
 import { DiscountService } from '../discount';
 import { OrderEntity, OrderStatusHistoryEntity, PublicOrderEntity } from './entities';
@@ -67,9 +66,10 @@ import {
 } from '../addon-service';
 // Shared with the newsletter export: one formula-injection guard, so a fix
 // cannot land in one export and miss the other (see the helper's docblock).
-import { buildCsvDocument, escapeCsvField, toSingleCsvLine } from '../common/utils/csv.util';
+import { buildCsvDocument, escapeCsvField, toSingleCsvLine } from '../common/utils';
 // TASK-483/466: one canonical phone spelling on both sides of the comparison.
 import { normalizeUaPhone } from '../common/validators';
+import type { Paginated } from '../common/pagination';
 import type {
   CreateOrderDto,
   CreateManualOrderDto,
@@ -92,7 +92,8 @@ import type {
   PaymentWithOrderRow,
   ShippingAddressData,
 } from './order.types';
-import type { PaymentApplyResult, PaymentEventInput } from '../payment/payment.types';
+import type { PaymentApplyResult, PaymentEventInput } from '../payment';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: payment barrel > payment.module > order barrel > this file
 import { PaymentOutcome } from '../payment/payment.types';
 
 const DEFAULT_PAGE = 1;
@@ -224,16 +225,6 @@ function isUnconfirmedOnlinePayment(order: {
 }
 
 /**
- * Pagination metadata returned alongside a list of orders.
- */
-export interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
  * What an operator gets back after taking an order over the phone (TASK-484).
  *
  * Two values rather than one because the second cannot be fetched again: the
@@ -265,7 +256,8 @@ export class OrderService {
     private readonly orderRepository: OrderRepository,
     // TASK-483: the public lookup's own narrow query.
     private readonly orderLookupRepository: OrderLookupRepository,
-    private readonly cartRepository: CartRepository,
+    // TASK-827: the cart through its service, not another module's repository.
+    private readonly cartService: CartService,
     private readonly userRepository: UserRepository,
     private readonly mailOutbox: NotificationOutboxService,
     private readonly deliveryService: DeliveryService,
@@ -312,10 +304,11 @@ export class OrderService {
       }
     }
 
-    const cart =
+    const cart = await this.cartService.loadForCheckout(
       actor.type === 'user'
-        ? await this.cartRepository.findByUserId(actor.userId)
-        : await this.cartRepository.findByToken(actor.cartToken);
+        ? { type: 'user', userId: actor.userId }
+        : { type: 'token', token: actor.cartToken },
+    );
 
     if (!cart) {
       throw new NotFoundException('Cart not found');
@@ -910,17 +903,14 @@ export class OrderService {
    * List the calling user's orders (paginated, newest first, optional status
    * filter).
    */
-  async getOrders(
-    userId: string,
-    query: OrderListQueryDto,
-  ): Promise<{ data: OrderEntity[]; meta: PaginationMeta }> {
+  async getOrders(userId: string, query: OrderListQueryDto): Promise<Paginated<OrderEntity>> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
 
     const { orders, total } = await this.orderRepository.findByUserId(userId, query);
 
     return {
-      data: orders.map((order) => OrderEntity.fromPrisma(order)),
+      items: orders.map((order) => OrderEntity.fromPrisma(order)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -930,9 +920,7 @@ export class OrderService {
    * optional `userId`, `status`, and created-at date-range filters. No
    * ownership scoping; authorization (ADMIN role) is enforced at the controller.
    */
-  async adminGetAllOrders(
-    query: AdminOrderListQueryDto,
-  ): Promise<{ data: OrderEntity[]; meta: PaginationMeta }> {
+  async adminGetAllOrders(query: AdminOrderListQueryDto): Promise<Paginated<OrderEntity>> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
 
@@ -940,7 +928,7 @@ export class OrderService {
 
     return {
       // TASK-336: admin reads opt into the operator-only fields.
-      data: orders.map((order) => OrderEntity.fromPrisma(order, { includeInternal: true })),
+      items: orders.map((order) => OrderEntity.fromPrisma(order, { includeInternal: true })),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

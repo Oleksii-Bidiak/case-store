@@ -33,7 +33,7 @@ import {
   DeleteCategoryDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
-// Direct file import, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
+// The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls in `auth.module` →
 // `auth.controller` → … → the `../category` barrel → this file, and that require cycle
 // leaves `CurrentUser` undefined at decorator-evaluation time ("CurrentUser is not a
 // function"). Anything on a module cycle's edge must bypass the barrels.
@@ -190,7 +190,7 @@ export class AdminCategoryController {
     @Body() dto: ReorderCategoriesDto,
     @CurrentUser('id') adminUserId: string,
   ): Promise<AdminCategoryTreeResponse> {
-    return this.categoryService.reorderTree(dto, adminUserId);
+    return { data: await this.categoryService.reorderTree(dto, adminUserId) };
   }
 
   /**
@@ -222,7 +222,7 @@ export class AdminCategoryController {
     @Body() dto: BulkCategoryStatusDto,
     @CurrentUser('id') adminUserId: string,
   ): Promise<AdminCategoryTreeResponse> {
-    return this.categoryService.setStatusMany(dto.ids, dto.isActive, adminUserId);
+    return { data: await this.categoryService.setStatusMany(dto.ids, dto.isActive, adminUserId) };
   }
 
   /**
@@ -244,7 +244,8 @@ export class AdminCategoryController {
   async findAllWithProductCount(
     @Query() query: CategoryListQueryDto,
   ): Promise<AdminCategoryListResponse> {
-    return this.categoryService.findAllWithProductCount(query);
+    const page = await this.categoryService.findAllWithProductCount(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**

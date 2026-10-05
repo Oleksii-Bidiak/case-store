@@ -1,16 +1,9 @@
 // Discount Module — public API
 export { DiscountModule } from './discount.module';
 export { DiscountService } from './discount.service';
-export { DiscountController } from './discount.controller';
-export { AdminDiscountController } from './admin-discount.controller';
-export { PublicDiscountController } from './public-discount.controller';
-export { DiscountRepository } from './discount.repository';
-export type {
-  CreateDiscountInput,
-  UpdateDiscountInput,
-  FindManyParams as DiscountFindManyParams,
-  PaginatedDiscountsResult,
-} from './discount.repository';
+// `DiscountRepository` is deliberately NOT exported (TASK-818): it is not in
+// `DiscountModule.exports`, and a caller holding it could write a discount past
+// the service's usage-cap and validity checks.
 export { DiscountEntity, DiscountPreviewEntity, PublicDiscountEntity } from './entities';
 export {
   CreateDiscountDto,
@@ -18,4 +11,5 @@ export {
   DiscountListQueryDto,
   PreviewDiscountDto,
 } from './dto';
-export { DiscountErrorCode } from './discount.errors';
+export { DiscountErrorCode, badDiscount, conflictDiscount } from './discount.errors';
+export type { AppliedDiscount, UserDiscountRedemption } from './discount.types';

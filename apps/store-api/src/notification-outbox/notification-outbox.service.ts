@@ -3,17 +3,18 @@ import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { Prisma, NotificationChannel, NotificationOutbox } from '@prisma/client';
 import { NotificationOutboxRepository } from './notification-outbox.repository';
-import { MailService, type SendOrderConfirmationParams } from '../mail/mail.service';
-import type { PasswordResetMailPayload } from '../mail/templates/password-reset.template';
-import type { AccountLockedMailPayload } from '../mail/templates/account-locked.template';
-import type { EmailVerificationMailPayload } from '../mail/templates/email-verification.template';
-import type { OrderShippedMailPayload } from '../mail/templates/order-shipped.template';
-import type { OrderPaymentExpiredMailPayload } from '../mail/templates/order-payment-expired.template';
-import type {
-  EmailChangeConfirmMailPayload,
-  EmailChangeNoticeMailPayload,
-} from '../mail/templates/email-change.template';
-import { Clock, NOTIFICATION_OUTBOX_CLOCK } from './notification-outbox.clock';
+import {
+  MailService,
+  type AccountLockedMailPayload,
+  type EmailChangeConfirmMailPayload,
+  type EmailChangeNoticeMailPayload,
+  type EmailVerificationMailPayload,
+  type OrderPaymentExpiredMailPayload,
+  type OrderShippedMailPayload,
+  type PasswordResetMailPayload,
+  type SendOrderConfirmationParams,
+} from '../mail';
+import { type Clock, NOTIFICATION_OUTBOX_CLOCK } from './notification-outbox.clock';
 import {
   ACCOUNT_LOCKED_MAIL_TYPE,
   EMAIL_CHANGE_CONFIRM_MAIL_TYPE,

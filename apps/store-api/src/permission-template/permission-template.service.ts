@@ -3,7 +3,7 @@ import {
   PermissionTemplateRepository,
   type PermissionTemplateRecord,
 } from './permission-template.repository';
-import { StaffService } from '../staff/staff.service';
+import { StaffService } from '../staff';
 import { assertGrantablePermissions, type PermissionActor } from '../auth/permissions';
 
 /** Input for {@link PermissionTemplateService.create}. */

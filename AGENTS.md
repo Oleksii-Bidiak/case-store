@@ -74,7 +74,7 @@ feature/
 2. **Services** must not directly import PrismaClient. Use repository classes instead.
 3. **Repositories** encapsulate all Prisma queries. Return domain entities, not raw Prisma objects.
 4. Use NestJS **modules** for encapsulation — each feature is a self-contained module.
-5. All API responses follow a consistent envelope: `{ data, meta? }` or `{ error, message, statusCode }`.
+5. All API responses follow a consistent envelope: `{ data, meta? }` or `{ error, message, statusCode }`. The **controller** builds `{ data, meta? }`; services return domain data (entities, arrays, `Paginated<T>` from `common/pagination`), never `{ data }` — enforced by `no-restricted-syntax` in `apps/store-api/eslint.config.js` (TASK-806). Errors keep coming from the global exception filter.
 
 ### Validation
 

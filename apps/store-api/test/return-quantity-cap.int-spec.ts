@@ -110,7 +110,7 @@ describe('ReturnService.createReturn — quantity cap under concurrency (integra
       data: {
         userId,
         status: OrderStatus.DELIVERED,
-        paymentStatus: PaymentStatus.SUCCEEDED,
+        paymentStatus: PaymentStatus.PAID,
         subtotal: 100,
         total: 100,
         shippingCost: 0,

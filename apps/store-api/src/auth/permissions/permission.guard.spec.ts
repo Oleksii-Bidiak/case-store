@@ -16,8 +16,8 @@ import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY } from './require-permission.dec
  *
  *   owner → @OwnerOnly → admin → the actor's own rows
  *
- * Swap the middle two and an admin reaches the owner's reserve — the four doors
- * that decide who runs the shop — while every test that only checks "an admin
+ * Swap the middle two and an admin reaches the owner's reserve — every route
+ * marked `@OwnerOnly()` — while every test that only checks "an admin
  * can do admin things" still passes. That is why the admin-versus-`@OwnerOnly`
  * case below is written as its own assertion rather than folded into a table.
  */

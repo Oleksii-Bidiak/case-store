@@ -172,7 +172,8 @@ export class AdminReviewController {
   @ApiResponse({ status: 401, description: 'Authentication required' })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async list(@Query() query: AdminReviewQueryDto): Promise<AdminReviewListResponseEnvelope> {
-    return this.reviewService.getReviewsForModeration(query);
+    const page = await this.reviewService.getReviewsForModeration(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**

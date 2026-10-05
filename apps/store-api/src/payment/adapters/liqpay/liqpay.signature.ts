@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { safeEqual } from '../../../csrf/csrf.util';
+import { safeEqual } from '../../../csrf';
 
 /**
  * LiqPay request/callback signing — the single most fragile thing in the whole

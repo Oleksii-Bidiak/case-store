@@ -85,8 +85,9 @@ export class AdminUserNoteController {
   @ApiResponse({ status: 200, description: 'Notes, newest first', type: UserNoteListResponse })
   @ApiResponse({ status: 403, description: 'Forbidden — customers:read required' })
   @ApiResponse({ status: 404, description: 'Customer not found' })
-  list(@Param('userId') userId: string): Promise<UserNoteListResponse> {
-    return this.userNoteService.findByUser(userId);
+  async list(@Param('userId') userId: string): Promise<UserNoteListResponse> {
+    const notes = await this.userNoteService.findByUser(userId);
+    return { data: notes.items, meta: notes.meta };
   }
 
   /**

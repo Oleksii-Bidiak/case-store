@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
-import { schedulingEnabled, stopCronJob } from '../common/scheduling/scheduling.util';
+import { schedulingEnabled, stopCronJob } from '../common/scheduling';
 import { CatalogImportService } from './catalog-import.service';
 
 /** Registered name of the cron job — used to look it up via SchedulerRegistry. */

@@ -12,9 +12,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
-// Direct file import rather than the '../../catalog-filter' barrel — see the
-// same note on ProductListQueryDto.
-import { SLUG_MAX_LENGTH, blankToUndefined } from '../../catalog-filter/slug-filter.dto-util';
+import { SLUG_MAX_LENGTH, blankToUndefined } from '../../catalog-filter';
 
 /**
  * Sort orders offered on the results page (TASK-417). `relevance` is the default

@@ -18,36 +18,17 @@ import {
 } from './dto';
 import { RevalidationNotifier, resolvePublishState, type RevalidateTarget } from '../publishing';
 import { reorderErrorToHttp } from '../common/reorder';
+import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /**
- * Response envelope for the PUBLIC banner list — no `meta`: the storefront reads
- * the complete published set and groups it by placement itself.
- */
-interface BannerListResponse {
-  data: BannerEntity[];
-}
-
-/** Pagination metadata carried by every ADMIN banner list response. */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Response envelope for the admin banner list.
+ * The PUBLIC banner list is a plain array — no `meta`: the storefront reads the
+ * complete published set and groups it by placement itself.
  *
- * `meta` is present even when the caller asked for no pagination — the admin
- * panel needs an honest row count to render "N записів" and to decide whether a
- * pager is warranted at all, and an envelope that changes shape depending on the
- * query would force the client to branch on it.
+ * The ADMIN list is a `Paginated` page even when the caller asked for no
+ * pagination — the admin panel needs an honest row count to render "N записів"
+ * and to decide whether a pager is warranted at all, and a list whose shape
+ * changed with the query would force the client to branch on it.
  */
-interface AdminBannerListResponse {
-  data: BannerEntity[];
-  meta: PaginationMeta;
-}
-
 @Injectable()
 export class BannerService {
   /** Homepage cache target purged after any admin write that changes visibility. */
@@ -67,11 +48,11 @@ export class BannerService {
   /**
    * List published banners (public storefront), optionally filtered by placement.
    */
-  async findAllPublished(query: BannerListQueryDto): Promise<BannerListResponse> {
+  async findAllPublished(query: BannerListQueryDto): Promise<BannerEntity[]> {
     const params: FindPublishedParams = { placement: query.placement };
     const banners = await this.bannerRepository.findAllPublished(params);
 
-    return { data: banners.map((banner) => BannerEntity.fromPrisma(banner)) };
+    return banners.map((banner) => BannerEntity.fromPrisma(banner));
   }
 
   /**
@@ -79,7 +60,7 @@ export class BannerService {
    * paginated. Omitting `page`/`limit` returns the complete list — the mode the
    * reorder UI requires (TASK-357).
    */
-  async findAllAdmin(query: AdminBannerListQueryDto): Promise<AdminBannerListResponse> {
+  async findAllAdmin(query: AdminBannerListQueryDto): Promise<Paginated<BannerEntity>> {
     const params: FindAllAdminParams = {
       placement: query.placement,
       status: query.status,
@@ -90,7 +71,7 @@ export class BannerService {
     const { banners, total } = await this.bannerRepository.findAllAdmin(params);
 
     return {
-      data: banners.map((banner) => BannerEntity.fromPrisma(banner)),
+      items: banners.map((banner) => BannerEntity.fromPrisma(banner)),
       meta: this.buildMeta(total, query.page, query.limit),
     };
   }
@@ -273,7 +254,7 @@ export class BannerService {
   async reorderPlacement(
     dto: ReorderBannersDto,
     actorId?: string,
-  ): Promise<AdminBannerListResponse> {
+  ): Promise<Paginated<BannerEntity>> {
     let banners;
     let total;
     try {
@@ -309,10 +290,10 @@ export class BannerService {
     // The reorder always answers with the COMPLETE admin list, so its `meta` is the
     // unpaginated one. Shape parity with `findAllAdmin` is load-bearing: the admin panel
     // writes this response straight into the list query's cache
-    // (`useReorderLifecycle` → `setQueryData`), and an envelope missing `meta` would blank
+    // (`useReorderLifecycle` → `setQueryData`), and a response missing `meta` would blank
     // the list's row counter the moment someone drags a row.
     return {
-      data: banners.map((banner) => BannerEntity.fromPrisma(banner)),
+      items: banners.map((banner) => BannerEntity.fromPrisma(banner)),
       meta: this.buildMeta(total),
     };
   }

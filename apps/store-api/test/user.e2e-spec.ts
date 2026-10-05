@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { Prisma } from '@prisma/client';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
@@ -66,7 +67,6 @@ describe('UserController (e2e)', () => {
     getOrderCount: jest.fn(),
     getRecentOrders: jest.fn(),
     getReviewsByUserId: jest.fn(),
-    getRedeemedCoupons: jest.fn(),
     getContactMessagesByEmail: jest.fn(),
   };
 
@@ -92,6 +92,11 @@ describe('UserController (e2e)', () => {
     // review.e2e-spec.ts.
     review: {
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    // TASK-827: the customer card's redeemed coupons are read by the (real)
+    // DiscountRepository, not by the mocked UserRepository.
+    discountRedemption: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
   };
 
@@ -500,14 +505,18 @@ describe('UserController (e2e)', () => {
           createdAt: new Date('2026-01-01T00:00:00.000Z'),
         },
       ]);
-      userRepositoryMock.getRedeemedCoupons.mockResolvedValue([
+      // The Prisma row as `DiscountRepository.findRedemptionsByUser` reads it —
+      // the coupons block runs through the real discount service and
+      // repository, so the flattening and the Decimal → number conversion are
+      // both on the wire path this test asserts (TASK-827).
+      prismaServiceMock.discountRedemption.findMany.mockResolvedValue([
         {
           id: 'redemption-1',
-          code: 'SUMMER20',
-          type: 'PERCENT',
-          value: 20,
+          discountId: 'discount-1',
+          userId: 'user-detail-id',
           orderId: 'order-1',
-          redeemedAt: new Date('2026-01-01T00:00:00.000Z'),
+          createdAt: new Date('2026-01-01T00:00:00.000Z'),
+          discount: { code: 'SUMMER20', type: 'PERCENT', value: new Prisma.Decimal('20.00') },
         },
       ]);
       userRepositoryMock.getContactMessagesByEmail.mockResolvedValue([
@@ -567,6 +576,25 @@ describe('UserController (e2e)', () => {
       expect(Array.isArray(card.redeemedCoupons)).toBe(true);
       expect(Array.isArray(card.contactMessages)).toBe(true);
       expect(card.recentOrders[0].total).toBe(129.99);
+      // The coupons block's exact wire shape — unchanged by moving its read
+      // into the discount module (TASK-827). `value` is a number, not a
+      // Decimal string; `redeemedAt` is the redemption's `createdAt`.
+      expect(card.redeemedCoupons).toEqual([
+        {
+          id: 'redemption-1',
+          code: 'SUMMER20',
+          type: 'PERCENT',
+          value: 20,
+          orderId: 'order-1',
+          redeemedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ]);
+      expect(prismaServiceMock.discountRedemption.findMany).toHaveBeenCalledWith({
+        where: { userId: 'user-detail-id' },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+        include: { discount: { select: { code: true, type: true, value: true } } },
+      });
       expect(card.contactMessages[0]).toEqual(
         expect.objectContaining({ id: 'message-1', status: 'NEW' }),
       );
@@ -637,7 +665,7 @@ describe('UserController (e2e)', () => {
       expect(userRepositoryMock.getLtv).not.toHaveBeenCalled();
       expect(userRepositoryMock.getRecentOrders).not.toHaveBeenCalled();
       expect(userRepositoryMock.getReviewsByUserId).not.toHaveBeenCalled();
-      expect(userRepositoryMock.getRedeemedCoupons).not.toHaveBeenCalled();
+      expect(prismaServiceMock.discountRedemption.findMany).not.toHaveBeenCalled();
       expect(userRepositoryMock.getContactMessagesByEmail).not.toHaveBeenCalled();
     });
 
@@ -672,7 +700,7 @@ describe('UserController (e2e)', () => {
       userRepositoryMock.getOrderCount.mockResolvedValue(12);
       userRepositoryMock.getRecentOrders.mockResolvedValue([]);
       userRepositoryMock.getReviewsByUserId.mockResolvedValue([]);
-      userRepositoryMock.getRedeemedCoupons.mockResolvedValue([]);
+      prismaServiceMock.discountRedemption.findMany.mockResolvedValue([]);
       userRepositoryMock.getContactMessagesByEmail.mockResolvedValue([]);
 
       const response = await request(app.getHttpServer())
@@ -699,7 +727,7 @@ describe('UserController (e2e)', () => {
       userRepositoryMock.getOrderCount.mockResolvedValue(0);
       userRepositoryMock.getRecentOrders.mockResolvedValue([]);
       userRepositoryMock.getReviewsByUserId.mockResolvedValue([]);
-      userRepositoryMock.getRedeemedCoupons.mockResolvedValue([]);
+      prismaServiceMock.discountRedemption.findMany.mockResolvedValue([]);
       userRepositoryMock.getContactMessagesByEmail.mockResolvedValue([]);
 
       await request(app.getHttpServer())

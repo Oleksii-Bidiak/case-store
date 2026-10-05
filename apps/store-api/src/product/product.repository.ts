@@ -8,7 +8,9 @@ import {
   buildProductListWhere,
   type ProductListWhereParams,
 } from './product-list-where';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: order barrel > order.module > search barrel > search.module > this file
 import { PRE_SHIPMENT_STATUSES } from '../order/order.constants';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: review barrel > review.controller > auth barrel > auth.module > wishlist.module > wishlist.repository > product barrel > this file
 import { COUNTS_TOWARD_RATING } from '../review/review.constants';
 import { COLOR_SPEC_KEY, isColorAxis, withColorAxis } from '../common/color-axis';
 import { PUBLIC_PRODUCT_WHERE } from './product-visibility';

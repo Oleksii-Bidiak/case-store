@@ -657,7 +657,7 @@ describe('ReviewRepository — hiding a whole account (TASK-589, reasons TASK-59
     user: { findUnique: userFindUnique },
     // The hide runs three statements in one transaction; the callback receives
     // the same mock as its `tx`, so every statement lands in `reviewUpdateMany`.
-    $transaction: jest.fn((fn: (tx: unknown) => unknown) => fn(prismaMock)),
+    $transaction: jest.fn((fn: (tx: unknown) => unknown): unknown => fn(prismaMock)),
   };
 
   beforeEach(async () => {

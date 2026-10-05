@@ -12,43 +12,18 @@ import { DeviceBrandEntity, DeviceModelEntity, DeviceModelListItemEntity } from 
 import { DeviceModelListQueryDto, DeviceBrandListQueryDto, ReorderDeviceBrandsDto } from './dto';
 import { generateSlug } from '../common/utils';
 import { reorderErrorToHttp } from '../common/reorder';
-
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-interface DeviceBrandListResponse {
-  data: DeviceBrandEntity[];
-}
-
-/**
- * Admin brand list envelope. `meta` is present even for an unpaginated read so the
- * panel can show a truthful row count without branching on the query — and so the
- * reorder response, which the panel writes straight into the list cache, can carry
- * the identical shape.
- */
-interface AdminDeviceBrandListResponse {
-  data: DeviceBrandEntity[];
-  meta: PaginationMeta;
-}
-
-interface DeviceModelListResponse {
-  data: DeviceModelListItemEntity[];
-}
-
-interface PaginatedDeviceModelsResponse {
-  data: DeviceModelEntity[];
-  meta: PaginationMeta;
-}
+import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /**
  * DeviceService — business logic for the device-compatibility taxonomy
  * (TASK-190): slug auto-generation (mirrors `CategoryService`), slug-uniqueness
- * and brand-existence validation, and envelope mapping. Never touches Prisma
+ * and brand-existence validation, and entity mapping. Never touches Prisma
  * directly — all reads/writes go through {@link DeviceRepository}.
+ *
+ * The admin brand list is a `Paginated` page even for an unpaginated read: its
+ * `meta` lets the panel show a truthful row count without branching on the query,
+ * and the reorder answer, which the panel writes straight into the list cache,
+ * carries the identical shape.
  */
 @Injectable()
 export class DeviceService {
@@ -62,9 +37,9 @@ export class DeviceService {
   // ─── Device brands ────────────────────────────────────────────────────────
 
   /** Public — list active device brands for the picker/filter cascade. */
-  async getBrands(activeOnly = true): Promise<DeviceBrandListResponse> {
+  async getBrands(activeOnly = true): Promise<DeviceBrandEntity[]> {
     const brands = await this.deviceRepository.findBrands(activeOnly);
-    return { data: brands.map((b) => DeviceBrandEntity.fromPrisma(b)) };
+    return brands.map((b) => DeviceBrandEntity.fromPrisma(b));
   }
 
   /**
@@ -74,7 +49,7 @@ export class DeviceService {
    */
   async getBrandsWithCount(
     query: DeviceBrandListQueryDto = {},
-  ): Promise<AdminDeviceBrandListResponse> {
+  ): Promise<Paginated<DeviceBrandEntity>> {
     const params: FindAdminBrandsParams = {
       page: query.page,
       limit: query.limit,
@@ -83,7 +58,7 @@ export class DeviceService {
     const { brands, total } = await this.deviceRepository.findBrandsWithCount(params);
 
     return {
-      data: brands.map((r) => DeviceBrandEntity.fromPrisma(r.brand, r.modelCount)),
+      items: brands.map((r) => DeviceBrandEntity.fromPrisma(r.brand, r.modelCount)),
       meta: this.buildOptionalMeta(total, query.page, query.limit),
     };
   }
@@ -137,7 +112,7 @@ export class DeviceService {
   async reorderBrands(
     dto: ReorderDeviceBrandsDto,
     actorId?: string,
-  ): Promise<AdminDeviceBrandListResponse> {
+  ): Promise<Paginated<DeviceBrandEntity>> {
     let brands;
     let total;
     try {
@@ -155,7 +130,7 @@ export class DeviceService {
     // one — shape parity with `getBrandsWithCount`, which the panel relies on when it writes
     // this response straight into the list query's cache.
     return {
-      data: brands.map((r) => DeviceBrandEntity.fromPrisma(r.brand, r.modelCount)),
+      items: brands.map((r) => DeviceBrandEntity.fromPrisma(r.brand, r.modelCount)),
       meta: this.buildOptionalMeta(total),
     };
   }
@@ -177,17 +152,17 @@ export class DeviceService {
    * the light {@link DeviceModelListItemEntity} projection (TASK-702): the
    * compat-landing SEO copy stays on the landing and admin routes.
    */
-  async getModels(query: DeviceModelListQueryDto): Promise<DeviceModelListResponse> {
+  async getModels(query: DeviceModelListQueryDto): Promise<DeviceModelListItemEntity[]> {
     const models = await this.deviceRepository.findPublicModels({
       limit: query.limit ?? 200,
       deviceBrandId: query.deviceBrandId,
       search: query.search,
     });
-    return { data: models.map((m) => DeviceModelListItemEntity.fromPrisma(m)) };
+    return models.map((m) => DeviceModelListItemEntity.fromPrisma(m));
   }
 
   /** Admin — paginated device model list across all statuses (or an explicit filter). */
-  async getModelsPaginated(query: DeviceModelListQueryDto): Promise<PaginatedDeviceModelsResponse> {
+  async getModelsPaginated(query: DeviceModelListQueryDto): Promise<Paginated<DeviceModelEntity>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 50;
     const { models, total } = await this.deviceRepository.findModels({
@@ -198,7 +173,7 @@ export class DeviceService {
       isActive: query.isActive,
     });
     return {
-      data: models.map((m) => DeviceModelEntity.fromPrisma(m)),
+      items: models.map((m) => DeviceModelEntity.fromPrisma(m)),
       meta: this.buildMeta(total, page, limit),
     };
   }

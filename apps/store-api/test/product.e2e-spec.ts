@@ -84,10 +84,15 @@ describe('ProductController (e2e)', () => {
   // `findById`/`findBySlug` back the TASK-420 slug → id resolver (the real one
   // runs here, over these mocks). Both echo the requested key back as a resolved
   // row, so either spelling of a filter reaches the repository unchanged.
+  type SlugRow = { id: string; slug: string };
   const categoryRepositoryMock = {
     findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
-    findById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
-    findBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
+    findById: jest.fn((id: string): Promise<SlugRow | null> =>
+      Promise.resolve({ id, slug: `slug-of-${id}` }),
+    ),
+    findBySlug: jest.fn((slug: string): Promise<SlugRow | null> =>
+      Promise.resolve({ id: `id-of-${slug}`, slug }),
+    ),
   };
 
   // Mock PrismaService — prevents database connection errors

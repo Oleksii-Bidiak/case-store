@@ -76,8 +76,8 @@ describe('PageService', () => {
 
       const result = await service.findAll({ page: 1, limit: 20 });
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(PageEntity);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toBeInstanceOf(PageEntity);
       expect(result.meta).toEqual({ total: 1, page: 1, limit: 20, totalPages: 1 });
     });
   });
@@ -105,7 +105,7 @@ describe('PageService', () => {
 
       const result = await service.findAllAdmin({ page: 1, limit: 20, status: undefined });
 
-      expect(result.data).toHaveLength(2);
+      expect(result.items).toHaveLength(2);
       expect(pageRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
         page: 1,
         limit: 20,
@@ -530,7 +530,7 @@ describe('PageService', () => {
       const result = await service.reorder({ orderedIds: ['page-uuid-1', 'page-uuid-2'] });
 
       expect(pageRepositoryMock.reorderAll).toHaveBeenCalledWith(['page-uuid-1', 'page-uuid-2']);
-      expect(result.data[0]).toBeInstanceOf(PageEntity);
+      expect(result.items[0]).toBeInstanceOf(PageEntity);
       // The unpaginated shape: one page holding everything (the panel writes this
       // response straight into the list query's cache).
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });

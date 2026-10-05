@@ -6,7 +6,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ReviewHiddenReason, UserRole } from '@prisma/client';
+import { ReviewHiddenReason, UserRole, type User } from '@prisma/client';
 import { StaffService } from './staff.service';
 import { StaffRepository } from './staff.repository';
 import { UserRepository } from '../user/user.repository';
@@ -15,6 +15,7 @@ import { AuthService } from '../auth/auth.service';
 import { ReviewService } from '../review/review.service';
 import { PermissionGrantRepository } from '../auth/permissions';
 import type { PermissionActor } from '../auth/permissions';
+import { buildUser } from '../../test/user.fixture';
 
 /**
  * The four doors, proved door by door (TASK-476, plan 181, invariants 2 and 3).
@@ -45,50 +46,40 @@ const deputyActor: PermissionActor = {
 };
 
 const baseRow = {
-  passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$hash',
   firstName: 'Olena',
   lastName: 'Kovalenko',
-  phone: null,
-  isActive: true,
-  emailVerifiedAt: null,
-  lockedUntil: null,
-  failedLoginAttempts: 0,
-  originalEmail: null,
-  deletedAt: null,
-  createdAt: new Date('2026-01-01T00:00:00.000Z'),
-  updatedAt: new Date('2026-01-01T00:00:00.000Z'),
 };
 
-const ownerRow = {
+const ownerRow = buildUser({
   ...baseRow,
   id: 'owner-1',
   email: 'owner@example.com',
   role: UserRole.ADMIN,
   isOwner: true,
-};
-const otherAdminRow = {
+});
+const otherAdminRow = buildUser({
   ...baseRow,
   id: 'admin-2',
   email: 'admin2@example.com',
   role: UserRole.ADMIN,
   isOwner: false,
-};
-const managerRow = {
+});
+const managerRow = buildUser({
   ...baseRow,
   id: 'manager-1',
   email: 'manager@example.com',
   role: UserRole.MANAGER,
   isOwner: false,
-};
-const customerRow = {
+});
+const customerRow = buildUser({
   ...baseRow,
   id: 'customer-1',
   email: 'shopper@example.com',
   role: UserRole.CUSTOMER,
   isOwner: false,
-};
+});
 
-const staffAccount = (user: typeof managerRow) => ({
+const staffAccount = (user: User) => ({
   user,
   permissionCount: 3,
   lastSeenAt: new Date('2026-02-01T00:00:00.000Z'),
@@ -560,8 +551,8 @@ describe('StaffService', () => {
       const result = await service.findAll({ page: 1, limit: 20 });
 
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
-      expect(result.data.map((row) => row.level)).toEqual([1, 3]);
-      expect(result.data[1].isOwner).toBe(true);
+      expect(result.items.map((row) => row.level)).toEqual([1, 3]);
+      expect(result.items[1].isOwner).toBe(true);
     });
   });
 

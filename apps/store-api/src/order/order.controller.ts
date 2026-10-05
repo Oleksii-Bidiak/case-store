@@ -27,7 +27,8 @@ import {
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { FailClosedThrottle, OrderLookupThrottle } from '../throttler';
-import { OrderService, PaginationMeta } from './order.service';
+import { OrderService } from './order.service';
+import type { PaginationMeta } from '../common/pagination';
 import {
   OrderEntity,
   OrderItemEntity,
@@ -43,10 +44,12 @@ import { CreateOrderDto, OrderListQueryDto, OrderLookupDto } from './dto';
 // service performs, which `JwtAuthGuard` alone already states. The set of callers
 // admitted is unchanged.
 import { JwtAuthGuard, CurrentUser } from '../auth';
-import { OptionalJwtAuthGuard } from '../cart/guards';
-import { CartIdentityInterceptor } from '../cart/interceptors';
-import { CartIdentity } from '../cart/decorators';
-import type { ResolvedCartIdentity } from '../cart/cart-identity.types';
+import {
+  CartIdentity,
+  CartIdentityInterceptor,
+  OptionalJwtAuthGuard,
+  type ResolvedCartIdentity,
+} from '../cart';
 import type { OrderActor } from './order.types';
 
 /**
@@ -350,7 +353,8 @@ export class OrderController {
     @CurrentUser('id') userId: string,
     @Query() query: OrderListQueryDto,
   ): Promise<{ data: OrderEntity[]; meta: PaginationMeta }> {
-    return this.orderService.getOrders(userId, query);
+    const page = await this.orderService.getOrders(userId, query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**

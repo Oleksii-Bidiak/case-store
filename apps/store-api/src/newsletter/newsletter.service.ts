@@ -5,25 +5,8 @@ import { NewsletterExportQueryDto, NewsletterListQueryDto, SubscribeDto } from '
 // Shared with the order export. This file used to carry its own byte-identical
 // `escapeCsv`, and the formula-injection hole was found in both copies at once —
 // which is the argument for there being only one.
-import { buildCsvDocument, escapeCsvField } from '../common/utils/csv.util';
-
-/**
- * Pagination metadata returned alongside paginated results.
- */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Paginated response envelope for subscriber lists.
- */
-interface PaginatedSubscriptionsResponse {
-  data: NewsletterSubscriptionEntity[];
-  meta: PaginationMeta;
-}
+import { buildCsvDocument, escapeCsvField } from '../common/utils';
+import type { Paginated, PaginationMeta } from '../common/pagination';
 
 /** CSV header row for the subscriber export. */
 const CSV_HEADER = ['email', 'status', 'source', 'createdAt'] as const;
@@ -57,7 +40,7 @@ export class NewsletterService {
    * List subscribers (admin) with pagination, status filter, email search, and
    * sort.
    */
-  async findAll(query: NewsletterListQueryDto): Promise<PaginatedSubscriptionsResponse> {
+  async findAll(query: NewsletterListQueryDto): Promise<Paginated<NewsletterSubscriptionEntity>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
 
@@ -71,7 +54,7 @@ export class NewsletterService {
     });
 
     return {
-      data: subscriptions.map((row) => NewsletterSubscriptionEntity.fromPrisma(row)),
+      items: subscriptions.map((row) => NewsletterSubscriptionEntity.fromPrisma(row)),
       meta: this.buildMeta(total, page, limit),
     };
   }

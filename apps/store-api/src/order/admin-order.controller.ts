@@ -291,7 +291,8 @@ export class AdminOrderController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminOrderListQueryDto): Promise<AdminOrderListResponse> {
-    return this.orderService.adminGetAllOrders(query);
+    const page = await this.orderService.adminGetAllOrders(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**

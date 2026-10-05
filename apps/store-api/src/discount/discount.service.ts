@@ -5,23 +5,16 @@ import {
   CreateDiscountInput,
   UpdateDiscountInput,
 } from './discount.repository';
-import { CartService } from '../cart';
-import type { ResolvedCartIdentity } from '../cart/cart-identity.types';
+import { CartService, type ResolvedCartIdentity } from '../cart';
 import { DiscountEntity, DiscountPreviewEntity, PublicDiscountEntity } from './entities';
 import { CreateDiscountDto, UpdateDiscountDto, DiscountListQueryDto } from './dto';
 import { DiscountErrorCode, badDiscount, conflictDiscount } from './discount.errors';
-import { centsToString, toCents } from '../addon-service/money.util';
+import type { AppliedDiscount, UserDiscountRedemption } from './discount.types';
+import { centsToString, toCents } from '../addon-service';
+import type { Paginated } from '../common/pagination';
 
 const DEFAULT_PAGE = 1;
 const DEFAULT_LIMIT = 20;
-
-/** Pagination metadata returned alongside an admin discount list. */
-export interface DiscountPaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
 
 /**
  * DiscountService — promo-code validation, amount calculation, redemption, and
@@ -51,8 +44,9 @@ export class DiscountService {
    * @param code Raw promo code (normalized to trimmed uppercase internally).
    * @param subtotal Cart subtotal as a decimal string ("XX.YY").
    * @param userId The redeeming user (drives the per-user cap check).
-   * @returns The loaded discount and the computed amount as a decimal string,
-   *   clamped so `amount <= subtotal`.
+   * @returns The applied discount (`id`/`code`/`type` only — the Prisma row
+   *   stays inside the module, TASK-827) and the computed amount as a decimal
+   *   string, clamped so `amount <= subtotal`.
    * @throws BadRequestException (NOT_FOUND/INACTIVE/NOT_STARTED/EXPIRED/
    *   MIN_SPEND_NOT_MET) and ConflictException (MAX_REDEMPTIONS_REACHED/
    *   USER_LIMIT_REACHED), each carrying a stable {@link DiscountErrorCode}.
@@ -61,7 +55,7 @@ export class DiscountService {
     code: string,
     subtotal: string,
     userId: string,
-  ): Promise<{ discount: Discount; amount: string }> {
+  ): Promise<{ discount: AppliedDiscount; amount: string }> {
     const normalizedCode = code.trim().toUpperCase();
     const discount = await this.discountRepository.findByCode(normalizedCode);
 
@@ -116,7 +110,10 @@ export class DiscountService {
     const amountCents = computeAmountCents(discount, subtotalCents);
     // Never a negative discount: the floor the old local copy of the cents
     // helper applied silently is written out here (TASK-807).
-    return { discount, amount: centsToString(Math.max(0, amountCents)) };
+    return {
+      discount: { id: discount.id, code: discount.code, type: discount.type },
+      amount: centsToString(Math.max(0, amountCents)),
+    };
   }
 
   /**
@@ -207,21 +204,29 @@ export class DiscountService {
    * no id). No pagination: a curated promo list is bounded (dozens, not
    * hundreds).
    */
-  async findActivePublic(): Promise<{ data: PublicDiscountEntity[] }> {
+  async findActivePublic(): Promise<PublicDiscountEntity[]> {
     const candidates = await this.discountRepository.findActiveWindowCandidates(new Date());
     const redeemable = candidates.filter(
       (discount) =>
         discount.maxRedemptions === null || discount.redeemedCount < discount.maxRedemptions,
     );
-    return { data: redeemable.map((discount) => PublicDiscountEntity.fromPrisma(discount)) };
+    return redeemable.map((discount) => PublicDiscountEntity.fromPrisma(discount));
+  }
+
+  /**
+   * A user's redeemed coupons, newest first, capped at `limit` — the coupons
+   * block of the admin customer card (TASK-827: the user module used to read
+   * `discountRedemption` itself). No permission check here: the caller's route
+   * already holds `customers:card`.
+   */
+  listUserRedemptions(userId: string, limit: number): Promise<UserDiscountRedemption[]> {
+    return this.discountRepository.findRedemptionsByUser(userId, limit);
   }
 
   // ─── Admin CRUD ─────────────────────────────────────────────────────────
 
   /** Admin — paginated discount list with optional active filter + code search. */
-  async list(
-    query: DiscountListQueryDto,
-  ): Promise<{ data: DiscountEntity[]; meta: DiscountPaginationMeta }> {
+  async list(query: DiscountListQueryDto): Promise<Paginated<DiscountEntity>> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
 
@@ -235,7 +240,7 @@ export class DiscountService {
     });
 
     return {
-      data: discounts.map((d) => DiscountEntity.fromPrisma(d)),
+      items: discounts.map((d) => DiscountEntity.fromPrisma(d)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

@@ -31,7 +31,7 @@ import {
   AdminBlogCategoryListQueryDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
-// Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module in and the
+// The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls the auth module in and the
 // resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
 import { BlogPostEntity, BlogCategoryEntity } from './entities';
@@ -128,7 +128,8 @@ export class AdminBlogController {
   async findCategories(
     @Query() query: AdminBlogCategoryListQueryDto,
   ): Promise<AdminBlogCategoryListResponse> {
-    return this.blogService.findAllCategoriesAdmin(query);
+    const page = await this.blogService.findAllCategoriesAdmin(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**
@@ -162,7 +163,8 @@ export class AdminBlogController {
     @Body() dto: ReorderBlogCategoriesDto,
     @CurrentUser('id') adminUserId: string,
   ): Promise<AdminBlogCategoryListResponse> {
-    return this.blogService.reorderCategories(dto, adminUserId);
+    const page = await this.blogService.reorderCategories(dto, adminUserId);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get('categories/:id')
@@ -225,7 +227,8 @@ export class AdminBlogController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminBlogPostListQueryDto): Promise<AdminBlogPostListResponse> {
-    return this.blogService.findAllAdmin(query);
+    const page = await this.blogService.findAllAdmin(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get('posts/:id')

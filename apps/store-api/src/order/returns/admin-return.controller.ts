@@ -84,7 +84,8 @@ export class AdminReturnController {
   @ApiResponse({ status: 200, description: 'Paginated returns', type: AdminReturnListResponse })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: ReturnListQueryDto): Promise<AdminReturnListResponse> {
-    return this.returnService.adminGetReturns(query);
+    const page = await this.returnService.adminGetReturns(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get(':returnId')

@@ -13,7 +13,7 @@ import {
   MaxLength,
 } from 'class-validator';
 import { OrderStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
-import { PENDING_STALE_HOURS } from '../../dashboard/dashboard.types';
+import { PENDING_STALE_HOURS } from '../../dashboard';
 import { OrderListQueryDto } from './order-list-query.dto';
 
 /**

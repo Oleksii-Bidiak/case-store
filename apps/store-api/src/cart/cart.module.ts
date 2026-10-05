@@ -15,6 +15,8 @@ import { AddonServiceModule } from '../addon-service';
   controllers: [CartController],
   // GuestCartCleanupService sweeps empty guest carts daily (TASK-776).
   providers: [CartRepository, CartService, CartIdentityInterceptor, GuestCartCleanupService],
-  exports: [CartService, CartRepository],
+  // CartRepository stays private to the module (TASK-827): OrderModule, its last
+  // outside consumer, now loads the checkout cart via CartService.
+  exports: [CartService],
 })
 export class CartModule {}

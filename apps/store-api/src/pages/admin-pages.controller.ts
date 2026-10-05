@@ -96,7 +96,8 @@ export class AdminPageController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminPageListQueryDto): Promise<AdminPageListResponse> {
-    return this.pageService.findAllAdmin(query);
+    const page = await this.pageService.findAllAdmin(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**
@@ -125,7 +126,8 @@ export class AdminPageController {
   @ApiResponse({ status: 404, description: 'REORDER_NOT_FOUND — an id is not in this list' })
   @ApiResponse({ status: 409, description: 'REORDER_STALE — another admin changed the list first' })
   async reorder(@Body() dto: ReorderPagesDto): Promise<AdminPageListResponse> {
-    return this.pageService.reorder(dto);
+    const page = await this.pageService.reorder(dto);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get(':id')

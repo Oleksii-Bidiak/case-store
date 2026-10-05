@@ -1,9 +1,11 @@
 import { Module, forwardRef } from '@nestjs/common';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > search barrel > this file
 import { ProductRepository } from '../product/product.repository';
 // Same rule as ProductRepository below: the blog index needs a BlogRepository,
 // and providing it here (rather than importing BlogModule) keeps the dependency
 // edge one-directional — BlogModule imports SearchModule for the BlogIndexer
 // seam, never the other way round.
+// eslint-disable-next-line local/no-deep-module-import -- cycle: blog barrel > blog.module > this file. (BlogRepository is not in BlogModule.exports either; provided module-locally — TASK-827)
 import { BlogRepository } from '../blog/blog.repository';
 // Direct file imports (NOT the '../category' barrel): CategoryModule and SearchModule now
 // form a module cycle, and routing these through the barrels would make the emitted
@@ -13,14 +15,13 @@ import { CategoryModule } from '../category/category.module';
 // stateless Prisma wrappers, so the slug → id resolver's two extra dependencies
 // are provided module-locally rather than by importing BrandModule/DeviceModule
 // — no new edge into the CategoryModule ↔ SearchModule forwardRef cycle.
+// eslint-disable-next-line local/no-deep-module-import -- cycle: brand barrel > brand.module > category.module > this file
 import { BrandRepository } from '../brand/brand.repository';
-import { DeviceRepository } from '../device/device.repository';
-import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
+import { DeviceRepository } from '../device';
+import { CatalogueFilterResolver } from '../catalog-filter';
 import { SlugRedirectModule } from '../slug-redirect';
-// Direct file import, not the barrel: the barrel re-exports the controller, and
-// this module only needs the Nest module class.
 import { SearchSynonymsModule } from '../search-synonyms/search-synonyms.module';
-import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
+import { CategorySubtreeIndexer } from '../common/ports';
 import { MeiliClient } from './meili.client';
 import { SearchService } from './search.service';
 import { ProductIndexer, SearchProductIndexer } from './product-indexer';

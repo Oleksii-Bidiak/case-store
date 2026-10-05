@@ -12,7 +12,7 @@ import { AuthRepository, type EmailVerificationTokenWithUser } from './auth.repo
 import { AuthService } from './auth.service';
 import { EmailVerificationService } from './email-verification.service';
 import { humanizeDuration, parseDurationToMs } from './duration.util';
-import { NotificationOutboxService } from '../notification-outbox/notification-outbox.service';
+import { NotificationOutboxService } from '../notification-outbox';
 
 /** Bytes of entropy for each opaque link (→ 64 hex chars), as for every other link. */
 const TOKEN_BYTES = 32;

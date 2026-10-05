@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { NotificationAudience, NotificationChannel, Prisma } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: notification-outbox barrel > notification-outbox.module > notification.module > this file
 import { NotificationOutboxRepository } from '../notification-outbox/notification-outbox.repository';
 import { NotificationBindingService } from './notification-binding.service';
 import {

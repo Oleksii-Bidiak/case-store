@@ -10,7 +10,7 @@ import { ProductSpecRepository } from './product-spec.repository';
 // Slug → id for `?category=&brand=&device=` (TASK-420). Provided, not imported
 // as a module: it is stateless, and a module edge here would add another arm to
 // the CategoryModule ↔ SearchModule forwardRef cycle for no benefit.
-import { CatalogueFilterResolver } from '../catalog-filter/catalogue-filter.resolver';
+import { CatalogueFilterResolver } from '../catalog-filter';
 import { StorageModule } from '../storage';
 import { UploadsModule } from '../uploads';
 import { SearchModule } from '../search';

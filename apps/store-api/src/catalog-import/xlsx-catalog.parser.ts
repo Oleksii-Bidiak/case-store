@@ -1,5 +1,5 @@
 import { generateSlug } from '../common/utils';
-import { MAX_DESCRIPTION_LENGTH } from '../product/product.constants';
+import { MAX_DESCRIPTION_LENGTH } from '../product';
 import {
   AttributeColumn,
   AttributeMap,

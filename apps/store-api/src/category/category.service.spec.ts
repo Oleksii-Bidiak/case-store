@@ -7,6 +7,7 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
+import type { Category } from '@prisma/client';
 import {
   CategoryRepository,
   CreateCategoryInput,
@@ -46,7 +47,7 @@ import { PermissionService } from '../auth/permissions';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
-const mockCategory = {
+const mockCategory: Category = {
   id: 'cat-uuid-1',
   name: 'Phone Cases',
   slug: 'phone-cases',
@@ -57,11 +58,14 @@ const mockCategory = {
   sortOrder: 0,
   metaTitle: null,
   metaDescription: null,
+  keywords: [],
+  ogImage: null,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
+  deletedAt: null,
 };
 
-const mockChildCategory = {
+const mockChildCategory: Category = {
   id: 'cat-uuid-2',
   name: 'iPhone Cases',
   slug: 'iphone-cases',
@@ -70,8 +74,13 @@ const mockChildCategory = {
   parentId: 'cat-uuid-1',
   isActive: true,
   sortOrder: 0,
+  metaTitle: null,
+  metaDescription: null,
+  keywords: [],
+  ogImage: null,
   createdAt: new Date('2026-01-02T00:00:00.000Z'),
   updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+  deletedAt: null,
 };
 
 const mockInactiveCategory = {
@@ -187,8 +196,8 @@ describe('CategoryService', () => {
 
       const result = await service.getRootCategories(query);
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(CategoryEntity);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toBeInstanceOf(CategoryEntity);
       expect(result.meta.total).toBe(1);
       expect(result.meta.page).toBe(1);
       expect(result.meta.limit).toBe(20);
@@ -267,12 +276,12 @@ describe('CategoryService', () => {
 
       const result = await service.getCategoryTree();
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(CategoryTreeNodeEntity);
-      expect(result.data[0].name).toBe('Phone Cases');
-      expect(result.data[0].children).toHaveLength(1);
-      expect(result.data[0].children[0]).toBeInstanceOf(CategoryTreeNodeEntity);
-      expect(result.data[0].children[0].name).toBe('iPhone Cases');
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBeInstanceOf(CategoryTreeNodeEntity);
+      expect(result[0].name).toBe('Phone Cases');
+      expect(result[0].children).toHaveLength(1);
+      expect(result[0].children[0]).toBeInstanceOf(CategoryTreeNodeEntity);
+      expect(result[0].children[0].name).toBe('iPhone Cases');
       expect(categoryRepositoryMock.findCategoryTree).toHaveBeenCalled();
     });
 
@@ -281,7 +290,7 @@ describe('CategoryService', () => {
 
       const result = await service.getCategoryTree();
 
-      expect(result.data).toHaveLength(0);
+      expect(result).toHaveLength(0);
     });
 
     // TASK-247: the admin SEO overrides must reach the public tree so the
@@ -307,14 +316,10 @@ describe('CategoryService', () => {
 
       const result = await service.getCategoryTree();
 
-      expect(result.data[0].metaTitle).toBe('Чохли — Преміум захист');
-      expect(result.data[0].metaDescription).toBe(
-        'Магазин преміальних чохлів для будь-якої моделі.',
-      );
-      expect(result.data[0].children[0].metaTitle).toBe('Чохли для iPhone | Store');
-      expect(result.data[0].children[0].metaDescription).toBe(
-        'Захисні чохли для всіх моделей iPhone.',
-      );
+      expect(result[0].metaTitle).toBe('Чохли — Преміум захист');
+      expect(result[0].metaDescription).toBe('Магазин преміальних чохлів для будь-якої моделі.');
+      expect(result[0].children[0].metaTitle).toBe('Чохли для iPhone | Store');
+      expect(result[0].children[0].metaDescription).toBe('Захисні чохли для всіх моделей iPhone.');
     });
 
     // TASK-277: sitemap `lastModified` for /categories/[slug] landing pages
@@ -336,8 +341,8 @@ describe('CategoryService', () => {
 
       const result = await service.getCategoryTree();
 
-      expect(result.data[0].updatedAt).toEqual(mockCategory.updatedAt);
-      expect(result.data[0].children[0].updatedAt).toEqual(mockChildCategory.updatedAt);
+      expect(result[0].updatedAt).toEqual(mockCategory.updatedAt);
+      expect(result[0].children[0].updatedAt).toEqual(mockChildCategory.updatedAt);
     });
 
     it('maps a missing metaTitle/metaDescription to null (not undefined)', async () => {
@@ -346,8 +351,8 @@ describe('CategoryService', () => {
 
       const result = await service.getCategoryTree();
 
-      expect(result.data[0].metaTitle).toBeNull();
-      expect(result.data[0].metaDescription).toBeNull();
+      expect(result[0].metaTitle).toBeNull();
+      expect(result[0].metaDescription).toBeNull();
     });
   });
 
@@ -374,17 +379,17 @@ describe('CategoryService', () => {
       expect(categoryRepositoryMock.findCategoryTreeForAdmin).toHaveBeenCalled();
       // Uses the admin (unfiltered) traversal, NOT the public isActive-filtered one.
       expect(categoryRepositoryMock.findCategoryTree).not.toHaveBeenCalled();
-      expect(result.data[0]).toBeInstanceOf(AdminCategoryTreeNodeEntity);
+      expect(result[0]).toBeInstanceOf(AdminCategoryTreeNodeEntity);
       // Still a CategoryTreeNodeEntity — the admin node is a strict superset.
-      expect(result.data[0]).toBeInstanceOf(CategoryTreeNodeEntity);
-      expect(result.data[0].productCount).toBe(7);
-      expect(result.data[0].depth).toBe(1);
-      expect(result.data[0].parentId).toBeNull();
+      expect(result[0]).toBeInstanceOf(CategoryTreeNodeEntity);
+      expect(result[0].productCount).toBe(7);
+      expect(result[0].depth).toBe(1);
+      expect(result[0].parentId).toBeNull();
       // Inactive child is present (not filtered out) and carries the admin fields.
-      expect(result.data[0].children[0].isActive).toBe(false);
-      expect(result.data[0].children[0].parentId).toBe(mockCategory.id);
-      expect(result.data[0].children[0].productCount).toBe(3);
-      expect(result.data[0].children[0].depth).toBe(2);
+      expect(result[0].children[0].isActive).toBe(false);
+      expect(result[0].children[0].parentId).toBe(mockCategory.id);
+      expect(result[0].children[0].productCount).toBe(3);
+      expect(result[0].children[0].depth).toBe(2);
     });
   });
 
@@ -401,14 +406,13 @@ describe('CategoryService', () => {
 
       const result = await service.findBySlug('phone-cases');
 
-      expect(result.data).toBeInstanceOf(CategoryWithCountEntity);
-      expect(result.data.name).toBe('Phone Cases');
-      expect(result.productCount).toBe(5);
+      expect(result).toBeInstanceOf(CategoryWithCountEntity);
+      expect(result.name).toBe('Phone Cases');
       // TASK-408: both counts reach the response — a storefront category listing
       // rolls up over the whole subtree, so the direct count alone under-reports
       // every parent category.
-      expect(result.data.productCount).toBe(5);
-      expect(result.data.subtreeProductCount).toBe(19);
+      expect(result.productCount).toBe(5);
+      expect(result.subtreeProductCount).toBe(19);
       // No `activeOnly` override: the PUBLIC read leans on the repository's
       // active-only DEFAULT (TASK-297), which is what makes a withdrawn category
       // 404 here. Passing `{ activeOnly: false }` — as the uniqueness checks in
@@ -1000,7 +1004,7 @@ describe('CategoryService', () => {
 
       const result = await service.reorderTree({ groups }, 'admin-1');
 
-      expect(result).toEqual({ data: adminTree });
+      expect(result).toEqual(adminTree);
       expect(categoryRepositoryMock.applyTreeMoves).toHaveBeenCalledTimes(1);
       expect(categoryRepositoryMock.applyTreeMoves).toHaveBeenCalledWith(groups);
     });
@@ -1042,9 +1046,7 @@ describe('CategoryService', () => {
       });
       subtreeIndexerMock.reindexSubtrees.mockRejectedValue(new Error('meili down'));
 
-      await expect(service.reorderTree({ groups }, 'admin-1')).resolves.toEqual({
-        data: adminTree,
-      });
+      await expect(service.reorderTree({ groups }, 'admin-1')).resolves.toEqual(adminTree);
     });
 
     it('logs one structured line with the event, groups, movedIds and actorId', async () => {
@@ -1458,7 +1460,7 @@ describe('CategoryService', () => {
         ['cat-uuid-1', 'cat-uuid-2'],
         false,
       );
-      expect(result).toEqual({ data: tree });
+      expect(result).toEqual(tree);
       expect(cacheMock.delByPrefix).toHaveBeenCalledWith(PRODUCT_CACHE_PREFIX);
       expect(subtreeIndexerMock.reindexSubtrees).toHaveBeenCalledWith(['cat-uuid-1', 'cat-uuid-2']);
       expect(pinoLoggerMock.info).toHaveBeenCalledWith(
@@ -1542,10 +1544,10 @@ describe('CategoryService', () => {
 
       const result = await service.findAllWithProductCount(query);
 
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toBeInstanceOf(CategoryWithCountEntity);
-      expect(result.data[0].productCount).toBe(5);
-      expect(result.data[0].subtreeProductCount).toBe(8); // TASK-408
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toBeInstanceOf(CategoryWithCountEntity);
+      expect(result.items[0].productCount).toBe(5);
+      expect(result.items[0].subtreeProductCount).toBe(8); // TASK-408
       expect(result.meta.total).toBe(2);
       expect(result.meta.page).toBe(1);
       expect(result.meta.limit).toBe(20);

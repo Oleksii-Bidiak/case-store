@@ -40,6 +40,6 @@ export class BrandController {
     type: BrandListResponse,
   })
   async findAll(@Query() query: PublicBrandListQueryDto): Promise<BrandListResponse> {
-    return this.brandService.findAllActive(query.categoryId);
+    return { data: await this.brandService.findAllActive(query.categoryId) };
   }
 }

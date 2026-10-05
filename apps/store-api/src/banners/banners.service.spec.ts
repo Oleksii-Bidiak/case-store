@@ -82,8 +82,8 @@ describe('BannerService', () => {
 
       const result = await service.findAllPublished({ placement: BannerPlacement.HERO_SLIDE });
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(BannerEntity);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toBeInstanceOf(BannerEntity);
       expect(bannerRepositoryMock.findAllPublished).toHaveBeenCalledWith({
         placement: BannerPlacement.HERO_SLIDE,
       });
@@ -99,7 +99,7 @@ describe('BannerService', () => {
 
       const result = await service.findAllAdmin({ placement: undefined, status: undefined });
 
-      expect(result.data).toHaveLength(2);
+      expect(result.items).toHaveLength(2);
       expect(bannerRepositoryMock.findAllAdmin).toHaveBeenCalledWith({
         placement: undefined,
         status: undefined,
@@ -540,8 +540,8 @@ describe('BannerService', () => {
         'admin-1',
       );
 
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toBeInstanceOf(BannerEntity);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toBeInstanceOf(BannerEntity);
       // Shape parity with `findAllAdmin` — the panel writes this straight into the list cache.
       expect(result.meta).toEqual({ total: 2, page: 1, limit: 2, totalPages: 1 });
       expect(bannerRepositoryMock.reorderPlacement).toHaveBeenCalledWith(

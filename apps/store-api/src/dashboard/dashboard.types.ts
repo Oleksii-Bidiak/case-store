@@ -244,7 +244,7 @@ export const REPEAT_BUYER_WINDOW_DAYS = 90;
  * product contract and the dashboard share a single source of truth. Existing
  * dashboard imports of `LOW_STOCK_THRESHOLD` from this module keep working.
  */
-export { LOW_STOCK_THRESHOLD } from '../product/product.constants';
+export { LOW_STOCK_THRESHOLD } from '../product';
 
 /** Maximum number of low-stock positions returned. */
 export const LOW_STOCK_LIMIT = 10;

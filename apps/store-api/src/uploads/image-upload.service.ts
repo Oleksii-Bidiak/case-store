@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import {
   ImageProcessor,
-  IStorageService,
+  type IStorageService,
   STORAGE_SERVICE,
   isStorageSubdir,
   stripGifMetadata,

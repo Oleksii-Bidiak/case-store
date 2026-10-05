@@ -37,7 +37,7 @@ const prismaMock = {
   },
   // The bulk path uses the CALLBACK form of $transaction — the mock hands the
   // same client back, so a `tx.` call inside is the same spy as a `prisma.` one.
-  $transaction: jest.fn((callback: (tx: unknown) => unknown) => callback(prismaMock)),
+  $transaction: jest.fn((callback: (tx: unknown) => unknown): unknown => callback(prismaMock)),
   // The cooldown age is computed in SQL against the database clock (TASK-763).
   $queryRaw: jest.fn(),
 };

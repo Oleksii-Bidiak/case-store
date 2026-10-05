@@ -146,7 +146,8 @@ export class AdminAddonServiceController {
   async findAllAdmin(
     @Query() query: AddonServiceListQueryDto,
   ): Promise<AdminAddonServiceListResponse> {
-    return this.addonServiceService.findAllAdmin(query);
+    const page = await this.addonServiceService.findAllAdmin(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get('admin/active')
@@ -158,7 +159,7 @@ export class AdminAddonServiceController {
   @ApiResponse({ status: 200, description: 'Active services', type: AddonServiceListResponse })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAllActive(): Promise<AddonServiceListResponse> {
-    return this.addonServiceService.findAllActive();
+    return { data: await this.addonServiceService.findAllActive() };
   }
 
   /**

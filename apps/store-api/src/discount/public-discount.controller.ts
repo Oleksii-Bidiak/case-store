@@ -55,6 +55,6 @@ export class PublicDiscountController {
     type: PublicActiveDiscountsResponseEnvelope,
   })
   async listActive(): Promise<{ data: PublicDiscountEntity[] }> {
-    return this.discountService.findActivePublic();
+    return { data: await this.discountService.findActivePublic() };
   }
 }

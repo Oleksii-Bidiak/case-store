@@ -79,6 +79,7 @@ describe('LiqPay success callback after TTL auto-cancel (e2e, TASK-619)', () => 
       provider: 'liqpay',
       providerPaymentId: null,
       amount: new Prisma.Decimal(CHARGED),
+      refundedAmount: new Prisma.Decimal(0),
       currency: 'UAH',
       status: attemptStatus,
       failureCode: null,

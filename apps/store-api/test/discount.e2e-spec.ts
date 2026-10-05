@@ -9,7 +9,7 @@ import request from 'supertest';
 import { AppModule } from '../src/app.module';
 import { AuthRepository } from '../src/auth/auth.repository';
 import { UserRepository } from '../src/user/user.repository';
-import { DiscountRepository } from '../src/discount';
+import { DiscountRepository } from '../src/discount/discount.repository';
 import { CartService } from '../src/cart';
 import { PrismaService } from '../src/prisma';
 import { PermissionRepository } from '../src/auth/permissions';

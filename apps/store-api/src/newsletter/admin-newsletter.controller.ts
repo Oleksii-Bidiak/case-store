@@ -66,7 +66,8 @@ export class AdminNewsletterController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: NewsletterListQueryDto): Promise<SubscriptionListResponse> {
-    return this.newsletterService.findAll(query);
+    const page = await this.newsletterService.findAll(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get('export')

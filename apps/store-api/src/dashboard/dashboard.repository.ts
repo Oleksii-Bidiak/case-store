@@ -7,13 +7,16 @@ import {
   Prisma,
   ReviewTextStatus,
 } from '@prisma/client';
-import { roundMoney } from '../analytics/reports/entities/report-common.entity';
-import { ProductsReportRepository } from '../analytics/reports/products-report.repository';
-import { lastKyivDays, type ReportRange } from '../analytics/reports/report-period';
-import { SalesRepository } from '../analytics/reports/sales.repository';
-import { kyivDaySql } from '../common/time/kyiv-day';
+import {
+  ProductsReportRepository,
+  SalesRepository,
+  lastKyivDays,
+  roundMoney,
+  type ReportRange,
+} from '../analytics';
+import { kyivDaySql } from '../common/time';
 import { PrismaService } from '../prisma';
-import { moderationQueueWhere } from '../review/review.constants';
+import { moderationQueueWhere } from '../review';
 import {
   DASHBOARD_WINDOW_DAYS,
   LOW_STOCK_LIMIT,

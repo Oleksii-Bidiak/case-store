@@ -26,7 +26,7 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
-// Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module
+// The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls the auth module
 // in and the resulting require cycle leaves `CurrentUser` undefined at
 // decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
@@ -162,8 +162,9 @@ export class MediaController {
   })
   @ApiResponse({ status: 401, description: 'Unauthenticated' })
   @ApiResponse({ status: 403, description: 'Forbidden — media:read required' })
-  findAll(@Query() query: MediaListQueryDto): Promise<MediaListResponseEnvelope> {
-    return this.media.findAll(query);
+  async findAll(@Query() query: MediaListQueryDto): Promise<MediaListResponseEnvelope> {
+    const page = await this.media.findAll(query);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get(':id')

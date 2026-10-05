@@ -1,7 +1,12 @@
 import { PublishStatus } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import { BlogRepository } from '../blog/blog.repository';
-import { MeiliClient, BLOG_POSTS_INDEX, SEARCH_MAX_TOTAL_HITS } from './meili.client';
+import {
+  MeiliClient,
+  BLOG_POSTS_INDEX,
+  SEARCH_MAX_TOTAL_HITS,
+  type BlogPostSearchDocument,
+} from './meili.client';
 import { BlogSearchService, BLOG_POSTS_INDEX_SETTINGS } from './blog-search.service';
 import { PRODUCTS_INDEX_SETTINGS } from './search.service';
 
@@ -55,6 +60,8 @@ describe('BlogSearchService', () => {
     >
   >;
   let repo: jest.Mocked<Pick<BlogRepository, 'findById' | 'findAllAdmin'>>;
+  /** The first post document handed to `indexDocuments`. */
+  const firstIndexedPost = () => meili.indexDocuments.mock.calls[0][0][0] as BlogPostSearchDocument;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -135,11 +142,11 @@ describe('BlogSearchService', () => {
         ],
         BLOG_POSTS_INDEX,
       );
-      const [[docs]] = meili.indexDocuments.mock.calls;
-      expect(Array.isArray((docs[0] as { searchTerms: string[] }).searchTerms)).toBe(true);
+      const doc = firstIndexedPost();
+      expect(Array.isArray(doc.searchTerms)).toBe(true);
       // The sanitized HTML body is deliberately NOT indexed — it would put tag
       // names and attribute values into the searchable text.
-      expect(docs[0]).not.toHaveProperty('content');
+      expect(doc).not.toHaveProperty('content');
     });
 
     it('indexes an unlisted post with listed=false, so the engine can filter it (TASK-537)', async () => {
@@ -149,8 +156,8 @@ describe('BlogSearchService', () => {
 
       await service.indexPost('post-1');
 
-      const [[docs]] = meili.indexDocuments.mock.calls;
-      expect((docs[0] as { listed: boolean }).listed).toBe(false);
+      const doc = firstIndexedPost();
+      expect(doc.listed).toBe(false);
     });
 
     it('carries the admin keywords and their cross-script terms (TASK-558)', async () => {
@@ -160,8 +167,7 @@ describe('BlogSearchService', () => {
 
       await service.indexPost('post-1');
 
-      const [[docs]] = meili.indexDocuments.mock.calls;
-      const doc = docs[0] as { keywords: string[]; searchTerms: string[] };
+      const doc = firstIndexedPost();
       expect(doc.keywords).toEqual(['MagSafe', 'подарунок']);
       expect(doc.searchTerms).toContain('магсейф');
     });
@@ -174,8 +180,8 @@ describe('BlogSearchService', () => {
 
       await service.reindexAll();
 
-      const [[docs]] = meili.indexDocuments.mock.calls;
-      expect((docs[0] as { keywords: string[] }).keywords).toEqual(['подарунок']);
+      const doc = firstIndexedPost();
+      expect(doc.keywords).toEqual(['подарунок']);
     });
 
     it('DELETES the document when the post is a draft (unpublish removes it from search)', async () => {

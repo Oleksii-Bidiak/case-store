@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { ProductGroupAxisEntity, ProductSiblingEntity } from '../../product/entities';
+import { ProductGroupAxisEntity, ProductSiblingEntity } from '../../product';
 
 /**
  * A product group as shown in the admin list: identity, axes, and how many

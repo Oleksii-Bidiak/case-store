@@ -72,7 +72,7 @@ describe('Discount promo-page publishing (integration — real Postgres)', () =>
   });
 
   it('lists only the published code in the public feed', async () => {
-    const codes = (await service.findActivePublic()).data.map((d) => d.code);
+    const codes = (await service.findActivePublic()).map((d) => d.code);
 
     expect(codes).toContain(publishedCode);
     expect(codes).not.toContain(hiddenCode);
@@ -82,6 +82,9 @@ describe('Discount promo-page publishing (integration — real Postgres)', () =>
     const { discount, amount } = await service.computeDiscount(hiddenCode, '200.00', 'any-user');
 
     expect(discount.code).toBe(hiddenCode);
+    // TASK-827: the applied discount leaves the module as id/code/type only —
+    // not the Prisma row with its caps, counters and promo-page flag.
+    expect(Object.keys(discount).sort()).toEqual(['code', 'id', 'type']);
     expect(new Prisma.Decimal(amount).toFixed(2)).toBe('20.00');
   });
 
@@ -89,7 +92,7 @@ describe('Discount promo-page publishing (integration — real Postgres)', () =>
     const hidden = await prisma.discount.findUniqueOrThrow({ where: { code: hiddenCode } });
     await service.update(hidden.id, { showOnPromoPage: true });
 
-    const codes = (await service.findActivePublic()).data.map((d) => d.code);
+    const codes = (await service.findActivePublic()).map((d) => d.code);
     expect(codes).toContain(hiddenCode);
   });
 });

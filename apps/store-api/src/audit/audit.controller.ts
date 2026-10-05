@@ -10,8 +10,7 @@ import {
 import { AuditService } from './audit.service';
 import { AuditLogQueryDto } from './dto';
 import { AuditLogEntity } from './entities';
-import { PermissionGuard } from '../auth/permissions/permission.guard';
-import { RequirePermission } from '../auth/permissions/require-permission.decorator';
+import { PermissionGuard, RequirePermission } from '../auth/permissions';
 
 class AuditLogPaginationMeta {
   @ApiProperty({ example: 240 }) total!: number;
@@ -69,7 +68,7 @@ export class AuditController {
     data: AuditLogEntity[];
     meta: AuditLogPaginationMeta;
   }> {
-    return this.auditService.findMany({
+    const page = await this.auditService.findMany({
       page: query.page ?? 1,
       limit: query.limit ?? 50,
       actorId: query.actorId,
@@ -82,5 +81,6 @@ export class AuditController {
       sortBy: query.sortBy,
       sortOrder: query.sortOrder,
     });
+    return { data: page.items, meta: page.meta };
   }
 }

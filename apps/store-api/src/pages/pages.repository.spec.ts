@@ -289,6 +289,7 @@ describe('PageRepository', () => {
 
       await repository.create({
         slug: 'returns',
+        kind: PageKind.LEGAL,
         title: 'Returns',
         content: '<p>x</p>',
         status: PublishStatus.DRAFT,
@@ -310,6 +311,7 @@ describe('PageRepository', () => {
 
       await repository.create({
         slug: 'terms',
+        kind: PageKind.LEGAL,
         title: 'Terms',
         content: '<p>x</p>',
         status: PublishStatus.DRAFT,

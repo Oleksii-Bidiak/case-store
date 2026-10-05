@@ -18,6 +18,7 @@ const repositoryMock = {
   countUserRedemptions: jest.fn(),
   tryIncrementRedeemed: jest.fn(),
   createRedemption: jest.fn(),
+  findRedemptionsByUser: jest.fn(),
 };
 
 const cartServiceMock = {
@@ -82,7 +83,11 @@ describe('DiscountService.computeDiscount', () => {
     const result = await service.computeDiscount('SUMMER10', '200.00', 'u1');
 
     expect(result.amount).toBe('20.00');
-    expect(result.discount.code).toBe('SUMMER10');
+    // TASK-827: the applied discount leaves the module as id/code/type — not
+    // the Prisma row with its caps and counters (`toEqual` would also pass on
+    // a superset, so the keys are pinned too).
+    expect(result.discount).toEqual({ id: 'd1', code: 'SUMMER10', type: DiscountType.PERCENT });
+    expect(Object.keys(result.discount).sort()).toEqual(['code', 'id', 'type']);
   });
 
   it('computes a fixed discount as a UAH amount', async () => {
@@ -232,6 +237,34 @@ describe('DiscountService.computeDiscount', () => {
   });
 });
 
+describe('DiscountService.listUserRedemptions (TASK-827)', () => {
+  let service: DiscountService;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new DiscountService(repositoryMock as never, cartServiceMock as never);
+  });
+
+  it("returns the repository's flattened rows for the user, passing the cap through", async () => {
+    const rows = [
+      {
+        id: 'redemption-1',
+        code: 'SUMMER20',
+        type: DiscountType.PERCENT,
+        value: new Prisma.Decimal('20.00'),
+        orderId: 'order-1',
+        redeemedAt: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    ];
+    repositoryMock.findRedemptionsByUser.mockResolvedValue(rows);
+
+    const result = await service.listUserRedemptions('user-1', 20);
+
+    expect(repositoryMock.findRedemptionsByUser).toHaveBeenCalledWith('user-1', 20);
+    expect(result).toBe(rows);
+  });
+});
+
 describe('DiscountService.findActivePublic (TASK-179)', () => {
   let service: DiscountService;
 
@@ -251,8 +284,8 @@ describe('DiscountService.findActivePublic (TASK-179)', () => {
 
     const result = await service.findActivePublic();
 
-    expect(result.data).toHaveLength(1);
-    const entity = result.data[0];
+    expect(result).toHaveLength(1);
+    const entity = result[0];
     expect(entity).toEqual({
       code: 'SUMMER10',
       type: DiscountType.PERCENT,
@@ -280,7 +313,7 @@ describe('DiscountService.findActivePublic (TASK-179)', () => {
 
     const result = await service.findActivePublic();
 
-    expect(result.data.map((d) => d.code)).toEqual(['ALWAYS']);
+    expect(result.map((d) => d.code)).toEqual(['ALWAYS']);
   });
 
   it('excludes a discount whose global cap is exhausted', async () => {
@@ -291,7 +324,7 @@ describe('DiscountService.findActivePublic (TASK-179)', () => {
 
     const result = await service.findActivePublic();
 
-    expect(result.data.map((d) => d.code)).toEqual(['LIVE']);
+    expect(result.map((d) => d.code)).toEqual(['LIVE']);
   });
 
   it('queries the repository with the current time', async () => {

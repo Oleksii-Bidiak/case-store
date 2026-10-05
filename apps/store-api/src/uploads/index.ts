@@ -1,5 +1,4 @@
 export { UploadsModule } from './uploads.module';
-export { UploadsController } from './uploads.controller';
 export { ImageUploadService, type StoredImage } from './image-upload.service';
 export { imageMulterOptions } from './image-multer.options';
 export {

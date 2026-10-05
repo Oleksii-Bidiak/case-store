@@ -6,11 +6,7 @@ import type { Request } from 'express';
 import { AuditService } from './audit.service';
 import { bodyToDiff } from './audit.sanitize';
 import { RECORDS_OWN_AUDIT_KEY } from './records-own-audit.decorator';
-import {
-  OWNER_ONLY_KEY,
-  REQUIRE_PERMISSION_KEY,
-} from '../auth/permissions/require-permission.decorator';
-import type { PermissionActor } from '../auth/permissions/permission.repository';
+import { OWNER_ONLY_KEY, REQUIRE_PERMISSION_KEY, type PermissionActor } from '../auth/permissions';
 
 /** HTTP verbs that change something. A GET is a read, and logging every admin
  *  read would bury the writes nobody can otherwise explain. */

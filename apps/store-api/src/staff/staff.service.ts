@@ -7,10 +7,9 @@ import {
 } from '@nestjs/common';
 import { ReviewHiddenReason, User, UserRole } from '@prisma/client';
 import { StaffRepository, type StaffAccount } from './staff.repository';
-import { UserRepository } from '../user/user.repository';
-import { AuthRepository } from '../auth/auth.repository';
-import { AuthService } from '../auth/auth.service';
-import { ReviewService } from '../review/review.service';
+import { UserRepository } from '../user';
+import { AuthRepository, AuthService } from '../auth';
+import { ReviewService } from '../review';
 import { StaffPermissionsEntity, StaffUserEntity } from './entities';
 import { CreateStaffDto, StaffListQueryDto } from './dto';
 import { hashPassword } from '../common/security';
@@ -24,18 +23,7 @@ import {
   levelOfRole,
   type PermissionActor,
 } from '../auth/permissions';
-
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-export interface PaginatedStaffResponse {
-  data: StaffUserEntity[];
-  meta: PaginationMeta;
-}
+import type { Paginated } from '../common/pagination';
 
 /**
  * What {@link StaffService.setPermissions} hands back.
@@ -130,7 +118,7 @@ export class StaffService {
   ) {}
 
   /** One page of staff accounts. */
-  async findAll(query: StaffListQueryDto): Promise<PaginatedStaffResponse> {
+  async findAll(query: StaffListQueryDto): Promise<Paginated<StaffUserEntity>> {
     const page = query.page ?? 1;
     const limit = query.limit ?? 20;
 
@@ -145,7 +133,7 @@ export class StaffService {
     });
 
     return {
-      data: staff.map((account) => toEntity(account)),
+      items: staff.map((account) => toEntity(account)),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

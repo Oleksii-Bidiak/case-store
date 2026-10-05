@@ -262,7 +262,10 @@ describe('Shop ping on a confirmed online payment (e2e, TASK-678)', () => {
         stagedRows = [];
         try {
           const result = await fn(tx);
-          if (stagedOrder) order = { ...order, ...stagedOrder };
+          // `fn` stages through the tx mock, which control-flow analysis cannot see —
+          // it still narrows `stagedOrder` to the `null` assigned above.
+          const staged = stagedOrder as Partial<OrderState> | null;
+          if (staged) order = { ...order, ...staged };
           committedRows.push(...stagedRows);
           return result;
         } finally {

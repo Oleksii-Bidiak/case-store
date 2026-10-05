@@ -9,7 +9,7 @@ import {
   type NotificationChannelAdapter,
 } from './channels/notification-channel-adapter';
 import { NotificationModule } from '../notification/notification.module';
-import { TelegramAdapter } from '../notification/telegram/telegram.adapter';
+import { TelegramAdapter } from '../notification';
 
 /**
  * NotificationOutboxModule — transactional-outbox infrastructure (TASK-103,

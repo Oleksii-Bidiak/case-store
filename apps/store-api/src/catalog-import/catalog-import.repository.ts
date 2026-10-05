@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AttributeType, CatalogImportRun, CatalogImportStatus, Prisma } from '@prisma/client';
-import { PrismaService } from '../prisma/prisma.service';
+import { PrismaService } from '../prisma';
 import { COLOR_SPEC_KEY, COLOR_SPEC_LABEL } from '../common/color-axis';
 import type { CurrentProductSnapshot, ImportedFingerprint, LedgerEntry } from './catalog-plan';
 

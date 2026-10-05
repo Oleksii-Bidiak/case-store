@@ -891,6 +891,37 @@ describe('CartService', () => {
     });
   });
 
+  // ─── loadForCheckout (TASK-827) ──────────────────────────────────────────────
+
+  describe('loadForCheckout', () => {
+    it("returns a signed-in buyer's raw cart rows, looked up by account id", async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(mockCartWithMultipleItems);
+
+      const result = await service.loadForCheckout(userIdentity);
+
+      expect(result).toBe(mockCartWithMultipleItems);
+      expect(cartRepositoryMock.findByUserId).toHaveBeenCalledWith('user-uuid-1');
+      expect(cartRepositoryMock.findByToken).not.toHaveBeenCalled();
+    });
+
+    it("returns a guest's cart by its cookie token, never by a user id", async () => {
+      cartRepositoryMock.findByToken.mockResolvedValue(mockGuestCart);
+
+      const result = await service.loadForCheckout({ type: 'token', token: 'guest-token-1' });
+
+      expect(result).toBe(mockGuestCart);
+      expect(cartRepositoryMock.findByToken).toHaveBeenCalledWith('guest-token-1');
+      expect(cartRepositoryMock.findByUserId).not.toHaveBeenCalled();
+    });
+
+    it('returns null without creating a cart when the identity has none', async () => {
+      cartRepositoryMock.findByUserId.mockResolvedValue(null);
+
+      await expect(service.loadForCheckout(userIdentity)).resolves.toBeNull();
+      expect(cartRepositoryMock.findOrCreate).not.toHaveBeenCalled();
+    });
+  });
+
   // ─── mergeGuestCart ──────────────────────────────────────────────────────────
 
   describe('mergeGuestCart', () => {

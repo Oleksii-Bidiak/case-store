@@ -4,7 +4,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { NotificationAudience, NotificationChannel } from '@prisma/client';
 import { CronJob } from 'cron';
 import { PinoLogger } from 'nestjs-pino';
-import { schedulingEnabled, stopCronJob } from '../../common/scheduling/scheduling.util';
+import { schedulingEnabled, stopCronJob } from '../../common/scheduling';
 import { hashBindingToken, NotificationBindingService } from '../notification-binding.service';
 import { TelegramClient, type TelegramUpdate } from './telegram.client';
 import { TelegramChannelState } from './telegram-channel.state';

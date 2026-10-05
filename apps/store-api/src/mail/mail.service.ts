@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PinoLogger } from 'nestjs-pino';
 import { createTransport, type Transporter } from 'nodemailer';
-import type { OrderEntity } from '../order/entities';
+import type { OrderEntity } from '../order';
 import {
   buildOrderConfirmationEmail,
   type OrderConfirmationParams,

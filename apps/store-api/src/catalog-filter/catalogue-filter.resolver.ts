@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: brand barrel > brand.module > category.module > search.module > catalog-filter barrel > this file
 import { BrandRepository } from '../brand/brand.repository';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: category barrel > category.module > search.module > catalog-filter barrel > this file
 import { CategoryRepository } from '../category/category.repository';
-import { DeviceRepository } from '../device/device.repository';
+import { DeviceRepository } from '../device';
 
 /**
  * The id a filter resolves to when the requested slug (or legacy uuid) names

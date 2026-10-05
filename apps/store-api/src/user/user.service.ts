@@ -6,9 +6,9 @@ import {
 } from '@nestjs/common';
 import { ReviewHiddenReason } from '@prisma/client';
 import { UserRepository, UpdateUserInput, FindAllParams } from './user.repository';
-import { AuthRepository } from '../auth/auth.repository';
-import { EmailChangeService } from '../auth/email-change.service';
-import { ReviewService } from '../review/review.service';
+import { AuthRepository, EmailChangeService } from '../auth';
+import { ReviewService } from '../review';
+import { DiscountService } from '../discount';
 import { UserEntity, UserAdminCardEntity } from './entities';
 import { UpdateProfileDto, UserListQueryDto } from './dto';
 import { assertMayManage, type PermissionActor } from '../auth/permissions';
@@ -18,24 +18,7 @@ import {
   CUSTOMER_CARD_COUPONS_LIMIT,
   CUSTOMER_CARD_MESSAGES_LIMIT,
 } from './user-admin-card.types';
-
-/**
- * Pagination metadata returned alongside paginated results.
- */
-interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Paginated response envelope for user lists.
- */
-interface PaginatedUsersResponse {
-  data: UserEntity[];
-  meta: PaginationMeta;
-}
+import type { Paginated } from '../common/pagination';
 
 @Injectable()
 export class UserService {
@@ -45,6 +28,9 @@ export class UserService {
     private readonly reviewService: ReviewService,
     // TASK-396: the operator's half of changing a customer's sign-in address.
     private readonly emailChangeService: EmailChangeService,
+    // TASK-827: the customer card's redeemed coupons are the discount module's
+    // read, not a query on its tables from here.
+    private readonly discountService: DiscountService,
   ) {}
 
   /**
@@ -122,7 +108,7 @@ export class UserService {
    * Supports filtering by role, active status, and text search.
    * Returns a paginated response with metadata.
    */
-  async findAll(query: UserListQueryDto): Promise<PaginatedUsersResponse> {
+  async findAll(query: UserListQueryDto): Promise<Paginated<UserEntity>> {
     const params: FindAllParams = {
       page: query.page ?? 1,
       limit: query.limit ?? 20,
@@ -138,7 +124,7 @@ export class UserService {
     const totalPages = Math.ceil(total / params.limit);
 
     return {
-      data: users.map((user) => UserEntity.fromPrisma(user)),
+      items: users.map((user) => UserEntity.fromPrisma(user)),
       meta: {
         total,
         page: params.page,
@@ -192,7 +178,7 @@ export class UserService {
         this.userRepository.getOrderCount(id),
         this.userRepository.getRecentOrders(id, CUSTOMER_CARD_RECENT_ORDERS_LIMIT),
         this.userRepository.getReviewsByUserId(id, CUSTOMER_CARD_REVIEWS_LIMIT),
-        this.userRepository.getRedeemedCoupons(id, CUSTOMER_CARD_COUPONS_LIMIT),
+        this.discountService.listUserRedemptions(id, CUSTOMER_CARD_COUPONS_LIMIT),
         this.userRepository.getContactMessagesByEmail(user.email, CUSTOMER_CARD_MESSAGES_LIMIT),
       ]);
 

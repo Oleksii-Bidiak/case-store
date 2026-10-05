@@ -99,7 +99,7 @@ describe('ReturnService.resolveReturn — refund ceilings (integration)', () => 
       data: {
         userId,
         status: OrderStatus.DELIVERED,
-        paymentStatus: PaymentStatus.SUCCEEDED,
+        paymentStatus: PaymentStatus.PAID,
         subtotal: 200,
         discount: 50,
         total: 150,

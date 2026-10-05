@@ -1,3 +1,4 @@
+import { UserRole } from '@prisma/client';
 import { UserRepository } from './user.repository';
 import { PrismaService } from '../prisma';
 
@@ -16,9 +17,6 @@ const prismaMock = {
     findMany: jest.fn(),
   },
   review: {
-    findMany: jest.fn(),
-  },
-  discountRedemption: {
     findMany: jest.fn(),
   },
   contactMessage: {
@@ -142,7 +140,7 @@ describe('UserRepository (soft-delete behaviour)', () => {
       prismaMock.user.findMany.mockResolvedValue([]);
       prismaMock.user.count.mockResolvedValue(0);
 
-      await repository.findAll({ page: 1, limit: 20, role: 'ADMIN' as UserRole, search: 'olena' });
+      await repository.findAll({ page: 1, limit: 20, role: UserRole.ADMIN, search: 'olena' });
 
       const { AND } = prismaMock.user.findMany.mock.calls[0][0].where;
       // First clause, and not replaceable: asking for ADMIN ANDs a contradiction
@@ -411,38 +409,6 @@ describe('UserRepository (soft-delete behaviour)', () => {
 
       expect(rows[0].textStatus).toBe('REJECTED');
       expect(rows[0]).not.toHaveProperty('isActive');
-    });
-  });
-
-  describe('getRedeemedCoupons', () => {
-    it('joins discount code/type/value and flattens to AdminCardCouponRow', async () => {
-      prismaMock.discountRedemption.findMany.mockResolvedValue([
-        {
-          id: 'redemption-1',
-          orderId: 'order-1',
-          createdAt: new Date('2026-01-01T00:00:00.000Z'),
-          discount: { code: 'SUMMER20', type: 'PERCENT', value: 20 },
-        },
-      ]);
-
-      const rows = await repository.getRedeemedCoupons('user-1', 20);
-
-      expect(prismaMock.discountRedemption.findMany).toHaveBeenCalledWith({
-        where: { userId: 'user-1' },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-        include: { discount: { select: { code: true, type: true, value: true } } },
-      });
-      expect(rows).toEqual([
-        {
-          id: 'redemption-1',
-          code: 'SUMMER20',
-          type: 'PERCENT',
-          value: 20,
-          orderId: 'order-1',
-          redeemedAt: new Date('2026-01-01T00:00:00.000Z'),
-        },
-      ]);
     });
   });
 

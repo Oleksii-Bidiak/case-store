@@ -98,20 +98,29 @@ const productRepositoryMock = {
 // the very thing under test. Both echo the requested key back as a resolved row,
 // so an id filter passes through unchanged and the pre-TASK-420 expectations
 // hold; tests override them with `null` to exercise the unresolved path.
+type SlugRow = { id: string; slug: string };
+type NamedSlugRow = SlugRow & { name: string };
+
 const categoryRepositoryMock = {
   findSubtreeIds: jest.fn((id: string) => Promise.resolve([id])),
-  findById: jest.fn((id: string) => Promise.resolve({ id, slug: `slug-of-${id}` })),
-  findBySlug: jest.fn((slug: string) => Promise.resolve({ id: `id-of-${slug}`, slug })),
+  findById: jest.fn((id: string): Promise<SlugRow | null> =>
+    Promise.resolve({ id, slug: `slug-of-${id}` }),
+  ),
+  findBySlug: jest.fn((slug: string): Promise<SlugRow | null> =>
+    Promise.resolve({ id: `id-of-${slug}`, slug }),
+  ),
 };
 
 // ─── BrandRepository mock (TASK-189 brand validation on create/update) ────────
 // `findById` resolves to a stub brand by default so create/update pass the
 // existence check; tests override it to null to simulate an unknown brand.
 const brandRepositoryMock = {
-  findById: jest.fn((id: string) => Promise.resolve({ id, name: 'Spigen', slug: `slug-of-${id}` })),
+  findById: jest.fn((id: string): Promise<NamedSlugRow | null> =>
+    Promise.resolve({ id, name: 'Spigen', slug: `slug-of-${id}` }),
+  ),
   // Backs the real CatalogueFilterResolver (TASK-420), same echo convention as
   // the category mock above.
-  findBySlug: jest.fn((slug: string) =>
+  findBySlug: jest.fn((slug: string): Promise<NamedSlugRow | null> =>
     Promise.resolve({ id: `id-of-${slug}`, name: 'Spigen', slug }),
   ),
 };
@@ -278,8 +287,8 @@ describe('ProductService', () => {
 
       const result = await service.findAll(query);
 
-      expect(result.data).toHaveLength(1);
-      expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toBeInstanceOf(PublicProductEntity);
       expect(result.meta.total).toBe(1);
       expect(result.meta.page).toBe(1);
       expect(result.meta.limit).toBe(20);
@@ -456,7 +465,7 @@ describe('ProductService', () => {
           categoryIds: [UNRESOLVED_FILTER_ID],
         }),
       );
-      expect(result.data).toEqual([]);
+      expect(result.items).toEqual([]);
     });
 
     it('lets the slug win when a request carries both spellings of one axis', async () => {
@@ -536,7 +545,7 @@ describe('ProductService', () => {
       expect(productRepositoryMock.findAll).toHaveBeenCalledWith(
         expect.objectContaining({ isActive: undefined }),
       );
-      expect(result.data).toHaveLength(1);
+      expect(result.items).toHaveLength(1);
       expect(result.meta.total).toBe(1);
       // No cache interaction: the admin table must always be fresh.
       expect(cacheServiceMock.get).not.toHaveBeenCalled();
@@ -610,11 +619,11 @@ describe('ProductService', () => {
 
       const result = await service.adminFindAll({ page: 1, limit: 20 });
 
-      expect(result.data[0]).toBeInstanceOf(ProductEntity);
-      expect(result.data[0]).not.toBeInstanceOf(PublicProductEntity);
-      expect(result.data[0].stock).toBe(150);
-      expect(result.data[0].reservedQty).toBe(4);
-      expect(result.data[0].physicalQty).toBe(154); // stock + reserved
+      expect(result.items[0]).toBeInstanceOf(ProductEntity);
+      expect(result.items[0]).not.toBeInstanceOf(PublicProductEntity);
+      expect(result.items[0].stock).toBe(150);
+      expect(result.items[0].reservedQty).toBe(4);
+      expect(result.items[0].physicalQty).toBe(154); // stock + reserved
       // The aggregate is fetched once for the whole page of ids.
       expect(productRepositoryMock.getReservedQtyByProductId).toHaveBeenCalledWith([
         'product-uuid-1',
@@ -627,8 +636,8 @@ describe('ProductService', () => {
 
       const result = await service.adminFindAll({ page: 1, limit: 20 });
 
-      expect(result.data[0].reservedQty).toBe(0);
-      expect(result.data[0].physicalQty).toBe(150);
+      expect(result.items[0].reservedQty).toBe(0);
+      expect(result.items[0].physicalQty).toBe(150);
     });
   });
 
@@ -644,9 +653,9 @@ describe('ProductService', () => {
 
       const result = await service.getCardsByIds(['card-uuid-b', 'card-uuid-a']);
 
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toBeInstanceOf(PublicProductEntity);
-      expect(result.data.map((p) => p.id)).toEqual(['card-uuid-b', 'card-uuid-a']);
+      expect(result).toHaveLength(2);
+      expect(result[0]).toBeInstanceOf(PublicProductEntity);
+      expect(result.map((p) => p.id)).toEqual(['card-uuid-b', 'card-uuid-a']);
     });
 
     it('silently drops unknown / inactive ids so a stale client history self-heals', async () => {
@@ -654,7 +663,7 @@ describe('ProductService', () => {
 
       const result = await service.getCardsByIds(['missing-uuid', 'card-uuid-a']);
 
-      expect(result.data.map((p) => p.id)).toEqual(['card-uuid-a']);
+      expect(result.map((p) => p.id)).toEqual(['card-uuid-a']);
     });
 
     it('collapses duplicate ids to the first occurrence before hitting the repository', async () => {
@@ -663,7 +672,7 @@ describe('ProductService', () => {
       const result = await service.getCardsByIds(['card-uuid-a', 'card-uuid-a']);
 
       expect(productRepositoryMock.findByIdsForCards).toHaveBeenCalledWith(['card-uuid-a']);
-      expect(result.data).toHaveLength(1);
+      expect(result).toHaveLength(1);
     });
 
     it('returns an empty list when nothing matches, without touching the cache', async () => {
@@ -671,7 +680,7 @@ describe('ProductService', () => {
 
       const result = await service.getCardsByIds(['card-uuid-a']);
 
-      expect(result.data).toEqual([]);
+      expect(result).toEqual([]);
       expect(cacheServiceMock.get).not.toHaveBeenCalled();
       expect(cacheServiceMock.set).not.toHaveBeenCalled();
     });
@@ -691,9 +700,9 @@ describe('ProductService', () => {
 
       const result = await service.findBySlug('iphone-15-pro-case-clear-magsafe');
 
-      expect(result).toHaveProperty('data');
-      expect(result.data).toBeInstanceOf(PublicProductEntity);
-      expect(result.data.slug).toBe('iphone-15-pro-case-clear-magsafe');
+      expect(result).toHaveProperty('product');
+      expect(result.product).toBeInstanceOf(PublicProductEntity);
+      expect(result.product.slug).toBe('iphone-15-pro-case-clear-magsafe');
       expect(result).toHaveProperty('category');
       expect(result).toHaveProperty('group');
       expect(result).toHaveProperty('images');
@@ -790,10 +799,10 @@ describe('ProductService', () => {
 
       const result = await service.findBySlugForAdminPreview('discontinued-case');
 
-      expect(result).toHaveProperty('data');
-      expect(result.data).toBeInstanceOf(ProductEntity);
-      expect(result.data.isActive).toBe(false);
-      expect(result.data.slug).toBe('discontinued-case');
+      expect(result).toHaveProperty('product');
+      expect(result.product).toBeInstanceOf(ProductEntity);
+      expect(result.product.isActive).toBe(false);
+      expect(result.product.slug).toBe('discontinued-case');
       expect(result).toHaveProperty('category');
       expect(result).toHaveProperty('group');
       expect(result).toHaveProperty('images');
@@ -808,8 +817,8 @@ describe('ProductService', () => {
 
       const result = await service.findBySlugForAdminPreview('discontinued-case');
 
-      expect(result.data.reservedQty).toBe(7);
-      expect(result.data.physicalQty).toBe(157); // 150 + 7
+      expect(result.product.reservedQty).toBe(7);
+      expect(result.product.physicalQty).toBe(157); // 150 + 7
       expect(productRepositoryMock.getReservedQtyByProductId).toHaveBeenCalledWith([
         'product-uuid-2',
       ]);
@@ -1596,7 +1605,7 @@ describe('ProductService', () => {
     const query: ProductListQueryDto = { page: 1, limit: 20 };
 
     it('returns the cached value on HIT without querying the repository', async () => {
-      const cachedResponse = { data: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } };
+      const cachedResponse = { items: [], meta: { total: 0, page: 1, limit: 20, totalPages: 0 } };
       cacheServiceMock.get.mockResolvedValue(cachedResponse);
 
       const result = await service.findAll(query);
@@ -1790,7 +1799,7 @@ describe('ProductService', () => {
     };
 
     it('returns the cached value on HIT without querying the repository', async () => {
-      const cached = { data: {}, category: {}, group: null, images: [] };
+      const cached = { product: {}, category: {}, group: null, images: [] };
       cacheServiceMock.get.mockResolvedValue(cached);
 
       const result = await service.findBySlug(slug);

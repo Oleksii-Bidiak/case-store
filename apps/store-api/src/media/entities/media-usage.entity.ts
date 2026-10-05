@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { MEDIA_USAGE_KINDS, MediaUsage, MediaUsageKind } from '../media-usage.types';
+import { MEDIA_USAGE_KINDS, type MediaUsage, type MediaUsageKind } from '../media-usage.types';
 
 /** One place a media asset is currently referenced from. */
 export class MediaUsageEntity {

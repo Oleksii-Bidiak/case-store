@@ -288,8 +288,8 @@ describe('CartRepository (integration)', () => {
         userCartId: userCart.id,
         guestCartId: guest.id,
         lines: [
-          { productId: product2Id, quantity: 2 }, // valid line
-          { productId: MISSING_PRODUCT_ID, quantity: 1 }, // FK violation
+          { productId: product2Id, quantity: 2, addonServiceIds: [] }, // valid line
+          { productId: MISSING_PRODUCT_ID, quantity: 1, addonServiceIds: [] }, // FK violation
         ],
       }),
     ).rejects.toThrow();

@@ -9,21 +9,23 @@ import { AuthRepository } from '../auth/auth.repository';
 
 import { ReviewService } from '../review/review.service';
 import { EmailChangeService } from '../auth/email-change.service';
+import { DiscountService } from '../discount';
+import { buildUser } from '../../test/user.fixture';
 
 // ─── Mock data ────────────────────────────────────────────────────────────────
 
-const mockUser = {
+const mockUser = buildUser({
   id: 'user-uuid-1',
   email: 'test@example.com',
   passwordHash: '$argon2id$v=19$m=65536,t=3,p=4$hash',
   firstName: 'John',
   lastName: 'Doe',
   phone: '+380991234567',
-  role: 'CUSTOMER' as UserRole,
+  role: 'CUSTOMER',
   isActive: true,
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   updatedAt: new Date('2026-01-01T00:00:00.000Z'),
-};
+});
 
 const mockAdminUser = {
   ...mockUser,
@@ -58,7 +60,6 @@ const userRepositoryMock = {
   getOrderCount: jest.fn(),
   getRecentOrders: jest.fn(),
   getReviewsByUserId: jest.fn(),
-  getRedeemedCoupons: jest.fn(),
   getContactMessagesByEmail: jest.fn(),
 };
 
@@ -81,6 +82,11 @@ const emailChangeServiceMock = {
   changeByOperator: jest.fn(),
 };
 
+// TASK-827: the customer card's redeemed coupons come from the discount module.
+const discountServiceMock = {
+  listUserRedemptions: jest.fn(),
+};
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('UserService', () => {
@@ -97,6 +103,7 @@ describe('UserService', () => {
         { provide: AuthRepository, useValue: authRepositoryMock },
         { provide: ReviewService, useValue: reviewServiceMock },
         { provide: EmailChangeService, useValue: emailChangeServiceMock },
+        { provide: DiscountService, useValue: discountServiceMock },
       ],
     }).compile();
 
@@ -284,8 +291,8 @@ describe('UserService', () => {
 
       const result = await service.findAll(query);
 
-      expect(result.data).toHaveLength(2);
-      expect(result.data[0]).toBeInstanceOf(UserEntity);
+      expect(result.items).toHaveLength(2);
+      expect(result.items[0]).toBeInstanceOf(UserEntity);
       expect(result.meta.total).toBe(2);
       expect(result.meta.page).toBe(1);
       expect(result.meta.limit).toBe(20);
@@ -417,7 +424,7 @@ describe('UserService', () => {
       repository.getOrderCount.mockResolvedValue(12);
       repository.getRecentOrders.mockResolvedValue(recentOrders as never);
       repository.getReviewsByUserId.mockResolvedValue(reviews as never);
-      repository.getRedeemedCoupons.mockResolvedValue(coupons as never);
+      discountServiceMock.listUserRedemptions.mockResolvedValue(coupons as never);
       repository.getContactMessagesByEmail.mockResolvedValue(messages as never);
     }
 
@@ -431,7 +438,7 @@ describe('UserService', () => {
       expect(repository.getOrderCount).not.toHaveBeenCalled();
       expect(repository.getRecentOrders).not.toHaveBeenCalled();
       expect(repository.getReviewsByUserId).not.toHaveBeenCalled();
-      expect(repository.getRedeemedCoupons).not.toHaveBeenCalled();
+      expect(discountServiceMock.listUserRedemptions).not.toHaveBeenCalled();
       expect(repository.getContactMessagesByEmail).not.toHaveBeenCalled();
     });
 
@@ -468,7 +475,7 @@ describe('UserService', () => {
       expect(repository.getOrderCount).toHaveBeenCalledWith('user-uuid-1');
       expect(repository.getRecentOrders).toHaveBeenCalledWith('user-uuid-1', 10);
       expect(repository.getReviewsByUserId).toHaveBeenCalledWith('user-uuid-1', 20);
-      expect(repository.getRedeemedCoupons).toHaveBeenCalledWith('user-uuid-1', 20);
+      expect(discountServiceMock.listUserRedemptions).toHaveBeenCalledWith('user-uuid-1', 20);
       expect(repository.getContactMessagesByEmail).toHaveBeenCalledWith('test@example.com', 20);
     });
 
@@ -491,7 +498,7 @@ describe('UserService', () => {
       repository.getOrderCount.mockImplementation(blocking(0));
       repository.getRecentOrders.mockImplementation(blocking([]));
       repository.getReviewsByUserId.mockImplementation(blocking([]));
-      repository.getRedeemedCoupons.mockImplementation(blocking([]));
+      discountServiceMock.listUserRedemptions.mockImplementation(blocking([]));
       repository.getContactMessagesByEmail.mockImplementation(blocking([]));
 
       const promise = service.getAdminCard('user-uuid-1');
@@ -504,7 +511,7 @@ describe('UserService', () => {
       expect(repository.getOrderCount).toHaveBeenCalledTimes(1);
       expect(repository.getRecentOrders).toHaveBeenCalledTimes(1);
       expect(repository.getReviewsByUserId).toHaveBeenCalledTimes(1);
-      expect(repository.getRedeemedCoupons).toHaveBeenCalledTimes(1);
+      expect(discountServiceMock.listUserRedemptions).toHaveBeenCalledTimes(1);
       expect(repository.getContactMessagesByEmail).toHaveBeenCalledTimes(1);
 
       // Release all reads so the service can finish and we don't leak a pending promise.

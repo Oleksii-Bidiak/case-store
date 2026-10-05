@@ -25,7 +25,7 @@
  *
  * THREE LEVELS READ THIS CATALOGUE DIFFERENTLY (plan 178, decision 1):
  *   - the OWNER (`User.isOwner`, exactly one) holds everything, plus the reserve
- *     `@OwnerOnly` marks — the four doors that decide who runs the shop;
+ *     `@OwnerOnly()` marks (listed on `PERMISSIONS` below);
  *   - an ADMIN holds every permission in here without a single row of their own,
  *     but never the reserve;
  *   - a MANAGER holds exactly their own rows.
@@ -79,10 +79,12 @@ export interface PermissionDefinition {
 /**
  * Every permission in the system.
  *
- * Note what is NOT here: the four doors that decide who runs the shop — changing
- * a role, setting somebody's password, deactivating and deleting an account.
- * Those are `@OwnerOnly()` by construction and have no key at all, because a key
- * is something that can be handed over and those cannot.
+ * Note what is NOT here: the owner's reserve — the routes marked `@OwnerOnly()`,
+ * today changing a customer's sign-in email, deleting a customer and
+ * transferring ownership. Those have no key at all, because a key is something
+ * that can be handed over and those cannot. (Changing a staff member's role or
+ * password, deactivating and deleting them are NOT in the reserve since
+ * TASK-476: they are `staff:write` plus the level rule on `/api/admin/staff`.)
  */
 export const PERMISSIONS = [
   // ── Замовлення ────────────────────────────────────────────────────────────

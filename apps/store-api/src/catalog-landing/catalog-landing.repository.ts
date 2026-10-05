@@ -1,8 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma';
-import { buildProductListWhere } from '../product/product-list-where';
-import { publicProductSql } from '../product/product-visibility';
+import { buildProductListWhere, publicProductSql } from '../product';
 
 /** One (category × device model) bucket: the pair and how many products sit in it. */
 export interface CompatPairCount {

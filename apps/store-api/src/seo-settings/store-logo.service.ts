@@ -17,7 +17,7 @@ import {
 import {
   BRANDING_SUBDIR,
   ImageProcessor,
-  IStorageService,
+  type IStorageService,
   sanitizeSvg,
   STORAGE_SERVICE,
 } from '../storage';

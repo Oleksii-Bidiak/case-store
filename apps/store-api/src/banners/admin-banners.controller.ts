@@ -28,7 +28,7 @@ import {
   ReorderBannersDto,
 } from './dto';
 import { PermissionGuard, RequirePermission } from '../auth/permissions';
-// Direct file import, NOT the `../auth` barrel: the barrel pulls the auth module in and the
+// The `auth/decorators` sub-barrel, NOT the `../auth` barrel: the barrel pulls the auth module in and the
 // resulting require cycle leaves `CurrentUser` undefined at decorator-evaluation time.
 import { CurrentUser } from '../auth/decorators';
 import { BannerEntity } from './entities';
@@ -109,7 +109,8 @@ export class AdminBannerController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAll(@Query() query: AdminBannerListQueryDto): Promise<AdminBannerListResponse> {
-    return this.bannerService.findAllAdmin(query);
+    const page = await this.bannerService.findAllAdmin(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**
@@ -147,7 +148,8 @@ export class AdminBannerController {
     @Body() dto: ReorderBannersDto,
     @CurrentUser('id') adminUserId: string,
   ): Promise<AdminBannerListResponse> {
-    return this.bannerService.reorderPlacement(dto, adminUserId);
+    const page = await this.bannerService.reorderPlacement(dto, adminUserId);
+    return { data: page.items, meta: page.meta };
   }
 
   @Get(':id')

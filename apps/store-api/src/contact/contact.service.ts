@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { RetryAfterException } from '../common/filters/retry-after.exception';
+import { RetryAfterException } from '../common/filters';
 import { PinoLogger } from 'nestjs-pino';
 import { ContactMessageStatus } from '@prisma/client';
 import {
@@ -8,8 +8,8 @@ import {
   type CreateContactMessageInput,
 } from './contact.repository';
 import { ContactMessageEntity } from './entities';
-// Direct path, not the barrel: the barrel pulls in NotificationModule itself.
-import { ShopNotifier } from '../notification/shop-notifier.service';
+import type { Paginated, PaginationMeta } from '../common/pagination';
+import { ShopNotifier } from '../notification';
 import {
   CreateContactMessageDto,
   ContactMessageListQueryDto,
@@ -43,23 +43,10 @@ export interface ContactSubmissionResult {
 }
 
 /**
- * Pagination metadata returned alongside inbox lists.
+ * One page of the admin inbox: the messages, pagination metadata, and the current
+ * unread (NEW) count for the sidebar badge.
  */
-export interface PaginationMeta {
-  total: number;
-  page: number;
-  limit: number;
-  totalPages: number;
-}
-
-/**
- * Response shape for the admin inbox: the page of messages, pagination
- * metadata, and the current unread (NEW) count for the sidebar badge.
- */
-export interface ContactInboxResult {
-  data: ContactMessageEntity[];
-  meta: PaginationMeta & { unread: number };
-}
+export type ContactInboxPage = Paginated<ContactMessageEntity, PaginationMeta & { unread: number }>;
 
 /**
  * ContactService — business logic for customer contact messages (TASK-177).
@@ -195,7 +182,7 @@ export class ContactService {
    * List messages for the admin inbox (paginated, optional status filter,
    * newest first) together with the current unread (NEW) count.
    */
-  async findAllAdmin(query: ContactMessageListQueryDto): Promise<ContactInboxResult> {
+  async findAllAdmin(query: ContactMessageListQueryDto): Promise<ContactInboxPage> {
     const page = query.page ?? DEFAULT_PAGE;
     const limit = query.limit ?? DEFAULT_LIMIT;
 
@@ -216,7 +203,7 @@ export class ContactService {
     const matchMap = await this.contactRepository.findMatchingUserIds(distinctEmails);
 
     return {
-      data: messages.map((row) =>
+      items: messages.map((row) =>
         ContactMessageEntity.fromPrisma(row, matchMap.get(row.email) ?? null),
       ),
       meta: { total, page, limit, totalPages: Math.ceil(total / limit), unread },

@@ -1,7 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { PinoLogger } from 'nestjs-pino';
-import { CategorySubtreeIndexer } from '../common/ports/category-subtree-indexer.port';
+import { CategorySubtreeIndexer } from '../common/ports';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: category barrel > category.module > search.module > this file
 import { CategoryRepository } from '../category/category.repository';
+// eslint-disable-next-line local/no-deep-module-import -- cycle: product barrel > product.module > search barrel > this file
 import { ProductRepository } from '../product/product.repository';
 import { SearchService } from './search.service';
 

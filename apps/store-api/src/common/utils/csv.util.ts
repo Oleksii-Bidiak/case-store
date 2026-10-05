@@ -8,10 +8,7 @@
  * places a security fix has to land, and the second one is the one that gets
  * missed.
  *
- * Imported by path (`../common/utils/csv.util`) rather than through the
- * `common/utils` barrel only because the barrel was owned by another agent in
- * the wave that added this file; move the export up whenever the barrel is next
- * touched.
+ * Imported through the `common/utils` barrel (TASK-818).
  */
 
 /**

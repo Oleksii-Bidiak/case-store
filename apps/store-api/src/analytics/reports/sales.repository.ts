@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { kyivDaySql } from '../../common/time/kyiv-day';
+import { kyivDaySql } from '../../common/time';
 import { PrismaService } from '../../prisma';
 import { ReportRange } from './report-period';
 import { SALES_BASE_STATUSES } from './sales-base';

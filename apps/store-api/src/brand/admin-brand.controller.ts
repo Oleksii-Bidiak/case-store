@@ -97,7 +97,8 @@ export class AdminBrandController {
   })
   @ApiResponse({ status: 403, description: 'Forbidden — admin access required' })
   async findAllAdmin(@Query() query: BrandListQueryDto): Promise<AdminBrandListResponse> {
-    return this.brandService.findAllAdmin(query);
+    const page = await this.brandService.findAllAdmin(query);
+    return { data: page.items, meta: page.meta };
   }
 
   /**

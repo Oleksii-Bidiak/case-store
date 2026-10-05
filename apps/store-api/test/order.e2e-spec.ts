@@ -22,7 +22,7 @@ import { OrderRepository } from '../src/order/order.repository';
 import { OrderLookupRepository } from '../src/order/order-lookup.repository';
 // TASK-425: the export's row cap, asserted rather than restated as a literal.
 import { ORDER_EXPORT_MAX_ROWS } from '../src/order/order.service';
-import { DiscountRepository } from '../src/discount';
+import { DiscountRepository } from '../src/discount/discount.repository';
 import { MailService } from '../src/mail/mail.service';
 import { NotificationOutboxService } from '../src/notification-outbox';
 import { ShopNotifier } from '../src/notification/shop-notifier.service';
@@ -230,8 +230,10 @@ describe('OrderController (e2e)', () => {
     paymentStatus: PaymentStatus.PENDING,
     subtotal: { toString: () => '59.98' },
     discount: { toString: () => '0' },
+    discountCode: null,
     shippingCost: { toString: () => '0' },
     tax: { toString: () => '0' },
+    addonsTotal: { toString: () => '0' },
     total: { toString: () => '59.98' },
     shippingAddress: validAddress as never,
     billingAddress: validAddress as never,

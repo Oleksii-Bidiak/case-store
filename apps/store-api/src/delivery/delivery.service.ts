@@ -3,9 +3,9 @@ import { ConfigService } from '@nestjs/config';
 import { DeliveryMethod } from '@prisma/client';
 import { PinoLogger } from 'nestjs-pino';
 import { CacheService } from '../cache';
-// The matrix file itself, not the order barrel: it is pure, and the order module
-// already depends on this one — importing its Nest module graph back would be a
-// cycle. One table, read by both the server check and the storefront (TASK-643).
+// One table, read by both the server check and the storefront (TASK-643); it is
+// in the order barrel, but the order module already depends on this one.
+// eslint-disable-next-line local/no-deep-module-import -- cycle: order barrel > order.module > delivery barrel > this file
 import { allowedPaymentMethods } from '../order/delivery-payment-matrix';
 import { DeliveryRepository, UpsertDeliverySettingInput } from './delivery.repository';
 import { PickupPointRepository, type PickupPoint } from './pickup-point.repository';
