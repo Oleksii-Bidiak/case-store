@@ -44,7 +44,7 @@
 ## Roadmap (Open)
 
 > Program approved 2026-07-03 (see `docs/plans` as tasks get picked up). Order: Етап 0 → 1 → 2 → 3 → 4 → review gates → 5 → 6 → 7.
-> New task IDs use the single monotonic counter — **next plain ID: TASK-1095**.
+> New task IDs use the single monotonic counter — **next plain ID: TASK-1097**.
 > (Хвиля 180 узяла 604–613 під сусідні знахідки — таблиця «Сусідні знахідки хвилі 180».)
 > (Хвиля 181 була взяла 604–605 під два свої хвости й мусила перенумерувати їх у 632–633 під час
 > мерджу: 180 пішла в develop першою і ті номери вже означали інше. Рівно граблина TASK-545 —
@@ -862,6 +862,8 @@
 | TASK-1092 | [знайдено в TASK-672] `dashboard.repository.int-spec.ts` чистить `orders`, але не `payments`: один залишковий рядок із Playwright-сіву (`e2e/fixtures/seed-e2e.ts`, платіж `e2e37121-…`) у `store_test` робив 19 int-тестів червоними локально (FK `payments_order_id_fkey`); прибрано вручну 2026-10-01. Виправити прибирання спеки (спершу `payment_events`/`payments`) | ⬜ | [187](docs/plans/187-notifications.md) |
 | TASK-1093 | [знайдено в TASK-672] `schema.prisma` у develop не відформатований `prisma format` (вирівнювання `OrderStatusHistory.rejectedPaymentStatus`, блок `User`), тож будь-який `prisma format` дає шум у непов'язаних моделях і конфлікти між хвилями. Один окремий коміт форматування | ⬜ | [187](docs/plans/187-notifications.md) |
 | TASK-1094 | [знайдено в TASK-675] Додаток прав у `docs/qa-manual-full.md` відстав від каталогу: пише «39 ключів / 36 грантабельних» і не має рядків `payments:correct`, `categories:delete`, `analytics:revenue`; з `settings:notifications` у каталозі 43 ключі. Звести підсумки й додати рядки | ⬜ | [187](docs/plans/187-notifications.md) |
+| TASK-1095 | [ревʼю 187A, S2] Отруєний апдейт блокує `getUpdates`-воркер (`telegram-updates.worker.ts`): не-БД виняток у `handle` (наприклад, `message.chat` без `id`) лишає offset перед цим апдейтом, і його ретраять кожні 10 с без межі — усі наступні `/start` стоять за ним. Пропускати апдейт після N невдач або розрізняти збій БД і помилку розбору. Ризик малий: Telegram завжди шле `chat` | ⬜ | [187](docs/plans/187-notifications.md) |
+| TASK-1096 | [ревʼю 187A, S3] Після переходу на канали черга досі говорить мовою пошти: події логу `mailOutbox.*`, job `mail-outbox-dispatch`, env `MAIL_OUTBOX_*` — TELEGRAM-рядки плутають пошук по логах. І заблокований канал не пише `lastError` на рядок, лише лог, тож у БД причина «чому PENDING» не видна. Перейменувати з перехідним періодом для алертів і писати причину на рядок | ⬜ | [187](docs/plans/187-notifications.md) |
 
 ### План 188 — Детальна статистика в адмінці: п'ять звітів, період, чистий виторг (B-8 / TASK-450)
 
@@ -1627,6 +1629,6 @@
   manual-only leftovers go to [`docs/manual-qa-pending.md`](docs/manual-qa-pending.md).
 - **Keep rows one line.** Root causes, sub-tasks and "Done/Verified" notes belong in the task's
   `docs/plans/NNN-*.md` (link it in the Plan column) — never in this file.
-- **New task IDs:** single monotonic counter; next plain ID **TASK-1095**. Never reuse an ID.
+- **New task IDs:** single monotonic counter; next plain ID **TASK-1097**. Never reuse an ID.
 - **Finishing an Етап:** collapse its table into one summary row under *Completed* and move the
   detailed rows to `docs/backlog-archive.md`.
